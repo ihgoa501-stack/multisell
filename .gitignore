@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+node_modules/
+dist/
+.vite/
+uploads/
+*.db
+*.sqlite3
+.DS_Store
+*.log
+
+# 旧Java项目残留（已清理）
+pom.xml
+*.java
+*.class
+product-*/
+src/main/

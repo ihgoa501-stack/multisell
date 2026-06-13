@@ -1,0 +1,98 @@
+"""库存管理 - 路由"""
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.common import Result
+from app.inventory.schemas import InventoryUpdate, InventoryCheck, InventoryVO, InventoryLogVO
+from app.inventory.service import InventoryService
+
+router = APIRouter(tags=["库存管理"])
+
+
+@router.get("/inventory/alerts", summary="库存预警列表")
+async def get_inventory_alerts(db: AsyncSession = Depends(get_db)):
+    """获取库存低于安全库存的SKU列表"""
+    from sqlalchemy import select, and_
+    from app.models import Inventory, Sku, Product
+
+    stmt = (
+        select(Inventory, Sku, Product.name)
+        .join(Sku, Inventory.sku_id == Sku.id)
+        .join(Product, Sku.product_id == Product.id)
+        .where(and_(Inventory.safety_stock > 0, Inventory.quantity <= Inventory.safety_stock))
+        .order_by(Inventory.quantity.asc())
+    )
+    result = await db.execute(stmt)
+    alerts = []
+    for inv, sku, product_name in result.all():
+        alerts.append({
+            "sku_id": inv.sku_id,
+            "sku_code": sku.code,
+            "spec_desc": sku.spec_desc,
+            "product_name": product_name,
+            "product_id": sku.product_id,
+            "quantity": inv.quantity,
+            "safety_stock": inv.safety_stock,
+            "warehouse": inv.warehouse,
+            "updated_at": inv.updated_at.isoformat() if inv.updated_at else None,
+        })
+    return Result.ok(alerts)
+
+
+def inv_to_vo(inv) -> InventoryVO:
+    return InventoryVO(
+        id=inv.id,
+        sku_id=inv.sku_id,
+        warehouse=inv.warehouse,
+        location=inv.location,
+        quantity=inv.quantity,
+        safety_stock=inv.safety_stock,
+        created_at=inv.created_at,
+        updated_at=inv.updated_at,
+    )
+
+
+def log_to_vo(log) -> InventoryLogVO:
+    return InventoryLogVO(
+        id=log.id,
+        sku_id=log.sku_id,
+        change_type=log.change_type,
+        change_qty=log.change_qty,
+        before_qty=log.before_qty,
+        after_qty=log.after_qty,
+        remark=log.remark,
+        operator=log.operator,
+        created_at=log.created_at,
+    )
+
+
+@router.put("/inventory/{sku_id}", summary="更新库存")
+async def update_inventory(sku_id: int, data: InventoryUpdate, db: AsyncSession = Depends(get_db)):
+    inv = await InventoryService.update_inventory(
+        db, sku_id, data.quantity, data.warehouse or "默认仓库",
+        data.location, data.safety_stock, data.remark
+    )
+    return Result.ok(inv_to_vo(inv))
+
+
+@router.get("/inventory/{sku_id}", summary="查询库存")
+async def get_inventory(sku_id: int, db: AsyncSession = Depends(get_db)):
+    inv = await InventoryService.get_inventory(db, sku_id)
+    if not inv:
+        return Result.ok(InventoryVO(sku_id=sku_id, quantity=0))
+    return Result.ok(inv_to_vo(inv))
+
+
+@router.post("/inventory/check", summary="库存预占检查")
+async def check_inventory(data: InventoryCheck, db: AsyncSession = Depends(get_db)):
+    ok, message = await InventoryService.check_stock(db, data.sku_id, data.quantity)
+    if not ok:
+        return Result.error(message=message)
+    return Result.ok({"sku_id": data.sku_id, "available": True})
+
+
+@router.get("/inventory/{sku_id}/logs", summary="库存变动记录")
+async def get_inventory_logs(sku_id: int, db: AsyncSession = Depends(get_db)):
+    logs = await InventoryService.get_inventory_logs(db, sku_id)
+    return Result.ok([log_to_vo(l) for l in logs])
