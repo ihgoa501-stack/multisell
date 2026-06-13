@@ -54,6 +54,29 @@ npm run dev
 
 访问 http://localhost:3001
 
+## 数据初始化
+
+首次部署或需要演示数据时，运行数据初始化脚本：
+
+```bash
+cd backend
+pip install -r requirements.txt
+python seed.py
+```
+
+该脚本会独立创建以下演示数据（不依赖 FastAPI 启动流程）：
+- 管理员账号：`admin` / `admin123`
+- 16 个商品分类（含父子层级）
+- 5 个跨境电商平台（Ozon、Shopee、Wildberries、速卖通、Temu）
+- 6 个品牌
+- 7 个演示商品及多规格 SKU、默认库存记录
+
+> 如需重置数据库（删除所有表并重新填充），可使用运维工具：
+> ```bash
+> cd backend
+> python scripts/db_reset.py
+> ```
+
 ## 技术栈
 
 - 后端：Python 3.11+ / FastAPI / SQLAlchemy 2.0 / PostgreSQL
