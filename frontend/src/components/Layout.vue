@@ -37,7 +37,12 @@
 import { computed, h, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NIcon, NLayout, NLayoutHeader, NLayoutSider, NMenu, NConfigProvider, useMessage, darkTheme } from 'naive-ui'
+import type { Component } from 'vue'
 import http from '@/api/http'
+
+// ========== 图标映射表 ==========
+// 新模块在路由 meta.icon 中指定图标 key，Layout 会自动渲染
+// 可用图标见下方 map。如需新增图标，在这里加一行 import + map 即可。
 import {
   ListOutline,
   LayersOutline,
@@ -50,7 +55,41 @@ import {
   DocumentTextOutline,
   WarningOutline,
   GlobeOutline,
+  CartOutline,
+  BarChartOutline,
+  CubeOutline,
+  SettingsOutline,
+  TrendingUpOutline,
+  ShieldCheckmarkOutline,
+  DownloadOutline,
 } from '@vicons/ionicons5'
+
+const iconMap: Record<string, Component> = {
+  home: HomeOutline,
+  list: ListOutline,
+  layers: LayersOutline,
+  palette: ColorPaletteOutline,
+  cash: CashOutline,
+  archive: ArchiveOutline,
+  people: PeopleOutline,
+  tag: PricetagOutline,
+  'doc-text': DocumentTextOutline,
+  warning: WarningOutline,
+  globe: GlobeOutline,
+  cart: CartOutline,
+  chart: BarChartOutline,
+  cube: CubeOutline,
+  settings: SettingsOutline,
+  trend: TrendingUpOutline,
+  shield: ShieldCheckmarkOutline,
+  download: DownloadOutline,
+}
+
+function renderIcon(iconName: string) {
+  const IconComp = iconMap[iconName]
+  if (!IconComp) return undefined
+  return () => h(NIcon, null, { default: () => h(IconComp) })
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -139,17 +178,29 @@ function handleKeydown(e: KeyboardEvent) {
 onMounted(() => document.addEventListener('keydown', handleKeydown))
 onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
-const menuOptions = [
-  { label: '首页', key: '/dashboard', icon: () => h(NIcon, null, { default: () => h(HomeOutline) }) },
-  { label: '商品列表', key: '/products', icon: () => h(NIcon, null, { default: () => h(ListOutline) }) },
-  { label: '分类管理', key: '/categories', icon: () => h(NIcon, null, { default: () => h(LayersOutline) }) },
-  { label: '品牌管理', key: '/brands', icon: () => h(NIcon, null, { default: () => h(PricetagOutline) }) },
-  { label: '供应商管理', key: '/suppliers', icon: () => h(NIcon, null, { default: () => h(PeopleOutline) }) },
-  { label: '平台管理', key: '/platforms', icon: () => h(NIcon, null, { default: () => h(GlobeOutline) }) },
-  { label: '发布管理', key: '/listings', icon: () => h(NIcon, null, { default: () => h(ArchiveOutline) }) },
-  { label: '操作日志', key: '/operation-logs', icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }) },
-  { label: '库存预警', key: '/inventory/alerts', icon: () => h(NIcon, null, { default: () => h(WarningOutline) }) },
-]
+// ========== 从路由自动生成侧边菜单 ==========
+// 读取所有路由配置中 meta.menu === true 且 meta.icon 存在的项
+// 新模块只需在 router/modules/ 里定义路由时设置 meta: { menu: true, icon: 'xxx' }
+// 菜单项就会自动出现，不需要改 Layout.vue。
+const menuOptions = computed(() => {
+  const items: any[] = []
+  // 获取当前路由实例的所有扁平化路由记录
+  const flatRoutes = router.getRoutes()
+  // 收集所有有菜单标记的路由
+  const seen = new Set<string>()
+  for (const r of flatRoutes) {
+    const meta = r.meta as Record<string, any> | undefined
+    if (meta?.menu === true && meta?.title && meta?.icon && !seen.has(r.path)) {
+      seen.add(r.path)
+      items.push({
+        label: meta.title,
+        key: r.path,
+        icon: renderIcon(meta.icon as string),
+      })
+    }
+  }
+  return items
+})
 
 function handleMenuSelect(key: string) {
   router.push(key)

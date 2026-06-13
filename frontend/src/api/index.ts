@@ -194,3 +194,26 @@ export const listingApi = {
     return http.get('/listings')
   },
 }
+
+// ===============================================
+// 新模块自动合并（用于多AI并行开发）
+// ===============================================
+// 每个 AI 在 modules/ 下创建文件（如 modules/order.ts），export 你的 API 对象。
+// 这里会自动合并并通过 apiModules 对象统一导出。
+//
+// 使用方式：
+//   import { apiModules } from '@/api'
+//   apiModules.orderApi.list(params)
+//
+// 已有模块（productApi / categoryApi 等）不受影响，可直接 import。
+// ===============================================
+const _modules = import.meta.glob('./modules/*.ts', { eager: true })
+const _merged: Record<string, any> = {}
+for (const mod of Object.values(_modules)) {
+  Object.assign(_merged, mod as Record<string, any>)
+}
+/** 由 api/modules/*.ts 自动合并生成的 API 对象 */
+export const apiModules = _merged as Record<string, any>
+
+// 默认导出 http 实例，方便页面直接调用
+export default http

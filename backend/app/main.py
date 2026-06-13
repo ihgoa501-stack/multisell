@@ -1,39 +1,56 @@
 """MultiSell — FastAPI 入口"""
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import init_db
+import importlib, pkgutil
 
-# ========== 导入路由 ==========
-from app.core import router as core_router
-from app.category import router as category_router
-from app.sku import router as sku_router
-from app.price import router as price_router
-from app.inventory import router as inventory_router
-from app.supplier import router as supplier_router
-from app.common import upload_router
-from app.brand import router as brand_router
-from app.dashboard import router as dashboard_router
-from app.operation_log import router as operation_log_router
-from app.platform import router as platform_router
-from app.listing import router as listing_router
-from app.search import router as search_router
-from app.auth import router as auth_router
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import HTTPException
+
+# ========== 自动发现并注册所有模块路由 ==========
+# 规则：每个 backend/app/<module>/ 只要 __init__.py 里导出 router 变量，
+# 就会自动被注册到 /api 前缀下。新模块只需建目录 + router.py + __init__.py 即可，
+# 不需要改 main.py 里的任何代码。
+#
+# 例外：app.common 导出了 upload_router（不从标准的 router 变量名），单独注册。
+from app.common import upload_router as _upload_router
+
+_registered_routers = set()
+
+
+def _discover_routers(app_instance: FastAPI):
+    """扫描 app/ 下所有子模块，自动注册有 router 的模块"""
+    import app as _app_root
+
+    for _importer, _modname, _ispkg in pkgutil.walk_packages(
+        _app_root.__path__, prefix="app."
+    ):
+        if _ispkg:
+            continue  # 只处理模块，不处理包
+        _parent = _modname.rsplit(".", 1)[0]
+        if _parent in _registered_routers:
+            continue
+        try:
+            _pkg = importlib.import_module(_parent)
+            if hasattr(_pkg, "router"):
+                app_instance.include_router(_pkg.router, prefix="/api")
+                _registered_routers.add(_parent)
+        except Exception:
+            pass  # 静默跳过无 router 的模块
+
+    # 单独注册 upload_router
+    app_instance.include_router(_upload_router, prefix="/api")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期"""
-    # 启动时：初始化数据库
     if settings.DEBUG:
         await init_db()
     yield
-    # 关闭时：清理资源
 
 
 app = FastAPI(
@@ -43,21 +60,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ========== 挂载路由 ==========
-app.include_router(core_router, prefix="/api")
-app.include_router(category_router, prefix="/api")
-app.include_router(sku_router, prefix="/api")
-app.include_router(price_router, prefix="/api")
-app.include_router(inventory_router, prefix="/api")
-app.include_router(supplier_router, prefix="/api")
-app.include_router(brand_router, prefix="/api")
-app.include_router(dashboard_router, prefix="/api")
-app.include_router(operation_log_router, prefix="/api")
-app.include_router(platform_router, prefix="/api")
-app.include_router(listing_router, prefix="/api")
-app.include_router(search_router, prefix="/api")
-app.include_router(auth_router, prefix="/api")
-app.include_router(upload_router, prefix="/api")
+# 自动发现并注册路由
+_discover_routers(app)
 
 # ========== 挂载静态文件（上传目录） ==========
 import os
