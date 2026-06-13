@@ -6,6 +6,7 @@ from app.database import get_db
 from app.common import Result
 from app.auth.schemas import UserRegister, UserLogin, UserVO, TokenVO
 from app.auth.service import AuthService
+from app.config import settings
 from app.models import User
 
 router = APIRouter(tags=["认证"])
@@ -27,7 +28,17 @@ async def get_current_user(
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """依赖注入：获取当前登录用户"""
+    """依赖注入：获取当前登录用户。
+    当 AUTH_ENABLED=False 时返回一个 mock 用户，跳过鉴权。
+    """
+    if not settings.AUTH_ENABLED:
+        mock_user = User(
+            id=0, username="system", display_name="系统管理员",
+            role="admin", status=1,
+        )
+        mock_user.roles = []
+        return mock_user
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="未登录")
     token = authorization[7:]
