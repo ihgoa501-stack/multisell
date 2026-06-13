@@ -123,7 +123,7 @@ async def export_products(
         cell.border = thin_border
 
     status_map = {0: "草稿", 1: "上架", 2: "下架"}
-    for row_idx, p in enumerate(products, 2):
+    for row_idx, p in enumerate(all_products, 2):
         category_name = p.category.name if p.category else ""
         ws.cell(row=row_idx, column=1, value=p.id)
         ws.cell(row=row_idx, column=2, value=p.name)
@@ -149,6 +149,50 @@ async def export_products(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=products_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"},
+    )
+
+
+@router.get("/products/export-template", summary="下载导入模板")
+async def export_template():
+    """下载商品导入模板（空表头）"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "商品导入模板"
+
+    headers = ["商品名称", "副标题", "单位", "状态"]
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = thin_border
+
+    ws.column_dimensions["A"].width = 40
+    ws.column_dimensions["B"].width = 30
+    ws.column_dimensions["C"].width = 8
+    ws.column_dimensions["D"].width = 10
+
+    # 数据验证：状态列下拉
+    from openpyxl.worksheet.datavalidation import DataValidation
+    dv = DataValidation(type="list", formula1='"草稿,上架,下架"', allow_blank=True)
+    dv.error = "请选择: 草稿 / 上架 / 下架"
+    dv.errorTitle = "状态错误"
+    ws.add_data_validation(dv)
+    dv.add(f"D2:D1048576")
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=product_import_template.xlsx"},
     )
 
 
