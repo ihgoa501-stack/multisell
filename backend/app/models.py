@@ -260,3 +260,50 @@ class User(Base):
     last_login_at = Column(DateTime(timezone=True), comment="最后登录时间")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    roles = relationship("Role", secondary="user_role", backref="users", lazy="selectin")
+
+
+class Role(Base):
+    """角色"""
+    __tablename__ = "role"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, comment="角色名称")
+    code = Column(String(100), nullable=False, unique=True, comment="角色代码")
+    description = Column(String(500), comment="角色描述")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    permissions = relationship("Permission", secondary="role_permission", backref="roles", lazy="selectin")
+
+
+class Permission(Base):
+    """权限"""
+    __tablename__ = "permission"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, comment="权限名称")
+    code = Column(String(100), nullable=False, unique=True, comment="权限代码")
+    description = Column(String(500), comment="权限描述")
+    module = Column(String(100), comment="所属模块")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class UserRole(Base):
+    """用户-角色关联"""
+    __tablename__ = "user_role"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    role_id = Column(BigInteger, ForeignKey("role.id"), nullable=False, comment="角色ID")
+
+
+class RolePermission(Base):
+    """角色-权限关联"""
+    __tablename__ = "role_permission"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    role_id = Column(BigInteger, ForeignKey("role.id"), nullable=False, comment="角色ID")
+    permission_id = Column(BigInteger, ForeignKey("permission.id"), nullable=False, comment="权限ID")

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
 
+    # 权限控制
+    AUTH_ENABLED: bool = False
+
     # 加密配置
     ENCRYPTION_KEY: str = "default-key-change-in-production-32bytes!!"
 
