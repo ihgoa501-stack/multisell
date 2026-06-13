@@ -4,6 +4,7 @@
       <template #title>📋 商品列表</template>
       <template #extra>
         <n-space>
+          <n-button @click="handleDownloadTemplate">📄 下载模板</n-button>
           <n-upload :show-file-list="false" accept=".xlsx,.xls" @change="handleImport">
             <n-button>📥 导入</n-button>
           </n-upload>
@@ -170,6 +171,21 @@ async function handleDuplicate(row: any) {
     }
   } catch (e: any) {
     message.error('复制失败')
+  }
+}
+
+async function handleDownloadTemplate() {
+  try {
+    const response = await http.get('/products/export-template', { responseType: 'blob' })
+    const url = window.URL.createObjectURL(new Blob([response as any]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'product_import_template.xlsx'
+    a.click()
+    window.URL.revokeObjectURL(url)
+    message.success('模板下载成功')
+  } catch (e: any) {
+    message.error('模板下载失败')
   }
 }
 
