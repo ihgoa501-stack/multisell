@@ -3,7 +3,7 @@
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, timezone
-from app.models import Product, Sku, Inventory, OperationLog, Brand, Supplier, Platform, ProductListing
+from app.models import Product, Sku, Inventory, OperationLog, Brand, Supplier, Platform, ProductListing, Category
 
 
 class DashboardService:
@@ -128,3 +128,81 @@ class DashboardService:
                 ],
             },
         }
+
+    @staticmethod
+    async def get_product_stats(db: AsyncSession) -> dict:
+        """商品统计（总数/上架/草稿/下架/各分类分布）"""
+        total = await db.scalar(select(func.count(Product.id))) or 0
+        on_shelf = await db.scalar(
+            select(func.count(Product.id)).where(Product.status == 1)
+        ) or 0
+        draft = await db.scalar(
+            select(func.count(Product.id)).where(Product.status == 0)
+        ) or 0
+        off_shelf = await db.scalar(
+            select(func.count(Product.id)).where(Product.status == 2)
+        ) or 0
+
+        # 各分类分布
+        cat_stmt = (
+            select(Product.category_id, Category.name, func.count(Product.id))
+            .outerjoin(Category, Product.category_id == Category.id)
+            .group_by(Product.category_id, Category.name)
+            .order_by(func.count(Product.id).desc())
+        )
+        cat_result = await db.execute(cat_stmt)
+        category_distribution = []
+        for cat_id, cat_name, cnt in cat_result.all():
+            category_distribution.append({
+                "category_id": cat_id,
+                "category_name": cat_name or f"分类{cat_id}",
+                "count": cnt,
+            })
+
+        return {
+            "total": total,
+            "on_shelf": on_shelf,
+            "draft": draft,
+            "off_shelf": off_shelf,
+            "category_distribution": category_distribution,
+        }
+
+    @staticmethod
+    async def get_platform_stats(db: AsyncSession) -> dict:
+        """平台发布统计（各平台已发布/待发布/失败数量）"""
+        platforms_stmt = (
+            select(Platform.id, Platform.name, Platform.code)
+            .where(Platform.status == 1)
+            .order_by(Platform.sort_order)
+        )
+        platforms_result = await db.execute(platforms_stmt)
+        platforms = platforms_result.all()
+
+        result = []
+        for p_id, p_name, p_code in platforms:
+            published = await db.scalar(
+                select(func.count(ProductListing.id)).where(
+                    and_(ProductListing.platform_id == p_id, ProductListing.status == "synced")
+                )
+            ) or 0
+            pending = await db.scalar(
+                select(func.count(ProductListing.id)).where(
+                    and_(ProductListing.platform_id == p_id, ProductListing.status.in_(["draft", "pending"]))
+                )
+            ) or 0
+            failed = await db.scalar(
+                select(func.count(ProductListing.id)).where(
+                    and_(ProductListing.platform_id == p_id, ProductListing.status == "failed")
+                )
+            ) or 0
+
+            result.append({
+                "platform_id": p_id,
+                "platform_name": p_name,
+                "platform_code": p_code,
+                "published": published,
+                "pending": pending,
+                "failed": failed,
+            })
+
+        return {"items": result}

@@ -13,3 +13,15 @@ router = APIRouter(tags=["仪表盘"])
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     stats = await DashboardService.get_stats(db)
     return Result.ok(stats)
+
+
+@router.get("/api/reports/product-stats", summary="商品统计")
+async def get_product_stats(db: AsyncSession = Depends(get_db)):
+    stats = await DashboardService.get_product_stats(db)
+    return Result.ok(stats)
+
+
+@router.get("/api/reports/platform-stats", summary="平台发布统计")
+async def get_platform_stats(db: AsyncSession = Depends(get_db)):
+    stats = await DashboardService.get_platform_stats(db)
+    return Result.ok(stats)
