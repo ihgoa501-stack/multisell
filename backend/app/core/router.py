@@ -360,38 +360,119 @@ async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/products/{product_id}/ai-enhance", summary="AI优化商品信息")
 async def ai_enhance_product(product_id: int, db: AsyncSession = Depends(get_db)):
-    """AI生成优化标题、描述和SEO关键词（当前为模拟数据，后续可接入LLM）"""
+    """AI生成优化标题、描述和SEO关键词（优先调用真实LLM，无Key/失败时回退到模拟数据）"""
     from app.models import Product
-    from datetime import datetime
+    from app.config import settings
+    import json
 
     product = await db.get(Product, product_id)
     if not product:
         return Result.not_found("商品不存在")
 
-    # 模拟AI生成结果（基于商品名称构建）
     name = product.name or ""
-    
-    # 生成优化标题（模拟）
-    enhanced_title = f"{name} - 高品质正品保障 厂家直销批发"
+    subtitle = product.subtitle or ""
+    description = product.description or ""
 
-    # 生成优化描述（模拟）
-    enhanced_desc = (
-        f"【{name}】品质保障，正品货源。\n\n"
-        f"产品特色：\n"
-        f"✅ 优质材料，经久耐用\n"
-        f"✅ 严格品控，质量可靠\n"
-        f"✅ 厂家直供，价格优惠\n"
-        f"✅ 支持批发/零售，快速发货\n\n"
-        f"欢迎联系我们获取更多产品信息！"
-    )
+    # ----- 尝试调用真实LLM -----
+    if settings.LLM_API_KEY:
+        import httpx
+        import asyncio
+        import re
 
-    # 生成SEO关键词（模拟）
-    keywords = [
-        name,
-        f"{name} 批发",
-        f"{name} 厂家",
-        f"{name} 价格",
-    ]
+        prompt = f"""你是一个电商商品标题和描述优化专家。
+请根据以下商品信息，生成优化的标题、描述和SEO关键词。
+
+商品名称：{name}
+商品副标题：{subtitle}
+商品描述：{description}
+
+请以JSON格式返回：
+{{
+  "title": "优化后的商品标题（不超过200字）",
+  "description": "优化后的商品描述（包含产品特色、卖点、适合场景，200-500字）",
+  "keywords": ["关键词1", "关键词2", "关键词3", "关键词4", "关键词5"]
+}}
+只返回JSON，不要额外说明。"""
+
+        payload = {
+            "model": settings.LLM_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+        }
+        headers = {
+            "Authorization": f"Bearer {settings.LLM_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.post(
+                        settings.LLM_API_URL,
+                        json=payload,
+                        headers=headers,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    content = data["choices"][0]["message"]["content"]
+
+                    # 尝试直接解析JSON
+                    try:
+                        result = json.loads(content)
+                    except json.JSONDecodeError:
+                        # 尝试从markdown代码块中提取
+                        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', content)
+                        if json_match:
+                            result = json.loads(json_match.group(1))
+                        else:
+                            raise ValueError("无法解析LLM返回的JSON")
+
+                    enhanced_title = result.get("title", name)
+                    enhanced_desc = result.get("description", description or name)
+                    keywords = result.get("keywords", [name])
+                    break  # 成功，跳出重试循环
+            except Exception as e:
+                last_error = e
+                if attempt < 2:
+                    await asyncio.sleep(1 * (attempt + 1))  # 退避等待
+                continue
+        else:
+            # 全部重试失败 → 回退到模拟数据
+            enhanced_title = f"{name} - 高品质正品保障 厂家直销批发"
+            enhanced_desc = (
+                f"【{name}】品质保障，正品货源。\n\n"
+                f"产品特色：\n"
+                f"✅ 优质材料，经久耐用\n"
+                f"✅ 严格品控，质量可靠\n"
+                f"✅ 厂家直供，价格优惠\n"
+                f"✅ 支持批发/零售，快速发货\n\n"
+                f"欢迎联系我们获取更多产品信息！"
+            )
+            keywords = [
+                name,
+                f"{name} 批发",
+                f"{name} 厂家",
+                f"{name} 价格",
+            ]
+    else:
+        # 没有配置Key → 使用模拟数据
+        enhanced_title = f"{name} - 高品质正品保障 厂家直销批发"
+        enhanced_desc = (
+            f"【{name}】品质保障，正品货源。\n\n"
+            f"产品特色：\n"
+            f"✅ 优质材料，经久耐用\n"
+            f"✅ 严格品控，质量可靠\n"
+            f"✅ 厂家直供，价格优惠\n"
+            f"✅ 支持批发/零售，快速发货\n\n"
+            f"欢迎联系我们获取更多产品信息！"
+        )
+        keywords = [
+            name,
+            f"{name} 批发",
+            f"{name} 厂家",
+            f"{name} 价格",
+        ]
 
     # 保存到商品记录
     product.ai_title = enhanced_title

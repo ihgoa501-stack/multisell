@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # 加密配置
     ENCRYPTION_KEY: str = "default-key-change-in-production-32bytes!!"
 
+    # ===== AI-5: LLM配置（环境变量: LLM_API_URL / LLM_API_KEY / LLM_MODEL）=====
+    LLM_API_URL: str = "https://api.openai.com/v1/chat/completions"
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = "gpt-4o-mini"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
