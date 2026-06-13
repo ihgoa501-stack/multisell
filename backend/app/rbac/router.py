@@ -10,7 +10,7 @@ from app.auth import get_current_user
 from app.config import settings
 from app.models import User
 
-router = APIRouter(tags=["权限管理"])
+router = APIRouter(prefix="/rbac", tags=["权限管理"])
 
 
 def require_auth(current_user: User = Depends(get_current_user)):
