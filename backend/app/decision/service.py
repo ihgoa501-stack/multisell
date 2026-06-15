@@ -10,6 +10,8 @@ from app.decision.schemas import (
     PreListingDecisionRequest,
     PreListingDecisionResponse,
 )
+from app.platform_fee.schemas import PlatformFeeRuleMatchRequest
+from app.platform_fee.service import PlatformFeeRuleService
 
 
 class PreListingDecisionService:
@@ -54,11 +56,51 @@ class PreListingDecisionService:
             else:
                 blocking_reasons.append(msg)
 
-        # 3. 计算费用
-        platform_fee = req.target_sale_price * req.platform_fee_pct / 100
-        payment_fee = req.target_sale_price * req.payment_fee_pct / 100
+        # 3. 计算费用 — 优先匹配平台费用规则
+        platform_fee_source = "manual"
+        applied_platform_fee_rule_id = None
+        platform_fee_rule_summary = None
+        fixed_fee = 0.0
+        advertising_fee = 0.0
+        other_fee = req.other_fee
 
-        total_cost = product_cost + shipping_fee + platform_fee + payment_fee + req.other_fee
+        platform_fee_pct = req.platform_fee_pct
+        payment_fee_pct = req.payment_fee_pct
+
+        if req.platform_id is not None:
+            # 尝试从SKU所属商品获取类目ID
+            product_stmt = select(Product).where(Product.id == sku.product_id)
+            product_result = await db.execute(product_stmt)
+            product = product_result.scalar_one_or_none()
+            category_id = req.category_id if req.category_id is not None else (product.category_id if product else None)
+
+            matched_rule = await PlatformFeeRuleService.match(
+                db,
+                PlatformFeeRuleMatchRequest(
+                    platform_id=req.platform_id,
+                    site_code=req.destination_country,
+                    category_id=category_id,
+                ),
+            )
+            if matched_rule:
+                platform_fee_source = "rule"
+                applied_platform_fee_rule_id = matched_rule["id"]
+                platform_fee_rule_summary = (
+                    f"{matched_rule.get('platform_name') or req.platform_id} "
+                    f"{matched_rule.get('site_code') or 'GLOBAL'}"
+                )
+                platform_fee_pct = matched_rule["commission_pct"]
+                payment_fee_pct = matched_rule["payment_fee_pct"]
+                fixed_fee = matched_rule["fixed_fee"]
+                advertising_fee = req.target_sale_price * matched_rule["advertising_pct"] / 100
+                other_fee = matched_rule["other_reserve_fee"]
+            else:
+                warnings.append("未匹配到平台费用规则，使用手动输入费率")
+
+        platform_fee = req.target_sale_price * platform_fee_pct / 100
+        payment_fee = req.target_sale_price * payment_fee_pct / 100
+
+        total_cost = product_cost + shipping_fee + platform_fee + payment_fee + fixed_fee + advertising_fee + other_fee
         profit_amount = req.target_sale_price - total_cost
         profit_margin = (profit_amount / req.target_sale_price * 100) if req.target_sale_price > 0 else 0
         profit_margin = round(profit_margin, 2)
@@ -85,10 +127,15 @@ class PreListingDecisionService:
             shipping_fee=shipping_fee,
             platform_fee=round(platform_fee, 2),
             payment_fee=round(payment_fee, 2),
-            other_fee=req.other_fee,
+            fixed_fee=round(fixed_fee, 2),
+            advertising_fee=round(advertising_fee, 2),
+            other_fee=other_fee,
             profit_amount=profit_amount,
             profit_margin=profit_margin,
             recommendation=recommendation,
             blocking_reasons=blocking_reasons,
             warnings=warnings,
+            applied_platform_fee_rule_id=applied_platform_fee_rule_id,
+            platform_fee_source=platform_fee_source,
+            platform_fee_rule_summary=platform_fee_rule_summary,
         )

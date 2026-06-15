@@ -417,7 +417,12 @@ async def test_prelisting_decision_uses_fee_rule_when_platform_provided(async_cl
 
     uid, token = await register_and_login(async_client, "decision_fee_rule")
     await grant_permission(uid, "platform:create")
+    await grant_permission(uid, "platform_fee:manage")
     await grant_permission(uid, "decision:calculate")
+    await grant_permission(uid, "product:create")
+    await grant_permission(uid, "sku:create")
+    await grant_permission(uid, "sku:update")
+    await grant_permission(uid, "shipping:manage")
     headers = {"Authorization": f"Bearer {token}"}
 
     platform_resp = await async_client.post(
@@ -446,9 +451,8 @@ async def test_prelisting_decision_uses_fee_rule_when_platform_provided(async_cl
     assert rule_resp.status_code == 200, f"rule create failed: {rule_resp.text}"
     rule_id = rule_resp.json()["data"]["id"]
 
-    # Reuse _create_test_data or create sku + shipping
-    from tests.test_prelisting_decision import _create_test_data
-    sku_id = await _create_test_data(async_client)
+    # Create SKU + shipping test data with auth
+    sku_id = await _create_auth_test_data(async_client, headers)
 
     resp = await async_client.post(
         "/api/decisions/prelisting",
@@ -476,6 +480,89 @@ async def test_prelisting_decision_uses_fee_rule_when_platform_provided(async_cl
     assert data["other_fee"] == 4.0  # overridden by rule's other_reserve_fee
 
 
+async def _create_auth_test_data(async_client, headers) -> int:
+    """Create product+SKU+shipping seed data with auth headers, return sku_id"""
+    uid = uuid4().hex[:6]
+
+    # 1. 创建商品（含物流包装字段）
+    resp = await async_client.post(
+        "/api/products",
+        json={
+            "name": f"Test_{uid}",
+            "package_length_cm": 30,
+            "package_width_cm": 20,
+            "package_height_cm": 10,
+            "package_weight_kg": 0.5,
+            "cargo_type": "normal",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200, f"创建商品失败: {resp.text}"
+    pid = resp.json()["data"]["id"]
+
+    # 2. 定义规格 + 生成 SKU
+    await async_client.post(
+        f"/api/products/{pid}/specs",
+        json={"specs": [{"name": "颜色", "values": ["标准"]}]},
+        headers=headers,
+    )
+    resp = await async_client.post(f"/api/products/{pid}/skus/generate", headers=headers)
+    assert resp.status_code == 200, f"生成 SKU 失败: {resp.text}"
+    sku_id = resp.json()["data"]["skus"][0]["id"]
+
+    # 设置成本价
+    await async_client.put(
+        f"/api/skus/{sku_id}",
+        json={"cost_price": 500, "code": f"SKU-{uid}"},
+        headers=headers,
+    )
+
+    # 3. 创建物流供应商
+    resp = await async_client.post(
+        "/api/shipping/providers",
+        json={"name": f"P_{uid}", "code": f"p_{uid}"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, f"创建物流供应商失败: {resp.text}"
+    provid = resp.json()["data"]["id"]
+
+    # 4. 创建物流渠道
+    resp = await async_client.post(
+        "/api/shipping/channels",
+        json={
+            "provider_id": provid,
+            "name": f"C_{uid}",
+            "code": f"c_{uid}",
+            "cargo_types": ["normal"],
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200, f"创建物流渠道失败: {resp.text}"
+    cid = resp.json()["data"]["id"]
+
+    # 5. 创建区域
+    await async_client.post(
+        f"/api/shipping/channels/{cid}/zones",
+        json={"country_code": "RU"},
+        headers=headers,
+    )
+
+    # 6. 创建报价规则
+    await async_client.post(
+        f"/api/shipping/channels/{cid}/rules",
+        json={
+            "rule_type": "fixed_plus_per_kg",
+            "fixed_fee": 50,
+            "per_kg_price": 20,
+            "minimum_charge": 25,
+            "rounding_increment": 0.1,
+        },
+        headers=headers,
+    )
+
+    return sku_id
+
+
 @pytest.mark.asyncio
 async def test_prelisting_decision_falls_back_to_manual_fee_when_no_rule_matches(async_client):
     from tests.auth_helpers import grant_permission, register_and_login
@@ -484,6 +571,10 @@ async def test_prelisting_decision_falls_back_to_manual_fee_when_no_rule_matches
     uid, token = await register_and_login(async_client, "decision_fee_fallback")
     await grant_permission(uid, "platform:create")
     await grant_permission(uid, "decision:calculate")
+    await grant_permission(uid, "product:create")
+    await grant_permission(uid, "sku:create")
+    await grant_permission(uid, "sku:update")
+    await grant_permission(uid, "shipping:manage")
     headers = {"Authorization": f"Bearer {token}"}
 
     platform_resp = await async_client.post(
@@ -494,8 +585,7 @@ async def test_prelisting_decision_falls_back_to_manual_fee_when_no_rule_matches
     assert platform_resp.status_code == 200
     platform_id = platform_resp.json()["data"]["id"]
 
-    from tests.test_prelisting_decision import _create_test_data
-    sku_id = await _create_test_data(async_client)
+    sku_id = await _create_auth_test_data(async_client, headers)
 
     resp = await async_client.post(
         "/api/decisions/prelisting",
