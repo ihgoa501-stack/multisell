@@ -87,6 +87,10 @@ async def create_example(
 | 平台结算 | `settlement:import`, `settlement:view`, `settlement:match` | import |
 | 平台费用规则 | `platform_fee:view`, `platform_fee:manage`, `platform_fee:calculate` | 已覆盖 |
 | 订单 | `order:view`, `order:create`, `order:update`, `order:update_status`, `order:cancel` | 已覆盖 |
+| 上架任务 | `listing:view`, `listing:task_manage`, `listing:publish` | create_from_decision, recheck, cancel, publish |
+| 财务账本 | `finance:ledger:view`, `finance:ledger:rebuild` | rebuild |
+| 异常工作台 | `exception:view`, `exception:manage`, `exception:generate` | generate, assign, resolve, ignore |
+| Agent 动作 | `agent_action:view`, `agent_action:propose`, `agent_action:approve`, `agent_action:execute` | propose, approve, reject, execute |
 | 搜索 | `search:view` | 无写操作 |
 
 ## 审计日志规则
@@ -137,6 +141,10 @@ await OperationLogService.log(
 | 发布 | publish, publish_failed |
 | 上架任务 | create_from_decision, recheck, cancel, publish |
 | 运费账单 | import, reconcile, resolve |
+| 平台结算 | import |
+| 财务账本 | rebuild |
+| 异常工作台 | generate, assign, resolve, ignore |
+| Agent 动作 | propose, approve, reject, execute |
 
 ## 测试
 
