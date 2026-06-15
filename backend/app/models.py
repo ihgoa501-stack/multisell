@@ -398,6 +398,69 @@ class ListingTask(Base):
     product_listing = relationship("ProductListing", lazy="selectin")
 
 
+class ShippingBillBatch(Base):
+    """运费账单批次"""
+    __tablename__ = "shipping_bill_batch"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    provider_id = Column(BigInteger, ForeignKey("shipping_provider.id"), comment="物流供应商ID")
+    source_filename = Column(String(500), nullable=False, comment="源文件名")
+    currency = Column(String(10), server_default="CNY", comment="默认币种")
+    row_count = Column(Integer, default=0, comment="导入行数")
+    matched_count = Column(Integer, default=0, comment="对账成功")
+    mismatch_count = Column(Integer, default=0, comment="金额/币种不符")
+    unmatched_count = Column(Integer, default=0, comment="无匹配订单")
+    status = Column(String(30), server_default="imported", comment="imported/reconciled/failed")
+    created_by = Column(String(100), comment="创建人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ShippingBillItem(Base):
+    """运费账单行"""
+    __tablename__ = "shipping_bill_item"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    batch_id = Column(BigInteger, ForeignKey("shipping_bill_batch.id"), nullable=False, comment="批次ID")
+    row_number = Column(Integer, nullable=False, comment="原始行号")
+    reconciliation_status = Column(String(30), server_default="unmatched_bill", comment="matched/unmatched_bill/missing_snapshot/amount_mismatch/currency_mismatch")
+
+    # 运单信息
+    tracking_number = Column(String(200), comment="运单号")
+    order_no = Column(String(200), comment="订单号")
+    provider_name = Column(String(200), comment="物流商名称")
+    channel_name = Column(String(200), comment="渠道名称")
+    destination_country = Column(String(10), comment="目的国")
+
+    # 账单金额
+    billed_weight_kg = Column(Numeric(10, 3), comment="账单计费重(kg)")
+    currency = Column(String(10), server_default="CNY", comment="币种")
+    actual_shipping_fee = Column(Numeric(12, 2), comment="实际运费")
+    surcharge_fee = Column(Numeric(12, 2), default=0, comment="附加费")
+    total_actual_fee = Column(Numeric(12, 2), comment="实际总运费(含附加费)")
+    billed_at = Column(DateTime(timezone=True), comment="账单日期")
+
+    # 匹配到的系统数据
+    matched_order_id = Column(BigInteger, ForeignKey("sales_order.id"), comment="匹配订单ID")
+    matched_snapshot_id = Column(BigInteger, ForeignKey("sales_order_shipping_snapshot.id"), comment="匹配快照ID")
+    snapshot_shipping_fee = Column(Numeric(12, 2), comment="快照运费")
+    variance_amount = Column(Numeric(12, 2), comment="差异金额(账单-快照)")
+
+    # 原始数据
+    raw_payload = Column(JSON, comment="原始CSV行数据")
+
+    # 差错处理
+    note = Column(Text, comment="备注/手动解决说明")
+    resolved_by = Column(String(100), comment="解决人")
+    resolved_at = Column(DateTime(timezone=True), comment="解决时间")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+    batch = relationship("ShippingBillBatch", lazy="selectin")
+    matched_order = relationship("Order", lazy="selectin")
+    matched_snapshot = relationship("OrderShippingSnapshot", lazy="selectin")
+
+
 class User(Base):
     """用户"""
     __tablename__ = "user"
@@ -468,6 +531,7 @@ class Order(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     order_no = Column(String(100), nullable=False, unique=True, comment="订单号")
     status = Column(String(50), default="pending", comment="状态: pending/paid/shipped/delivered/completed/cancelled")
+    tracking_number = Column(String(200), comment="运单号/追踪号")
     recipient_name = Column(String(100), comment="收件人")
     recipient_phone = Column(String(50), comment="联系电话")
     shipping_address = Column(String(500), comment="收货地址")

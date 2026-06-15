@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user, require_permission
 from app.common import Result
+from app.config import settings
 from app.database import get_db
 from app.models import User
 from app.operation_log.service import OperationLogService
@@ -278,6 +279,9 @@ async def import_shipping_rules(
 ):
     try:
         content = await file.read()
+        if len(content) > settings.MAX_UPLOAD_SIZE:
+            max_mb = settings.MAX_UPLOAD_SIZE // 1024 // 1024
+            return Result.bad_request(f"文件过大，最大支持 {max_mb}MB，当前文件 {len(content) // 1024 // 1024}MB")
         result = await ImportService.import_rules(db, file.filename or "", content)
     except ValueError as e:
         return Result.bad_request(str(e))
@@ -305,3 +309,119 @@ async def calculate_shipping(
         return Result.ok(result.model_dump())
     except ValueError as e:
         return Result.bad_request(str(e))
+
+
+# ── Bill Import / Reconciliation ─────────────────────────────────────────
+
+@router.post("/shipping/bills/import", summary="导入运费账单")
+async def import_shipping_bills(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("shipping:bill:import")),
+):
+    from app.shipping.bill_service import ShippingBillService
+
+    if not file.filename or not (
+        file.filename.lower().endswith(".csv")
+    ):
+        return Result.bad_request("仅支持 .csv 格式的运费账单")
+
+    content = await file.read()
+    try:
+        result = await ShippingBillService.import_bills(
+            db, file.filename, content, operator=_operator(current_user),
+        )
+    except ValueError as e:
+        return Result.bad_request(str(e))
+
+    if result.get("batch_id") is None and result.get("error_rows", 0) > 0:
+        return Result.bad_request(f"解析失败: {result['errors'][0]['message']}")
+
+    return Result.ok(result)
+
+
+@router.get("/shipping/bills", summary="账单批次列表")
+async def list_bill_batches(
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("shipping:bill:view")),
+):
+    from app.shipping.bill_service import ShippingBillService
+
+    batches = await ShippingBillService.list_batches(db, status=status)
+    return Result.ok(batches)
+
+
+@router.get("/shipping/bills/{batch_id}", summary="账单批次详情")
+async def get_bill_batch(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("shipping:bill:view")),
+):
+    from app.shipping.bill_service import ShippingBillService
+
+    batch = await ShippingBillService.get_batch(db, batch_id)
+    if not batch:
+        return Result.not_found("账单批次不存在")
+    return Result.ok(batch)
+
+
+@router.get("/shipping/bills/{batch_id}/items", summary="账单行列表")
+async def list_bill_items(
+    batch_id: int,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("shipping:bill:view")),
+):
+    from app.shipping.bill_service import ShippingBillService
+
+    items = await ShippingBillService.list_items(db, batch_id, status=status)
+    return Result.ok(items)
+
+
+@router.get("/shipping/reconciliation/summary", summary="对账汇总")
+async def get_reconciliation_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("shipping:bill:view")),
+):
+    from app.shipping.bill_service import ShippingBillService
+
+    summary = await ShippingBillService.get_reconciliation_summary(db)
+    return Result.ok(summary)
+
+
+@router.post("/shipping/bills/{batch_id}/reconcile", summary="对账")
+async def reconcile_bill_batch(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("shipping:reconcile")),
+):
+    from app.shipping.bill_service import ShippingBillService
+
+    result = await ShippingBillService.reconcile_batch(
+        db, batch_id, operator=_operator(current_user),
+    )
+    if result is None:
+        return Result.not_found("账单批次不存在")
+    return Result.ok(result)
+
+
+@router.post("/shipping/bills/items/{item_id}/resolve", summary="手动解决账单差异")
+async def resolve_bill_item(
+    item_id: int,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("shipping:reconcile")),
+):
+    from app.shipping.bill_service import ShippingBillService
+
+    note = (data or {}).get("note", "")
+    if not note:
+        return Result.bad_request("请填写解决说明")
+
+    result = await ShippingBillService.resolve_item(
+        db, item_id, note, operator=_operator(current_user),
+    )
+    if result is None:
+        return Result.not_found("账单行不存在")
+    return Result.ok(result)
