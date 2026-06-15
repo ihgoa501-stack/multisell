@@ -79,7 +79,8 @@ async def create_example(
 | 库存 | `inventory:view`, `inventory:update`, `inventory:adjust` | 已覆盖 |
 | 供应商 | `supplier:view`, `supplier:create`, `supplier:update`, `supplier:delete` | 已覆盖 |
 | 平台 | `platform:view`, `platform:create`, `platform:update`, `platform:delete` | 已覆盖 |
-| 发布 | `listing:view`, `listing:publish`, `listing:sync` | 已覆盖 |
+| 发布 | `listing:view`, `listing:publish`, `listing:sync`, `listing:task_manage` | 已覆盖 |
+| 上架任务 | `listing:view`, `listing:task_manage`, `listing:publish` | create_from_decision, recheck, cancel, publish |
 | 上架决策 | `decision:calculate` | 无写操作 |
 | 物流运费 | `shipping:view`, `shipping:manage`, `shipping:calculate` | 已覆盖 |
 | 平台费用规则 | `platform_fee:view`, `platform_fee:manage`, `platform_fee:calculate` | 已覆盖 |
@@ -132,6 +133,7 @@ await OperationLogService.log(
 | 平台 | create, update, delete |
 | 平台费用规则 | create, update, delete |
 | 发布 | publish, publish_failed |
+| 上架任务 | create_from_decision, recheck, cancel, publish |
 
 ## 测试
 
