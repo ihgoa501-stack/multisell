@@ -81,3 +81,34 @@ export interface PreListingDecisionBatchResponse {
 export function calculateBatchPreListingDecision(data: { items: PreListingDecisionBatchItem[] }) {
   return http.post('/decisions/prelisting/batch', data)
 }
+
+// --- Excel ---
+
+export interface PreListingDecisionExcelPreviewRow {
+  row_number: number
+  item?: PreListingDecisionBatchItem | null
+  errors: string[]
+}
+
+export interface PreListingDecisionExcelPreviewResponse {
+  total_rows: number
+  valid_rows: number
+  error_rows: number
+  items: PreListingDecisionExcelPreviewRow[]
+}
+
+export function downloadBatchPreListingDecisionTemplate() {
+  return http.get('/decisions/prelisting/batch/template', { responseType: 'blob' })
+}
+
+export function previewBatchPreListingDecisionExcel(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return http.post('/decisions/prelisting/batch/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export function exportBatchPreListingDecisionResults(data: PreListingDecisionBatchResponse) {
+  return http.post('/decisions/prelisting/batch/export', data, { responseType: 'blob' })
+}
