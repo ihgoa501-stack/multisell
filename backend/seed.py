@@ -97,8 +97,6 @@ SEED_PERMISSIONS = [
     {"code": "listing:view", "name": "查看发布", "module": "listing"},
     {"code": "listing:task_manage", "name": "管理上架任务", "module": "listing"},
     {"code": "listing:publish", "name": "发布上架任务", "module": "listing"},
-    {"code": "shipping:bill_manage", "name": "管理运费账单", "module": "shipping"},
-    {"code": "shipping:bill_view", "name": "查看运费账单", "module": "shipping"},
     {"code": "shipping:bill:import", "name": "导入运费账单", "module": "shipping"},
     {"code": "shipping:bill:view", "name": "查看运费账单", "module": "shipping"},
     {"code": "shipping:reconcile", "name": "运费对账", "module": "shipping"},
