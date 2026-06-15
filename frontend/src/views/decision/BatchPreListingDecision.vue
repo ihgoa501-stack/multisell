@@ -11,7 +11,16 @@
         <n-space>
           <n-button type="primary" @click="addRow">新增行</n-button>
           <n-button @click="removeSelectedRows" :disabled="checkedRowKeys.length === 0">删除选中</n-button>
+          <n-button @click="handleDownloadTemplate">下载模板</n-button>
+          <n-upload
+            :show-file-list="false"
+            accept=".xlsx"
+            :custom-request="handlePreviewUpload"
+          >
+            <n-button>上传预览</n-button>
+          </n-upload>
           <n-button type="primary" :loading="loading" @click="handleCalculate">批量计算</n-button>
+          <n-button v-if="batchResult" @click="handleExportResult">导出结果</n-button>
         </n-space>
 
         <n-data-table
@@ -24,6 +33,15 @@
         />
       </n-space>
     </n-card>
+
+    <n-alert
+      v-if="previewErrors.length > 0"
+      type="warning"
+      :show-icon="false"
+      style="margin-top: 16px;"
+    >
+      <div v-for="err in previewErrors" :key="err">{{ err }}</div>
+    </n-alert>
 
     <n-card v-if="batchResult" title="汇总结果" style="margin-top: 16px;">
       <n-descriptions :column="4" bordered>
@@ -50,12 +68,17 @@
 
 <script setup lang="ts">
 import { h, reactive, ref } from 'vue'
-import { NInput, NInputNumber, NSelect, NTag, useMessage } from 'naive-ui'
+import { NInput, NInputNumber, NSelect, NTag, NUpload, useMessage } from 'naive-ui'
+import type { UploadFileInfo } from 'naive-ui'
 import {
   calculateBatchPreListingDecision,
+  downloadBatchPreListingDecisionTemplate,
+  exportBatchPreListingDecisionResults,
+  previewBatchPreListingDecisionExcel,
   type PreListingDecisionBatchItem,
   type PreListingDecisionBatchItemResult,
   type PreListingDecisionBatchResponse,
+  type PreListingDecisionExcelPreviewResponse,
 } from '@/api/modules/decision'
 
 type BatchInputRow = PreListingDecisionBatchItem & {
@@ -147,6 +170,79 @@ async function handleCalculate() {
     message.error(err?.response?.data?.message || err?.message || '批量测算失败')
   } finally {
     loading.value = false
+  }
+}
+
+const previewErrors = ref<string[]>([])
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+function applyPreview(preview: PreListingDecisionExcelPreviewResponse) {
+  previewErrors.value = preview.items
+    .filter((item) => item.errors.length > 0)
+    .flatMap((item) => item.errors.map((err) => `第 ${item.row_number} 行：${err}`))
+
+  const validItems = preview.items
+    .filter((item) => item.item)
+    .map((item) => item.item as PreListingDecisionBatchItem)
+
+  rows.splice(0, rows.length)
+  for (const item of validItems) {
+    const key = item.item_key || `row-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    rows.push({
+      key,
+      ...item,
+    })
+  }
+  if (rows.length === 0) {
+    rows.push(createRow())
+  }
+}
+
+async function handleDownloadTemplate() {
+  try {
+    const resp = await downloadBatchPreListingDecisionTemplate()
+    downloadBlob(resp as unknown as Blob, 'prelisting_decision_template.xlsx')
+  } catch (err: any) {
+    message.error(err?.message || '下载模板失败')
+  }
+}
+
+async function handlePreviewUpload(options: { file: UploadFileInfo; onFinish: () => void; onError: () => void }) {
+  const rawFile = options.file.file
+  if (!rawFile) {
+    message.error('未读取到上传文件')
+    options.onError()
+    return
+  }
+  try {
+    const resp = await previewBatchPreListingDecisionExcel(rawFile)
+    const preview = resp.data as unknown as PreListingDecisionExcelPreviewResponse
+    applyPreview(preview)
+    message.success(`解析成功：有效 ${preview.valid_rows} 行，错误 ${preview.error_rows} 行`)
+    options.onFinish()
+  } catch (err: any) {
+    message.error(err?.message || '上传预览失败')
+    options.onError()
+  }
+}
+
+async function handleExportResult() {
+  if (!batchResult.value) return
+  try {
+    const resp = await exportBatchPreListingDecisionResults(batchResult.value)
+    downloadBlob(resp as unknown as Blob, 'prelisting_decision_results.xlsx')
+  } catch (err: any) {
+    message.error(err?.message || '导出结果失败')
   }
 }
 
