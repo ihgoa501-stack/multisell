@@ -7,6 +7,9 @@
           <n-form-item-gi :span="8" label="SKU ID">
             <n-input-number v-model:value="form.sku_id" placeholder="输入SKU ID" :min="1" style="width: 100%;" />
           </n-form-item-gi>
+          <n-form-item-gi :span="8" label="平台ID">
+            <n-input-number v-model:value="form.platform_id" placeholder="选填，填写后自动匹配规则" :min="1" style="width: 100%;" clearable />
+          </n-form-item-gi>
           <n-form-item-gi :span="8" label="目的国代码">
             <n-input v-model:value="form.destination_country" placeholder="如 RU" maxlength="10" />
           </n-form-item-gi>
@@ -29,6 +32,9 @@
             <n-input-number v-model:value="form.other_fee" :min="0" :precision="2" style="width: 100%;">
               <template #suffix>元</template>
             </n-input-number>
+          </n-form-item-gi>
+          <n-form-item-gi :span="8" label="类目ID">
+            <n-input-number v-model:value="form.category_id" placeholder="选填，用于匹配类目级规则" :min="1" style="width: 100%;" clearable />
           </n-form-item-gi>
           <n-form-item-gi :span="8" label="最低利润率">
             <n-input-number v-model:value="form.minimum_margin_pct" :min="0" :max="100" :precision="1" style="width: 100%;">
@@ -73,9 +79,17 @@
         <n-descriptions-item label="运费">{{ result.shipping_fee }} 元</n-descriptions-item>
         <n-descriptions-item label="平台费">{{ result.platform_fee }} 元</n-descriptions-item>
         <n-descriptions-item label="支付费">{{ result.payment_fee }} 元</n-descriptions-item>
+        <n-descriptions-item label="固定交易费">{{ result.fixed_fee }} 元</n-descriptions-item>
+        <n-descriptions-item label="广告预留">{{ result.advertising_fee }} 元</n-descriptions-item>
         <n-descriptions-item label="其他费用">{{ result.other_fee }} 元</n-descriptions-item>
+        <n-descriptions-item label="费用规则来源">
+          {{ result.platform_fee_source === 'rule' ? '规则库' : '手动输入' }}
+          <span v-if="result.applied_platform_fee_rule_id">
+            #{{ result.applied_platform_fee_rule_id }} {{ result.platform_fee_rule_summary || '' }}
+          </span>
+        </n-descriptions-item>
         <n-descriptions-item label="总成本">
-          {{ (result.product_cost + result.shipping_fee + result.platform_fee + result.payment_fee + result.other_fee).toFixed(2) }} 元
+          {{ (result.product_cost + result.shipping_fee + result.platform_fee + result.payment_fee + result.fixed_fee + result.advertising_fee + result.other_fee).toFixed(2) }} 元
         </n-descriptions-item>
         <n-descriptions-item label="利润金额">
           <span :style="{ color: result.profit_amount >= 0 ? 'green' : 'red', fontWeight: 'bold' }">
@@ -108,6 +122,8 @@ const form = reactive<PreListingDecisionRequest>({
   sku_id: null as unknown as number,
   destination_country: '',
   target_sale_price: null as unknown as number,
+  platform_id: null as unknown as number | null,
+  category_id: null as unknown as number | null,
   platform_fee_pct: 10,
   payment_fee_pct: 3,
   other_fee: 0,
