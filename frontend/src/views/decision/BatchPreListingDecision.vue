@@ -21,6 +21,7 @@
           </n-upload>
           <n-button type="primary" :loading="loading" @click="handleCalculate">批量计算</n-button>
           <n-button v-if="batchResult" @click="handleExportResult">导出结果</n-button>
+          <n-button v-if="batchResult" type="primary" @click="handleCreateListingTasks">生成上架任务</n-button>
         </n-space>
 
         <n-data-table
@@ -80,6 +81,7 @@ import {
   type PreListingDecisionBatchResponse,
   type PreListingDecisionExcelPreviewResponse,
 } from '@/api/modules/decision'
+import { createListingTasksFromDecisions } from '@/api/modules/listing'
 
 type BatchInputRow = PreListingDecisionBatchItem & {
   key: string
@@ -243,6 +245,42 @@ async function handleExportResult() {
     downloadBlob(resp as unknown as Blob, 'prelisting_decision_results.xlsx')
   } catch (err: any) {
     message.error(err?.message || '导出结果失败')
+  }
+}
+
+async function handleCreateListingTasks() {
+  if (!batchResult.value) return
+  const approved = batchResult.value.items.filter((item) => item.status === 'success' && item.result?.recommendation === 'approve')
+  if (approved.length === 0) {
+    message.warning('没有可生成上架任务的 approve 结果')
+    return
+  }
+
+  const platformByKey = new Map(rows.map((row) => [row.item_key || row.key, row.platform_id]))
+  const items = approved
+    .map((item) => {
+      const platformId = platformByKey.get(item.item_key || '')
+      if (!item.result || !item.sku_id || !platformId) return null
+      return {
+        item_key: item.item_key,
+        sku_id: item.sku_id,
+        platform_id: platformId,
+        decision_result: item.result,
+      }
+    })
+    .filter(Boolean) as any[]
+
+  if (items.length === 0) {
+    message.warning('approve 结果缺少平台ID，无法生成上架任务')
+    return
+  }
+
+  try {
+    const resp = await createListingTasksFromDecisions(items)
+    const data = resp.data
+    message.success(`生成完成：新建 ${data.created_count}，复用 ${data.reused_count}，跳过 ${data.skipped_count}`)
+  } catch (err: any) {
+    message.error(err?.message || '生成上架任务失败')
   }
 }
 
