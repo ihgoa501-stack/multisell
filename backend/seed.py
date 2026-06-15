@@ -94,6 +94,9 @@ SEED_PERMISSIONS = [
     {"code": "platform_fee:view", "name": "查看平台费用规则", "module": "platform_fee"},
     {"code": "platform_fee:manage", "name": "管理平台费用规则", "module": "platform_fee"},
     {"code": "platform_fee:calculate", "name": "匹配平台费用规则", "module": "platform_fee"},
+    {"code": "listing:view", "name": "查看发布", "module": "listing"},
+    {"code": "listing:task_manage", "name": "管理上架任务", "module": "listing"},
+    {"code": "listing:publish", "name": "发布上架任务", "module": "listing"},
 ]
 
 SEED_PRODUCTS = [

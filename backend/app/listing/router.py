@@ -1,6 +1,6 @@
 """发布管理 - 路由"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_permission
@@ -13,6 +13,11 @@ from app.listing.service import (
     PublishValidationError,
     listing_to_dict,
 )
+from app.listing.task_schemas import (
+    ListingTaskCreateFromDecisionRequest,
+    ListingTaskCreateFromDecisionResponse,
+)
+from app.listing.task_service import ListingTaskService
 from app.operation_log.service import OperationLogService
 
 router = APIRouter(tags=["发布管理"])
@@ -128,3 +133,65 @@ async def get_all_listings(
             "last_sync_at": listing.last_sync_at.isoformat() if listing.last_sync_at else None,
         })
     return Result.ok(items)
+
+
+# ── Listing Task Endpoints ──────────────────────────────────────────────
+
+@router.post("/listing-tasks/from-decisions", summary="从决策结果创建上架任务")
+async def create_listing_tasks_from_decisions(
+    data: ListingTaskCreateFromDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("listing:task_manage")),
+) -> Result[ListingTaskCreateFromDecisionResponse]:
+    result = await ListingTaskService.create_from_decisions(
+        db, data.items, operator=current_user.username,
+    )
+    return Result.ok(result)
+
+
+@router.get("/listing-tasks", summary="查询上架任务队列")
+async def list_listing_tasks(
+    status: str | None = None,
+    platform_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("listing:view")),
+):
+    tasks = await ListingTaskService.list_tasks(db, status=status, platform_id=platform_id)
+    return Result.ok(tasks)
+
+
+@router.post("/listing-tasks/{task_id}/recheck", summary="重新检查上架任务")
+async def recheck_listing_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("listing:task_manage")),
+):
+    task = await ListingTaskService.recheck_task(db, task_id, operator=current_user.username)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return Result.ok(task)
+
+
+@router.post("/listing-tasks/{task_id}/cancel", summary="取消上架任务")
+async def cancel_listing_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("listing:task_manage")),
+):
+    task = await ListingTaskService.cancel_task(db, task_id, operator=current_user.username)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return Result.ok(task)
+
+
+@router.post("/listing-tasks/{task_id}/publish", summary="发布上架任务")
+async def publish_listing_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("listing:publish")),
+):
+    task, error = await ListingTaskService.publish_task(db, task_id, operator=current_user.username)
+    if task is None:
+        detail = error or "发布失败"
+        raise HTTPException(status_code=400, detail=detail)
+    return Result.ok(task)

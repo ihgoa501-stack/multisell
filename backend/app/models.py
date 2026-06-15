@@ -369,6 +369,35 @@ class ProductListing(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
+class ListingTask(Base):
+    """上架任务队列"""
+    __tablename__ = "listing_task"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    product_id = Column(BigInteger, ForeignKey("product.id"), nullable=False, comment="商品ID")
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=False, comment="平台ID")
+    sku_id = Column(BigInteger, ForeignKey("sku.id"), comment="来源SKU ID")
+    product_listing_id = Column(BigInteger, ForeignKey("product_listing.id"), comment="发布记录ID")
+    source_type = Column(String(50), default="decision", nullable=False, comment="来源: decision/manual")
+    source_item_key = Column(String(100), comment="来源行标识")
+    status = Column(String(50), default="blocked", nullable=False, comment="ready/blocked/published/failed/cancelled")
+    missing_requirements = Column(JSON, default=list, nullable=False, comment="阻塞发布的缺失项")
+    decision_snapshot = Column(JSON, comment="决策结果快照")
+    target_sale_price = Column(Numeric(12, 2), comment="决策目标售价")
+    target_profit_margin = Column(Numeric(8, 2), comment="决策利润率")
+    destination_country = Column(String(10), comment="目的国")
+    last_error = Column(Text, comment="最近错误")
+    created_by = Column(String(100), comment="创建人")
+    updated_by = Column(String(100), comment="更新人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    product = relationship("Product", lazy="selectin")
+    platform = relationship("Platform", lazy="selectin")
+    sku = relationship("Sku", lazy="selectin")
+    product_listing = relationship("ProductListing", lazy="selectin")
+
+
 class User(Base):
     """用户"""
     __tablename__ = "user"
