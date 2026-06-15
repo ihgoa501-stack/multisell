@@ -431,6 +431,25 @@ Excel 导出和模板已有，但导入字段与模板还需要重新校准，�
 - 平台属性映射。
 - 发布失败自动重试队列。
 
+### 运费账单对账
+
+状态：已完成第一版。
+
+已实现：
+- 支持导入物流商 CSV 运费账单（支持中英文双格式列名）。
+- 运单号、订单号自动匹配订单运费快照。
+- 对账结果按 matched / unmatched_bill / missing_snapshot / amount_mismatch / currency_mismatch 分类。
+- 手动解决差异功能。
+- 对账操作接入权限（shipping:bill:import / shipping:bill:view / shipping:reconcile）和审计日志。
+- 前端导入、对账、明细查询、异常行过滤页面。
+- 对账汇总 API。
+
+暂未实现：
+- 实际物流商 API 直连。
+- 自动对账调度。
+- 按时间范围批量对账。
+- 从对账结果自动调整订单利润。
+
 ### 平台费用规则
 
 状态：已完成第一版。

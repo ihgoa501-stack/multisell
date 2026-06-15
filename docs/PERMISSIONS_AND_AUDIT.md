@@ -134,6 +134,7 @@ await OperationLogService.log(
 | 平台费用规则 | create, update, delete |
 | 发布 | publish, publish_failed |
 | 上架任务 | create_from_decision, recheck, cancel, publish |
+| 运费账单 | import, reconcile, resolve |
 
 ## 测试
 
