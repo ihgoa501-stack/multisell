@@ -461,6 +461,56 @@ class ShippingBillItem(Base):
     matched_snapshot = relationship("OrderShippingSnapshot", lazy="selectin")
 
 
+ALLOWED_TRANSACTION_TYPES = [
+    "sale", "platform_fee", "payment_fee", "refund", "adjustment", "payout", "tax", "other",
+]
+
+
+class PlatformSettlementBatch(Base):
+    """平台结算批次"""
+    __tablename__ = "platform_settlement_batch"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    platform_name = Column(String(100), comment="结算单平台名称")
+    filename = Column(String(500), nullable=False, comment="源文件名")
+    row_count = Column(Integer, default=0, comment="导入行数")
+    matched_count = Column(Integer, default=0, comment="已匹配行")
+    unmatched_count = Column(Integer, default=0, comment="未匹配行")
+    import_status = Column(String(30), server_default="imported", comment="imported/partial/complete")
+    status = Column(String(30), server_default="imported", comment="imported/matched")
+    created_by = Column(String(100), comment="创建人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class PlatformSettlementItem(Base):
+    """平台结算行"""
+    __tablename__ = "platform_settlement_item"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    batch_id = Column(BigInteger, ForeignKey("platform_settlement_batch.id"), nullable=False, comment="批次ID")
+    row_number = Column(Integer, nullable=False, comment="原始行号")
+
+    platform = Column(String(100), comment="平台名称（导入时填写）")
+    store_name = Column(String(200), comment="店铺名称")
+    platform_order_no = Column(String(200), comment="平台订单号")
+    order_no = Column(String(200), comment="系统订单号")
+    transaction_type = Column(String(50), nullable=False, comment="交易类型: sale/platform_fee/payment_fee/refund/adjustment/payout/tax/other")
+    currency = Column(String(10), server_default="CNY", comment="币种")
+    amount = Column(Numeric(14, 2), default=0, comment="金额")
+    settled_at = Column(DateTime(timezone=True), comment="结算日期")
+    description = Column(Text, comment="描述")
+
+    match_status = Column(String(30), server_default="unmatched", comment="matched/unmatched/manual")
+    matched_order_id = Column(BigInteger, ForeignKey("sales_order.id"), comment="匹配订单ID")
+
+    raw_payload = Column(JSON, comment="原始CSV行数据")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+    batch = relationship("PlatformSettlementBatch", lazy="selectin")
+    matched_order = relationship("Order", lazy="selectin")
+
+
 class User(Base):
     """用户"""
     __tablename__ = "user"

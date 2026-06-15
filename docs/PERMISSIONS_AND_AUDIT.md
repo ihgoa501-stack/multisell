@@ -84,6 +84,7 @@ async def create_example(
 | 上架决策 | `decision:calculate` | 无写操作 |
 | 物流运费 | `shipping:view`, `shipping:manage`, `shipping:calculate` | 已覆盖 |
 | 运费账单 | `shipping:bill:import`, `shipping:bill:view`, `shipping:reconcile` | import, reconcile, resolve |
+| 平台结算 | `settlement:import`, `settlement:view`, `settlement:match` | import |
 | 平台费用规则 | `platform_fee:view`, `platform_fee:manage`, `platform_fee:calculate` | 已覆盖 |
 | 订单 | `order:view`, `order:create`, `order:update`, `order:update_status`, `order:cancel` | 已覆盖 |
 | 搜索 | `search:view` | 无写操作 |

@@ -100,6 +100,9 @@ SEED_PERMISSIONS = [
     {"code": "shipping:bill:import", "name": "导入运费账单", "module": "shipping"},
     {"code": "shipping:bill:view", "name": "查看运费账单", "module": "shipping"},
     {"code": "shipping:reconcile", "name": "运费对账", "module": "shipping"},
+    {"code": "settlement:import", "name": "导入平台结算", "module": "settlement"},
+    {"code": "settlement:view", "name": "查看平台结算", "module": "settlement"},
+    {"code": "settlement:match", "name": "匹配平台结算", "module": "settlement"},
 ]
 
 SEED_PRODUCTS = [
