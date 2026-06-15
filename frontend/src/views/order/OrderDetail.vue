@@ -117,6 +117,9 @@
           </n-timeline-item>
         </n-timeline>
       </n-card>
+
+      <!-- 利润账本 -->
+      <OrderProfitLedger v-if="detail.id" :order-id="detail.id" />
     </n-spin>
   </div>
 </template>
@@ -126,6 +129,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NTag, useMessage, useDialog } from 'naive-ui'
 import CostLayerTag from '@/components/CostLayerTag.vue'
+import OrderProfitLedger from '@/components/OrderProfitLedger.vue'
 import { apiModules } from '@/api'
 
 const router = useRouter()

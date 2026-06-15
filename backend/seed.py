@@ -103,6 +103,8 @@ SEED_PERMISSIONS = [
     {"code": "settlement:import", "name": "导入平台结算", "module": "settlement"},
     {"code": "settlement:view", "name": "查看平台结算", "module": "settlement"},
     {"code": "settlement:match", "name": "匹配平台结算", "module": "settlement"},
+    {"code": "finance:ledger:view", "name": "查看财务账本", "module": "finance"},
+    {"code": "finance:ledger:rebuild", "name": "重建财务账本", "module": "finance"},
 ]
 
 SEED_PRODUCTS = [

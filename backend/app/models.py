@@ -511,6 +511,24 @@ class PlatformSettlementItem(Base):
     matched_order = relationship("Order", lazy="selectin")
 
 
+class FinanceLedgerEntry(Base):
+    """财务账本条目"""
+    __tablename__ = "finance_ledger_entry"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), nullable=False, comment="订单ID")
+    entry_type = Column(String(50), nullable=False, comment="条目类型: revenue/product_cost/shipping_cost/platform_fee/payment_fee/refund/adjustment/other_fee")
+    amount = Column(Numeric(14, 2), nullable=False, comment="金额（正数为收入，负数为成本/费用）")
+    currency = Column(String(10), server_default="CNY", comment="币种")
+    cost_layer = Column(String(30), nullable=False, comment="成本层: estimated/snapshot/actual/allocated")
+    source_type = Column(String(50), comment="来源类型: order/shipping_snapshot/shipping_bill_row/settlement_row")
+    source_id = Column(BigInteger, comment="来源ID")
+    description = Column(String(500), comment="描述说明")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+    order = relationship("Order", lazy="selectin")
+
+
 class User(Base):
     """用户"""
     __tablename__ = "user"
