@@ -37,3 +37,47 @@ export interface PreListingDecisionResponse {
 export function calculatePreListingDecision(data: PreListingDecisionRequest) {
   return http.post('/decisions/prelisting', data)
 }
+
+// --- 批量 ---
+
+export interface PreListingDecisionBatchItem {
+  item_key?: string | null
+  sku_id: number
+  destination_country: string
+  target_sale_price: number
+  platform_id?: number | null
+  category_id?: number | null
+  platform_fee_pct: number
+  payment_fee_pct: number
+  other_fee: number
+  minimum_margin_pct: number
+  cargo_type: string
+}
+
+export interface PreListingDecisionBatchItemResult {
+  index: number
+  item_key?: string | null
+  sku_id?: number | null
+  status: string
+  result?: PreListingDecisionResponse | null
+  error_message?: string | null
+}
+
+export interface PreListingDecisionBatchSummary {
+  total_items: number
+  success_count: number
+  error_count: number
+  approve_count: number
+  reject_count: number
+  needs_data_count: number
+  average_profit_margin: number
+}
+
+export interface PreListingDecisionBatchResponse {
+  summary: PreListingDecisionBatchSummary
+  items: PreListingDecisionBatchItemResult[]
+}
+
+export function calculateBatchPreListingDecision(data: { items: PreListingDecisionBatchItem[] }) {
+  return http.post('/decisions/prelisting/batch', data)
+}

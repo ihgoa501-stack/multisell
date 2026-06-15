@@ -12,4 +12,15 @@ export const routes: RouteRecordRaw[] = [
       perm: 'decision:calculate',
     },
   },
+  {
+    path: 'decisions/prelisting/batch',
+    name: 'BatchPreListingDecision',
+    component: () => import('@/views/decision/BatchPreListingDecision.vue'),
+    meta: {
+      title: '批量上架决策',
+      icon: 'analytics',
+      menu: true,
+      perm: 'decision:calculate',
+    },
+  },
 ]
