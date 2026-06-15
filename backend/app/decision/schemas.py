@@ -1,6 +1,7 @@
 """上架前经营决策 - Pydantic Schema"""
 
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -74,6 +75,21 @@ class PreListingDecisionBatchSummary(BaseModel):
     reject_count: int
     needs_data_count: int
     average_profit_margin: float
+
+
+class PreListingDecisionExcelPreviewRow(BaseModel):
+    """批量上架决策 Excel 预览单行"""
+    row_number: int
+    item: Optional[PreListingDecisionBatchItem] = None
+    errors: list[str] = []
+
+
+class PreListingDecisionExcelPreviewResponse(BaseModel):
+    """批量上架决策 Excel 预览响应"""
+    total_rows: int
+    valid_rows: int
+    error_rows: int
+    items: list[PreListingDecisionExcelPreviewRow]
 
 
 class PreListingDecisionBatchResponse(BaseModel):
