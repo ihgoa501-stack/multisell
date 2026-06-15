@@ -81,6 +81,7 @@ import {
   type PreListingDecisionBatchResponse,
   type PreListingDecisionExcelPreviewResponse,
 } from '@/api/modules/decision'
+import CostLayerTag from '@/components/CostLayerTag.vue'
 import { createListingTasksFromDecisions } from '@/api/modules/listing'
 
 type BatchInputRow = PreListingDecisionBatchItem & {
@@ -397,6 +398,24 @@ const resultColumns = [
     key: 'profit_amount',
     render: (row: PreListingDecisionBatchItemResult) =>
       row.result ? `${row.result.profit_amount}` : '-',
+  },
+  {
+    title: '运费来源',
+    key: 'shipping_cost_layer',
+    width: 100,
+    render: (row: PreListingDecisionBatchItemResult) => {
+      if (!row.result) return '-'
+      return h(CostLayerTag, { layer: row.result.shipping_cost_layer || 'estimated' })
+    },
+  },
+  {
+    title: '平台费来源',
+    key: 'platform_fee_cost_layer',
+    width: 100,
+    render: (row: PreListingDecisionBatchItemResult) => {
+      if (!row.result) return '-'
+      return h(CostLayerTag, { layer: row.result.platform_fee_cost_layer || 'estimated' })
+    },
   },
   {
     title: '费用来源',

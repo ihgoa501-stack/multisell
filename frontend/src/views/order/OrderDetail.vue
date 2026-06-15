@@ -62,12 +62,20 @@
         <n-descriptions :column="3" label-placement="left">
           <n-descriptions-item label="销售额">¥{{ money(detail.profit?.revenue_amount) }}</n-descriptions-item>
           <n-descriptions-item label="商品成本">¥{{ money(detail.profit?.product_cost) }}</n-descriptions-item>
-          <n-descriptions-item label="运费">¥{{ money(detail.profit?.shipping_fee) }}</n-descriptions-item>
-          <n-descriptions-item label="平台费">¥{{ money(detail.profit?.platform_fee) }}</n-descriptions-item>
+          <n-descriptions-item label="运费">¥{{ money(detail.profit?.shipping_fee) }}
+            <CostLayerTag v-if="detail.profit?.shipping_cost_layer" :layer="detail.profit.shipping_cost_layer" />
+          </n-descriptions-item>
+          <n-descriptions-item label="平台费">¥{{ money(detail.profit?.platform_fee) }}
+            <CostLayerTag v-if="detail.profit?.platform_fee_cost_layer" :layer="detail.profit.platform_fee_cost_layer" />
+          </n-descriptions-item>
           <n-descriptions-item label="支付费">¥{{ money(detail.profit?.payment_fee) }}</n-descriptions-item>
           <n-descriptions-item label="其他费用">¥{{ money(detail.profit?.other_fee) }}</n-descriptions-item>
           <n-descriptions-item label="利润">¥{{ money(detail.profit?.profit_amount) }}</n-descriptions-item>
           <n-descriptions-item label="利润率">{{ money(detail.profit?.profit_margin) }}%</n-descriptions-item>
+          <n-descriptions-item label="利润来源">
+            <CostLayerTag v-if="detail.profit?.profit_cost_layer" :layer="detail.profit.profit_cost_layer" />
+            <span v-else>-</span>
+          </n-descriptions-item>
         </n-descriptions>
         <n-space style="margin-top: 12px;" align="center">
           <n-input-number v-model:value="profitForm.product_cost" placeholder="商品成本" :min="0" />
@@ -117,6 +125,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NTag, useMessage, useDialog } from 'naive-ui'
+import CostLayerTag from '@/components/CostLayerTag.vue'
 import { apiModules } from '@/api'
 
 const router = useRouter()

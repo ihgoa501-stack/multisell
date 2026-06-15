@@ -541,6 +541,7 @@ class ShippingBillService:
                 "resolved_by": it.resolved_by,
                 "resolved_at": it.resolved_at.isoformat() if it.resolved_at else None,
                 "created_at": it.created_at.isoformat() if it.created_at else None,
+                "cost_layer": "actual",
             }
             for it in items
         ]

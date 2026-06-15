@@ -5,6 +5,11 @@ from decimal import Decimal
 from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.finance.cost_layers import (
+    COST_LAYER_ESTIMATED,
+    COST_LAYER_SNAPSHOT,
+    resolve_profit_cost_layer,
+)
 from app.inventory.service import InventoryService
 from app.models import Order, OrderItem, OrderShippingSnapshot, OrderStatusLog, Price, Product, Sku
 from app.order.schemas import OrderCreate, OrderProfitInputsUpdate, OrderShippingQuoteBind
@@ -110,6 +115,10 @@ def order_to_dict(
     else:
         product_name = f"{items[0].product_name} 等{len(items)}件"
 
+    shipping_cost_layer = COST_LAYER_SNAPSHOT if shipping_snapshot else COST_LAYER_ESTIMATED
+    platform_fee_cost_layer = COST_LAYER_ESTIMATED
+    profit_cost_layer = resolve_profit_cost_layer(shipping_cost_layer, platform_fee_cost_layer)
+
     return {
         "id": order.id,
         "order_no": order.order_no,
@@ -132,11 +141,14 @@ def order_to_dict(
             "revenue_amount": _money(order.total_amount),
             "product_cost": _money(order.product_cost),
             "shipping_fee": _money(order.shipping_fee),
+            "shipping_cost_layer": shipping_cost_layer,
             "platform_fee": _money(order.platform_fee),
+            "platform_fee_cost_layer": platform_fee_cost_layer,
             "payment_fee": _money(order.payment_fee),
             "other_fee": _money(order.other_fee),
             "profit_amount": _money(order.profit_amount),
             "profit_margin": float(order.profit_margin or 0),
+            "profit_cost_layer": profit_cost_layer,
         },
         "shipping_snapshot": shipping_snapshot,
         "payment_method": order.payment_method,

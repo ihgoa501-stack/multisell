@@ -105,11 +105,14 @@ class OrderProfitVO(BaseModel):
     revenue_amount: float
     product_cost: float
     shipping_fee: float
+    shipping_cost_layer: str = "estimated"
     platform_fee: float
+    platform_fee_cost_layer: str = "estimated"
     payment_fee: float
     other_fee: float
     profit_amount: float
     profit_margin: float
+    profit_cost_layer: str = "estimated"
 
 
 class OrderVO(BaseModel):

@@ -14,6 +14,7 @@ from app.decision.schemas import (
     PreListingDecisionRequest,
     PreListingDecisionResponse,
 )
+from app.finance.cost_layers import COST_LAYER_ESTIMATED
 from app.platform_fee.schemas import PlatformFeeRuleMatchRequest
 from app.platform_fee.service import PlatformFeeRuleService
 
@@ -129,7 +130,9 @@ class PreListingDecisionService:
             target_sale_price=req.target_sale_price,
             product_cost=product_cost,
             shipping_fee=shipping_fee,
+            shipping_cost_layer=COST_LAYER_ESTIMATED,
             platform_fee=round(platform_fee, 2),
+            platform_fee_cost_layer=COST_LAYER_ESTIMATED,
             payment_fee=round(payment_fee, 2),
             fixed_fee=round(fixed_fee, 2),
             advertising_fee=round(advertising_fee, 2),

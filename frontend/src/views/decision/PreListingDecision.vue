@@ -76,8 +76,14 @@
 
       <n-descriptions :column="3" bordered>
         <n-descriptions-item label="商品成本">{{ result.product_cost }} 元</n-descriptions-item>
-        <n-descriptions-item label="运费">{{ result.shipping_fee }} 元</n-descriptions-item>
-        <n-descriptions-item label="平台费">{{ result.platform_fee }} 元</n-descriptions-item>
+        <n-descriptions-item label="运费">
+          {{ result.shipping_fee }} 元
+          <CostLayerTag :layer="result.shipping_cost_layer || 'estimated'" />
+        </n-descriptions-item>
+        <n-descriptions-item label="平台费">
+          {{ result.platform_fee }} 元
+          <CostLayerTag :layer="result.platform_fee_cost_layer || 'estimated'" />
+        </n-descriptions-item>
         <n-descriptions-item label="支付费">{{ result.payment_fee }} 元</n-descriptions-item>
         <n-descriptions-item label="固定交易费">{{ result.fixed_fee }} 元</n-descriptions-item>
         <n-descriptions-item label="广告预留">{{ result.advertising_fee }} 元</n-descriptions-item>
@@ -110,6 +116,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useMessage } from 'naive-ui'
+import CostLayerTag from '@/components/CostLayerTag.vue'
 import {
   calculatePreListingDecision,
   type PreListingDecisionRequest,

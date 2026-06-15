@@ -4,6 +4,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from app.finance.cost_layers import COST_LAYER_ESTIMATED
+
 
 class PreListingDecisionRequest(BaseModel):
     """上架前经营决策请求"""
@@ -26,7 +28,10 @@ class PreListingDecisionResponse(BaseModel):
     target_sale_price: float
     product_cost: float
     shipping_fee: float
+    shipping_cost_layer: str = COST_LAYER_ESTIMATED
     platform_fee: float
+    platform_fee_cost_layer: str = COST_LAYER_ESTIMATED
+    payment_fee: float
     payment_fee: float
     fixed_fee: float = 0
     advertising_fee: float = 0

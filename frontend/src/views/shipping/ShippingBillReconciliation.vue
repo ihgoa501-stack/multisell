@@ -38,6 +38,7 @@
 import { h, onMounted, ref } from 'vue'
 import { NButton, NTag, useMessage } from 'naive-ui'
 import type { UploadFileInfo } from 'naive-ui'
+import CostLayerTag from '@/components/CostLayerTag.vue'
 import { shippingApi } from '@/api/modules/shipping'
 
 const message = useMessage()
@@ -93,6 +94,12 @@ const itemColumns = [
   { title: '账单运费', key: 'actual_shipping_fee', width: 100 },
   { title: '快照运费', key: 'snapshot_shipping_fee', width: 100 },
   { title: '差异', key: 'variance_amount', width: 90 },
+  {
+    title: '成本来源',
+    key: 'cost_layer',
+    width: 80,
+    render: (row: any) => h(CostLayerTag, { layer: row.cost_layer || 'estimated' }),
+  },
   {
     title: '状态',
     key: 'reconciliation_status',
