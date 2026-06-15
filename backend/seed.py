@@ -105,6 +105,9 @@ SEED_PERMISSIONS = [
     {"code": "settlement:match", "name": "匹配平台结算", "module": "settlement"},
     {"code": "finance:ledger:view", "name": "查看财务账本", "module": "finance"},
     {"code": "finance:ledger:rebuild", "name": "重建财务账本", "module": "finance"},
+    {"code": "exception:generate", "name": "生成异常", "module": "exception"},
+    {"code": "exception:view", "name": "查看异常", "module": "exception"},
+    {"code": "exception:manage", "name": "管理异常", "module": "exception"},
 ]
 
 SEED_PRODUCTS = [

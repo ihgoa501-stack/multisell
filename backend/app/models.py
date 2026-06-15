@@ -529,6 +529,31 @@ class FinanceLedgerEntry(Base):
     order = relationship("Order", lazy="selectin")
 
 
+EXCEPTION_SEVERITY_CHOICES = ["low", "medium", "high", "critical"]
+EXCEPTION_STATUS_CHOICES = ["open", "assigned", "resolved", "ignored"]
+
+
+class ExceptionItem(Base):
+    """异常工作台条目"""
+    __tablename__ = "exception_item"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    source_module = Column(String(50), nullable=False, comment="来源模块: listing/shipping/settlement/finance")
+    source_type = Column(String(50), comment="来源类型")
+    source_id = Column(BigInteger, comment="来源ID")
+    severity = Column(String(20), default="medium", comment="严重程度: low/medium/high/critical")
+    status = Column(String(20), default="open", comment="状态: open/assigned/resolved/ignored")
+    title = Column(String(300), nullable=False, comment="异常标题")
+    description = Column(Text, comment="异常描述")
+    recommended_action = Column(String(500), comment="建议操作")
+    assigned_to = Column(String(100), comment="分配给")
+    resolved_at = Column(DateTime(timezone=True), comment="解决时间")
+    resolved_by = Column(String(100), comment="解决人")
+    note = Column(Text, comment="备注")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 class User(Base):
     """用户"""
     __tablename__ = "user"
