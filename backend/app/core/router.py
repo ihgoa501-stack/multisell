@@ -3,53 +3,52 @@
 from fastapi import APIRouter, Depends, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from datetime import datetime
-import io, openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import update, delete
 from app.database import get_db
-from app.common import Result, PageResult, ProductStatus
-from app.core.schemas import ProductCreate, ProductUpdate, ProductQuery, ProductVO
-from app.core.service import ProductService
+from app.common import Result, PageResult
+from app.core.schemas import ProductCreate, ProductUpdate, ProductQuery
+from app.core.service import ProductService, product_to_vo
+from app.core.excel_service import ExcelService
+from app.core.ai_service import AiEnhanceService
+from app.core.detail_service import ProductDetailService
+from app.auth import require_permission
+from app.models import Product, User
+from app.operation_log.service import OperationLogService
 
 router = APIRouter(tags=["商品管理"])
 
 
-def product_to_vo(product) -> ProductVO:
-    """商品模型转VO"""
-    status_name = ProductStatus.STATUS_MAP.get(product.status, "未知")
-    category_name = product.category.name if product.category else None
-    # 获取品牌名称（如果有brand_id）
-    brand_name = None
-    if hasattr(product, 'brand_id') and product.brand_id:
-        # 这里不额外查询，前端会通过/brands/all获取
-        pass
-    return ProductVO(
-        id=product.id,
-        name=product.name,
-        subtitle=product.subtitle,
-        description=product.description,
-        brand_id=product.brand_id,
-        category_id=product.category_id,
-        category_name=category_name,
-        brand_name=None,
-        unit=product.unit,
-        status=product.status,
-        status_name=status_name,
-        main_image=product.main_image,
-        images=product.images,
-        ai_status=product.ai_status,
-        platform_statuses=product.platform_statuses,
-        created_at=product.created_at,
-        updated_at=product.updated_at,
+def _operator(current_user: User) -> str:
+    return current_user.username if current_user else "system"
+
+
+async def _log_product_operation(
+    db: AsyncSession,
+    action: str,
+    current_user: User,
+    resource_id: str = None,
+    content: str = None,
+):
+    await OperationLogService.log(
+        db,
+        module="product",
+        action=action,
+        resource_id=resource_id,
+        content=content,
+        operator=_operator(current_user),
     )
 
 
-@router.post("/products/batch/status", summary="批量修改商品状态")
-async def batch_update_status(data: dict, db: AsyncSession = Depends(get_db)):
-    """批量修改商品状态"""
-    from sqlalchemy import update
-    from app.models import Product
+# ========== 批量操作 ==========
 
+
+@router.post("/products/batch/status", summary="批量修改商品状态")
+async def batch_update_status(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:update")),
+):
     ids = data.get("ids", [])
     status = data.get("status", 0)
     if not ids:
@@ -58,15 +57,21 @@ async def batch_update_status(data: dict, db: AsyncSession = Depends(get_db)):
     stmt = update(Product).where(Product.id.in_(ids)).values(status=status)
     await db.execute(stmt)
     await db.flush()
+    await _log_product_operation(
+        db,
+        "batch_update_status",
+        current_user,
+        content=f"批量修改商品状态: ids={ids}, status={status}",
+    )
     return Result.ok({"affected": len(ids)})
 
 
 @router.post("/products/batch/delete", summary="批量删除商品")
-async def batch_delete_products(data: dict, db: AsyncSession = Depends(get_db)):
-    """批量删除商品"""
-    from sqlalchemy import delete
-    from app.models import Product
-
+async def batch_delete_products(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:delete")),
+):
     ids = data.get("ids", [])
     if not ids:
         return Result.bad_request("请选择商品")
@@ -74,13 +79,18 @@ async def batch_delete_products(data: dict, db: AsyncSession = Depends(get_db)):
     stmt = delete(Product).where(Product.id.in_(ids))
     result = await db.execute(stmt)
     await db.flush()
+    await _log_product_operation(
+        db,
+        "batch_delete",
+        current_user,
+        content=f"批量删除商品: ids={ids}",
+    )
     return Result.ok({"affected": result.rowcount})
 
 
-@router.post("/products", summary="创建商品")
-async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)):
-    product = await ProductService.create(db, data)
-    return Result.ok(product_to_vo(product))
+# ========== Excel 导出导入 ==========
+# NOTE: 这些路由必须在 /products/{product_id} 之前注册，
+# 否则 "export" 和 "export-template" 会被当作 product_id 解析
 
 
 @router.get("/products/export", summary="导出商品Excel")
@@ -88,63 +98,19 @@ async def export_products(
     name: str = Query(None, description="按名称筛选"),
     category_id: int = Query(None, description="按分类筛选"),
     status: int = Query(None, description="按状态筛选"),
+    brand_id: int = Query(None, description="按品牌筛选"),
+    cargo_type: str = Query(None, description="按货品类型筛选"),
+    logistics_status: str = Query(None, description="按物流完整状态筛选"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:export")),
 ):
-    """导出商品列表为 Excel 文件"""
-    from app.core.service import ProductService
-
-    # 分批拉取所有商品
-    all_products = []
-    page = 1
-    while True:
-        q = ProductQuery(name=name, category_id=category_id, status=status, page=page, page_size=100)
-        products, total = await ProductService.list_products(db, q)
-        all_products.extend(products)
-        if len(all_products) >= total:
-            break
-        page += 1
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "商品列表"
-
-    headers = ["ID", "商品名称", "副标题", "分类", "单位", "状态", "创建时间"]
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
-    thin_border = Border(
-        left=Side(style="thin"), right=Side(style="thin"),
-        top=Side(style="thin"), bottom=Side(style="thin"),
+    output = await ExcelService.export_products(db, name, category_id, status, brand_id, cargo_type, logistics_status)
+    await _log_product_operation(
+        db,
+        "export",
+        current_user,
+        content=f"导出商品Excel: name={name}, category_id={category_id}, status={status}",
     )
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center")
-        cell.border = thin_border
-
-    status_map = {0: "草稿", 1: "上架", 2: "下架"}
-    for row_idx, p in enumerate(all_products, 2):
-        category_name = p.category.name if p.category else ""
-        ws.cell(row=row_idx, column=1, value=p.id)
-        ws.cell(row=row_idx, column=2, value=p.name)
-        ws.cell(row=row_idx, column=3, value=p.subtitle or "")
-        ws.cell(row=row_idx, column=4, value=category_name)
-        ws.cell(row=row_idx, column=5, value=p.unit)
-        ws.cell(row=row_idx, column=6, value=status_map.get(p.status, "未知"))
-        ws.cell(row=row_idx, column=7, value=p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "")
-        for col in range(1, 8):
-            ws.cell(row=row_idx, column=col).border = thin_border
-    ws.column_dimensions["A"].width = 8
-    ws.column_dimensions["B"].width = 40
-    ws.column_dimensions["C"].width = 30
-    ws.column_dimensions["D"].width = 15
-    ws.column_dimensions["E"].width = 8
-    ws.column_dimensions["F"].width = 8
-    ws.column_dimensions["G"].width = 20
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -153,42 +119,10 @@ async def export_products(
 
 
 @router.get("/products/export-template", summary="下载导入模板")
-async def export_template():
-    """下载商品导入模板（空表头）"""
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "商品导入模板"
-
-    headers = ["商品名称", "副标题", "单位", "状态"]
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
-    thin_border = Border(
-        left=Side(style="thin"), right=Side(style="thin"),
-        top=Side(style="thin"), bottom=Side(style="thin"),
-    )
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center")
-        cell.border = thin_border
-
-    ws.column_dimensions["A"].width = 40
-    ws.column_dimensions["B"].width = 30
-    ws.column_dimensions["C"].width = 8
-    ws.column_dimensions["D"].width = 10
-
-    # 数据验证：状态列下拉
-    from openpyxl.worksheet.datavalidation import DataValidation
-    dv = DataValidation(type="list", formula1='"草稿,上架,下架"', allow_blank=True)
-    dv.error = "请选择: 草稿 / 上架 / 下架"
-    dv.errorTitle = "状态错误"
-    ws.add_data_validation(dv)
-    dv.add(f"D2:D1048576")
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
+async def export_template(
+    current_user: User = Depends(require_permission("product:export")),
+):
+    output = ExcelService.export_template()
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -200,174 +134,61 @@ async def export_template():
 async def import_products(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:import")),
 ):
-    """从 Excel 文件导入商品"""
     if not file.filename or not file.filename.endswith(('.xlsx', '.xls')):
         return Result.bad_request("请上传 .xlsx 或 .xls 文件")
     content = await file.read()
-    wb = openpyxl.load_workbook(io.BytesIO(content))
-    ws = wb.active
-    if ws.max_row < 2:
-        return Result.bad_request("Excel 文件为空")
-    imported = 0
-    errors = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        name = row[1] if len(row) > 1 else None
-        if not name:
-            continue
-        try:
-            product_data = ProductCreate(
-                name=str(name),
-                subtitle=str(row[2]) if len(row) > 2 and row[2] else None,
-                unit=str(row[4]) if len(row) > 4 and row[4] else "件",
-                status=1 if len(row) > 5 and row[5] == "上架" else 0 if row[5] == "草稿" else 2,
-            )
-            await ProductService.create(db, product_data)
-            imported += 1
-        except Exception as e:
-            errors.append(f"第{row[0] if row[0] else row_idx}行: {str(e)}")
-    return Result.ok({"imported": imported, "errors": errors, "total": ws.max_row - 1})
+    result = await ExcelService.import_products(db, content)
+    await _log_product_operation(
+        db,
+        "import",
+        current_user,
+        content=f"导入商品Excel: filename={file.filename}, imported={result['imported']}, total={result['total']}",
+    )
+    if result["errors"]:
+        return Result.ok(result)
+    return Result.ok(result)
 
 
-@router.put("/products/{product_id}", summary="更新商品")
-async def update_product(product_id: int, data: ProductUpdate, db: AsyncSession = Depends(get_db)):
-    product = await ProductService.update(db, product_id, data)
-    if not product:
-        return Result.not_found("商品不存在")
+# ========== CRUD ==========
+
+
+@router.post("/products", summary="创建商品")
+async def create_product(
+    data: ProductCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:create")),
+):
+    product = await ProductService.create(db, data)
+    await _log_product_operation(
+        db,
+        "create",
+        current_user,
+        resource_id=str(product.id),
+        content=f"创建商品: {product.name}",
+    )
     return Result.ok(product_to_vo(product))
 
 
-@router.get("/products/{product_id}/detail", summary="商品聚合详情")
-async def get_product_detail(product_id: int, db: AsyncSession = Depends(get_db)):
-    """聚合返回商品详情 + SKU列表 + 价格 + 库存 + 供应商"""
-    from sqlalchemy import select
-    from app.models import Sku, Price, Inventory, Brand, ProductSupplier, Supplier, ProductListing, Platform
-
-    product = await ProductService.get_by_id(db, product_id)
+@router.put("/products/{product_id}", summary="更新商品")
+async def update_product(
+    product_id: int,
+    data: ProductUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:update")),
+):
+    product = await ProductService.update(db, product_id, data)
     if not product:
         return Result.not_found("商品不存在")
-
-    vo = product_to_vo(product)
-
-    # 品牌名称
-    if product.brand_id:
-        brand = await db.get(Brand, product.brand_id)
-        if brand:
-            vo.brand_name = brand.name
-
-    # SKU列表
-    stmt = select(Sku).where(Sku.product_id == product_id)
-    skus_result = await db.execute(stmt)
-    skus = skus_result.scalars().all()
-    sku_list = []
-    for sku in skus:
-        s = {
-            "id": sku.id,
-            "code": sku.code,
-            "barcode": sku.barcode,
-            "spec_desc": sku.spec_desc,
-            "price": float(sku.price) if sku.price else None,
-            "market_price": float(sku.market_price) if sku.market_price else None,
-            "stock": sku.stock or 0,
-            "image": sku.image,
-            "status": sku.status,
-        }
-        # 获取每个SKU的当前售价
-        price_stmt = select(Price).where(
-            Price.sku_id == sku.id,
-            Price.price_type == "sale_price",
-            Price.status == 1,
-        ).order_by(Price.created_at.desc()).limit(1)
-        price_res = await db.execute(price_stmt)
-        current_price = price_res.scalar_one_or_none()
-        if current_price:
-            s["sale_price"] = float(current_price.price)
-        sku_list.append(s)
-
-    # 库存信息
-    inv_list = []
-    sku_ids = [s.id for s in skus]
-    if sku_ids:
-        inv_stmt = select(Inventory).where(Inventory.sku_id.in_(sku_ids))
-        inv_res = await db.execute(inv_stmt)
-        for inv in inv_res.scalars().all():
-            inv_list.append({
-                "id": inv.id,
-                "sku_id": inv.sku_id,
-                "warehouse": inv.warehouse,
-                "quantity": inv.quantity,
-                "safety_stock": inv.safety_stock,
-            })
-
-    # 供应商列表
-    ps_stmt = select(ProductSupplier, Supplier.name).join(
-        Supplier, ProductSupplier.supplier_id == Supplier.id
-    ).where(ProductSupplier.product_id == product_id)
-    ps_res = await db.execute(ps_stmt)
-    suppliers = []
-    for ps, name in ps_res.all():
-        suppliers.append({
-            "id": ps.id,
-            "supplier_id": ps.supplier_id,
-            "supplier_name": name,
-            "supply_price": float(ps.supply_price) if ps.supply_price else None,
-        })
-
-    # 发布状态
-    listing_stmt = (
-        select(ProductListing, Platform.name, Platform.code)
-        .join(Platform, ProductListing.platform_id == Platform.id)
-        .where(ProductListing.product_id == product_id)
-        .order_by(Platform.sort_order)
+    await _log_product_operation(
+        db,
+        "update",
+        current_user,
+        resource_id=str(product.id),
+        content=f"更新商品: {product.name}",
     )
-    listing_res = await db.execute(listing_stmt)
-    listings = []
-    for listing, plat_name, plat_code in listing_res.all():
-        listings.append({
-            "id": listing.id,
-            "platform_id": listing.platform_id,
-            "platform_name": plat_name,
-            "platform_code": plat_code,
-            "platform_product_id": listing.platform_product_id,
-            "status": listing.status,
-            "platform_url": listing.platform_url,
-            "last_sync_at": listing.last_sync_at.isoformat() if listing.last_sync_at else None,
-        })
-
-    return Result.ok({
-        "product": vo.model_dump(),
-        "skus": sku_list,
-        "inventory": inv_list,
-        "suppliers": suppliers,
-        "listings": listings,
-    })
-
-
-@router.post("/products/{product_id}/duplicate", summary="复制商品")
-async def duplicate_product(product_id: int, db: AsyncSession = Depends(get_db)):
-    """基于已有商品复制一个新商品（复制基本信息，不复制SKU/价格/库存）"""
-    from app.models import Product
-    
-    product = await ProductService.get_by_id(db, product_id)
-    if not product:
-        return Result.not_found("商品不存在")
-
-    new_product = Product(
-        name=f"{product.name} (副本)",
-        subtitle=product.subtitle,
-        description=product.description,
-        brand_id=product.brand_id,
-        category_id=product.category_id,
-        unit=product.unit,
-        main_image=product.main_image,
-        images=product.images,
-        status=0,  # 新商品默认为草稿
-    )
-    db.add(new_product)
-    await db.flush()
-    await db.refresh(new_product)
-
-    return Result.ok(product_to_vo(new_product))
+    return Result.ok(product_to_vo(product))
 
 
 @router.get("/products/{product_id}", summary="商品详情")
@@ -384,153 +205,117 @@ async def list_products(
     category_id: int = Query(None, description="分类ID"),
     status: int = Query(None, description="状态"),
     brand_id: int = Query(None, description="品牌ID"),
+    cargo_type: str = Query(None, description="货品类型: normal/battery/liquid/sensitive"),
+    logistics_status: str = Query(None, description="物流完整状态: complete/incomplete"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    query = ProductQuery(name=name, category_id=category_id, status=status, brand_id=brand_id, page=page, page_size=page_size)
+    query = ProductQuery(name=name, category_id=category_id, status=status, brand_id=brand_id, cargo_type=cargo_type, logistics_status=logistics_status, page=page, page_size=page_size)
     products, total = await ProductService.list_products(db, query)
     items = [product_to_vo(p) for p in products]
     return PageResult.ok(items, total, page, page_size)
 
 
 @router.delete("/products/{product_id}", summary="删除商品")
-async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
-    ok = await ProductService.delete(db, product_id)
+async def delete_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:delete")),
+):
+    try:
+        ok = await ProductService.delete(db, product_id)
+    except ValueError as e:
+        return Result.bad_request(str(e))
     if not ok:
         return Result.not_found("商品不存在")
+    await _log_product_operation(
+        db,
+        "delete",
+        current_user,
+        resource_id=str(product_id),
+        content=f"删除商品: {product_id}",
+    )
     return Result.ok(message="删除成功")
 
 
-@router.post("/products/{product_id}/ai-enhance", summary="AI优化商品信息")
-async def ai_enhance_product(product_id: int, db: AsyncSession = Depends(get_db)):
-    """AI生成优化标题、描述和SEO关键词（优先调用真实LLM，无Key/失败时回退到模拟数据）"""
-    from app.models import Product
-    from app.config import settings
-    import json
+# ========== 复制 ==========
 
-    product = await db.get(Product, product_id)
+
+@router.post("/products/{product_id}/duplicate", summary="复制商品")
+async def duplicate_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:create")),
+):
+    product = await ProductService.get_by_id(db, product_id)
     if not product:
         return Result.not_found("商品不存在")
 
-    name = product.name or ""
-    subtitle = product.subtitle or ""
-    description = product.description or ""
-
-    # ----- 尝试调用真实LLM -----
-    if settings.LLM_API_KEY:
-        import httpx
-        import asyncio
-        import re
-
-        prompt = f"""你是一个电商商品标题和描述优化专家。
-请根据以下商品信息，生成优化的标题、描述和SEO关键词。
-
-商品名称：{name}
-商品副标题：{subtitle}
-商品描述：{description}
-
-请以JSON格式返回：
-{{
-  "title": "优化后的商品标题（不超过200字）",
-  "description": "优化后的商品描述（包含产品特色、卖点、适合场景，200-500字）",
-  "keywords": ["关键词1", "关键词2", "关键词3", "关键词4", "关键词5"]
-}}
-只返回JSON，不要额外说明。"""
-
-        payload = {
-            "model": settings.LLM_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-        }
-        headers = {
-            "Authorization": f"Bearer {settings.LLM_API_KEY}",
-            "Content-Type": "application/json",
-        }
-
-        last_error = None
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.post(
-                        settings.LLM_API_URL,
-                        json=payload,
-                        headers=headers,
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                    content = data["choices"][0]["message"]["content"]
-
-                    # 尝试直接解析JSON
-                    try:
-                        result = json.loads(content)
-                    except json.JSONDecodeError:
-                        # 尝试从markdown代码块中提取
-                        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', content)
-                        if json_match:
-                            result = json.loads(json_match.group(1))
-                        else:
-                            raise ValueError("无法解析LLM返回的JSON")
-
-                    enhanced_title = result.get("title", name)
-                    enhanced_desc = result.get("description", description or name)
-                    keywords = result.get("keywords", [name])
-                    break  # 成功，跳出重试循环
-            except Exception as e:
-                last_error = e
-                if attempt < 2:
-                    await asyncio.sleep(1 * (attempt + 1))  # 退避等待
-                continue
-        else:
-            # 全部重试失败 → 回退到模拟数据
-            enhanced_title = f"{name} - 高品质正品保障 厂家直销批发"
-            enhanced_desc = (
-                f"【{name}】品质保障，正品货源。\n\n"
-                f"产品特色：\n"
-                f"✅ 优质材料，经久耐用\n"
-                f"✅ 严格品控，质量可靠\n"
-                f"✅ 厂家直供，价格优惠\n"
-                f"✅ 支持批发/零售，快速发货\n\n"
-                f"欢迎联系我们获取更多产品信息！"
-            )
-            keywords = [
-                name,
-                f"{name} 批发",
-                f"{name} 厂家",
-                f"{name} 价格",
-            ]
-    else:
-        # 没有配置Key → 使用模拟数据
-        enhanced_title = f"{name} - 高品质正品保障 厂家直销批发"
-        enhanced_desc = (
-            f"【{name}】品质保障，正品货源。\n\n"
-            f"产品特色：\n"
-            f"✅ 优质材料，经久耐用\n"
-            f"✅ 严格品控，质量可靠\n"
-            f"✅ 厂家直供，价格优惠\n"
-            f"✅ 支持批发/零售，快速发货\n\n"
-            f"欢迎联系我们获取更多产品信息！"
-        )
-        keywords = [
-            name,
-            f"{name} 批发",
-            f"{name} 厂家",
-            f"{name} 价格",
-        ]
-
-    # 保存到商品记录
-    product.ai_title = enhanced_title
-    product.ai_description = enhanced_desc
-    product.seo_keywords = keywords
-    product.ai_status = "completed"
+    new_product = Product(
+        name=f"{product.name} (副本)",
+        subtitle=product.subtitle,
+        description=product.description,
+        brand_id=product.brand_id,
+        category_id=product.category_id,
+        unit=product.unit,
+        main_image=product.main_image,
+        images=product.images,
+        product_length_cm=product.product_length_cm,
+        product_width_cm=product.product_width_cm,
+        product_height_cm=product.product_height_cm,
+        product_weight_kg=product.product_weight_kg,
+        package_length_cm=product.package_length_cm,
+        package_width_cm=product.package_width_cm,
+        package_height_cm=product.package_height_cm,
+        package_weight_kg=product.package_weight_kg,
+        cargo_type=product.cargo_type,
+        status=0,
+    )
+    db.add(new_product)
     await db.flush()
+    await db.refresh(new_product)
+    await _log_product_operation(
+        db,
+        "duplicate",
+        current_user,
+        resource_id=str(new_product.id),
+        content=f"复制商品: {product_id} -> {new_product.id}",
+    )
 
-    return Result.ok({
-        "enhanced_title": enhanced_title,
-        "enhanced_description": enhanced_desc,
-        "seo_keywords": keywords,
-        "ai_status": "completed",
-        "message": "AI优化完成，请检查并确认",
-    })
+    return Result.ok(product_to_vo(new_product))
 
 
+# ========== 聚合详情 ==========
+
+
+@router.get("/products/{product_id}/detail", summary="商品聚合详情")
+async def get_product_detail(product_id: int, db: AsyncSession = Depends(get_db)):
+    try:
+        data = await ProductDetailService.get_detail(db, product_id)
+        return Result.ok(data)
+    except ValueError as e:
+        return Result.not_found(str(e))
+
+
+# ========== AI 优化 ==========
+
+
+@router.post("/products/{product_id}/ai-enhance", summary="AI优化商品信息")
+async def ai_enhance_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("product:ai")),
+):
+    try:
+        result = await AiEnhanceService.enhance_product(db, product_id)
+        await _log_product_operation(
+            db,
+            "ai_enhance",
+            current_user,
+            resource_id=str(product_id),
+            content=f"AI优化商品: {product_id}",
+        )
+        return Result.ok(result)
+    except ValueError as e:
+        return Result.not_found(str(e))

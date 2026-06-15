@@ -33,6 +33,15 @@ class Product(Base):
     status = Column(SmallInteger, default=0, comment="状态: 0-草稿, 1-上架, 2-下架")
     main_image = Column(String(500), comment="主图URL")
     images = Column(JSON, comment="图片列表")
+    product_length_cm = Column(Numeric(10, 2), comment="商品长(cm)")
+    product_width_cm = Column(Numeric(10, 2), comment="商品宽(cm)")
+    product_height_cm = Column(Numeric(10, 2), comment="商品高(cm)")
+    product_weight_kg = Column(Numeric(10, 2), comment="商品重量(kg)")
+    package_length_cm = Column(Numeric(10, 2), comment="包装长(cm)")
+    package_width_cm = Column(Numeric(10, 2), comment="包装宽(cm)")
+    package_height_cm = Column(Numeric(10, 2), comment="包装高(cm)")
+    package_weight_kg = Column(Numeric(10, 2), comment="包装重量(kg)")
+    cargo_type = Column(String(50), default="normal", comment="货品类型")
     # AI 辅助字段
     ai_title = Column(String(500), comment="AI生成的优化标题")
     ai_description = Column(Text, comment="AI生成的优化描述")
@@ -85,10 +94,14 @@ class Sku(Base):
     price = Column(Numeric(10, 2), default=0, comment="销售价")
     cost_price = Column(Numeric(10, 2), default=0, comment="成本价")
     market_price = Column(Numeric(10, 2), default=0, comment="市场价")
-    stock = Column(Integer, default=0, comment="库存")
+    stock = Column(Integer, default=0, comment="库存（已弃用，请使用 Inventory.quantity）")
     lock_stock = Column(Integer, default=0, comment="锁定库存")
     warning_stock = Column(Integer, default=0, comment="安全库存预警")
-    weight = Column(Numeric(10, 2), default=0, comment="重量(kg)")
+    weight = Column(Numeric(10, 2), default=0, comment="重量(kg，历史字段，不表示包装重量)")
+    sku_length_cm = Column(Numeric(10, 2), comment="SKU包装长(cm)")
+    sku_width_cm = Column(Numeric(10, 2), comment="SKU包装宽(cm)")
+    sku_height_cm = Column(Numeric(10, 2), comment="SKU包装高(cm)")
+    sku_weight_kg = Column(Numeric(10, 2), comment="SKU包装重量(kg)")
     image = Column(String(500), comment="SKU图片")
     status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
@@ -134,6 +147,7 @@ class Inventory(Base):
     warehouse = Column(String(100), default="默认仓库", comment="仓库")
     location = Column(String(200), comment="货位")
     quantity = Column(Integer, default=0, comment="当前库存")
+    locked_quantity = Column(Integer, default=0, nullable=False, comment="锁定库存")
     safety_stock = Column(Integer, default=0, comment="安全库存")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
@@ -180,6 +194,92 @@ class ProductSupplier(Base):
     supply_price = Column(Numeric(10, 2), comment="供货价")
     min_order_qty = Column(Integer, default=1, comment="最小起订量")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class ShippingProvider(Base):
+    """物流供应商"""
+    __tablename__ = "shipping_provider"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, comment="供应商名称")
+    code = Column(String(50), unique=True, comment="编码")
+    contact = Column(String(100), comment="联系人")
+    phone = Column(String(50), comment="联系电话")
+    remark = Column(Text, comment="备注")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ShippingChannel(Base):
+    """物流渠道（供应商的物流产品）"""
+    __tablename__ = "shipping_channel"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    provider_id = Column(BigInteger, ForeignKey("shipping_provider.id"), nullable=False, comment="物流供应商ID")
+    name = Column(String(200), nullable=False, comment="渠道名称")
+    code = Column(String(50), comment="渠道编码")
+    volumetric_divisor = Column(Integer, nullable=False, default=6000, comment="抛重系数")
+    cargo_types = Column(JSON, comment="支持货品类型: [\"normal\",\"battery\",\"liquid\",\"sensitive\"]")
+    estimated_delivery_min = Column(Integer, comment="最短时效(天)")
+    estimated_delivery_max = Column(Integer, comment="最长时效(天)")
+    currency = Column(String(10), default="CNY", comment="报价币种")
+    sort_order = Column(Integer, default=0, comment="排序")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    provider = relationship("ShippingProvider", lazy="selectin")
+    zones = relationship("ShippingZone", lazy="selectin", cascade="all, delete-orphan")
+    rules = relationship("ShippingQuoteRule", lazy="selectin", cascade="all, delete-orphan",
+                         order_by="ShippingQuoteRule.priority, ShippingQuoteRule.id")
+
+
+class ShippingZone(Base):
+    """物流区域（渠道覆盖的目的地国家）"""
+    __tablename__ = "shipping_zone"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    channel_id = Column(BigInteger, ForeignKey("shipping_channel.id"), nullable=False, comment="物流渠道ID")
+    country_code = Column(String(10), nullable=False, comment="国家代码 ISO 3166-1 alpha-2")
+    postal_code_from = Column(String(20), comment="邮编范围起始")
+    postal_code_to = Column(String(20), comment="邮编范围截止")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    channel_rel = relationship("ShippingChannel", viewonly=True, overlaps="zones")
+
+
+class ShippingQuoteRule(Base):
+    """报价规则"""
+    __tablename__ = "shipping_quote_rule"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    channel_id = Column(BigInteger, ForeignKey("shipping_channel.id"), nullable=False, comment="物流渠道ID")
+    zone_id = Column(BigInteger, ForeignKey("shipping_zone.id"), comment="物流区域ID，空表示渠道全局规则")
+    rule_type = Column(String(50), nullable=False, comment="规则类型: fixed_plus_per_kg/first_weight_plus_increment/tiered_weight")
+    priority = Column(Integer, default=0, comment="优先级，值小优先")
+    min_weight_kg = Column(Numeric(10, 3), default=0, comment="适用最小重量(kg)")
+    max_weight_kg = Column(Numeric(10, 3), comment="适用最大重量(kg)，NULL无上限")
+    first_kg = Column(Numeric(10, 3), default=0, comment="首重(kg)")
+    first_price = Column(Numeric(10, 2), default=0, comment="首重价格")
+    additional_kg = Column(Numeric(10, 3), default=0, comment="续重单位(kg)")
+    additional_price = Column(Numeric(10, 2), default=0, comment="续重单价")
+    fixed_fee = Column(Numeric(10, 2), default=0, comment="固定费")
+    per_kg_price = Column(Numeric(10, 2), default=0, comment="每公斤价格")
+    minimum_charge = Column(Numeric(10, 2), comment="最低收费")
+    tier_config = Column(JSON, comment="阶梯配置: [{min_kg, max_kg, price}]")
+    surcharge_fixed = Column(Numeric(10, 2), default=0, comment="附加费(固定)")
+    fuel_surcharge_pct = Column(Numeric(5, 2), default=0, comment="燃油附加费百分比")
+    rounding_increment = Column(Numeric(10, 3), default=0.1, comment="计费重向上取整增量(kg)")
+    remark = Column(Text, comment="备注")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    channel_rel = relationship("ShippingChannel", viewonly=True, overlaps="rules")
+    zone = relationship("ShippingZone", lazy="selectin", foreign_keys=[zone_id])
 
 
 class OperationLog(Base):
@@ -307,3 +407,95 @@ class RolePermission(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     role_id = Column(BigInteger, ForeignKey("role.id"), nullable=False, comment="角色ID")
     permission_id = Column(BigInteger, ForeignKey("permission.id"), nullable=False, comment="权限ID")
+
+
+class Order(Base):
+    """销售订单"""
+    __tablename__ = "sales_order"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_no = Column(String(100), nullable=False, unique=True, comment="订单号")
+    status = Column(String(50), default="pending", comment="状态: pending/paid/shipped/delivered/completed/cancelled")
+    recipient_name = Column(String(100), comment="收件人")
+    recipient_phone = Column(String(50), comment="联系电话")
+    shipping_address = Column(String(500), comment="收货地址")
+    total_amount = Column(Numeric(10, 2), default=0, comment="商品总额")
+    shipping_fee = Column(Numeric(10, 2), default=0, comment="运费")
+    pay_amount = Column(Numeric(10, 2), default=0, comment="实付金额")
+    platform_fee = Column(Numeric(10, 2), default=0, comment="平台佣金/平台费")
+    payment_fee = Column(Numeric(10, 2), default=0, comment="支付手续费")
+    other_fee = Column(Numeric(10, 2), default=0, comment="其他费用")
+    product_cost = Column(Numeric(10, 2), default=0, comment="商品成本")
+    profit_amount = Column(Numeric(10, 2), default=0, comment="订单利润")
+    profit_margin = Column(Numeric(10, 4), default=0, comment="利润率百分比")
+    payment_method = Column(String(50), comment="支付方式")
+    remark = Column(Text, comment="备注")
+    paid_at = Column(DateTime(timezone=True), comment="支付时间")
+    shipped_at = Column(DateTime(timezone=True), comment="发货时间")
+    delivered_at = Column(DateTime(timezone=True), comment="签收时间")
+    cancelled_at = Column(DateTime(timezone=True), comment="取消时间")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class OrderItem(Base):
+    """销售订单明细"""
+    __tablename__ = "sales_order_item"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), nullable=False, comment="订单ID")
+    sku_id = Column(BigInteger, ForeignKey("sku.id"), nullable=False, comment="SKU ID")
+    product_id = Column(BigInteger, ForeignKey("product.id"), nullable=False, comment="商品ID")
+    product_name = Column(String(200), nullable=False, comment="商品名称快照")
+    sku_code = Column(String(100), comment="SKU编码快照")
+    spec_desc = Column(String(500), comment="规格描述快照")
+    unit_price = Column(Numeric(10, 2), nullable=False, comment="单价")
+    quantity = Column(Integer, nullable=False, comment="数量")
+    subtotal = Column(Numeric(10, 2), nullable=False, comment="小计")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class OrderStatusLog(Base):
+    """订单状态流转记录"""
+    __tablename__ = "sales_order_status_log"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), nullable=False, comment="订单ID")
+    from_status = Column(String(50), comment="原状态")
+    to_status = Column(String(50), nullable=False, comment="新状态")
+    operator = Column(String(100), comment="操作人")
+    remark = Column(String(500), comment="备注")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class OrderShippingSnapshot(Base):
+    """订单运费快照"""
+    __tablename__ = "sales_order_shipping_snapshot"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), nullable=False, unique=True, comment="订单ID")
+    sku_id = Column(BigInteger, ForeignKey("sku.id"), nullable=False, comment="试算SKU ID")
+    quantity = Column(Integer, nullable=False, comment="试算数量")
+    destination_country = Column(String(10), nullable=False, comment="目的地国家")
+    postal_code = Column(String(20), comment="目的地邮编")
+    cargo_type = Column(String(50), default="normal", comment="货品类型")
+    package_source = Column(String(20), comment="包装数据来源: product/sku")
+    package_length_cm = Column(Numeric(10, 2), nullable=False, comment="包装长cm")
+    package_width_cm = Column(Numeric(10, 2), nullable=False, comment="包装宽cm")
+    package_height_cm = Column(Numeric(10, 2), nullable=False, comment="包装高cm")
+    package_weight_kg = Column(Numeric(10, 3), nullable=False, comment="单件包装重量kg")
+    provider_id = Column(BigInteger, ForeignKey("shipping_provider.id"), nullable=False, comment="物流供应商ID")
+    provider_name = Column(String(200), nullable=False, comment="物流供应商名称快照")
+    channel_id = Column(BigInteger, ForeignKey("shipping_channel.id"), nullable=False, comment="物流渠道ID")
+    channel_name = Column(String(200), nullable=False, comment="物流渠道名称快照")
+    currency = Column(String(10), default="CNY", comment="币种")
+    actual_weight_kg = Column(Numeric(10, 4), nullable=False, comment="实际重量kg")
+    volumetric_weight_kg = Column(Numeric(10, 4), nullable=False, comment="体积重量kg")
+    chargeable_weight_kg = Column(Numeric(10, 4), nullable=False, comment="计费重量kg")
+    base_shipping_fee = Column(Numeric(10, 2), nullable=False, comment="基础运费")
+    surcharge_fee = Column(Numeric(10, 2), default=0, comment="固定附加费")
+    fuel_surcharge_fee = Column(Numeric(10, 2), default=0, comment="燃油附加费")
+    total_shipping_fee = Column(Numeric(10, 2), nullable=False, comment="总运费")
+    calculation_detail = Column(Text, comment="计算说明")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")

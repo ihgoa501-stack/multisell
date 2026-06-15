@@ -1,13 +1,16 @@
-"""MultiSell — FastAPI 入口"""
+"""凌镜 LingMirror — FastAPI 入口"""
 
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
-from app.database import init_db
 import importlib, pkgutil
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # ========== 自动发现并注册所有模块路由 ==========
@@ -38,8 +41,8 @@ def _discover_routers(app_instance: FastAPI):
             if hasattr(_pkg, "router"):
                 app_instance.include_router(_pkg.router, prefix="/api")
                 _registered_routers.add(_parent)
-        except Exception:
-            pass  # 静默跳过无 router 的模块
+        except Exception as _exc:
+            logger.warning("模块 %s 路由注册失败: %s", _modname, _exc)
 
     # 单独注册 upload_router
     app_instance.include_router(_upload_router, prefix="/api")
@@ -48,8 +51,15 @@ def _discover_routers(app_instance: FastAPI):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期"""
+    # 生产环境强制开启鉴权
+    if settings.is_production and not settings.AUTH_ENABLED:
+        raise RuntimeError(
+            "生产环境禁止关闭鉴权: 请设置 AUTH_ENABLED=True 或 DEBUG=True"
+        )
     if settings.DEBUG:
-        await init_db()
+        logger.warning(
+            "DEBUG 模式启动 — 请确保已运行: cd backend && alembic upgrade head"
+        )
     yield
 
 

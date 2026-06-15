@@ -1,6 +1,8 @@
-# 🌐 MultiSell — AI跨境电商商品中台
+# 🪞 凌镜 LingMirror — 跨境电商 AgentOS
 
-基于 **Python FastAPI + Vue 3 + PostgreSQL** 的跨境电商商品中台。
+> 技术项目名暂保留 `MultiSell`；对外产品品牌为 `凌镜 LingMirror`。
+
+基于 **Python FastAPI + Vue 3 + PostgreSQL** 的 AI Agent 协作跨境电商运营平台。
 
 ## 核心定位
 
@@ -29,18 +31,29 @@
 ### Docker一键启动
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-访问 http://localhost:3001
+访问前端：http://localhost:3000
+
+访问后端 API：http://localhost:8000/docs
 
 ### 本地开发
+
+先启动 PostgreSQL：
+
+```bash
+docker compose up -d db
+```
 
 **后端：**
 ```bash
 cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8001
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/alembic upgrade head
+.venv/bin/python seed.py
+.venv/bin/uvicorn app.main:app --reload --port 8001
 ```
 
 API文档：http://localhost:8001/docs
@@ -54,14 +67,37 @@ npm run dev
 
 访问 http://localhost:3001
 
+## 测试
+
+后端测试使用独立数据库 `product_management_test`。Docker 首次初始化 PostgreSQL 时会自动创建该测试库。
+
+```bash
+docker compose up -d db
+cd backend
+TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
+  python3 -m pytest -q
+```
+
+## 项目文档
+
+| 文档 | 用途 |
+|------|------|
+| [产品愿景与第一可用版本](docs/PRODUCT_VISION_AND_MVP.md) | 最终产品定位、第一阶段切入口、后续 Agent 开发方向 |
+| [项目现状](docs/PROJECT_STATUS.md) | 当前已完成能力、已知限制、验证结果 |
+| [项目收口与 Agent 协作规范](docs/PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | Agent 分工、验收标准、协作流程 |
+| [开发指南](docs/DEVELOPMENT_GUIDE.md) | 本地启动、测试、模块约定、交接提示词 |
+| [权限与审计](docs/PERMISSIONS_AND_AUDIT.md) | 鉴权规则、权限码、审计日志接入方式 |
+| [路线图](docs/ROADMAP.md) | 后续阶段优先级和每阶段待办 |
+| [实施计划](docs/superpowers/plans/2026-06-13-multisell-stabilization-roadmap.md) | 分阶段工程实施计划 |
+
 ## 数据初始化
 
 首次部署或需要演示数据时，运行数据初始化脚本：
 
 ```bash
 cd backend
-pip install -r requirements.txt
-python seed.py
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python seed.py
 ```
 
 该脚本会独立创建以下演示数据（不依赖 FastAPI 启动流程）：
@@ -74,7 +110,7 @@ python seed.py
 > 如需重置数据库（删除所有表并重新填充），可使用运维工具：
 > ```bash
 > cd backend
-> python scripts/db_reset.py
+> .venv/bin/python scripts/db_reset.py
 > ```
 
 ## 技术栈

@@ -23,6 +23,55 @@
       <n-form-item label="描述" path="description">
         <n-input v-model:value="form.description" type="textarea" :rows="4" placeholder="商品描述" />
       </n-form-item>
+      <n-divider title-placement="left">商品尺寸</n-divider>
+      <n-grid :cols="2" :x-gap="12">
+        <n-form-item-gi label="商品长">
+          <n-input-number v-model:value="form.product_length_cm" :min="0" :precision="2" style="width: 100%;">
+            <template #suffix>cm</template>
+          </n-input-number>
+        </n-form-item-gi>
+        <n-form-item-gi label="商品宽">
+          <n-input-number v-model:value="form.product_width_cm" :min="0" :precision="2" style="width: 100%;">
+            <template #suffix>cm</template>
+          </n-input-number>
+        </n-form-item-gi>
+        <n-form-item-gi label="商品高">
+          <n-input-number v-model:value="form.product_height_cm" :min="0" :precision="2" style="width: 100%;">
+            <template #suffix>cm</template>
+          </n-input-number>
+        </n-form-item-gi>
+        <n-form-item-gi label="商品重量">
+          <n-input-number v-model:value="form.product_weight_kg" :min="0" :precision="2" style="width: 100%;">
+            <template #suffix>kg</template>
+          </n-input-number>
+        </n-form-item-gi>
+      </n-grid>
+      <n-divider title-placement="left">包装信息</n-divider>
+      <n-grid :cols="2" :x-gap="12">
+        <n-form-item-gi label="包装长">
+          <n-input-number v-model:value="form.package_length_cm" :min="0" :precision="2" style="width: 100%;">
+            <template #suffix>cm</template>
+          </n-input-number>
+        </n-form-item-gi>
+        <n-form-item-gi label="包装宽">
+          <n-input-number v-model:value="form.package_width_cm" :min="0" :precision="2" style="width: 100%;">
+            <template #suffix>cm</template>
+          </n-input-number>
+        </n-form-item-gi>
+        <n-form-item-gi label="包装高">
+          <n-input-number v-model:value="form.package_height_cm" :min="0" :precision="2" style="width: 100%;">
+            <template #suffix>cm</template>
+          </n-input-number>
+        </n-form-item-gi>
+        <n-form-item-gi label="包装重量">
+          <n-input-number v-model:value="form.package_weight_kg" :min="0" :precision="2" style="width: 100%;">
+            <template #suffix>kg</template>
+          </n-input-number>
+        </n-form-item-gi>
+        <n-form-item-gi label="货品类型">
+          <n-select v-model:value="form.cargo_type" :options="cargoTypeOptions" />
+        </n-form-item-gi>
+      </n-grid>
       <n-form-item v-if="isEdit" label="AI优化">
         <n-space>
           <n-button :loading="aiLoading" type="warning" @click="handleAiEnhance">✨ AI优化</n-button>
@@ -76,8 +125,35 @@ const aiLoading = ref(false)
 const isEdit = computed(() => !!route.params.id)
 const categoryTree = ref<any[]>([])
 const brandOptions = ref<any[]>([])
+const cargoTypeOptions = [
+  { label: '普通货品', value: 'normal' },
+  { label: '带电', value: 'battery' },
+  { label: '液体', value: 'liquid' },
+  { label: '敏感货', value: 'sensitive' },
+]
 
-const form = ref<any>({ name: '', subtitle: '', category_id: null, brand_id: null, unit: '件', description: '', main_image: '', status: 0, ai_status: '' })
+const createEmptyForm = () => ({
+  name: '',
+  subtitle: '',
+  category_id: null,
+  brand_id: null,
+  unit: '件',
+  description: '',
+  main_image: '',
+  status: 0,
+  ai_status: '',
+  product_length_cm: null,
+  product_width_cm: null,
+  product_height_cm: null,
+  product_weight_kg: null,
+  package_length_cm: null,
+  package_width_cm: null,
+  package_height_cm: null,
+  package_weight_kg: null,
+  cargo_type: 'normal',
+})
+
+const form = ref<any>(createEmptyForm())
 
 const rules = {
   name: { required: true, message: '请输入商品名称', trigger: 'blur' },
@@ -102,13 +178,25 @@ onMounted(async () => {
       const res: any = await productApi.getById(Number(route.params.id))
       if (res.data) {
         form.value = {
+          ...createEmptyForm(),
           name: res.data.name,
           subtitle: res.data.subtitle || '',
           category_id: res.data.category_id,
           brand_id: res.data.brand_id || null,
           unit: res.data.unit || '件',
           description: res.data.description || '',
+          main_image: res.data.main_image || '',
           status: res.data.status ?? 0,
+          ai_status: res.data.ai_status || '',
+          product_length_cm: res.data.product_length_cm ?? null,
+          product_width_cm: res.data.product_width_cm ?? null,
+          product_height_cm: res.data.product_height_cm ?? null,
+          product_weight_kg: res.data.product_weight_kg ?? null,
+          package_length_cm: res.data.package_length_cm ?? null,
+          package_width_cm: res.data.package_width_cm ?? null,
+          package_height_cm: res.data.package_height_cm ?? null,
+          package_weight_kg: res.data.package_weight_kg ?? null,
+          cargo_type: res.data.cargo_type || 'normal',
         }
       }
     } catch (e: any) {

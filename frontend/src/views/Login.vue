@@ -3,8 +3,15 @@
     <n-card style="width: 400px;" :bordered="true">
       <template #header>
         <div style="text-align: center;">
-          <h2 style="margin: 0; font-size: 24px;">🌐 MultiSell</h2>
-          <p style="margin: 4px 0 0; color: #888; font-size: 14px;">AI跨境电商商品中台</p>
+          <div style="display: flex; justify-content: center; align-items: center; gap: 10px;">
+            <img
+              src="/brand/lingmirror-icon.png"
+              alt="凌镜 LingMirror"
+              style="width: 36px; height: 36px; border-radius: 8px;"
+            />
+            <h2 style="margin: 0; font-size: 24px;">凌镜 LingMirror</h2>
+          </div>
+          <p style="margin: 8px 0 0; color: #888; font-size: 14px;">跨境电商 AgentOS</p>
         </div>
       </template>
       <n-form ref="formRef" :model="form" :rules="rules">

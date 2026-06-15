@@ -39,4 +39,16 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1100,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vue: ['vue', 'vue-router', 'pinia'],
+          naive: ['naive-ui'],
+          icons: ['@vicons/ionicons5'],
+        },
+      },
+    },
+  },
 })

@@ -1,12 +1,12 @@
 """认证 - 路由"""
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.common import Result
 from app.auth.schemas import UserRegister, UserLogin, UserVO, TokenVO
 from app.auth.service import AuthService
-from app.config import settings
+from app.auth.dependencies import get_current_user
 from app.models import User
 
 router = APIRouter(tags=["认证"])
@@ -22,32 +22,6 @@ def user_to_vo(user: User) -> UserVO:
         status=user.status,
         created_at=user.created_at,
     )
-
-
-async def get_current_user(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    """依赖注入：获取当前登录用户。
-    当 AUTH_ENABLED=False 时返回一个 mock 用户，跳过鉴权。
-    """
-    if not settings.AUTH_ENABLED:
-        mock_user = User(
-            id=0, username="system", display_name="系统管理员",
-            role="admin", status=1,
-        )
-        mock_user.roles = []
-        return mock_user
-
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="未登录")
-    token = authorization[7:]
-    user = await AuthService.get_current_user(db, token)
-    if not user:
-        raise HTTPException(status_code=401, detail="登录已过期")
-    if user.status != 1:
-        raise HTTPException(status_code=403, detail="账号已被禁用")
-    return user
 
 
 @router.post("/auth/register", summary="用户注册")
@@ -77,5 +51,31 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/auth/me", summary="获取当前用户信息")
-async def get_me(current_user: User = Depends(get_current_user)):
-    return Result.ok(user_to_vo(current_user))
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # 加载权限列表
+    permissions: list[str] = []
+    if current_user.role == "admin":
+        # admin 拥有所有权限，返回空列表表示无限制
+        permissions = []
+    else:
+        from sqlalchemy import select
+        from app.models import Permission, RolePermission, UserRole
+        stmt = (
+            select(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .where(UserRole.user_id == current_user.id)
+        )
+        result = await db.execute(stmt)
+        seen: set[str] = set()
+        for (code,) in result.all():
+            if code and code not in seen:
+                seen.add(code)
+                permissions.append(code)
+
+    vo = user_to_vo(current_user)
+    vo.permissions = permissions
+    return Result.ok(vo)

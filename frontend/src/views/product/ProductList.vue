@@ -23,9 +23,23 @@
         <n-form-item label="状态">
           <n-select v-model:value="query.status" :options="statusOptions" clearable style="width: 120px;" />
         </n-form-item>
+        <n-form-item label="货品类型">
+          <n-select v-model:value="query.cargo_type" :options="cargoTypeOptions" clearable style="width: 120px;" />
+        </n-form-item>
+        <n-form-item label="物流状态">
+          <n-select v-model:value="query.logistics_status" :options="logisticsStatusOptions" clearable style="width: 130px;" />
+        </n-form-item>
         <n-form-item>
           <n-button type="primary" @click="search">搜索</n-button>
           <n-button style="margin-left: 8px;" @click="reset">重置</n-button>
+          <n-button
+            style="margin-left: 8px;"
+            :type="query.logistics_status === 'incomplete' ? 'warning' : 'default'"
+            ghost
+            @click="showIncompleteOnly"
+          >
+            ⚠ 只看缺物流数据
+          </n-button>
         </n-form-item>
       </n-form>
     </n-card>
@@ -39,10 +53,18 @@
         <n-button size="small" type="error" ghost @click="batchDelete">批量删除</n-button>
         <n-button size="small" @click="checkedRowIds = []">取消选择</n-button>
       </n-space>
-      <n-data-table :columns="columns" :data="data" :loading="loading" :pagination="pagination"
+      <n-data-table
+        :columns="columns"
+        :data="data"
+        :loading="loading"
+        :pagination="pagination"
+        remote
+        :scroll-x="1950"
         :row-key="(row: any) => row.id"
         @update:checked-row-keys="checkedRowIds = $event"
-        @update:page="onPageChange" />
+        @update:page="onPageChange"
+        @update:page-size="onPageSizeChange"
+      />
     </n-card>
   </div>
 </template>
@@ -68,60 +90,173 @@ const statusOptions = [
   { label: '下架', value: 2 },
 ]
 
-const query = reactive({ name: '', status: null as number | null, page: 1, page_size: 20 })
+const cargoTypeOptions = [
+  { label: '普通货品', value: 'normal' },
+  { label: '带电', value: 'battery' },
+  { label: '液体', value: 'liquid' },
+  { label: '敏感货', value: 'sensitive' },
+]
+
+const logisticsStatusOptions = [
+  { label: '可计算运费', value: 'complete' },
+  { label: '缺物流数据', value: 'incomplete' },
+]
+
+const query = reactive({
+  name: '',
+  status: null as number | null,
+  cargo_type: null as string | null,
+  logistics_status: null as string | null,
+  page: 1,
+  page_size: 20,
+})
 
 const pagination = reactive({
   page: 1,
   pageSize: 20,
-  showSizePicker: false,
+  pageSizes: [10, 20, 50, 100],
+  showSizePicker: true,
   itemCount: 0,
   onChange: (page: number) => {
     query.page = page
     fetchData()
   },
+  onUpdatePageSize: (pageSize: number) => {
+    query.page_size = pageSize
+    query.page = 1
+    fetchData()
+  },
 })
+
+// ----- 渲染辅助函数 -----
+
+function formatDimensions(length?: number, width?: number, height?: number) {
+  if (!length || !width || !height) return '-'
+  return `${length} x ${width} x ${height} cm`
+}
+
+function formatWeight(weight?: number) {
+  if (!weight) return '-'
+  return `${weight} kg`
+}
+
+function cargoTypeLabel(value?: string) {
+  const map: Record<string, string> = {
+    normal: '普通',
+    battery: '带电',
+    liquid: '液体',
+    sensitive: '敏感',
+  }
+  return map[value || 'normal'] || value || '-'
+}
+
+// ----- 运费试算预填辅助 -----
+
+function hasCompletePackage(row: any) {
+  return !!row.package_length_cm
+    && !!row.package_width_cm
+    && !!row.package_height_cm
+    && !!row.package_weight_kg
+}
+
+function buildCalculatorQuery(row: any) {
+  return {
+    length_cm: String(row.package_length_cm),
+    width_cm: String(row.package_width_cm),
+    height_cm: String(row.package_height_cm),
+    weight_kg: String(row.package_weight_kg),
+    cargo_type: row.cargo_type || 'normal',
+    quantity: '1',
+    source_product_id: String(row.id),
+    source_product_name: row.name || '',
+  }
+}
+
+function goShippingCalculator(row: any) {
+  if (!hasCompletePackage(row)) {
+    router.push(`/products/${row.id}/edit`)
+    return
+  }
+  router.push({
+    path: '/shipping/calculator',
+    query: buildCalculatorQuery(row),
+  })
+}
+
+// ----- 表格列定义 -----
 
 const columns = [
   { type: 'selection' as const },
-  { title: 'ID', key: 'id', width: 70 },
-  { title: '商品名称', key: 'name', ellipsis: { tooltip: true } },
-  { title: '分类', key: 'category_name' },
-  { title: '单位', key: 'unit', width: 60 },
-  { title: '状态', key: 'status_name', width: 80, render: (row: any) => {
+  { title: 'ID', key: 'id', width: 70, fixed: 'left' as const },
+  { title: '商品名称', key: 'name', minWidth: 220, ellipsis: { tooltip: true } },
+  { title: '分类', key: 'category_name', width: 120 },
+  {
+    title: '状态', key: 'status_name', width: 80,
+    render: (row: any) => {
       const map: Record<number, any> = { 0: { type: 'default', text: '草稿' }, 1: { type: 'success', text: '上架' }, 2: { type: 'warning', text: '下架' } }
       const s = map[row.status] || { type: 'default', text: '未知' }
       return h(NTag, { type: s.type, size: 'small' }, { default: () => s.text })
-    }
+    },
   },
-  { title: 'AI', key: 'ai_status', width: 70, render: (row: any) => {
-      if (!row.ai_status) return null
-      return h(NTag, { type: row.ai_status === 'completed' ? 'success' : row.ai_status === 'failed' ? 'error' : 'warning', size: 'small' }, { default: () => row.ai_status === 'completed' ? '已优化' : row.ai_status === 'failed' ? '失败' : '待处理' })
-    }
+  {
+    title: '货品', key: 'cargo_type', width: 90,
+    render: (row: any) => {
+      const colors: Record<string, string> = { normal: '#18a058', battery: '#d03050', liquid: '#2080f0', sensitive: '#f0a020' }
+      const bg = colors[row.cargo_type] || '#808080'
+      return h(NTag, { color: { color: bg, textColor: '#fff' }, size: 'small' }, { default: () => cargoTypeLabel(row.cargo_type) })
+    },
   },
-  { title: '平台', key: 'platform_statuses', width: 120, render: (row: any) => {
-      const ps = row.platform_statuses
-      if (!ps || !Object.keys(ps).length) return h('span', { style: 'color:#999;font-size:12px;' }, '未发布')
-      return h(NSpace, { size: 'small' }, {
-        default: () => Object.entries(ps).map(([platformId, status]) => {
-          const platformNames: Record<string, string> = { '1': 'Ozon', '2': 'Shopee' }
-          const name = platformNames[platformId] || `平台${platformId}`
-          return h(NTag, { size: 'tiny', type: status === 'synced' ? 'success' : 'warning' }, { default: () => name })
-        })
-      })
-    }
+  {
+    title: '商品尺寸', key: 'product_dimensions', width: 150,
+    render: (row: any) => formatDimensions(row.product_length_cm, row.product_width_cm, row.product_height_cm),
+  },
+  {
+    title: '商品重量', key: 'product_weight_kg', width: 100,
+    render: (row: any) => formatWeight(row.product_weight_kg),
+  },
+  {
+    title: '包装尺寸', key: 'package_dimensions', width: 150,
+    render: (row: any) => formatDimensions(row.package_length_cm, row.package_width_cm, row.package_height_cm),
+  },
+  {
+    title: '包装重量', key: 'package_weight_kg', width: 100,
+    render: (row: any) => formatWeight(row.package_weight_kg),
+  },
+  {
+    title: '计费体积重', key: 'package_volume_weight_kg', width: 110,
+    render: (row: any) => {
+      if (row.package_volume_weight_kg == null) return '-'
+      return `${row.package_volume_weight_kg} kg`
+    },
+  },
+  {
+    title: '物流状态', key: 'logistics_status', width: 180,
+    render: (row: any) => {
+      if (row.logistics_status === 'complete') {
+        return h(NTag, { type: 'success', size: 'small' }, { default: () => '可计算运费' })
+      }
+      const missing = (row.missing_logistics_fields || []).join('、') || '未知'
+      return h('div', [
+        h(NTag, { type: 'warning', size: 'small' }, { default: () => '缺物流数据' }),
+        h('div', { style: 'margin-top:4px;color:#d03050;font-size:12px;' }, `缺: ${missing}`),
+      ])
+    },
   },
   { title: '创建时间', key: 'created_at', width: 170 },
-  { title: '操作', width: 320, render: (row: any) => {
+  {
+    title: '操作', width: 350, fixed: 'right' as const,
+    render: (row: any) => {
       return h(NSpace, null, {
         default: () => [
           h(NButton, { size: 'small', onClick: () => router.push(`/products/${row.id}`) }, { default: () => '详情' }),
           h(NButton, { size: 'small', onClick: () => router.push(`/products/${row.id}/edit`) }, { default: () => '编辑' }),
           h(NButton, { size: 'small', onClick: () => router.push(`/products/${row.id}/skus`) }, { default: () => 'SKU' }),
-          h(NButton, { size: 'small', type: 'info', ghost: true, onClick: () => handleDuplicate(row) }, { default: () => '复制' }),
-          h(NButton, { size: 'small', type: 'error', ghost: true, onClick: () => handleDelete(row) }, { default: () => '删除' }),
+          h(NButton, { size: 'small', ghost: true, type: hasCompletePackage(row) ? 'info' : 'warning', onClick: () => goShippingCalculator(row) }, { default: () => hasCompletePackage(row) ? '运费试算' : '补物流' }),
+          h(NButton, { size: 'small', ghost: true, type: 'info', onClick: () => handleDuplicate(row) }, { default: () => '复制' }),
+          h(NButton, { size: 'small', ghost: true, type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }),
         ]
       })
-    }
+    },
   },
 ]
 
@@ -141,8 +276,25 @@ async function fetchData() {
 }
 
 function search() { query.page = 1; fetchData() }
-function reset() { query.name = ''; query.status = null; query.page = 1; fetchData() }
+function showIncompleteOnly() {
+  query.logistics_status = 'incomplete'
+  query.page = 1
+  fetchData()
+}
+function reset() {
+  query.name = ''
+  query.status = null
+  query.cargo_type = null
+  query.logistics_status = null
+  query.page = 1
+  fetchData()
+}
 function onPageChange(page: number) { query.page = page; fetchData() }
+function onPageSizeChange(pageSize: number) {
+  query.page_size = pageSize
+  query.page = 1
+  fetchData()
+}
 
 function handleDelete(row: any) {
   dialog.warning({
@@ -192,7 +344,12 @@ async function handleDownloadTemplate() {
 async function handleExport() {
   try {
     const response = await http.get('/products/export', {
-      params: { name: query.name || undefined, status: query.status ?? undefined },
+      params: {
+        name: query.name || undefined,
+        status: query.status ?? undefined,
+        cargo_type: query.cargo_type || undefined,
+        logistics_status: query.logistics_status || undefined,
+      },
       responseType: 'blob',
     })
     const url = window.URL.createObjectURL(new Blob([response as any]))

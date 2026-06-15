@@ -22,11 +22,13 @@ class InventoryCheck(BaseModel):
 
 class InventoryVO(BaseModel):
     """库存响应"""
-    id: int
+    id: int = 0
     sku_id: int
     warehouse: str = "默认仓库"
     location: Optional[str] = None
     quantity: int = 0
+    locked_quantity: int = 0
+    available_quantity: int = 0
     safety_stock: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

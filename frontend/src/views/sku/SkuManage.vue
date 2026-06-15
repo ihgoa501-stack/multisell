@@ -30,6 +30,11 @@
       <n-form-item label="条形码"><n-input v-model:value="editingSku.barcode" /></n-form-item>
       <n-form-item label="销售价"><n-input-number v-model:value="editingSku.price" :min="0" :precision="2" style="width: 150px;" /></n-form-item>
       <n-form-item label="库存"><n-input-number v-model:value="editingSku.stock" :min="0" style="width: 120px;" /></n-form-item>
+      <n-form-item label="重量(旧字段)"><n-input-number v-model:value="editingSku.weight" :min="0" :precision="2" style="width: 150px;" /></n-form-item>
+      <n-form-item label="包装长"><n-input-number v-model:value="editingSku.sku_length_cm" :min="0" :precision="2" style="width: 150px;"><template #suffix>cm</template></n-input-number></n-form-item>
+      <n-form-item label="包装宽"><n-input-number v-model:value="editingSku.sku_width_cm" :min="0" :precision="2" style="width: 150px;"><template #suffix>cm</template></n-input-number></n-form-item>
+      <n-form-item label="包装高"><n-input-number v-model:value="editingSku.sku_height_cm" :min="0" :precision="2" style="width: 150px;"><template #suffix>cm</template></n-input-number></n-form-item>
+      <n-form-item label="包装重量"><n-input-number v-model:value="editingSku.sku_weight_kg" :min="0" :precision="2" style="width: 150px;"><template #suffix>kg</template></n-input-number></n-form-item>
       <n-form-item label="状态">
         <n-switch v-model:value="editingSku.statusBool" :checked-value="true" :unchecked-value="false">
           <template #checked>启用</template>
@@ -105,6 +110,18 @@ const skuColumns = [
   { title: '规格描述', key: 'spec_desc', ellipsis: { tooltip: true } },
   { title: '价格', key: 'price', width: 100 },
   { title: '库存', key: 'stock', width: 80 },
+  { title: '包装覆盖', key: 'package_override', width: 180, render: (row: any) => {
+      if (
+        row.sku_length_cm != null &&
+        row.sku_width_cm != null &&
+        row.sku_height_cm != null &&
+        row.sku_weight_kg != null
+      ) {
+        return `${row.sku_length_cm} × ${row.sku_width_cm} × ${row.sku_height_cm} cm / ${row.sku_weight_kg} kg`
+      }
+      return '使用商品默认包装'
+    }
+  },
   { title: '条形码', key: 'barcode', width: 130 },
   { title: '状态', key: 'status', width: 70, render: (row: any) => h(NTag, { type: row.status === 1 ? 'success' : 'default', size: 'small' }, { default: () => row.status === 1 ? '启用' : '禁用' }) },
   { title: '操作', width: 100, render: (row: any) => h(NButton, { size: 'small', onClick: () => openEditSku(row) }, { default: () => '编辑' }) },
@@ -124,6 +141,11 @@ async function saveSku() {
       barcode: editingSku.value.barcode,
       price: editingSku.value.price,
       stock: editingSku.value.stock,
+      weight: editingSku.value.weight,
+      sku_length_cm: editingSku.value.sku_length_cm,
+      sku_width_cm: editingSku.value.sku_width_cm,
+      sku_height_cm: editingSku.value.sku_height_cm,
+      sku_weight_kg: editingSku.value.sku_weight_kg,
       status: editingSku.value.statusBool ? 1 : 0,
     }
     await skuApi.updateSku(editingSku.value.id, data)

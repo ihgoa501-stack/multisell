@@ -2,22 +2,14 @@
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.auth import require_permission
 from app.database import get_db
 from app.common import Result, PageResult
+from app.models import User
 from app.rbac.schemas import RoleCreate, RoleUpdate, RoleVO, PermissionCreate, PermissionUpdate, PermissionVO, AssignRolesData
 from app.rbac.service import RbacService
-from app.auth import get_current_user
-from app.config import settings
-from app.models import User
 
 router = APIRouter(prefix="/rbac", tags=["权限管理"])
-
-
-def require_auth(current_user: User = Depends(get_current_user)):
-    """当 AUTH_ENABLED=False 时跳过鉴权"""
-    if not settings.AUTH_ENABLED:
-        return None
-    return current_user
 
 
 # ==================== 角色接口 ====================
@@ -37,15 +29,22 @@ def role_to_vo(r) -> RoleVO:
 
 
 @router.post("/roles", summary="创建角色")
-async def create_role(data: RoleCreate, db: AsyncSession = Depends(get_db),
-                      _=Depends(require_auth)):
+async def create_role(
+    data: RoleCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:manage")),
+):
     r = await RbacService.create_role(db, data.model_dump())
     return Result.ok(role_to_vo(r))
 
 
 @router.put("/roles/{role_id}", summary="更新角色")
-async def update_role(role_id: int, data: RoleUpdate, db: AsyncSession = Depends(get_db),
-                      _=Depends(require_auth)):
+async def update_role(
+    role_id: int,
+    data: RoleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:manage")),
+):
     r = await RbacService.update_role(db, role_id, data.model_dump(exclude_unset=True))
     if not r:
         return Result.not_found("角色不存在")
@@ -53,8 +52,11 @@ async def update_role(role_id: int, data: RoleUpdate, db: AsyncSession = Depends
 
 
 @router.get("/roles/{role_id}", summary="角色详情")
-async def get_role(role_id: int, db: AsyncSession = Depends(get_db),
-                   _=Depends(require_auth)):
+async def get_role(
+    role_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:view")),
+):
     r = await RbacService.get_role(db, role_id)
     if not r:
         return Result.not_found("角色不存在")
@@ -67,7 +69,7 @@ async def list_roles(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_auth),
+    current_user: User = Depends(require_permission("rbac:view")),
 ):
     roles, total = await RbacService.list_roles(db, name, page, page_size)
     items = [role_to_vo(r) for r in roles]
@@ -75,8 +77,11 @@ async def list_roles(
 
 
 @router.delete("/roles/{role_id}", summary="删除角色")
-async def delete_role(role_id: int, db: AsyncSession = Depends(get_db),
-                      _=Depends(require_auth)):
+async def delete_role(
+    role_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:manage")),
+):
     ok = await RbacService.delete_role(db, role_id)
     if not ok:
         return Result.not_found("角色不存在")
@@ -85,8 +90,10 @@ async def delete_role(role_id: int, db: AsyncSession = Depends(get_db),
 
 @router.post("/roles/{role_id}/permissions", summary="为角色分配权限")
 async def assign_role_permissions(
-    role_id: int, data: AssignRolesData, db: AsyncSession = Depends(get_db),
-    _=Depends(require_auth),
+    role_id: int,
+    data: AssignRolesData,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:manage")),
 ):
     try:
         r = await RbacService.assign_permissions_to_role(db, role_id, data.role_ids)
@@ -110,15 +117,22 @@ def permission_to_vo(p) -> PermissionVO:
 
 
 @router.post("/permissions", summary="创建权限")
-async def create_permission(data: PermissionCreate, db: AsyncSession = Depends(get_db),
-                            _=Depends(require_auth)):
+async def create_permission(
+    data: PermissionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:manage")),
+):
     p = await RbacService.create_permission(db, data.model_dump())
     return Result.ok(permission_to_vo(p))
 
 
 @router.put("/permissions/{perm_id}", summary="更新权限")
-async def update_permission(perm_id: int, data: PermissionUpdate, db: AsyncSession = Depends(get_db),
-                            _=Depends(require_auth)):
+async def update_permission(
+    perm_id: int,
+    data: PermissionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:manage")),
+):
     p = await RbacService.update_permission(db, perm_id, data.model_dump(exclude_unset=True))
     if not p:
         return Result.not_found("权限不存在")
@@ -126,8 +140,11 @@ async def update_permission(perm_id: int, data: PermissionUpdate, db: AsyncSessi
 
 
 @router.get("/permissions/{perm_id}", summary="权限详情")
-async def get_permission(perm_id: int, db: AsyncSession = Depends(get_db),
-                         _=Depends(require_auth)):
+async def get_permission(
+    perm_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:view")),
+):
     p = await RbacService.get_permission(db, perm_id)
     if not p:
         return Result.not_found("权限不存在")
@@ -141,7 +158,7 @@ async def list_permissions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_auth),
+    current_user: User = Depends(require_permission("rbac:view")),
 ):
     perms, total = await RbacService.list_permissions(db, name, module, page, page_size)
     items = [permission_to_vo(p) for p in perms]
@@ -149,8 +166,11 @@ async def list_permissions(
 
 
 @router.delete("/permissions/{perm_id}", summary="删除权限")
-async def delete_permission(perm_id: int, db: AsyncSession = Depends(get_db),
-                            _=Depends(require_auth)):
+async def delete_permission(
+    perm_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:manage")),
+):
     ok = await RbacService.delete_permission(db, perm_id)
     if not ok:
         return Result.not_found("权限不存在")
@@ -162,8 +182,10 @@ async def delete_permission(perm_id: int, db: AsyncSession = Depends(get_db),
 
 @router.post("/users/{user_id}/roles", summary="为用户分配角色")
 async def assign_user_roles(
-    user_id: int, data: AssignRolesData, db: AsyncSession = Depends(get_db),
-    _=Depends(require_auth),
+    user_id: int,
+    data: AssignRolesData,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:manage")),
 ):
     try:
         user = await RbacService.assign_roles_to_user(db, user_id, data.role_ids)
@@ -177,8 +199,9 @@ async def assign_user_roles(
 
 @router.get("/users/{user_id}/permissions", summary="获取用户权限")
 async def get_user_permissions(
-    user_id: int, db: AsyncSession = Depends(get_db),
-    _=Depends(require_auth),
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("rbac:view")),
 ):
     perms = await RbacService.get_user_permissions(db, user_id)
     items = [permission_to_vo(p) for p in perms]
@@ -191,7 +214,7 @@ async def list_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_auth),
+    current_user: User = Depends(require_permission("rbac:view")),
 ):
     users, total = await RbacService.list_users(db, username, page, page_size)
 

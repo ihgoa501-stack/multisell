@@ -30,6 +30,10 @@ class SkuUpdate(BaseModel):
     code: Optional[str] = Field(None, description="SKU编码")
     image: Optional[str] = Field(None, description="图片")
     weight: Optional[float] = Field(None, description="重量(kg)")
+    sku_length_cm: Optional[float] = Field(None, gt=0, description="SKU包装长(cm)")
+    sku_width_cm: Optional[float] = Field(None, gt=0, description="SKU包装宽(cm)")
+    sku_height_cm: Optional[float] = Field(None, gt=0, description="SKU包装高(cm)")
+    sku_weight_kg: Optional[float] = Field(None, gt=0, description="SKU包装重量(kg)")
     warning_stock: Optional[int] = Field(None, description="安全库存")
     status: Optional[int] = Field(None, description="状态")
 
@@ -70,6 +74,10 @@ class SkuVO(BaseModel):
     lock_stock: int = 0
     warning_stock: int = 0
     weight: Optional[float] = None
+    sku_length_cm: Optional[float] = None
+    sku_width_cm: Optional[float] = None
+    sku_height_cm: Optional[float] = None
+    sku_weight_kg: Optional[float] = None
     image: Optional[str] = None
     status: int = 1
     created_at: Optional[datetime] = None

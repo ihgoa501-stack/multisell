@@ -30,6 +30,12 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """创建所有表（仅开发环境用）"""
+    """创建所有表（仅开发/测试环境用 — 推荐使用 alembic upgrade head）"""
+    import warnings
+    warnings.warn(
+        "init_db() 已弃用，请使用 alembic upgrade head 管理数据库迁移",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

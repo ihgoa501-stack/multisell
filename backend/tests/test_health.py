@@ -13,4 +13,4 @@ class TestHealth:
         data = resp.json()
         assert data["status"] == "ok"
         assert "service" in data
-        assert "MultiSell" in data["service"]
+        assert "凌镜 LingMirror" in data["service"]

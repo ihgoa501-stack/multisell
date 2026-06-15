@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.models import SpecName, SpecValue, Sku
+from app.models import Inventory, Price, SpecName, SpecValue, Sku
 
 
 class SpecService:
@@ -70,10 +70,16 @@ class SpecService:
         # 笛卡尔积生成所有组合
         combinations = list(itertools.product(*spec_groups))
 
-        # 删除旧SKU
-        await db.execute(delete(Sku).where(Sku.product_id == product_id))
+        existing_result = await db.execute(
+            select(Sku).where(Sku.product_id == product_id).order_by(Sku.id)
+        )
+        existing_skus = list(existing_result.scalars().all())
+        existing_by_spec = {
+            tuple(sorted((sku.spec_values or {}).items())): sku
+            for sku in existing_skus
+        }
 
-        # 创建新SKU
+        desired_keys = set()
         skus = []
         for idx, combo in enumerate(combinations):
             spec_desc_parts = []
@@ -84,15 +90,38 @@ class SpecService:
 
             spec_desc = "-".join(spec_desc_parts)
             code = f"SKU-{product_id}-{idx + 1:04d}"
+            key = tuple(sorted(spec_values_map.items()))
+            desired_keys.add(key)
 
-            sku = Sku(
-                product_id=product_id,
-                code=code,
-                spec_desc=spec_desc,
-                spec_values=spec_values_map,
-            )
-            db.add(sku)
+            sku = existing_by_spec.get(key)
+            if sku:
+                sku.code = sku.code or code
+                sku.spec_desc = spec_desc
+                sku.status = 1
+            else:
+                sku = Sku(
+                    product_id=product_id,
+                    code=code,
+                    spec_desc=spec_desc,
+                    spec_values=spec_values_map,
+                )
+                db.add(sku)
             skus.append(sku)
+
+        for sku in existing_skus:
+            key = tuple(sorted((sku.spec_values or {}).items()))
+            if key in desired_keys:
+                continue
+            has_inventory = await db.scalar(
+                select(Inventory.id).where(Inventory.sku_id == sku.id).limit(1)
+            )
+            has_price = await db.scalar(
+                select(Price.id).where(Price.sku_id == sku.id).limit(1)
+            )
+            if has_inventory or has_price:
+                sku.status = 0
+            else:
+                await db.delete(sku)
 
         await db.flush()
         return skus

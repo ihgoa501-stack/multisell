@@ -19,7 +19,7 @@ const baseRoutes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/dashboard/Dashboard.vue'),
-        meta: { title: '首页', icon: 'home', menu: true },
+        meta: { title: '首页', icon: 'home', menu: true, perm: 'dashboard:view' },
       },
       {
         path: 'products',
@@ -73,7 +73,7 @@ const baseRoutes: RouteRecordRaw[] = [
         path: 'suppliers',
         name: 'SupplierList',
         component: () => import('@/views/supplier/SupplierList.vue'),
-        meta: { title: '供应商管理', icon: 'people', menu: true },
+        meta: { title: '供应商管理', icon: 'people', menu: true, perm: 'supplier:view' },
       },
       {
         path: 'brands',
@@ -85,25 +85,25 @@ const baseRoutes: RouteRecordRaw[] = [
         path: 'operation-logs',
         name: 'OperationLog',
         component: () => import('@/views/operation_log/OperationLog.vue'),
-        meta: { title: '操作日志', icon: 'doc-text', menu: true },
+        meta: { title: '操作日志', icon: 'doc-text', menu: true, perm: 'operation_log:view' },
       },
       {
         path: 'platforms',
         name: 'PlatformList',
         component: () => import('@/views/platform/PlatformList.vue'),
-        meta: { title: '平台管理', icon: 'globe', menu: true },
+        meta: { title: '平台管理', icon: 'globe', menu: true, perm: 'platform:view' },
       },
       {
         path: 'listings',
         name: 'ListingManage',
         component: () => import('@/views/listing/ListingManage.vue'),
-        meta: { title: '发布管理', icon: 'archive', menu: true },
+        meta: { title: '发布管理', icon: 'archive', menu: true, perm: 'listing:view' },
       },
       {
         path: 'inventory/alerts',
         name: 'InventoryAlerts',
         component: () => import('@/views/inventory/InventoryAlerts.vue'),
-        meta: { title: '库存预警', icon: 'warning', menu: true },
+        meta: { title: '库存预警', icon: 'warning', menu: true, perm: 'inventory:view' },
       },
     ],
   },
@@ -142,13 +142,13 @@ const router = createRouter({
   routes,
 })
 
-// 路由守卫
+// 路由守卫 — 未登录跳转 /login 并保留 redirect
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
   if (to.meta.noAuth) {
     next()
   } else if (!token) {
-    next('/login')
+    next(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
   } else {
     next()
   }

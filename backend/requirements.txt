@@ -13,4 +13,4 @@ httpx==0.28.1
 openpyxl
 cryptography
 passlib
-bcrypt
+bcrypt==4.1.3

@@ -73,12 +73,14 @@ class PriceService:
 
     @staticmethod
     async def get_current_price(db: AsyncSession, sku_id: int) -> Optional[Price]:
-        """获取当前有效销售价"""
+        """获取当前有效销售价（按 start_time <= now < end_time 计算）"""
         now = datetime.utcnow()
         stmt = select(Price).where(
             Price.sku_id == sku_id,
             Price.price_type == "sale_price",
             Price.status == 1,
+            (Price.start_time.is_(None) | (Price.start_time <= now)),
+            (Price.end_time.is_(None) | (Price.end_time > now)),
         ).order_by(Price.created_at.desc()).limit(1)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()

@@ -30,7 +30,7 @@ from app.database import Base
 from app.models import (
     User, Category, Platform, Brand,
     Product, SpecName, SpecValue, Sku,
-    Inventory,
+    Inventory, Permission,
 )
 from app.auth.service import hash_password
 
@@ -72,6 +72,15 @@ SEED_BRANDS = [
     ("BeautyGlow", "高端美妆品牌，源自韩国科研配方"),
     ("FreshFood",  "健康食品品牌，从农场到餐桌"),
     ("SportMax",   "专业运动品牌，助力极限挑战"),
+]
+
+SEED_PERMISSIONS = [
+    {"code": "order:view", "name": "查看订单", "module": "order"},
+    {"code": "order:create", "name": "创建订单", "module": "order"},
+    {"code": "order:update", "name": "更新订单", "module": "order"},
+    {"code": "order:update_status", "name": "更新订单状态", "module": "order"},
+    {"code": "order:cancel", "name": "取消订单", "module": "order"},
+    {"code": "decision:calculate", "name": "上架前决策计算", "module": "decision"},
 ]
 
 SEED_PRODUCTS = [
@@ -177,14 +186,15 @@ SEED_PRODUCTS = [
 
 # ── 辅助函数 ────────────────────────────────────────────────────────
 
-async def get_or_create(session: AsyncSession, model, **filters):
-    """查找已有记录，若不存在则创建。"""
+async def get_or_create(session: AsyncSession, model, defaults: dict | None = None, **filters):
+    """查找已有记录，若不存在则创建（可指定默认字段值）。"""
     stmt = select(model).filter_by(**filters)
     result = await session.execute(stmt)
     instance = result.scalar_one_or_none()
     if instance:
         return instance, False
-    instance = model(**filters)
+    init_data = {**filters, **(defaults or {})}
+    instance = model(**init_data)
     session.add(instance)
     await session.flush()
     return instance, True
@@ -193,17 +203,39 @@ async def get_or_create(session: AsyncSession, model, **filters):
 async def seed_users(session: AsyncSession):
     """创建默认管理员账号。"""
     print("  └─ 创建管理员账号...")
-    admin, created = await get_or_create(session, User, username="admin")
-    if created:
-        admin.password_hash = hash_password("admin123")
-        admin.display_name = "系统管理员"
-        admin.role = "admin"
-        admin.email = "admin@multisell.com"
-        admin.status = 1
-        await session.flush()
-        print(f"     ✔ 管理员 admin / admin123 已创建 (id={admin.id})")
-    else:
+    stmt = select(User).where(User.username == "admin")
+    result = await session.execute(stmt)
+    admin = result.scalar_one_or_none()
+    if admin:
         print(f"     → 管理员已存在 (id={admin.id})，跳过")
+        return
+    admin = User(
+        username="admin",
+        password_hash=hash_password("admin123"),
+        display_name="系统管理员",
+        role="admin",
+        email="admin@multisell.com",
+        status=1,
+    )
+    session.add(admin)
+    await session.flush()
+    print(f"     ✔ 管理员 admin / admin123 已创建 (id={admin.id})")
+
+
+async def seed_permissions(session: AsyncSession):
+    """创建基础权限码。"""
+    print("  └─ 创建权限码...")
+    for item in SEED_PERMISSIONS:
+        permission, created = await get_or_create(
+            session,
+            Permission,
+            defaults={"name": item["name"], "module": item["module"]},
+            code=item["code"],
+        )
+        if created:
+            print(f"     ✔ {permission.code}")
+        else:
+            print(f"     → {permission.code} 已存在，跳过")
 
 
 async def seed_categories(session: AsyncSession) -> dict[str, int]:
@@ -212,12 +244,13 @@ async def seed_categories(session: AsyncSession) -> dict[str, int]:
     name_id_map: dict[str, int] = {}
 
     for name, parent_name, level, sort_order in SEED_CATEGORIES:
-        cat, created = await get_or_create(session, Category, name=name)
+        cat, created = await get_or_create(
+            session, Category,
+            defaults=dict(level=level, sort_order=sort_order, status=1),
+            name=name,
+        )
         if created:
             cat.parent_id = name_id_map.get(parent_name, 0)
-            cat.level = level
-            cat.sort_order = sort_order
-            cat.status = 1
             await session.flush()
             print(f"     ✔ {name} (id={cat.id})")
         else:
@@ -231,13 +264,12 @@ async def seed_platforms(session: AsyncSession):
     """创建示例平台。"""
     print("  └─ 创建平台...")
     for name, code, api_base, sort_order in SEED_PLATFORMS:
-        platform, created = await get_or_create(session, Platform, code=code)
+        platform, created = await get_or_create(
+            session, Platform,
+            defaults=dict(name=name, api_base_url=api_base, sort_order=sort_order, status=1),
+            code=code,
+        )
         if created:
-            platform.name = name
-            platform.api_base_url = api_base
-            platform.sort_order = sort_order
-            platform.status = 1
-            await session.flush()
             print(f"     ✔ {name} ({code}) (id={platform.id})")
         else:
             print(f"     → {name} ({code}) 已存在 (id={platform.id})，跳过")
@@ -247,12 +279,12 @@ async def seed_brands(session: AsyncSession):
     """创建示例品牌。"""
     print("  └─ 创建品牌...")
     for name, desc in SEED_BRANDS:
-        brand, created = await get_or_create(session, Brand, name=name)
+        brand, created = await get_or_create(
+            session, Brand,
+            defaults=dict(description=desc, status=1, sort_order=0),
+            name=name,
+        )
         if created:
-            brand.description = desc
-            brand.status = 1
-            brand.sort_order = 0
-            await session.flush()
             print(f"     ✔ {name} (id={brand.id})")
         else:
             print(f"     → {name} 已存在 (id={brand.id})，跳过")
@@ -354,16 +386,19 @@ async def seed():
             print("📋 第1步：创建管理员账号")
             await seed_users(session)
 
-            print("\n📋 第2步：创建分类数据")
+            print("\n📋 第2步：创建权限码")
+            await seed_permissions(session)
+
+            print("\n📋 第3步：创建分类数据")
             category_ids = await seed_categories(session)
 
-            print("\n📋 第3步：创建平台数据")
+            print("\n📋 第4步：创建平台数据")
             await seed_platforms(session)
 
-            print("\n📋 第4步：创建品牌数据")
+            print("\n📋 第5步：创建品牌数据")
             await seed_brands(session)
 
-            print("\n📋 第5步：创建商品和 SKU")
+            print("\n📋 第6步：创建商品和 SKU")
             await seed_products_and_skus(session, category_ids)
 
             await session.commit()

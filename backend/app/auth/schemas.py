@@ -23,6 +23,7 @@ class UserVO(BaseModel):
     role: str = "user"
     email: Optional[str] = None
     status: int = 1
+    permissions: list[str] = []
     created_at: Optional[datetime] = None
 
     class Config:

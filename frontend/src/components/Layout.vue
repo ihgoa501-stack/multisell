@@ -3,7 +3,14 @@
     <n-layout position="absolute" style="height: 100vh">
       <n-layout-header bordered style="height: 48px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; background: #2c3e50;">
         <div style="display: flex; align-items: center; gap: 12px;">
-          <h2 style="margin: 0; color: #fff; font-size: 16px; letter-spacing: 1px;">🌐 MultiSell</h2>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <img
+              src="/brand/lingmirror-icon.png"
+              alt="凌镜"
+              style="width: 24px; height: 24px; border-radius: 6px;"
+            />
+            <h2 style="margin: 0; color: #fff; font-size: 16px; letter-spacing: 1px;">凌镜</h2>
+          </div>
         <n-auto-complete
           v-model:value="searchQuery"
           :options="searchOptions"
@@ -111,13 +118,31 @@ function toggleTheme() {
 }
 
 // 用户信息
-const user = JSON.parse(localStorage.getItem('user') || '{}')
-const userDisplayName = computed(() => user?.display_name || user?.username || '未登录')
+const user = ref<any>(JSON.parse(localStorage.getItem('user') || '{}'))
+const userPermissions = ref<string[]>(user.value?.permissions || [])
+const userDisplayName = computed(() => user.value?.display_name || user.value?.username || '未登录')
 
 function handleLogout() {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
   window.location.href = '/login'
+}
+
+// 从 /auth/me 加载当前用户信息和权限
+async function loadUserPermissions() {
+  const token = localStorage.getItem('token')
+  if (!token) return
+  try {
+    const res: any = await http.get('/auth/me')
+    if (res.code === 200) {
+      const me = res.data
+      user.value = me
+      localStorage.setItem('user', JSON.stringify(me))
+      userPermissions.value = me.permissions || []
+    }
+  } catch {
+    // ignore
+  }
 }
 
 async function doSearch(q: string) {
@@ -175,23 +200,33 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => document.addEventListener('keydown', handleKeydown))
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown)
+  loadUserPermissions()
+})
 onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
-// ========== 从路由自动生成侧边菜单 ==========
-// 读取所有路由配置中 meta.menu === true 且 meta.icon 存在的项
-// 新模块只需在 router/modules/ 里定义路由时设置 meta: { menu: true, icon: 'xxx' }
-// 菜单项就会自动出现，不需要改 Layout.vue。
+// ========== 从路由自动生成侧边菜单（带权限过滤） ==========
+// 每个路由 meta 可设置:
+//   menu: true              显示在侧边栏
+//   icon: 'xxx'             图标 key
+//   perm: 'module:action'   需要的权限码（可选）
+// admin 用户看到所有菜单；普通用户只看到有权限的菜单
 const menuOptions = computed(() => {
   const items: any[] = []
-  // 获取当前路由实例的所有扁平化路由记录
   const flatRoutes = router.getRoutes()
-  // 收集所有有菜单标记的路由
   const seen = new Set<string>()
+  const perms = userPermissions.value
+  const isAdmin = user.value?.role === 'admin'
+
   for (const r of flatRoutes) {
     const meta = r.meta as Record<string, any> | undefined
     if (meta?.menu === true && meta?.title && meta?.icon && !seen.has(r.path)) {
       seen.add(r.path)
+      // 权限过滤：admin 或无 perm 要求的菜单始终显示
+      if (!isAdmin && meta.perm && !perms.includes(meta.perm)) {
+        continue
+      }
       items.push({
         label: meta.title,
         key: r.path,
