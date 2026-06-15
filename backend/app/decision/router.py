@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_permission
 from app.common.schemas import Result
 from app.database import get_db
-from app.decision.schemas import PreListingDecisionRequest, PreListingDecisionResponse
+from app.decision.schemas import (
+    PreListingDecisionBatchRequest,
+    PreListingDecisionBatchResponse,
+    PreListingDecisionRequest,
+    PreListingDecisionResponse,
+)
 from app.decision.service import PreListingDecisionService
 from app.models import User
 
@@ -24,3 +29,13 @@ async def prelisting_decision(
         return Result.ok(result)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/prelisting/batch", summary="批量上架前经营决策")
+async def prelisting_decision_batch(
+    data: PreListingDecisionBatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("decision:calculate")),
+) -> Result[PreListingDecisionBatchResponse]:
+    result = await PreListingDecisionService.calculate_batch(db, data)
+    return Result.ok(result)

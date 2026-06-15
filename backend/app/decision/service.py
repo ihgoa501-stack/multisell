@@ -7,6 +7,10 @@ from app.models import Sku, Product
 from app.shipping.schemas import CalculateRequest, CalculateResponse
 from app.shipping.service import CalculateService
 from app.decision.schemas import (
+    PreListingDecisionBatchItemResult,
+    PreListingDecisionBatchRequest,
+    PreListingDecisionBatchResponse,
+    PreListingDecisionBatchSummary,
     PreListingDecisionRequest,
     PreListingDecisionResponse,
 )
@@ -138,4 +142,71 @@ class PreListingDecisionService:
             applied_platform_fee_rule_id=applied_platform_fee_rule_id,
             platform_fee_source=platform_fee_source,
             platform_fee_rule_summary=platform_fee_rule_summary,
+        )
+
+    @staticmethod
+    async def calculate_batch(
+        db: AsyncSession,
+        req: PreListingDecisionBatchRequest,
+    ) -> PreListingDecisionBatchResponse:
+        item_results: list[PreListingDecisionBatchItemResult] = []
+        approve_count = 0
+        reject_count = 0
+        needs_data_count = 0
+        error_count = 0
+        margin_sum = 0.0
+        margin_count = 0
+
+        for index, item in enumerate(req.items):
+            try:
+                single_req = PreListingDecisionRequest(
+                    **item.model_dump(exclude={"item_key"})
+                )
+                result = await PreListingDecisionService.calculate(db, single_req)
+                if result.recommendation == "approve":
+                    approve_count += 1
+                elif result.recommendation == "reject":
+                    reject_count += 1
+                elif result.recommendation == "needs_data":
+                    needs_data_count += 1
+
+                margin_sum += result.profit_margin
+                margin_count += 1
+                item_results.append(
+                    PreListingDecisionBatchItemResult(
+                        index=index,
+                        item_key=item.item_key,
+                        sku_id=item.sku_id,
+                        status="success",
+                        result=result,
+                        error_message=None,
+                    )
+                )
+            except ValueError as exc:
+                error_count += 1
+                item_results.append(
+                    PreListingDecisionBatchItemResult(
+                        index=index,
+                        item_key=item.item_key,
+                        sku_id=item.sku_id,
+                        status="error",
+                        result=None,
+                        error_message=str(exc),
+                    )
+                )
+
+        success_count = len(req.items) - error_count
+        average_profit_margin = round(margin_sum / margin_count, 2) if margin_count else 0
+
+        return PreListingDecisionBatchResponse(
+            summary=PreListingDecisionBatchSummary(
+                total_items=len(req.items),
+                success_count=success_count,
+                error_count=error_count,
+                approve_count=approve_count,
+                reject_count=reject_count,
+                needs_data_count=needs_data_count,
+                average_profit_margin=average_profit_margin,
+            ),
+            items=item_results,
         )
