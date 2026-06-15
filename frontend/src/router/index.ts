@@ -25,7 +25,7 @@ const baseRoutes: RouteRecordRaw[] = [
         path: 'products',
         name: 'ProductList',
         component: () => import('@/views/product/ProductList.vue'),
-        meta: { title: '商品列表', icon: 'list', menu: true },
+        meta: { title: '商品列表', icon: 'list', menu: true, perm: 'product:view' },
       },
       {
         path: 'products/create',
@@ -49,7 +49,7 @@ const baseRoutes: RouteRecordRaw[] = [
         path: 'categories',
         name: 'CategoryList',
         component: () => import('@/views/category/CategoryList.vue'),
-        meta: { title: '分类管理', icon: 'layers', menu: true },
+        meta: { title: '分类管理', icon: 'layers', menu: true, perm: 'category:view' },
       },
       {
         path: 'products/:id/skus',
@@ -79,7 +79,7 @@ const baseRoutes: RouteRecordRaw[] = [
         path: 'brands',
         name: 'BrandList',
         component: () => import('@/views/brand/BrandList.vue'),
-        meta: { title: '品牌管理', icon: 'tag', menu: true },
+        meta: { title: '品牌管理', icon: 'tag', menu: true, perm: 'brand:view' },
       },
       {
         path: 'operation-logs',

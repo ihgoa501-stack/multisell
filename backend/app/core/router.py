@@ -192,7 +192,11 @@ async def update_product(
 
 
 @router.get("/products/{product_id}", summary="商品详情")
-async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
+async def get_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_permission("product:view")),
+):
     product = await ProductService.get_by_id(db, product_id)
     if not product:
         return Result.not_found("商品不存在")
@@ -210,6 +214,7 @@ async def list_products(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_permission("product:view")),
 ):
     query = ProductQuery(name=name, category_id=category_id, status=status, brand_id=brand_id, cargo_type=cargo_type, logistics_status=logistics_status, page=page, page_size=page_size)
     products, total = await ProductService.list_products(db, query)
@@ -290,7 +295,11 @@ async def duplicate_product(
 
 
 @router.get("/products/{product_id}/detail", summary="商品聚合详情")
-async def get_product_detail(product_id: int, db: AsyncSession = Depends(get_db)):
+async def get_product_detail(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_permission("product:view")),
+):
     try:
         data = await ProductDetailService.get_detail(db, product_id)
         return Result.ok(data)

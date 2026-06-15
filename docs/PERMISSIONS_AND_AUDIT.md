@@ -71,7 +71,9 @@ async def create_example(
 
 | 模块 | 权限码 | 审计日志 |
 | --- | --- | --- |
-| 商品 | `product:create`, `product:update`, `product:delete`, `product:import`, `product:export`, `product:ai` | 已覆盖 |
+| 商品 | `product:view`, `product:create`, `product:update`, `product:delete`, `product:import`, `product:export`, `product:ai` | 已覆盖 |
+| 分类 | `category:view`, `category:create`, `category:update`, `category:delete` | 已覆盖 |
+| 品牌 | `brand:view`, `brand:create`, `brand:update`, `brand:delete` | 已覆盖 |
 | SKU | `sku:view`, `sku:create`, `sku:update`, `sku:delete` | 已覆盖 |
 | 价格 | `price:view`, `price:update`, `price:batch_update` | 已覆盖 |
 | 库存 | `inventory:view`, `inventory:update`, `inventory:adjust` | 已覆盖 |
@@ -81,17 +83,7 @@ async def create_example(
 | 上架决策 | `decision:calculate` | 无写操作 |
 | 物流运费 | `shipping:view`, `shipping:manage`, `shipping:calculate` | 已覆盖 |
 | 订单 | `order:view`, `order:create`, `order:update`, `order:update_status`, `order:cancel` | 已覆盖 |
-
-仍需补齐：
-
-Reasonix 本轮没有覆盖分类、品牌、商品读取和全局搜索。后续建议补齐：
-
-| 模块 | 权限码 |
-| --- | --- |
-| 分类 | `category:view`, `category:create`, `category:update`, `category:delete` |
-| 品牌 | `brand:view`, `brand:create`, `brand:update`, `brand:delete` |
-| 商品读取 | `product:view` |
-| 搜索 | `search:view` |
+| 搜索 | `search:view` | 无写操作 |
 
 ## 审计日志规则
 
@@ -129,6 +121,8 @@ await OperationLogService.log(
 | 模块 | 审计操作 |
 | --- | --- |
 | 商品 | create, update, delete, batch_update_status, batch_delete, duplicate, import, export, ai_enhance |
+| 分类 | create, update, delete |
+| 品牌 | create, update, delete |
 | 订单 | create, update_status, cancel, bind_shipping_quote, update_profit_inputs |
 | 库存 | update |
 | 价格 | set_price, batch_update |
