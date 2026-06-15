@@ -91,6 +91,9 @@ SEED_PERMISSIONS = [
     {"code": "brand:delete", "name": "删除品牌", "module": "brand"},
     {"code": "search:view", "name": "全局搜索", "module": "search"},
     {"code": "decision:calculate", "name": "上架前决策计算", "module": "decision"},
+    {"code": "platform_fee:view", "name": "查看平台费用规则", "module": "platform_fee"},
+    {"code": "platform_fee:manage", "name": "管理平台费用规则", "module": "platform_fee"},
+    {"code": "platform_fee:calculate", "name": "匹配平台费用规则", "module": "platform_fee"},
 ]
 
 SEED_PRODUCTS = [
