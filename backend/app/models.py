@@ -554,6 +554,42 @@ class ExceptionItem(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
+AGENT_ACTION_STATUS_FLOW = {
+    "proposed": {"approved", "rejected"},
+    "approved": {"executed"},
+    "rejected": set(),
+    "executed": set(),
+}
+
+
+class AgentAction(Base):
+    """Agent 动作提案与审批"""
+    __tablename__ = "agent_action"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    source_module = Column(String(50), comment="来源模块")
+    source_type = Column(String(50), comment="来源类型")
+    source_id = Column(BigInteger, comment="来源ID")
+    exception_id = Column(BigInteger, ForeignKey("exception_item.id"), comment="关联异常ID")
+    action_type = Column(String(100), nullable=False, comment="动作类型")
+    title = Column(String(300), nullable=False, comment="动作标题")
+    description = Column(Text, comment="动作描述")
+    proposed_payload = Column(JSON, comment="动作提议参数")
+    before_snapshot = Column(JSON, comment="执行前状态快照")
+    after_snapshot = Column(JSON, comment="执行后状态快照")
+    status = Column(String(30), default="proposed", comment="proposed/approved/rejected/executed")
+    proposed_by = Column(String(100), comment="提议人")
+    approved_by = Column(String(100), comment="审批人")
+    approved_at = Column(DateTime(timezone=True), comment="审批时间")
+    rejected_by = Column(String(100), comment="驳回人")
+    rejected_at = Column(DateTime(timezone=True), comment="驳回时间")
+    rejection_reason = Column(Text, comment="驳回原因")
+    executed_by = Column(String(100), comment="执行人")
+    executed_at = Column(DateTime(timezone=True), comment="执行时间")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 class User(Base):
     """用户"""
     __tablename__ = "user"

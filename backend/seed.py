@@ -108,6 +108,10 @@ SEED_PERMISSIONS = [
     {"code": "exception:generate", "name": "生成异常", "module": "exception"},
     {"code": "exception:view", "name": "查看异常", "module": "exception"},
     {"code": "exception:manage", "name": "管理异常", "module": "exception"},
+    {"code": "agent_action:propose", "name": "提议Agent动作", "module": "agent_action"},
+    {"code": "agent_action:view", "name": "查看Agent动作", "module": "agent_action"},
+    {"code": "agent_action:approve", "name": "审批Agent动作", "module": "agent_action"},
+    {"code": "agent_action:execute", "name": "执行Agent动作", "module": "agent_action"},
 ]
 
 SEED_PRODUCTS = [

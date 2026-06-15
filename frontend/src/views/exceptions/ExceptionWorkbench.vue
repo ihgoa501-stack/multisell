@@ -44,6 +44,13 @@
     <n-card style="margin-top: 12px;" :bordered="false">
       <n-data-table :columns="columns" :data="items" :loading="loading" :pagination="{ pageSize: 20 }" />
     </n-card>
+
+    <!-- Agent Action Drawer -->
+    <n-drawer v-model:show="showActionPanel" :width="600" placement="right">
+      <n-drawer-content title="Agent 动作提案" closable>
+        <AgentActionPanel v-if="actionExceptionId" :exception-id="actionExceptionId" />
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
@@ -51,6 +58,7 @@
 import { h, onMounted, ref } from 'vue'
 import { NButton, NSpace, NTag, useMessage, useDialog } from 'naive-ui'
 import CostLayerTag from '@/components/CostLayerTag.vue'
+import AgentActionPanel from '@/components/AgentActionPanel.vue'
 import {
   generateExceptions,
   getExceptions,
@@ -156,10 +164,18 @@ const columns = [
             onClick: () => handleIgnore(row),
             disabled: row.status === 'resolved' || row.status === 'ignored',
           }, { default: () => '忽略' }),
+          h(NButton, {
+            size: 'small',
+            tertiary: true,
+            onClick: () => { actionExceptionId = row.id; showActionPanel = true },
+          }, { default: () => '提案' }),
         ],
       }),
   },
 ]
+
+const actionExceptionId = ref<number | null>(null)
+const showActionPanel = ref(false)
 
 async function fetchItems() {
   loading.value = true
