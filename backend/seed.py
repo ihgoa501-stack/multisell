@@ -75,11 +75,21 @@ SEED_BRANDS = [
 ]
 
 SEED_PERMISSIONS = [
+    {"code": "product:view", "name": "查看商品", "module": "product"},
     {"code": "order:view", "name": "查看订单", "module": "order"},
     {"code": "order:create", "name": "创建订单", "module": "order"},
     {"code": "order:update", "name": "更新订单", "module": "order"},
     {"code": "order:update_status", "name": "更新订单状态", "module": "order"},
     {"code": "order:cancel", "name": "取消订单", "module": "order"},
+    {"code": "category:view", "name": "查看分类", "module": "category"},
+    {"code": "category:create", "name": "创建分类", "module": "category"},
+    {"code": "category:update", "name": "更新分类", "module": "category"},
+    {"code": "category:delete", "name": "删除分类", "module": "category"},
+    {"code": "brand:view", "name": "查看品牌", "module": "brand"},
+    {"code": "brand:create", "name": "创建品牌", "module": "brand"},
+    {"code": "brand:update", "name": "更新品牌", "module": "brand"},
+    {"code": "brand:delete", "name": "删除品牌", "module": "brand"},
+    {"code": "search:view", "name": "全局搜索", "module": "search"},
     {"code": "decision:calculate", "name": "上架前决策计算", "module": "decision"},
 ]
 

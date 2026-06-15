@@ -6,6 +6,9 @@ from app.database import get_db
 from app.common import Result, PageResult
 from app.brand.schemas import BrandCreate, BrandUpdate, BrandVO
 from app.brand.service import BrandService
+from app.auth import require_permission
+from app.models import User
+from app.operation_log.service import OperationLogService
 
 router = APIRouter(tags=["品牌管理"])
 
@@ -24,21 +27,50 @@ def brand_to_vo(b) -> BrandVO:
 
 
 @router.post("/brands", summary="创建品牌")
-async def create_brand(data: BrandCreate, db: AsyncSession = Depends(get_db)):
+async def create_brand(
+    data: BrandCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("brand:create")),
+):
     b = await BrandService.create(db, data.model_dump())
+    await OperationLogService.log(
+        db,
+        module="brand",
+        action="create",
+        resource_id=str(b.id),
+        content=f"创建品牌: {b.name}",
+        operator=current_user.username,
+    )
     return Result.ok(brand_to_vo(b))
 
 
 @router.put("/brands/{brand_id}", summary="更新品牌")
-async def update_brand(brand_id: int, data: BrandUpdate, db: AsyncSession = Depends(get_db)):
+async def update_brand(
+    brand_id: int,
+    data: BrandUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("brand:update")),
+):
     b = await BrandService.update(db, brand_id, data.model_dump(exclude_unset=True))
     if not b:
         return Result.not_found("品牌不存在")
+    await OperationLogService.log(
+        db,
+        module="brand",
+        action="update",
+        resource_id=str(b.id),
+        content=f"更新品牌: {b.name}",
+        operator=current_user.username,
+    )
     return Result.ok(brand_to_vo(b))
 
 
 @router.get("/brands/{brand_id}", summary="品牌详情")
-async def get_brand(brand_id: int, db: AsyncSession = Depends(get_db)):
+async def get_brand(
+    brand_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_permission("brand:view")),
+):
     b = await BrandService.get_by_id(db, brand_id)
     if not b:
         return Result.not_found("品牌不存在")
@@ -51,6 +83,7 @@ async def list_brands(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_permission("brand:view")),
 ):
     brands, total = await BrandService.list_brands(db, name, page, page_size)
     items = [brand_to_vo(b) for b in brands]
@@ -58,18 +91,33 @@ async def list_brands(
 
 
 @router.get("/brands/all", summary="所有品牌（下拉选择用）")
-async def get_all_brands(db: AsyncSession = Depends(get_db)):
+async def get_all_brands(
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_permission("brand:view")),
+):
     brands = await BrandService.get_all(db)
     items = [{"id": b.id, "name": b.name} for b in brands]
     return Result.ok(items)
 
 
 @router.delete("/brands/{brand_id}", summary="删除品牌")
-async def delete_brand(brand_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_brand(
+    brand_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("brand:delete")),
+):
     try:
         ok = await BrandService.delete(db, brand_id)
         if not ok:
             return Result.not_found("品牌不存在")
+        await OperationLogService.log(
+            db,
+            module="brand",
+            action="delete",
+            resource_id=str(brand_id),
+            content=f"删除品牌: {brand_id}",
+            operator=current_user.username,
+        )
         return Result.ok(message="删除成功")
     except ValueError as e:
         return Result.error(message=str(e))

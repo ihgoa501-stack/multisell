@@ -290,7 +290,9 @@ MultiSell 是一个 AI 原生跨境电商商品中台，目标流程是：
 
 | 模块 | 权限码 | 审计日志 |
 | --- | --- | --- |
-| 商品 | `product:create/update/delete/import/export/ai` | 已覆盖 |
+| 商品 | `product:view/create/update/delete/import/export/ai` | 已覆盖 |
+| 分类 | `category:view/create/update/delete` | 已覆盖 |
+| 品牌 | `brand:view/create/update/delete` | 已覆盖 |
 | 订单 | `order:view/create/update/update_status/cancel` | 已覆盖 |
 | 库存 | `inventory:view/update` | 已覆盖 |
 | 价格 | `price:view/update/batch_update` | 已覆盖 |
@@ -301,13 +303,7 @@ MultiSell 是一个 AI 原生跨境电商商品中台，目标流程是：
 | 报表 | `dashboard:view`, `report:view` | — |
 | RBAC | `rbac:view/manage` | — |
 | 操作日志 | `operation_log:view` | — |
-
-仍需补齐：
-
-- 分类接口 `category:*` 权限和写操作审计。
-- 品牌接口 `brand:*` 权限和写操作审计。
-- 商品读取接口如需做到后端强制保护，可补 `product:view`。
-- 全局搜索如需做到后端强制保护，可补 `search:view`。
+| 搜索 | `search:view` | — |
 
 权限规则：
 

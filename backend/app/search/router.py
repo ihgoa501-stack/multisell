@@ -5,7 +5,8 @@ from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.common import Result
-from app.models import Product, Sku, Supplier
+from app.auth import require_permission
+from app.models import Product, Sku, Supplier, User
 
 router = APIRouter(tags=["全局搜索"])
 
@@ -15,6 +16,7 @@ async def global_search(
     q: str = Query(..., min_length=1, max_length=100, description="搜索关键词"),
     limit: int = Query(10, ge=1, le=50, description="每类结果数量"),
     db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_permission("search:view")),
 ):
     """同时搜索商品、SKU、供应商"""
 

@@ -12,6 +12,7 @@
             <h2 style="margin: 0; color: #fff; font-size: 16px; letter-spacing: 1px;">凌镜</h2>
           </div>
         <n-auto-complete
+          v-if="canSearch"
           v-model:value="searchQuery"
           :options="searchOptions"
           :input-props="{ placeholder: '搜索商品/SKU/供应商... (/)', style: 'width: 280px;' }"
@@ -121,6 +122,7 @@ function toggleTheme() {
 const user = ref<any>(JSON.parse(localStorage.getItem('user') || '{}'))
 const userPermissions = ref<string[]>(user.value?.permissions || [])
 const userDisplayName = computed(() => user.value?.display_name || user.value?.username || '未登录')
+const canSearch = computed(() => user.value?.role === 'admin' || userPermissions.value.includes('search:view'))
 
 function handleLogout() {
   localStorage.removeItem('token')
@@ -146,6 +148,10 @@ async function loadUserPermissions() {
 }
 
 async function doSearch(q: string) {
+  if (!canSearch.value) {
+    searchOptions.value = []
+    return
+  }
   if (!q || q.length < 1) {
     searchOptions.value = []
     return
