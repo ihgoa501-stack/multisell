@@ -38,3 +38,45 @@ class PreListingDecisionResponse(BaseModel):
     applied_platform_fee_rule_id: Optional[int] = None
     platform_fee_source: str = "manual"  # manual / rule
     platform_fee_rule_summary: Optional[str] = None
+
+
+class PreListingDecisionBatchItem(PreListingDecisionRequest):
+    """批量上架前经营决策单行请求"""
+    item_key: Optional[str] = Field(None, max_length=100, description="前端行标识，原样返回")
+
+
+class PreListingDecisionBatchRequest(BaseModel):
+    """批量上架前经营决策请求"""
+    items: list[PreListingDecisionBatchItem] = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="批量测算行，最多100条",
+    )
+
+
+class PreListingDecisionBatchItemResult(BaseModel):
+    """批量上架前经营决策单行结果"""
+    index: int
+    item_key: Optional[str] = None
+    sku_id: Optional[int] = None
+    status: str  # success / error
+    result: Optional[PreListingDecisionResponse] = None
+    error_message: Optional[str] = None
+
+
+class PreListingDecisionBatchSummary(BaseModel):
+    """批量上架前经营决策汇总"""
+    total_items: int
+    success_count: int
+    error_count: int
+    approve_count: int
+    reject_count: int
+    needs_data_count: int
+    average_profit_margin: float
+
+
+class PreListingDecisionBatchResponse(BaseModel):
+    """批量上架前经营决策响应"""
+    summary: PreListingDecisionBatchSummary
+    items: list[PreListingDecisionBatchItemResult]

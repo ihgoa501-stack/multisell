@@ -105,6 +105,87 @@ async def test_prelisting_decision_404_for_nonexistent_sku(
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_batch_prelisting_decision_returns_summary_and_item_results(
+    async_client: AsyncClient,
+):
+    sku_id = await _create_test_data(async_client)
+
+    resp = await async_client.post(
+        "/api/decisions/prelisting/batch",
+        json={
+            "items": [
+                {
+                    "item_key": "approve-row",
+                    "sku_id": sku_id,
+                    "destination_country": "RU",
+                    "target_sale_price": 5000,
+                    "platform_fee_pct": 10,
+                    "payment_fee_pct": 3,
+                    "other_fee": 100,
+                    "minimum_margin_pct": 20,
+                    "cargo_type": "normal",
+                },
+                {
+                    "item_key": "needs-data-row",
+                    "sku_id": sku_id,
+                    "destination_country": "ZZ",
+                    "target_sale_price": 5000,
+                    "platform_fee_pct": 10,
+                    "payment_fee_pct": 3,
+                    "other_fee": 100,
+                    "minimum_margin_pct": 20,
+                    "cargo_type": "normal",
+                },
+                {
+                    "item_key": "missing-sku-row",
+                    "sku_id": 999999,
+                    "destination_country": "RU",
+                    "target_sale_price": 5000,
+                    "platform_fee_pct": 10,
+                    "payment_fee_pct": 3,
+                    "other_fee": 100,
+                    "minimum_margin_pct": 20,
+                    "cargo_type": "normal",
+                },
+            ]
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["summary"]["total_items"] == 3
+    assert data["summary"]["success_count"] == 2
+    assert data["summary"]["error_count"] == 1
+    assert data["summary"]["approve_count"] == 1
+    assert data["summary"]["needs_data_count"] == 1
+    assert data["summary"]["reject_count"] == 0
+    assert data["summary"]["average_profit_margin"] > 0
+
+    items = data["items"]
+    assert items[0]["index"] == 0
+    assert items[0]["item_key"] == "approve-row"
+    assert items[0]["status"] == "success"
+    assert items[0]["result"]["recommendation"] == "approve"
+    assert items[0]["error_message"] is None
+
+    assert items[1]["status"] == "success"
+    assert items[1]["result"]["recommendation"] == "needs_data"
+
+    assert items[2]["status"] == "error"
+    assert items[2]["result"] is None
+    assert "SKU不存在" in items[2]["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_batch_prelisting_decision_rejects_empty_items(async_client: AsyncClient):
+    resp = await async_client.post(
+        "/api/decisions/prelisting/batch",
+        json={"items": []},
+    )
+    assert resp.status_code == 422
+
+
 async def _create_test_data(async_client: AsyncClient) -> int:
     """创建商品+SKU+物流渠道种子数据，返回 sku_id"""
     uid = uuid4().hex[:6]
