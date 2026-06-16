@@ -552,3 +552,29 @@ Excel 导出和模板已有，但导入字段与模板还需要重新校准，�
 - 税务/VAT 报表。
 - AI 自动分析和异常诊断。
 
+### CSV 订单导入
+
+状态：已完成第一版。
+
+已实现：
+- `csv_order` adapter 注册在 adapter registry，`supports_order_import=True`，`auth_type=none`。
+- `POST /api/order-imports/csv` 上传 CSV 订单导入。
+- `GET /api/order-imports` 列出导入批次。
+- `GET /api/order-imports/{batch_id}` 批次详情。
+- `GET /api/order-imports/{batch_id}/items` 批次明细。
+- 同一 `platform_order_no` 多 SKU 合并成一个订单。
+- 重复 `platform_order_no` 不重复创建订单（`skipped_duplicate`）。
+- SKU 不存在时 item 标记 `failed`。
+- `paid_at` 有值时订单自动标记 `paid`。
+- `shipping_fee` 和 `tracking_number` 写入订单。
+- `order_no` 为空时自动生成系统订单号。
+- 权限码：`order_import:import`、`order_import:view`。
+- 审计日志：`order_import/import`。
+- 前端订单导入页面（上传、批次列表、明细查看）。
+
+暂未实现：
+- 真实平台 API 自动拉取订单。
+- OAuth 授权流。
+- 订单自动同步。
+- CSV 模板下载。
+

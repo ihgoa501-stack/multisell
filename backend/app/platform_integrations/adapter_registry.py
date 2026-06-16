@@ -12,7 +12,7 @@ class AdapterCapability:
     supports_order_import: bool = False
     supports_settlement_import: bool = False
     supports_tracking_sync: bool = False
-    auth_type: str = "api_key"  # api_key / oauth2 / client_credentials
+    auth_type: str = "api_key"  # api_key / oauth2 / client_credentials / none
 
 
 ADAPTERS: dict[str, AdapterCapability] = {
@@ -69,6 +69,15 @@ ADAPTERS: dict[str, AdapterCapability] = {
         supports_settlement_import=True,
         supports_tracking_sync=True,
         auth_type="api_key",
+    ),
+    "csv_order": AdapterCapability(
+        adapter_code="csv_order",
+        display_name="CSV订单导入",
+        supports_listing_publish=False,
+        supports_order_import=True,
+        supports_settlement_import=False,
+        supports_tracking_sync=False,
+        auth_type="none",
     ),
 }
 

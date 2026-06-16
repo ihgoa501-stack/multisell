@@ -120,6 +120,8 @@ SEED_PERMISSIONS = [
     {"code": "platform_integration:view", "name": "查看平台集成", "module": "platform_integration"},
     {"code": "platform_integration:manage", "name": "管理平台集成", "module": "platform_integration"},
     {"code": "platform_integration:test", "name": "测试平台连接", "module": "platform_integration"},
+    {"code": "order_import:import", "name": "导入订单", "module": "order_import"},
+    {"code": "order_import:view", "name": "查看订单导入", "module": "order_import"},
 ]
 
 SEED_PRODUCTS = [
