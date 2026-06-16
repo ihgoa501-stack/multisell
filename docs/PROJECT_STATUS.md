@@ -583,10 +583,10 @@ Stage 12 已实现：
 - 新增审计日志：`order_import/process_chain`。
 - 前端新增链路状态列、链路状态标签渲染、明细链路状态列、"处理链路"按钮。
 - Alembic migration `20260616_02_add_order_import_chain_fields`。
+- 冒烟验收 checklist：`docs/ORDER_IMPORT_SMOKE_CHECKLIST.md`。
 
 暂未实现：
 - 真实平台 API 自动拉取订单。
 - OAuth 授权流。
 - 订单自动同步。
 - CSV 模板下载。
-
