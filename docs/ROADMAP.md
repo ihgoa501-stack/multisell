@@ -208,3 +208,18 @@
 - Stage 11 已完成 CSV 订单导入：CSV 上传 → 批次解析 → 订单创建 → 状态同步 → 审计日志。
 - 下一步应接入真实平台 adapter（如 Ozon、Shopee），完成从 listing task 到真实平台发布的最后落地。
 - 真实平台发布后才能验证全链路：决策 → 任务 → 发布 → 订单 → 运费 → 对账 → 利润。
+
+## Stage 13 Demo Seed / Sandbox Scenario
+
+状态：已完成。
+
+已实现：
+- Demo CSV 数据（订单导入、运费账单、平台结算）
+- 幂等 seed 脚本 `scripts/load_demo_data.py`
+- Demo 验收文档 `docs/DEMO_SCENARIO.md`
+- 自动测试 `tests/test_demo_seed.py`
+- 完整业务闭环演示：商品 → SKU → 库存 → 物流报价 → 平台费用规则 → CSV 订单导入 → 运费账单 → 平台结算 → 利润账本 → 异常工作台 → 利润看板
+
+后续：
+- 可扩展更多 demo 场景（多平台竞争、广告费、FBA 头程）
+- 可为每个主要模块提供独立的 demo 数据集

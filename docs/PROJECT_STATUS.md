@@ -590,3 +590,41 @@ Stage 12 已实现：
 - OAuth 授权流。
 - 订单自动同步。
 - CSV 模板下载。
+
+### Stage 13 Demo Seed / Sandbox Scenario
+
+状态：已完成。
+
+已实现：
+- Demo 数据目录 `docs/demo-data/`，包含三组演示 CSV：
+  - `order_import_demo.csv` — 7 行 6 个订单（多SKU合并、正/负利润、有/无tracking）
+  - `shipping_bill_demo.csv` — 5 行（matched / amount_mismatch / unmatched_bill）
+  - `platform_settlement_demo.csv` — 18 行（matched / unmatched，含 refund / adjustment）
+- Demo seed 脚本 `backend/scripts/load_demo_data.py`：
+  - 幂等可重复执行
+  - 创建 demo 用户（demo / demo123）
+  - 7 个演示商品、14 个 SKU、14 条库存记录
+  - 3 家物流供应商、4 个渠道、4 条报价规则
+  - 6 条平台费用规则（覆盖 Ozon / Shopee / Wildberries）
+  - 3 家供应商、csv_order adapter 配置
+- Demo 验收文档 `docs/DEMO_SCENARIO.md`
+- 自动测试 `backend/tests/test_demo_seed.py`：
+  - 脚本可导入 / 幂等性 / SKU-CSV 一致性
+  - CSV 文件可解析 / 含多SKU同订单 / 含 matched + unmatched
+  - 各数据实体创建验证
+
+相关测试：
+- `backend/tests/test_demo_seed.py`
+
+相关文件：
+- `docs/demo-data/`
+- `backend/scripts/load_demo_data.py`
+- `docs/DEMO_SCENARIO.md`
+
+暂未实现：
+- 真实平台 API
+- OAuth
+- 真实物流商 API
+- 后台定时任务
+- AI 自动执行
+- 复杂前端新页面

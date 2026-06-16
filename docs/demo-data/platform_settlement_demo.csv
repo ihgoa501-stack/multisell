@@ -1,0 +1,19 @@
+platform,store_name,platform_order_no,order_no,transaction_type,currency,amount,settled_at,description
+Ozon,RU Store,OZ-10001,,sale,CNY,598.00,2026-06-05,订单收入 蓝牙耳机x2
+Ozon,RU Store,OZ-10001,,platform_fee,CNY,-59.80,2026-06-05,平台佣金 10%
+Ozon,RU Store,OZ-10001,,payment_fee,CNY,-5.98,2026-06-05,支付手续费 1%
+Ozon,RU Store,OZ-10002,,sale,CNY,599.00,2026-06-06,订单收入 智能手表x1
+Ozon,RU Store,OZ-10002,,platform_fee,CNY,-71.88,2026-06-06,平台佣金 12%
+Ozon,RU Store,OZ-10002,,payment_fee,CNY,-5.99,2026-06-06,支付手续费 1%
+Ozon,RU Store,OZ-10002,,refund,CNY,-40.00,2026-06-07,部分退款运费
+Shopee,SG Store,SP-20001,,sale,SGD,259.00,2026-06-06,订单收入 夹克x1
+Shopee,SG Store,SP-20001,,platform_fee,SGD,-25.90,2026-06-06,平台佣金 10%
+Shopee,SG Store,SP-20002,,sale,SGD,476.00,2026-06-07,订单收入 精华液x2
+Shopee,SG Store,SP-20002,,platform_fee,SGD,-38.08,2026-06-07,平台佣金 8%
+Shopee,SG Store,SP-20002,,adjustment,SGD,0.00,2026-06-07,无金额调整
+Wildberries,RU Store,WB-30001,,sale,CNY,384.00,2026-06-08,订单收入 坚果x3
+Wildberries,RU Store,WB-30001,,platform_fee,CNY,-57.60,2026-06-08,平台佣金 15%
+Wildberries,RU Store,WB-30001,,payment_fee,CNY,-3.84,2026-06-08,支付手续费 1%
+Wildberries,RU Store,WB-30002,,sale,CNY,99.00,2026-06-09,订单收入 瑜伽垫x1
+Wildberries,RU Store,WB-30002,,platform_fee,CNY,-14.85,2026-06-09,平台佣金 15%
+UNMATCHED-SETTLEMENT-001,,,UNMATCHED,sale,CNY,500.00,2026-06-10,Unmatched sale line — no matching order
