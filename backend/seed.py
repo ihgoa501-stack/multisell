@@ -116,6 +116,7 @@ SEED_PERMISSIONS = [
     {"code": "allocation:view", "name": "查看费用分摊", "module": "allocation"},
     {"code": "allocation:calculate", "name": "计算费用分摊", "module": "allocation"},
     {"code": "allocation:post", "name": "入账费用分摊", "module": "allocation"},
+    {"code": "finance:report:view", "name": "查看财务报表", "module": "finance"},
 ]
 
 SEED_PRODUCTS = [
