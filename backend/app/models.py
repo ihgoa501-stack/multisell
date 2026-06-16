@@ -590,6 +590,57 @@ class AgentAction(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
+class PlatformIntegrationAccount(Base):
+    """平台账号/连接配置"""
+    __tablename__ = "platform_integration_account"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=False, comment="平台ID")
+    adapter_code = Column(String(50), nullable=False, comment="adapter 代码")
+    account_name = Column(String(200), nullable=False, comment="账号名称")
+    status = Column(String(30), default="draft", comment="draft/active/disabled")
+    credential_metadata = Column(JSON, default=dict, nullable=False, comment="密钥元信息: [{key: 'api_key', masked: '***...abcd'}]，不存明文")
+    created_by = Column(String(100), comment="创建人")
+    updated_by = Column(String(100), comment="更新人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    platform = relationship("Platform", lazy="selectin")
+
+
+class PlatformCategoryMapping(Base):
+    """平台类目映射"""
+    __tablename__ = "platform_category_mapping"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=False, comment="平台ID")
+    adapter_code = Column(String(50), nullable=False, comment="适配器代码")
+    local_category_id = Column(BigInteger, ForeignKey("category.id"), nullable=False, comment="本地类目ID")
+    platform_category_id = Column(String(200), nullable=False, comment="平台类目ID")
+    platform_category_name = Column(String(500), comment="平台类目名称")
+    platform_category_path = Column(String(1000), comment="平台类目路径")
+    created_by = Column(String(100), comment="创建人")
+    updated_by = Column(String(100), comment="更新人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class PlatformAttributeMapping(Base):
+    """平台属性映射"""
+    __tablename__ = "platform_attribute_mapping"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=False, comment="平台ID")
+    adapter_code = Column(String(50), nullable=False, comment="适配器代码")
+    local_attribute = Column(String(100), nullable=False, comment="本地属性名")
+    platform_attribute = Column(String(200), nullable=False, comment="平台属性名")
+    default_value = Column(String(500), comment="默认值")
+    created_by = Column(String(100), comment="创建人")
+    updated_by = Column(String(100), comment="更新人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 ALLOWED_ALLOCATION_TYPES = ["first_leg", "fba", "overseas_warehouse", "other"]
 ALLOWED_ALLOCATION_METHODS = ["quantity", "weight", "volume", "value"]
 
