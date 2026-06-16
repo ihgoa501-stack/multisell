@@ -89,6 +89,7 @@ async def create_example(
 | 订单 | `order:view`, `order:create`, `order:update`, `order:update_status`, `order:cancel` | 已覆盖 |
 | 上架任务 | `listing:view`, `listing:task_manage`, `listing:publish` | create_from_decision, recheck, cancel, publish |
 | 财务账本 | `finance:ledger:view`, `finance:ledger:rebuild` | rebuild |
+| 财务报表 | `finance:report:view` | 查看（只读） |
 | 异常工作台 | `exception:view`, `exception:manage`, `exception:generate` | generate, assign, resolve, ignore |
 | Agent 动作 | `agent_action:view`, `agent_action:propose`, `agent_action:approve`, `agent_action:execute` | propose, approve, reject, execute |
 | 搜索 | `search:view` | 无写操作 |
