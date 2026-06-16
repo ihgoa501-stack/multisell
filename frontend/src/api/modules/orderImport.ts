@@ -22,3 +22,11 @@ export function getOrderImport(batchId: number) {
 export function listOrderImportItems(batchId: number) {
   return http.get(`/order-imports/${batchId}/items`)
 }
+
+export function processOrderImportChain(batchId: number) {
+  return http.post(`/order-imports/${batchId}/process-chain`)
+}
+
+export function getOrderImportChainSummary(batchId: number) {
+  return http.get(`/order-imports/${batchId}/chain-summary`)
+}

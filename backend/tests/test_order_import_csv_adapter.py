@@ -94,7 +94,7 @@ class TestOrderImportCSVAdapter:
         assert data["failed_count"] == 1
         assert data["created_order_count"] == 0
 
-    async def test_import_duplicate_platform_order_no_skipped(self, async_client: AsyncClient):
+    async def test_import_duplicate_platform_order_no_same_batch_no_longer_skipped(self, async_client: AsyncClient):
         async with async_session_factory() as session:
             _, sku = await _create_product_and_sku(session, sku_code=f"DUP-{uuid4().hex[:5]}")
             await _ensure_inventory(session, sku.id, 100)
@@ -108,8 +108,26 @@ class TestOrderImportCSVAdapter:
         resp = await async_client.post("/api/order-imports/csv", files={"file": ("order_import.csv", content, "text/csv")})
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["skipped_duplicate_count"] == 1
         assert data["created_order_count"] == 1
+        assert data["skipped_duplicate_count"] == 0
+
+    async def test_import_cross_batch_duplicate_skipped(self, async_client: AsyncClient):
+        async with async_session_factory() as session:
+            _, sku = await _create_product_and_sku(session, sku_code=f"XDUP-{uuid4().hex[:5]}")
+            await _ensure_inventory(session, sku.id, 100)
+            await session.commit()
+        csv_text = (
+            "platform,store_name,platform_order_no,order_no,sku_code,quantity,unit_price,currency,recipient_name,recipient_phone,country_code,shipping_address,shipping_fee,paid_at\n"
+            f"Temu,Temu店,EX-XDUP,,{sku.code},1,10,CNY,邮,+8613600000000,US,addr4,1.0,\n"
+        )
+        _, content = _make_csv(csv_text)
+        resp = await async_client.post("/api/order-imports/csv", files={"file": ("order_import.csv", content, "text/csv")})
+        assert resp.status_code == 200
+        resp2 = await async_client.post("/api/order-imports/csv", files={"file": ("order_import.csv", content, "text/csv")})
+        assert resp2.status_code == 200
+        data2 = resp2.json()["data"]
+        assert data2["skipped_duplicate_count"] == 1
+        assert data2["created_order_count"] == 0
 
     async def test_import_paid_at_sets_order_paid(self, async_client: AsyncClient):
         async with async_session_factory() as session:

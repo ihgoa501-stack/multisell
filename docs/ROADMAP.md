@@ -1,6 +1,6 @@
 # 凌镜 LingMirror Roadmap
 
-更新时间：2026-06-16（Stage 1-7 已完成，Stage 11 CSV 订单导入已完成）
+更新时间：2026-06-16（Stage 1-7 已完成，Stage 11 CSV 订单导入已完成，Stage 12 经营链路已完成）
 
 ## 当前阶段判断
 

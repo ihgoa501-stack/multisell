@@ -10,6 +10,7 @@ from app.auth import require_permission
 from app.common import PageResult, Result
 from app.database import get_db
 from app.models import User
+from app.order_import.chain_service import OrderImportChainService
 from app.order_import.models import OrderImportBatch, OrderImportItem
 from app.order_import.schemas import OrderImportBatchCreate, OrderImportBatchVO, OrderImportItemVO
 from app.order_import.service import OrderImportService
@@ -98,6 +99,40 @@ async def list_import_items(
     return Result.ok([_item_to_vo(item) for item in items])
 
 
+@router.post("/order-imports/{batch_id}/process-chain", summary="处理订单导入链路")
+async def process_import_chain(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("order_import:process")),
+):
+    batch = await OrderImportService.get_batch(db, batch_id)
+    if not batch:
+        return Result.not_found("批次不存在")
+    try:
+        summary = await OrderImportChainService.process_chain(db, batch_id, operator=_operator(current_user))
+        await db.commit()
+        return Result.ok(summary)
+    except ValueError as e:
+        await db.rollback()
+        return Result.error(str(e))
+
+
+@router.get("/order-imports/{batch_id}/chain-summary", summary="订单导入链路摘要")
+async def get_import_chain_summary(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("order_import:view")),
+):
+    batch = await OrderImportService.get_batch(db, batch_id)
+    if not batch:
+        return Result.not_found("批次不存在")
+    try:
+        summary = await OrderImportChainService.get_chain_summary(db, batch_id)
+        return Result.ok(summary)
+    except ValueError as e:
+        return Result.error(str(e))
+
+
 def _batch_to_vo(batch: OrderImportBatch) -> dict:
     return {
         "id": batch.id,
@@ -110,6 +145,11 @@ def _batch_to_vo(batch: OrderImportBatch) -> dict:
         "skipped_duplicate_count": batch.skipped_duplicate_count,
         "failed_count": batch.failed_count,
         "imported_by": batch.imported_by,
+        "chain_status": batch.chain_status if hasattr(batch, 'chain_status') else "chain_pending",
+        "ledger_rebuilt_count": getattr(batch, 'ledger_rebuilt_count', 0),
+        "exception_generated_count": getattr(batch, 'exception_generated_count', 0),
+        "chain_failure_count": getattr(batch, 'chain_failure_count', 0),
+        "processed_at": getattr(batch, 'processed_at', None),
         "created_at": batch.created_at,
         "updated_at": batch.updated_at,
     }
@@ -121,6 +161,7 @@ def _item_to_vo(item: OrderImportItem) -> dict:
         "batch_id": item.batch_id,
         "row_number": item.row_number,
         "platform_order_no": item.platform_order_no,
+        "order_id": item.order_id,
         "order_no": item.order_no,
         "sku_code": item.sku_code,
         "quantity": item.quantity,
@@ -135,6 +176,8 @@ def _item_to_vo(item: OrderImportItem) -> dict:
         "paid_at": item.paid_at,
         "status": item.status,
         "failure_reason": item.failure_reason,
+        "chain_status": getattr(item, 'chain_status', 'chain_pending'),
+        "chain_failure_reason": getattr(item, 'chain_failure_reason', None),
         "raw_payload": item.raw_payload,
         "created_at": item.created_at,
     }

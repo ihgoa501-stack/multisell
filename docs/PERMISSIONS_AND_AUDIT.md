@@ -92,7 +92,7 @@ async def create_example(
 | 财务报表 | `finance:report:view` | 查看（只读） |
 | 异常工作台 | `exception:view`, `exception:manage`, `exception:generate` | generate, assign, resolve, ignore |
 | Agent 动作 | `agent_action:view`, `agent_action:propose`, `agent_action:approve`, `agent_action:execute` | propose, approve, reject, execute |
-| CSV 订单导入 | `order_import:import`, `order_import:view` | import |
+| CSV 订单导入 | `order_import:import`, `order_import:view`, `order_import:process` | import, process_chain |
 | 搜索 | `search:view` | 无写操作 |
 
 ## 审计日志规则
@@ -147,7 +147,7 @@ await OperationLogService.log(
 | 财务账本 | rebuild |
 | 异常工作台 | generate, assign, resolve, ignore |
 | Agent 动作 | propose, approve, reject, execute |
-| CSV 订单导入 | import |
+| CSV 订单导入 | import, process_chain |
 
 ## 测试
 

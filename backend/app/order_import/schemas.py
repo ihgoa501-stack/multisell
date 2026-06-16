@@ -35,6 +35,7 @@ class OrderImportItemVO(BaseModel):
     batch_id: int
     row_number: int
     platform_order_no: Optional[str] = None
+    order_id: Optional[int] = None
     order_no: Optional[str] = None
     sku_code: Optional[str] = None
     quantity: Optional[int] = None
@@ -49,6 +50,8 @@ class OrderImportItemVO(BaseModel):
     paid_at: Optional[str] = None
     status: str
     failure_reason: Optional[str] = None
+    chain_status: str = "chain_pending"
+    chain_failure_reason: Optional[str] = None
     raw_payload: Optional[dict] = None
     created_at: Optional[datetime] = None
 
@@ -64,5 +67,10 @@ class OrderImportBatchVO(BaseModel):
     skipped_duplicate_count: int = 0
     failed_count: int = 0
     imported_by: Optional[str] = None
+    chain_status: str = "chain_pending"
+    ledger_rebuilt_count: int = 0
+    exception_generated_count: int = 0
+    chain_failure_count: int = 0
+    processed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

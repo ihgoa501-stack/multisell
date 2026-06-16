@@ -9,6 +9,7 @@ import csv
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.inventory.service import InventoryService
 from app.models import Order, OrderItem, OrderStatusLog, Platform, Sku, Product
 from app.order.schemas import OrderCreate, OrderItemCreate
 from app.order.service import OrderService, order_to_dict
@@ -65,7 +66,7 @@ class OrderImportService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def _find_external_order(db: AsyncSession, adapter_code: str, platform_order_no: Optional[str]) -> Optional[Order]:
+    async def _find_external_order(db: AsyncSession, adapter_code: str, platform_order_no: Optional[str], exclude_batch_id: Optional[int] = None) -> Optional[Order]:
         if not platform_order_no:
             return None
         stmt = (
@@ -76,8 +77,10 @@ class OrderImportService:
                 models.OrderImportBatch.adapter_code == adapter_code,
                 models.OrderImportItem.platform_order_no == platform_order_no,
             )
-            .limit(1)
         )
+        if exclude_batch_id is not None:
+            stmt = stmt.where(models.OrderImportItem.batch_id != exclude_batch_id)
+        stmt = stmt.limit(1)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -163,7 +166,7 @@ class OrderImportService:
         for item in items:
             payload = item.raw_payload or {}
             try:
-                existing = await OrderImportService._find_external_order(db, batch.adapter_code, item.platform_order_no)
+                existing = await OrderImportService._find_external_order(db, batch.adapter_code, item.platform_order_no, exclude_batch_id=batch.id)
                 if existing:
                     item.order_id = existing.id
                     item.order_no = existing.order_no
@@ -188,9 +191,38 @@ class OrderImportService:
                 external_key = f"{batch.adapter_code}:{item.platform_order_no or ''}"
                 if external_key in created_orders:
                     parent = created_orders[external_key]
-                    order_dict = await OrderService.get_detail(db, parent["id"])
+
+                    quantity = int(item.quantity or 1)
+                    unit_price = Decimal(str(float(item.unit_price or sku.price or 0)))
+                    subtotal = unit_price * quantity
+
+                    order_item = OrderItem(
+                        order_id=parent["id"],
+                        sku_id=sku.id,
+                        product_id=sku.product_id,
+                        product_name="",
+                        sku_code=sku.code,
+                        spec_desc=sku.spec_desc or "",
+                        unit_price=unit_price,
+                        quantity=quantity,
+                        subtotal=subtotal,
+                    )
+                    db.add(order_item)
+
+                    order_obj = await db.get(Order, parent["id"])
+                    if order_obj:
+                        order_obj.total_amount = Decimal(str(order_obj.total_amount or 0)) + subtotal
+                        OrderService._recalculate_profit(order_obj)
+
+                    await InventoryService.lock_stock(
+                        db, sku_id=sku.id, quantity=quantity,
+                        order_no=parent["order_no"], operator=operator or "system",
+                    )
+
+                    await db.flush()
+
                     item.order_id = parent["id"]
-                    item.order_no = order_dict["order_no"]
+                    item.order_no = parent["order_no"]
                     item.status = "imported"
                 else:
                     order_dict = await OrderImportService.create_order_from_import(db, batch, payload, operator)
