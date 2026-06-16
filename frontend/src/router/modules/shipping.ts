@@ -13,4 +13,10 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/views/shipping/ShippingCalculator.vue'),
     meta: { title: '运费计算器', icon: 'trend', menu: true, perm: 'shipping:calculate' },
   },
+  {
+    path: 'shipping/bill-reconciliation',
+    name: 'ShippingBillReconciliation',
+    component: () => import('@/views/shipping/ShippingBillReconciliation.vue'),
+    meta: { title: '物流对账', icon: 'receipt', menu: true, perm: 'shipping:bill:view' },
+  },
 ]

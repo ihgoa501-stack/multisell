@@ -139,6 +139,7 @@ class PreListingDecisionService:
             other_fee=other_fee,
             profit_amount=profit_amount,
             profit_margin=profit_margin,
+            profit_cost_layer=COST_LAYER_ESTIMATED,
             recommendation=recommendation,
             blocking_reasons=blocking_reasons,
             warnings=warnings,

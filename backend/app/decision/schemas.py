@@ -38,6 +38,7 @@ class PreListingDecisionResponse(BaseModel):
     other_fee: float
     profit_amount: float
     profit_margin: float
+    profit_cost_layer: str = COST_LAYER_ESTIMATED
     recommendation: str  # approve / reject / needs_data
     blocking_reasons: list[str]
     warnings: list[str]

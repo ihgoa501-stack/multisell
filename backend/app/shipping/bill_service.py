@@ -522,6 +522,7 @@ class ShippingBillService:
                 "batch_id": it.batch_id,
                 "row_number": it.row_number,
                 "reconciliation_status": it.reconciliation_status or "unmatched_bill",
+                "actual_shipping_cost_layer": "actual",
                 "tracking_number": it.tracking_number,
                 "order_no": it.order_no,
                 "provider_name": it.provider_name,

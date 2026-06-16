@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # 文件上传
     UPLOAD_DIR: str = "./uploads"
-    MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
+    MAX_UPLOAD_SIZE: int = 100 * 1024 * 1024  # 100MB
     ALLOWED_EXTENSIONS: list[str] = ["jpg", "jpeg", "png", "gif", "webp"]
 
     # 静态文件URL前缀

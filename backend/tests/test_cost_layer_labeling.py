@@ -46,6 +46,7 @@ class TestDecisionCostLayer:
         data = resp.json()["data"]
         assert data["shipping_cost_layer"] == "estimated"
         assert data["platform_fee_cost_layer"] == "estimated"
+        assert data["profit_cost_layer"] == "estimated"
 
     async def test_batch_decision_returns_cost_layers(self, async_client):
         sku_id, plat_id, _ = await _setup_data(async_client)
@@ -184,4 +185,4 @@ class TestShippingBillCostLayer:
         list_resp = await async_client.get(f"/api/shipping/bills/{batch_id}/items")
         items = list_resp.json()["data"]
         assert len(items) == 1
-        assert items[0]["cost_layer"] == "actual"
+        assert items[0]["actual_shipping_cost_layer"] == "actual"

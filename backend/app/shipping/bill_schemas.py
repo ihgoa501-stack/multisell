@@ -6,6 +6,9 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+from app.finance.cost_layers import COST_LAYER_ACTUAL
+
+
 # ── Bill Batch ──────────────────────────────────────────────────────────────
 
 class BillBatchResponse(BaseModel):
@@ -42,6 +45,7 @@ class BillItemResponse(BaseModel):
     batch_id: int
     row_number: int
     reconciliation_status: str = "unmatched_bill"
+    actual_shipping_cost_layer: str = COST_LAYER_ACTUAL
     tracking_number: Optional[str] = None
     order_no: Optional[str] = None
     provider_name: Optional[str] = None

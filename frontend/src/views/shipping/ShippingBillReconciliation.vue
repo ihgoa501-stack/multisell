@@ -98,7 +98,7 @@ const itemColumns = [
     title: '成本来源',
     key: 'cost_layer',
     width: 80,
-    render: (row: any) => h(CostLayerTag, { layer: row.cost_layer || 'estimated' }),
+    render: (row: any) => h(CostLayerTag, { layer: row.actual_shipping_cost_layer || 'actual' }),
   },
   {
     title: '状态',

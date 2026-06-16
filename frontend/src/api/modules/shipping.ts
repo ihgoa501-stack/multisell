@@ -67,4 +67,35 @@ export const shippingApi = {
   calculate(data: any) {
     return http.post('/shipping/calculate', data)
   },
+
+  // ===== Bill Import & Reconciliation =====
+  importBills(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return http.post('/shipping/bills/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  listBillBatches(status?: string) {
+    const params: any = {}
+    if (status) params.status = status
+    return http.get('/shipping/bills', { params })
+  },
+  getBillBatch(batchId: number) {
+    return http.get(`/shipping/bills/${batchId}`)
+  },
+  listBillItems(batchId: number, status?: string) {
+    const params: any = {}
+    if (status) params.status = status
+    return http.get(`/shipping/bills/${batchId}/items`, { params })
+  },
+  reconcileBatch(batchId: number) {
+    return http.post(`/shipping/bills/${batchId}/reconcile`)
+  },
+  resolveBillItem(itemId: number, note: string) {
+    return http.post(`/shipping/bills/items/${itemId}/resolve`, { note })
+  },
+  getReconciliationSummary() {
+    return http.get('/shipping/reconciliation/summary')
+  },
 }
