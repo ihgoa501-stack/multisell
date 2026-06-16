@@ -609,7 +609,8 @@ async def load_demo_data(session: AsyncSession) -> DemoDataSummary:
     await ensure_demo_products_and_skus(session, summary)
 
     # demo CSV 路径
-    demo_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "demo-data")
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    demo_dir = os.path.join(repo_root, "docs", "demo-data")
     summary.csv_paths = [
         os.path.join(demo_dir, "order_import_demo.csv"),
         os.path.join(demo_dir, "shipping_bill_demo.csv"),
