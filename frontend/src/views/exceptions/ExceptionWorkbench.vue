@@ -167,7 +167,7 @@ const columns = [
           h(NButton, {
             size: 'small',
             tertiary: true,
-            onClick: () => { actionExceptionId = row.id; showActionPanel = true },
+            onClick: () => { actionExceptionId.value = row.id; showActionPanel.value = true },
           }, { default: () => '提案' }),
         ],
       }),
