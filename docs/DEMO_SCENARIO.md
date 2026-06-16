@@ -30,7 +30,8 @@ psql -h localhost -U postgres -c "CREATE DATABASE product_management_test;" 2>/d
 
 ```bash
 cd /Users/lc/multisell/backend
-source .venv/bin/activate
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
+  /Users/lc/multisell/backend/.venv/bin/python -m
 pip install -r requirements.txt
 ```
 
@@ -96,7 +97,8 @@ demo csv paths: .../docs/demo-data/order_import_demo.csv, ...
 
 ```bash
 cd /Users/lc/multisell/backend
-source .venv/bin/activate
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
+  /Users/lc/multisell/backend/.venv/bin/python -m
 uvicorn app.main:app --reload --port 8000
 ```
 

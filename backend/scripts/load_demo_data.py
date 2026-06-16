@@ -36,6 +36,7 @@ from app.models import (
     PlatformIntegrationAccount,
 )
 from app.auth.service import hash_password
+from app.order_import import models  # noqa: F401 — ensure tables created
 from app.models import User
 
 
@@ -222,18 +223,22 @@ async def ensure_admin_user(session: AsyncSession):
 
 
 async def ensure_demo_user(session: AsyncSession):
-    """创建 demo 用户"""
+    """创建或更新 demo 用户"""
     user, created = await get_or_create(
         session, User,
         defaults=dict(
             password_hash=hash_password("demo123"),
             display_name="Demo 演示用户",
-            role="user",
+            role="admin",
             email="demo@multisell.com",
             status=1,
         ),
         username="demo",
     )
+    if not created and user.role != "admin":
+        user.role = "admin"
+        user.display_name = "Demo 演示用户"
+        user.password_hash = hash_password("demo123")
     return user, created
 
 
