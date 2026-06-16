@@ -112,6 +112,10 @@ SEED_PERMISSIONS = [
     {"code": "agent_action:view", "name": "查看Agent动作", "module": "agent_action"},
     {"code": "agent_action:approve", "name": "审批Agent动作", "module": "agent_action"},
     {"code": "agent_action:execute", "name": "执行Agent动作", "module": "agent_action"},
+    {"code": "allocation:import", "name": "导入费用分摊", "module": "allocation"},
+    {"code": "allocation:view", "name": "查看费用分摊", "module": "allocation"},
+    {"code": "allocation:calculate", "name": "计算费用分摊", "module": "allocation"},
+    {"code": "allocation:post", "name": "入账费用分摊", "module": "allocation"},
 ]
 
 SEED_PRODUCTS = [

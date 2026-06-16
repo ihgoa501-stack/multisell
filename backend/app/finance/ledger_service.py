@@ -31,6 +31,7 @@ ENTRY_PAYMENT_FEE = "payment_fee"
 ENTRY_REFUND = "refund"
 ENTRY_ADJUSTMENT = "adjustment"
 ENTRY_OTHER_FEE = "other_fee"
+ENTRY_ALLOCATED_COST = "allocated_cost"
 
 
 def _money(val) -> float:

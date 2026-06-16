@@ -590,6 +590,57 @@ class AgentAction(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
+ALLOWED_ALLOCATION_TYPES = ["first_leg", "fba", "overseas_warehouse", "other"]
+ALLOWED_ALLOCATION_METHODS = ["quantity", "weight", "volume", "value"]
+
+
+class CostAllocationBatch(Base):
+    """费用分摊批次"""
+    __tablename__ = "cost_allocation_batch"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    allocation_type = Column(String(50), nullable=False, comment="first_leg/fba/overseas_warehouse/other")
+    allocation_method = Column(String(30), nullable=False, comment="quantity/weight/volume/value")
+    total_amount = Column(Numeric(14, 2), nullable=False, comment="分摊总金额")
+    currency = Column(String(10), server_default="CNY", comment="币种")
+    source_filename = Column(String(500), comment="源文件名")
+    row_count = Column(Integer, default=0, comment="行数")
+    status = Column(String(30), server_default="imported", comment="imported/calculated/posted")
+    posted_count = Column(Integer, default=0, comment="已入账行数")
+    created_by = Column(String(100), comment="创建人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class CostAllocationItem(Base):
+    """费用分摊明细"""
+    __tablename__ = "cost_allocation_item"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    batch_id = Column(BigInteger, ForeignKey("cost_allocation_batch.id"), nullable=False, comment="批次ID")
+    row_number = Column(Integer, nullable=False, comment="原始行号")
+
+    sku_id = Column(BigInteger, ForeignKey("sku.id"), comment="SKU ID")
+    sku_code = Column(String(100), comment="SKU编码")
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), comment="订单ID")
+    quantity = Column(Integer, default=0, comment="数量")
+    weight_kg = Column(Numeric(10, 3), comment="重量(kg)")
+    volume_m3 = Column(Numeric(10, 4), comment="体积(m³)")
+    item_value = Column(Numeric(14, 2), comment="货值")
+
+    allocation_factor = Column(Numeric(14, 4), comment="分摊因子")
+    allocated_amount = Column(Numeric(14, 2), default=0, comment="分摊金额")
+    cost_layer = Column(String(30), server_default="allocated", comment="成本层")
+
+    posted_to_ledger = Column(Integer, default=0, comment="是否已入账")
+    raw_payload = Column(JSON, comment="原始CSV行数据")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+    batch = relationship("CostAllocationBatch", lazy="selectin")
+    sku = relationship("Sku", lazy="selectin")
+    matched_order = relationship("Order", lazy="selectin")
+
+
 class User(Base):
     """用户"""
     __tablename__ = "user"
