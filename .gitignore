@@ -13,6 +13,10 @@ uploads/
 .DS_Store
 *.log
 
+.codegraph/
+.qoder/
+reasonix.toml
+
 # 旧Java项目残留（已清理）
 pom.xml
 *.java

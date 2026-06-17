@@ -19,8 +19,8 @@ async def get_current_user(
     """获取当前登录用户。AUTH_ENABLED=False 时返回系统用户。"""
     if not settings.AUTH_ENABLED:
         mock_user = User(
-            id=0,
-            username="system",
+            id=1,
+            username="admin",
             display_name="系统管理员",
             role="admin",
             status=1,

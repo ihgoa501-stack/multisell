@@ -106,6 +106,12 @@ class AgentDecisionRequest(BaseModel):
     dry_run: bool = False
 
 
+class FeedbackRequest(BaseModel):
+    user_action: str = Field(..., pattern="^(accepted|modified|rejected|ignored)$")
+    user_overrides: Optional[dict] = None
+    user_feedback: Optional[str] = None
+
+
 class AgentDecisionResponse(BaseModel):
     agent_id: str
     decision_point: str

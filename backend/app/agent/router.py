@@ -1,4 +1,10 @@
-"""Agent API 路由"""
+"""Agent API 路由
+
+注意：路由注册顺序很重要。
+/agents/decisions, /agents/rules, /agents/profile, /agents/episodes
+等静态路径必须定义在 /agents/{agent_id} 之前，
+否则 FastAPI 会将 "decisions/rules/profile/episodes" 匹配为 {agent_id}。
+"""
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -8,7 +14,7 @@ from app.models import User
 from app.agent.schemas import (
     AgentMetadataVO, DecisionLogVO, PersonalRuleVO, PersonalRuleCreate,
     PersonalRuleUpdate, HonchoProfileVO, HonchoProfileUpdate,
-    AgentDecisionRequest, EpisodeVO,
+    AgentDecisionRequest, FeedbackRequest, EpisodeVO,
 )
 from app.agent.registry import AgentRegistry
 from app.agent.service import AgentService
@@ -17,41 +23,12 @@ from app.agent.base import EvolutionStage
 router = APIRouter(tags=["AI Agent 系统"])
 
 
+# ── 静态路径（必须放在 /agents/{agent_id} 之前） ──
+
+
 @router.get("/agents", summary="Agent列表")
 async def list_agents():
     return Result.ok(AgentRegistry.list_agents())
-
-
-@router.get("/agents/{agent_id}", summary="Agent详情")
-async def get_agent(agent_id: str):
-    meta = AgentRegistry.get_metadata(agent_id)
-    if not meta:
-        return Result.not_found(f"Agent {agent_id} 不存在")
-    return Result.ok(meta)
-
-
-@router.post("/agents/{agent_id}/decide", summary="Agent决策")
-async def agent_decide(
-    agent_id: str,
-    req: AgentDecisionRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("agent:execute")),
-):
-    agent_cls = AgentRegistry.get_agent_class(agent_id)
-    if not agent_cls:
-        return Result.not_found(f"Agent {agent_id} 不存在")
-
-    stage_override = None
-    decision_stage_map = {}
-    rules = await AgentService.list_rules(db, current_user.id, agent_id, req.decision_point)
-    if rules:
-        pass
-
-    agent = agent_cls(user_id=current_user.id, stage_override=stage_override)
-    result = await AgentService.execute_decision(
-        db, agent, req.decision_point, req.context, dry_run=req.dry_run
-    )
-    return Result.ok(result)
 
 
 @router.get("/agents/decisions", summary="决策日志列表")
@@ -75,13 +52,14 @@ async def list_decisions(
 @router.post("/agents/decisions/{decision_id}/feedback", summary="提交决策反馈")
 async def submit_feedback(
     decision_id: int,
-    user_action: str = Query(..., pattern="^(accepted|modified|rejected|ignored)$"),
-    user_feedback: str = Query(None),
+    req: FeedbackRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("agent:execute")),
 ):
     decision = await AgentService.update_decision_feedback(
-        db, decision_id, user_action, user_feedback=user_feedback
+        db, decision_id, req.user_action,
+        user_overrides=req.user_overrides,
+        user_feedback=req.user_feedback,
     )
     if not decision:
         return Result.not_found("决策记录不存在")
@@ -167,3 +145,38 @@ async def list_episodes(
         records=[EpisodeVO.model_validate(e) for e in episodes],
         total=total, page=page, page_size=page_size,
     )
+
+
+# ── 动态路径（放在静态路径之后） ──
+
+
+@router.get("/agents/{agent_id}", summary="Agent详情")
+async def get_agent(agent_id: str):
+    meta = AgentRegistry.get_metadata(agent_id)
+    if not meta:
+        return Result.not_found(f"Agent {agent_id} 不存在")
+    return Result.ok(meta)
+
+
+@router.post("/agents/{agent_id}/decide", summary="Agent决策")
+async def agent_decide(
+    agent_id: str,
+    req: AgentDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    agent_cls = AgentRegistry.get_agent_class(agent_id)
+    if not agent_cls:
+        return Result.not_found(f"Agent {agent_id} 不存在")
+
+    stage_override = None
+    decision_stage_map = {}
+    rules = await AgentService.list_rules(db, current_user.id, agent_id, req.decision_point)
+    if rules:
+        pass
+
+    agent = agent_cls(user_id=current_user.id, stage_override=stage_override)
+    result = await AgentService.execute_decision(
+        db, agent, req.decision_point, req.context, dry_run=req.dry_run
+    )
+    return Result.ok(result)

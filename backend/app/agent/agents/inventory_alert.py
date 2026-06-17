@@ -1,24 +1,51 @@
-"""A5 库存预警 Agent
+"""A5 库存预警 Agent (Phase 1 增强版)
 
-设计依据: final-integrated-solution.md §6.3
-- L1自动监控 + L1自动补货建议，关键决策L2人工确认
-- 三级预警体系 (红/黄/绿)
-- 补货数量公式 (Holt-Winters简化版)
-- 物流方式决策树
+设计依据: docs/AI_AGENT_FEASIBLE_DEVELOPMENT_SPEC.md §7.1.2
+- 输入覆盖 SKU、可售库存、锁定库存、在途库存、近 7/14/30 天销量、采购提前期、MOQ、安全库存天数
+- 输出库存状态、可售天数、建议补货量、建议物流方式、风险原因、建议操作
+- 数据不足时返回 insufficient_data，不允许编造数据
 """
 from typing import Any
-from datetime import datetime, timezone, timedelta
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
+
+
+# ── 必填字段列表（缺少其中任一即返回 insufficient_data） ──
+REQUIRED_STOCK_FIELDS = [
+    "sku_code", "sellable_stock", "sales_7d",
+    "lead_time_days", "safety_stock_days",
+]
+REQUIRED_REPLENISH_FIELDS = [
+    "sku_code", "sellable_stock", "sales_30d",
+    "lead_time_days", "moq",
+]
+
+
+def _safe_int(v: Any, default: int = 0) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(v: Any, default: float = 0.0) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _missing_fields(context: dict, required: list[str]) -> list[str]:
+    return [f for f in required if f not in context or context[f] is None]
 
 
 @register_agent
 class A5InventoryAlertAgent(BaseAgent):
     agent_id = "A5"
     name = "库存预警 Agent"
-    description = "智能库存监控、三级预警、补货建议与物流方式推荐"
+    description = "智能库存监控、三级预警、补货建议与物流方式推荐 | 支持可售/锁定/在途库存、多周期销量、采购提前期与MOQ"
     decision_points = ["stock_alert", "replenishment_plan", "logistics_choice"]
-    version = "1.0.0"
+    version = "2.0.0"
 
     DEFAULT_STAGES = {
         "stock_alert": EvolutionStage.SEMI_AUTONOMOUS,
@@ -35,138 +62,181 @@ class A5InventoryAlertAgent(BaseAgent):
             return self._recommend_logistics(context)
         return {"action": "unknown", "confidence": 0.0}
 
+    # ──────────────────────────────
+    #  1. 库存预警（核心入口）
+    # ──────────────────────────────
     def _check_stock_alert(self, context: dict) -> dict:
-        sku_code = context.get("sku_code", "")
-        product_name = context.get("product_name", "")
-        quantity = int(context.get("quantity", 0))
-        safety_stock = int(context.get("safety_stock", 0))
-        daily_sales = float(context.get("daily_sales", 0))
-        is_fast_moving = context.get("is_fast_moving", False)
-        in_transit = int(context.get("in_transit", 0))
+        # ---- 向后兼容旧字段名 ----
+        context = self._backfill_legacy_fields(context)
 
-        sellable_days = int(quantity / daily_sales) if daily_sales > 0 else 999
+        missing = _missing_fields(context, REQUIRED_STOCK_FIELDS)
+        if missing:
+            return self._insufficient("stock_alert", missing)
 
-        red_threshold = 3 if is_fast_moving else 7
-        yellow_threshold = 7 if is_fast_moving else 14
+        sku_code = str(context["sku_code"])
+        sellable = _safe_int(context["sellable_stock"])
+        locked = _safe_int(context.get("locked_stock", 0))
+        in_transit = _safe_int(context.get("in_transit_stock", 0))
+        valid_stock = sellable + in_transit  # 锁定库存不计入可售
 
-        alerts = []
-        actions = []
-        alert_level = "green"
-        confidence = 0.90
+        # 从多周期销量推算日均销量
+        sales_7d = _safe_float(context.get("sales_7d", 0))
+        sales_14d = _safe_float(context.get("sales_14d", 0))
+        sales_30d = _safe_float(context.get("sales_30d", 0))
+
+        daily_sales, sales_source = self._estimate_daily_sales(
+            sales_7d, sales_14d, sales_30d
+        )
+
+        lead_time = _safe_int(context["lead_time_days"], 30)
+        safety_days = _safe_int(context["safety_stock_days"], 14)
+        moq = _safe_int(context.get("moq", 0))
+
+        # 可售天数计算
+        sellable_days = round(valid_stock / daily_sales, 1) if daily_sales > 0 else 999.0
+
+        # ---- 三级预警判定 ----
+        red_threshold = lead_time * 0.5  # 小于半个提前期 → 红色
+        yellow_threshold = lead_time + safety_days  # 提前期 + 安全天数 → 黄色
 
         if sellable_days <= red_threshold:
-            alert_level = "red"
+            stock_status = "red"
             confidence = 0.95
-            alerts.append({
-                "level": "red",
-                "sku_code": sku_code,
-                "product_name": product_name,
-                "sellable_days": sellable_days,
-                "current_stock": quantity,
-                "in_transit": in_transit,
-                "daily_sales": daily_sales,
-                "message": f"[紧急] {product_name}({sku_code}) 仅可售 {sellable_days} 天",
-            })
-            actions = ["pause_ads", "notify_purchase", "notify_operations", "consider_raising_price"]
+            risk_reason = (
+                f"可售天数({sellable_days}天)不足提前期({lead_time}天)的一半，"
+                f"存在断货风险"
+            )
+            suggested_actions = [
+                "紧急补货",
+                "暂停广告投放",
+                "通知采购部门",
+                "考虑提价控量",
+            ]
         elif sellable_days <= yellow_threshold:
-            alert_level = "yellow"
+            stock_status = "yellow"
             confidence = 0.88
-            replenish_qty = self._calc_replenish_qty(daily_sales, sellable_days, 30, quantity, in_transit)
-            alerts.append({
-                "level": "yellow",
-                "sku_code": sku_code,
-                "product_name": product_name,
-                "sellable_days": sellable_days,
-                "current_stock": quantity,
-                "in_transit": in_transit,
-                "daily_sales": daily_sales,
-                "suggested_replenish": replenish_qty,
-                "message": f"[预警] {product_name}({sku_code}) 可售 {sellable_days} 天，建议补货 {replenish_qty}",
-            })
-            actions = ["generate_replenishment", "notify_purchase", "consider_reduce_ads"]
+            risk_reason = (
+                f"可售天数({sellable_days}天)小于提前期+安全库存天数"
+                f"({lead_time}+{safety_days}={yellow_threshold}天)，建议尽快补货"
+            )
+            suggested_actions = [
+                "安排补货",
+                "关注在途到货时间",
+                "适当降低广告预算",
+            ]
         else:
-            alert_level = "green"
+            stock_status = "green"
             confidence = 0.85
-            alerts.append({
-                "level": "green",
-                "sku_code": sku_code,
-                "sellable_days": sellable_days,
-                "message": f"{product_name}({sku_code}) 库存正常，可售 {sellable_days} 天",
-            })
-            actions = ["monitor"]
+            risk_reason = "库存充足，暂无风险"
+            suggested_actions = ["常规监控"]
+
+        # ---- 建议补货量 ----
+        suggested_replenish_qty = self._calc_replenish_qty(
+            daily_sales=daily_sales,
+            sellable_days=sellable_days,
+            target_days=lead_time + safety_days,
+            current_stock=sellable,
+            in_transit=in_transit,
+            moq=moq,
+        )
+
+        # ---- 建议物流方式 ----
+        suggested_logistics = self._pick_logistics(
+            stock_status, sellable_days, lead_time
+        )
 
         return {
-            "alert_level": alert_level,
+            "stock_status": stock_status,
             "sellable_days": sellable_days,
-            "alerts": alerts,
-            "actions": actions,
+            "sellable_stock": sellable,
+            "locked_stock": locked,
+            "in_transit_stock": in_transit,
+            "daily_sales_used": round(daily_sales, 1),
+            "daily_sales_source": sales_source,
+            "lead_time_days": lead_time,
+            "safety_stock_days": safety_days,
+            "moq": moq,
+            "suggested_replenish_qty": suggested_replenish_qty,
+            "suggested_logistics": suggested_logistics,
+            "risk_reason": risk_reason,
+            "suggested_actions": suggested_actions,
             "confidence": confidence,
         }
 
-    def _calc_replenish_qty(
-        self,
-        daily_sales: float,
-        sellable_days: int,
-        target_days: int,
-        current_stock: int,
-        in_transit: int,
-    ) -> int:
-        safety_days = int(target_days * 1.5)
-        needed = int(daily_sales * safety_days)
-        available = current_stock + in_transit
-        return max(0, needed - available)
-
+    # ──────────────────────────────
+    #  2. 补货计算
+    # ──────────────────────────────
     def _calculate_replenishment(self, context: dict) -> dict:
-        sku_code = context.get("sku_code", "")
-        daily_sales = float(context.get("daily_sales", 0))
-        current_stock = int(context.get("quantity", 0))
-        in_transit = int(context.get("in_transit", 0))
-        lead_time_days = int(context.get("lead_time_days", 20))
-        min_moq = int(context.get("min_moq", 100))
-        season_factor = float(context.get("season_factor", 1.0))
-        trend_factor = float(context.get("trend_factor", 1.0))
+        context = self._backfill_legacy_fields(context)
 
-        adjusted_daily_sales = daily_sales * season_factor * trend_factor
-        safety_stock_days = lead_time_days * 1.5
-        safety_stock_qty = int(adjusted_daily_sales * safety_stock_days)
+        missing = _missing_fields(context, REQUIRED_REPLENISH_FIELDS)
+        if missing:
+            return self._insufficient("replenishment_plan", missing)
 
-        replenish_qty = safety_stock_qty - current_stock - in_transit
-        buffer = int(adjusted_daily_sales * 7)
-        replenish_qty = max(replenish_qty + buffer, min_moq)
+        sku_code = str(context["sku_code"])
+        sellable = _safe_int(context["sellable_stock"])
+        in_transit = _safe_int(context.get("in_transit_stock", 0))
+        lead_time = _safe_int(context["lead_time_days"], 30)
+        moq = _safe_int(context["moq"], 100)
+        safety_days_input = _safe_int(context.get("safety_stock_days", 14))
 
+        sales_7d = _safe_float(context.get("sales_7d", 0))
+        sales_14d = _safe_float(context.get("sales_14d", 0))
+        sales_30d = _safe_float(context.get("sales_30d", 0))
+        daily_sales, sales_source = self._estimate_daily_sales(
+            sales_7d, sales_14d, sales_30d
+        )
+
+        if daily_sales <= 0:
+            return self._insufficient("replenishment_plan", ["sales_7d/sales_30d"])
+
+        target_days = lead_time + safety_days_input
+        target_stock = int(daily_sales * target_days)
+        available = sellable + in_transit
+        replenish_qty = max(target_stock - available, moq)
+
+        risk_reason = ""
         urgency = "normal"
-        if replenish_qty > 0 and (current_stock + in_transit) < int(adjusted_daily_sales * lead_time_days):
+        if replenish_qty > 0 and available < int(daily_sales * lead_time):
             urgency = "urgent"
-
-        confidence = 0.85
-        if trend_factor > 1.2 or trend_factor < 0.8:
-            confidence = 0.75
+            risk_reason = f"当前可用库存({available})小于提前期({lead_time}天)预估销量({int(daily_sales * lead_time)})"
 
         return {
             "sku_code": sku_code,
-            "current_stock": current_stock,
-            "in_transit": in_transit,
-            "adjusted_daily_sales": round(adjusted_daily_sales, 1),
-            "safety_stock_qty": safety_stock_qty,
+            "sellable_stock": sellable,
+            "in_transit_stock": in_transit,
+            "available_stock": sellable + in_transit,
+            "daily_sales_used": round(daily_sales, 1),
+            "daily_sales_source": sales_source,
+            "lead_time_days": lead_time,
+            "safety_stock_days": safety_days_input,
+            "target_stock": target_stock,
             "suggested_replenish_qty": replenish_qty,
-            "min_moq": min_moq,
+            "moq": moq,
             "urgency": urgency,
-            "lead_time_days": lead_time_days,
-            "confidence": confidence,
+            "risk_reason": risk_reason,
+            "confidence": 0.90 if urgency == "normal" else 0.85,
         }
 
+    # ──────────────────────────────
+    #  3. 物流推荐
+    # ──────────────────────────────
     def _recommend_logistics(self, context: dict) -> dict:
-        urgency = context.get("urgency", "normal")
-        cargo_value = float(context.get("cargo_value", 0))
-        weight_kg = float(context.get("weight_kg", 0))
+        stock_status = context.get("stock_status", "green")
+        sellable_days = _safe_float(context.get("sellable_days", 999))
+        lead_time = _safe_int(context.get("lead_time_days", 20))
+        cargo_value = _safe_float(context.get("cargo_value", 0))
+        weight_kg = _safe_float(context.get("weight_kg", 0))
         destination = context.get("destination", "US")
         is_peak_season = context.get("is_peak_season", False)
-        has_fba_capacity = context.get("has_fba_capacity", True)
 
         options = []
         confidence = 0.85
+        suggested_logistics = "海运"
 
-        if urgency == "urgent":
+        if stock_status == "red" or sellable_days < lead_time * 0.5:
+            # 紧急：空运或快递
+            suggested_logistics = "空运/国际快递"
             if cargo_value > 50:
                 options.append({
                     "method": "air_express",
@@ -183,23 +253,34 @@ class A5InventoryAlertAgent(BaseAgent):
                 "suitability": "alternative",
             })
             confidence = 0.90
-        elif urgency == "normal":
-            sea_freight_days = "15-20" if destination == "US" else "25-35"
+        elif stock_status == "yellow":
+            # 预警：快船或空运备选
+            suggested_logistics = "快船"
+            options.append({
+                "method": "express_sea",
+                "name": "快船 (美森/以星)",
+                "estimated_days": "10-15",
+                "cost_estimate": "中",
+                "suitability": "recommended",
+            })
+            options.append({
+                "method": "air_freight",
+                "name": "空运 (备选)",
+                "estimated_days": "7-12",
+                "cost_estimate": "高",
+                "suitability": "alternative",
+            })
+            confidence = 0.88
+        else:
+            # 正常：海运
+            sea_days = "15-20" if destination == "US" else "25-35"
             options.append({
                 "method": "sea_freight",
                 "name": "海运",
-                "estimated_days": sea_freight_days,
+                "estimated_days": sea_days,
                 "cost_estimate": "低",
                 "suitability": "recommended",
             })
-            if destination == "US":
-                options.append({
-                    "method": "express_sea",
-                    "name": "快船 (美森/以星)",
-                    "estimated_days": "10-15",
-                    "cost_estimate": "中",
-                    "suitability": "alternative",
-                })
             if destination == "EU":
                 options.append({
                     "method": "rail",
@@ -208,21 +289,90 @@ class A5InventoryAlertAgent(BaseAgent):
                     "cost_estimate": "中低",
                     "suitability": "alternative",
                 })
-            if is_peak_season:
-                options.append({
-                    "method": "advance_buffer",
-                    "name": "建议提前2周预留旺季缓冲",
-                    "estimated_days": "提前2周",
-                    "cost_estimate": "—",
-                    "suitability": "warning",
-                })
-                confidence = 0.80
+            confidence = 0.85
+
+        if is_peak_season and options:
+            options.append({
+                "method": "advance_buffer",
+                "name": "旺季建议提前2周备货",
+                "estimated_days": "提前2周",
+                "cost_estimate": "—",
+                "suitability": "warning",
+            })
+            confidence = max(0.80, confidence - 0.05)
 
         return {
+            "suggested_logistics": suggested_logistics,
             "destination": destination,
-            "urgency": urgency,
+            "stock_status": stock_status,
+            "sellable_days": sellable_days,
             "cargo_value": cargo_value,
-            "has_fba_capacity": has_fba_capacity,
+            "weight_kg": weight_kg,
             "options": options,
             "confidence": confidence,
+        }
+
+    # ──────────────────────────────
+    #  内部工具方法
+    # ──────────────────────────────
+    def _estimate_daily_sales(
+        self, sales_7d: float, sales_14d: float, sales_30d: float
+    ) -> tuple[float, str]:
+        """从多周期销量估算日均销量，优先用短周期"""
+        if sales_7d > 0:
+            return sales_7d / 7, "7d"
+        if sales_14d > 0:
+            return sales_14d / 14, "14d"
+        if sales_30d > 0:
+            return sales_30d / 30, "30d"
+        return 0.0, "none"
+
+    def _calc_replenish_qty(
+        self,
+        daily_sales: float,
+        sellable_days: float,
+        target_days: int,
+        current_stock: int,
+        in_transit: int,
+        moq: int = 0,
+    ) -> int:
+        target_stock = int(daily_sales * target_days)
+        available = current_stock + in_transit
+        qty = max(target_stock - available, 0)
+        if moq > 0 and qty < moq and qty > 0:
+            qty = moq
+        return qty
+
+    def _pick_logistics(
+        self, stock_status: str, sellable_days: float, lead_time: int
+    ) -> str:
+        if stock_status == "red" or sellable_days < lead_time * 0.5:
+            return "空运/国际快递"
+        elif stock_status == "yellow":
+            return "快船"
+        return "海运"
+
+    def _backfill_legacy_fields(self, context: dict) -> dict:
+        """向后兼容旧字段名（quantity→sellable_stock, in_transit→in_transit_stock）"""
+        ctx = dict(context)
+        if "sellable_stock" not in ctx and "quantity" in ctx:
+            ctx["sellable_stock"] = ctx["quantity"]
+        if "in_transit_stock" not in ctx and "in_transit" in ctx:
+            ctx["in_transit_stock"] = ctx["in_transit"]
+        if "moq" not in ctx and "min_moq" in ctx:
+            ctx["moq"] = ctx["min_moq"]
+        if "sellable_stock" not in ctx and "current_stock" in ctx:
+            ctx["sellable_stock"] = ctx["current_stock"]
+        # 兼容旧版 daily_sales → sales_7d
+        if "sales_7d" not in ctx and "daily_sales" in ctx:
+            ctx["sales_7d"] = float(ctx["daily_sales"]) * 7
+        return ctx
+
+    def _insufficient(self, point: str, missing: list[str]) -> dict:
+        return {
+            "status": "insufficient_data",
+            "decision_point": point,
+            "missing_fields": missing,
+            "message": f"缺少必要字段: {', '.join(missing)}，请补充完整数据",
+            "confidence": 0.0,
         }

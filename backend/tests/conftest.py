@@ -17,16 +17,18 @@ os.environ.setdefault(
 from app.main import app
 from app.database import Base, async_session_factory, engine
 from app.auth.service import AuthService
+import sqlalchemy as sa
 
 
 @pytest_asyncio.fixture(scope="session")
 async def prepare_db():
     """会话级：在测试数据库中创建所有表 + 种子数据"""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        # 使用 CASCADE 删除所有表（处理循环/复杂外键依赖）
+        # 分两条语句执行（asyncpg 不支持多语句合一的 prepared statement）
+        await conn.execute(sa.text("DROP SCHEMA IF EXISTS public CASCADE"))
+        await conn.execute(sa.text("CREATE SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
-
-    # 创建默认 admin 用户（幂等）
     async with async_session_factory() as session:
         from sqlalchemy import select
         from app.models import User

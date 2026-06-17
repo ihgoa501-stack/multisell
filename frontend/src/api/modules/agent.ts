@@ -13,8 +13,8 @@ export const agentApi = {
   getDecisions(params?: any) {
     return http.get('/agents/decisions', { params })
   },
-  submitFeedback(decisionId: number, params: { user_action: string; user_feedback?: string }) {
-    return http.post(`/agents/decisions/${decisionId}/feedback`, null, { params })
+  submitFeedback(decisionId: number, data: { user_action: string; user_overrides?: any; user_feedback?: string }) {
+    return http.post(`/agents/decisions/${decisionId}/feedback`, data)
   },
   listRules(params?: any) {
     return http.get('/agents/rules', { params })
@@ -41,18 +41,18 @@ export const agentApi = {
 
 export const entropyApi = {
   getDashboard() {
-    return http.get('/agents/entropy/dashboard')
+    return http.get('/entropy/dashboard')
   },
   runDefenses() {
-    return http.post('/agents/entropy/defend')
+    return http.post('/entropy/defend')
   },
   getHealthScores() {
-    return http.get('/agents/entropy/health')
+    return http.get('/entropy/health')
   },
   getSpc() {
-    return http.get('/agents/entropy/spc')
+    return http.get('/entropy/spc')
   },
   getChanges(params?: any) {
-    return http.get('/agents/entropy/changes', { params })
+    return http.get('/entropy/changes', { params })
   },
 }
