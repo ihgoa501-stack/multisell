@@ -112,7 +112,8 @@
                   <label class="text-[13px] font-medium text-[var(--text-primary)]">{{ field.count && field.count > 1 ? `${field.label} ${idx + 1}` : field.label }} <span v-if="field.required" class="text-red-500">*</span></label>
                 </div>
                 <n-input-number
-                  v-model:value="(field.count ? (form.extra[field.key] || [])[idx] : form.extra[field.key]) as number"
+                  :value="field.count ? (form.extra[field.key] || [])[idx] : form.extra[field.key]"
+                  @update:value="(val: any) => { field.count ? (() => { const arr = form.extra[field.key] || []; arr[idx] = val; form.extra[field.key] = [...arr] })() : (form.extra[field.key] = val) }"
                   :placeholder="field.placeholder || '0'"
                   :min="0"
                   size="small"
