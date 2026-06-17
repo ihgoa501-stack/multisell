@@ -91,6 +91,8 @@ SEED_PERMISSIONS = [
     {"code": "brand:delete", "name": "删除品牌", "module": "brand"},
     {"code": "search:view", "name": "全局搜索", "module": "search"},
     {"code": "decision:calculate", "name": "上架前决策计算", "module": "decision"},
+    {"code": "agent:view", "name": "查看 AI Agent", "module": "agent"},
+    {"code": "agent:execute", "name": "执行 AI Agent 决策", "module": "agent"},
 ]
 
 SEED_PRODUCTS = [
