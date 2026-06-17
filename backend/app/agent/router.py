@@ -1,0 +1,169 @@
+"""Agent API 路由"""
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.auth import require_permission
+from app.common import Result, PageResult
+from app.models import User
+from app.agent.schemas import (
+    AgentMetadataVO, DecisionLogVO, PersonalRuleVO, PersonalRuleCreate,
+    PersonalRuleUpdate, HonchoProfileVO, HonchoProfileUpdate,
+    AgentDecisionRequest, EpisodeVO,
+)
+from app.agent.registry import AgentRegistry
+from app.agent.service import AgentService
+from app.agent.base import EvolutionStage
+
+router = APIRouter(tags=["AI Agent 系统"])
+
+
+@router.get("/agents", summary="Agent列表")
+async def list_agents():
+    return Result.ok(AgentRegistry.list_agents())
+
+
+@router.get("/agents/{agent_id}", summary="Agent详情")
+async def get_agent(agent_id: str):
+    meta = AgentRegistry.get_metadata(agent_id)
+    if not meta:
+        return Result.not_found(f"Agent {agent_id} 不存在")
+    return Result.ok(meta)
+
+
+@router.post("/agents/{agent_id}/decide", summary="Agent决策")
+async def agent_decide(
+    agent_id: str,
+    req: AgentDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    agent_cls = AgentRegistry.get_agent_class(agent_id)
+    if not agent_cls:
+        return Result.not_found(f"Agent {agent_id} 不存在")
+
+    stage_override = None
+    decision_stage_map = {}
+    rules = await AgentService.list_rules(db, current_user.id, agent_id, req.decision_point)
+    if rules:
+        pass
+
+    agent = agent_cls(user_id=current_user.id, stage_override=stage_override)
+    result = await AgentService.execute_decision(
+        db, agent, req.decision_point, req.context, dry_run=req.dry_run
+    )
+    return Result.ok(result)
+
+
+@router.get("/agents/decisions", summary="决策日志列表")
+async def list_decisions(
+    agent_id: str = Query(None),
+    decision_point: str = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    logs, total = await AgentService.get_decision_logs(
+        db, current_user.id, agent_id, decision_point, page, page_size
+    )
+    return PageResult.ok(
+        records=[DecisionLogVO.model_validate(l) for l in logs],
+        total=total, page=page, page_size=page_size,
+    )
+
+
+@router.post("/agents/decisions/{decision_id}/feedback", summary="提交决策反馈")
+async def submit_feedback(
+    decision_id: int,
+    user_action: str = Query(..., pattern="^(accepted|modified|rejected|ignored)$"),
+    user_feedback: str = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    decision = await AgentService.update_decision_feedback(
+        db, decision_id, user_action, user_feedback=user_feedback
+    )
+    if not decision:
+        return Result.not_found("决策记录不存在")
+    return Result.ok(DecisionLogVO.model_validate(decision))
+
+
+@router.get("/agents/rules", summary="个人规则列表")
+async def list_rules(
+    agent_id: str = Query(None),
+    decision_point: str = Query(None),
+    status: str = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    rules = await AgentService.list_rules(db, current_user.id, agent_id, decision_point, status)
+    return Result.ok([PersonalRuleVO.model_validate(r) for r in rules])
+
+
+@router.post("/agents/rules", summary="创建个人规则")
+async def create_rule(
+    data: PersonalRuleCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    rule = await AgentService.create_rule(db, current_user.id, data.model_dump())
+    return Result.ok(PersonalRuleVO.model_validate(rule))
+
+
+@router.put("/agents/rules/{rule_id}", summary="更新个人规则")
+async def update_rule(
+    rule_id: int,
+    data: PersonalRuleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    rule = await AgentService.update_rule(db, rule_id, current_user.id, data.model_dump(exclude_none=True))
+    if not rule:
+        return Result.not_found("规则不存在或无权修改")
+    return Result.ok(PersonalRuleVO.model_validate(rule))
+
+
+@router.delete("/agents/rules/{rule_id}", summary="删除个人规则")
+async def delete_rule(
+    rule_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    ok = await AgentService.delete_rule(db, rule_id, current_user.id)
+    if not ok:
+        return Result.not_found("规则不存在或无权删除")
+    return Result.ok(message="规则已删除")
+
+
+@router.get("/agents/profile", summary="Honcho用户模型")
+async def get_honcho_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    profile = await AgentService.get_or_create_honcho_profile(db, current_user.id)
+    return Result.ok(HonchoProfileVO.model_validate(profile))
+
+
+@router.put("/agents/profile", summary="更新Honcho用户模型")
+async def update_honcho_profile(
+    data: HonchoProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    profile = await AgentService.update_honcho_profile(db, current_user.id, data.model_dump(exclude_none=True))
+    return Result.ok(HonchoProfileVO.model_validate(profile))
+
+
+@router.get("/agents/episodes", summary="Episode列表")
+async def list_episodes(
+    agent_id: str = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    episodes, total = await AgentService.list_episodes(db, current_user.id, agent_id, page, page_size)
+    return PageResult.ok(
+        records=[EpisodeVO.model_validate(e) for e in episodes],
+        total=total, page=page, page_size=page_size,
+    )

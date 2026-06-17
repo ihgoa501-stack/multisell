@@ -846,3 +846,126 @@ class OrderShippingSnapshot(Base):
     calculation_detail = Column(Text, comment="计算说明")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+# ========== AI Agent 系统模型 ==========
+
+
+class AgentDecision(Base):
+    """Agent决策日志 (Hermes Episodic Memory)"""
+    __tablename__ = "agent_decision"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    agent_id = Column(String(20), nullable=False, comment="Agent标识: A3/A4/A5/A6/A7/G1/G2/G3")
+    decision_point = Column(String(50), nullable=False, comment="决策点: acos_adjustment/stock_alert/discount_check 等")
+
+    context_json = Column(JSON, nullable=False, comment="决策上下文")
+    agent_output = Column(JSON, nullable=False, comment="Agent原始输出")
+    final_decision = Column(JSON, nullable=False, comment="最终执行的决策")
+
+    user_action = Column(String(20), nullable=False, comment="用户操作: accepted/modified/rejected/ignored")
+    user_overrides = Column(JSON, comment="用户修改内容")
+    user_feedback = Column(Text, comment="用户显式反馈")
+
+    rules_applied = Column(JSON, comment="应用的规则ID列表")
+    rule_overrides = Column(Integer, default=0, comment="规则覆盖次数")
+
+    evolution_stage = Column(String(20), nullable=False, comment="进化阶段: observation/suggestion/semi_autonomous/full_autonomous")
+    confidence = Column(Numeric(4, 3), comment="置信度 0.000-1.000")
+
+    response_time_ms = Column(Integer, comment="响应耗时(ms)")
+    token_count = Column(Integer, comment="Token消耗")
+
+    session_id = Column(String(100), nullable=False, comment="会话ID")
+    episode_id = Column(BigInteger, comment="Episode批次ID")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class PersonalRule(Base):
+    """个人规则库"""
+    __tablename__ = "personal_rule"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    agent_id = Column(String(20), nullable=False, comment="Agent标识")
+    decision_point = Column(String(50), nullable=False, comment="决策点")
+
+    rule_type = Column(String(20), nullable=False, comment="规则类型: threshold/strategy/style/veto")
+    rule_name = Column(String(100), nullable=False, comment="规则名称")
+    rule_condition = Column(JSON, nullable=False, comment="规则条件")
+    rule_action = Column(JSON, nullable=False, comment="规则动作")
+    priority = Column(Integer, default=100, comment="优先级")
+
+    source = Column(String(20), nullable=False, comment="来源: manual/nudge/auto_extracted/template")
+    source_decisions = Column(JSON, comment="来源决策ID列表")
+    status = Column(String(20), default="active", comment="状态: active/shadow/paused/retired")
+    confidence = Column(Numeric(4, 3), default=0, comment="置信度")
+
+    times_applied = Column(Integer, default=0, comment="应用次数")
+    times_overridden = Column(Integer, default=0, comment="被覆盖次数")
+    last_applied_at = Column(DateTime(timezone=True), comment="最后应用时间")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class AgentEpisode(Base):
+    """Agent Episode汇总 (每N个决策一批)"""
+    __tablename__ = "agent_episode"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    agent_id = Column(String(20), nullable=False, comment="Agent标识")
+
+    episode_number = Column(Integer, nullable=False, comment="Episode序号")
+    decision_count = Column(Integer, nullable=False, comment="决策数量")
+    episode_summary = Column(Text, comment="Episode摘要")
+    key_insights = Column(JSON, comment="关键洞察")
+    improvement_suggestions = Column(JSON, comment="改进建议")
+
+    acceptance_rate = Column(Numeric(4, 3), comment="采纳率")
+    avg_confidence = Column(Numeric(4, 3), comment="平均置信度")
+    avg_response_ms = Column(Integer, comment="平均响应耗时")
+    total_tokens = Column(Integer, comment="总Token消耗")
+
+    nudge_triggered = Column(Integer, default=0, comment="Nudge触发次数")
+    nudge_topics = Column(JSON, comment="Nudge话题")
+    nudge_response = Column(Text, comment="Nudge用户响应")
+
+    started_at = Column(DateTime(timezone=True), nullable=False, comment="开始时间")
+    ended_at = Column(DateTime(timezone=True), nullable=False, comment="结束时间")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class HonchoProfile(Base):
+    """Honcho用户模型 (辩证建模)"""
+    __tablename__ = "honcho_profile"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, unique=True, comment="用户ID")
+
+    risk_tolerance = Column(String(30), default="moderate", comment="风险容忍度: conservative/moderate/aggressive")
+    communication_style = Column(String(20), default="balanced", comment="沟通风格: concise/balanced/detailed")
+    notification_prefs = Column(JSON, comment="通知偏好")
+    agent_profiles = Column(JSON, nullable=False, default=lambda: {}, comment="各Agent配置档案")
+
+    hypothesis_count = Column(Integer, default=0, comment="假设数量")
+    confirmed_count = Column(Integer, default=0, comment="已验证数量")
+    last_dialectic_at = Column(DateTime(timezone=True), comment="上次辩证对话时间")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class RuleConflict(Base):
+    """规则冲突日志"""
+    __tablename__ = "rule_conflict"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    decision_id = Column(BigInteger, ForeignKey("agent_decision.id"), nullable=False, comment="决策ID")
+    conflicting_rules = Column(JSON, nullable=False, comment="冲突规则ID列表")
+    winner_rule_id = Column(BigInteger, nullable=False, comment="胜出规则ID")
+    resolution = Column(String(20), nullable=False, comment="解决方式: auto_priority/user_choice/latest_wins")
+    nudge_sent = Column(Integer, default=0, comment="是否已发送Nudge")
+    nudge_resolved = Column(Integer, default=0, comment="是否已解决")
+    user_choice = Column(BigInteger, comment="用户选择的规则ID")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")

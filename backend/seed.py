@@ -123,6 +123,8 @@ SEED_PERMISSIONS = [
     {"code": "order_import:import", "name": "导入订单", "module": "order_import"},
     {"code": "order_import:view", "name": "查看订单导入", "module": "order_import"},
     {"code": "order_import:process", "name": "处理订单导入链路", "module": "order_import"},
+    {"code": "agent:view", "name": "查看 AI Agent", "module": "agent"},
+    {"code": "agent:execute", "name": "执行 AI Agent 决策", "module": "agent"},
 ]
 
 SEED_PRODUCTS = [
