@@ -1,6 +1,6 @@
 """数据库模型定义"""
 
-from sqlalchemy import Column, BigInteger, String, Integer, Numeric, DateTime, Text, JSON, ForeignKey, SmallInteger, func
+from sqlalchemy import Column, BigInteger, String, Integer, Numeric, DateTime, Text, JSON, ForeignKey, SmallInteger, func, UniqueConstraint as sa_UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -969,3 +969,60 @@ class RuleConflict(Base):
     nudge_resolved = Column(Integer, default=0, comment="是否已解决")
     user_choice = Column(BigInteger, comment="用户选择的规则ID")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class RuleMarkChange(Base):
+    """标记变更表 — 熵系统底层审计日志 (Mark Change Pattern)"""
+    __tablename__ = "rule_mark_change"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+    target_type = Column(String(30), nullable=False, comment="变更目标: personal_rule/skill/threshold/honcho_profile")
+    target_id = Column(BigInteger, nullable=False, comment="目标ID")
+    field_path = Column(String(200), nullable=False, comment="JSON路径")
+
+    old_value = Column(JSON, comment="旧值")
+    new_value = Column(JSON, nullable=False, comment="新值")
+
+    source_type = Column(String(30), nullable=False, comment="来源: gds/gds_proxy/human/nudge/auto_extract")
+    source_id = Column(String(100), comment="具体来源标识")
+    change_summary = Column(Text, nullable=False, comment="变更说明")
+
+    parent_change_id = Column(BigInteger, comment="关联的触发变更")
+    related_decision_ids = Column(JSON, comment="关联的决策ID列表")
+    context_json = Column(JSON, comment="触发变更的上下文快照")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class SpcControlLimit(Base):
+    """SPC 统计过程控制 — 决策指标监控"""
+    __tablename__ = "spc_control_limit"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    agent_id = Column(String(20), nullable=False, comment="Agent标识")
+    decision_point = Column(String(50), nullable=False, comment="决策点")
+    metric_name = Column(String(50), nullable=False, comment="指标名: acceptance_rate/confidence/override_rate")
+
+    baseline_mean = Column(Numeric(10, 4), nullable=False, comment="均值")
+    baseline_stddev = Column(Numeric(10, 4), nullable=False, comment="标准差")
+    baseline_samples = Column(Integer, nullable=False, comment="样本数")
+
+    ucl = Column(Numeric(10, 4), nullable=False, comment="μ+3σ 上控制线")
+    lcl = Column(Numeric(10, 4), nullable=False, comment="μ-3σ 下控制线")
+    uwl = Column(Numeric(10, 4), nullable=False, comment="μ+2σ 上警戒线")
+    lwl = Column(Numeric(10, 4), nullable=False, comment="μ-2σ 下警戒线")
+
+    consecutive_same_side = Column(Integer, default=0, comment="连续同侧点数")
+    last_breach_at = Column(DateTime(timezone=True), comment="上次越线时间")
+
+    baseline_recalc_at = Column(DateTime(timezone=True), nullable=False, comment="基线计算时间")
+    next_recalc_at = Column(DateTime(timezone=True), nullable=False, comment="下次重算时间")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    __table_args__ = (
+        sa_UniqueConstraint("user_id", "agent_id", "decision_point", "metric_name", name="uq_spc_metric"),
+    )
