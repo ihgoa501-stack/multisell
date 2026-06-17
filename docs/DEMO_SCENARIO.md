@@ -30,9 +30,7 @@ psql -h localhost -U postgres -c "CREATE DATABASE product_management_test;" 2>/d
 
 ```bash
 cd /Users/lc/multisell/backend
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
-  /Users/lc/multisell/backend/.venv/bin/python -m
-pip install -r requirements.txt
+/Users/lc/multisell/backend/.venv/bin/python -m pip install -r requirements.txt
 ```
 
 ---
@@ -41,7 +39,8 @@ pip install -r requirements.txt
 
 ```bash
 cd /Users/lc/multisell/backend
-python scripts/load_demo_data.py
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
+  /Users/lc/multisell/backend/.venv/bin/python scripts/load_demo_data.py
 ```
 
 预期输出：
@@ -98,8 +97,7 @@ demo csv paths: .../docs/demo-data/order_import_demo.csv, ...
 ```bash
 cd /Users/lc/multisell/backend
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
-  /Users/lc/multisell/backend/.venv/bin/python -m
-uvicorn app.main:app --reload --port 8000
+  /Users/lc/multisell/backend/.venv/bin/python -m uvicorn app.main:app --reload --port 8000
 ```
 
 后端运行在 `http://localhost:8000`。

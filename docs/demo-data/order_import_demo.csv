@@ -1,8 +1,8 @@
 platform,store_name,platform_order_no,order_no,sku_code,quantity,unit_price,currency,recipient_name,recipient_phone,country_code,shipping_address,shipping_fee,tracking_number,paid_at
-Ozon,RU Store,OZ-10001,,DEMO-BT-BLACK,1,299.00,CNY,Анна Иванова,+7-912-555-01-01,RU,Москва, ул. Тверская 12,35,RUS-TRK-001,2026-06-01
-Ozon,RU Store,OZ-10001,,DEMO-BT-WHITE,1,299.00,CNY,Анна Иванова,+7-912-555-01-01,RU,Москва, ул. Тверская 12,35,RUS-TRK-001,2026-06-01
-Ozon,RU Store,OZ-10002,,DEMO-WATCH-BLACK-SPORT,1,599.00,CNY,Сергей Петров,+7-912-555-01-02,RU,Санкт-Петербург, Невский пр. 45,42,RUS-TRK-002,2026-06-02
+Ozon,RU Store,OZ-10001,,DEMO-BT-BLACK,1,299.00,CNY,Анна Иванова,+7-912-555-01-01,RU,"Москва, ул. Тверская 12",35,RUS-TRK-001,2026-06-01
+Ozon,RU Store,OZ-10001,,DEMO-BT-WHITE,1,299.00,CNY,Анна Иванова,+7-912-555-01-01,RU,"Москва, ул. Тверская 12",35,RUS-TRK-001,2026-06-01
+Ozon,RU Store,OZ-10002,,DEMO-WATCH-BLACK-SPORT,1,599.00,CNY,Сергей Петров,+7-912-555-01-02,RU,"Санкт-Петербург, Невский пр. 45",42,RUS-TRK-002,2026-06-02
 Shopee,SG Store,SP-20001,,DEMO-JACKET-BLUE-L,1,259.00,CNY,Tan Wei Ming,+65-8123-4567,SG,Blk 123 Tampines St 11,18,,2026-06-03
 Shopee,SG Store,SP-20002,,DEMO-BTL-50ML,2,238.00,CNY,Lim Siew Ling,+65-9123-4568,SG,10 Bedok South Ave 2,22,,2026-06-04
-Wildberries,RU Store,WB-30001,,DEMO-NUT-1KG,3,128.00,CNY,Екатерина Смирнова,+7-912-555-01-03,RU,Казань, ул. Баумана 8,28,RUS-TRK-003,2026-06-05
-Wildberries,RU Store,WB-30002,,DEMO-YOGA-MAT-PURPLE-10,1,99.00,CNY,Ольга Кузнецова,+7-912-555-01-04,RU,Новосибирск, пр. Красный 15,15,WB-TRK-NO-SNAPSHOT,2026-06-06
+Wildberries,RU Store,WB-30001,,DEMO-NUT-1KG,3,128.00,CNY,Екатерина Смирнова,+7-912-555-01-03,RU,"Казань, ул. Баумана 8",28,RUS-TRK-003,2026-06-05
+Wildberries,RU Store,WB-30002,,DEMO-YOGA-MAT-PURPLE-10,1,99.00,CNY,Ольга Кузнецова,+7-912-555-01-04,RU,"Новосибирск, пр. Красный 15",15,WB-TRK-NO-SNAPSHOT,2026-06-06

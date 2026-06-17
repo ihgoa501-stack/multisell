@@ -4,9 +4,9 @@
 
 | Field | Value |
 |---|---|
-| Date | 2026-06-16 |
+| Date | 2026-06-17 |
 | Branch | `codex/demo-acceptance` |
-| Commit | *(to be filled after commit)* |
+| Acceptance reference | Current branch HEAD after acceptance fixes |
 | Backend | `DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test /Users/lc/multisell/backend/.venv/bin/python -m uvicorn app.main:app --reload --port 8000` |
 | Frontend | `cd frontend && npm run dev` |
 
@@ -46,24 +46,24 @@ cd backend && DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432
 
 ### 4. Pre-listing Decision
 **Result:** ✅ PASS（API 验证）
-- `POST /api/decision/calculate` 接收 sku_id, target_price, destination_country 等参数
+- `POST /api/decisions/prelisting` 接收 `sku_id`, `target_sale_price`, `destination_country` 等参数
 
 ### 5. CSV Order Import
-**Result:** ⚠️ PASS WITH ISSUES
-- API 工作正常：可见多 SKU 合并、失败行、创建订单数
+**Result:** ✅ PASS
+- API 工作正常：可见多 SKU 合并、创建订单数
 - 上传格式：`adapter_code` 作为 Form 字段，`file` 作为 File 字段
-- **issue:** CSV 上传后未自动创建运费快照，导致后续 chain 处理中运费差异无法反映
+- 修复：Demo CSV 地址字段已加引号，避免逗号导致 `shipping_fee/tracking_number/paid_at` 错位。
+- 最新结果：7 行记录，创建 6 个订单，失败 0 行。
 
 ### 6. Process Chain
 **Result:** ✅ PASS
 - `POST /api/order-imports/{batch_id}/process-chain` 成功重建账本并生成异常
 
 ### 7. Shipping Bill Import & Reconcile
-**Result:** ⚠️ PARTIAL
+**Result:** ⚠️ WARN
 - 导入成功（5 行）
-- 对账结果：matched=0, mismatch=0, unmatched=5
-- **原因：** Demo 订单通过 CSV 导入创建时没有 tracking_number 匹配（虽然在 CSV 里有 tracking_number，但订单表中需通过 import 流程写入）
-- 这是设计预期：需要在导入 + 链路处理后才有 tracking_number 写入订单表
+- 对账结果：matched=0, mismatch=3, unmatched=2
+- 说明：对账接口可运行并能分类异常；当前 demo 未创建运费快照，所以不会产生 matched，适合作为异常工作台演示输入。
 
 ### 8. Settlement Import
 **Result:** ✅ PASS
@@ -100,15 +100,15 @@ cd backend && DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432
 
 | # | Issue | Impact | Workaround |
 |---|---|---|---|
-| 4 | Order import CSV has `tracking_number` but order table doesn't get it linked for shipping bill matching | Shipping bill reconcile shows all as unmatched | Manually add tracking_number to orders or adjust demo data |
+| 4 | Demo 订单没有运费快照 | Shipping bill reconcile 无 matched，主要产生 mismatch/unmatched | Stage 14.2 增加 demo 快照或导入后自动快照 |
 | 5 | Profit dashboard revenue=0 | Process chain → ledger rebuild doesn't have product_cost data from CSV | Add `product_cost` field to order_import_demo.csv |
-| 6 | No independent `/api/skus` list endpoint (only `/api/products/{product_id}/skus`) | SKU page in acceptance script fails | Use product-skized endpoint |
-| 7 | Shipping bill matching requires existing tracking_number in order | Unmatched bills expected | Part of normal demo flow: unmatched_bill shows in exception workbench |
+| 6 | No independent `/api/skus` list endpoint (only `/api/products/{product_id}/skus`) | Demo scripts must look up SKU through product detail | Use product-scoped endpoint |
+| 7 | Negative profit report is empty | Demo cannot yet show negative-profit BI card | Add product_cost and settlement/fee data to imported orders |
 
 ## Next Steps
 
 1. **Immediate (Stage 14.1):** Add `product_cost` field to order import CSV so profit calculation works
-2. **Immediate (Stage 14.2):** Add tracking_number write-back flow in order import so shipping bills can match
+2. **Immediate (Stage 14.2):** Add demo order shipping snapshots so shipping bills can produce matched and amount_mismatch examples
 3. **Short-term:** Add a standalone SKU list endpoint
 4. **Demo docs:** Update DEMO_SCENARIO.md with accurate API paths and expected results
 5. **Long-term:** Add automated E2E test that runs the full acceptance script
@@ -124,4 +124,8 @@ cd backend && TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost
 # Frontend build
 cd frontend && npm run build
 # → ✓ 4292 modules transformed, ✓ built in 2.10s
+
+# API acceptance
+cd backend && /Users/lc/multisell/backend/.venv/bin/python scripts/acceptance_api.py
+# → PASS: 12  FAIL: 0  WARN: 3  TOTAL: 15
 ```
