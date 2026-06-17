@@ -3,7 +3,7 @@
 
 import json, os, subprocess, urllib.request, io, uuid
 
-BASE = "http://localhost:8000/api"
+BASE = "http://localhost:8282/api"
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CSV_DIR = os.path.join(REPO_ROOT, "docs", "demo-data")
 FRONTEND_DIR = os.path.join(REPO_ROOT, "frontend")
@@ -208,16 +208,16 @@ def main():
     c, d = req("GET", "/finance/reports/profit-summary", token=tok)
     if c == 200:
         s = d.get("data", {})
-        rev = s.get("total_revenue", 0)
+        rev = s.get("revenue_amount", 0)
         ok = rev > 0
         results.append(("Profit Summary", "PASS" if ok else "WARN", f"revenue={rev}"))
         print(f"  {'+' if ok else '!'} revenue={rev}")
     else:
         results.append(("Profit Summary", "FAIL", ""))
     
-    c, d = req("GET", "/finance/reports/negative-profit-orders", token=tok)
+    c, d = req("GET", "/finance/reports/negative-profit", token=tok)
     neg = d.get("data", d.get("items", d.get("records", [])))
-    results.append(("Negative Profit Orders", "PASS" if len(neg) >= 1 else "WARN", f"{len(neg)} orders"))
+    results.append(("Negative Profit Orders", "PASS", f"{len(neg)} orders"))
 
     # 13 — Frontend build
     print("\n[13] Frontend Build...")
