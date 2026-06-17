@@ -18,10 +18,6 @@ export interface ExceptionItem {
   updated_at?: string | null
 }
 
-export function generateExceptions() {
-  return http.post('/exceptions/generate')
-}
-
 export function getExceptions(params?: { source_module?: string; severity?: string; status?: string }) {
   return http.get('/exceptions', { params })
 }

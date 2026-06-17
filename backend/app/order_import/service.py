@@ -1,361 +1,305 @@
-"""订单导入 - 服务层"""
-from datetime import datetime, date
-from decimal import Decimal
-from io import StringIO
-from typing import Optional
-from uuid import uuid4
+"""订单导入 - 服务层
+
+支持从平台导出文件或API数据导入订单。
+当前使用模拟数据/CSV解析，后续接入平台API后替换为真实数据源。
+"""
 
 import csv
-from sqlalchemy import select
+import io
+import json
+import logging
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Optional
+
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.inventory.service import InventoryService
-from app.models import Order, OrderItem, OrderStatusLog, Platform, Sku, Product
-from app.order.schemas import OrderCreate, OrderItemCreate
-from app.order.service import OrderService, order_to_dict
-from app.order_import.schemas import OrderImportItemCreate
-from app.order_import import models
+from app.models import (
+    Order, OrderItem, OrderStatusLog,
+    Platform, Product, Sku,
+    OrderImport,
+)
+from app.order.service import OrderService
+from app.order_import.schemas import OrderImportRowData
 
-
-IMPORT_ALLOWED_STATUSES = {"imported", "created_order", "skipped_duplicate", "failed"}
-
-CSV_FIELDS = [
-    "platform",
-    "store_name",
-    "platform_order_no",
-    "order_no",
-    "sku_code",
-    "quantity",
-    "unit_price",
-    "currency",
-    "recipient_name",
-    "recipient_phone",
-    "country_code",
-    "shipping_address",
-    "shipping_fee",
-    "paid_at",
-]
+logger = logging.getLogger(__name__)
 
 
 class OrderImportService:
 
     @staticmethod
-    def _parse_paid_at(value: Optional[str]) -> Optional[datetime]:
-        if not value or not str(value).strip():
-            return None
-        text = str(value).strip()
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y %H:%M", "%m/%d/%Y"):
-            try:
-                return datetime.strptime(text, fmt)
-            except ValueError:
-                continue
-        return None
+    async def import_orders(
+        db: AsyncSession,
+        source_type: str,
+        orders_data: list[OrderImportRowData],
+        platform_id: Optional[int] = None,
+        created_by: Optional[str] = None,
+    ) -> dict:
+        """批量导入订单
 
-    @staticmethod
-    async def _find_sku(db: AsyncSession, sku_code: str) -> Optional[Sku]:
-        stmt = select(Sku).where(Sku.code == sku_code, Sku.status == 1).limit(1)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+        对每条数据:
+        1. 按 platform_order_no 去重
+        2. 解析 SKU 信息
+        3. 创建 Order + OrderItem 记录
 
-    @staticmethod
-    async def _find_platform_by_name(db: AsyncSession, name: Optional[str]) -> Optional[Platform]:
-        if not name:
-            return None
-        stmt = select(Platform).where(Platform.name == name, Platform.status == 1).limit(1)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def _find_external_order(db: AsyncSession, adapter_code: str, platform_order_no: Optional[str], exclude_batch_id: Optional[int] = None) -> Optional[Order]:
-        if not platform_order_no:
-            return None
-        stmt = (
-            select(Order)
-            .join(models.OrderImportItem, models.OrderImportItem.order_id == Order.id)
-            .join(models.OrderImportBatch, models.OrderImportBatch.id == models.OrderImportItem.batch_id)
-            .where(
-                models.OrderImportBatch.adapter_code == adapter_code,
-                models.OrderImportItem.platform_order_no == platform_order_no,
-            )
+        返回 { import_id, total, success, failed, errors, orders }
+        """
+        import_record = OrderImport(
+            platform_id=platform_id,
+            source_type=source_type,
+            total_rows=len(orders_data),
+            status="processing",
+            created_by=created_by or "system",
         )
-        if exclude_batch_id is not None:
-            stmt = stmt.where(models.OrderImportItem.batch_id != exclude_batch_id)
-        stmt = stmt.limit(1)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def create_order_from_import(db: AsyncSession, batch: models.OrderImportBatch, payload: dict, operator: Optional[str] = None) -> dict:
-        sku_code = str(payload.get("sku_code") or "").strip()
-        sku = await OrderImportService._find_sku(db, sku_code)
-        if not sku:
-            raise ValueError(f"SKU不存在: {sku_code}")
-
-        quantity = int(payload.get("quantity") or 1)
-        unit_price = payload.get("unit_price")
-        if unit_price is None or str(unit_price).strip() == "":
-            unit_price = float(sku.price or 0)
-
-        fee_fields = ["shipping_fee", "platform_fee", "payment_fee", "other_fee", "product_cost"]
-        fee_values = {field: float(payload.get(field) or 0) for field in fee_fields}
-
-        recipient_name = str(payload.get("recipient_name") or "").strip()
-        if not recipient_name:
-            raise ValueError("缺少收件人姓名")
-
-        item_payload = OrderItemCreate(
-            sku_id=sku.id,
-            quantity=quantity,
-            unit_price=float(unit_price),
-        )
-        order_create = OrderCreate(
-            recipient_name=recipient_name,
-            recipient_phone=(payload.get("recipient_phone") or None),
-            shipping_address=(payload.get("shipping_address") or None),
-            items=[item_payload],
-            **fee_values,
-        )
-        order_dict = await OrderService.create(db, order_create)
-        order_id = order_dict["id"]
-
-        # 将 tracking_number 和 shipping_fee 写入订单
-        order = await db.get(Order, order_id)
-        tracking_number = payload.get("tracking_number")
-        if tracking_number and str(tracking_number).strip():
-            order.tracking_number = str(tracking_number).strip()
+        db.add(import_record)
         await db.flush()
-        await db.refresh(order)
 
-        paid_at_dt = OrderImportService._parse_paid_at(payload.get("paid_at"))
-        if paid_at_dt:
-            order.status = "paid"
-            order.paid_at = paid_at_dt
-            log = OrderStatusLog(
-                order_id=order.id,
-                from_status="pending",
-                to_status="paid",
-                operator=operator or "system",
-                remark="CSV导入支付",
-            )
-            db.add(log)
-            await db.flush()
-            await db.refresh(order)
-        return order_dict
+        success_count = 0
+        error_count = 0
+        errors = []
+        created_orders = []
 
-    @staticmethod
-    async def process_batch(db: AsyncSession, batch_id: int, operator: Optional[str] = None) -> models.OrderImportBatch:
-        batch = await db.get(models.OrderImportBatch, batch_id)
-        if not batch:
-            raise ValueError("批次不存在")
-
-        stmt = (
-            select(models.OrderImportItem)
-            .where(models.OrderImportItem.batch_id == batch_id)
-            .order_by(models.OrderImportItem.id)
-        )
-        result = await db.execute(stmt)
-        items = list(result.scalars().all())
-
-        batch.row_count = len(items)
-        batch.created_order_count = 0
-        batch.skipped_duplicate_count = 0
-        batch.failed_count = 0
-
-        created_orders: dict[str, dict] = {}
-
-        for item in items:
-            payload = item.raw_payload or {}
+        for idx, row in enumerate(orders_data):
             try:
-                existing = await OrderImportService._find_external_order(db, batch.adapter_code, item.platform_order_no, exclude_batch_id=batch.id)
-                if existing:
-                    item.order_id = existing.id
-                    item.order_no = existing.order_no
-                    item.status = "skipped_duplicate"
-                    item.failure_reason = None
-                    batch.skipped_duplicate_count += 1
+                # 查重 - 按平台订单号
+                dup = await db.execute(
+                    select(Order).where(Order.order_no == row.platform_order_no)
+                )
+                if dup.scalar_one_or_none():
+                    error_count += 1
+                    errors.append({"row": idx, "order_no": row.platform_order_no, "error": "订单号已存在"})
                     continue
 
-                if not item.sku_code or not str(item.sku_code).strip():
-                    item.status = "failed"
-                    item.failure_reason = "缺少SKU编码"
-                    batch.failed_count += 1
-                    continue
+                # 解析商品明细
+                items_data = []
+                total_amount = Decimal("0")
+                for item_data in row.items:
+                    sku = None
+                    sku_code = item_data.get("sku_code", "")
+                    if sku_code:
+                        sku_result = await db.execute(
+                            select(Sku).where(Sku.code == sku_code)
+                        )
+                        sku = sku_result.scalar_one_or_none()
 
-                sku = await OrderImportService._find_sku(db, str(item.sku_code).strip())
-                if not sku:
-                    item.status = "failed"
-                    item.failure_reason = f"SKU不存在: {item.sku_code}"
-                    batch.failed_count += 1
-                    continue
-
-                external_key = f"{batch.adapter_code}:{item.platform_order_no or ''}"
-                if external_key in created_orders:
-                    parent = created_orders[external_key]
-
-                    quantity = int(item.quantity or 1)
-                    unit_price = Decimal(str(float(item.unit_price or sku.price or 0)))
+                    unit_price = Decimal(str(item_data.get("unit_price", 0)))
+                    quantity = int(item_data.get("quantity", 1))
                     subtotal = unit_price * quantity
+                    total_amount += subtotal
 
+                    items_data.append({
+                        "sku_id": sku.id if sku else None,
+                        "product_id": sku.product_id if sku else None,
+                        "product_name": item_data.get("product_name", ""),
+                        "sku_code": sku_code,
+                        "spec_desc": sku.spec_desc if sku else item_data.get("spec_desc", ""),
+                        "unit_price": float(unit_price),
+                        "quantity": quantity,
+                        "subtotal": float(subtotal),
+                    })
+
+                # 创建订单
+                order_data = {
+                    "order_no": row.platform_order_no,
+                    "status": "paid",
+                    "recipient_name": row.recipient_name or "",
+                    "recipient_phone": row.recipient_phone or "",
+                    "shipping_address": row.shipping_address or "",
+                    "total_amount": float(total_amount),
+                    "shipping_fee": row.shipping_fee,
+                    "pay_amount": float(total_amount) + row.shipping_fee,
+                    "platform_fee": row.platform_fee,
+                    "payment_fee": row.payment_fee,
+                    "paid_at": datetime.now(timezone.utc),
+                    "created_at": datetime.now(timezone.utc),
+                }
+
+                order = Order(**order_data)
+                db.add(order)
+                await db.flush()
+
+                # 创建订单明细
+                for item in items_data:
                     order_item = OrderItem(
-                        order_id=parent["id"],
-                        sku_id=sku.id,
-                        product_id=sku.product_id,
-                        product_name="",
-                        sku_code=sku.code,
-                        spec_desc=sku.spec_desc or "",
-                        unit_price=unit_price,
-                        quantity=quantity,
-                        subtotal=subtotal,
+                        order_id=order.id,
+                        **item,
                     )
                     db.add(order_item)
 
-                    order_obj = await db.get(Order, parent["id"])
-                    if order_obj:
-                        order_obj.total_amount = Decimal(str(order_obj.total_amount or 0)) + subtotal
-                        OrderService._recalculate_profit(order_obj)
+                # 创建状态记录
+                status_log = OrderStatusLog(
+                    order_id=order.id,
+                    from_status=None,
+                    to_status="paid",
+                    operator=created_by or "system",
+                    remark=f"从{source_type}导入",
+                )
+                db.add(status_log)
 
-                    await InventoryService.lock_stock(
-                        db, sku_id=sku.id, quantity=quantity,
-                        order_no=parent["order_no"], operator=operator or "system",
-                    )
+                created_orders.append({
+                    "id": order.id,
+                    "order_no": order.order_no,
+                    "items_count": len(items_data),
+                    "total_amount": float(total_amount),
+                })
+                success_count += 1
 
-                    await db.flush()
+            except Exception as e:
+                error_count += 1
+                errors.append({"row": idx, "order_no": row.platform_order_no, "error": str(e)})
 
-                    item.order_id = parent["id"]
-                    item.order_no = parent["order_no"]
-                    item.status = "imported"
-                else:
-                    order_dict = await OrderImportService.create_order_from_import(db, batch, payload, operator)
-                    item.order_id = order_dict["id"]
-                    item.order_no = order_dict["order_no"]
-                    item.status = "created_order"
-                    batch.created_order_count += 1
-                    created_orders[external_key] = {"id": order_dict["id"], "order_no": order_dict["order_no"]}
-            except ValueError as exc:
-                item.status = "failed"
-                item.failure_reason = str(exc)
-                batch.failed_count += 1
-            except Exception as exc:
-                item.status = "failed"
-                item.failure_reason = f"导入异常: {exc}"
-                batch.failed_count += 1
-
-        batch.imported_by = operator or batch.imported_by
+        # 更新导入记录
+        import_record.success_count = success_count
+        import_record.error_count = error_count
+        import_record.error_detail = errors
+        import_record.status = "completed" if error_count == 0 else "completed"
         await db.flush()
-        await db.refresh(batch)
-        return batch
-
-    @staticmethod
-    async def create_batch(db: AsyncSession, data: dict, operator: Optional[str] = None) -> models.OrderImportBatch:
-        adapter_code = str(data.get("adapter_code") or "csv_order").strip()
-        batch = models.OrderImportBatch(
-            adapter_code=adapter_code,
-            platform=data.get("platform"),
-            store_name=data.get("store_name"),
-            source_filename=data.get("source_filename"),
-            row_count=0,
-            created_order_count=0,
-            skipped_duplicate_count=0,
-            failed_count=0,
-            imported_by=operator,
-        )
-        db.add(batch)
-        await db.flush()
-        await db.refresh(batch)
-        return batch
-
-    @staticmethod
-    async def append_items(db: AsyncSession, batch_id: int, rows: list[dict]) -> list[models.OrderImportItem]:
-        items = []
-        for idx, row in enumerate(rows, start=1):
-            item = models.OrderImportItem(
-                batch_id=batch_id,
-                row_number=row.get("row_number") or idx,
-                platform=row.get("platform"),
-                store_name=row.get("store_name"),
-                platform_order_no=str(row.get("platform_order_no") or "").strip() or None,
-                order_no=str(row.get("order_no") or "").strip() or None,
-                sku_code=str(row.get("sku_code") or "").strip(),
-                quantity=int(row.get("quantity") or 1),
-                unit_price=float(row.get("unit_price") or 0),
-                currency=str(row.get("currency") or "CNY"),
-                recipient_name=row.get("recipient_name"),
-                recipient_phone=row.get("recipient_phone"),
-                country_code=row.get("country_code"),
-                shipping_address=row.get("shipping_address"),
-                shipping_fee=float(row.get("shipping_fee") or 0),
-                tracking_number=row.get("tracking_number"),
-                paid_at=row.get("paid_at"),
-                status="imported",
-                raw_payload=row,
-            )
-            db.add(item)
-            items.append(item)
-        await db.flush()
-        for item in items:
-            await db.refresh(item)
-        return items
-
-    @staticmethod
-    async def get_batch(db: AsyncSession, batch_id: int) -> Optional[models.OrderImportBatch]:
-        return await db.get(models.OrderImportBatch, batch_id)
-
-    @staticmethod
-    async def list_batches(db: AsyncSession, adapter_code: Optional[str] = None) -> list[models.OrderImportBatch]:
-        stmt = select(models.OrderImportBatch).order_by(models.OrderImportBatch.id.desc())
-        if adapter_code:
-            stmt = stmt.where(models.OrderImportBatch.adapter_code == adapter_code)
-        result = await db.execute(stmt)
-        return list(result.scalars().all())
-
-    @staticmethod
-    async def list_items(db: AsyncSession, batch_id: int) -> list[models.OrderImportItem]:
-        stmt = select(models.OrderImportItem).where(models.OrderImportItem.batch_id == batch_id).order_by(models.OrderImportItem.id)
-        result = await db.execute(stmt)
-        return list(result.scalars().all())
-
-    @staticmethod
-    def parse_csv(content: bytes, source_filename: Optional[str] = None, adapter_code: str = "csv_order") -> dict:
-        text = content.decode("utf-8-sig")
-        reader = csv.DictReader(StringIO(text))
-        fieldnames = reader.fieldnames or []
-        normalized_fieldnames = [name.strip() for name in fieldnames] if fieldnames else []
-        adapter_code = (adapter_code or "csv_order").strip() or "csv_order"
-        source_filename = source_filename or "upload.csv"
-        platform = None
-        store_name = None
-        rows: list[dict] = []
-        for row_number, row in enumerate(reader, start=1):
-            plain = {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in row.items() if k}
-            if platform is None:
-                platform = plain.get("platform")
-            if store_name is None:
-                store_name = plain.get("store_name")
-            payload = {
-                "row_number": row_number,
-                "platform": plain.get("platform"),
-                "store_name": plain.get("store_name"),
-                "platform_order_no": plain.get("platform_order_no"),
-                "order_no": plain.get("order_no"),
-                "sku_code": plain.get("sku_code"),
-                "quantity": plain.get("quantity"),
-                "unit_price": plain.get("unit_price"),
-                "currency": plain.get("currency") or "CNY",
-                "recipient_name": plain.get("recipient_name"),
-                "recipient_phone": plain.get("recipient_phone"),
-                "country_code": plain.get("country_code"),
-                "shipping_address": plain.get("shipping_address"),
-                "shipping_fee": plain.get("shipping_fee"),
-                "tracking_number": plain.get("tracking_number"),
-                "paid_at": plain.get("paid_at"),
-            }
-            rows.append(payload)
+        await db.refresh(import_record)
 
         return {
-            "adapter_code": adapter_code,
-            "source_filename": source_filename,
-            "platform": platform,
-            "store_name": store_name,
-            "normalized_fieldnames": normalized_fieldnames,
-            "rows": rows,
+            "import_id": import_record.id,
+            "source_type": source_type,
+            "total": len(orders_data),
+            "success": success_count,
+            "failed": error_count,
+            "errors": errors,
+            "orders": created_orders,
         }
+
+    @staticmethod
+    async def list_imports(
+        db: AsyncSession,
+        source_type: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[dict], int]:
+        """查询导入记录"""
+        stmt = select(OrderImport)
+        count_stmt = select(func.count()).select_from(OrderImport)
+
+        if source_type:
+            stmt = stmt.where(OrderImport.source_type == source_type)
+            count_stmt = count_stmt.where(OrderImport.source_type == source_type)
+
+        total = (await db.execute(count_stmt)).scalar() or 0
+        offset = (page - 1) * page_size
+        stmt = stmt.order_by(OrderImport.created_at.desc()).offset(offset).limit(page_size)
+        result = await db.execute(stmt)
+        records = result.scalars().all()
+
+        rows = []
+        for r in records:
+            platform_name = None
+            if r.platform_id:
+                p = await db.get(Platform, r.platform_id)
+                if p:
+                    platform_name = p.name
+
+            rows.append({
+                "id": r.id,
+                "platform_id": r.platform_id,
+                "platform_name": platform_name,
+                "source_type": r.source_type,
+                "file_name": r.file_name,
+                "total_rows": r.total_rows,
+                "success_count": r.success_count,
+                "error_count": r.error_count,
+                "status": r.status,
+                "created_by": r.created_by,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+
+        return rows, total
+
+    @staticmethod
+    async def parse_csv(content: str, source_type: str) -> list[OrderImportRowData]:
+        """解析平台导出的CSV文件为导入数据
+
+        支持格式:
+          - ozon: Ozon 标准导出格式
+          - shopee: Shopee 标准导出格式
+          - wb: Wildberries 标准导出格式
+        """
+        reader = csv.DictReader(io.StringIO(content))
+        orders_map: dict[str, OrderImportRowData] = {}
+
+        for row in reader:
+            platform_order_no = (
+                row.get("Номер заказа") or  # Ozon (Russian)
+                row.get("Order ID") or       # Shopee
+                row.get("Номер") or          # WB (Russian)
+                row.get("订单号") or          # 中文
+                row.get("order_no") or
+                ""
+            )
+            if not platform_order_no:
+                continue
+
+            if platform_order_no not in orders_map:
+                orders_map[platform_order_no] = OrderImportRowData(
+                    platform_order_no=platform_order_no,
+                    order_date=row.get("Дата") or row.get("Date") or row.get("日期"),
+                    status="paid",
+                    recipient_name=row.get("Получатель") or row.get("Recipient") or row.get("收件人"),
+                    recipient_phone=row.get("Телефон") or row.get("Phone") or row.get("电话"),
+                    shipping_address=row.get("Адрес") or row.get("Address") or row.get("地址"),
+                    country=row.get("Страна") or row.get("Country") or row.get("国家"),
+                    total_amount=float(row.get("Сумма") or row.get("Amount") or row.get("金额") or 0),
+                    shipping_fee=float(row.get("Доставка") or row.get("Shipping") or row.get("运费") or 0),
+                    platform_fee=float(row.get("Комиссия") or row.get("Fee") or row.get("平台费") or 0),
+                )
+
+            # 商品明细
+            sku_code = row.get("SKU") or row.get("Артикул") or row.get("sku_code") or ""
+            product_name = row.get("Товар") or row.get("Product Name") or row.get("商品名称") or ""
+            quantity = int(row.get("Количество") or row.get("Quantity") or row.get("数量") or 1)
+            unit_price = float(row.get("Цена") or row.get("Price") or row.get("单价") or 0)
+
+            orders_map[platform_order_no].items.append({
+                "sku_code": sku_code,
+                "product_name": product_name,
+                "quantity": quantity,
+                "unit_price": unit_price,
+            })
+
+        return list(orders_map.values())
+
+    @staticmethod
+    async def generate_mock_orders(
+        db: AsyncSession,
+        platform_id: int,
+        count: int = 5,
+    ) -> list[dict]:
+        """生成模拟订单数据，用于演示"""
+        import random
+
+        sku_stmt = select(Sku).limit(10)
+        skus = (await db.execute(sku_stmt)).scalars().all()
+
+        if not skus:
+            return []
+
+        rows = []
+        for i in range(count):
+            sku = random.choice(skus)
+            qty = random.randint(1, 3)
+            unit_price = float(sku.price or 99)
+            rows.append(OrderImportRowData(
+                platform_order_no=f"SIM-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{i+1:04d}",
+                recipient_name=f"测试用户{i+1}",
+                recipient_phone=f"1380000{i+1:04d}",
+                shipping_address=f"测试地址第{i+1}号",
+                country="RU",
+                total_amount=unit_price * qty,
+                shipping_fee=random.choice([0, 15, 30]),
+                platform_fee=round(unit_price * qty * 0.08, 2),
+                items=[{
+                    "sku_code": sku.code or f"sku-{sku.id}",
+                    "product_name": f"模拟商品-{sku.id}",
+                    "quantity": qty,
+                    "unit_price": unit_price,
+                }],
+            ))
+
+        return rows

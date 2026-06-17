@@ -25,7 +25,7 @@ class G1DashboardAgent(BaseAgent):
         "dashboard_overview": EvolutionStage.OBSERVATION,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any]) -> dict[str, Any]:
+    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
         # G1 dashboard data is provided via dedicated API endpoint
         # This method is a fallback for future extensibility
         if decision_point == "dashboard_overview":

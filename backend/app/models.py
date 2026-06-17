@@ -848,181 +848,358 @@ class OrderShippingSnapshot(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
-# ========== AI Agent 系统模型 ==========
-
-
-class AgentDecision(Base):
-    """Agent决策日志 (Hermes Episodic Memory)"""
-    __tablename__ = "agent_decision"
+class ImportBatch(Base):
+    """导入批次"""
+    __tablename__ = "import_batch"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
-    agent_id = Column(String(20), nullable=False, comment="Agent标识: A3/A4/A5/A6/A7/G1/G2/G3")
-    decision_point = Column(String(50), nullable=False, comment="决策点: acos_adjustment/stock_alert/discount_check 等")
+    type = Column(String(30), nullable=False, comment="导入类型: product/sku/price/inventory")
+    file_name = Column(String(255), comment="原始文件名")
+    status = Column(String(20), nullable=False, default="pending", comment="pending/previewed/committed/failed")
+    total_rows = Column(Integer, default=0, comment="总行数")
+    success_count = Column(Integer, default=0, comment="成功行数")
+    error_count = Column(Integer, default=0, comment="失败行数")
+    error_summary = Column(Text, comment="错误摘要")
+    created_by = Column(String(100), comment="操作人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    context_json = Column(JSON, nullable=False, comment="决策上下文")
-    agent_output = Column(JSON, nullable=False, comment="Agent原始输出")
-    final_decision = Column(JSON, nullable=False, comment="最终执行的决策")
 
-    user_action = Column(String(20), nullable=False, comment="用户操作: accepted/modified/rejected/ignored")
-    user_overrides = Column(JSON, comment="用户修改内容")
-    user_feedback = Column(Text, comment="用户显式反馈")
+class ImportBatchRow(Base):
+    """导入行结果"""
+    __tablename__ = "import_batch_row"
 
-    rules_applied = Column(JSON, comment="应用的规则ID列表")
-    rule_overrides = Column(Integer, default=0, comment="规则覆盖次数")
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    batch_id = Column(BigInteger, ForeignKey("import_batch.id"), nullable=False, index=True)
+    row_index = Column(Integer, nullable=False, comment="Excel行号")
+    status = Column(String(20), nullable=False, default="pending", comment="pending/success/error")
+    raw_data = Column(JSON, comment="原始行数据")
+    error_message = Column(Text, comment="错误信息")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    evolution_stage = Column(String(20), nullable=False, comment="进化阶段: observation/suggestion/semi_autonomous/full_autonomous")
-    confidence = Column(Numeric(4, 3), comment="置信度 0.000-1.000")
+    batch = relationship("ImportBatch", backref="rows")
 
-    response_time_ms = Column(Integer, comment="响应耗时(ms)")
-    token_count = Column(Integer, comment="Token消耗")
 
-    session_id = Column(String(100), nullable=False, comment="会话ID")
-    episode_id = Column(BigInteger, comment="Episode批次ID")
+class PlatformFeeRule(Base):
+    """平台费用规则"""
+    __tablename__ = "platform_fee_rule"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=False, index=True)
+    country_code = Column(String(10), comment="国家代码，null表示平台默认")
+    category_id = Column(BigInteger, ForeignKey("category.id"), comment="类目ID，null表示类目默认")
+    fee_type = Column(String(30), nullable=False, comment="commission/fixed/payment/storage/other")
+    fee_rate_pct = Column(Numeric(10, 4), default=0, comment="费率(%)")
+    fixed_amount = Column(Numeric(12, 2), default=0, comment="固定费用")
+    min_amount = Column(Numeric(12, 2), comment="最低费用")
+    max_amount = Column(Numeric(12, 2), comment="最高费用")
+    currency = Column(String(3), default="CNY", comment="币种")
+    effective_from = Column(DateTime(timezone=True), comment="生效时间")
+    effective_to = Column(DateTime(timezone=True), comment="失效时间")
+    priority = Column(Integer, default=0, comment="优先级，小值优先")
+    status = Column(String(20), default="active", comment="active/inactive")
+    remark = Column(Text, comment="备注")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    platform = relationship("Platform", backref="fee_rules")
+    category = relationship("Category", backref="fee_rules")
+
+
+class Settlement(Base):
+    """结算单 — 从平台导入的结算报告"""
+    __tablename__ = "settlement"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=False, comment="平台ID")
+    settlement_no = Column(String(100), nullable=False, comment="结算单号")
+    period_start = Column(DateTime(timezone=True), comment="结算周期开始")
+    period_end = Column(DateTime(timezone=True), comment="结算周期结束")
+    currency = Column(String(3), default="CNY", comment="币种")
+
+    total_revenue = Column(Numeric(12, 2), default=0, comment="总收入")
+    total_fee = Column(Numeric(12, 2), default=0, comment="总费用")
+    total_refund = Column(Numeric(12, 2), default=0, comment="总退款")
+    total_net = Column(Numeric(12, 2), default=0, comment="净收入")
+
+    status = Column(String(20), default="pending", comment="状态: pending/reconciling/reconciled/closed")
+    raw_data = Column(JSON, comment="原始数据(JSON)")
+
+    imported_at = Column(DateTime(timezone=True), server_default=func.now(), comment="导入时间")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    platform = relationship("Platform", lazy="selectin")
+    items = relationship("SettlementItem", back_populates="settlement_rel", cascade="all, delete-orphan", lazy="selectin")
+
+
+class SettlementItem(Base):
+    """结算明细 — 结算单中的每笔交易"""
+    __tablename__ = "settlement_item"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    settlement_id = Column(BigInteger, ForeignKey("settlement.id"), nullable=False, index=True, comment="结算单ID")
+
+    transaction_type = Column(String(30), nullable=False, comment="交易类型: order_sale/refund/shipping_fee/platform_fee/payment_fee/other")
+    transaction_id = Column(String(100), comment="平台交易ID")
+
+    order_no = Column(String(100), comment="关联订单号")
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), comment="内部订单ID")
+    sku_id = Column(BigInteger, ForeignKey("sku.id"), comment="SKU ID")
+
+    amount = Column(Numeric(12, 2), default=0, comment="金额")
+    fee = Column(Numeric(12, 2), default=0, comment="费用")
+    net = Column(Numeric(12, 2), default=0, comment="净额")
+
+    quantity = Column(Integer, default=0, comment="数量")
+
+    occurred_at = Column(DateTime(timezone=True), comment="交易发生时间")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
 
+    # 对账状态
+    reconciliation_status = Column(String(20), default="pending", comment="对账状态: pending/matched/unmatched/discrepancy")
+    reconciliation_note = Column(Text, comment="对账备注")
+    reconciled_at = Column(DateTime(timezone=True), comment="对账时间")
+    reconciled_by = Column(String(100), comment="对账人")
 
-class PersonalRule(Base):
-    """个人规则库"""
-    __tablename__ = "personal_rule"
+    settlement_rel = relationship("Settlement", back_populates="items", lazy="selectin")
+
+
+class OrderImport(Base):
+    """订单导入记录"""
+    __tablename__ = "order_import"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
-    agent_id = Column(String(20), nullable=False, comment="Agent标识")
-    decision_point = Column(String(50), nullable=False, comment="决策点")
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), comment="平台ID")
+    source_type = Column(String(50), nullable=False, comment="来源: ozon/shopee/wb/manual")
+    file_name = Column(String(255), comment="文件名")
 
-    rule_type = Column(String(20), nullable=False, comment="规则类型: threshold/strategy/style/veto")
-    rule_name = Column(String(100), nullable=False, comment="规则名称")
-    rule_condition = Column(JSON, nullable=False, comment="规则条件")
-    rule_action = Column(JSON, nullable=False, comment="规则动作")
-    priority = Column(Integer, default=100, comment="优先级")
+    total_rows = Column(Integer, default=0, comment="总行数")
+    success_count = Column(Integer, default=0, comment="成功数")
+    error_count = Column(Integer, default=0, comment="失败数")
+    error_detail = Column(JSON, comment="错误详情")
 
-    source = Column(String(20), nullable=False, comment="来源: manual/nudge/auto_extracted/template")
-    source_decisions = Column(JSON, comment="来源决策ID列表")
-    status = Column(String(20), default="active", comment="状态: active/shadow/paused/retired")
-    confidence = Column(Numeric(4, 3), default=0, comment="置信度")
-
-    times_applied = Column(Integer, default=0, comment="应用次数")
-    times_overridden = Column(Integer, default=0, comment="被覆盖次数")
-    last_applied_at = Column(DateTime(timezone=True), comment="最后应用时间")
+    status = Column(String(20), default="pending", comment="状态: pending/processing/completed/failed")
+    created_by = Column(String(100), comment="导入人")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
-class AgentEpisode(Base):
-    """Agent Episode汇总 (每N个决策一批)"""
-    __tablename__ = "agent_episode"
+class Warehouse(Base):
+    """仓库"""
+    __tablename__ = "warehouse"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
-    agent_id = Column(String(20), nullable=False, comment="Agent标识")
-
-    episode_number = Column(Integer, nullable=False, comment="Episode序号")
-    decision_count = Column(Integer, nullable=False, comment="决策数量")
-    episode_summary = Column(Text, comment="Episode摘要")
-    key_insights = Column(JSON, comment="关键洞察")
-    improvement_suggestions = Column(JSON, comment="改进建议")
-
-    acceptance_rate = Column(Numeric(4, 3), comment="采纳率")
-    avg_confidence = Column(Numeric(4, 3), comment="平均置信度")
-    avg_response_ms = Column(Integer, comment="平均响应耗时")
-    total_tokens = Column(Integer, comment="总Token消耗")
-
-    nudge_triggered = Column(Integer, default=0, comment="Nudge触发次数")
-    nudge_topics = Column(JSON, comment="Nudge话题")
-    nudge_response = Column(Text, comment="Nudge用户响应")
-
-    started_at = Column(DateTime(timezone=True), nullable=False, comment="开始时间")
-    ended_at = Column(DateTime(timezone=True), nullable=False, comment="结束时间")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-
-
-class HonchoProfile(Base):
-    """Honcho用户模型 (辩证建模)"""
-    __tablename__ = "honcho_profile"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, unique=True, comment="用户ID")
-
-    risk_tolerance = Column(String(30), default="moderate", comment="风险容忍度: conservative/moderate/aggressive")
-    communication_style = Column(String(20), default="balanced", comment="沟通风格: concise/balanced/detailed")
-    notification_prefs = Column(JSON, comment="通知偏好")
-    agent_profiles = Column(JSON, nullable=False, default=lambda: {}, comment="各Agent配置档案")
-
-    hypothesis_count = Column(Integer, default=0, comment="假设数量")
-    confirmed_count = Column(Integer, default=0, comment="已验证数量")
-    last_dialectic_at = Column(DateTime(timezone=True), comment="上次辩证对话时间")
+    name = Column(String(200), nullable=False, comment="仓库名称")
+    code = Column(String(50), unique=True, comment="仓库编码")
+    address = Column(String(500), comment="地址")
+    contact = Column(String(100), comment="联系人")
+    phone = Column(String(50), comment="联系电话")
+    is_default = Column(SmallInteger, default=0, comment="是否默认仓库")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
-class RuleConflict(Base):
-    """规则冲突日志"""
-    __tablename__ = "rule_conflict"
+class AllocationRule(Base):
+    """库存分配规则"""
+    __tablename__ = "allocation_rule"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    decision_id = Column(BigInteger, ForeignKey("agent_decision.id"), nullable=False, comment="决策ID")
-    conflicting_rules = Column(JSON, nullable=False, comment="冲突规则ID列表")
-    winner_rule_id = Column(BigInteger, nullable=False, comment="胜出规则ID")
-    resolution = Column(String(20), nullable=False, comment="解决方式: auto_priority/user_choice/latest_wins")
-    nudge_sent = Column(Integer, default=0, comment="是否已发送Nudge")
-    nudge_resolved = Column(Integer, default=0, comment="是否已解决")
-    user_choice = Column(BigInteger, comment="用户选择的规则ID")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-
-
-class RuleMarkChange(Base):
-    """标记变更表 — 熵系统底层审计日志 (Mark Change Pattern)"""
-    __tablename__ = "rule_mark_change"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-
-    target_type = Column(String(30), nullable=False, comment="变更目标: personal_rule/skill/threshold/honcho_profile")
-    target_id = Column(BigInteger, nullable=False, comment="目标ID")
-    field_path = Column(String(200), nullable=False, comment="JSON路径")
-
-    old_value = Column(JSON, comment="旧值")
-    new_value = Column(JSON, nullable=False, comment="新值")
-
-    source_type = Column(String(30), nullable=False, comment="来源: gds/gds_proxy/human/nudge/auto_extract")
-    source_id = Column(String(100), comment="具体来源标识")
-    change_summary = Column(Text, nullable=False, comment="变更说明")
-
-    parent_change_id = Column(BigInteger, comment="关联的触发变更")
-    related_decision_ids = Column(JSON, comment="关联的决策ID列表")
-    context_json = Column(JSON, comment="触发变更的上下文快照")
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-
-
-class SpcControlLimit(Base):
-    """SPC 统计过程控制 — 决策指标监控"""
-    __tablename__ = "spc_control_limit"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
-    agent_id = Column(String(20), nullable=False, comment="Agent标识")
-    decision_point = Column(String(50), nullable=False, comment="决策点")
-    metric_name = Column(String(50), nullable=False, comment="指标名: acceptance_rate/confidence/override_rate")
-
-    baseline_mean = Column(Numeric(10, 4), nullable=False, comment="均值")
-    baseline_stddev = Column(Numeric(10, 4), nullable=False, comment="标准差")
-    baseline_samples = Column(Integer, nullable=False, comment="样本数")
-
-    ucl = Column(Numeric(10, 4), nullable=False, comment="μ+3σ 上控制线")
-    lcl = Column(Numeric(10, 4), nullable=False, comment="μ-3σ 下控制线")
-    uwl = Column(Numeric(10, 4), nullable=False, comment="μ+2σ 上警戒线")
-    lwl = Column(Numeric(10, 4), nullable=False, comment="μ-2σ 下警戒线")
-
-    consecutive_same_side = Column(Integer, default=0, comment="连续同侧点数")
-    last_breach_at = Column(DateTime(timezone=True), comment="上次越线时间")
-
-    baseline_recalc_at = Column(DateTime(timezone=True), nullable=False, comment="基线计算时间")
-    next_recalc_at = Column(DateTime(timezone=True), nullable=False, comment="下次重算时间")
-
+    name = Column(String(200), nullable=False, comment="规则名称")
+    priority = Column(Integer, default=0, comment="优先级")
+    rule_type = Column(String(50), nullable=False, comment="规则类型: percentage/fixed/priority")
+    warehouse_id = Column(BigInteger, ForeignKey("warehouse.id"), nullable=False, comment="仓库ID")
+    allocation_pct = Column(Numeric(5, 2), default=100, comment="分配百分比")
+    allocation_qty = Column(Integer, default=0, comment="固定分配数量")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class InventoryWarehouse(Base):
+    """仓库库存（SKU在各仓库的库存）"""
+    __tablename__ = "inventory_warehouse"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    sku_id = Column(BigInteger, ForeignKey("sku.id"), nullable=False, comment="SKU ID")
+    warehouse_id = Column(BigInteger, ForeignKey("warehouse.id"), nullable=False, comment="仓库ID")
+    quantity = Column(Integer, default=0, comment="库存数量")
+    locked_quantity = Column(Integer, default=0, comment="锁定库存")
+    safety_stock = Column(Integer, default=0, comment="安全库存")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    __table_args__ = (sa_UniqueConstraint("sku_id", "warehouse_id", name="uq_sku_warehouse"),)
+
+
+class FinanceAccount(Base):
+    """财务账户"""
+    __tablename__ = "finance_account"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, comment="账户名称")
+    account_type = Column(String(50), nullable=False, comment="账户类型: platform/payment/bank/cash")
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), comment="关联平台ID")
+    currency = Column(String(3), default="CNY", comment="币种")
+    balance = Column(Numeric(14, 2), default=0, comment="余额")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class FinanceTransaction(Base):
+    """财务流水"""
+    __tablename__ = "finance_transaction"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    account_id = Column(BigInteger, ForeignKey("finance_account.id"), nullable=False, comment="账户ID")
+    transaction_type = Column(String(50), nullable=False, comment="类型: revenue/cost/fee/refund/transfer")
+    amount = Column(Numeric(14, 2), nullable=False, comment="金额（正收入/负支出）")
+    currency = Column(String(3), default="CNY", comment="币种")
+
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), comment="关联订单ID")
+    settlement_id = Column(BigInteger, ForeignKey("settlement.id"), comment="关联结算单ID")
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), comment="关联平台ID")
+
+    description = Column(String(500), comment="描述")
+    transaction_date = Column(DateTime(timezone=True), comment="交易日期")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class Notification(Base):
+    """通知消息"""
+    __tablename__ = "notification"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, index=True, comment="接收用户ID")
+    alert_type = Column(String(50), nullable=False, comment="类型: inventory_low_stock/inventory_out_of_stock/settlement_pending/settlement_discrepancy/listing_failed/order_pending/system")
+    title = Column(String(200), nullable=False, comment="标题")
+    content = Column(Text, comment="内容")
+    link_url = Column(String(500), comment="跳转链接")
+    severity = Column(String(20), default="info", comment="严重程度: info/warning/error/critical")
+    is_read = Column(SmallInteger, default=0, comment="是否已读: 0-未读, 1-已读")
+    source_id = Column(String(100), comment="来源ID (如 sku=123)")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class AlertRule(Base):
+    """预警规则配置"""
+    __tablename__ = "alert_rule"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, comment="规则名称")
+    alert_type = Column(String(50), nullable=False, unique=True, comment="预警类型")
+    enabled = Column(SmallInteger, default=1, comment="是否启用: 0-禁用, 1-启用")
+    config = Column(JSON, comment="配置 (如阈值、检查间隔等)")
+    description = Column(String(500), comment="说明")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ExceptionItem(Base):
+    """异常工作台条目"""
+    __tablename__ = "exception_item"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    source_module = Column(String(50), nullable=False, comment="来源模块: listing/shipping/settlement/finance")
+    source_type = Column(String(50), comment="来源类型")
+    source_id = Column(BigInteger, comment="来源ID")
+    severity = Column(String(20), default="medium", comment="严重程度: low/medium/high/critical")
+    status = Column(String(20), default="open", comment="状态: open/assigned/resolved/ignored")
+    title = Column(String(300), nullable=False, comment="异常标题")
+    description = Column(Text, comment="异常描述")
+    recommended_action = Column(String(500), comment="建议操作")
+    assigned_to = Column(String(100), comment="分配给")
+    resolved_at = Column(DateTime(timezone=True), comment="解决时间")
+    resolved_by = Column(String(100), comment="解决人")
+    note = Column(Text, comment="备注")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ListingTask(Base):
+    """多平台上架任务"""
+    __tablename__ = "listing_task"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, comment="任务名称")
+    status = Column(String(50), default="pending", comment="任务状态: pending/in_progress/completed/partial_failed/all_failed")
+    total_count = Column(Integer, default=0, comment="总条目数")
+    success_count = Column(Integer, default=0, comment="成功数")
+    failed_count = Column(Integer, default=0, comment="失败数")
+    created_by = Column(BigInteger, ForeignKey("user.id"), comment="创建人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ListingTaskItem(Base):
+    """上架任务条目（每个产品×平台组合）"""
+    __tablename__ = "listing_task_item"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(BigInteger, ForeignKey("listing_task.id"), nullable=False, comment="任务ID")
+    product_id = Column(BigInteger, ForeignKey("product.id"), nullable=False, comment="商品ID")
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=False, comment="平台ID")
+    status = Column(String(50), default="pending", comment="状态: pending/in_progress/success/failed")
+    result = Column(JSON, comment="发布结果（平台商品ID、URL等）")
+    error_message = Column(Text, comment="错误信息")
+    retry_count = Column(Integer, default=0, comment="重试次数")
+    executed_at = Column(DateTime(timezone=True), comment="执行时间")
 
     __table_args__ = (
-        sa_UniqueConstraint("user_id", "agent_id", "decision_point", "metric_name", name="uq_spc_metric"),
+        sa_UniqueConstraint("task_id", "product_id", "platform_id", name="uq_task_product_platform"),
     )
+
+
+class ProductImageGen(Base):
+    """AI 生图生成记录"""
+    __tablename__ = "product_image_gen"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    product_id = Column(BigInteger, ForeignKey("product.id"), nullable=False, comment="商品ID")
+    prompt = Column(String(2000), nullable=False, comment="用户提示词")
+    style = Column(String(50), default="product_white", comment="风格预设")
+    negative_prompt = Column(String(1000), default="", comment="反向提示词")
+    size = Column(String(20), default="1024x1024", comment="图片尺寸")
+    requested_count = Column(Integer, default=1, comment="请求生成数量")
+    status = Column(String(20), default="pending", comment="生成状态: pending/done/failed")
+    image_urls = Column(JSON, comment="生成的图片URL列表")
+    error_message = Column(String(1000), comment="失败原因")
+    created_by = Column(BigInteger, comment="操作人")
+    batch_id = Column(String(36), comment="批量生图的批次标识 (UUID)，便于一次批量结果查询")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class PromptTemplate(Base):
+    """生图 Prompt 模板"""
+    __tablename__ = "prompt_template"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, comment="模板名称")
+    description = Column(String(500), comment="模板描述")
+    prompt = Column(String(2000), nullable=False, comment="正向提示词")
+    negative_prompt = Column(String(1000), default="", comment="反向提示词")
+    style = Column(String(50), default="product_white", comment="风格预设")
+    size = Column(String(20), default="1024x1024", comment="图片尺寸")
+    platform_code = Column(String(50), comment="关联平台（为空则通用）")
+    is_shared = Column(SmallInteger, default=1, comment="是否团队共享: 0-私有, 1-共享")
+    usage_count = Column(Integer, default=0, comment="使用次数")
+    created_by = Column(BigInteger, comment="创建人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+# ========== 向后兼容导入（Agent 模型已移至 app/agent/models.py） ==========
+from app.agent.models import (  # noqa: E402, F401
+    AgentAction,
+    AgentDecision,
+    AgentEpisode,
+    HonchoProfile,
+    PersonalRule,
+    RuleConflict,
+    RuleMarkChange,
+    SpcControlLimit,
+    SystemConfig,
+)

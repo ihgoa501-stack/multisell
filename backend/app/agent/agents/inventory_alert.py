@@ -8,6 +8,8 @@
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
+from app.agent.llm_service import AgentLlmService
+from app.agent.data_service import AgentDataService
 
 
 # ── 必填字段列表（缺少其中任一即返回 insufficient_data） ──
@@ -53,9 +55,12 @@ class A5InventoryAlertAgent(BaseAgent):
         "logistics_choice": EvolutionStage.SUGGESTION,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any]) -> dict[str, Any]:
+    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+        # 自动从 DB 补齐数据
+        if db is not None and decision_point in ("stock_alert", "replenishment_plan"):
+            context = await AgentDataService.fill_sku_context(db, context)
         if decision_point == "stock_alert":
-            return self._check_stock_alert(context)
+            return await self._check_stock_alert(context, db=db)
         elif decision_point == "replenishment_plan":
             return self._calculate_replenishment(context)
         elif decision_point == "logistics_choice":
@@ -65,7 +70,7 @@ class A5InventoryAlertAgent(BaseAgent):
     # ──────────────────────────────
     #  1. 库存预警（核心入口）
     # ──────────────────────────────
-    def _check_stock_alert(self, context: dict) -> dict:
+    async def _check_stock_alert(self, context: dict, db: Any = None) -> dict:
         # ---- 向后兼容旧字段名 ----
         context = self._backfill_legacy_fields(context)
 
@@ -145,6 +150,23 @@ class A5InventoryAlertAgent(BaseAgent):
             stock_status, sellable_days, lead_time
         )
 
+        # ---- LLM 自然语言解释 ----
+        llm_summary = {
+            "status": stock_status,
+            "sku": sku_code,
+            "sellable": sellable,
+            "transit": in_transit,
+            "daily_sales": round(daily_sales, 1),
+            "sellable_days": sellable_days,
+            "lead_time": lead_time,
+            "safety_days": safety_days,
+            "risk_reason": risk_reason,
+        }
+        try:
+            ai_explanation = await AgentLlmService.explain("A5", llm_summary, db=db)
+        except Exception:
+            ai_explanation = ""
+
         return {
             "stock_status": stock_status,
             "sellable_days": sellable_days,
@@ -160,6 +182,7 @@ class A5InventoryAlertAgent(BaseAgent):
             "suggested_logistics": suggested_logistics,
             "risk_reason": risk_reason,
             "suggested_actions": suggested_actions,
+            "ai_explanation": ai_explanation,
             "confidence": confidence,
         }
 

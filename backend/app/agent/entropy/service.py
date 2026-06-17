@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import RuleMarkChange, PersonalRule
+from app.agent.models import RuleMarkChange, PersonalRule
 from app.agent.entropy.defenses import TTLSweeper, BudgetEnforcer, DecayScheduler, MergeDetector, RegretAnalyzer
 from app.agent.entropy.health_score import RuleHealthScorer
 from app.agent.entropy.spc_control import SpcController
@@ -78,19 +78,8 @@ class EntropyService:
         decayed = await self.decay.apply_decay(db, user_id)
         duplicates = await self.merge.find_duplicates(db, user_id)
 
-        merged = []
-        for dup in duplicates[:5]:
-            merged_rule = await self.merge.merge_rules(db, dup["keep"].id, dup["remove"].id)
-            if merged_rule:
-                merged.append(merged_rule)
-
-        regrettable = await self.regret.find_regrettable_changes(db, user_id)
-        regrettable = regrettable[:3]
-        rolled_back = []
-        for item in regrettable:
-            rb = await self.regret.rollback_change(db, item["change"].id)
-            if rb:
-                rolled_back.append(rb)
+        # 规则合并只生成候选，不自动合并（Phase 5 原则）
+        shadowed = await self._shadow_overridden_rules(db, user_id)
 
         mark_changes = []
         for rule in expired + budget_exceeded:
@@ -105,14 +94,75 @@ class EntropyService:
                 "expired_rules": len(expired),
                 "budget_exceeded": len(budget_exceeded),
                 "decay_applied": len(decayed),
-                "merged_pairs": len(merged),
-                "regret_rollbacks": len(rolled_back),
+                "merged_candidates": len(duplicates),  # 只生成候选，不自动合并
+                "shadowed_by_overrides": len(shadowed),
             },
-            "total_affected": len(expired) + len(budget_exceeded) + len(decayed) + len(merged) + len(rolled_back),
+            "total_affected": len(expired) + len(budget_exceeded) + len(decayed) + len(shadowed),
             "mark_changes": mark_changes,
             "duplicates_found": len(duplicates),
-            "regrettable_found": len(regrettable),
+            "merge_candidates": [
+                {
+                    "keep_id": dup["keep"].id,
+                    "keep_name": dup["keep"].rule_name,
+                    "remove_id": dup["remove"].id,
+                    "remove_name": dup["remove"].rule_name,
+                    "similarity": dup["similarity"],
+                }
+                for dup in duplicates[:10]
+            ],
         }
+
+    async def _shadow_overridden_rules(
+        self, db: AsyncSession, user_id: int,
+        max_override_rate: float = 0.5, min_applied: int = 5,
+    ) -> list[PersonalRule]:
+        """被用户频繁覆盖的规则降级为 shadow
+
+        条件：应用次数 >= min_applied 且 覆盖率 > max_override_rate
+        """
+        stmt = select(PersonalRule).where(
+            PersonalRule.user_id == user_id,
+            PersonalRule.status == "active",
+        )
+        result = await db.execute(stmt)
+        rules = list(result.scalars().all())
+        shadowed = []
+
+        for rule in rules:
+            applied = rule.times_applied or 0
+            overridden = rule.times_overridden or 0
+            if applied >= min_applied and overridden > 0:
+                rate = overridden / applied
+                if rate > max_override_rate:
+                    old_status = rule.status
+                    rule.status = "shadow"
+                    await self._log_rule_change(db, rule, {
+                        "target_type": "personal_rule",
+                        "target_id": rule.id,
+                        "field_path": "$.status",
+                        "old_value": old_status,
+                        "new_value": "shadow",
+                        "source_type": "gds",
+                        "source_id": "override_shadow",
+                        "change_summary": (
+                            f"覆盖率过高({rate:.0%})自动降级为shadow: "
+                            f"应用{applied}次, 覆盖{overridden}次"
+                        ),
+                        "context_json": {
+                            "applied": applied,
+                            "overridden": overridden,
+                            "override_rate": rate,
+                        },
+                    })
+                    shadowed.append(rule)
+
+        await db.flush()
+        return shadowed
+
+    async def _log_rule_change(self, db: AsyncSession, rule: PersonalRule, data: dict) -> RuleMarkChange:
+        change = RuleMarkChange(**data)
+        db.add(change)
+        return change
 
     async def get_health_scores(self, db: AsyncSession, user_id: int) -> list[dict]:
         return await self.scorer.score_all_rules(db, user_id)

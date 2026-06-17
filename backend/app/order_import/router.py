@@ -1,20 +1,15 @@
 """订单导入 - 路由"""
-from datetime import datetime
-from io import BytesIO
-from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth import require_permission
-from app.common import PageResult, Result
+from app.common import Result, PageResult
 from app.database import get_db
 from app.models import User
-from app.order_import.chain_service import OrderImportChainService
-from app.order_import.models import OrderImportBatch, OrderImportItem
-from app.order_import.schemas import OrderImportBatchCreate, OrderImportBatchVO, OrderImportItemVO
-from app.order_import.service import OrderImportService
 from app.operation_log.service import OperationLogService
+from app.order_import.schemas import OrderImportRequest, OrderImportRowData
+from app.order_import.service import OrderImportService
 
 router = APIRouter(tags=["订单导入"])
 
@@ -23,161 +18,82 @@ def _operator(current_user: User) -> str:
     return current_user.username if current_user else "system"
 
 
-@router.post("/order-imports/csv", summary="上传 CSV 订单导入")
-async def import_orders_csv(
-    file: UploadFile = File(...),
-    adapter_code: Optional[str] = Form(None),
+@router.post("/order-import", summary="导入订单")
+async def import_orders(
+    data: OrderImportRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("order_import:import")),
+    current_user: User = Depends(require_permission("order:create")),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="仅支持 CSV 文件")
-
-    adapter_code = (adapter_code or "csv_order").strip() or "csv_order"
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="空文件")
-
-    parsed = OrderImportService.parse_csv(content, source_filename=file.filename, adapter_code=adapter_code)
-    batch = await OrderImportService.create_batch(db, {
-        "adapter_code": adapter_code,
-        "platform": parsed["platform"],
-        "store_name": parsed["store_name"],
-        "source_filename": parsed["source_filename"],
-    }, operator=_operator(current_user))
-    await OrderImportService.append_items(db, batch.id, parsed["rows"])
-    batch = await OrderImportService.process_batch(db, batch.id, operator=_operator(current_user))
-
+    """批量导入订单数据"""
+    result = await OrderImportService.import_orders(
+        db,
+        source_type=data.source_type,
+        orders_data=data.orders,
+        platform_id=data.platform_id,
+        created_by=_operator(current_user),
+    )
     await OperationLogService.log(
         db,
         module="order_import",
         action="import",
-        resource_id=str(batch.id),
-        content=f"导入订单批次: {file.filename}, adapter={adapter_code}, rows={batch.row_count}, created={batch.created_order_count}",
+        resource_id=str(result["import_id"]),
+        content=f"导入订单: {result['source_type']} 成功={result['success']} 失败={result['failed']}",
         operator=_operator(current_user),
     )
-    await db.commit()
-    return Result.ok(_batch_to_vo(batch))
+    return Result.ok(result)
 
 
-@router.get("/order-imports", summary="列出订单导入批次")
-async def list_import_batches(
-    adapter_code: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 20,
+@router.post("/order-import/csv", summary="从CSV导入订单")
+async def import_orders_csv(
+    source_type: str = Query(..., description="来源类型: ozon/shopee/wb"),
+    file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("order_import:view")),
+    current_user: User = Depends(require_permission("order:create")),
 ):
-    batches = await OrderImportService.list_batches(db, adapter_code=adapter_code)
-    total = len(batches)
-    items = [_batch_to_vo(batch) for batch in batches]
-    return PageResult.ok(items, total, page, page_size)
+    """上传平台导出的CSV文件导入订单"""
+    content = (await file.read()).decode("utf-8-sig")
+    rows = await OrderImportService.parse_csv(content, source_type)
+    if not rows:
+        return Result.bad_request("CSV中未找到有效订单数据")
+
+    result = await OrderImportService.import_orders(
+        db,
+        source_type=source_type,
+        orders_data=rows,
+        created_by=_operator(current_user),
+    )
+    return Result.ok(result)
 
 
-@router.get("/order-imports/{batch_id}", summary="批次详情")
-async def get_import_batch(
-    batch_id: int,
+@router.get("/order-imports", summary="导入记录列表")
+async def list_imports(
+    source_type: str = Query(None, description="来源类型"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("order_import:view")),
+    current_user: User = Depends(require_permission("order:view")),
 ):
-    batch = await OrderImportService.get_batch(db, batch_id)
-    if not batch:
-        return Result.not_found("批次不存在")
-    return Result.ok(_batch_to_vo(batch))
+    rows, total = await OrderImportService.list_imports(db, source_type, page, page_size)
+    return PageResult.ok(records=rows, total=total, page=page, page_size=page_size)
 
 
-@router.get("/order-imports/{batch_id}/items", summary="批次明细")
-async def list_import_items(
-    batch_id: int,
+@router.post("/order-import/mock", summary="生成模拟订单数据")
+async def generate_mock_orders(
+    platform_id: int = Query(..., description="平台ID"),
+    count: int = Query(5, ge=1, le=50, description="订单数量"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("order_import:view")),
+    current_user: User = Depends(require_permission("order:create")),
 ):
-    batch = await OrderImportService.get_batch(db, batch_id)
-    if not batch:
-        return Result.not_found("批次不存在")
-    items = await OrderImportService.list_items(db, batch_id)
-    return Result.ok([_item_to_vo(item) for item in items])
+    """基于现有SKU生成模拟订单数据并导入，用于演示"""
+    rows = await OrderImportService.generate_mock_orders(db, platform_id, count)
+    if not rows:
+        return Result.bad_request("系统中暂无SKU数据，请先创建商品")
 
-
-@router.post("/order-imports/{batch_id}/process-chain", summary="处理订单导入链路")
-async def process_import_chain(
-    batch_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("order_import:process")),
-):
-    batch = await OrderImportService.get_batch(db, batch_id)
-    if not batch:
-        return Result.not_found("批次不存在")
-    try:
-        summary = await OrderImportChainService.process_chain(db, batch_id, operator=_operator(current_user))
-        await db.commit()
-        return Result.ok(summary)
-    except ValueError as e:
-        await db.rollback()
-        return Result.error(str(e))
-
-
-@router.get("/order-imports/{batch_id}/chain-summary", summary="订单导入链路摘要")
-async def get_import_chain_summary(
-    batch_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("order_import:view")),
-):
-    batch = await OrderImportService.get_batch(db, batch_id)
-    if not batch:
-        return Result.not_found("批次不存在")
-    try:
-        summary = await OrderImportChainService.get_chain_summary(db, batch_id)
-        return Result.ok(summary)
-    except ValueError as e:
-        return Result.error(str(e))
-
-
-def _batch_to_vo(batch: OrderImportBatch) -> dict:
-    return {
-        "id": batch.id,
-        "adapter_code": batch.adapter_code,
-        "platform": batch.platform,
-        "store_name": batch.store_name,
-        "source_filename": batch.source_filename,
-        "row_count": batch.row_count,
-        "created_order_count": batch.created_order_count,
-        "skipped_duplicate_count": batch.skipped_duplicate_count,
-        "failed_count": batch.failed_count,
-        "imported_by": batch.imported_by,
-        "chain_status": batch.chain_status if hasattr(batch, 'chain_status') else "chain_pending",
-        "ledger_rebuilt_count": getattr(batch, 'ledger_rebuilt_count', 0),
-        "exception_generated_count": getattr(batch, 'exception_generated_count', 0),
-        "chain_failure_count": getattr(batch, 'chain_failure_count', 0),
-        "processed_at": getattr(batch, 'processed_at', None),
-        "created_at": batch.created_at,
-        "updated_at": batch.updated_at,
-    }
-
-
-def _item_to_vo(item: OrderImportItem) -> dict:
-    return {
-        "id": item.id,
-        "batch_id": item.batch_id,
-        "row_number": item.row_number,
-        "platform_order_no": item.platform_order_no,
-        "order_id": item.order_id,
-        "order_no": item.order_no,
-        "sku_code": item.sku_code,
-        "quantity": item.quantity,
-        "unit_price": item.unit_price,
-        "currency": item.currency,
-        "recipient_name": item.recipient_name,
-        "recipient_phone": item.recipient_phone,
-        "country_code": item.country_code,
-        "shipping_address": item.shipping_address,
-        "shipping_fee": item.shipping_fee,
-        "tracking_number": item.tracking_number,
-        "paid_at": item.paid_at,
-        "status": item.status,
-        "failure_reason": item.failure_reason,
-        "chain_status": getattr(item, 'chain_status', 'chain_pending'),
-        "chain_failure_reason": getattr(item, 'chain_failure_reason', None),
-        "raw_payload": item.raw_payload,
-        "created_at": item.created_at,
-    }
+    result = await OrderImportService.import_orders(
+        db,
+        source_type="mock",
+        orders_data=rows,
+        platform_id=platform_id,
+        created_by=_operator(current_user),
+    )
+    return Result.ok(result)

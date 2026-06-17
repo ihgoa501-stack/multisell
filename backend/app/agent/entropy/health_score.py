@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import PersonalRule
+from app.agent.models import PersonalRule
 
 
 class RuleHealthScorer:

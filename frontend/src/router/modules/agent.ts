@@ -8,6 +8,24 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'AI 助手', icon: 'cube', menu: true, perm: 'agent:view' },
   },
   {
+    path: 'agents/actions',
+    name: 'AgentActions',
+    component: () => import('@/views/agent/AgentActions.vue'),
+    meta: { title: '待执行操作', icon: 'checkmark-circle', menu: true, perm: 'agent:view' },
+  },
+  {
+    path: 'agents/dashboard',
+    name: 'Dashboard',
+    component: () => import('@/views/agent/Dashboard.vue'),
+    meta: { title: '运营驾驶舱', icon: 'analytics', menu: true, perm: 'agent:view' },
+  },
+  {
+    path: 'agents/llm-settings',
+    name: 'LlmSettings',
+    component: () => import('@/views/agent/LlmSettings.vue'),
+    meta: { title: 'LLM 配置', icon: 'settings', menu: true, perm: 'agent:view' },
+  },
+  {
     path: 'agents/:agentId',
     name: 'AgentDetail',
     component: () => import('@/views/agent/AgentDetail.vue'),

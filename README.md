@@ -88,6 +88,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_
 | [开发指南](docs/DEVELOPMENT_GUIDE.md) | 本地启动、测试、模块约定、交接提示词 |
 | [权限与审计](docs/PERMISSIONS_AND_AUDIT.md) | 鉴权规则、权限码、审计日志接入方式 |
 | [路线图](docs/ROADMAP.md) | 后续阶段优先级和每阶段待办 |
+| [剩余开发总文档](docs/DEVELOPMENT_BACKLOG_AND_SPEC.md) | 还需要开发的全部事项、优先级、模块规格和验收标准 |
 | [实施计划](docs/superpowers/plans/2026-06-13-multisell-stabilization-roadmap.md) | 分阶段工程实施计划 |
 
 ## 数据初始化

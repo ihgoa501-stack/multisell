@@ -13,30 +13,49 @@
     <n-grid :cols="3" :x-gap="12" style="margin-top: 12px;">
       <n-grid-item>
         <n-card title="决策模拟" :bordered="false">
-          <n-form>
-            <n-form-item label="决策点">
-              <n-select v-model:value="simulatePoint" :options="decisionPointOptions" />
-            </n-form-item>
-            <n-form-item label="上下文 (JSON)">
-              <n-input v-model:value="simulateContext" type="textarea" :rows="6" placeholder='{"sku_code": "SKU001", "sellable_stock": 50, "sales_7d": 70}' />
-            </n-form-item>
-            <n-space>
-              <n-button type="primary" @click="runDecision(false)" :loading="loading">执行决策</n-button>
-              <n-button @click="runDecision(true)" :loading="loading">模拟 (Dry Run)</n-button>
+          <!-- Agent 专属表单 -->
+          <div v-if="agentFormComponent">
+            <component :is="agentFormComponent" :result="result" @decision="onDecision" />
+            <n-divider />
+            <n-space justify="end">
+              <n-button size="tiny" quaternary @click="showJsonInput = !showJsonInput">
+                {{ showJsonInput ? '隐藏 JSON' : '高级：JSON 模式' }}
+              </n-button>
             </n-space>
-          </n-form>
+          </div>
+          <!-- JSON 模式（回退） -->
+          <div v-if="!agentFormComponent || showJsonInput">
+            <n-form>
+              <n-form-item label="决策点">
+                <n-select v-model:value="simulatePoint" :options="decisionPointOptions" />
+              </n-form-item>
+              <n-form-item label="上下文 (JSON)">
+                <n-input v-model:value="simulateContext" type="textarea" :rows="6" placeholder='{"sku_code": "SKU001", "sellable_stock": 50, "sales_7d": 70}' />
+              </n-form-item>
+              <n-space>
+                <n-button type="primary" @click="runDecision(false)" :loading="loading">执行决策</n-button>
+                <n-button @click="runDecision(true)" :loading="loading">模拟 (Dry Run)</n-button>
+              </n-space>
+            </n-form>
+          </div>
         </n-card>
       </n-grid-item>
       <n-grid-item>
         <n-card title="决策结果" :bordered="false">
           <n-empty v-if="!result" description="尚未执行决策" />
           <n-space v-else vertical>
-            <n-tag :type="result.confidence >= 0.9 ? 'success' : result.confidence >= 0.7 ? 'warning' : 'error'">
-              置信度: {{ (result.confidence * 100).toFixed(0) }}%
-            </n-tag>
-            <n-tag>阶段: {{ result.stage }}</n-tag>
-            <n-tag v-if="result.rules_applied?.length">已应用 {{ result.rules_applied.length }} 条规则</n-tag>
-            <n-tag v-if="result.decision_id">决策ID: {{ result.decision_id }}</n-tag>
+            <n-space wrap>
+              <n-tag :type="result.confidence >= 0.9 ? 'success' : result.confidence >= 0.7 ? 'warning' : 'error'">
+                置信度: {{ (result.confidence * 100).toFixed(0) }}%
+              </n-tag>
+              <n-tag>阶段: {{ result.stage }}</n-tag>
+              <n-tag v-if="result.rules_applied?.length">已应用 {{ result.rules_applied.length }} 条规则</n-tag>
+              <n-tag v-if="result.decision_id">决策ID: {{ result.decision_id }}</n-tag>
+            </n-space>
+            <!-- AI 解释 -->
+            <n-alert v-if="result.decision?.ai_explanation" type="info" :title="'AI 解释'" style="margin-top: 8px;">
+              {{ result.decision.ai_explanation }}
+            </n-alert>
             <n-divider />
             <n-code :code="JSON.stringify(result.decision, null, 2)" language="json" />
           </n-space>
@@ -73,7 +92,7 @@
     <n-drawer v-model:show="showDetail" :width="600" placement="right">
       <n-drawer-content :title="'决策 #' + (selectedLog?.id || '')" closable>
         <n-space vertical v-if="selectedLog">
-          <n-description label="决策点" :content="selectedLog.decision_point" />
+          <div><strong>决策点：</strong>{{ selectedLog.decision_point }}</div>
           <n-card title="上下文 (Context)" size="small">
             <n-code :code="JSON.stringify(selectedLog.context_json, null, 2)" language="json" />
           </n-card>
@@ -114,9 +133,19 @@
 </template>
 
 <script setup lang="ts">
-import { h, ref, reactive, computed, onMounted } from 'vue'
-import { useRouter, useRoute, useMessage, NTag, NSpace, NCode, NEmpty, NDivider, NButton } from 'naive-ui'
+import { h, ref, reactive, computed, shallowRef, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { useMessage, NTag, NSpace, NCode, NEmpty, NDivider, NButton, NAlert } from 'naive-ui'
 import { agentApi } from '@/api/modules/agent'
+import A5Form from './forms/A5Form.vue'
+import G3Form from './forms/G3Form.vue'
+import A6Form from './forms/A6Form.vue'
+import A3Form from './forms/A3Form.vue'
+import A1Form from './forms/A1Form.vue'
+import A2Form from './forms/A2Form.vue'
+import A4Form from './forms/A4Form.vue'
+import A7Form from './forms/A7Form.vue'
+import G2Form from './forms/G2Form.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -132,6 +161,18 @@ const simulatePoint = ref('')
 const simulateContext = ref('{}')
 
 const profile = reactive({ risk_tolerance: 'moderate', communication_style: 'balanced' })
+
+// Agent 专属表单映射
+const formMap: Record<string, any> = {
+  A5: A5Form, G3: G3Form, A6: A6Form, A3: A3Form,
+  A1: A1Form, A2: A2Form, A4: A4Form, A7: A7Form, G2: G2Form,
+}
+const agentFormComponent = computed(() => formMap[agentId] || null)
+const showJsonInput = ref(false)
+
+function onDecision(data: any) {
+  result.value = data
+}
 
 // 决策详情抽屉
 const showDetail = ref(false)

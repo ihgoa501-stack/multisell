@@ -1,4 +1,3 @@
-"""财务模块"""
-from app.finance.router import router
+"""财务管理模块"""
 
-__all__ = ["router"]
+from app.finance.router import router

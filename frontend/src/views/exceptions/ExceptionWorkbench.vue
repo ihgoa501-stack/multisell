@@ -4,12 +4,9 @@
       <template #title>异常工作台</template>
     </n-page-header>
 
-    <!-- Actions -->
+    <!-- Filters -->
     <n-card style="margin-top: 12px;" :bordered="false">
       <n-space>
-        <n-button type="primary" :loading="generating" @click="handleGenerate">
-          扫描生成异常
-        </n-button>
         <n-select
           v-model:value="filterModule"
           :options="moduleOptions"
@@ -35,32 +32,19 @@
           @update:value="fetchItems"
         />
       </n-space>
-      <n-alert v-if="generateResult" type="success" :show-icon="false" style="margin-top: 8px;">
-        扫描完成：新建 {{ generateResult.created_count }} 条，扫描 {{ generateResult.total_scanned }} 条
-      </n-alert>
     </n-card>
 
     <!-- Exception list -->
     <n-card style="margin-top: 12px;" :bordered="false">
       <n-data-table :columns="columns" :data="items" :loading="loading" :pagination="{ pageSize: 20 }" />
     </n-card>
-
-    <!-- Agent Action Drawer -->
-    <n-drawer v-model:show="showActionPanel" :width="600" placement="right">
-      <n-drawer-content title="Agent 动作提案" closable>
-        <AgentActionPanel v-if="actionExceptionId" :exception-id="actionExceptionId" />
-      </n-drawer-content>
-    </n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { h, onMounted, ref } from 'vue'
 import { NButton, NSpace, NTag, useMessage, useDialog } from 'naive-ui'
-import CostLayerTag from '@/components/CostLayerTag.vue'
-import AgentActionPanel from '@/components/AgentActionPanel.vue'
 import {
-  generateExceptions,
   getExceptions,
   assignException,
   resolveException,
@@ -71,14 +55,13 @@ import {
 const message = useMessage()
 const dialog = useDialog()
 const loading = ref(false)
-const generating = ref(false)
 const items = ref<ExceptionItem[]>([])
-const generateResult = ref<any | null>(null)
 const filterModule = ref<string | null>(null)
 const filterSeverity = ref<string | null>(null)
 const filterStatus = ref<string | null>(null)
 
 const moduleOptions = [
+  { label: '全部', value: '' },
   { label: '上架任务', value: 'listing' },
   { label: '物流账单', value: 'shipping' },
   { label: '平台结算', value: 'settlement' },
@@ -86,6 +69,7 @@ const moduleOptions = [
 ]
 
 const severityOptions = [
+  { label: '全部', value: '' },
   { label: '低', value: 'low' },
   { label: '中', value: 'medium' },
   { label: '高', value: 'high' },
@@ -93,6 +77,7 @@ const severityOptions = [
 ]
 
 const statusOptions = [
+  { label: '全部', value: '' },
   { label: '开放', value: 'open' },
   { label: '已分配', value: 'assigned' },
   { label: '已解决', value: 'resolved' },
@@ -144,7 +129,7 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
-    width: 260,
+    width: 200,
     render: (row: ExceptionItem) =>
       h(NSpace, null, {
         default: () => [
@@ -164,18 +149,10 @@ const columns = [
             onClick: () => handleIgnore(row),
             disabled: row.status === 'resolved' || row.status === 'ignored',
           }, { default: () => '忽略' }),
-          h(NButton, {
-            size: 'small',
-            tertiary: true,
-            onClick: () => { actionExceptionId.value = row.id; showActionPanel.value = true },
-          }, { default: () => '提案' }),
         ],
       }),
   },
 ]
-
-const actionExceptionId = ref<number | null>(null)
-const showActionPanel = ref(false)
 
 async function fetchItems() {
   loading.value = true
@@ -190,20 +167,6 @@ async function fetchItems() {
     message.error(err?.message || '查询失败')
   } finally {
     loading.value = false
-  }
-}
-
-async function handleGenerate() {
-  generating.value = true
-  try {
-    const resp = await generateExceptions()
-    generateResult.value = resp.data
-    message.success('扫描完成')
-    await fetchItems()
-  } catch (err: any) {
-    message.error(err?.message || '生成失败')
-  } finally {
-    generating.value = false
   }
 }
 

@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Any
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import AgentDecision, PersonalRule, AgentEpisode, HonchoProfile, RuleConflict
+from app.agent.models import AgentDecision, PersonalRule, AgentEpisode, HonchoProfile, RuleConflict
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import AgentRegistry
 
@@ -97,10 +97,28 @@ class AgentService:
         rule = await db.get(PersonalRule, rule_id)
         if not rule or rule.user_id != user_id:
             return None
+        old_status = rule.status
         for k, v in data.items():
             if v is not None:
                 setattr(rule, k, v)
         rule.updated_at = func.now()
+
+        # 记录状态变更到 rule_mark_change
+        if "status" in data and data["status"] != old_status:
+            from app.agent.models import RuleMarkChange
+            change = RuleMarkChange(
+                target_type="personal_rule",
+                target_id=rule.id,
+                field_path="$.status",
+                old_value=old_status,
+                new_value=data["status"],
+                source_type="manual",
+                source_id=f"user_{user_id}",
+                change_summary=f"用户手动修改状态: {old_status} → {data['status']}",
+                context_json={"rule_name": rule.rule_name},
+            )
+            db.add(change)
+
         await db.flush()
         await db.refresh(rule)
         return rule
@@ -190,7 +208,7 @@ class AgentService:
     ) -> dict:
         start_time = time.time()
 
-        agent_output = await agent.decide(decision_point, context)
+        agent_output = await agent.decide(decision_point, context, db=db)
         confidence = agent_output.get("confidence", 0.0)
         stage = agent.get_stage(decision_point)
 
@@ -213,6 +231,11 @@ class AgentService:
         if not dry_run:
             created = await AgentService.create_decision(db, record)
             decision_id = created.id
+            # 自动提取待执行操作
+            from app.agent.action_service import AgentActionService
+            actions = await AgentActionService.create_actions(
+                db, agent.user_id, agent.agent_id, decision_id, decision
+            )
         else:
             decision_id = None
 
@@ -382,7 +405,7 @@ class AgentService:
                     })
 
         # ── 规则健康概览（从 PersonalRule 统计） ──
-        from app.models import PersonalRule
+        from app.agent.models import PersonalRule
         rules_stmt = select(PersonalRule).where(
             PersonalRule.user_id == user_id,
         )

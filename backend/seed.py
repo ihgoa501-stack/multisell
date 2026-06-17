@@ -125,6 +125,21 @@ SEED_PERMISSIONS = [
     {"code": "order_import:process", "name": "处理订单导入链路", "module": "order_import"},
     {"code": "agent:view", "name": "查看 AI Agent", "module": "agent"},
     {"code": "agent:execute", "name": "执行 AI Agent 决策", "module": "agent"},
+    {"code": "import:view", "name": "查看导入", "module": "import"},
+    {"code": "import:execute", "name": "执行导入", "module": "import"},
+    {"code": "platform_fee:view", "name": "查看平台费用", "module": "platform_fee"},
+    {"code": "platform_fee:manage", "name": "管理平台费用", "module": "platform_fee"},
+    {"code": "settlement:view", "name": "查看结算单", "module": "settlement"},
+    {"code": "settlement:create", "name": "导入结算单", "module": "settlement"},
+    {"code": "settlement:update", "name": "更新结算单", "module": "settlement"},
+    {"code": "settlement:delete", "name": "删除结算单", "module": "settlement"},
+    {"code": "settlement:reconcile", "name": "对账操作", "module": "settlement"},
+    {"code": "finance:view", "name": "查看财务", "module": "finance"},
+    {"code": "finance:manage", "name": "管理财务", "module": "finance"},
+    {"code": "notification:view", "name": "查看通知", "module": "notification"},
+    {"code": "notification:update", "name": "管理通知", "module": "notification"},
+    {"code": "notification:delete", "name": "删除通知", "module": "notification"},
+    {"code": "notification:manage", "name": "管理预警规则", "module": "notification"},
 ]
 
 SEED_PRODUCTS = [
@@ -230,7 +245,7 @@ SEED_PRODUCTS = [
 
 # ── 辅助函数 ────────────────────────────────────────────────────────
 
-async def get_or_create(session: AsyncSession, model, defaults: dict | None = None, **filters):
+async def get_or_create(session: AsyncSession, model, defaults: dict = None, **filters):
     """查找已有记录，若不存在则创建（可指定默认字段值）。"""
     stmt = select(model).filter_by(**filters)
     result = await session.execute(stmt)
@@ -410,6 +425,61 @@ async def seed_products_and_skus(session: AsyncSession, category_ids: dict[str, 
 
 # ── 主流程 ──────────────────────────────────────────────────────────
 
+async def seed_settlements(session: AsyncSession):
+    """生成模拟结算数据"""
+    from app.settlement.service import SettlementService
+    from sqlalchemy import select
+    from app.models import Order
+
+    # 检查是否有已支付的订单
+    stmt = select(Order).where(Order.status == "paid").limit(3)
+    orders = (await session.execute(stmt)).scalars().all()
+    if not orders:
+        print("  ⏭ 无已支付订单，跳过结算数据")
+        return
+
+    # 获取第一个平台
+    from app.models import Platform
+    stmt = select(Platform).limit(1)
+    platform = (await session.execute(stmt)).scalar_one_or_none()
+    if not platform:
+        print("  ⏭ 无平台配置，跳过结算数据")
+        return
+
+    settlement = await SettlementService.generate_mock_data(session, platform.id, min(len(orders), 5))
+    print(f"  ✔ 结算单 {settlement.settlement_no}: 明细={settlement.total_revenue}")
+
+
+async def seed_allocation(session: AsyncSession):
+    """生成模拟仓库和分配规则"""
+    from app.allocation.service import AllocationService
+
+    try:
+        result = await AllocationService.generate_mock_data(session)
+        print(f"  ✔ 仓库={result['warehouses_created']} 规则={result['rules_created']} SKU分配={result['skus_allocated']}")
+    except Exception as e:
+        print(f"  ⏭ 跳过库存分配: {e}")
+
+
+async def seed_finance(session: AsyncSession):
+    """生成模拟财务账户"""
+    from app.finance.service import FinanceService
+
+    accounts = await FinanceService.generate_mock_data(session)
+    print(f"  ✔ 财务账户: {len(accounts)} 个")
+
+
+async def seed_notifications(session: AsyncSession):
+    """初始化预警规则并执行一次检查"""
+    from app.notification.service import NotificationService
+
+    rules = await NotificationService.initialize_rules(session)
+    print(f"  ✔ 预警规则: {len(rules)} 条")
+    results = await NotificationService.check_and_create_alerts(session)
+    created = sum(v for v in results.values() if isinstance(v, int) and v > 0)
+    print(f"  ✔ 预警检查: 生成 {created} 条通知")
+
+
 async def seed():
     """执行全部数据初始化。"""
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
@@ -444,6 +514,18 @@ async def seed():
 
             print("\n📋 第6步：创建商品和 SKU")
             await seed_products_and_skus(session, category_ids)
+
+            print("\n📋 第7步：生成模拟结算数据")
+            await seed_settlements(session)
+
+            print("\n📋 第8步：生成仓库和分配规则")
+            await seed_allocation(session)
+
+            print("\n📋 第9步：生成模拟财务数据")
+            await seed_finance(session)
+
+            print("\n📋 第10步：初始化预警规则")
+            await seed_notifications(session)
 
             await session.commit()
             print(f"\n{'='*50}")

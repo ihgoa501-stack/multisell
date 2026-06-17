@@ -24,6 +24,29 @@
         />
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
+        <n-popover trigger="click" placement="bottom-end" :width="360" @update:show="onNotifPopover">
+          <template #trigger>
+            <n-badge :value="unreadCount" :max="99" dot>
+              <n-button size="tiny" quaternary style="color: rgba(255,255,255,0.7); position:relative;">
+                <template #icon><n-icon><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M427.68 351.43C402 320 383.87 304 383.87 217.35c0-76.48-47.31-137.58-130.36-154.36V32H258.5v31c-83.05 16.78-130.36 77.88-130.36 154.36 0 86.66-18.14 102.62-43.81 134.08C77 365 72 370.09 77 376.38S88 384 96 384h320c8 0 14-2.53 19-7.62s0-11.38-7.31-24.95zM368 416H144a16 16 0 0 0 0 32h224a16 16 0 0 0 0-32z" fill="currentColor"/></svg></n-icon></template>
+              </n-button>
+            </n-badge>
+          </template>
+          <n-list v-if="recentNotifs.length" style="max-height:300px;overflow-y:auto;">
+            <n-list-item v-for="n in recentNotifs" :key="n.id" clickable @click="goNotif(n)">
+              <template #prefix>
+                <n-tag size="tiny" :type="sevColor(n.severity)" round>{{ n.alert_type.split('_')[0] }}</n-tag>
+              </template>
+              <span :style="{fontWeight: n.is_read ? 'normal' : 'bold', fontSize:'13px'}">{{ n.title }}</span>
+              <template #suffix><span style="font-size:11px;color:#999;white-space:nowrap;">{{ timeAgo(n.created_at) }}</span></template>
+            </n-list-item>
+          </n-list>
+          <n-empty v-else description="暂无未读通知" style="padding:20px;" />
+          <n-space justify="space-between" style="border-top:1px solid #eee;padding:8px 12px;margin-top:4px;">
+            <n-button size="tiny" @click="markAllRead">全部已读</n-button>
+            <n-button size="tiny" @click="router.push('/notifications')">查看全部</n-button>
+          </n-space>
+        </n-popover>
         <span style="color: rgba(255,255,255,0.7); font-size: 13px;">{{ userDisplayName }}</span>
         <n-button size="tiny" quaternary style="color: rgba(255,255,255,0.5);" @click="handleLogout">退出</n-button>
         <n-button size="tiny" quaternary style="color: rgba(255,255,255,0.5);" @click="toggleTheme">{{ themeIcon }}</n-button>
@@ -44,7 +67,7 @@
 <script setup lang="ts">
 import { computed, h, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NIcon, NLayout, NLayoutHeader, NLayoutSider, NMenu, NConfigProvider, useMessage, darkTheme } from 'naive-ui'
+import { NIcon, NLayout, NLayoutHeader, NLayoutSider, NMenu, NConfigProvider, NBadge, NPopover, NList, NListItem, NSpace, useMessage, darkTheme } from 'naive-ui'
 import type { Component } from 'vue'
 import http from '@/api/http'
 
@@ -70,6 +93,10 @@ import {
   TrendingUpOutline,
   ShieldCheckmarkOutline,
   DownloadOutline,
+  AnalyticsOutline,
+  BusinessOutline,
+  NotificationsOutline,
+  CheckmarkCircleOutline,
 } from '@vicons/ionicons5'
 
 const iconMap: Record<string, Component> = {
@@ -91,6 +118,10 @@ const iconMap: Record<string, Component> = {
   trend: TrendingUpOutline,
   shield: ShieldCheckmarkOutline,
   download: DownloadOutline,
+  'checkmark-circle': CheckmarkCircleOutline,
+  warehouse: BusinessOutline,
+  analytics: AnalyticsOutline,
+  notification: NotificationsOutline,
 }
 
 function renderIcon(iconName: string) {
@@ -108,6 +139,55 @@ const message = useMessage()
 const searchQuery = ref('')
 const searchOptions = ref<any[]>([])
 let searchTimer: any = null
+
+// ── 通知 ──
+const unreadCount = ref(0)
+const recentNotifs = ref<any[]>([])
+let notifTimer: any = null
+
+function sevColor(sev: string): string {
+  return { info: 'info', warning: 'warning', error: 'error', critical: 'error' }[sev] || 'info'
+}
+
+function timeAgo(t: string): string {
+  if (!t) return ''
+  const s = Math.floor((Date.now() - new Date(t).getTime()) / 1000)
+  if (s < 60) return '刚刚'
+  if (s < 3600) return `${Math.floor(s / 60)}分钟前`
+  if (s < 86400) return `${Math.floor(s / 3600)}小时前`
+  return `${Math.floor(s / 86400)}天前`
+}
+
+async function fetchNotifs() {
+  try {
+    const res: any = await http.get('/notifications?unread_only=true&page_size=5')
+    const body = res.data
+    recentNotifs.value = body?.data?.records ?? body?.records ?? []
+    const countRes: any = await http.get('/notifications/unread-count')
+    unreadCount.value = countRes.data?.data?.total ?? countRes.data?.total ?? 0
+  } catch {}
+}
+
+function onNotifPopover(show: boolean) {
+  if (show) fetchNotifs()
+}
+
+async function markAllRead() {
+  try {
+    await http.put('/notifications/read-all')
+    unreadCount.value = 0
+    recentNotifs.value = []
+    message.success('已全部标记已读')
+  } catch {}
+}
+
+function goNotif(n: any) {
+  if (!n.is_read) {
+    http.put(`/notifications/${n.id}/read`).catch(() => {})
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }
+  if (n.link_url) router.push(n.link_url)
+}
 
 // 暗黑模式
 const isDark = ref(localStorage.getItem('darkMode') === 'true')
@@ -209,8 +289,13 @@ function handleKeydown(e: KeyboardEvent) {
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
   loadUserPermissions()
+  fetchNotifs()
+  notifTimer = setInterval(fetchNotifs, 30000)
 })
-onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  if (notifTimer) clearInterval(notifTimer)
+})
 
 // ========== 从路由自动生成侧边菜单（带权限过滤） ==========
 // 每个路由 meta 可设置:

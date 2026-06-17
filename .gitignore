@@ -23,3 +23,10 @@ pom.xml
 *.class
 product-*/
 src/main/
+
+# Claude AI
+.understand-anything/
+.kilo/
+
+# Playwright MCP
+.playwright-mcp/

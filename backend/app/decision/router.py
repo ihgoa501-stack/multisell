@@ -1,25 +1,19 @@
 """上架前经营决策 - 路由"""
 
-import io
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_permission
 from app.common.schemas import Result
 from app.database import get_db
-from app.decision.excel_service import PreListingDecisionExcelService
 from app.decision.schemas import (
-    PreListingDecisionBatchRequest,
-    PreListingDecisionBatchResponse,
-    PreListingDecisionExcelPreviewResponse,
+    CompareDecisionRequest,
     PreListingDecisionRequest,
     PreListingDecisionResponse,
 )
 from app.decision.service import PreListingDecisionService
-from app.models import User
+from app.models import Platform, User
 
 router = APIRouter(prefix="/decisions", tags=["上架决策"])
 
@@ -29,7 +23,7 @@ async def prelisting_decision(
     data: PreListingDecisionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("decision:calculate")),
-) -> Result[PreListingDecisionResponse]:
+):
     try:
         result = await PreListingDecisionService.calculate(db, data)
         return Result.ok(result)
@@ -37,52 +31,57 @@ async def prelisting_decision(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/prelisting/batch", summary="批量上架前经营决策")
-async def prelisting_decision_batch(
-    data: PreListingDecisionBatchRequest,
+@router.post("/prelisting/compare", summary="多平台经营决策对比")
+async def compare_prelisting_decision(
+    data: CompareDecisionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("decision:calculate")),
-) -> Result[PreListingDecisionBatchResponse]:
-    result = await PreListingDecisionService.calculate_batch(db, data)
-    return Result.ok(result)
-
-
-@router.get("/prelisting/batch/template", summary="下载批量上架决策 Excel 模板")
-async def download_prelisting_batch_template(
-    current_user: User = Depends(require_permission("decision:calculate")),
 ):
-    output = PreListingDecisionExcelService.generate_template()
-    return StreamingResponse(
-        io.BytesIO(output),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=prelisting_decision_template.xlsx"},
-    )
-
-
-@router.post("/prelisting/batch/preview", summary="上传预览批量上架决策 Excel")
-async def preview_prelisting_batch_excel(
-    file: UploadFile = File(...),
-    current_user: User = Depends(require_permission("decision:calculate")),
-) -> Result[PreListingDecisionExcelPreviewResponse]:
-    if not file.filename or not file.filename.lower().endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="仅支持 .xlsx 文件")
-    content = await file.read()
-    try:
-        preview = PreListingDecisionExcelService.parse_preview(content)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return Result.ok(preview)
-
-
-@router.post("/prelisting/batch/export", summary="导出批量上架决策结果")
-async def export_prelisting_batch_results(
-    data: PreListingDecisionBatchResponse,
-    current_user: User = Depends(require_permission("decision:calculate")),
-):
-    output = PreListingDecisionExcelService.export_results(data)
-    filename = f"prelisting_decision_results_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.xlsx"
-    return StreamingResponse(
-        io.BytesIO(output),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
-    )
+    """对同一SKU在多个平台下分别计算经营决策，方便运营对比选择最佳平台"""
+    results = []
+    for platform_id in data.platform_ids:
+        # 验证平台存在
+        stmt = select(Platform).where(Platform.id == platform_id)
+        platform = (await db.execute(stmt)).scalar_one_or_none()
+        if not platform:
+            continue
+        req = PreListingDecisionRequest(
+            sku_id=data.sku_id,
+            destination_country=data.destination_country,
+            target_sale_price=data.target_sale_price,
+            platform_id=platform_id,
+            platform_fee_pct=0,
+            payment_fee_pct=data.payment_fee_pct,
+            other_fee=data.other_fee,
+            minimum_margin_pct=data.minimum_margin_pct,
+            cargo_type=data.cargo_type,
+        )
+        try:
+            r = await PreListingDecisionService.calculate(db, req)
+            # Lookup platform name
+            stmt = select(Platform.name).where(Platform.id == platform_id)
+            platform_name = (await db.execute(stmt)).scalar_one_or_none() or f"平台{platform_id}"
+            results.append({
+                "platform_id": platform_id,
+                "platform_name": platform_name,
+                "product_cost": r.product_cost,
+                "shipping_fee": r.shipping_fee,
+                "platform_fee": r.platform_fee,
+                "payment_fee": r.payment_fee,
+                "total_cost": round(
+                    r.product_cost + r.shipping_fee + r.platform_fee + r.payment_fee + data.other_fee, 2
+                ),
+                "profit_amount": r.profit_amount,
+                "profit_margin": r.profit_margin,
+                "recommendation": r.recommendation,
+                "blocking_reasons": r.blocking_reasons,
+                "warnings": r.warnings,
+            })
+        except (ValueError, HTTPException):
+            continue
+    return Result.ok({
+        "sku_id": data.sku_id,
+        "destination_country": data.destination_country,
+        "target_sale_price": data.target_sale_price,
+        "results": results,
+    })

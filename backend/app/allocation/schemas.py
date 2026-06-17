@@ -1,31 +1,99 @@
-"""费用分摊 - Pydantic Schema"""
+"""库存分配 - Pydantic 模型"""
 
+from datetime import datetime
 from typing import Optional
-
 from pydantic import BaseModel, Field
 
 
-class AllocationImportResponse(BaseModel):
-    batch_id: int
-    total_rows: int
-    imported_rows: int
-    error_rows: int
-    errors: list[dict] = []
+class WarehouseCreate(BaseModel):
+    """创建仓库"""
+    name: str = Field(..., description="仓库名称")
+    code: Optional[str] = None
+    address: Optional[str] = None
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    is_default: bool = False
 
 
-class AllocationItemResponse(BaseModel):
+class WarehouseUpdate(BaseModel):
+    """更新仓库"""
+    name: Optional[str] = None
+    code: Optional[str] = None
+    address: Optional[str] = None
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    is_default: Optional[bool] = None
+    status: Optional[int] = None
+
+
+class WarehouseVO(BaseModel):
+    """仓库视图"""
     id: int
-    batch_id: int
-    row_number: int
-    sku_id: Optional[int] = None
+    name: str
+    code: Optional[str] = None
+    address: Optional[str] = None
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    is_default: bool
+    status: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AllocationRuleCreate(BaseModel):
+    """创建分配规则"""
+    name: str = Field(..., description="规则名称")
+    priority: int = 0
+    rule_type: str = Field(..., description="percentage/fixed/priority")
+    warehouse_id: int = Field(..., description="仓库ID")
+    allocation_pct: float = 100
+    allocation_qty: int = 0
+
+
+class AllocationRuleVO(BaseModel):
+    """分配规则视图"""
+    id: int
+    name: str
+    priority: int
+    rule_type: str
+    warehouse_id: int
+    warehouse_name: Optional[str] = None
+    allocation_pct: float
+    allocation_qty: int
+    status: int
+
+    class Config:
+        from_attributes = True
+
+
+class InventoryWarehouseVO(BaseModel):
+    """仓库库存视图"""
+    id: int
+    sku_id: int
+    warehouse_id: int
+    warehouse_name: Optional[str] = None
+    quantity: int
+    locked_quantity: int
+    safety_stock: int
+    available_qty: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class InventoryAllocateRequest(BaseModel):
+    """库存分配请求"""
+    sku_id: int = Field(..., description="SKU ID")
+    warehouse_id: int = Field(..., description="目标仓库ID")
+    quantity: int = Field(..., gt=0, description="分配数量")
+
+
+class AllocationResult(BaseModel):
+    """分配结果"""
+    sku_id: int
     sku_code: Optional[str] = None
-    order_id: Optional[int] = None
-    quantity: int = 0
-    weight_kg: Optional[float] = None
-    volume_m3: Optional[float] = None
-    item_value: Optional[float] = None
-    allocation_factor: Optional[float] = None
-    allocated_amount: float = 0
-    cost_layer: str = "allocated"
-    posted_to_ledger: bool = False
-    created_at: Optional[str] = None
+    total_available: int
+    allocated: list[dict] = []
+    warnings: list[str] = []

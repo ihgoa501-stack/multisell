@@ -60,7 +60,15 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "DEBUG 模式启动 — 请确保已运行: cd backend && alembic upgrade head"
         )
+
+    # ── 启动 Agent 调度引擎 ──
+    from app.agent.scheduler import scheduler as _agent_scheduler
+    await _agent_scheduler.start()
+
     yield
+
+    # ── 关闭 Agent 调度引擎 ──
+    await _agent_scheduler.stop()
 
 
 app = FastAPI(

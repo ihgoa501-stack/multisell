@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Optional
 from sqlalchemy import select, func, and_, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import PersonalRule, AgentDecision, RuleMarkChange
+from app.agent.models import PersonalRule, AgentDecision, RuleMarkChange
 
 logger = logging.getLogger(__name__)
 

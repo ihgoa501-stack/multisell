@@ -10,6 +10,8 @@
 from typing import Any, Optional
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
+from app.agent.llm_service import AgentLlmService
+from app.agent.data_service import AgentDataService
 
 # ── 必填字段（缺少任一即返回 insufficient_data） ──
 REQUIRED_CHECK_FIELDS = [
@@ -45,9 +47,11 @@ class G3DiscountRiskAgent(BaseAgent):
         "promotion_validation": EvolutionStage.FULL_AUTONOMOUS,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any]) -> dict[str, Any]:
+    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+        if db is not None and decision_point == "discount_check":
+            context = await AgentDataService.fill_sku_context(db, context)
         if decision_point == "discount_check":
-            return self._check_discount_risk(context)
+            return await self._check_discount_risk(context, db=db)
         elif decision_point == "promotion_validation":
             return self._validate_promotion(context)
         return {"action": "unknown", "confidence": 0.0}
@@ -55,7 +59,7 @@ class G3DiscountRiskAgent(BaseAgent):
     # ────────────────────────────────────
     #  1. 折扣叠加风控（核心入口）
     # ────────────────────────────────────
-    def _check_discount_risk(self, context: dict) -> dict:
+    async def _check_discount_risk(self, context: dict, db: Any = None) -> dict:
         missing = _missing_fields(context, REQUIRED_CHECK_FIELDS)
         if missing:
             return self._insufficient("discount_check", missing)
@@ -146,10 +150,28 @@ class G3DiscountRiskAgent(BaseAgent):
             alerts.append(platform_risk)
             confidence = max(0.80, confidence - 0.05)
 
+        # ---- LLM 自然语言解释 ----
+        llm_summary = {
+            "action": action,
+            "sku": sku_code,
+            "original_price": selling_price,
+            "cost_price": cost_price,
+            "final_price": round(final_price, 2),
+            "gross_profit": gross_profit,
+            "gross_margin": gross_margin,
+            "discount_details": ", ".join(d.get("description", "") for d in discount_details),
+            "reason": reason,
+        }
+        try:
+            ai_explanation = await AgentLlmService.explain("G3", llm_summary, db=db)
+        except Exception:
+            ai_explanation = ""
+
         return {
             "action": action,
             "blocked": blocked,
             "reason": reason,
+            "ai_explanation": ai_explanation,
             "final_price": round(final_price, 2),
             "original_price": selling_price,
             "cost_price": cost_price,

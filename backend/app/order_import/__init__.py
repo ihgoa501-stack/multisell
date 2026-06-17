@@ -1,3 +1,3 @@
-from app.order_import.router import router
+"""订单导入模块"""
 
-__all__ = ["router"]
+from app.order_import.router import router

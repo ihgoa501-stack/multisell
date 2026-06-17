@@ -1,4 +1,10 @@
+import logging
+
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
+
+
 class Settings(BaseSettings):
     # 应用配置
     APP_NAME: str = "凌镜 LingMirror - 跨境电商 AgentOS"
@@ -26,8 +32,8 @@ class Settings(BaseSettings):
     # 权限控制
     AUTH_ENABLED: bool = True
 
-    # 加密配置
-    ENCRYPTION_KEY: str = "default-key-change-in-production-32bytes!!"
+    # 加密配置 — 生产环境必须通过环境变量或 .env 设置
+    ENCRYPTION_KEY: str = ""
 
     @property
     def is_production(self) -> bool:
@@ -39,9 +45,24 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4o-mini"
 
+    # ===== AI 生图配置（环境变量: IMAGE_GEN_* / REPLICATE_API_KEY / OPENAI_API_KEY）=====
+    IMAGE_GEN_PROVIDER: str = "replicate"   # replicate / openai
+    IMAGE_GEN_MODEL: str = "black-forest-labs/flux-2-pro"
+    REPLICATE_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    REMOVE_BG_API_KEY: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if not self.ENCRYPTION_KEY:
+            logger.warning(
+                "⚠️ ENCRYPTION_KEY 为空！平台 API 密钥等敏感数据将被明文存储。"
+                "请通过环境变量或 .env 文件设置 ENCRYPTION_KEY。"
+            )
 
 
 settings = Settings()

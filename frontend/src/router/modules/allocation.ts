@@ -2,14 +2,9 @@ import type { RouteRecordRaw } from 'vue-router'
 
 export const routes: RouteRecordRaw[] = [
   {
-    path: 'allocations',
-    name: 'CostAllocation',
-    component: () => import('@/views/allocation/CostAllocation.vue'),
-    meta: {
-      title: '费用分摊',
-      icon: 'trend',
-      menu: true,
-      perm: 'allocation:view',
-    },
+    path: 'allocation',
+    name: 'AllocationManage',
+    component: () => import('@/views/allocation/AllocationManage.vue'),
+    meta: { title: '库存分配', icon: 'warehouse', menu: true, perm: 'inventory:view' },
   },
 ]

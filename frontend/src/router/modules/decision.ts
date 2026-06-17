@@ -4,7 +4,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: 'decisions/prelisting',
     name: 'PreListingDecision',
-    component: () => import('@/views/decision/PreListingDecision.vue'),
+    component: () => import('@/views/decision/DecisionWorkbench.vue'),
     meta: {
       title: '上架决策',
       icon: 'analytics',

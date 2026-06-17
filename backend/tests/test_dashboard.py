@@ -15,20 +15,21 @@ class TestDashboard:
         stats = data["data"]
         # 验证关键字段
         assert "products" in stats
-        assert "skus" in stats
         assert "inventory" in stats
         assert "brands" in stats
         assert "suppliers" in stats
         assert "platforms" in stats
-        # products 字段
+        assert "orders" in stats
+        assert "finance" in stats
+        # products 字段（skus 移入 products 内部）
         assert "total" in stats["products"]
         assert "on_shelf" in stats["products"]
         assert "draft" in stats["products"]
+        assert "skus" in stats["products"]
         # platforms 字段
         assert "published" in stats["platforms"]
         assert "detail" in stats["platforms"]
         # 近期动态
-        assert "recent_listings" in stats
         assert "recent_logs" in stats
 
 

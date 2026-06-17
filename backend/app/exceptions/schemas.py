@@ -25,12 +25,6 @@ class ExceptionItemResponse(BaseModel):
     updated_at: Optional[str] = None
 
 
-class ExceptionGenerateResponse(BaseModel):
-    """生成异常响应"""
-    created_count: int
-    total_scanned: int
-
-
 class ExceptionAssignRequest(BaseModel):
     assigned_to: str = ""
 

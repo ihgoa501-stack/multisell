@@ -10,6 +10,18 @@ export const agentApi = {
   decide(agentId: string, data: { decision_point: string; context: any; dry_run?: boolean }) {
     return http.post(`/agents/${agentId}/decide`, data)
   },
+  getDashboard() {
+    return http.get('/agents/dashboard')
+  },
+  listActions(params?: any) {
+    return http.get('/agents/actions', { params })
+  },
+  executeAction(actionId: number) {
+    return http.post(`/agents/actions/${actionId}/execute`)
+  },
+  rejectAction(actionId: number) {
+    return http.post(`/agents/actions/${actionId}/reject`)
+  },
   getDecisions(params?: any) {
     return http.get('/agents/decisions', { params })
   },

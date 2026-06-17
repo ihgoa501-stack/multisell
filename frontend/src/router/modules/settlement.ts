@@ -2,9 +2,24 @@ import type { RouteRecordRaw } from 'vue-router'
 
 export const routes: RouteRecordRaw[] = [
   {
-    path: 'settlement/import',
-    name: 'SettlementImport',
-    component: () => import('@/views/settlement/SettlementImport.vue'),
-    meta: { title: '平台结算', icon: 'money', menu: true, perm: 'settlement:view' },
+    path: 'settlements',
+    name: 'SettlementList',
+    component: () => import('@/views/settlement/SettlementList.vue'),
+    meta: {
+      title: '结算管理',
+      icon: 'cash',
+      menu: true,
+      perm: 'settlement:view',
+    },
+  },
+  {
+    path: 'settlements/:id',
+    name: 'SettlementDetail',
+    component: () => import('@/views/settlement/SettlementDetail.vue'),
+    meta: {
+      title: '结算详情',
+      menu: false,
+      perm: 'settlement:view',
+    },
   },
 ]

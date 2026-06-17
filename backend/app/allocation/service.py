@@ -1,310 +1,287 @@
-"""费用分摊 - 服务层"""
+"""库存分配 - 服务层
 
-import csv
-import io
-from decimal import Decimal, ROUND_HALF_UP
+管理多仓库、库存分配与分配规则。
+"""
+
+import logging
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    CostAllocationBatch,
-    CostAllocationItem,
-    FinanceLedgerEntry,
-    Order,
-    Sku,
+    Sku, Product, Inventory,
+    Warehouse, AllocationRule, InventoryWarehouse,
 )
-from app.finance.cost_layers import COST_LAYER_ALLOCATED
-from app.finance.ledger_service import ENTRY_ALLOCATED_COST
-from app.operation_log.service import OperationLogService
 
-ALLOCATION_METHODS = ["quantity", "weight", "volume", "value"]
+logger = logging.getLogger(__name__)
+
+
+class WarehouseService:
+
+    @staticmethod
+    async def create(db: AsyncSession, data: dict) -> Warehouse:
+        warehouse = Warehouse(**data)
+        db.add(warehouse)
+        await db.flush()
+        await db.refresh(warehouse)
+        return warehouse
+
+    @staticmethod
+    async def update(db: AsyncSession, warehouse_id: int, data: dict) -> Optional[Warehouse]:
+        wh = await db.get(Warehouse, warehouse_id)
+        if not wh:
+            return None
+        for k, v in data.items():
+            if v is not None:
+                setattr(wh, k, v)
+        await db.flush()
+        await db.refresh(wh)
+        return wh
+
+    @staticmethod
+    async def delete(db: AsyncSession, warehouse_id: int) -> bool:
+        wh = await db.get(Warehouse, warehouse_id)
+        if not wh:
+            return False
+        await db.delete(wh)
+        await db.flush()
+        return True
+
+    @staticmethod
+    async def list_all(db: AsyncSession) -> list[Warehouse]:
+        result = await db.execute(
+            select(Warehouse).where(Warehouse.status == 1).order_by(Warehouse.id)
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_by_id(db: AsyncSession, warehouse_id: int) -> Optional[Warehouse]:
+        return await db.get(Warehouse, warehouse_id)
 
 
 class AllocationService:
 
     @staticmethod
-    def parse_csv(content: bytes) -> tuple[list[dict], list[str]]:
-        text = content.decode("utf-8-sig")
-        reader = csv.DictReader(io.StringIO(text))
-        headers = {h.strip() for h in reader.fieldnames or []}
-
-        if "sku_code" not in headers:
-            raise ValueError("缺少必填列: sku_code")
-
-        rows: list[dict] = []
-        errors: list[str] = []
-
-        for idx, raw in enumerate(reader, start=2):
-            try:
-                row = {
-                    "sku_code": raw.get("sku_code", "").strip(),
-                    "order_no": raw.get("order_no", "").strip() or None,
-                    "quantity": int(float(raw.get("quantity", 0) or 0)),
-                    "weight_kg": float(raw.get("weight", 0) or 0) if raw.get("weight") else None,
-                    "volume_m3": float(raw.get("volume", 0) or 0) if raw.get("volume") else None,
-                    "item_value": float(raw.get("item_value", 0) or 0) if raw.get("item_value") else None,
-                    "raw_payload": dict(raw),
-                }
-                if not row["sku_code"]:
-                    errors.append(f"第{idx}行: SKU编码不能为空")
-                    continue
-                rows.append(row)
-            except Exception as e:
-                errors.append(f"第{idx}行: 解析异常 {str(e)}")
-
-        return rows, errors
+    async def create_rule(db: AsyncSession, data: dict) -> AllocationRule:
+        rule = AllocationRule(**data)
+        db.add(rule)
+        await db.flush()
+        await db.refresh(rule)
+        return rule
 
     @staticmethod
-    async def import_csv(
-        db: AsyncSession,
-        filename: str,
-        content: bytes,
-        allocation_type: str,
-        allocation_method: str,
-        total_amount: float,
-        currency: str = "CNY",
-        operator: Optional[str] = None,
+    async def list_rules(db: AsyncSession) -> list[AllocationRule]:
+        result = await db.execute(
+            select(AllocationRule).order_by(AllocationRule.priority, AllocationRule.id)
+        )
+        rules = result.scalars().all()
+
+        # 补充仓库名称
+        for r in rules:
+            if r.warehouse_id:
+                wh = await db.get(Warehouse, r.warehouse_id)
+                r.warehouse_name = wh.name if wh else None
+        return list(rules)
+
+    @staticmethod
+    async def delete_rule(db: AsyncSession, rule_id: int) -> bool:
+        rule = await db.get(AllocationRule, rule_id)
+        if not rule:
+            return False
+        await db.delete(rule)
+        await db.flush()
+        return True
+
+    @staticmethod
+    async def get_warehouse_inventory(
+        db: AsyncSession, sku_id: int,
+    ) -> list[dict]:
+        """查询SKU在各仓库的库存分布"""
+        stmt = select(InventoryWarehouse).where(
+            InventoryWarehouse.sku_id == sku_id
+        )
+        result = await db.execute(stmt)
+        records = result.scalars().all()
+
+        rows = []
+        for r in records:
+            wh = await db.get(Warehouse, r.warehouse_id)
+            rows.append({
+                "id": r.id,
+                "sku_id": r.sku_id,
+                "warehouse_id": r.warehouse_id,
+                "warehouse_name": wh.name if wh else "未知仓库",
+                "quantity": r.quantity,
+                "locked_quantity": r.locked_quantity,
+                "safety_stock": r.safety_stock,
+                "available_qty": max(r.quantity - r.locked_quantity, 0),
+            })
+        return rows
+
+    @staticmethod
+    async def allocate(
+        db: AsyncSession, sku_id: int, warehouse_id: int, quantity: int,
     ) -> dict:
-        rows, parse_errors = AllocationService.parse_csv(content)
-
-        if parse_errors and not rows:
-            return {"batch_id": None, "total_rows": 0, "imported_rows": 0, "error_rows": len(parse_errors), "errors": parse_errors}
-
-        batch = CostAllocationBatch(
-            allocation_type=allocation_type,
-            allocation_method=allocation_method,
-            total_amount=Decimal(str(total_amount)),
-            currency=currency,
-            source_filename=filename,
-            row_count=len(rows),
-            status="imported",
-            created_by=operator,
+        """将库存从总库存分配到指定仓库"""
+        # 获取总库存
+        inv = await db.execute(
+            select(Inventory).where(Inventory.sku_id == sku_id)
         )
-        db.add(batch)
-        await db.flush()
+        total_inv = inv.scalar_one_or_none()
+        if not total_inv:
+            raise ValueError("SKU库存不存在")
 
-        for row in rows:
-            # Resolve sku_id by code
-            sku = None
-            order = None
-            if row["sku_code"]:
-                stmt = select(Sku).where(Sku.code == row["sku_code"])
-                result = await db.execute(stmt)
-                sku = result.scalar_one_or_none()
+        available = total_inv.quantity - total_inv.locked_quantity
+        if quantity > available:
+            raise ValueError(f"可用库存不足: 需要{quantity}, 可用{available}")
 
-            if row.get("order_no"):
-                stmt = select(Order).where(Order.order_no == row["order_no"])
-                result = await db.execute(stmt)
-                order = result.scalar_one_or_none()
+        # 获取仓库库存记录
+        stmt = select(InventoryWarehouse).where(
+            InventoryWarehouse.sku_id == sku_id,
+            InventoryWarehouse.warehouse_id == warehouse_id,
+        )
+        result = await db.execute(stmt)
+        wh_inv = result.scalar_one_or_none()
 
-            item = CostAllocationItem(
-                batch_id=batch.id,
-                row_number=rows.index(row) + 2,
-                sku_id=sku.id if sku else None,
-                sku_code=row["sku_code"],
-                order_id=order.id if order else None,
-                quantity=row["quantity"],
-                weight_kg=row.get("weight_kg"),
-                volume_m3=row.get("volume_m3"),
-                item_value=row.get("item_value"),
-                cost_layer="allocated",
-                raw_payload=row.get("raw_payload"),
+        if wh_inv:
+            wh_inv.quantity += quantity
+        else:
+            wh_inv = InventoryWarehouse(
+                sku_id=sku_id,
+                warehouse_id=warehouse_id,
+                quantity=quantity,
             )
-            db.add(item)
+            db.add(wh_inv)
 
+        # 扣减总库存
+        total_inv.quantity -= quantity
         await db.flush()
 
-        await OperationLogService.log(
-            db, module="allocation", action="import",
-            resource_id=str(batch.id),
-            content=f"导入费用分摊: type={allocation_type}, method={allocation_method}, total={total_amount}",
-            operator=operator or "system",
-        )
+        wh = await db.get(Warehouse, warehouse_id)
+        sku = await db.get(Sku, sku_id)
 
-        return {"batch_id": batch.id, "total_rows": len(rows), "imported_rows": len(rows), "error_rows": len(parse_errors), "errors": parse_errors}
+        return {
+            "sku_id": sku_id,
+            "sku_code": sku.code if sku else None,
+            "warehouse_id": warehouse_id,
+            "warehouse_name": wh.name if wh else None,
+            "allocated_qty": quantity,
+            "remaining_total": total_inv.quantity,
+            "warehouse_quantity": wh_inv.quantity,
+        }
 
     @staticmethod
-    async def calculate(
-        db: AsyncSession,
-        batch_id: int,
-        operator: Optional[str] = None,
-    ) -> Optional[dict]:
-        batch = await db.get(CostAllocationBatch, batch_id)
-        if not batch:
-            return None
+    async def auto_allocate(db: AsyncSession, sku_id: int) -> list[dict]:
+        """按分配规则自动分配到各仓库"""
+        rules = await db.execute(
+            select(AllocationRule)
+            .where(AllocationRule.status == 1)
+            .order_by(AllocationRule.priority, AllocationRule.id)
+        )
+        rules = rules.scalars().all()
 
-        stmt = select(CostAllocationItem).where(CostAllocationItem.batch_id == batch_id)
-        result = await db.execute(stmt)
-        items = result.scalars().all()
+        inv = await db.execute(
+            select(Inventory).where(Inventory.sku_id == sku_id)
+        )
+        total_inv = inv.scalar_one_or_none()
+        if not total_inv:
+            raise ValueError("SKU库存不存在")
 
-        if not items:
-            return None
+        available = total_inv.quantity - total_inv.locked_quantity
+        if available <= 0:
+            return []
 
-        total_amount = Decimal(str(batch.total_amount))
-        method = batch.allocation_method
+        results = []
+        remaining = available
 
-        # Compute factors
-        factors: list[Decimal] = []
-        for item in items:
-            if method == "quantity":
-                factors.append(Decimal(str(item.quantity or 0)))
-            elif method == "weight":
-                factors.append(Decimal(str(item.weight_kg or 0)))
-            elif method == "volume":
-                factors.append(Decimal(str(item.volume_m3 or 0)))
-            elif method == "value":
-                factors.append(Decimal(str(item.item_value or 0)))
+        for rule in rules:
+            if remaining <= 0:
+                break
 
-        total_factor = sum(factors)
+            if rule.rule_type == "percentage":
+                qty = int(available * float(rule.allocation_pct) / 100)
+            elif rule.rule_type == "fixed":
+                qty = min(rule.allocation_qty, remaining)
+            else:  # priority
+                qty = remaining
 
-        if total_factor <= 0:
-            raise ValueError("分摊因子总和为0，无法计算")
+            if qty > 0:
+                result = await AllocationService.allocate(
+                    db, sku_id, rule.warehouse_id, qty
+                )
+                results.append(result)
+                remaining -= qty
 
-        # Allocate with rounding
-        allocated_sum = Decimal("0")
-        for i, item in enumerate(items):
-            factor = factors[i]
-            if i == len(items) - 1:
-                # Last item: remainder
-                raw_amt = total_amount - allocated_sum
+        return results
+
+    @staticmethod
+    async def generate_mock_data(db: AsyncSession) -> dict:
+        """生成模拟仓库和分配规则"""
+        import random
+
+        mock_warehouses = [
+            ("深圳保税仓", "sz-bonded", "深圳市南山区"),
+            ("广州中心仓", "gz-central", "广州市白云区"),
+            ("义乌分拣仓", "yw-sorting", "义乌市稠江街道"),
+            ("海外仓-莫斯科", "ru-moscow", "Moscow, Russia"),
+            ("海外仓-曼谷", "th-bangkok", "Bangkok, Thailand"),
+        ]
+
+        warehouses = []
+        for i, (name, code, addr) in enumerate(mock_warehouses):
+            existing = await db.execute(
+                select(Warehouse).where(Warehouse.code == code)
+            )
+            if not existing.scalar_one_or_none():
+                wh = Warehouse(
+                    name=name, code=code, address=addr,
+                    is_default=1 if i == 0 else 0,
+                )
+                db.add(wh)
+                await db.flush()
+                warehouses.append(wh)
             else:
-                ratio = factor / total_factor
-                raw_amt = (total_amount * ratio).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            allocated_sum += raw_amt
-            item.allocation_factor = factor
-            item.allocated_amount = raw_amt
+                warehouses.append(existing.scalar_one())
 
-        batch.status = "calculated"
-        await db.flush()
+        # 创建默认分配规则
+        rules_data = [
+            ("优先本地仓", 1, "percentage", warehouses[0].id, 60),
+            ("广州分仓", 2, "percentage", warehouses[1].id, 30),
+            ("海外备货", 3, "percentage", warehouses[3].id, 10),
+        ]
 
-        await OperationLogService.log(
-            db, module="allocation", action="calculate",
-            resource_id=str(batch_id),
-            content=f"计算分摊: method={method}, total={total_amount}",
-            operator=operator or "system",
-        )
-
-        return AllocationService._batch_detail(batch, items)
-
-    @staticmethod
-    async def post_to_ledger(
-        db: AsyncSession,
-        batch_id: int,
-        operator: Optional[str] = None,
-    ) -> Optional[dict]:
-        batch = await db.get(CostAllocationBatch, batch_id)
-        if not batch:
-            return None
-
-        stmt = select(CostAllocationItem).where(
-            CostAllocationItem.batch_id == batch_id,
-            CostAllocationItem.posted_to_ledger == 0,
-        )
-        result = await db.execute(stmt)
-        items = result.scalars().all()
-
-        posted_count = 0
-        for item in items:
-            if not item.order_id:
-                continue
-
-            # Create ledger entry
-            entry = FinanceLedgerEntry(
-                order_id=item.order_id,
-                entry_type=ENTRY_ALLOCATED_COST,
-                amount=-Decimal(str(item.allocated_amount or 0)),
-                currency=batch.currency or "CNY",
-                cost_layer=COST_LAYER_ALLOCATED,
-                source_type="cost_allocation_item",
-                source_id=item.id,
-                description=f"费用分摊: {batch.allocation_type} ({batch.allocation_method})",
+        created_rules = 0
+        for name, pri, rtype, wid, pct in rules_data:
+            existing = await db.execute(
+                select(AllocationRule).where(
+                    AllocationRule.name == name,
+                    AllocationRule.warehouse_id == wid,
+                )
             )
-            db.add(entry)
-            item.posted_to_ledger = 1
-            posted_count += 1
+            if not existing.scalar_one_or_none():
+                rule = AllocationRule(
+                    name=name, priority=pri, rule_type=rtype,
+                    warehouse_id=wid, allocation_pct=pct,
+                )
+                db.add(rule)
+                created_rules += 1
 
-        batch.posted_count = (batch.posted_count or 0) + posted_count
-        if batch.posted_count >= (batch.row_count or 0):
-            batch.status = "posted"
         await db.flush()
 
-        await OperationLogService.log(
-            db, module="allocation", action="post_to_ledger",
-            resource_id=str(batch_id),
-            content=f"入账分摊: posted={posted_count}",
-            operator=operator or "system",
-        )
+        # 对现有SKU执行一轮自动分配
+        sku_result = await db.execute(select(Sku).limit(10))
+        skus = sku_result.scalars().all()
+        allocated_skus = 0
+        for sku in skus:
+            try:
+                await AllocationService.auto_allocate(db, sku.id)
+                allocated_skus += 1
+            except ValueError:
+                pass
 
-        return {"batch_id": batch.id, "posted_count": posted_count}
-
-    @staticmethod
-    async def list_batches(db: AsyncSession, status: Optional[str] = None) -> list[dict]:
-        stmt = select(CostAllocationBatch).order_by(CostAllocationBatch.created_at.desc())
-        if status:
-            stmt = stmt.where(CostAllocationBatch.status == status)
-        result = await db.execute(stmt)
-        return [AllocationService._batch_to_dict(b) for b in result.scalars().all()]
-
-    @staticmethod
-    async def get_batch(db: AsyncSession, batch_id: int) -> Optional[dict]:
-        batch = await db.get(CostAllocationBatch, batch_id)
-        if not batch:
-            return None
-        return AllocationService._batch_to_dict(batch)
-
-    @staticmethod
-    async def list_items(db: AsyncSession, batch_id: int) -> list[dict]:
-        stmt = select(CostAllocationItem).where(CostAllocationItem.batch_id == batch_id).order_by(CostAllocationItem.row_number)
-        result = await db.execute(stmt)
-        items = result.scalars().all()
-        return [AllocationService._item_to_dict(it) for it in items]
-
-    @staticmethod
-    def _batch_detail(batch, items) -> dict:
         return {
-            "batch_id": batch.id,
-            "allocation_type": batch.allocation_type,
-            "allocation_method": batch.allocation_method,
-            "total_amount": float(batch.total_amount),
-            "currency": batch.currency or "CNY",
-            "status": batch.status,
-            "items": [AllocationService._item_to_dict(it) for it in items],
-        }
-
-    @staticmethod
-    def _batch_to_dict(b: CostAllocationBatch) -> dict:
-        return {
-            "id": b.id,
-            "allocation_type": b.allocation_type,
-            "allocation_method": b.allocation_method,
-            "total_amount": float(b.total_amount),
-            "currency": b.currency or "CNY",
-            "source_filename": b.source_filename,
-            "row_count": b.row_count or 0,
-            "status": b.status,
-            "posted_count": b.posted_count or 0,
-            "created_by": b.created_by,
-            "created_at": b.created_at.isoformat() if b.created_at else None,
-        }
-
-    @staticmethod
-    def _item_to_dict(it: CostAllocationItem) -> dict:
-        return {
-            "id": it.id,
-            "batch_id": it.batch_id,
-            "row_number": it.row_number,
-            "sku_id": it.sku_id,
-            "sku_code": it.sku_code,
-            "order_id": it.order_id,
-            "quantity": it.quantity or 0,
-            "weight_kg": float(it.weight_kg) if it.weight_kg else None,
-            "volume_m3": float(it.volume_m3) if it.volume_m3 else None,
-            "item_value": float(it.item_value) if it.item_value else None,
-            "allocation_factor": float(it.allocation_factor) if it.allocation_factor else None,
-            "allocated_amount": float(it.allocated_amount) if it.allocated_amount else 0,
-            "cost_layer": it.cost_layer or "allocated",
-            "posted_to_ledger": bool(it.posted_to_ledger),
-            "created_at": it.created_at.isoformat() if it.created_at else None,
+            "warehouses_created": len(warehouses),
+            "rules_created": created_rules,
+            "skus_allocated": allocated_skus,
         }

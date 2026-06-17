@@ -10,7 +10,9 @@ from app.models import User
 from app.sku.schemas import SpecDefine, SkuUpdate, SpecNameVO, SpecValueVO, SkuVO
 from app.sku.service import SpecService
 from app.models import Inventory
+import asyncio
 from app.operation_log.service import OperationLogService
+from app.events import emit_agent_event
 
 router = APIRouter(tags=["规格与SKU管理"])
 
@@ -134,6 +136,16 @@ async def update_sku(
         content=f"更新SKU: sku_id={sku_id}",
         operator=current_user.username,
     )
+
+    # Agent 事件：价格变动触发折扣风险检查
+    if data.price is not None and sku.price is not None and float(data.price) != float(sku.price):
+        asyncio.ensure_future(emit_agent_event("price.changed", {
+            "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
+            "original_price": float(sku.price),
+            "new_price": float(data.price),
+            "sku_id": sku_id,
+        }, source="sku.router"))
+
     return Result.ok(sku_to_vo(sku))
 
 
@@ -146,4 +158,8 @@ async def get_sku(
     sku = await SpecService.get_sku_by_id(db, sku_id)
     if not sku:
         return Result.not_found("SKU不存在")
-    return Result.ok(sku_to_vo(sku))
+    # 从 Inventory 表查询真实库存（sku.stock 已废弃）
+    inventory = await db.scalar(
+        select(Inventory.quantity).where(Inventory.sku_id == sku_id)
+    )
+    return Result.ok(sku_to_vo(sku, stock=inventory))

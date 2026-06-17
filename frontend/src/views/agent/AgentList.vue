@@ -32,7 +32,8 @@
 
 <script setup lang="ts">
 import { h, ref, reactive, onMounted } from 'vue'
-import { useRouter, useMessage, NTag, NSpace } from 'naive-ui'
+import { useRouter } from 'vue-router'
+import { useMessage, NTag, NSpace } from 'naive-ui'
 import { agentApi } from '@/api/modules/agent'
 
 const router = useRouter()

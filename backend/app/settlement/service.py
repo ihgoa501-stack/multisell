@@ -1,294 +1,459 @@
-"""平台结算导入 - 服务层"""
+"""结算管理 - 服务层"""
 
-import csv
-import io
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import select, func, and_, delete as sa_delete, case
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.models import Order, PlatformSettlementBatch, PlatformSettlementItem
-from app.operation_log.service import OperationLogService
+from app.models import Settlement, SettlementItem, Order, Platform
 
-ALLOWED_TX_TYPES = {
-    "sale", "platform_fee", "payment_fee", "refund",
-    "adjustment", "payout", "tax", "other",
-}
-
-REQUIRED_COLUMNS = {"platform", "transaction_type", "amount"}
+logger = logging.getLogger(__name__)
 
 
 class SettlementService:
 
-    @staticmethod
-    def parse_csv(content: bytes) -> tuple[list[dict], list[str]]:
-        """解析 CSV，返回 (rows, errors)。"""
-        text = content.decode("utf-8-sig")
-        reader = csv.DictReader(io.StringIO(text))
-        headers = {h.strip() for h in reader.fieldnames or []}
-
-        missing = REQUIRED_COLUMNS - headers
-        if missing:
-            raise ValueError(f"缺少必填列: {', '.join(sorted(missing))}")
-
-        col_map = {
-            "platform": "platform",
-            "store_name": "store_name",
-            "platform_order_no": "platform_order_no",
-            "order_no": "order_no",
-            "transaction_type": "transaction_type",
-            "currency": "currency",
-            "amount": "amount",
-            "settled_at": "settled_at",
-            "description": "description",
-        }
-
-        rows: list[dict] = []
-        errors: list[str] = []
-
-        for idx, raw in enumerate(reader, start=2):
-            try:
-                row = {}
-                for csv_col, model_field in col_map.items():
-                    raw_val = raw.get(csv_col, "").strip()
-                    row[model_field] = raw_val if raw_val else None
-
-                tx_type = (row.get("transaction_type") or "").lower()
-                if tx_type not in ALLOWED_TX_TYPES:
-                    errors.append(f"第{idx}行: 不支持的交易类型 '{tx_type}'")
-                    continue
-
-                if not row.get("platform"):
-                    errors.append(f"第{idx}行: 平台不能为空")
-                    continue
-
-                try:
-                    row["amount"] = float(row.get("amount") or 0)
-                except (TypeError, ValueError):
-                    errors.append(f"第{idx}行: 金额必须是数字")
-                    continue
-
-                if row.get("settled_at"):
-                    try:
-                        row["settled_at"] = datetime.fromisoformat(
-                            row["settled_at"].replace("T", " ").replace("Z", "+00:00")
-                        )
-                    except ValueError:
-                        row["settled_at"] = None
-
-                row["raw_payload"] = dict(raw)
-                rows.append(row)
-            except Exception as e:
-                errors.append(f"第{idx}行: 解析异常 {str(e)}")
-
-        return rows, errors
+    # ── 导入 ────────────────────────────────────────────────────────
 
     @staticmethod
-    async def import_csv(
+    async def import_settlement(
         db: AsyncSession,
-        filename: str,
-        content: bytes,
-        operator: Optional[str] = None,
-    ) -> dict:
-        """导入结算 CSV，创建批次和行。"""
-        rows, parse_errors = SettlementService.parse_csv(content)
-
-        if parse_errors and not rows:
-            return {
-                "batch_id": None,
-                "total_rows": 0,
-                "imported_rows": 0,
-                "error_rows": len(parse_errors),
-                "errors": parse_errors,
-            }
-
-        # Detect platform name from first row
-        platform_name = rows[0].get("platform") if rows else None
-
-        batch = PlatformSettlementBatch(
-            platform_name=platform_name,
-            filename=filename,
-            row_count=len(rows),
-            import_status="imported",
-            status="imported",
-            created_by=operator,
-        )
-        db.add(batch)
+        data: dict,
+        items_data: list[dict],
+    ) -> Settlement:
+        """导入结算单及其明细"""
+        settlement = Settlement(**data)
+        db.add(settlement)
         await db.flush()
 
-        for row in rows:
-            item = PlatformSettlementItem(
-                batch_id=batch.id,
-                row_number=rows.index(row) + 2,
-                platform=row.get("platform"),
-                store_name=row.get("store_name"),
-                platform_order_no=row.get("platform_order_no"),
-                order_no=row.get("order_no"),
-                transaction_type=row.get("transaction_type", "").lower(),
-                currency=row.get("currency") or "CNY",
-                amount=float(row.get("amount", 0)),
-                settled_at=row.get("settled_at"),
-                description=row.get("description"),
-                match_status="unmatched",
-                raw_payload=row.get("raw_payload"),
-            )
-
-            # Try to match by order_no
-            if item.order_no:
-                stmt = select(Order).where(Order.order_no == item.order_no)
-                result = await db.execute(stmt)
-                order = result.scalar_one_or_none()
-                if order:
-                    item.match_status = "matched"
-                    item.matched_order_id = order.id
-
+        for item_data in items_data:
+            item = SettlementItem(settlement_id=settlement.id, **item_data)
             db.add(item)
 
         await db.flush()
+        await db.refresh(settlement)
 
-        # Update batch counts
-        matched_count = await SettlementService._count_by_match_status(db, batch.id, "matched")
-        unmatched_count = await SettlementService._count_by_match_status(db, batch.id, "unmatched")
-        batch.matched_count = matched_count
-        batch.unmatched_count = unmatched_count
-        await db.flush()
+        # 重新统计汇总金额
+        await SettlementService._recalc_totals(db, settlement.id)
 
-        await OperationLogService.log(
-            db,
-            module="settlement",
-            action="import",
-            resource_id=str(batch.id),
-            content=f"导入平台结算: filename={filename}, rows={len(rows)}, matched={matched_count}",
-            operator=operator or "system",
-        )
-
-        return {
-            "batch_id": batch.id,
-            "total_rows": len(rows),
-            "imported_rows": len(rows),
-            "error_rows": len(parse_errors),
-            "errors": parse_errors,
-        }
+        return settlement
 
     @staticmethod
-    async def _count_by_match_status(db, batch_id: int, status: str) -> int:
-        stmt = select(func.count(PlatformSettlementItem.id)).where(
-            PlatformSettlementItem.batch_id == batch_id,
-            PlatformSettlementItem.match_status == status,
-        )
-        result = await db.execute(stmt)
-        return result.scalar() or 0
+    async def _recalc_totals(db: AsyncSession, settlement_id: int):
+        """根据明细重新计算结算单汇总"""
+        stmt = select(
+            func.coalesce(func.sum(SettlementItem.amount), 0),
+            func.coalesce(func.sum(SettlementItem.fee), 0),
+            func.coalesce(func.sum(SettlementItem.net), 0),
+        ).where(SettlementItem.settlement_id == settlement_id)
+
+        row = (await db.execute(stmt)).one()
+        settlement = await db.get(Settlement, settlement_id)
+        if settlement:
+            settlement.total_revenue = float(row[0])
+            settlement.total_fee = float(row[1])
+            settlement.total_net = float(row[2])
+            await db.flush()
+
+    # ── 查询 ────────────────────────────────────────────────────────
 
     @staticmethod
-    async def list_batches(db: AsyncSession, status: Optional[str] = None) -> list[dict]:
-        stmt = select(PlatformSettlementBatch).order_by(
-            PlatformSettlementBatch.created_at.desc()
-        )
+    async def list_settlements(
+        db: AsyncSession,
+        platform_id: Optional[int] = None,
+        status: Optional[str] = None,
+        keyword: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[dict], int]:
+        """分页查询结算单列表（含汇总统计）"""
+        stmt = select(Settlement)
+        count_stmt = select(func.count()).select_from(Settlement)
+
+        if platform_id:
+            stmt = stmt.where(Settlement.platform_id == platform_id)
+            count_stmt = count_stmt.where(Settlement.platform_id == platform_id)
         if status:
-            stmt = stmt.where(PlatformSettlementBatch.status == status)
+            stmt = stmt.where(Settlement.status == status)
+            count_stmt = count_stmt.where(Settlement.status == status)
+        if keyword:
+            like = f"%{keyword}%"
+            stmt = stmt.where(Settlement.settlement_no.ilike(like))
+            count_stmt = count_stmt.where(Settlement.settlement_no.ilike(like))
+
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        offset = (page - 1) * page_size
+        stmt = stmt.order_by(Settlement.created_at.desc()).offset(offset).limit(page_size)
         result = await db.execute(stmt)
-        batches = result.scalars().all()
-        return [
-            {
-                "id": b.id,
-                "platform_name": b.platform_name,
-                "filename": b.filename,
-                "row_count": b.row_count or 0,
-                "matched_count": b.matched_count or 0,
-                "unmatched_count": b.unmatched_count or 0,
-                "import_status": b.import_status,
-                "status": b.status,
-                "created_by": b.created_by,
-                "created_at": b.created_at.isoformat() if b.created_at else None,
-            }
-            for b in batches
-        ]
+        settlements = result.scalars().all()
+
+        rows = []
+        for s in settlements:
+            platform_name = None
+            if s.platform:
+                platform_name = s.platform.name
+
+            # 统计对账状态
+            item_counts = await SettlementService._item_status_counts(db, s.id)
+
+            rows.append({
+                "id": s.id,
+                "platform_id": s.platform_id,
+                "platform_name": platform_name,
+                "settlement_no": s.settlement_no,
+                "period_start": s.period_start.isoformat() if s.period_start else None,
+                "period_end": s.period_end.isoformat() if s.period_end else None,
+                "currency": s.currency,
+                "total_revenue": float(s.total_revenue),
+                "total_fee": float(s.total_fee),
+                "total_refund": float(s.total_refund),
+                "total_net": float(s.total_net),
+                "status": s.status,
+                "item_count": item_counts["total"],
+                "matched_count": item_counts["matched"],
+                "unmatched_count": item_counts["unmatched"],
+                "discrepancy_count": item_counts["discrepancy"],
+                "imported_at": s.imported_at.isoformat() if s.imported_at else None,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+            })
+
+        return rows, total
 
     @staticmethod
-    async def get_batch(db: AsyncSession, batch_id: int) -> Optional[dict]:
-        batch = await db.get(PlatformSettlementBatch, batch_id)
-        if not batch:
-            return None
+    async def _item_status_counts(db: AsyncSession, settlement_id: int) -> dict:
+        """获取明细对账状态统计"""
+        stmt = select(
+            func.count().label("total"),
+            func.sum(case((SettlementItem.reconciliation_status == "matched", 1), else_=0)).label("matched"),
+            func.sum(case((SettlementItem.reconciliation_status == "unmatched", 1), else_=0)).label("unmatched"),
+            func.sum(case((SettlementItem.reconciliation_status == "discrepancy", 1), else_=0)).label("discrepancy"),
+        ).where(SettlementItem.settlement_id == settlement_id)
+
+        row = (await db.execute(stmt)).one()
         return {
-            "id": batch.id,
-            "platform_name": batch.platform_name,
-            "filename": batch.filename,
-            "row_count": batch.row_count or 0,
-            "matched_count": batch.matched_count or 0,
-            "unmatched_count": batch.unmatched_count or 0,
-            "import_status": batch.import_status,
-            "status": batch.status,
-            "created_by": batch.created_by,
-            "created_at": batch.created_at.isoformat() if batch.created_at else None,
+            "total": row[0] or 0,
+            "matched": row[1] or 0,
+            "unmatched": row[2] or 0,
+            "discrepancy": row[3] or 0,
         }
+
+    @staticmethod
+    async def get_settlement_detail(db: AsyncSession, settlement_id: int) -> Optional[dict]:
+        """获取结算单详情"""
+        settlement = await db.get(Settlement, settlement_id)
+        if not settlement:
+            return None
+
+        platform_name = settlement.platform.name if settlement.platform else None
+        item_counts = await SettlementService._item_status_counts(db, settlement_id)
+
+        return {
+            "id": settlement.id,
+            "platform_id": settlement.platform_id,
+            "platform_name": platform_name,
+            "settlement_no": settlement.settlement_no,
+            "period_start": settlement.period_start.isoformat() if settlement.period_start else None,
+            "period_end": settlement.period_end.isoformat() if settlement.period_end else None,
+            "currency": settlement.currency,
+            "total_revenue": float(settlement.total_revenue),
+            "total_fee": float(settlement.total_fee),
+            "total_refund": float(settlement.total_refund),
+            "total_net": float(settlement.total_net),
+            "status": settlement.status,
+            "item_count": item_counts["total"],
+            "matched_count": item_counts["matched"],
+            "unmatched_count": item_counts["unmatched"],
+            "discrepancy_count": item_counts["discrepancy"],
+            "imported_at": settlement.imported_at.isoformat() if settlement.imported_at else None,
+            "created_at": settlement.created_at.isoformat() if settlement.created_at else None,
+            "updated_at": settlement.updated_at.isoformat() if settlement.updated_at else None,
+        }
+
+    # ── 明细 ────────────────────────────────────────────────────────
 
     @staticmethod
     async def list_items(
         db: AsyncSession,
-        batch_id: int,
-        match_status: Optional[str] = None,
-    ) -> list[dict]:
-        stmt = (
-            select(PlatformSettlementItem)
-            .where(PlatformSettlementItem.batch_id == batch_id)
-            .order_by(PlatformSettlementItem.row_number)
+        settlement_id: int,
+        reconciliation_status: Optional[str] = None,
+        transaction_type: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[dict], int]:
+        """分页查询结算明细"""
+        stmt = select(SettlementItem).where(SettlementItem.settlement_id == settlement_id)
+        count_stmt = select(func.count()).select_from(SettlementItem).where(
+            SettlementItem.settlement_id == settlement_id
         )
-        if match_status:
-            stmt = stmt.where(PlatformSettlementItem.match_status == match_status)
 
+        if reconciliation_status:
+            stmt = stmt.where(SettlementItem.reconciliation_status == reconciliation_status)
+            count_stmt = count_stmt.where(SettlementItem.reconciliation_status == reconciliation_status)
+        if transaction_type:
+            stmt = stmt.where(SettlementItem.transaction_type == transaction_type)
+            count_stmt = count_stmt.where(SettlementItem.transaction_type == transaction_type)
+
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        offset = (page - 1) * page_size
+        stmt = stmt.order_by(SettlementItem.occurred_at.desc().nulls_last()).offset(offset).limit(page_size)
         result = await db.execute(stmt)
         items = result.scalars().all()
-        return [
-            {
-                "id": it.id,
-                "batch_id": it.batch_id,
-                "row_number": it.row_number,
-                "platform": it.platform,
-                "store_name": it.store_name,
-                "platform_order_no": it.platform_order_no,
-                "order_no": it.order_no,
-                "transaction_type": it.transaction_type,
-                "currency": it.currency or "CNY",
-                "amount": float(it.amount) if it.amount else 0,
-                "settled_at": it.settled_at.isoformat() if it.settled_at else None,
-                "description": it.description,
-                "match_status": it.match_status,
-                "matched_order_id": it.matched_order_id,
-                "cost_layer": "actual",
-                "created_at": it.created_at.isoformat() if it.created_at else None,
-            }
-            for it in items
-        ]
+
+        rows = []
+        for item in items:
+            rows.append({
+                "id": item.id,
+                "settlement_id": item.settlement_id,
+                "transaction_type": item.transaction_type,
+                "transaction_id": item.transaction_id,
+                "order_no": item.order_no,
+                "order_id": item.order_id,
+                "sku_id": item.sku_id,
+                "amount": float(item.amount),
+                "fee": float(item.fee),
+                "net": float(item.net),
+                "quantity": item.quantity,
+                "occurred_at": item.occurred_at.isoformat() if item.occurred_at else None,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "reconciliation_status": item.reconciliation_status,
+                "reconciliation_note": item.reconciliation_note,
+                "reconciled_at": item.reconciled_at.isoformat() if item.reconciled_at else None,
+                "reconciled_by": item.reconciled_by,
+            })
+
+        return rows, total
+
+    # ── 对账 ────────────────────────────────────────────────────────
 
     @staticmethod
-    async def list_unmatched_items(
+    async def reconcile(
         db: AsyncSession,
-    ) -> list[dict]:
-        stmt = (
-            select(PlatformSettlementItem)
-            .where(PlatformSettlementItem.match_status == "unmatched")
-            .order_by(PlatformSettlementItem.created_at.desc())
-            .limit(200)
+        settlement_id: int,
+        auto_match: bool = True,
+        strategy: str = "by_order_no",
+    ) -> dict:
+        """执行对账
+
+        - auto_match: 是否自动按策略匹配
+        - strategy: by_order_no（按订单号匹配）/ by_transaction_id（按交易ID匹配）
+        """
+        settlement = await db.get(Settlement, settlement_id)
+        if not settlement:
+            raise ValueError("结算单不存在")
+
+        # 更新结算单状态
+        settlement.status = "reconciling"
+        await db.flush()
+
+        # 获取所有待对账的明细
+        stmt = select(SettlementItem).where(
+            SettlementItem.settlement_id == settlement_id,
+            SettlementItem.reconciliation_status.in_(["pending", "unmatched"]),
         )
         result = await db.execute(stmt)
         items = result.scalars().all()
-        return [
-            {
-                "id": it.id,
-                "batch_id": it.batch_id,
-                "row_number": it.row_number,
-                "platform": it.platform,
-                "store_name": it.store_name,
-                "order_no": it.order_no,
-                "transaction_type": it.transaction_type,
-                "currency": it.currency or "CNY",
-                "amount": float(it.amount) if it.amount else 0,
-                "settled_at": it.settled_at.isoformat() if it.settled_at else None,
-                "description": it.description,
-                "match_status": it.match_status,
-                "cost_layer": "actual",
-                "created_at": it.created_at.isoformat() if it.created_at else None,
-            }
-            for it in items
-        ]
+
+        matched = 0
+        unmatched = 0
+
+        now = datetime.now(timezone.utc)
+
+        for item in items:
+            if not auto_match:
+                # 仅标记为未对账
+                item.reconciliation_status = "unmatched"
+                unmatched += 1
+                continue
+
+            if strategy == "by_order_no" and item.order_no:
+                # 按订单号匹配
+                order_stmt = select(Order).where(Order.order_no == item.order_no)
+                order = (await db.execute(order_stmt)).scalar_one_or_none()
+                if order:
+                    item.order_id = order.id
+                    item.reconciliation_status = "matched"
+
+                    # 检查金额是否一致
+                    expected_amount = float(order.pay_amount or 0)
+                    actual_amount = float(item.amount)
+                    if abs(expected_amount - actual_amount) > 0.01:
+                        item.reconciliation_status = "discrepancy"
+                        item.reconciliation_note = (
+                            f"金额不一致: 内部订单 {expected_amount} vs 平台结算 {actual_amount}"
+                        )
+
+                    matched += 1
+                else:
+                    item.reconciliation_status = "unmatched"
+                    unmatched += 1
+
+            elif strategy == "by_transaction_id" and item.transaction_id:
+                # 按交易ID匹配 — 宽松匹配
+                order_stmt = select(Order).where(
+                    Order.remark.ilike(f"%{item.transaction_id}%")
+                )
+                order = (await db.execute(order_stmt)).scalar_one_or_none()
+                if order:
+                    item.order_id = order.id
+                    item.order_no = order.order_no
+                    item.reconciliation_status = "matched"
+                    matched += 1
+                else:
+                    item.reconciliation_status = "unmatched"
+                    unmatched += 1
+            else:
+                item.reconciliation_status = "unmatched"
+                unmatched += 1
+
+            item.reconciled_at = now
+
+        await db.flush()
+
+        # 重新统计
+        item_counts = await SettlementService._item_status_counts(db, settlement_id)
+
+        # 若全部匹配则自动标记为已对账
+        if item_counts["unmatched"] == 0 and item_counts["discrepancy"] == 0 and item_counts["total"] > 0:
+            settlement.status = "reconciled"
+        else:
+            settlement.status = "reconciling"
+        await db.flush()
+
+        return {
+            "settlement_id": settlement_id,
+            "matched": matched,
+            "unmatched": unmatched,
+            "total": len(items),
+            "summary": item_counts,
+        }
+
+    @staticmethod
+    async def update_item_reconciliation(
+        db: AsyncSession,
+        item_id: int,
+        status: str,
+        note: Optional[str] = None,
+        reconciled_by: Optional[str] = None,
+    ) -> Optional[dict]:
+        """手动更新明细对账状态"""
+        item = await db.get(SettlementItem, item_id)
+        if not item:
+            return None
+
+        item.reconciliation_status = status
+        if note is not None:
+            item.reconciliation_note = note
+        if reconciled_by is not None:
+            item.reconciled_by = reconciled_by
+        item.reconciled_at = datetime.now(timezone.utc)
+        await db.flush()
+
+        return {
+            "id": item.id,
+            "reconciliation_status": item.reconciliation_status,
+            "reconciliation_note": item.reconciliation_note,
+            "reconciled_at": item.reconciled_at.isoformat(),
+        }
+
+    # ── 删除 ────────────────────────────────────────────────────────
+
+    @staticmethod
+    async def delete_settlement(db: AsyncSession, settlement_id: int) -> bool:
+        """删除结算单（级联删除明细）"""
+        settlement = await db.get(Settlement, settlement_id)
+        if not settlement:
+            return False
+
+        await db.delete(settlement)
+        await db.flush()
+        return True
+
+    # ── 模拟数据生成 ────────────────────────────────────────────────
+
+    @staticmethod
+    async def generate_mock_data(
+        db: AsyncSession,
+        platform_id: int,
+        count: int = 10,
+    ) -> Settlement:
+        """生成模拟结算数据，用于演示和测试"""
+        from datetime import timedelta
+        import random
+
+        now = datetime.now(timezone.utc)
+        settlement_no = f"STL-{now.strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+
+        # 获取最近的订单作为模拟数据源
+        order_stmt = select(Order).order_by(Order.created_at.desc()).limit(count)
+        orders = (await db.execute(order_stmt)).scalars().all()
+
+        settlement = Settlement(
+            platform_id=platform_id,
+            settlement_no=settlement_no,
+            period_start=now - timedelta(days=30),
+            period_end=now,
+            currency="CNY",
+            status="pending",
+        )
+        db.add(settlement)
+        await db.flush()
+
+        items_data = []
+        for order in orders:
+            amount = float(order.pay_amount or 0)
+            fee = float(order.platform_fee or 0) + float(order.payment_fee or 0)
+            items_data.append(SettlementItem(
+                settlement_id=settlement.id,
+                transaction_type="order_sale",
+                transaction_id=f"TXN-{order.order_no}",
+                order_no=order.order_no,
+                order_id=order.id,
+                amount=amount,
+                fee=fee,
+                net=amount - fee,
+                quantity=1,
+                occurred_at=order.paid_at or order.created_at,
+            ))
+
+        # 加入一些退款和费用
+        if orders:
+            refund_amount = float(orders[0].pay_amount or 0) * 0.5
+            items_data.append(SettlementItem(
+                settlement_id=settlement.id,
+                transaction_type="refund",
+                transaction_id=f"REF-{settlement_no}",
+                order_no=orders[0].order_no,
+                order_id=orders[0].id,
+                amount=-refund_amount,
+                fee=0,
+                net=-refund_amount,
+                quantity=1,
+                occurred_at=now - timedelta(days=1),
+            ))
+            items_data.append(SettlementItem(
+                settlement_id=settlement.id,
+                transaction_type="platform_fee",
+                transaction_id=f"FEE-{settlement_no}",
+                amount=0,
+                fee=50.00,
+                net=-50.00,
+                quantity=1,
+                occurred_at=now - timedelta(days=1),
+            ))
+
+        for item in items_data:
+            db.add(item)
+
+        await db.flush()
+
+        # 重算汇总
+        await SettlementService._recalc_totals(db, settlement.id)
+        await db.refresh(settlement)
+
+        return settlement

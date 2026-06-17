@@ -8,6 +8,8 @@
 from typing import Any, Optional
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
+from app.agent.llm_service import AgentLlmService
+from app.agent.data_service import AgentDataService
 
 REQUIRED_FIELDS = ["sku_code", "selling_price", "cost_price"]
 OPTIONAL_FIELDS = [
@@ -41,9 +43,11 @@ class A6ProfitWatchAgent(BaseAgent):
         "cost_optimization": EvolutionStage.SUGGESTION,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any]) -> dict[str, Any]:
+    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+        if db is not None and decision_point == "profit_check":
+            context = await AgentDataService.fill_sku_context(db, context)
         if decision_point == "profit_check":
-            return self._check_profit(context)
+            return await self._check_profit(context, db=db)
         elif decision_point == "cost_optimization":
             return self._suggest_cost_optimization(context)
         return {"action": "unknown", "confidence": 0.0}
@@ -51,7 +55,7 @@ class A6ProfitWatchAgent(BaseAgent):
     # ──────────────────────────────
     #  1. 利润检查（核心入口）
     # ──────────────────────────────
-    def _check_profit(self, context: dict) -> dict:
+    async def _check_profit(self, context: dict, db: Any = None) -> dict:
         missing = _missing_fields(context, REQUIRED_FIELDS)
         if missing:
             return self._insufficient("profit_check", missing)
@@ -187,6 +191,22 @@ class A6ProfitWatchAgent(BaseAgent):
             "optimization_suggestions": optimization_suggestions,
             "confidence": confidence,
         }
+
+        # ---- LLM 自然语言解释 ----
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain("A6", {
+                "sku": sku_code,
+                "selling_price": selling_price,
+                "cost_price": cost_price,
+                "fee_breakdown": str(fees),
+                "profit": profit_per_unit,
+                "margin": gross_margin,
+                "is_loss": is_loss,
+                "anomaly_reason": anomaly_reason,
+            }, db=db)
+        except Exception:
+            result["ai_explanation"] = ""
+
         return result
 
     # ──────────────────────────────

@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Optional
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import AgentDecision, SpcControlLimit
+from app.agent.models import AgentDecision, SpcControlLimit
 
 
 class SpcController:

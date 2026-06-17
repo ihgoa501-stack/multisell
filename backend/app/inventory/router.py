@@ -1,5 +1,6 @@
 """库存管理 - 路由"""
 
+import asyncio
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_permission
@@ -9,6 +10,7 @@ from app.inventory.schemas import InventoryUpdate, InventoryCheck, InventoryVO, 
 from app.inventory.service import InventoryService
 from app.models import User
 from app.operation_log.service import OperationLogService
+from app.events import emit_agent_event
 
 router = APIRouter(tags=["库存管理"])
 
@@ -95,6 +97,24 @@ async def update_inventory(
         content=f"更新库存: sku_id={sku_id}, quantity={data.quantity}",
         operator=current_user.username,
     )
+
+    # Agent 事件：库存异常通知
+    if data.quantity is not None or data.safety_stock is not None:
+        qty = data.quantity if data.quantity is not None else (inv.quantity if inv else 0)
+        safe = data.safety_stock if data.safety_stock is not None else (inv.safety_stock if inv else 0)
+        if safe > 0 and qty <= 0:
+            asyncio.ensure_future(emit_agent_event("inventory.out_of_stock", {
+                "sku_id": sku_id,
+                "current_stock": qty,
+                "safety_stock": safe,
+            }, source="inventory.router"))
+        elif safe > 0 and qty <= safe:
+            asyncio.ensure_future(emit_agent_event("inventory.low_stock", {
+                "sku_id": sku_id,
+                "current_stock": qty,
+                "safety_stock": safe,
+            }, source="inventory.router"))
+
     return Result.ok(inv_to_vo(inv))
 
 

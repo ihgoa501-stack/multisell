@@ -4,19 +4,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Sku, Product
+from app.platform_fee.schemas import PlatformFeeCalculateRequest
+from app.platform_fee.service import PlatformFeeService
 from app.shipping.schemas import CalculateRequest, CalculateResponse
 from app.shipping.service import CalculateService
 from app.decision.schemas import (
-    PreListingDecisionBatchItemResult,
-    PreListingDecisionBatchRequest,
-    PreListingDecisionBatchResponse,
-    PreListingDecisionBatchSummary,
     PreListingDecisionRequest,
     PreListingDecisionResponse,
 )
-from app.finance.cost_layers import COST_LAYER_ESTIMATED
-from app.platform_fee.schemas import PlatformFeeRuleMatchRequest
-from app.platform_fee.service import PlatformFeeRuleService
 
 
 class PreListingDecisionService:
@@ -61,57 +56,37 @@ class PreListingDecisionService:
             else:
                 blocking_reasons.append(msg)
 
-        # 3. 计算费用 — 优先匹配平台费用规则
-        platform_fee_source = "manual"
-        applied_platform_fee_rule_id = None
-        platform_fee_rule_summary = None
-        fixed_fee = 0.0
-        advertising_fee = 0.0
-        other_fee = req.other_fee
-
-        platform_fee_pct = req.platform_fee_pct
-        payment_fee_pct = req.payment_fee_pct
-
-        if req.platform_id is not None:
-            # 尝试从SKU所属商品获取类目ID
-            product_stmt = select(Product).where(Product.id == sku.product_id)
-            product_result = await db.execute(product_stmt)
-            product = product_result.scalar_one_or_none()
-            category_id = req.category_id if req.category_id is not None else (product.category_id if product else None)
-
-            matched_rule = await PlatformFeeRuleService.match(
-                db,
-                PlatformFeeRuleMatchRequest(
-                    platform_id=req.platform_id,
-                    site_code=req.destination_country,
-                    category_id=category_id,
-                ),
-            )
-            if matched_rule:
-                platform_fee_source = "rule"
-                applied_platform_fee_rule_id = matched_rule["id"]
-                platform_fee_rule_summary = (
-                    f"{matched_rule.get('platform_name') or req.platform_id} "
-                    f"{matched_rule.get('site_code') or 'GLOBAL'}"
+        # 3. 计算平台费用
+        platform_fee = 0.0
+        if req.platform_id:
+            try:
+                fee_result = await PlatformFeeService.calculate_fee(
+                    db,
+                    PlatformFeeCalculateRequest(
+                        platform_id=req.platform_id,
+                        country_code=req.destination_country,
+                        sale_price=req.target_sale_price,
+                    ),
                 )
-                platform_fee_pct = matched_rule["commission_pct"]
-                payment_fee_pct = matched_rule["payment_fee_pct"]
-                fixed_fee = matched_rule["fixed_fee"]
-                advertising_fee = req.target_sale_price * matched_rule["advertising_pct"] / 100
-                other_fee = matched_rule["other_reserve_fee"]
-            else:
-                warnings.append("未匹配到平台费用规则，使用手动输入费率")
+                platform_fee = fee_result.total_fee
+                if fee_result.rules_matched == 0:
+                    warnings.append("未匹配到平台费用规则，平台费为0")
+            except Exception as e:
+                warnings.append(f"平台费用计算异常: {e}")
+                platform_fee = req.target_sale_price * req.platform_fee_pct / 100
+        else:
+            platform_fee = req.target_sale_price * req.platform_fee_pct / 100
 
-        platform_fee = req.target_sale_price * platform_fee_pct / 100
-        payment_fee = req.target_sale_price * payment_fee_pct / 100
+        # 4. 计算支付费用及其他
+        payment_fee = req.target_sale_price * req.payment_fee_pct / 100
 
-        total_cost = product_cost + shipping_fee + platform_fee + payment_fee + fixed_fee + advertising_fee + other_fee
+        total_cost = product_cost + shipping_fee + platform_fee + payment_fee + req.other_fee
         profit_amount = req.target_sale_price - total_cost
         profit_margin = (profit_amount / req.target_sale_price * 100) if req.target_sale_price > 0 else 0
         profit_margin = round(profit_margin, 2)
         profit_amount = round(profit_amount, 2)
 
-        # 4. 决策逻辑
+        # 5. 决策逻辑
         if blocking_reasons:
             recommendation = "needs_data"
         elif profit_margin >= req.minimum_margin_pct:
@@ -130,87 +105,12 @@ class PreListingDecisionService:
             target_sale_price=req.target_sale_price,
             product_cost=product_cost,
             shipping_fee=shipping_fee,
-            shipping_cost_layer=COST_LAYER_ESTIMATED,
             platform_fee=round(platform_fee, 2),
-            platform_fee_cost_layer=COST_LAYER_ESTIMATED,
             payment_fee=round(payment_fee, 2),
-            fixed_fee=round(fixed_fee, 2),
-            advertising_fee=round(advertising_fee, 2),
-            other_fee=other_fee,
+            other_fee=req.other_fee,
             profit_amount=profit_amount,
             profit_margin=profit_margin,
-            profit_cost_layer=COST_LAYER_ESTIMATED,
             recommendation=recommendation,
             blocking_reasons=blocking_reasons,
             warnings=warnings,
-            applied_platform_fee_rule_id=applied_platform_fee_rule_id,
-            platform_fee_source=platform_fee_source,
-            platform_fee_rule_summary=platform_fee_rule_summary,
-        )
-
-    @staticmethod
-    async def calculate_batch(
-        db: AsyncSession,
-        req: PreListingDecisionBatchRequest,
-    ) -> PreListingDecisionBatchResponse:
-        item_results: list[PreListingDecisionBatchItemResult] = []
-        approve_count = 0
-        reject_count = 0
-        needs_data_count = 0
-        error_count = 0
-        margin_sum = 0.0
-        margin_count = 0
-
-        for index, item in enumerate(req.items):
-            try:
-                single_req = PreListingDecisionRequest(
-                    **item.model_dump(exclude={"item_key"})
-                )
-                result = await PreListingDecisionService.calculate(db, single_req)
-                if result.recommendation == "approve":
-                    approve_count += 1
-                elif result.recommendation == "reject":
-                    reject_count += 1
-                elif result.recommendation == "needs_data":
-                    needs_data_count += 1
-
-                margin_sum += result.profit_margin
-                margin_count += 1
-                item_results.append(
-                    PreListingDecisionBatchItemResult(
-                        index=index,
-                        item_key=item.item_key,
-                        sku_id=item.sku_id,
-                        status="success",
-                        result=result,
-                        error_message=None,
-                    )
-                )
-            except ValueError as exc:
-                error_count += 1
-                item_results.append(
-                    PreListingDecisionBatchItemResult(
-                        index=index,
-                        item_key=item.item_key,
-                        sku_id=item.sku_id,
-                        status="error",
-                        result=None,
-                        error_message=str(exc),
-                    )
-                )
-
-        success_count = len(req.items) - error_count
-        average_profit_margin = round(margin_sum / margin_count, 2) if margin_count else 0
-
-        return PreListingDecisionBatchResponse(
-            summary=PreListingDecisionBatchSummary(
-                total_items=len(req.items),
-                success_count=success_count,
-                error_count=error_count,
-                approve_count=approve_count,
-                reject_count=reject_count,
-                needs_data_count=needs_data_count,
-                average_profit_margin=average_profit_margin,
-            ),
-            items=item_results,
         )

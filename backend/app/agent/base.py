@@ -45,7 +45,7 @@ class BaseAgent:
         }
         return thresholds[stage]
 
-    async def decide(self, decision_point: str, context: dict[str, Any]) -> dict[str, Any]:
+    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
         raise NotImplementedError
 
     def build_decision_record(

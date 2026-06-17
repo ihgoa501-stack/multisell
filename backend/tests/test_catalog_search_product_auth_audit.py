@@ -1,5 +1,6 @@
 """分类、品牌、商品读取、搜索的权限与审计覆盖。"""
 
+from typing import Optional
 from uuid import uuid4
 
 import pytest
@@ -13,7 +14,7 @@ from tests.auth_helpers import enable_auth, grant_permission, register_and_login
 pytestmark = pytest.mark.usefixtures("enable_auth")
 
 
-async def _count_logs(module: str, action: str, resource_id: str | None = None) -> int:
+async def _count_logs(module: str, action: str, resource_id: Optional[str] = None) -> int:
     async with async_session_factory() as session:
         stmt = select(OperationLog).where(
             OperationLog.module == module,
