@@ -6,7 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.database import async_session_factory
-from app.models import Order, OrderItem
+from app.models import Order, OrderItem, OrderShippingSnapshot, ShippingProvider, ShippingChannel
 from app.order_import.models import OrderImportBatch, OrderImportItem
 from tests.auth_helpers import register_and_login, grant_permission
 from tests.test_order_import_csv_adapter import (
@@ -134,6 +134,52 @@ class TestChainProcessing:
         batch = batch_response.json()["data"]
         assert batch["chain_status"] == "chain_processed"
         assert batch["ledger_rebuilt_count"] == 1
+
+    async def test_process_chain_creates_shipping_snapshot_for_tracked_order(self, async_client: AsyncClient):
+        async with async_session_factory() as session:
+            prod, sku = await _create_product_and_sku(session, sku_code=f"SNAP-{uuid4().hex[:5]}")
+            await _ensure_inventory(session, sku.id, 100)
+            provider = ShippingProvider(name="Test Ship", code="TEST_SHIP", status=1)
+            session.add(provider)
+            await session.flush()
+            channel = ShippingChannel(
+                name="Test", code="TEST", provider_id=provider.id,
+                volumetric_divisor=6000, cargo_types=["normal"],
+                estimated_delivery_min=1, estimated_delivery_max=99,
+                currency="CNY", status=1,
+            )
+            session.add(channel)
+            await session.commit()
+
+        csv_text = (
+            "platform,store_name,platform_order_no,sku_code,quantity,unit_price,recipient_name,shipping_fee,tracking_number,paid_at\n"
+            f"amazon,US,AMZ-SNAP01,{sku.code},1,20,Alice,50,TRK-SNAP-001,\n"
+        )
+        _, content = _make_csv(csv_text)
+        import_response = await async_client.post(
+            "/api/order-imports/csv",
+            files={"file": ("orders.csv", content, "text/csv")},
+        )
+        assert import_response.status_code == 200
+        batch_id = import_response.json()["data"]["id"]
+
+        process_response = await async_client.post(f"/api/order-imports/{batch_id}/process-chain")
+        assert process_response.status_code == 200
+
+        items_resp = await async_client.get(f"/api/order-imports/{batch_id}/items")
+        order_id = items_resp.json()["data"][0]["order_id"]
+        import_item_tn = items_resp.json()["data"][0].get("tracking_number")
+
+        async with async_session_factory() as session:
+            order = await session.get(Order, order_id)
+            assert order is not None
+            assert order.tracking_number == "TRK-SNAP-001", f"预期TRK-SNAP-001, 实际={order.tracking_number}"
+            assert import_item_tn == "TRK-SNAP-001", f"预期TRK-SNAP-001, 实际={import_item_tn}"
+            stmt = select(OrderShippingSnapshot).where(OrderShippingSnapshot.order_id == order_id)
+            snapshot = (await session.execute(stmt)).scalar_one_or_none()
+            assert snapshot is not None, "process-chain 应创建运费快照"
+            assert float(snapshot.total_shipping_fee) == 50
+            assert snapshot.order_id == order_id
 
     async def test_process_chain_requires_permission(self, async_client: AsyncClient):
         from app.config import settings

@@ -1,5 +1,5 @@
 tracking_number,order_no,provider_name,channel_name,currency,actual_shipping_fee,surcharge_fee,billed_at
-RUS-TRK-001,,CDEK,CDEK Economy,CNY,38.00,0,2026-06-10
+RUS-TRK-001,,CDEK,CDEK Economy,CNY,35.00,0,2026-06-10
 RUS-TRK-002,,CDEK,CDEK Standard,CNY,45.00,2.00,2026-06-10
 ,SP-20002,Shopee Xpress,Standard,SGD,4.50,0,2026-06-11
 RUS-TRK-003,,Russian Post,EMS,CNY,25.00,0,2026-06-12
