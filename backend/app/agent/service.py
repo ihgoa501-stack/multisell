@@ -268,3 +268,154 @@ class AgentService:
         result = await db.execute(stmt)
         episodes = result.scalars().all()
         return list(episodes), total
+
+    @staticmethod
+    async def get_dashboard(
+        db: AsyncSession,
+        user_id: int,
+    ) -> dict:
+        """G1 运营驾驶舱数据聚合"""
+        from datetime import datetime, timezone, timedelta
+
+        now = datetime.now(timezone.utc)
+        seven_days_ago = now - timedelta(days=7)
+
+        # ── 最近 7 天决策统计 ──
+        recent_stmt = select(AgentDecision).where(
+            AgentDecision.user_id == user_id,
+            AgentDecision.created_at >= seven_days_ago,
+        )
+        recent_result = await db.execute(recent_stmt)
+        recent_decisions = recent_result.scalars().all()
+
+        total_recent = len(recent_decisions)
+        accepted = sum(1 for d in recent_decisions if d.user_action == "accepted")
+        acceptance_rate = round(accepted / total_recent, 3) if total_recent > 0 else 0.0
+
+        by_agent: dict[str, int] = {}
+        for d in recent_decisions:
+            by_agent[d.agent_id] = by_agent.get(d.agent_id, 0) + 1
+
+        # ── 待确认决策（ignored 且 recent） ──
+        pending_stmt = select(AgentDecision).where(
+            AgentDecision.user_id == user_id,
+            AgentDecision.user_action == "ignored",
+            AgentDecision.created_at >= seven_days_ago,
+        ).order_by(AgentDecision.created_at.desc()).limit(20)
+        pending_result = await db.execute(pending_stmt)
+        pending_decisions = pending_result.scalars().all()
+
+        # ── 风险汇总：从 agent_output 中提取风险信息 ──
+        risk_items = []
+        for d in recent_decisions:
+            output = d.agent_output or {}
+            decision = d.final_decision or {}
+
+            if d.agent_id == "A5":
+                status = output.get("stock_status", decision.get("stock_status", ""))
+                if status == "red":
+                    risk_items.append({
+                        "agent_id": "A5",
+                        "decision_id": d.id,
+                        "risk_type": "即将断货",
+                        "sku": output.get("sku_code", decision.get("sku_code", "")),
+                        "detail": output.get("risk_reason", decision.get("risk_reason", "")),
+                        "severity": "high",
+                        "created_at": d.created_at.isoformat() if d.created_at else None,
+                    })
+                elif status == "yellow":
+                    risk_items.append({
+                        "agent_id": "A5",
+                        "decision_id": d.id,
+                        "risk_type": "库存预警",
+                        "sku": output.get("sku_code", decision.get("sku_code", "")),
+                        "detail": output.get("risk_reason", decision.get("risk_reason", "")),
+                        "severity": "medium",
+                        "created_at": d.created_at.isoformat() if d.created_at else None,
+                    })
+
+            elif d.agent_id == "G3":
+                action = output.get("action", decision.get("action", ""))
+                if action == "block":
+                    risk_items.append({
+                        "agent_id": "G3",
+                        "decision_id": d.id,
+                        "risk_type": "折扣风险（已阻断）",
+                        "sku": output.get("sku_code", decision.get("sku_code", "")),
+                        "detail": output.get("reason", decision.get("reason", "")),
+                        "severity": "high",
+                        "created_at": d.created_at.isoformat() if d.created_at else None,
+                    })
+                elif action == "warn":
+                    risk_items.append({
+                        "agent_id": "G3",
+                        "decision_id": d.id,
+                        "risk_type": "折扣风险（预警）",
+                        "sku": output.get("sku_code", decision.get("sku_code", "")),
+                        "detail": output.get("reason", decision.get("reason", "")),
+                        "severity": "medium",
+                        "created_at": d.created_at.isoformat() if d.created_at else None,
+                    })
+
+            elif d.agent_id == "A6":
+                is_loss = output.get("is_loss", decision.get("is_loss", False))
+                below = output.get("below_threshold", decision.get("below_threshold", False))
+                if is_loss:
+                    risk_items.append({
+                        "agent_id": "A6",
+                        "decision_id": d.id,
+                        "risk_type": "亏损 SKU",
+                        "sku": output.get("sku_code", decision.get("sku_code", "")),
+                        "detail": output.get("anomaly_reason", decision.get("anomaly_reason", "")),
+                        "severity": "high",
+                        "created_at": d.created_at.isoformat() if d.created_at else None,
+                    })
+                elif below:
+                    risk_items.append({
+                        "agent_id": "A6",
+                        "decision_id": d.id,
+                        "risk_type": "低毛利 SKU",
+                        "sku": output.get("sku_code", decision.get("sku_code", "")),
+                        "detail": output.get("anomaly_reason", decision.get("anomaly_reason", "")),
+                        "severity": "medium",
+                        "created_at": d.created_at.isoformat() if d.created_at else None,
+                    })
+
+        # ── 规则健康概览（从 PersonalRule 统计） ──
+        from app.models import PersonalRule
+        rules_stmt = select(PersonalRule).where(
+            PersonalRule.user_id == user_id,
+        )
+        rules_result = await db.execute(rules_stmt)
+        all_rules = rules_result.scalars().all()
+
+        total_rules = len(all_rules)
+        active_rules = sum(1 for r in all_rules if r.status == "active")
+        shadow_rules = sum(1 for r in all_rules if r.status == "shadow")
+        retired_rules = sum(1 for r in all_rules if r.status in ("retired", "paused"))
+
+        return {
+            "summary": {
+                "total_decisions_7d": total_recent,
+                "acceptance_rate_7d": acceptance_rate,
+                "pending_confirmations": len(pending_decisions),
+                "active_risks": len(risk_items),
+            },
+            "decisions_by_agent": by_agent,
+            "recent_risks": risk_items[:20],
+            "pending_decisions": [
+                {
+                    "id": d.id,
+                    "agent_id": d.agent_id,
+                    "decision_point": d.decision_point,
+                    "created_at": d.created_at.isoformat() if d.created_at else None,
+                }
+                for d in pending_decisions[:10]
+            ],
+            "rule_health": {
+                "total": total_rules,
+                "active": active_rules,
+                "shadow": shadow_rules,
+                "retired_or_paused": retired_rules,
+            },
+        }
