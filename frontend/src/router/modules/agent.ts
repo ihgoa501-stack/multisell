@@ -19,4 +19,10 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/views/agent/AgentRules.vue'),
     meta: { title: '个人规则', icon: 'settings', menu: false },
   },
+  {
+    path: 'agents/entropy',
+    name: 'EntropyCockpit',
+    component: () => import('@/views/agent/EntropyCockpit.vue'),
+    meta: { title: '熵管理', icon: 'analytics', menu: true, perm: 'agent:view' },
+  },
 ]

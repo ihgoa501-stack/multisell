@@ -38,3 +38,21 @@ export const agentApi = {
     return http.get('/agents/episodes', { params })
   },
 }
+
+export const entropyApi = {
+  getDashboard() {
+    return http.get('/agents/entropy/dashboard')
+  },
+  runDefenses() {
+    return http.post('/agents/entropy/defend')
+  },
+  getHealthScores() {
+    return http.get('/agents/entropy/health')
+  },
+  getSpc() {
+    return http.get('/agents/entropy/spc')
+  },
+  getChanges(params?: any) {
+    return http.get('/agents/entropy/changes', { params })
+  },
+}
