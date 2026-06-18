@@ -216,6 +216,21 @@ export function downgradeAgentLevel(agentId: string, targetLevel: string) {
   })
 }
 
+// ── Phase 4 Finale: Agent Detail ─────────────────────────
+
+export interface AgentDetailResponse {
+  agent: AgentOSAgent
+  squad_name: string
+  current_work_items: AgentOSWorkItem[]
+  recent_operations: AgentOSOperationLog[]
+  decision_count_7d: number
+  adoption_rate_7d: number
+}
+
+export function getAgentOSAgentDetail(agentId: string) {
+  return http.get(`/agentos/agents/${agentId}/detail`)
+}
+
 // ─── 兼容对象式导出（用于 apiModules 合并） ───────────────
 
 export const agentosApi = {
@@ -230,4 +245,5 @@ export const agentosApi = {
   getAgentOSUpgradeCandidates,
   upgradeAgentLevel,
   downgradeAgentLevel,
+  getAgentOSAgentDetail,
 }

@@ -56,6 +56,12 @@ export const routes: RouteRecordRaw[] = [
           perm: 'agentos:view',
         },
       },
+      {
+        path: 'agents/:agentId',
+        name: 'AgentOSAgentDetail',
+        component: () => import('@/views/agentos/AgentDetail.vue'),
+        meta: { title: 'Agent 详情', menu: false, perm: 'agentos:view' },
+      },
     ],
   },
 ]
