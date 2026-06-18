@@ -74,6 +74,30 @@ async def list_templates(
     return Result.ok(data)
 
 
+@router.get("/agentos/operations", summary="AgentOS 操作审计日志")
+async def list_operations(
+    item_id: str | None = None,
+    action: str | None = None,
+    source_type: str | None = None,
+    user_id: int | None = None,
+    limit: int = 20,
+    offset: int = 0,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:view")),
+):
+    """查询审批/状态变更操作日志"""
+    data = await AgentOSService.get_operations(
+        db, item_id=item_id, action=action, source_type=source_type,
+        user_id=user_id, limit=limit, offset=offset,
+    )
+    return PageResult.ok(
+        records=data["records"],
+        total=data["total"],
+        page=(offset // limit) + 1,
+        page_size=limit,
+    )
+
+
 # ── Phase 2: Mutation 操作 ──────────────────────────────
 
 

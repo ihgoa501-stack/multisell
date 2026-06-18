@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agentos.schemas import (
     AgentOSAgent,
     AgentOSMetric,
+    AgentOSOperationLogVO,
     AgentOSOverview,
     AgentOSSquad,
     AgentOSTemplate,
@@ -744,6 +745,47 @@ class AgentOSService:
             comment=comment,
         )
         db.add(log)
+
+    @staticmethod
+    async def get_operations(
+        db: AsyncSession,
+        item_id: str | None = None,
+        action: str | None = None,
+        source_type: str | None = None,
+        user_id: int | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """查询操作审计日志"""
+        from app.agentos.models import AgentOSOperationLog
+
+        query = select(AgentOSOperationLog)
+        if item_id:
+            query = query.where(AgentOSOperationLog.item_id == item_id)
+        if action:
+            query = query.where(AgentOSOperationLog.action == action)
+        if source_type:
+            query = query.where(AgentOSOperationLog.source_type == source_type)
+        if user_id:
+            query = query.where(AgentOSOperationLog.user_id == user_id)
+
+        count_q = select(sa_func.count()).select_from(query.subquery())
+        total = (await db.execute(count_q)).scalar() or 0
+
+        rows = (
+            await db.execute(
+                query.order_by(AgentOSOperationLog.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+        ).scalars().all()
+
+        return {
+            "records": [AgentOSOperationLogVO.model_validate(r) for r in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
 
     # ── Phase 2: Mutation 操作 ─────────────────────────────
 
