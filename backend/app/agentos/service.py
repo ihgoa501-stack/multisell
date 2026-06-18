@@ -21,6 +21,7 @@ from app.agentos.schemas import (
     WorkItemStatus,
 )
 from app.models import ExceptionItem, Notification
+from app.agentos.models import AgentOSOperationLog
 
 # ─── Agent → Squad 映射 ──────────────────────────────────────
 
@@ -716,6 +717,34 @@ class AgentOSService:
         }
         return mapping.get(alert_type)
 
+    # ── Phase 3: Operation Log ──────────────────────────
+
+    @staticmethod
+    def _extract_source_type(item_id: str) -> str:
+        return item_id.split(":")[0] if ":" in item_id else "unknown"
+
+    @staticmethod
+    async def _write_operation_log(
+        db: AsyncSession,
+        user_id: int,
+        item_id: str,
+        action: str,
+        previous_status: str | None = None,
+        new_status: str | None = None,
+        comment: str | None = None,
+    ) -> None:
+        """写入操作审计日志"""
+        log = AgentOSOperationLog(
+            user_id=user_id,
+            item_id=item_id,
+            action=action,
+            source_type=AgentOSService._extract_source_type(item_id),
+            previous_status=previous_status,
+            new_status=new_status,
+            comment=comment,
+        )
+        db.add(log)
+
     # ── Phase 2: Mutation 操作 ─────────────────────────────
 
     @staticmethod
@@ -726,6 +755,7 @@ class AgentOSService:
         new_status: str,
     ) -> dict[str, Any]:
         """更新 WorkItem 的底层状态"""
+        old_status: str | None = None
         if item_id.startswith("exception:"):
             try:
                 uid = int(item_id[len("exception:"):])
@@ -734,6 +764,7 @@ class AgentOSService:
                 row = result.scalar_one_or_none()
                 if not row:
                     return {"ok": False, "error": "not_found"}
+                old_status = str(row.status)
                 if new_status in ("completed", "resolved"):
                     row.status = "resolved"
                 elif new_status == "in_progress":
@@ -767,6 +798,7 @@ class AgentOSService:
                 row = result.scalar_one_or_none()
                 if not row:
                     return {"ok": False, "error": "not_found"}
+                old_status = str(row.status)
                 mapping = {
                     "completed": "executed",
                     "in_progress": "confirmed",
@@ -787,6 +819,10 @@ class AgentOSService:
         else:
             return {"ok": False, "error": f"unknown source_type in '{item_id}'"}
 
+        await AgentOSService._write_operation_log(
+            db, user_id, item_id, "status_update",
+            previous_status=old_status, new_status=new_status,
+        )
         return {"ok": True, "new_status": new_status}
 
     @staticmethod
@@ -813,6 +849,11 @@ class AgentOSService:
             # 非 AgentAction 类型通过 status update 处理即可
             return await AgentOSService.update_work_item_status(db, item_id, user_id, "in_progress")
 
+        await AgentOSService._write_operation_log(
+            db, user_id, item_id, "approve",
+            previous_status="pending", new_status="in_progress",
+            comment=comment,
+        )
         return {"ok": True, "action": "approved", "comment": comment}
 
     @staticmethod
@@ -838,6 +879,11 @@ class AgentOSService:
         else:
             return await AgentOSService.update_work_item_status(db, item_id, user_id, "cancelled")
 
+        await AgentOSService._write_operation_log(
+            db, user_id, item_id, "reject",
+            previous_status="pending", new_status="cancelled",
+            comment=comment,
+        )
         return {"ok": True, "action": "rejected", "comment": comment}
 
 
