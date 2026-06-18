@@ -9,9 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/fabric": "^5.3.11",
     "@vicons/ionicons5": "^0.13.0",
     "axios": "^1.7.9",
     "date-fns": "^4.1.0",
+    "fabric": "^6.9.1",
     "naive-ui": "^2.41.0",
     "pinia": "^2.3.0",
     "unplugin-auto-import": "^21.0.0",

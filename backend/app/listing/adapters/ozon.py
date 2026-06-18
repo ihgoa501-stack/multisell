@@ -46,6 +46,7 @@ class OzonListingAdapter:
                 "Content-Type": "application/json",
             },
             timeout=DEFAULT_TIMEOUT,
+            cookies={},
         )
 
     # ------------------------------------------------------------------ #
@@ -144,10 +145,46 @@ class OzonListingAdapter:
             sync_message=f"published to Ozon (task_id={task_id})",
         )
 
-    async def sync_status(self, *, listing_id: int) -> str:
-        """查询 Ozon 商品发布状态（暂用 v4/product/info）"""
-        # 简化实现：返回 synced，完整实现需查询 task 状态
-        return "synced"
+    async def sync_status(
+        self,
+        *,
+        listing_id: int,
+        platform: Platform,
+        platform_product_id: str,
+    ) -> str:
+        """查询 Ozon 商品发布状态。
+
+        通过 v4/product/info 查询商品当前状态。
+        platform_product_id 格式: ozon-{product.id}-{timestamp}
+        """
+        # 从 platform_product_id 提取 offer_id（product id 部分）
+        offer_id = f"sku-{listing_id}"
+        if platform_product_id and platform_product_id.startswith("ozon-"):
+            parts = platform_product_id.split("-")
+            if len(parts) >= 2:
+                offer_id = parts[1]
+
+        payload = {"offer_id": offer_id, "sku": None}
+
+        async with self._client(platform) as client:
+            resp = await client.post("/v4/product/info", json=payload)
+            body = self._parse_response(resp, "sync_status")
+
+        items = body.get("result", {}).get("items", [])
+        if not items:
+            return "unknown"
+
+        state = items[0].get("state", "")
+        # Ozon 状态: created → imported/processing → processed → failed
+        state_map = {
+            "imported": "synced",
+            "processed": "synced",
+            "processing": "in_progress",
+            "created": "pending",
+            "failed": "failed",
+            "rejected": "failed",
+        }
+        return state_map.get(state, state)
 
     async def validate_credentials(self, *, platform: Platform) -> bool:
         """用 Ozon Ping API 校验凭证"""

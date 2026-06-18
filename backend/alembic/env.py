@@ -13,6 +13,7 @@ from app.database import Base
 # 加载所有模型以确保 Base.metadata 完整
 import app.models  # noqa: F401
 import app.agent.models  # noqa: F401
+import app.agentos.models  # noqa: F401
 
 # Alembic Config 对象
 config = context.config

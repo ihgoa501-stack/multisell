@@ -1,0 +1,83 @@
+<h2>设计第 3 部分：核心导航与模块结构</h2>
+<p class="subtitle">导航要从“功能模块列表”改成“AI 经营工作台”。已有业务页面保留，但入口按工作流重组。</p>
+
+<div class="mockup">
+  <div class="mockup-header">推荐导航结构</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:220px 1fr;gap:14px;">
+      <div class="placeholder" style="min-height:430px;text-align:left;">
+        <strong>一级导航</strong><br><br>
+        1. AgentOS 总控台<br>
+        2. 任务中心<br>
+        3. Agent 小队<br>
+        4. 模板与技能<br>
+        5. 业务数据<br>
+        6. 审计与安全<br>
+        7. 系统设置
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="placeholder" style="min-height:132px;text-align:left;">
+          <strong>1. AgentOS 总控台</strong><br>
+          首页：经营健康、AI 任务、审批、小队状态<br>
+          替代当前普通 Dashboard 作为主入口
+        </div>
+        <div class="placeholder" style="min-height:132px;text-align:left;">
+          <strong>2. 任务中心</strong><br>
+          统一承接：Agent 建议、异常、待审批动作、定时任务结果<br>
+          来源：agent_actions / exceptions / notifications / decisions
+        </div>
+        <div class="placeholder" style="min-height:132px;text-align:left;">
+          <strong>3. Agent 小队</strong><br>
+          增长 / 履约 / 风控 三组<br>
+          每组看自治等级、信任评分、决策日志、可晋升项
+        </div>
+        <div class="placeholder" style="min-height:132px;text-align:left;">
+          <strong>4. 模板与技能</strong><br>
+          Listing 优化、选品分析、库存补货、利润风控、客服草稿<br>
+          第一版做内置模板，不做开放市场
+        </div>
+        <div class="placeholder" style="min-height:132px;text-align:left;">
+          <strong>5. 业务数据</strong><br>
+          商品 / SKU / 物流 / 平台 / 库存 / 订单 / 结算 / 财务<br>
+          保留现有页面，作为 Agent 上下文和人工编辑入口
+        </div>
+        <div class="placeholder" style="min-height:132px;text-align:left;">
+          <strong>6. 审计与安全</strong><br>
+          AI 使用记录、操作日志、安全红线、熵管理、RBAC<br>
+          面向合规、回溯、风控
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>页面分组</h3>
+  <p><strong>AgentOS 总控台：</strong>新增主页面，聚合当前 `dashboard/Dashboard.vue` 和 `agent/Dashboard.vue` 的价值，但以任务和审批为中心。</p>
+  <p><strong>任务中心：</strong>新增统一列表，把现有 `AgentActions`、`ExceptionWorkbench`、`NotificationCenter`、待确认决策整合为同一种“工作项”。</p>
+  <p><strong>Agent 小队：</strong>重组现有 `AgentList`、`AgentDetail`、`AgentRules`、`EntropyCockpit`，按增长/履约/风控展示，而不是按 A1-A7 平铺。</p>
+  <p><strong>模板与技能：</strong>第一版不是开放画布，而是展示跨境电商内置模板：上架决策、Listing 优化、库存补货、利润风控、客服草稿。</p>
+  <p><strong>业务数据：</strong>当前商品、库存、订单、物流、结算、平台、财务页面继续保留，但定位变成 Agent 的上下文数据层。</p>
+  <p><strong>审计与安全：</strong>把操作日志、RBAC、熵管理、安全红线、AI 审计统一起来，作为差异化卖点。</p>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>这样重组的好处</h4>
+    <ul>
+      <li>用户第一眼看到的是 AI 工作台，不是传统后台。</li>
+      <li>现有业务页面不用推倒重写。</li>
+      <li>Agent、异常、审批、通知统一成任务语义。</li>
+      <li>审计与安全被提升为产品能力。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>需要避免</h4>
+    <ul>
+      <li>不要在左侧导航暴露 30 个平级模块。</li>
+      <li>不要把 Agent 小队做成纯展示卡片。</li>
+      <li>不要让模板变成复杂低代码画布。</li>
+      <li>不要把安全审计藏在系统设置里。</li>
+    </ul>
+  </div>
+</div>

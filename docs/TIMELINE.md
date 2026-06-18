@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-06-18：AgentOS Phase 1 工程骨架 ✅
+
+新增 AI 原生运营总控台层：
+
+| 维度 | 变化 |
+|------|------|
+| **后端模块** | 新增 `agentos`（schemas / service / router），4 个聚合 API |
+| **数据模型** | WorkItem 统一归一化（异常/通知/Agent动作/上架任务）+ Squad + Agent 模型 |
+| **前端页面** | 总控台、任务中心、Agent 团队页 + AutonomyBadge / AgentStatusCard / WorkItemCard 组件 |
+| **路由** | 新增 `/agentos` 一级入口，默认进入 `/agentos/control-center` |
+| **测试** | 20 个测试（归一化纯函数 11 + API 契约 9），全部通过 |
+| **构建** | `npm run build` 通过，无 TypeScript 错误 |
+
 ## 2026-06-16：feat/ai-agent-framework 合并 🎉
 
 最大单次合并（191 files）。核心架构升级：
@@ -54,6 +67,11 @@ gantt
     前端体验 / 权限 UI              :done, 2026-06-15, 3d
     发布准备 (安全/Auth/部署)       :done, 2026-06-16, 2d
 
+    section AgentOS Phase 1
+    AgentOS 工程骨架               :done, 2026-06-18, 1d
+    聚合 API / WorkItem 模型       :done, 2026-06-18, 1d
+    前端总控台 / 任务 / 团队页     :done, 2026-06-18, 1d
+
     section Agent 系统
     Hermes Agent 架构               :done, 2026-06-16, 3d
     熵值管理 / 自净化               :done, 2026-06-16, 2d
@@ -75,9 +93,10 @@ gantt
 
 | # | 功能 | 说明 | 涉及模块 |
 |---|------|------|---------|
-| 1 | 🔗 **真实平台接入** | Ozon / Shopee 真实 API 发布 | `listing`, `listing_task` |
-| 2 | 📦 **售后退货** | `paid → cancelled` 自动退库存、RMA 流程 | `order`, `aftersales` |
-| 3 | 📊 **Excel 批量运营** | 批量改价、改库存、改物流属性 | `batch_ops` |
+| 1 | 🔗 **AgentOS Phase 2** | WorkItem 状态写入、审批闭环、自治升级 | `agentos`, `agent` |
+| 2 | 🔗 **真实平台接入** | Ozon / Shopee 真实 API 发布 | `listing`, `listing_task` |
+| 3 | 📦 **售后退货** | `paid → cancelled` 自动退库存、RMA 流程 | `order`, `aftersales` |
+| 4 | 📊 **Excel 批量运营** | 批量改价、改库存、改物流属性 | `batch_ops` |
 
 ### P1 — 重要
 

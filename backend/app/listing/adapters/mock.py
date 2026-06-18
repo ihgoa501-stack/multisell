@@ -1,5 +1,7 @@
 """本地 mock 平台发布适配器。"""
 
+from typing import Any
+
 from app.listing.adapters.base import PublishResult
 from app.models import Inventory, Platform, Price, Product, Sku
 
@@ -19,7 +21,7 @@ class MockListingAdapter:
 
         platform_product_id = f"{platform.code}-{product.id}"
         platform_sku = f"{platform.code}-sku-{skus[0].id}" if skus else None
-        published_skus = [
+        published_skus: list[dict[str, Any]] = [
             {
                 "sku_id": sku.id,
                 "code": sku.code,
@@ -44,7 +46,13 @@ class MockListingAdapter:
             sync_message="mock publish synced",
         )
 
-    async def sync_status(self, *, listing_id: int) -> str:
+    async def sync_status(
+        self,
+        *,
+        listing_id: int,
+        platform: Platform,
+        platform_product_id: str,
+    ) -> str:
         return "synced"
 
     async def validate_credentials(self, *, platform: Platform) -> bool:

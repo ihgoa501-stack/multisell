@@ -139,3 +139,17 @@ class EpisodeVO(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── 进化/等级控制相关 Pydantic 模型 ──────────────────────
+
+STAGE_PATTERN = r"^(observation|suggestion|semi_autonomous|full_autonomous)$"
+
+
+class StageChangeRequest(BaseModel):
+    decision_point: str
+    target_stage: str = Field(..., pattern=STAGE_PATTERN)
+
+
+class NudgeRespondRequest(BaseModel):
+    response: str = Field(..., pattern=r"^(accept|dismiss)$")

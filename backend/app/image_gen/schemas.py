@@ -123,3 +123,35 @@ class PromptTemplateItem(BaseModel):
     created_by: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+
+
+# ====== 编辑 / 视频 ======
+
+class InpaintRequest(BaseModel):
+    """局部重绘请求"""
+    image_url: str = Field(..., description="原始图片URL")
+    mask_base64: str = Field(..., description="mask 图片(base64), 白色区域为重绘区")
+    prompt: str = Field(..., min_length=1, max_length=1000, description="描述重绘内容")
+    negative_prompt: Optional[str] = Field("", description="反向提示词")
+
+
+class OutpaintRequest(BaseModel):
+    """扩图请求"""
+    image_url: str = Field(..., description="原始图片URL")
+    direction: str = Field("right", description="扩图方向: left/right/top/bottom")
+    prompt: str = Field(..., min_length=1, max_length=1000, description="描述扩展内容")
+    expand_ratio: float = Field(0.3, ge=0.1, le=1.0, description="扩展比例")
+
+
+class VideoGenRequest(BaseModel):
+    """AI 视频生成请求"""
+    prompt: str = Field(..., min_length=1, max_length=2000, description="视频描述")
+    image_url: Optional[str] = Field(None, description="起始图片(可选)")
+
+
+class SlideshowRequest(BaseModel):
+    """图片合成视频请求"""
+    image_urls: List[str] = Field(..., min_length=2, max_length=50, description="图片序列")
+    duration_per_frame: float = Field(2.0, ge=0.5, le=10.0, description="每帧时长(秒)")
+    transition: str = Field("fade", description="转场: fade/none")
+    resolution: str = Field("1920x1080", description="视频分辨率")

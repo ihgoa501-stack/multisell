@@ -205,6 +205,59 @@ class SpcControlLimit(Base):
     )
 
 
+class AgentEvolutionConfig(Base):
+    """Agent 进化配置 — 持久化每个 user × agent × decision_point 的阶段和信任评分"""
+    __tablename__ = "agent_evolution_config"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    agent_id = Column(String(20), nullable=False, comment="Agent标识")
+    decision_point = Column(String(50), nullable=False, comment="决策点")
+
+    current_stage = Column(String(20), nullable=False, default="observation", comment="当前自治阶段")
+    stage_updated_at = Column(DateTime(timezone=True), comment="阶段最后变更时间")
+    stage_updated_by = Column(String(20), default="system", comment="变更来源: manual/nudge/regret/system")
+
+    trust_score = Column(Numeric(6, 2), default=0, comment="信任评分 0-100")
+    decision_count = Column(Integer, default=0, comment="累计决策样本数")
+    adoption_rate = Column(Numeric(5, 4), comment="采纳率")
+    avg_confidence = Column(Numeric(5, 4), comment="平均置信度")
+    consistency_score = Column(Numeric(5, 4), comment="规则覆盖一致性")
+    stability_score = Column(Numeric(5, 4), comment="SPC 稳定性")
+    last_calculated_at = Column(DateTime(timezone=True), comment="信任评分最后计算时间")
+
+    nudge_last_shown_at = Column(DateTime(timezone=True), comment="上次 Nudge 提示时间")
+    nudge_dismissed_count = Column(Integer, default=0, comment="Nudge 忽略次数")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    __table_args__ = (
+        sa_UniqueConstraint("user_id", "agent_id", "decision_point", name="uq_agent_evolution"),
+    )
+
+
+class AgentNudge(Base):
+    """Agent Nudge 晋升提示记录"""
+    __tablename__ = "agent_nudge"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    agent_id = Column(String(20), nullable=False, comment="Agent标识")
+    decision_point = Column(String(50), nullable=False, comment="决策点")
+
+    target_stage = Column(String(20), nullable=False, comment="目标晋升阶段")
+    trust_score_at_time = Column(Numeric(6, 2), nullable=False, comment="提示时的信任评分")
+    score_components = Column(JSON, comment="评分分量明细")
+
+    status = Column(String(20), nullable=False, default="pending", comment="状态: pending/accepted/dismissed/expired")
+    responded_at = Column(DateTime(timezone=True), comment="响应时间")
+    cooling_until = Column(DateTime(timezone=True), comment="冷却截止时间（忽略后7天）")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 class SystemConfig(Base):
     """系统配置（LLM Key、提供商、模型选择等）"""
     __tablename__ = "system_config"

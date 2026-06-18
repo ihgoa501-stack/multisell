@@ -1,10 +1,16 @@
 """AI 生图 - 业务逻辑"""
 
 import asyncio
+import base64
 import logging
+import os
+import subprocess
 from typing import Optional, List
+import uuid
+import shutil
 from datetime import datetime, timezone
 
+import httpx
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -436,6 +442,206 @@ class ImageGenService:
         if tpl:
             tpl.usage_count = (tpl.usage_count or 0) + 1
             await db.flush()
+
+    @staticmethod
+    async def inpaint(
+        db: AsyncSession,
+        user_id: int,
+        image_url: str,
+        mask_base64: str,
+        prompt: str,
+        negative_prompt: str = "",
+    ) -> dict:
+        """局部重绘 — 调用 Replicate FLUX.2 Pro fill"""
+        if "," in mask_base64:
+            mask_base64 = mask_base64.split(",")[1]
+
+        api_key = settings.REPLICATE_API_KEY
+        if not api_key:
+            raise ValueError("REPLICATE_API_KEY 未配置")
+
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            img_resp = await client.get(image_url)
+            img_resp.raise_for_status()
+            image_b64 = base64.b64encode(img_resp.content).decode()
+
+        url = "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        body = {
+            "input": {
+                "prompt": prompt,
+                "image": f"data:image/jpeg;base64,{image_b64}",
+                "mask": f"data:image/png;base64,{mask_base64}",
+                "negative_prompt": negative_prompt or None,
+                "output_format": "jpg",
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            prediction = resp.json()
+            get_url = prediction["urls"]["get"]
+            for _ in range(60):
+                await asyncio.sleep(1)
+                poll = await client.get(get_url, headers=headers)
+                poll.raise_for_status()
+                status_data = poll.json()
+                if status_data["status"] == "succeeded":
+                    output_urls = status_data["output"]
+                    output_url = output_urls[0] if isinstance(output_urls, list) else output_urls
+                    local_url = await ImageGenService._download_image(output_url)
+                    return {"image_url": local_url}
+                elif status_data["status"] == "failed":
+                    raise RuntimeError(f"Inpaint 失败: {status_data.get('error', 'unknown')}")
+        raise TimeoutError("Inpaint 超时")
+
+    @staticmethod
+    async def outpaint(
+        db: AsyncSession,
+        user_id: int,
+        image_url: str,
+        direction: str,
+        prompt: str,
+        expand_ratio: float = 0.3,
+    ) -> dict:
+        """扩图 — 调用 Replicate FLUX outpaint"""
+        api_key = settings.REPLICATE_API_KEY
+        if not api_key:
+            raise ValueError("REPLICATE_API_KEY 未配置")
+
+        url = "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        body = {
+            "input": {
+                "prompt": prompt,
+                "image": image_url,
+                "outpaint": direction,
+                "outpaint_expand": expand_ratio,
+                "output_format": "jpg",
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            prediction = resp.json()
+            get_url = prediction["urls"]["get"]
+            for _ in range(60):
+                await asyncio.sleep(1)
+                poll = await client.get(get_url, headers=headers)
+                poll.raise_for_status()
+                status_data = poll.json()
+                if status_data["status"] == "succeeded":
+                    output_urls = status_data["output"]
+                    output_url = output_urls[0] if isinstance(output_urls, list) else output_urls
+                    local_url = await ImageGenService._download_image(output_url)
+                    return {"image_url": local_url}
+                elif status_data["status"] == "failed":
+                    raise RuntimeError(f"Outpaint 失败: {status_data.get('error', 'unknown')}")
+        raise TimeoutError("Outpaint 超时")
+
+    @staticmethod
+    async def generate_video(
+        db: AsyncSession,
+        user_id: int,
+        prompt: str,
+        image_url: Optional[str] = None,
+    ) -> dict:
+        """AI 视频生成 — Replicate Stable Video Diffusion"""
+        api_key = settings.REPLICATE_API_KEY
+        if not api_key:
+            raise ValueError("REPLICATE_API_KEY 未配置")
+
+        input_data = {"prompt": prompt}
+        if image_url:
+            input_data["input_image"] = image_url
+
+        url = "https://api.replicate.com/v1/models/stability-ai/stable-video-diffusion/predictions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        body = {"input": input_data}
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            prediction = resp.json()
+            job_id = prediction["id"]
+
+        return {"job_id": job_id, "status": "processing", "video_url": None}
+
+    @staticmethod
+    async def get_video_status(job_id: str) -> dict:
+        """查询视频生成进度"""
+        api_key = settings.REPLICATE_API_KEY
+        if not api_key:
+            raise ValueError("REPLICATE_API_KEY 未配置")
+
+        url = f"https://api.replicate.com/v1/predictions/{job_id}"
+        headers = {"Authorization": f"Bearer {api_key}"}
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            if data["status"] == "succeeded":
+                output = data["output"]
+                video_url = output[0] if isinstance(output, list) else output
+                return {"job_id": job_id, "status": "done", "video_url": video_url}
+            elif data["status"] == "failed":
+                return {"job_id": job_id, "status": "failed", "video_url": None, "error": data.get("error")}
+            return {"job_id": job_id, "status": "processing", "video_url": None}
+
+    @staticmethod
+    async def create_slideshow(
+        db: AsyncSession,
+        user_id: int,
+        image_urls: List[str],
+        duration_per_frame: float = 2.0,
+        transition: str = "fade",
+        resolution: str = "1920x1080",
+    ) -> dict:
+        """图片序列合成视频 — FFmpeg"""
+        output_filename = f"slideshow_{uuid.uuid4().hex[:12]}.mp4"
+        output_path = os.path.join(settings.UPLOAD_DIR, output_filename)
+        temp_dir = os.path.join(settings.UPLOAD_DIR, f"slideshow_{uuid.uuid4().hex[:12]}")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        local_paths = []
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            for i, url in enumerate(image_urls):
+                resp = await client.get(url)
+                resp.raise_for_status()
+                fpath = os.path.join(temp_dir, f"frame_{i:04d}.jpg")
+                with open(fpath, "wb") as f:
+                    f.write(resp.content)
+                local_paths.append(fpath)
+
+        input_concat = os.path.join(temp_dir, "input.txt")
+        with open(input_concat, "w") as f:
+            for p in local_paths:
+                f.write(f"file '{p}'\n")
+                f.write(f"duration {duration_per_frame}\n")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", input_concat,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-r", "24",
+            output_path,
+        ]
+        subprocess.run(cmd, capture_output=True, timeout=300)
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+        with open(output_path, "rb") as f:
+            video_bytes = f.read()
+        local_url = await save_upload_file(video_bytes, output_filename)
+        os.remove(output_path)
+
+        return {"video_url": local_url, "duration": duration_per_frame * len(image_urls)}
 
     # ========== 内部方法 ==========
 

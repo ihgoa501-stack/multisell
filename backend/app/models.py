@@ -1132,11 +1132,27 @@ class PromptTemplate(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
+class ProductCanvas(Base):
+    """AI 生图画布"""
+    __tablename__ = "product_canvases"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    product_id = Column(BigInteger, ForeignKey("product.id"), nullable=False, comment="关联商品ID")
+    name = Column(String(200), default="未命名画布", comment="画布名称")
+    layers = Column(JSON, comment="Fabric.js 序列化图层数据")
+    thumbnail = Column(Text, nullable=True, comment="缩略图URL")
+    created_by = Column(BigInteger, ForeignKey("user.id"), comment="创建人")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 # ========== 向后兼容导入（Agent 模型已移至 app/agent/models.py） ==========
 from app.agent.models import (  # noqa: E402, F401
     AgentAction,
     AgentDecision,
     AgentEpisode,
+    AgentEvolutionConfig,
+    AgentNudge,
     HonchoProfile,
     PersonalRule,
     RuleConflict,

@@ -15,10 +15,12 @@ from app.agent.schemas import (
     AgentMetadataVO, DecisionLogVO, PersonalRuleVO, PersonalRuleCreate,
     PersonalRuleUpdate, HonchoProfileVO, HonchoProfileUpdate,
     AgentDecisionRequest, FeedbackRequest, EpisodeVO,
+    StageChangeRequest, NudgeRespondRequest,
 )
 from app.agent.registry import AgentRegistry
 from app.agent.service import AgentService
 from app.agent.action_service import AgentActionService
+from app.agent.evolution_service import EvolutionService, TrustScoreCalculator
 from app.agent.base import EvolutionStage
 from app.agent.scheduler import scheduler as _agent_scheduler
 from app.agent.pipeline import evaluate_chains
@@ -286,7 +288,79 @@ async def trigger_schedule(
     return Result.ok(result)
 
 
-# ── 动态路径（放在静态路径之后） ──
+# ── 进化/自治等级控制（放在动态路径之前） ──
+
+
+@router.get("/agents/evolution/overview", summary="Agent自治等级总览")
+async def evolution_overview(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    data = await EvolutionService.get_overview(db, current_user.id)
+    return Result.ok(data)
+
+
+@router.get("/agents/evolution/nudge/pending", summary="待处理Nudge列表")
+async def list_pending_nudges(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    nudges = await EvolutionService.get_pending_nudges(db, current_user.id)
+    return Result.ok(nudges)
+
+
+@router.post("/agents/evolution/nudge/{nudge_id}/respond", summary="响应Nudge提示")
+async def respond_nudge(
+    nudge_id: int,
+    req: NudgeRespondRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    result = await EvolutionService.respond_nudge(db, current_user.id, nudge_id, req.response)
+    if not result.get("success"):
+        return Result.bad_request(result.get("message", "操作失败"))
+    return Result.ok(result)
+
+
+@router.post("/agents/evolution/generate-nudges", summary="手动触发Nudge生成")
+async def generate_nudges(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    nudges = await EvolutionService.generate_nudges(db, current_user.id)
+    return Result.ok({"generated": len(nudges), "nudges": nudges})
+
+
+# ── 进化动态路径 ──
+
+
+@router.get("/agents/evolution/{agent_id}", summary="Agent进化详情与等级控制")
+async def evolution_agent_detail(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    data = await EvolutionService.get_agent_detail(db, current_user.id, agent_id)
+    if not data:
+        return Result.not_found(f"Agent {agent_id} 不存在")
+    return Result.ok(data)
+
+
+@router.put("/agents/evolution/{agent_id}/stage", summary="变更Agent自治阶段")
+async def evolution_change_stage(
+    agent_id: str,
+    req: StageChangeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:execute")),
+):
+    result = await EvolutionService.change_stage(
+        db, current_user.id, agent_id, req.decision_point, req.target_stage,
+    )
+    if not result.get("success"):
+        return Result.bad_request(result.get("message", "操作失败"))
+    return Result.ok(result)
+
+
 
 
 @router.get("/agents/{agent_id}", summary="Agent详情")
@@ -308,11 +382,12 @@ async def agent_decide(
     if not agent_cls:
         return Result.not_found(f"Agent {agent_id} 不存在")
 
-    stage_override = None
-    decision_stage_map = {}
-    rules = await AgentService.list_rules(db, current_user.id, agent_id, req.decision_point)
-    if rules:
-        pass
+    # 从 DB 加载进化阶段配置
+    from app.agent.evolution_service import EvolutionService as EvoSvc
+    config = await EvoSvc.get_or_create_config(
+        db, current_user.id, agent_id, req.decision_point,
+    )
+    stage_override = {req.decision_point: EvolutionStage(config.current_stage)}
 
     agent = agent_cls(user_id=current_user.id, stage_override=stage_override)
     result = await AgentService.execute_decision(

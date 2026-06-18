@@ -44,7 +44,8 @@
 
 | 文档 | 说明 |
 |------|------|
-| [开发指南](DEVELOPMENT_GUIDE.md) | 本地开发环境搭建、工作流 |
+| [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
+| [AgentOS Phase 1 实现计划](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) | 第一版工程骨架总控台 |
 | [核心模块架构](PERMISSIONS_AND_AUDIT.md) | 权限系统 + 审计日志设计 |
 | [物流与运费 PRD](LOGISTICS_AND_SHIPPING_PRD.md) | 物流需求 |
 | [物流与运费技术规格](LOGISTICS_SHIPPING_TECH_SPEC.md) | 物流技术实现 |
@@ -96,6 +97,7 @@
 | 06-15 | [项目稳定化与 MVP 交接](superpowers/plans/2026-06-15-project-stabilization-and-mvp-handoff.md) |
 | 06-15 | [运费手动计算器](superpowers/plans/2026-06-15-shipping-manual-calculator.md) |
 | 06-15 | [运费表导入](superpowers/plans/2026-06-15-shipping-rate-import.md) |
+| 06-18 | [AgentOS Phase 1](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) |
 | 06-16 | [订单导入运营链路](superpowers/plans/2026-06-16-order-import-operational-chain.md) |
 
 ## 🆕 功能需求 (Feature Requests)

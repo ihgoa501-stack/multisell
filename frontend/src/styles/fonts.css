@@ -1,0 +1,23 @@
+/**
+ * 凌镜 LingMirror — 字体导入
+ *
+ * 标题字体：Outfit（几何感无衬线）
+ * 正文字体：Source Sans 3（高可读性）
+ *
+ * 中文字体使用系统字体栈：
+ *   PingFang SC → Microsoft YaHei → system-ui
+ */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap');
+
+/**
+ * 字体回退栈（在 Naive UI theme 的 fontFamily 中使用）
+ *
+ * 英文：
+ *   'Outfit', 'Source Sans 3', system-ui, sans-serif
+ *
+ * 中文：
+ *   'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif
+ *
+ * 等宽（代码）：
+ *   'SF Mono', 'Fira Code', 'Cascadia Code', monospace
+ */

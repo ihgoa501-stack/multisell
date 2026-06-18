@@ -227,3 +227,94 @@ async function doReject(id: number) {
 
 onMounted(() => { fetchDashboard(); fetchActions() })
 </script>
+
+<style scoped>
+/* 页面容器 */
+:deep(.n-page-header) {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-neutral-200, #e5e5e5);
+  margin-bottom: 16px;
+}
+
+/* 概览卡片 */
+:deep(.n-card) {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+:deep(.n-card:hover) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 统计数字 */
+:deep(.n-statistic__value) {
+  font-weight: 700;
+  color: var(--color-neutral-900, #171717);
+}
+
+/* 卡片标题 */
+:deep(.n-card-header__main) {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-neutral-900, #171717);
+}
+
+/* 列表项 */
+:deep(.n-list-item) {
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  transition: background 0.15s ease;
+}
+
+:deep(.n-list-item:hover) {
+  background: var(--color-neutral-50, #f9fafb);
+}
+
+/* 标签样式 */
+:deep(.n-tag--small) {
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+/* 按钮组 */
+:deep(.n-space--horizontal) {
+  gap: 6px;
+}
+
+/* 操作按钮 */
+:deep(.n-button--tiny-type) {
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+/* 空状态 */
+:deep(.n-empty) {
+  padding: 40px 0;
+}
+
+/* 网格间距 */
+:deep(.n-grid) {
+  margin-top: 16px;
+}
+
+/* 风险标签 */
+:deep(.n-tag--error-type) {
+  font-weight: 600;
+}
+
+:deep(.n-tag--warning-type) {
+  font-weight: 600;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  :deep(.n-grid) {
+    grid-template-columns: 1fr !important;
+  }
+
+  :deep(.n-statistic__value) {
+    font-size: 20px;
+  }
+}
+</style>

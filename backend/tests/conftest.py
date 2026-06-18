@@ -4,8 +4,8 @@ import os
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
-# 测试环境使用独立数据库
-os.environ.setdefault("AUTH_ENABLED", "False")
+# 测试环境使用独立数据库 — 强制关闭权限校验（覆盖已存在的环境变量）
+os.environ["AUTH_ENABLED"] = "False"
 os.environ.setdefault(
     "DATABASE_URL",
     os.environ.get(

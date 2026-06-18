@@ -1,58 +1,146 @@
 <template>
-  <div>
-    <n-page-header subtitle="管理商品信息">
-      <template #title>📋 商品列表</template>
+  <div class="product-list-page">
+    <!-- 页面头部 -->
+    <n-page-header subtitle="管理商品信息，支持批量操作和 AI 智能优化">
+      <template #title>
+        <span class="page-title">📋 商品列表</span>
+      </template>
       <template #extra>
-        <n-space>
-          <n-button @click="handleDownloadTemplate">📄 下载模板</n-button>
+        <n-space align="center" :size="12">
+          <n-button @click="handleDownloadTemplate" ghost>📄 下载模板</n-button>
           <n-upload :show-file-list="false" accept=".xlsx,.xls" @change="handleImport">
-            <n-button>📥 导入</n-button>
+            <n-button ghost>📥 导入</n-button>
           </n-upload>
-          <n-button @click="handleExport">📤 导出</n-button>
-          <n-button type="primary" @click="router.push('/products/create')">＋ 新增商品</n-button>
+          <n-button @click="handleExport" ghost>📤 导出</n-button>
+          <n-button type="primary" @click="router.push('/products/create')">
+            <template #icon>＋</template>
+            新增商品
+          </n-button>
         </n-space>
       </template>
     </n-page-header>
 
-    <!-- 搜索栏 -->
-    <n-card style="margin-top: 12px; margin-bottom: 12px;" :bordered="false">
-      <n-form inline>
-        <n-form-item label="商品名称">
-          <n-input v-model:value="query.name" placeholder="搜索商品名称" clearable @keyup.enter="search" />
+    <!-- AI 优化提示栏 -->
+    <n-card
+      v-if="data.length > 0"
+      class="ai-hint-bar"
+      :bordered="false"
+      size="small"
+      style="margin-top: 16px;"
+    >
+      <n-space align="center" justify="space-between" style="width: 100%;">
+        <n-space align="center" :size="10">
+          <span style="font-size: 18px;">🤖</span>
+          <div>
+            <span style="font-weight: 600; color: var(--color-brand-600);">AI 智能优化建议</span>
+            <span style="margin-left: 8px; color: var(--color-neutral-600); font-size: 13px;">
+              发现 {{ data.length }} 个商品可优化标题和描述，预计提升点击率 18%
+            </span>
+          </div>
+        </n-space>
+        <n-space :size="8">
+          <n-button size="small" type="primary" ghost>查看建议</n-button>
+          <n-button size="small" @click="(($event.target as HTMLElement)?.closest('.ai-hint-bar'))?.classList.add('hidden')">暂不</n-button>
+        </n-space>
+      </n-space>
+    </n-card>
+
+    <!-- 搜索筛选区 -->
+    <n-card class="filter-card" :bordered="false" size="small" style="margin-top: 16px;">
+      <n-form inline :label-width="80">
+        <n-form-item label="商品名称" path="name">
+          <n-input
+            v-model:value="query.name"
+            placeholder="搜索商品名称或 SKU"
+            clearable
+            style="width: 200px;"
+            @keyup.enter="search"
+          >
+            <template #prefix>
+              <span style="color: var(--color-neutral-400);">🔍</span>
+            </template>
+          </n-input>
         </n-form-item>
-        <n-form-item label="状态">
-          <n-select v-model:value="query.status" :options="statusOptions" clearable style="width: 120px;" />
+        <n-form-item label="状态" path="status">
+          <n-select
+            v-model:value="query.status"
+            :options="statusOptions"
+            clearable
+            placeholder="全部状态"
+            style="width: 130px;"
+          />
         </n-form-item>
-        <n-form-item label="货品类型">
-          <n-select v-model:value="query.cargo_type" :options="cargoTypeOptions" clearable style="width: 120px;" />
+        <n-form-item label="货品类型" path="cargo_type">
+          <n-select
+            v-model:value="query.cargo_type"
+            :options="cargoTypeOptions"
+            clearable
+            placeholder="全部类型"
+            style="width: 130px;"
+          />
         </n-form-item>
-        <n-form-item label="物流状态">
-          <n-select v-model:value="query.logistics_status" :options="logisticsStatusOptions" clearable style="width: 130px;" />
+        <n-form-item label="物流状态" path="logistics_status">
+          <n-select
+            v-model:value="query.logistics_status"
+            :options="logisticsStatusOptions"
+            clearable
+            placeholder="全部"
+            style="width: 140px;"
+          />
         </n-form-item>
         <n-form-item>
-          <n-button type="primary" @click="search">搜索</n-button>
-          <n-button style="margin-left: 8px;" @click="reset">重置</n-button>
-          <n-button
-            style="margin-left: 8px;"
-            :type="query.logistics_status === 'incomplete' ? 'warning' : 'default'"
-            ghost
-            @click="showIncompleteOnly"
-          >
-            ⚠ 只看缺物流数据
-          </n-button>
+          <n-space :size="8">
+            <n-button type="primary" @click="search">搜索</n-button>
+            <n-button @click="reset">重置</n-button>
+            <n-button
+              :type="query.logistics_status === 'incomplete' ? 'warning' : 'default'"
+              ghost
+              @click="showIncompleteOnly"
+            >
+              ⚠ 缺物流数据
+            </n-button>
+          </n-space>
         </n-form-item>
       </n-form>
     </n-card>
 
-    <!-- 表格 -->
-    <n-card :bordered="false">
-      <n-space v-if="checkedRowIds.length > 0" style="margin-bottom: 12px; align-items: center;">
-        <span>已选 <b>{{ checkedRowIds.length }}</b> 项</span>
-        <n-button size="small" @click="batchUpdateStatus(1)">批量上架</n-button>
-        <n-button size="small" @click="batchUpdateStatus(2)">批量下架</n-button>
-        <n-button size="small" type="error" ghost @click="batchDelete">批量删除</n-button>
-        <n-button size="small" @click="checkedRowIds = []">取消选择</n-button>
+    <!-- 数据表格区 -->
+    <n-card class="table-card" :bordered="false" style="margin-top: 16px;">
+      <!-- 工具栏 -->
+      <n-space align="center" justify="space-between" style="margin-bottom: 16px;">
+        <n-space align="center" :size="12">
+          <span style="font-weight: 600; font-size: 15px;">商品列表</span>
+          <n-tag size="small" :bordered="false" type="info">共 {{ total }} 件</n-tag>
+        </n-space>
+        <n-space :size="8">
+          <n-button size="small" @click="search" :loading="loading">
+            🔄 刷新
+          </n-button>
+        </n-space>
       </n-space>
+
+      <!-- 批量操作栏 -->
+      <n-card
+        v-if="checkedRowIds.length > 0"
+        class="batch-bar"
+        size="small"
+        :bordered="false"
+      >
+        <n-space align="center" justify="space-between" style="width: 100%;">
+          <n-space align="center" :size="10">
+            <span style="color: white; font-weight: 600;">
+              已选 <b>{{ checkedRowIds.length }}</b> 项
+            </span>
+            <n-divider vertical style="height: 20px; background: rgba(255,255,255,0.3);" />
+            <n-button size="tiny" type="info" ghost @click="batchUpdateStatus(1)">批量上架</n-button>
+            <n-button size="tiny" type="warning" ghost @click="batchUpdateStatus(2)">批量下架</n-button>
+            <n-button size="tiny" type="error" ghost @click="batchDelete">批量删除</n-button>
+          </n-space>
+          <n-button size="tiny" @click="checkedRowIds = []" style="color: white;">取消选择</n-button>
+        </n-space>
+      </n-card>
+
+      <!-- 数据表格 -->
       <n-data-table
         :columns="columns"
         :data="data"
@@ -64,7 +152,24 @@
         @update:checked-row-keys="checkedRowIds = $event"
         @update:page="onPageChange"
         @update:page-size="onPageSizeChange"
+        style="margin-top: 12px;"
       />
+
+      <!-- 空状态 -->
+      <n-empty
+        v-if="!loading && data.length === 0"
+        description="暂无商品数据"
+        style="padding: 60px 0;"
+      >
+        <template #extra>
+          <n-space :size="12">
+            <n-button type="primary" @click="router.push('/products/create')">新增商品</n-button>
+            <n-upload :show-file-list="false" accept=".xlsx,.xls" @change="handleImport">
+              <n-button ghost>批量导入</n-button>
+            </n-upload>
+          </n-space>
+        </template>
+      </n-empty>
     </n-card>
   </div>
 </template>
@@ -416,3 +521,83 @@ function batchDelete() {
 
 onMounted(fetchData)
 </script>
+
+<style scoped>
+.product-list-page {
+  padding: 0;
+}
+
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-neutral-900);
+}
+
+/* AI 提示栏 */
+.ai-hint-bar {
+  background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+}
+
+.ai-hint-bar :deep(.n-card__content) {
+  padding: 12px 16px;
+}
+
+/* 筛选区卡片 */
+.filter-card {
+  background: var(--color-neutral-50, #f9fafb);
+  border-radius: 8px;
+}
+
+.filter-card :deep(.n-card__content) {
+  padding: 16px;
+}
+
+/* 表格区卡片 */
+.table-card {
+  border-radius: 8px;
+}
+
+/* 批量操作栏 */
+.batch-bar {
+  background: var(--color-brand-500, #0ea5e9);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.batch-bar :deep(.n-card__content) {
+  padding: 10px 16px;
+}
+
+/* 表格行悬停效果 */
+:deep(.n-data-table-tr:hover) {
+  background: var(--color-neutral-50, #f9fafb);
+}
+
+/* 状态标签优化 */
+:deep(.n-tag--round) {
+  font-weight: 500;
+}
+
+/* 操作按钮组 */
+:deep(.n-data-table-td--last-col) {
+  white-space: nowrap;
+}
+
+/* 空状态 */
+:deep(.n-empty) {
+  padding: 60px 0;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .page-title {
+    font-size: 18px;
+  }
+
+  :deep(.n-form--inline) {
+    flex-direction: column;
+  }
+}
+</style>

@@ -258,3 +258,95 @@ async function handleDuplicate() {
   }
 }
 </script>
+
+<style scoped>
+/* 页面容器 */
+:deep(.n-page-header) {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-neutral-200, #e5e5e5);
+  margin-bottom: 16px;
+}
+
+/* 卡片样式优化 */
+:deep(.n-card) {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+:deep(.n-card:hover) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 卡片标题 */
+:deep(.n-card-header__main) {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-neutral-900, #171717);
+}
+
+/* 描述列表标签 */
+:deep(.n-descriptions-table-wrapper) {
+  margin-top: 8px;
+}
+
+:deep(.n-descriptions-table-wrapper .n-descriptions-table__label) {
+  font-weight: 500;
+  color: var(--color-neutral-600, #525252);
+  background: var(--color-neutral-50, #f9fafb);
+}
+
+/* 标签样式 */
+:deep(.n-tag--small) {
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+/* 表格样式 */
+:deep(.n-data-table) {
+  border-radius: 6px;
+}
+
+:deep(.n-data-table-thead) {
+  background: var(--color-neutral-50, #f9fafb);
+}
+
+/* 操作按钮组 */
+:deep(.n-space--horizontal) {
+  gap: 8px;
+}
+
+/* 状态徽章 */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 加载状态 */
+:deep(.n-spin) {
+  min-height: 400px;
+}
+
+/* AI 状态提示 */
+.ai-status-hint {
+  background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 16px;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  :deep(.n-grid) {
+    grid-template-columns: 1fr !important;
+  }
+
+  :deep(.n-descriptions-table-wrapper .n-descriptions-table) {
+    width: 100% !important;
+  }
+}
+</style>

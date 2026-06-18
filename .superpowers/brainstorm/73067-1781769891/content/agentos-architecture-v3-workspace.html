@@ -1,0 +1,81 @@
+<h2>设计第 1 部分最终修订：凌镜 AI 原生经营工作台</h2>
+<p class="subtitle">新增参考 HTML 后，产品定位进一步收敛：凌镜不是传统 ERP 看板，而是“有受控操作权限的跨境电商 AgentOS 工作台”。</p>
+
+<div class="mockup">
+  <div class="mockup-header">LingMirror = AI Native Commerce Workspace</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:12px;">
+      <div class="placeholder" style="min-height:145px;">
+        <strong>1. 经营上下文层</strong><br><br>
+        @商品 / @SKU / @订单 / @库存 / @店铺 / @平台 / @物流 / @结算<br><br>
+        让 Agent 知道“现在在处理什么业务对象”
+      </div>
+      <div class="placeholder" style="min-height:145px;">
+        <strong>2. AgentOS 决策层</strong><br><br>
+        三个小队：增长 / 履约 / 风控<br>
+        四级自治：观察 / 建议 / 半自主 / 全自主<br><br>
+        让 Agent 像团队一样分工
+      </div>
+      <div class="placeholder" style="min-height:145px;">
+        <strong>3. 受控执行层</strong><br><br>
+        任务队列 / 审批队列 / 安全红线 / 操作审计 / 回滚复盘<br><br>
+        让 AI 能干活，但不能越权
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div class="placeholder">
+        <strong>Ask / 查询模式</strong><br>
+        问经营问题，看解释和分析。不执行操作。
+      </div>
+      <div class="placeholder">
+        <strong>Agent / 协作模式</strong><br>
+        Agent 生成方案、任务和变更，人审批后执行。
+      </div>
+      <div class="placeholder">
+        <strong>Quest / 委托模式</strong><br>
+        用户设目标，Agent 后台跑完整工作流，异常时打断。
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="placeholder">
+        <strong>产品表面</strong><br>
+        Web 总控台是第一版主入口；后续可扩展桌面端处理本地文件/表格，IM/移动端用于远程审批和日报。
+      </div>
+      <div class="placeholder">
+        <strong>技能生态</strong><br>
+        运营 SOP、选品策略、定价规则、上架流程沉淀为 Skills；第一版先做内置技能和规则，不做开放市场。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>相对上一版的新增点</h3>
+  <p><strong>1. 从“总控台”升级为“AI 原生工作台”。</strong>总控台仍是首页，但产品心智不是看报表，而是把业务目标交给受控 Agent 团队执行。</p>
+  <p><strong>2. 增加三种工作模式。</strong>Ask 负责查和解释，Agent 负责协作执行，Quest 负责端到端委托。它们对应用户信任逐步提升的过程。</p>
+  <p><strong>3. 明确 Web / 桌面 / IM 的长期分工。</strong>第一版做 Web；桌面端未来负责本地文件、Excel、图片素材、浏览器自动化；IM/移动端只做派单、提醒、审批、结果查看。</p>
+  <p><strong>4. 技能系统作为长期护城河。</strong>跨境电商的 SOP、规则、经验不能只存在于配置项里，要逐步变成可复用、可审计、可分享的运营技能。</p>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>第一版产品承诺</h4>
+    <ul>
+      <li>用户能在一个工作台看到全业务任务、风险、审批和 Agent 状态。</li>
+      <li>用户能明确控制每个 Agent 的自治等级。</li>
+      <li>Agent 的每次建议和执行都有上下文、理由、风险、审计。</li>
+      <li>至少一条业务链路能从目标到执行闭环跑通。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>不是第一版承诺</h4>
+    <ul>
+      <li>不是完整桌面端。</li>
+      <li>不是开放 Skill 市场。</li>
+      <li>不是所有平台 API 全自动操作。</li>
+      <li>不是所有 Agent 都达到全自主。</li>
+    </ul>
+  </div>
+</div>

@@ -1,0 +1,75 @@
+<h2>设计第 6 部分：实施阶段与 MVP 范围</h2>
+<p class="subtitle">目标是先做出“像 AgentOS、也能每天用”的版本，而不是一次性做完整平台。</p>
+
+<div class="mockup">
+  <div class="mockup-header">分阶段路线</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div class="placeholder" style="min-height:240px;text-align:left;">
+        <strong>Phase 1：AgentOS 外壳 + 可用总控台</strong><br><br>
+        时间：第一版 MVP<br><br>
+        - 新 AgentOS 总控台<br>
+        - 统一任务中心 WorkItem<br>
+        - 三个 Agent 小队页面<br>
+        - 自治等级总览<br>
+        - 审批队列和安全红线<br>
+        - AI 审计记录<br>
+        - Listing / 库存 / 利润 / 上架决策模板
+      </div>
+      <div class="placeholder" style="min-height:240px;text-align:left;">
+        <strong>Phase 2：深业务闭环</strong><br><br>
+        时间：MVP 后增强<br><br>
+        - 选品分析 Agent 深化<br>
+        - 客服草稿 Agent<br>
+        - 广告建议 Agent<br>
+        - 合规检测 Agent<br>
+        - 定时任务引擎<br>
+        - IM 通知/审批<br>
+        - 信任评分自动晋升
+      </div>
+      <div class="placeholder" style="min-height:240px;text-align:left;">
+        <strong>Phase 3：平台化与生态</strong><br><br>
+        时间：验证后<br><br>
+        - 桌面端/本地文件处理<br>
+        - 浏览器自动化<br>
+        - Skill 市场<br>
+        - 自定义 Agent 模板<br>
+        - 多模型路由<br>
+        - 多平台 API 深度执行<br>
+        - 企业团队配置
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>MVP 必须包含</h3>
+  <p><strong>1. 一个新的 AgentOS 总控台。</strong>把当前经营看板、Agent 驾驶舱、异常和审批统一成 AI 工作台首页。</p>
+  <p><strong>2. 一个统一任务中心。</strong>把 AgentAction、Exception、Notification、Decision 包装成 WorkItem 统一展示和处理。</p>
+  <p><strong>3. 一个 Agent 小队视图。</strong>按增长、履约、风控组织 Agent，并展示自治等级、采纳率、待审批、风险。</p>
+  <p><strong>4. 一个自治等级控制面板。</strong>用户能理解和调整 Agent 自治程度，但晋升机制可以先做规则版，后续再做完整 Trust Score。</p>
+  <p><strong>5. 一套安全与审计机制。</strong>高风险动作进审批，所有 AI 决策和执行可追溯。</p>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>Phase 1 深做</h4>
+    <ul>
+      <li>商品上架前经营决策。</li>
+      <li>库存和利润预警。</li>
+      <li>审批和审计。</li>
+      <li>Agent 小队状态。</li>
+      <li>内置电商模板入口。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>Phase 1 浅做</h4>
+    <ul>
+      <li>广告：先建议/草稿，不自动投放。</li>
+      <li>客服：先草稿，不自动回复真实客户。</li>
+      <li>合规：先检测和提示，不自动提交平台。</li>
+      <li>IM：先预留入口，不做完整双向审批。</li>
+      <li>Skill：先内置模板，不做市场。</li>
+    </ul>
+  </div>
+</div>

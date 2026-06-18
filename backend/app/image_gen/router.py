@@ -15,6 +15,10 @@ from app.image_gen.schemas import (
     RemoveBgRequest,
     PromptTemplateCreate,
     PromptTemplateUpdate,
+    InpaintRequest,
+    OutpaintRequest,
+    VideoGenRequest,
+    SlideshowRequest,
 )
 from app.image_gen.service import ImageGenService
 
@@ -227,3 +231,94 @@ async def delete_template(
         return Result(code=403, message=str(e))
     except Exception as e:
         return Result.error(f"删除模板失败: {str(e)}")
+
+
+@router.post("/inpaint", summary="局部重绘")
+async def inpaint_image(
+    req: InpaintRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_permission("image_gen:generate")),
+):
+    try:
+        result = await ImageGenService.inpaint(
+            db=db, user_id=current_user.id,
+            image_url=req.image_url,
+            mask_base64=req.mask_base64,
+            prompt=req.prompt,
+            negative_prompt=req.negative_prompt or "",
+        )
+        return Result.ok(result)
+    except Exception as e:
+        return Result.error(f"局部重绘失败: {str(e)}")
+
+
+@router.post("/outpaint", summary="扩图")
+async def outpaint_image(
+    req: OutpaintRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_permission("image_gen:generate")),
+):
+    try:
+        result = await ImageGenService.outpaint(
+            db=db, user_id=current_user.id,
+            image_url=req.image_url,
+            direction=req.direction,
+            prompt=req.prompt,
+            expand_ratio=req.expand_ratio,
+        )
+        return Result.ok(result)
+    except Exception as e:
+        return Result.error(f"扩图失败: {str(e)}")
+
+
+@router.post("/video", summary="AI 生成视频")
+async def generate_video(
+    req: VideoGenRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_permission("image_gen:generate")),
+):
+    try:
+        result = await ImageGenService.generate_video(
+            db=db, user_id=current_user.id,
+            prompt=req.prompt,
+            image_url=req.image_url,
+        )
+        return Result.ok(result)
+    except Exception as e:
+        return Result.error(f"视频生成失败: {str(e)}")
+
+
+@router.get("/video/status/{job_id}", summary="视频生成进度")
+async def video_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_permission("image_gen:history")),
+):
+    try:
+        result = await ImageGenService.get_video_status(job_id=job_id)
+        return Result.ok(result)
+    except Exception as e:
+        return Result.error(str(e))
+
+
+@router.post("/video/slideshow", summary="图片合成视频")
+async def create_slideshow(
+    req: SlideshowRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_permission("image_gen:generate")),
+):
+    try:
+        result = await ImageGenService.create_slideshow(
+            db=db, user_id=current_user.id,
+            image_urls=req.image_urls,
+            duration_per_frame=req.duration_per_frame,
+            transition=req.transition,
+            resolution=req.resolution,
+        )
+        return Result.ok(result)
+    except Exception as e:
+        return Result.error(f"视频合成失败: {str(e)}")

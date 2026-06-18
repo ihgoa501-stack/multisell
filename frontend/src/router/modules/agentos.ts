@@ -3,20 +3,48 @@ import type { RouteRecordRaw } from 'vue-router'
 export const routes: RouteRecordRaw[] = [
   {
     path: 'agentos',
-    name: 'AgentOSControlCenter',
-    component: () => import('@/views/agentos/ControlCenter.vue'),
-    meta: { title: 'AgentOS 总控台', icon: 'analytics', menu: true, perm: 'agent:view' },
-  },
-  {
-    path: 'agentos/tasks',
-    name: 'AgentOSTaskCenter',
-    component: () => import('@/views/agentos/TaskCenter.vue'),
-    meta: { title: '任务中心', icon: 'checkmark-circle', menu: true, perm: 'agent:view' },
-  },
-  {
-    path: 'agentos/squads',
-    name: 'AgentOSSquads',
-    component: () => import('@/views/agentos/AgentSquads.vue'),
-    meta: { title: 'Agent 小队', icon: 'cube', menu: true, perm: 'agent:view' },
+    name: 'AgentOS',
+    redirect: '/agentos/control-center',
+    meta: {
+      title: 'AgentOS',
+      icon: 'analytics',
+      menu: true,
+      perm: 'agentos:view',
+    },
+    children: [
+      {
+        path: 'control-center',
+        name: 'AgentOSControlCenter',
+        component: () => import('@/views/agentos/ControlCenter.vue'),
+        meta: {
+          title: '总控台',
+          icon: 'analytics',
+          menu: true,
+          perm: 'agentos:view',
+        },
+      },
+      {
+        path: 'work-items',
+        name: 'AgentOSWorkItems',
+        component: () => import('@/views/agentos/WorkItems.vue'),
+        meta: {
+          title: '任务中心',
+          icon: 'list',
+          menu: true,
+          perm: 'agentos:view',
+        },
+      },
+      {
+        path: 'squads',
+        name: 'AgentOSSquads',
+        component: () => import('@/views/agentos/Squads.vue'),
+        meta: {
+          title: 'Agent 团队',
+          icon: 'people',
+          menu: true,
+          perm: 'agentos:view',
+        },
+      },
+    ],
   },
 ]

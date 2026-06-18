@@ -1,0 +1,98 @@
+<h2>设计第 5 部分：自治等级、安全红线与审批机制</h2>
+<p class="subtitle">用户愿不愿意让 Agent 执行，取决于系统是否能解释、可控、可撤回、可审计。</p>
+
+<div class="mockup">
+  <div class="mockup-header">Agent 自治控制模型</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+      <div class="placeholder" style="min-height:170px;">
+        <strong>观察模式</strong><br>
+        OBSERVATION<br><br>
+        只读数据<br>
+        生成报告<br>
+        不给执行建议<br>
+        不创建动作<br><br>
+        适合新 Agent / 新业务域
+      </div>
+      <div class="placeholder" style="min-height:170px;">
+        <strong>建议模式</strong><br>
+        SUGGESTION<br><br>
+        生成建议<br>
+        展示理由<br>
+        人手动执行<br>
+        记录反馈<br><br>
+        适合多数初期场景
+      </div>
+      <div class="placeholder" style="min-height:170px;">
+        <strong>半自主</strong><br>
+        SEMI_AUTONOMOUS<br><br>
+        低风险自动执行<br>
+        高风险进审批<br>
+        支持修改后执行<br><br>
+        适合库存、预警、常规调价
+      </div>
+      <div class="placeholder" style="min-height:170px;">
+        <strong>全自主</strong><br>
+        FULL_AUTONOMOUS<br><br>
+        自动执行常规链路<br>
+        异常才打断<br>
+        更严格预算和红线<br><br>
+        只给高信任低风险链路
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div class="placeholder">
+        <strong>信任评分</strong><br>
+        采纳率 40%<br>
+        置信度 25%<br>
+        规则一致性 20%<br>
+        稳定性 15%
+      </div>
+      <div class="placeholder">
+        <strong>安全红线</strong><br>
+        大额采购/调价<br>
+        批量 SKU 操作<br>
+        首次平台发布<br>
+        删除/收款/税务等禁止项
+      </div>
+      <div class="placeholder">
+        <strong>紧急控制</strong><br>
+        一键暂停全部 Agent<br>
+        单 Agent 降级<br>
+        单规则停用<br>
+        失败自动回退观察模式
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>审批规则</h3>
+  <p><strong>金额类：</strong>采购、调价、广告预算、退款等超过用户阈值必须审批，默认阈值可从 500 元起。</p>
+  <p><strong>批量类：</strong>影响多个 SKU、多个平台、多个订单的动作必须审批，默认超过 20 个 SKU 进入审批。</p>
+  <p><strong>不可逆类：</strong>删除商品、删除 Listing、修改收款账户、税务信息、平台授权等默认禁止 Agent 自动执行。</p>
+  <p><strong>首次类：</strong>首次向新平台发布、首次使用新模板、首次执行新类型动作，强制人工确认。</p>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>用户可见能力</h4>
+    <ul>
+      <li>每个 Agent 每个决策点可独立设置自治等级。</li>
+      <li>每个升级建议都展示信任评分依据。</li>
+      <li>每个审批动作展示上下文、收益、风险和审计记录。</li>
+      <li>系统可自动提示晋升，也可自动降级。</li>
+      <li>安全红线高于任何自治等级。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>产品表达</h4>
+    <ul>
+      <li>不要把等级叫成技术枚举，要用“观察/建议/半自主/全自主”。</li>
+      <li>不要让用户一上来配置复杂规则。</li>
+      <li>默认从低自治开始，用数据推动用户升级。</li>
+      <li>审批页要像业务决策页，不像系统弹窗。</li>
+    </ul>
+  </div>
+</div>

@@ -145,7 +145,7 @@
                 <n-statistic label="缺货" :value="stats.inventory?.out_of_stock || 0"><template #suffix>个</template></n-statistic>
               </n-card>
             </div>
-            <n-progress :percentage="stats.inventory?.health_pct || 100" :color="(stats.inventory?.health_pct || 100) > 70 ? '#18a058' : '#d03050'" height="16" />
+            <n-progress :percentage="stats.inventory?.health_pct || 100" :color="(stats.inventory?.health_pct || 100) > 70 ? '#18a058' : '#d03050'" :height="16" />
             <div style="text-align:center;font-size:12px;color:#888;margin-top:4px;">库存健康率 {{ stats.inventory?.health_pct || 100 }}%</div>
           </div>
         </n-card>
@@ -318,3 +318,73 @@ async function fetchStats() {
 
 onMounted(fetchStats)
 </script>
+
+<style scoped>
+.dashboard-page {
+  padding: 0;
+}
+
+/* 页面标题 */
+:deep(.n-page-header__title) {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-neutral-900, #171717);
+}
+
+:deep(.n-page-header__subtitle) {
+  color: var(--color-neutral-500, #737373);
+  font-size: 14px;
+}
+
+/* KPI 卡片 */
+:deep(.n-card) {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+:deep(.n-card:hover) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 统计数字高亮 */
+:deep(.n-statistic__value) {
+  font-weight: 700;
+  color: var(--color-neutral-900, #171717);
+}
+
+/* 进度条颜色 */
+:deep(.n-progress) {
+  margin-top: 4px;
+}
+
+/* 表格标题 */
+:deep(.n-card-header__main) {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+/* 空状态 */
+:deep(.n-empty) {
+  padding: 40px 0;
+}
+
+/* 网格间距 */
+:deep(.n-grid) {
+  margin-top: 16px;
+}
+
+/* 卡片内边距优化 */
+:deep(.n-card__content) {
+  padding: 16px;
+}
+
+/* 标签样式优化 */
+:deep(.n-tag--tiny) {
+  font-weight: 500;
+}
+
+/* 按钮样式优化 */
+:deep(.n-button--small-type) {
+  font-weight: 500;
+}
+</style>

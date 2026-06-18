@@ -1,0 +1,104 @@
+<h2>设计第 2 部分：首页 / 总控台页面布局</h2>
+<p class="subtitle">首页不是传统 Dashboard，而是“今天 AI 团队正在帮我处理什么，我需要拍板什么，业务哪里有风险”。</p>
+
+<div class="mockup">
+  <div class="mockup-header">凌镜 AgentOS 总控台 - 第一屏布局</div>
+  <div class="mockup-body">
+    <div class="mock-nav">
+      凌镜 AgentOS &nbsp;|&nbsp; 总控台 &nbsp; Agent 小队 &nbsp; 任务中心 &nbsp; 审批 &nbsp; 技能模板 &nbsp; 审计
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-top:12px;">
+      <div class="placeholder">今日销售 / 利润</div>
+      <div class="placeholder">库存风险</div>
+      <div class="placeholder">待审批动作</div>
+      <div class="placeholder">Agent 自动化率</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:260px 1fr 320px;gap:12px;margin-top:12px;align-items:stretch;">
+      <div class="placeholder" style="min-height:330px;text-align:left;">
+        <strong>左侧：任务来源筛选</strong><br><br>
+        全部任务<br>
+        增长小队<br>
+        履约小队<br>
+        风控小队<br><br>
+        商品上新<br>
+        库存补货<br>
+        订单异常<br>
+        利润预警<br>
+        客服草稿<br>
+        合规审计<br><br>
+        状态：待处理 / 执行中 / 已完成 / 被拦截
+      </div>
+
+      <div class="placeholder" style="min-height:330px;text-align:left;">
+        <strong>中间：AI 任务工作台</strong><br><br>
+        任务卡片 1：A6 发现 SKU-102 在 Ozon 毛利率低于 12%<br>
+        - 上下文：成本、运费、平台费、历史售价<br>
+        - 建议：提高售价 / 暂停上架 / 更换物流<br>
+        - 风险：调价影响转化，需要审批<br><br>
+        任务卡片 2：A5 预测 SKU-088 7 天后断货<br>
+        - 建议补货 120 件<br>
+        - 采购金额触发高风险审批<br><br>
+        操作：批准 / 修改 / 分派 / 忽略 / 查看审计
+      </div>
+
+      <div class="placeholder" style="min-height:330px;text-align:left;">
+        <strong>右侧：Agent 团队状态</strong><br><br>
+        增长小队：3 个 Agent<br>
+        采纳率 68% · 1 个可晋升<br><br>
+        履约小队：3 个 Agent<br>
+        待审批 4 · 1 个红线拦截<br><br>
+        风控小队：3 个 Agent<br>
+        风险高 · A6 建议降级观察<br><br>
+        快捷：一键暂停全部 Agent<br>
+        快捷：查看自治等级总览
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
+      <div class="placeholder">
+        <strong>底部模块 1</strong><br>
+        最近 AI 审计记录
+      </div>
+      <div class="placeholder">
+        <strong>底部模块 2</strong><br>
+        推荐启用的电商模板
+      </div>
+      <div class="placeholder">
+        <strong>底部模块 3</strong><br>
+        定时任务和日报
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>布局原则</h3>
+  <p><strong>顶部只放经营结论。</strong>不堆太多图表，只回答今天是否健康：利润、库存、审批、自动化。</p>
+  <p><strong>中间是主工作区。</strong>用户每天主要处理 AI 推来的任务，而不是进各个模块查数据。</p>
+  <p><strong>右侧是控制权。</strong>让用户随时知道 Agent 小队状态、自治等级风险、是否需要暂停或降级。</p>
+  <p><strong>底部是可追溯和成长。</strong>审计、模板、定时任务放在第二屏，避免抢第一屏注意力。</p>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>第一屏必须显示</h4>
+    <ul>
+      <li>今日经营健康状态。</li>
+      <li>AI 生成的待处理任务。</li>
+      <li>待审批和红线拦截。</li>
+      <li>三大 Agent 小队状态。</li>
+      <li>一键暂停全部 Agent。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>第一屏避免显示</h4>
+    <ul>
+      <li>大面积传统报表图。</li>
+      <li>完整 Agent 配置表。</li>
+      <li>复杂工作流编辑器。</li>
+      <li>太多营销式说明文案。</li>
+    </ul>
+  </div>
+</div>

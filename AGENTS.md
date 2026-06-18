@@ -60,6 +60,7 @@ Key modules:
 | `core` `category` `brand` `sku` `price` `inventory` `supplier` | Product catalog, categories, SKU generation, pricing, stock, suppliers |
 | `platform` `listing` `listing_task` | Platform config, adapter-based publishing, multi-platform task queue |
 | `agent` `agent_actions` | Hermes AI agents, evolution stages, action audit lifecycle |
+| `agentos` | AgentOS 运营总控台 — 聚合层、WorkItem 归一化、Squad/Agent 视图 |
 | `auth` `rbac` | JWT auth and permission checks |
 | `operation_log` | Mutation audit logs |
 | `dashboard` `search` | Overview stats and global search |

@@ -1,0 +1,94 @@
+<h2>设计第 1 部分修订：AgentOS 信息架构 + 调研吸收</h2>
+<p class="subtitle">根据你提供的三份调研，第一版需要同时体现“全业务 AgentOS”和“自治等级可控”，否则 AI 原生感不够，也难以建立信任。</p>
+
+<div class="mockup">
+  <div class="mockup-header">LingMirror AgentOS 第一版：总控台 + 任务流 + Agent 小队 + 自治等级</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:12px;">
+      <div class="placeholder" style="min-height:155px;">
+        <strong>增长小队</strong><br><br>
+        A1 选品扫描<br>
+        A2 Listing 优化<br>
+        A3 广告建议<br><br>
+        目标：上新、曝光、转化
+      </div>
+      <div class="placeholder" style="min-height:155px;">
+        <strong>履约小队</strong><br><br>
+        A5 库存预警<br>
+        G2 仓储海关<br>
+        订单/物流 Agent<br><br>
+        目标：库存、订单、物流闭环
+      </div>
+      <div class="placeholder" style="min-height:155px;">
+        <strong>风控小队</strong><br><br>
+        A6 利润监控<br>
+        A7 合规检测<br>
+        G3 折扣风控<br><br>
+        目标：利润、合规、红线
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:12px;align-items:stretch;">
+      <div class="placeholder">
+        <strong>上下文感知</strong><br>
+        商品 / SKU / 库存 / 订单 / 物流 / 平台费 / 结算 / 审计<br>
+        以后扩展 @商品、@订单、@店铺、@平台、@报告
+      </div>
+      <div class="placeholder">
+        <strong>统一 AgentOS 骨架</strong><br>
+        观察 → 建议 → 审批 → 执行 → 复盘<br>
+        任务队列 / 决策日志 / 操作审批 / 规则记忆 / 熵管理
+      </div>
+      <div class="placeholder">
+        <strong>自治等级控制</strong><br>
+        OBSERVATION / SUGGESTION / SEMI / FULL<br>
+        信任评分 / 晋升提示 / 安全红线 / 一键暂停
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div class="placeholder">
+        <strong>技能沉淀</strong><br>
+        选品策略、定价规则、上架流程从高频操作固化为团队技能
+      </div>
+      <div class="placeholder">
+        <strong>异步触达</strong><br>
+        站内通知先行；后续接飞书/微信/钉钉做远程审批和日报
+      </div>
+      <div class="placeholder">
+        <strong>模型与工具路由</strong><br>
+        文案、计算、客服、合规使用不同模型/工具，失败可降级
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>吸收后的设计变化</h3>
+  <p><strong>1. 自治等级成为总控台核心。</strong>用户不只是看 Agent 任务，还要能看到每个 Agent 当前像“实习生、助理、主管、资深运营”一样处在哪个自治阶段。</p>
+  <p><strong>2. 总控台不仅显示业务指标，还显示信任状态。</strong>每个小队要展示采纳率、置信度、待审批、被红线拦截、是否可晋升。</p>
+  <p><strong>3. 第一版做 AgentOS 外壳，但预留桌面 Agent 产品模式。</strong>包括上下文引用、技能沉淀、定时任务、IM 审批、动态模型路由，不过第一版只做必要入口和数据结构，不一次做完整生态。</p>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>第一版必须落地</h4>
+    <ul>
+      <li>全业务总控台首页</li>
+      <li>统一任务队列和审批队列</li>
+      <li>三大 Agent 小队分组</li>
+      <li>Agent 自治等级总览</li>
+      <li>安全红线和高风险动作拦截</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>第一版先不做深</h4>
+    <ul>
+      <li>完整 IM 双向审批</li>
+      <li>技能市场和自动技能生成</li>
+      <li>多模型自动路由后台</li>
+      <li>所有业务域的全自动执行</li>
+      <li>移动端完整工作台</li>
+    </ul>
+  </div>
+</div>

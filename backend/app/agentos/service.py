@@ -1,17 +1,30 @@
+"""AgentOS 服务层 — 聚合现有业务数据并归一化为 WorkItem"""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func as sa_func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.models import AgentAction as PendingAgentAction
-from app.agent.models import AgentDecision
+from app.agentos.schemas import (
+    AgentOSAgent,
+    AgentOSMetric,
+    AgentOSOverview,
+    AgentOSSquad,
+    AgentOSTemplate,
+    AgentOSWorkItem,
+    AutonomyLevel,
+    RiskLevel,
+    WorkItemPriority,
+    WorkItemStatus,
+)
 from app.models import ExceptionItem, Notification
 
+# ─── Agent → Squad 映射 ──────────────────────────────────────
 
-AGENT_TO_SQUAD = {
+AGENT_TO_SQUAD: dict[str, str] = {
     "A1": "growth",
     "A2": "growth",
     "A3": "growth",
@@ -24,7 +37,26 @@ AGENT_TO_SQUAD = {
     "G1": "risk",
 }
 
-MODULE_TO_SQUAD = {
+SQUAD_TO_NAME: dict[str, str] = {
+    "growth": "增长小队",
+    "fulfillment": "履约小队",
+    "risk": "风控小队",
+}
+
+AGENT_META: dict[str, dict[str, str]] = {
+    "A1": {"name": "选品助手", "role": "选品分析"},
+    "A2": {"name": "Listing 优化师", "role": "刊登优化"},
+    "A3": {"name": "广告顾问", "role": "广告投放"},
+    "A4": {"name": "客服助手", "role": "客户服务"},
+    "A5": {"name": "库存管家", "role": "库存管理"},
+    "G2": {"name": "仓储专员", "role": "仓储物流"},
+    "A6": {"name": "利润分析师", "role": "利润分析"},
+    "A7": {"name": "合规检查员", "role": "合规检查"},
+    "G3": {"name": "折扣风控", "role": "折扣风控"},
+    "G1": {"name": "总控", "role": "Governance"},
+}
+
+MODULE_TO_SQUAD: dict[str, str] = {
     "product": "growth",
     "listing": "growth",
     "listing_task": "growth",
@@ -35,9 +67,10 @@ MODULE_TO_SQUAD = {
     "finance": "risk",
     "platform_fee": "risk",
     "compliance": "risk",
+    "agent": "risk",
 }
 
-ALERT_TO_SQUAD = {
+ALERT_TO_SQUAD: dict[str, str] = {
     "inventory_low_stock": "fulfillment",
     "inventory_out_of_stock": "fulfillment",
     "order_pending": "fulfillment",
@@ -46,28 +79,33 @@ ALERT_TO_SQUAD = {
     "settlement_discrepancy": "risk",
 }
 
-AGENT_SQUADS = [
+# ─── 静态 Squad 定义 ─────────────────────────────────────────
+
+AGENT_SQUADS: list[dict[str, Any]] = [
     {
         "id": "growth",
         "name": "增长小队",
         "description": "负责选品、Listing、广告建议和上新质量。",
+        "domain": "商品增长",
         "agents": ["A1", "A2", "A3", "A4"],
     },
     {
         "id": "fulfillment",
         "name": "履约小队",
         "description": "负责库存、订单、仓储、海关和物流闭环。",
+        "domain": "订单履约",
         "agents": ["A5", "G2"],
     },
     {
         "id": "risk",
         "name": "风控小队",
         "description": "负责利润、折扣、合规和平台安全红线。",
+        "domain": "风险控制",
         "agents": ["A6", "A7", "G3", "G1"],
     },
 ]
 
-TEMPLATE_CARDS = [
+TEMPLATE_CARDS: list[dict[str, Any]] = [
     {
         "id": "pre_listing_decision",
         "title": "上架前经营决策",
@@ -111,211 +149,703 @@ TEMPLATE_CARDS = [
 ]
 
 
+# ─── 归一化纯函数 ────────────────────────────────────────────
+
+
 class AgentOSService:
+    """AgentOS 聚合服务 — 归一化业务数据为统一模型"""
+
+    # ── 辅助函数 ──────────────────────────────────────────
+
     @staticmethod
     def _iso(dt: Any) -> Any:
-        return dt if not hasattr(dt, "isoformat") else dt
+        """保持 datetime 对象不变（序列化由 Pydantic 处理）"""
+        return dt
 
     @staticmethod
     def _squad_for_agent(agent_id: str | None) -> str:
-        return AGENT_TO_SQUAD.get(agent_id or "", "risk")
+        return AGENT_TO_SQUAD.get(agent_id or "", "governance")
 
     @staticmethod
-    def _risk_from_severity(severity: str | None) -> str:
-        mapping = {"critical": "critical", "error": "high", "warning": "medium", "info": "low"}
-        return mapping.get(severity or "", "medium")
+    def _risk_from_severity(severity: str | None) -> RiskLevel:
+        mapping = {
+            "critical": RiskLevel.CRITICAL,
+            "error": RiskLevel.HIGH,
+            "high": RiskLevel.HIGH,
+            "warning": RiskLevel.MEDIUM,
+            "info": RiskLevel.LOW,
+            "low": RiskLevel.LOW,
+        }
+        return mapping.get(severity or "", RiskLevel.MEDIUM)
 
     @staticmethod
-    def _risk_from_action(action_type: str | None, payload: dict[str, Any] | None = None) -> str:
+    def _risk_from_action(
+        action_type: str | None,
+        payload: dict[str, Any] | None = None,
+    ) -> RiskLevel:
         payload = payload or {}
-        amount = abs(float(payload.get("amount") or payload.get("total_amount") or 0))
-        sku_count = len(payload.get("sku_codes") or [])
+        try:
+            amount = abs(float(payload.get("amount") or payload.get("total_amount") or 0))
+        except (TypeError, ValueError):
+            amount = 0
+        sku_codes = payload.get("sku_codes") or payload.get("sku_ids") or []
+        sku_count = len(sku_codes) if isinstance(sku_codes, list) else 0
         if amount >= 500 or sku_count > 20:
-            return "high"
+            return RiskLevel.CRITICAL
         if action_type in {"replenish", "price_adjust", "discount_review", "ad_action"}:
-            return "medium"
-        return "low"
+            return RiskLevel.HIGH
+        return RiskLevel.MEDIUM
 
     @staticmethod
-    def _approval_required(risk_level: str, status: str) -> bool:
-        return status == "pending" and risk_level in {"high", "critical"}
+    def _priority_from_risk(risk: RiskLevel) -> WorkItemPriority:
+        mapping = {
+            RiskLevel.CRITICAL: WorkItemPriority.CRITICAL,
+            RiskLevel.HIGH: WorkItemPriority.HIGH,
+            RiskLevel.MEDIUM: WorkItemPriority.MEDIUM,
+            RiskLevel.LOW: WorkItemPriority.LOW,
+        }
+        return mapping.get(risk, WorkItemPriority.MEDIUM)
 
     @staticmethod
-    def normalize_agent_pending_action(row: PendingAgentAction) -> dict[str, Any]:
-        risk = AgentOSService._risk_from_action(row.action_type, row.action_payload)
+    def _approval_required(risk: RiskLevel, status: str) -> bool:
+        return status in {"pending", "proposed"} and risk in {RiskLevel.HIGH, RiskLevel.CRITICAL}
+
+    @staticmethod
+    def _to_datetime(val: Any) -> datetime | None:
+        if val is None:
+            return None
+        if isinstance(val, datetime):
+            return val
+        return None
+
+    # ── 归一化函数 ─────────────────────────────────────────
+
+    @staticmethod
+    def normalize_agent_pending_action(row: Any) -> AgentOSWorkItem:
+        """将 Agent 待执行操作归一化为 WorkItem"""
+        risk = AgentOSService._risk_from_action(
+            getattr(row, "action_type", None),
+            getattr(row, "action_payload", None) or getattr(row, "proposed_payload", None),
+        )
+        squad_id = AgentOSService._squad_for_agent(getattr(row, "agent_id", None))
+        status_raw = getattr(row, "status", "pending")
+        status = AgentOSService._map_action_status(status_raw)
+
+        return AgentOSWorkItem(
+            id=f"agent_action:{getattr(row, 'id', 0)}",
+            source_type="agent_action",
+            source_id=str(getattr(row, "id", "")),
+            title=getattr(row, "summary", "") or getattr(row, "title", ""),
+            description=getattr(row, "summary", ""),
+            priority=AgentOSService._priority_from_risk(risk),
+            status=status,
+            risk_level=risk,
+            agent_id=getattr(row, "agent_id", None),
+            agent_name=AGENT_META.get(getattr(row, "agent_id", ""), {}).get("name"),
+            squad_id=squad_id,
+            squad_name=SQUAD_TO_NAME.get(squad_id, squad_id),
+            autonomy_level=AutonomyLevel.SUGGESTION,
+            requires_approval=AgentOSService._approval_required(risk, status_raw),
+            created_at=AgentOSService._to_datetime(getattr(row, "created_at", None)),
+            updated_at=AgentOSService._to_datetime(getattr(row, "updated_at", None)),
+            action_url=f"/agents/{getattr(row, 'agent_id', '')}",
+            metadata={
+                "action_type": getattr(row, "action_type", ""),
+                "decision_id": str(getattr(row, "decision_id", "")),
+                "payload": (getattr(row, "action_payload", None) or getattr(row, "proposed_payload", None) or {}),
+            },
+        )
+
+    @staticmethod
+    def normalize_exception(row: Any) -> AgentOSWorkItem:
+        """将异常条目归一化为 WorkItem"""
+        severity = getattr(row, "severity", "medium")
+        risk = AgentOSService._risk_from_severity(severity)
+        source_module = getattr(row, "source_module", "")
+        squad_id = MODULE_TO_SQUAD.get(source_module, "risk")
+        status_raw = getattr(row, "status", "open")
+
+        return AgentOSWorkItem(
+            id=f"exception:{getattr(row, 'id', 0)}",
+            source_type="exception",
+            source_id=str(getattr(row, "id", "")),
+            title=getattr(row, "title", ""),
+            description=getattr(row, "description", ""),
+            priority=AgentOSService._priority_from_risk(risk),
+            status=AgentOSService._map_exception_status(status_raw),
+            risk_level=risk,
+            squad_id=squad_id,
+            squad_name=SQUAD_TO_NAME.get(squad_id, squad_id),
+            autonomy_level=AutonomyLevel.OBSERVATION,
+            requires_approval=False,
+            created_at=AgentOSService._to_datetime(getattr(row, "created_at", None)),
+            updated_at=AgentOSService._to_datetime(getattr(row, "updated_at", None)),
+            action_url=f"/exceptions/{getattr(row, 'id', 0)}",
+            metadata={
+                "source_module": source_module,
+                "severity": severity,
+                "recommended_action": getattr(row, "recommended_action", ""),
+            },
+        )
+
+    @staticmethod
+    def normalize_notification(row: Any) -> AgentOSWorkItem:
+        """将通知归一化为 WorkItem"""
+        alert_type = getattr(row, "alert_type", "")
+        squad_id = ALERT_TO_SQUAD.get(alert_type, "governance")
+        severity = getattr(row, "severity", "info")
+        risk = AgentOSService._risk_from_severity(severity)
+        is_read = getattr(row, "is_read", 0)
+
+        # 尝试从 alert_type 推断 agent
+        inferred_agent = AgentOSService._infer_agent_from_alert(alert_type)
+
+        return AgentOSWorkItem(
+            id=f"notification:{getattr(row, 'id', 0)}",
+            source_type="notification",
+            source_id=getattr(row, "source_id", "") or str(getattr(row, "id", "")),
+            title=getattr(row, "title", ""),
+            description=getattr(row, "content", ""),
+            priority=AgentOSService._priority_from_risk(risk),
+            status=WorkItemStatus.PENDING if not is_read else WorkItemStatus.COMPLETED,
+            risk_level=risk,
+            agent_id=inferred_agent,
+            agent_name=AGENT_META.get(inferred_agent or "", {}).get("name"),
+            squad_id=squad_id,
+            squad_name=SQUAD_TO_NAME.get(squad_id, squad_id),
+            autonomy_level=AutonomyLevel.OBSERVATION,
+            requires_approval=False,
+            created_at=AgentOSService._to_datetime(getattr(row, "created_at", None)),
+            action_url=getattr(row, "link_url", ""),
+            metadata={"alert_type": alert_type, "is_read": bool(is_read)},
+        )
+
+    @staticmethod
+    def normalize_listing_task(row: Any) -> AgentOSWorkItem:
+        """将上架任务归一化为 WorkItem"""
+        status_raw = getattr(row, "status", "blocked")
+        risk = RiskLevel.HIGH if status_raw in {"failed", "blocked"} else RiskLevel.MEDIUM
+
+        return AgentOSWorkItem(
+            id=f"listing_task:{getattr(row, 'id', 0)}",
+            source_type="listing_task",
+            source_id=str(getattr(row, "id", "")),
+            title=f"上架任务 #{getattr(row, 'id', '')}",
+            description=getattr(row, "last_error", "") or "",
+            priority=AgentOSService._priority_from_risk(risk),
+            status=AgentOSService._map_listing_status(status_raw),
+            risk_level=risk,
+            squad_id="growth",
+            squad_name="增长小队",
+            agent_id="A2",
+            agent_name="Listing 优化师",
+            autonomy_level=AutonomyLevel.SEMI_AUTONOMOUS,
+            requires_approval=True,
+            created_at=AgentOSService._to_datetime(getattr(row, "created_at", None)),
+            updated_at=AgentOSService._to_datetime(getattr(row, "updated_at", None)),
+            action_url=f"/listing_tasks/{getattr(row, 'id', 0)}",
+            metadata={
+                "product_id": str(getattr(row, "product_id", "")),
+                "platform_id": str(getattr(row, "platform_id", "")),
+                "status": status_raw,
+            },
+        )
+
+    # ── 聚合查询 ───────────────────────────────────────────
+
+    @staticmethod
+    async def get_control_center(db: AsyncSession) -> dict[str, Any]:
+        """聚合总控台数据"""
+        overview = AgentOSOverview()
+
+        # 统计异常数量
+        critical_count = 0
+        exception_items: list[AgentOSWorkItem] = []
+        try:
+            stmt = select(ExceptionItem).order_by(ExceptionItem.created_at.desc()).limit(20)
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                item = AgentOSService.normalize_exception(row)
+                exception_items.append(item)
+                if item.risk_level == RiskLevel.CRITICAL:
+                    critical_count += 1
+        except Exception:
+            pass  # 优雅降级
+
+        # 统计通知
+        notification_items: list[AgentOSWorkItem] = []
+        try:
+            stmt = select(Notification).order_by(Notification.created_at.desc()).limit(20)
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                notification_items.append(AgentOSService.normalize_notification(row))
+        except Exception:
+            pass
+
+        # 尝试统计 Agent 待执行操作
+        pending_actions: list[AgentOSWorkItem] = []
+        try:
+            from app.agent.models import AgentAction as PendingAgentAction
+
+            stmt = (
+                select(PendingAgentAction)
+                .where(PendingAgentAction.status == "pending")
+                .order_by(PendingAgentAction.created_at.desc())
+                .limit(20)
+            )
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                pending_actions.append(AgentOSService.normalize_agent_pending_action(row))
+        except Exception:
+            pass
+
+        # 尝试统计上架任务
+        listing_items: list[AgentOSWorkItem] = []
+        try:
+            from app.models import ListingTask
+
+            stmt = (
+                select(ListingTask)
+                .where(ListingTask.status.in_(["blocked", "failed", "ready"]))
+                .order_by(ListingTask.updated_at.desc().nulls_last())
+                .limit(20)
+            )
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                listing_items.append(AgentOSService.normalize_listing_task(row))
+        except Exception:
+            pass
+
+        # 合并所有 WorkItem 并按风险排序
+        all_items = exception_items + notification_items + pending_actions + listing_items
+        all_items.sort(key=lambda x: (_PRIORITY_SORT.get(x.priority, 0), x.created_at or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+
+        # 统计摘要
+        pending_approvals = sum(1 for i in all_items if i.requires_approval)
+        overview.pending_approvals = pending_approvals
+        overview.critical_items = critical_count
+        overview.active_agents = len(AGENT_TO_SQUAD)
+        overview.health_score = AgentOSService._compute_health_score(all_items)
+
+        # 构建团队数据
+        squads = AgentOSService._build_squads(all_items)
+
+        # 指标
+        metrics = AgentOSService._build_metrics(all_items)
+
+        # 优先任务（高风险 + 需审批）
+        priority_items = [i for i in all_items if i.risk_level in {RiskLevel.HIGH, RiskLevel.CRITICAL} or i.requires_approval][:10]
+
+        # 最近活动
+        recent = sorted(
+            all_items,
+            key=lambda x: x.updated_at or x.created_at or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )[:10]
+
         return {
-            "id": f"agent_action:{row.id}",
-            "source_type": "agent_action",
-            "source_id": str(row.id),
-            "source_module": "agent",
-            "business_object": {"type": "decision", "id": str(row.decision_id) if row.decision_id else None},
-            "squad": AgentOSService._squad_for_agent(row.agent_id),
-            "agent_id": row.agent_id,
-            "title": row.summary,
-            "summary": row.summary,
-            "recommendation": row.summary,
-            "risk_level": risk,
-            "approval_required": AgentOSService._approval_required(risk, row.status),
-            "status": row.status,
-            "action_type": row.action_type,
-            "context": row.action_payload or {},
-            "audit_link": f"/agents/{row.agent_id}",
-            "created_at": AgentOSService._iso(row.created_at),
+            "overview": overview,
+            "squads": squads,
+            "priority_work_items": priority_items,
+            "metrics": metrics,
+            "recent_activity": recent,
         }
 
     @staticmethod
-    def normalize_exception(row: ExceptionItem) -> dict[str, Any]:
-        squad = MODULE_TO_SQUAD.get(row.source_module or "", "risk")
-        risk = AgentOSService._risk_from_severity(row.severity)
-        return {
-            "id": f"exception:{row.id}",
-            "source_type": "exception",
-            "source_id": str(row.id),
-            "source_module": row.source_module,
-            "business_object": {"type": row.source_type, "id": str(row.source_id) if row.source_id else None},
-            "squad": squad,
-            "agent_id": None,
-            "title": row.title,
-            "summary": row.description,
-            "recommendation": row.recommended_action,
-            "risk_level": risk,
-            "approval_required": False,
-            "status": row.status,
-            "action_type": None,
-            "context": {},
-            "audit_link": f"/exceptions",
-            "created_at": AgentOSService._iso(row.created_at),
-        }
-
-    @staticmethod
-    def normalize_notification(row: Notification) -> dict[str, Any]:
-        risk = AgentOSService._risk_from_severity(row.severity)
-        return {
-            "id": f"notification:{row.id}",
-            "source_type": "notification",
-            "source_id": str(row.id),
-            "source_module": row.alert_type,
-            "business_object": {"type": row.alert_type, "id": row.source_id},
-            "squad": ALERT_TO_SQUAD.get(row.alert_type, "risk"),
-            "agent_id": None,
-            "title": row.title,
-            "summary": row.content,
-            "recommendation": "查看并处理该预警",
-            "risk_level": risk,
-            "approval_required": False,
-            "status": "read" if row.is_read else "unread",
-            "action_type": None,
-            "context": {"link_url": row.link_url},
-            "audit_link": row.link_url or "/notifications",
-            "created_at": AgentOSService._iso(row.created_at),
-        }
-
-    @staticmethod
-    def _sort_key(item: dict[str, Any]) -> datetime:
-        value = item.get("created_at")
-        if isinstance(value, datetime):
-            return value
-        return datetime.min.replace(tzinfo=timezone.utc)
-
-    @staticmethod
-    async def list_work_items(
+    async def get_work_items(
         db: AsyncSession,
-        user_id: int,
-        source_type: str | None = None,
-        squad: str | None = None,
         status: str | None = None,
-        page: int = 1,
-        page_size: int = 20,
-    ) -> tuple[list[dict[str, Any]], int]:
-        items: list[dict[str, Any]] = []
+        priority: str | None = None,
+        squad: str | None = None,
+        agent_id: str | None = None,
+        requires_approval: bool | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """获取 WorkItem 列表"""
+        all_items = await AgentOSService._collect_all_work_items(db)
 
-        if source_type in (None, "agent_action"):
-            action_stmt = select(PendingAgentAction).where(PendingAgentAction.user_id == user_id)
-            if status:
-                action_stmt = action_stmt.where(PendingAgentAction.status == status)
-            action_result = await db.execute(action_stmt.order_by(PendingAgentAction.created_at.desc()).limit(100))
-            items.extend(AgentOSService.normalize_agent_pending_action(row) for row in action_result.scalars().all())
-
-        if source_type in (None, "exception"):
-            exception_stmt = select(ExceptionItem)
-            if status:
-                exception_stmt = exception_stmt.where(ExceptionItem.status == status)
-            exception_result = await db.execute(exception_stmt.order_by(ExceptionItem.created_at.desc()).limit(100))
-            items.extend(AgentOSService.normalize_exception(row) for row in exception_result.scalars().all())
-
-        if source_type in (None, "notification"):
-            notification_stmt = select(Notification).where(Notification.user_id == user_id)
-            if status == "unread":
-                notification_stmt = notification_stmt.where(Notification.is_read == 0)
-            notification_result = await db.execute(notification_stmt.order_by(Notification.created_at.desc()).limit(100))
-            items.extend(AgentOSService.normalize_notification(row) for row in notification_result.scalars().all())
-
+        # 筛选
+        if status:
+            all_items = [i for i in all_items if i.status.value == status]
+        if priority:
+            all_items = [i for i in all_items if i.priority.value == priority]
         if squad:
-            items = [item for item in items if item["squad"] == squad]
+            all_items = [i for i in all_items if i.squad_id == squad]
+        if agent_id:
+            all_items = [i for i in all_items if i.agent_id == agent_id]
+        if requires_approval is not None:
+            all_items = [i for i in all_items if i.requires_approval == requires_approval]
 
-        items.sort(key=AgentOSService._sort_key, reverse=True)
-        total = len(items)
-        start = (page - 1) * page_size
-        return items[start:start + page_size], total
+        # 排序：风险优先，时间次之
+        all_items.sort(
+            key=lambda x: (_PRIORITY_SORT.get(x.priority, 0), x.created_at or datetime.min.replace(tzinfo=timezone.utc)),
+            reverse=True,
+        )
+
+        total = len(all_items)
+        paged = all_items[offset : offset + limit]
+
+        return {
+            "items": paged,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
 
     @staticmethod
-    async def get_squads(db: AsyncSession, user_id: int) -> list[dict[str, Any]]:
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        squads = [dict(squad) for squad in AGENT_SQUADS]
+    async def get_squads(db: AsyncSession) -> dict[str, Any]:
+        """获取 Agent 团队列表"""
+        all_items = await AgentOSService._collect_all_work_items(db)
+        squads = AgentOSService._build_squads(all_items)
 
-        for squad in squads:
-            agents = squad["agents"]
-            decisions = await db.scalar(
-                select(func.count()).select_from(AgentDecision).where(
-                    AgentDecision.user_id == user_id,
-                    AgentDecision.agent_id.in_(agents),
-                    AgentDecision.created_at >= seven_days_ago,
-                )
-            ) or 0
-            accepted = await db.scalar(
-                select(func.count()).select_from(AgentDecision).where(
-                    AgentDecision.user_id == user_id,
-                    AgentDecision.agent_id.in_(agents),
-                    AgentDecision.user_action == "accepted",
-                    AgentDecision.created_at >= seven_days_ago,
-                )
-            ) or 0
-            pending = await db.scalar(
-                select(func.count()).select_from(PendingAgentAction).where(
-                    PendingAgentAction.user_id == user_id,
-                    PendingAgentAction.agent_id.in_(agents),
-                    PendingAgentAction.status == "pending",
-                )
-            ) or 0
-            squad["decision_count_7d"] = int(decisions)
-            squad["pending_approvals"] = int(pending)
-            squad["risk_count"] = int(pending)
-            squad["adoption_rate"] = round(accepted / decisions, 3) if decisions else 0
-            squad["autonomy_level"] = "semi_autonomous" if pending else "suggestion"
+        pending_approvals = sum(1 for i in all_items if i.requires_approval)
+        critical_items = sum(1 for i in all_items if i.risk_level == RiskLevel.CRITICAL)
+        overview = AgentOSOverview(
+            health_score=AgentOSService._compute_health_score(all_items),
+            active_agents=len(AGENT_TO_SQUAD),
+            pending_approvals=pending_approvals,
+            critical_items=critical_items,
+        )
 
+        return {"squads": squads, "summary": overview}
+
+    @staticmethod
+    async def get_templates(db: AsyncSession) -> dict[str, Any]:
+        """获取内置模板列表"""
+        _ = db  # 当前为静态数据，保留 db 参数保持接口一致
+        templates = [AgentOSTemplate(**t) for t in TEMPLATE_CARDS]
+        return {"templates": templates}
+
+    # ── 内部方法 ───────────────────────────────────────────
+
+    @staticmethod
+    async def _collect_all_work_items(db: AsyncSession) -> list[AgentOSWorkItem]:
+        """收集所有来源的 WorkItem"""
+        items: list[AgentOSWorkItem] = []
+
+        # 异常
+        try:
+            stmt = select(ExceptionItem).order_by(ExceptionItem.created_at.desc()).limit(100)
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                items.append(AgentOSService.normalize_exception(row))
+        except Exception:
+            pass
+
+        # 通知
+        try:
+            stmt = select(Notification).order_by(Notification.created_at.desc()).limit(100)
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                items.append(AgentOSService.normalize_notification(row))
+        except Exception:
+            pass
+
+        # Agent 待执行操作
+        try:
+            from app.agent.models import AgentAction as PendingAgentAction
+
+            stmt = select(PendingAgentAction).order_by(PendingAgentAction.created_at.desc()).limit(100)
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                items.append(AgentOSService.normalize_agent_pending_action(row))
+        except Exception:
+            pass
+
+        # 上架任务
+        try:
+            from app.models import ListingTask
+
+            stmt = (
+                select(ListingTask)
+                .where(ListingTask.status.in_(["blocked", "failed", "ready"]))
+                .order_by(ListingTask.updated_at.desc().nulls_last())
+                .limit(100)
+            )
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                items.append(AgentOSService.normalize_listing_task(row))
+        except Exception:
+            pass
+
+        return items
+
+    @staticmethod
+    def _build_squads(items: list[AgentOSWorkItem]) -> list[AgentOSSquad]:
+        """从静态定义 + 动态数据构建 Squad 列表"""
+        squads: list[AgentOSSquad] = []
+        for sq in AGENT_SQUADS:
+            squad_id = sq["id"]
+            squad_items = [i for i in items if i.squad_id == squad_id]
+
+            agents = [
+                AgentOSAgent(
+                    id=aid,
+                    name=AGENT_META.get(aid, {}).get("name", aid),
+                    role=AGENT_META.get(aid, {}).get("role", ""),
+                    squad_id=squad_id,
+                    status="active",
+                    autonomy_level=AutonomyLevel.SUGGESTION,
+                    current_workload=sum(1 for i in squad_items if i.agent_id == aid),
+                    success_rate=0.85,
+                    risk_level=AgentOSService._compute_agent_risk(squad_items, aid),
+                )
+                for aid in sq["agents"]
+            ]
+
+            # 统计
+            pending_count = sum(1 for i in squad_items if i.status == WorkItemStatus.PENDING)
+            approval_count = sum(1 for i in squad_items if i.requires_approval)
+            squad_risk_levels = [i.risk_level for i in squad_items if i.risk_level]
+            squad_risk = RiskLevel.CRITICAL if any(r == RiskLevel.CRITICAL for r in squad_risk_levels) else (
+                RiskLevel.HIGH if any(r == RiskLevel.HIGH for r in squad_risk_levels) else
+                RiskLevel.MEDIUM if any(r == RiskLevel.MEDIUM for r in squad_risk_levels) else
+                RiskLevel.LOW
+            )
+
+            squads.append(AgentOSSquad(
+                id=squad_id,
+                name=sq["name"],
+                description=sq["description"],
+                domain=sq.get("domain", ""),
+                status="active",
+                autonomy_level=AutonomyLevel.SUGGESTION,
+                agents=agents,
+                active_work_items=pending_count,
+                pending_approvals=approval_count,
+                risk_level=squad_risk,
+                health_score=AgentOSService._compute_squad_health(squad_items, agents),
+            ))
         return squads
 
     @staticmethod
-    async def get_summary(db: AsyncSession, user_id: int) -> dict[str, Any]:
-        work_items, total = await AgentOSService.list_work_items(db, user_id, page=1, page_size=200)
-        pending_approvals = sum(1 for item in work_items if item["approval_required"])
-        inventory_risks = sum(1 for item in work_items if item["squad"] == "fulfillment")
-        executed = sum(1 for item in work_items if item["status"] in {"executed", "read", "resolved"})
-        return {
-            "sales_today": 0,
-            "profit_today": 0,
-            "inventory_risks": inventory_risks,
-            "pending_approvals": pending_approvals,
-            "active_work_items": total,
-            "agent_automation_rate": round(executed / total, 3) if total else 0,
-        }
+    def _build_metrics(items: list[AgentOSWorkItem]) -> list[AgentOSMetric]:
+        """构建业务指标"""
+        total = len(items)
+        pending = sum(1 for i in items if i.status == WorkItemStatus.PENDING)
+        critical = sum(1 for i in items if i.risk_level == RiskLevel.CRITICAL)
+        approval = sum(1 for i in items if i.requires_approval)
+
+        return [
+            AgentOSMetric(key="total_items", label="总任务数", value=float(total), unit="个"),
+            AgentOSMetric(key="pending_items", label="待处理", value=float(pending), unit="个"),
+            AgentOSMetric(key="critical_items", label="严重风险", value=float(critical), unit="个"),
+            AgentOSMetric(key="pending_approvals", label="待审批", value=float(approval), unit="个"),
+            AgentOSMetric(key="agent_count", label="Agent 数", value=float(len(AGENT_TO_SQUAD)), unit="个"),
+        ]
 
     @staticmethod
-    async def get_control_center(db: AsyncSession, user_id: int) -> dict[str, Any]:
-        work_items, _ = await AgentOSService.list_work_items(db, user_id, page=1, page_size=8)
-        return {
-            "summary": await AgentOSService.get_summary(db, user_id),
-            "work_items": work_items,
-            "squads": await AgentOSService.get_squads(db, user_id),
-            "templates": TEMPLATE_CARDS,
+    def _compute_health_score(items: list[AgentOSWorkItem]) -> float:
+        """计算系统健康分 (0-100)"""
+        if not items:
+            return 85.0  # 无数据时默认健康
+        critical_ratio = sum(1 for i in items if i.risk_level == RiskLevel.CRITICAL) / len(items)
+        pending_ratio = sum(1 for i in items if i.status == WorkItemStatus.PENDING) / len(items)
+        score = 100 - (critical_ratio * 50) - (pending_ratio * 20)
+        return max(0, min(100, round(score, 1)))
+
+    @staticmethod
+    def _compute_squad_health(
+        items: list[AgentOSWorkItem],
+        agents: list[AgentOSAgent],
+    ) -> float:
+        """计算小队健康分 (0-100)"""
+        if not items:
+            return 90.0
+        critical = sum(1 for i in items if i.risk_level == RiskLevel.CRITICAL)
+        high = sum(1 for i in items if i.risk_level == RiskLevel.HIGH)
+        score = 100 - (critical * 15) - (high * 5)
+        return max(0, min(100, round(score, 1)))
+
+    @staticmethod
+    def _compute_agent_risk(items: list[AgentOSWorkItem], agent_id: str) -> RiskLevel:
+        """计算 Agent 的风险等级"""
+        agent_items = [i for i in items if i.agent_id == agent_id]
+        if any(i.risk_level == RiskLevel.CRITICAL for i in agent_items):
+            return RiskLevel.CRITICAL
+        if any(i.risk_level == RiskLevel.HIGH for i in agent_items):
+            return RiskLevel.HIGH
+        if any(i.risk_level == RiskLevel.MEDIUM for i in agent_items):
+            return RiskLevel.MEDIUM
+        return RiskLevel.LOW
+
+    @staticmethod
+    def _map_action_status(status: str) -> WorkItemStatus:
+        mapping = {
+            "pending": WorkItemStatus.PENDING,
+            "proposed": WorkItemStatus.PENDING,
+            "approved": WorkItemStatus.IN_PROGRESS,
+            "confirmed": WorkItemStatus.IN_PROGRESS,
+            "executed": WorkItemStatus.COMPLETED,
+            "rejected": WorkItemStatus.CANCELLED,
+            "failed": WorkItemStatus.FAILED,
         }
+        return mapping.get(status, WorkItemStatus.PENDING)
+
+    @staticmethod
+    def _map_exception_status(status: str) -> WorkItemStatus:
+        mapping = {
+            "open": WorkItemStatus.PENDING,
+            "assigned": WorkItemStatus.IN_PROGRESS,
+            "resolved": WorkItemStatus.COMPLETED,
+            "ignored": WorkItemStatus.CANCELLED,
+        }
+        return mapping.get(status, WorkItemStatus.PENDING)
+
+    @staticmethod
+    def _map_listing_status(status: str) -> WorkItemStatus:
+        mapping = {
+            "ready": WorkItemStatus.PENDING,
+            "blocked": WorkItemStatus.BLOCKED,
+            "published": WorkItemStatus.COMPLETED,
+            "failed": WorkItemStatus.FAILED,
+            "cancelled": WorkItemStatus.CANCELLED,
+        }
+        return mapping.get(status, WorkItemStatus.PENDING)
+
+    @staticmethod
+    def _infer_agent_from_alert(alert_type: str) -> str | None:
+        mapping = {
+            "inventory_low_stock": "A5",
+            "inventory_out_of_stock": "A5",
+            "order_pending": "A5",
+            "listing_failed": "A2",
+            "settlement_pending": "A6",
+            "settlement_discrepancy": "A6",
+        }
+        return mapping.get(alert_type)
+
+    # ── Phase 2: Mutation 操作 ─────────────────────────────
+
+    @staticmethod
+    async def update_work_item_status(
+        db: AsyncSession,
+        item_id: str,
+        user_id: int,
+        new_status: str,
+    ) -> dict[str, Any]:
+        """更新 WorkItem 的底层状态"""
+        if item_id.startswith("exception:"):
+            try:
+                uid = int(item_id[len("exception:"):])
+                stmt = select(ExceptionItem).where(ExceptionItem.id == uid)
+                result = await db.execute(stmt)
+                row = result.scalar_one_or_none()
+                if not row:
+                    return {"ok": False, "error": "not_found"}
+                if new_status in ("completed", "resolved"):
+                    row.status = "resolved"
+                elif new_status == "in_progress":
+                    row.status = "assigned"
+                elif new_status == "cancelled":
+                    row.status = "ignored"
+                else:
+                    return {"ok": False, "error": f"status '{new_status}' not allowed for exceptions"}
+            except ValueError:
+                return {"ok": False, "error": "invalid_id"}
+        elif item_id.startswith("notification:"):
+            try:
+                uid = int(item_id[len("notification:"):])
+                stmt = select(Notification).where(Notification.id == uid)
+                result = await db.execute(stmt)
+                row = result.scalar_one_or_none()
+                if not row:
+                    return {"ok": False, "error": "not_found"}
+                if new_status == "completed":
+                    row.is_read = 1
+                else:
+                    row.is_read = 0
+            except ValueError:
+                return {"ok": False, "error": "invalid_id"}
+        elif item_id.startswith("agent_action:"):
+            try:
+                from app.agent.models import AgentAction as PendingAgentAction
+                uid = int(item_id[len("agent_action:"):])
+                stmt = select(PendingAgentAction).where(PendingAgentAction.id == uid)
+                result = await db.execute(stmt)
+                row = result.scalar_one_or_none()
+                if not row:
+                    return {"ok": False, "error": "not_found"}
+                mapping = {
+                    "completed": "executed",
+                    "in_progress": "confirmed",
+                    "cancelled": "rejected",
+                    "pending": "pending",
+                }
+                row.status = mapping.get(new_status, new_status)
+            except (ImportError, ValueError):
+                return {"ok": False, "error": "invalid_id"}
+        elif item_id.startswith("listing_task:"):
+            try:
+                uid = int(item_id[len("listing_task:"):])
+                stmt = select(type("LT", (object,), {"id": int}))
+                stmt = select(ExceptionItem).where(ExceptionItem.id == -1)  # fallback
+                return {"ok": False, "error": "listing_task update not yet supported"}
+            except ValueError:
+                return {"ok": False, "error": "invalid_id"}
+        else:
+            return {"ok": False, "error": f"unknown source_type in '{item_id}'"}
+
+        return {"ok": True, "new_status": new_status}
+
+    @staticmethod
+    async def approve_work_item(
+        db: AsyncSession,
+        item_id: str,
+        user_id: int,
+        comment: str | None = None,
+    ) -> dict[str, Any]:
+        """审批通过一个 WorkItem，触发底层动作执行"""
+        if item_id.startswith("agent_action:"):
+            try:
+                from app.agent.models import AgentAction as PendingAgentAction
+                uid = int(item_id[len("agent_action:"):])
+                stmt = select(PendingAgentAction).where(PendingAgentAction.id == uid)
+                result = await db.execute(stmt)
+                row = result.scalar_one_or_none()
+                if not row:
+                    return {"ok": False, "error": "not_found"}
+                row.status = "confirmed"
+            except (ImportError, ValueError):
+                return {"ok": False, "error": "invalid_id"}
+        else:
+            # 非 AgentAction 类型通过 status update 处理即可
+            return await AgentOSService.update_work_item_status(db, item_id, user_id, "in_progress")
+
+        return {"ok": True, "action": "approved", "comment": comment}
+
+    @staticmethod
+    async def reject_work_item(
+        db: AsyncSession,
+        item_id: str,
+        user_id: int,
+        comment: str | None = None,
+    ) -> dict[str, Any]:
+        """拒绝一个 WorkItem"""
+        if item_id.startswith("agent_action:"):
+            try:
+                from app.agent.models import AgentAction as PendingAgentAction
+                uid = int(item_id[len("agent_action:"):])
+                stmt = select(PendingAgentAction).where(PendingAgentAction.id == uid)
+                result = await db.execute(stmt)
+                row = result.scalar_one_or_none()
+                if not row:
+                    return {"ok": False, "error": "not_found"}
+                row.status = "rejected"
+            except (ImportError, ValueError):
+                return {"ok": False, "error": "invalid_id"}
+        else:
+            return await AgentOSService.update_work_item_status(db, item_id, user_id, "cancelled")
+
+        return {"ok": True, "action": "rejected", "comment": comment}
+
+
+# ─── 排序权重 ──────────────────────────────────────────────
+
+_PRIORITY_SORT = {
+    WorkItemPriority.CRITICAL: 4,
+    WorkItemPriority.HIGH: 3,
+    WorkItemPriority.MEDIUM: 2,
+    WorkItemPriority.LOW: 1,
+}

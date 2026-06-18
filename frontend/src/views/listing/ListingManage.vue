@@ -94,3 +94,87 @@ async function handleRepublish(pid: number, platId: number) {
 
 onMounted(fetchData)
 </script>
+
+<style scoped>
+/* 页面容器 */
+:deep(.n-page-header) {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-neutral-200, #e5e5e5);
+  margin-bottom: 16px;
+}
+
+/* 卡片样式 */
+:deep(.n-card) {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+:deep(.n-card:hover) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 卡片标题 */
+:deep(.n-card-header__main) {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-neutral-900, #171717);
+}
+
+/* 表格样式 */
+:deep(.n-data-table) {
+  border-radius: 6px;
+}
+
+:deep(.n-data-table-thead) {
+  background: var(--color-neutral-50, #f9fafb);
+}
+
+:deep(.n-data-table-tr:hover) {
+  background: var(--color-neutral-50, #f9fafb);
+}
+
+/* 标签样式 */
+:deep(.n-tag--small) {
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+/* 表单样式 */
+:deep(.n-form--inline) {
+  align-items: flex-end;
+}
+
+/* 输入框 */
+:deep(.n-input-number) {
+  border-radius: 4px;
+}
+
+/* 按钮样式 */
+:deep(.n-button--small-type) {
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+/* 空状态 */
+:deep(.n-empty) {
+  padding: 40px 0;
+}
+
+/* 全局发布概览卡片 */
+:deep(.n-card:first-of-type) {
+  background: linear-gradient(135deg, #f9fafb 0%, #f0f9ff 100%);
+  border: 1px solid var(--color-neutral-200, #e5e5e5);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  :deep(.n-form--inline) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  :deep(.n-data-table) {
+    font-size: 13px;
+  }
+}
+</style>

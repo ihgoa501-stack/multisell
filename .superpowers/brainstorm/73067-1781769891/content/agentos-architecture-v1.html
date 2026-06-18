@@ -1,0 +1,71 @@
+<h2>设计第 1 部分：AgentOS 信息架构</h2>
+<p class="subtitle">第一版不是把所有业务都做深，而是先建立统一 AgentOS 外壳，让所有业务域以后都能按同一种方式接入。</p>
+
+<div class="mockup">
+  <div class="mockup-header">LingMirror AgentOS = 统一任务流 + 三个 Agent 小队 + 人类控制层</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div class="placeholder" style="min-height:170px;">
+        <strong>增长小队</strong><br><br>
+        A1 选品扫描<br>
+        A2 Listing 优化<br>
+        A3 广告调价<br><br>
+        目标：提升曝光、转化、上架质量
+      </div>
+      <div class="placeholder" style="min-height:170px;">
+        <strong>履约小队</strong><br><br>
+        A5 库存预警<br>
+        G2 仓储海关<br>
+        订单/物流 Agent<br><br>
+        目标：保障库存、订单、物流闭环
+      </div>
+      <div class="placeholder" style="min-height:170px;">
+        <strong>风控小队</strong><br><br>
+        A6 利润监控<br>
+        A7 合规检测<br>
+        G3 折扣风控<br><br>
+        目标：守住利润、合规、平台风险
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:12px;align-items:stretch;">
+      <div class="placeholder">
+        <strong>业务数据层</strong><br>
+        商品 / SKU / 库存 / 订单 / 物流 / 平台费 / 结算 / 审计
+      </div>
+      <div class="placeholder">
+        <strong>AgentOS 统一骨架</strong><br>
+        观察 → 建议 → 审批 → 执行 → 复盘<br>
+        任务队列 / 决策日志 / 操作审批 / 规则记忆 / 熵管理
+      </div>
+      <div class="placeholder">
+        <strong>人类控制层</strong><br>
+        设目标 / 看结论 / 批准高风险动作 / 调整策略 / 处理异常
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>核心判断</h3>
+  <p>第一版先把所有 Agent 的输出统一为“任务”和“决策”，进入同一个总控台。不同业务域可以先深浅不同：商品、库存、订单、利润走真实数据；广告、客服、合规可以先接入为 Agent 小队占位和异常/建议卡片，后续逐步补深。</p>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>这样做的好处</h4>
+    <ul>
+      <li>产品一开始就是全业务 AgentOS，不是单点工具。</li>
+      <li>工程上仍然可控，先共用任务流和审批流。</li>
+      <li>现有 Agent 决策、规则、Action、熵管理都能复用。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>需要克制的地方</h4>
+    <ul>
+      <li>第一版不要承诺每个小队都能自动执行完整业务。</li>
+      <li>先保证总控台能统一承接任务、风险和审批。</li>
+      <li>深度闭环优先给商品、库存、订单、利润这些已有数据域。</li>
+    </ul>
+  </div>
+</div>

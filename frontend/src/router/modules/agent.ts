@@ -15,7 +15,7 @@ export const routes: RouteRecordRaw[] = [
   },
   {
     path: 'agents/dashboard',
-    name: 'Dashboard',
+    name: 'AgentDashboard',
     component: () => import('@/views/agent/Dashboard.vue'),
     meta: { title: '运营驾驶舱', icon: 'analytics', menu: true, perm: 'agent:view' },
   },

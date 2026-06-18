@@ -23,6 +23,7 @@ from app.agent.registry import AgentRegistry
 from app.agent.service import AgentService
 from app.agent.pipeline import evaluate_chains
 from app.agent.models import AgentDecision
+from app.agent.evolution_service import EvolutionService
 from app.agent.entropy.service import EntropyService
 from app.models import Sku, Inventory, Product, Order
 
@@ -387,8 +388,16 @@ class AgentScheduler:
 
             for ctx in contexts:
                 try:
+                    # 从 DB 加载该用户在该决策点的阶段配置
+                    stage_override = {}
+                    config = await EvolutionService.get_or_create_config(
+                        db, self._system_user_id, agent_id, dp,
+                    )
+                    stage_override[dp] = config.current_stage
+
                     agent = agent_cls(
                         user_id=self._system_user_id,
+                        stage_override=stage_override,
                     )
                     result = await AgentService.execute_decision(
                         db, agent, dp, ctx, dry_run=False,

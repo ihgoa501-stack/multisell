@@ -16,22 +16,24 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("product", sa.Column("product_length_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("product", sa.Column("product_width_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("product", sa.Column("product_height_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("product", sa.Column("product_weight_kg", sa.Numeric(10, 2), nullable=True))
-    op.add_column("product", sa.Column("package_length_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("product", sa.Column("package_width_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("product", sa.Column("package_height_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("product", sa.Column("package_weight_kg", sa.Numeric(10, 2), nullable=True))
-    op.add_column(
-        "product",
-        sa.Column("cargo_type", sa.String(length=50), nullable=True, server_default="normal"),
-    )
-    op.add_column("sku", sa.Column("sku_length_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("sku", sa.Column("sku_width_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("sku", sa.Column("sku_height_cm", sa.Numeric(10, 2), nullable=True))
-    op.add_column("sku", sa.Column("sku_weight_kg", sa.Numeric(10, 2), nullable=True))
+    conn = op.get_bind()
+    columns = [
+        ("product", "product_length_cm", "NUMERIC(10, 2)"),
+        ("product", "product_width_cm", "NUMERIC(10, 2)"),
+        ("product", "product_height_cm", "NUMERIC(10, 2)"),
+        ("product", "product_weight_kg", "NUMERIC(10, 2)"),
+        ("product", "package_length_cm", "NUMERIC(10, 2)"),
+        ("product", "package_width_cm", "NUMERIC(10, 2)"),
+        ("product", "package_height_cm", "NUMERIC(10, 2)"),
+        ("product", "package_weight_kg", "NUMERIC(10, 2)"),
+        ("product", "cargo_type", "VARCHAR(50) DEFAULT 'normal'"),
+        ("sku", "sku_length_cm", "NUMERIC(10, 2)"),
+        ("sku", "sku_width_cm", "NUMERIC(10, 2)"),
+        ("sku", "sku_height_cm", "NUMERIC(10, 2)"),
+        ("sku", "sku_weight_kg", "NUMERIC(10, 2)"),
+    ]
+    for table, col, dtype in columns:
+        conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {dtype}"))
 
 
 def downgrade() -> None:

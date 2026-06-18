@@ -1,0 +1,94 @@
+<h2>设计第 4 部分：核心数据流与 Agent 协作流程</h2>
+<p class="subtitle">这是 AgentOS 能不能成立的关键：所有 Agent 都必须走同一条可审计、可审批、可复盘的工作流。</p>
+
+<div class="mockup">
+  <div class="mockup-header">统一数据流：业务事件 → Agent 决策 → 工作项 → 审批/执行 → 复盘学习</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+      <div class="placeholder" style="min-height:160px;">
+        <strong>1. 业务事件</strong><br><br>
+        商品资料变化<br>
+        库存低水位<br>
+        订单异常<br>
+        结算差异<br>
+        利润下降<br>
+        平台规则变化
+      </div>
+      <div class="placeholder" style="min-height:160px;">
+        <strong>2. Agent 观察</strong><br><br>
+        读取上下文<br>
+        应用规则<br>
+        计算指标<br>
+        判断风险<br>
+        生成解释
+      </div>
+      <div class="placeholder" style="min-height:160px;">
+        <strong>3. 任务/决策</strong><br><br>
+        AgentDecision<br>
+        AgentAction<br>
+        ExceptionItem<br>
+        Notification<br>
+        WorkItem 统一视图
+      </div>
+      <div class="placeholder" style="min-height:160px;">
+        <strong>4. 人机回环</strong><br><br>
+        批准<br>
+        修改<br>
+        拒绝<br>
+        分派<br>
+        触发红线时强制审批
+      </div>
+      <div class="placeholder" style="min-height:160px;">
+        <strong>5. 执行与复盘</strong><br><br>
+        写业务表<br>
+        写操作日志<br>
+        更新采纳率<br>
+        计算信任评分<br>
+        触发晋升/降级
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div class="placeholder">
+        <strong>增长链路示例</strong><br>
+        新商品导入 → A2 生成 Listing → A6 校验利润 → G3 校验折扣 → 人审批上架
+      </div>
+      <div class="placeholder">
+        <strong>履约链路示例</strong><br>
+        库存预警 → A5 生成补货建议 → G2 校验仓储/物流 → 高金额审批 → 创建采购任务
+      </div>
+      <div class="placeholder">
+        <strong>风控链路示例</strong><br>
+        订单/结算异常 → A6 识别利润黑洞 → A7/G3 检查合规和折扣 → 生成处理建议
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>统一 WorkItem 概念</h3>
+  <p>第一版不一定要立刻新增一张大表，但前端和产品语义必须有统一的 <strong>WorkItem 工作项</strong>：它可以来自 AgentAction、ExceptionItem、Notification、AgentDecision。用户在任务中心看到的是统一任务，而不是四种技术对象。</p>
+  <p>每个 WorkItem 至少包含：来源模块、业务对象、Agent/小队、风险等级、建议动作、状态、审批要求、审计链接。</p>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>必须统一的规则</h4>
+    <ul>
+      <li>所有 Agent 输出都要落到决策日志。</li>
+      <li>所有可执行动作都要经过风险判定。</li>
+      <li>高风险动作必须进入审批队列。</li>
+      <li>所有执行结果都要写操作日志。</li>
+      <li>用户反馈要反哺信任评分和自治等级。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>第一版先不强求</h4>
+    <ul>
+      <li>不要求所有业务事件实时流式触发。</li>
+      <li>不要求所有 Agent 都能自动写回平台。</li>
+      <li>不要求复杂 DAG 可视化编辑。</li>
+      <li>不要求 IM 双向审批闭环。</li>
+    </ul>
+  </div>
+</div>

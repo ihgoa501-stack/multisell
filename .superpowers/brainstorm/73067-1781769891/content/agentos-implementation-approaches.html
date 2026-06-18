@@ -1,0 +1,80 @@
+<h2>全业务 AgentOS：三种落地方式</h2>
+<p class="subtitle">你选择 C：全业务 AgentOS。现在要决定第一版怎么落地，避免变成很多页面和概念堆叠。</p>
+
+<div class="cards">
+  <div class="card" data-choice="bigbang" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 大而全一次铺开</div>
+        <div class="mockup-body">
+          <div class="mock-nav">广告 / 客服 / 合规 / 供应链 / 财务 / 订单 / 商品 全部并行</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;">
+            <div class="placeholder">广告 Agent</div>
+            <div class="placeholder">客服 Agent</div>
+            <div class="placeholder">合规 Agent</div>
+            <div class="placeholder">供应链 Agent</div>
+            <div class="placeholder">财务 Agent</div>
+            <div class="placeholder">订单 Agent</div>
+            <div class="placeholder">商品 Agent</div>
+            <div class="placeholder">老板 Agent</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Big Bang</h3>
+      <p>视觉上最震撼，但数据和执行闭环同时爆炸。容易做成空壳总控台，不建议第一版采用。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="shell" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. AgentOS 外壳先行</div>
+        <div class="mockup-body">
+          <div class="mock-nav">统一任务流：观察 → 建议 → 审批 → 执行 → 复盘</div>
+          <div style="display:grid;grid-template-columns:1fr .8fr;gap:10px;margin-top:10px;">
+            <div class="placeholder" style="min-height:150px;">
+              统一任务中心<br>
+              商品 / 库存 / 订单 / 利润先接入<br>
+              广告 / 客服 / 合规以占位域接入
+            </div>
+            <div class="placeholder" style="min-height:150px;">
+              Agent 自动驾驶状态<br>
+              阶段 / 置信度 / 待审批 / 异常
+            </div>
+          </div>
+          <div class="placeholder" style="margin-top:10px;">统一规则、权限、审计、记忆、熵管理</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 外壳 + 首批领域</h3>
+      <p>先做真正的 AgentOS 骨架，再把业务域逐步接入。既能体现全业务方向，也能第一版可用。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="squads" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. 领域小队并行</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+            <div class="placeholder" style="min-height:150px;">增长小队<br>选品 / Listing / 广告</div>
+            <div class="placeholder" style="min-height:150px;">履约小队<br>库存 / 订单 / 物流</div>
+            <div class="placeholder" style="min-height:150px;">风控小队<br>利润 / 折扣 / 合规</div>
+          </div>
+          <div class="placeholder" style="margin-top:10px;">G1 总指挥跨小队调度</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Agent 小队制</h3>
+      <p>组织感最强，适合中长期产品形态。第一版可以作为信息架构，但需要 B 的统一任务流托底。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p><strong>推荐：</strong>B 为第一版落地方式，C 作为页面组织语言。也就是“AgentOS 外壳 + 三个 Agent 小队 + 首批真实业务接入”。</p>
+</div>

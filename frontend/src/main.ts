@@ -5,6 +5,7 @@ import App from './App.vue'
 
 // 全局样式
 import './assets/main.css'
+import './styles/fonts.css'
 
 const app = createApp(App)
 app.use(createPinia())

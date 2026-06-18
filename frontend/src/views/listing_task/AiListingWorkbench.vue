@@ -102,7 +102,7 @@
               <div class="flex items-center justify-between mb-1">
                 <label class="text-[13px] font-medium text-[var(--text-primary)]">{{ field.label }} <span v-if="field.required" class="text-red-500">*</span></label>
               </div>
-              <n-input v-model:value="(form.extra[field.key] as string)" :placeholder="field.placeholder || `输入${field.label}`" size="small" />
+              <n-input v-model:value="form.extra[field.key]" :placeholder="field.placeholder || `输入${field.label}`" size="small" />
             </div>
 
             <!-- 数字 -->
@@ -113,7 +113,7 @@
                 </div>
                 <n-input-number
                   :value="field.count ? (form.extra[field.key] || [])[idx] : form.extra[field.key]"
-                  @update:value="(val: any) => { field.count ? (() => { const arr = form.extra[field.key] || []; arr[idx] = val; form.extra[field.key] = [...arr] })() : (form.extra[field.key] = val) }"
+                  @update:value="updateNum(field.key, field.count ? idx : null, $event)"
                   :placeholder="field.placeholder || '0'"
                   :min="0"
                   size="small"
@@ -128,7 +128,7 @@
                 <label class="text-[13px] font-medium text-[var(--text-primary)]">{{ field.label }} <span v-if="field.required" class="text-red-500">*</span></label>
               </div>
               <n-select
-                v-model:value="(form.extra[field.key] as string)"
+                v-model:value="form.extra[field.key]"
                 :options="field.options || []"
                 :placeholder="field.placeholder || `选择${field.label}`"
                 size="small"
@@ -158,12 +158,12 @@
                 <label class="text-[13px] font-medium text-[var(--text-primary)]">{{ field.label }}</label>
               </div>
               <div class="space-y-1.5">
-                <div v-for="(kv, ki) in (form.extra[field.key] as {k:string,v:string}[])" :key="ki" class="flex gap-1.5 items-center">
+                <div v-for="(kv, ki) in getKVArr(field.key)" :key="ki" class="flex gap-1.5 items-center">
                   <n-input v-model:value="kv.k" placeholder="属性名" size="small" style="width:120px" />
                   <n-input v-model:value="kv.v" placeholder="属性值" size="small" class="flex-1" />
-                  <n-button size="tiny" quaternary @click="(form.extra[field.key] as any[]).splice(ki, 1)">×</n-button>
+                  <n-button size="tiny" quaternary @click="getAnyArr(field.key).splice(ki, 1)">×</n-button>
                 </div>
-                <n-button size="tiny" secondary @click="(form.extra[field.key] as any[]).push({k:'',v:''})">+ 添加</n-button>
+                <n-button size="tiny" secondary @click="getAnyArr(field.key).push({k:'',v:''})">+ 添加</n-button>
               </div>
             </div>
           </template>
@@ -618,6 +618,33 @@ watch([selectedProductId, selectedPlatformId], () => {
 function ensureExtraArray(key: string, count: number) {
   if (!Array.isArray(form.value.extra[key])) {
     form.value.extra[key] = Array(count).fill('')
+  }
+}
+
+// Template-safe helpers to avoid `as` casts in templates (vue-tsc limitation)
+function getStr(key: string): string {
+  return (form.value.extra[key] ?? '') as string
+}
+
+function getStrArr(key: string): string[] {
+  return (form.value.extra[key] ?? []) as string[]
+}
+
+function getKVArr(key: string): { k: string; v: string }[] {
+  return (form.value.extra[key] ?? []) as { k: string; v: string }[]
+}
+
+function getAnyArr(key: string): any[] {
+  return (form.value.extra[key] ?? []) as any[]
+}
+
+function updateNum(key: string, idx: number | null, val: number | null) {
+  if (idx !== null) {
+    const arr = getAnyArr(key)
+    arr[idx] = val
+    form.value.extra[key] = [...arr]
+  } else {
+    form.value.extra[key] = val
   }
 }
 

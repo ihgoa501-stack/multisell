@@ -27,7 +27,13 @@ class ListingAdapter(Protocol):
     ) -> PublishResult:
         """发布商品到平台并返回平台侧同步结果。"""
 
-    async def sync_status(self, *, listing_id: int) -> str:
+    async def sync_status(
+        self,
+        *,
+        listing_id: int,
+        platform: Platform,
+        platform_product_id: str,
+    ) -> str:
         """同步平台发布状态。"""
 
     async def validate_credentials(self, *, platform: Platform) -> bool:

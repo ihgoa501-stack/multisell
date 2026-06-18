@@ -1,0 +1,82 @@
+<h2>第一版 Agent 团队系统的中心应该是什么？</h2>
+<p class="subtitle">这一步先定产品重心。后续的信息架构、页面布局、后端编排都会跟着这个选择走。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 上架前经营决策作战室</div>
+        <div class="mockup-body">
+          <div class="mock-nav">目标：评估 20 个商品是否适合上架 Ozon 俄罗斯站</div>
+          <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:12px;margin-top:12px;">
+            <div class="placeholder" style="min-height:160px;">
+              商品批次队列<br>
+              资料完整性 / 运费 / 平台费 / 利润 / 风险
+            </div>
+            <div class="placeholder" style="min-height:160px;">
+              Agent 团队协作流<br>
+              A2 → G2 → A6 → G3 → G1
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="mock-button">批准上架</button>
+            <button class="mock-button">补资料</button>
+            <button class="mock-button">拒绝</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 作战室优先</h3>
+      <p>围绕一个明确业务目标，让多个 Agent 协作完成商品上架前决策。最适合当前 MVP 和现有代码基础。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. 全公司运营中枢</div>
+        <div class="mockup-body">
+          <div class="mock-nav">今日经营总览：订单 / 库存 / 利润 / 客服 / 广告 / 合规</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;">
+            <div class="placeholder">销售趋势</div>
+            <div class="placeholder">库存风险</div>
+            <div class="placeholder">利润预警</div>
+            <div class="placeholder">客服异常</div>
+            <div class="placeholder">广告花费</div>
+            <div class="placeholder">合规风险</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 总控台优先</h3>
+      <p>看起来最完整，但第一版范围会很大，需要订单、广告、客服、平台数据都足够稳定。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. Agent 队伍管理台</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:180px 1fr;gap:12px;">
+            <div class="mock-sidebar">G1 总指挥<br>A1 选品<br>A2 Listing<br>A5 库存<br>A6 利润<br>G3 风控</div>
+            <div class="placeholder" style="min-height:170px;">
+              单个 Agent 配置<br>
+              能力 / 规则 / 记忆 / 阶段 / 决策日志
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 队伍管理优先</h3>
+      <p>适合调试和展示 Agent 能力，但容易变成“AI 助手列表升级版”，业务闭环不够强。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p><strong>我的初步推荐：</strong>A。它能把现有商品、物流、平台费、利润、上架任务、Agent 决策、审批动作串成一个可验收闭环。B 和 C 可以作为 A 的二级页面或后续阶段。</p>
+</div>

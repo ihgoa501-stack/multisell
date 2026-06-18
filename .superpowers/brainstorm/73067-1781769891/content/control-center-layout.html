@@ -1,0 +1,73 @@
+<h2>总控台第一屏应该服务谁的核心动作？</h2>
+<p class="subtitle">你已经选择“总控台优先”。现在需要定第一屏的重心，否则页面会变成一堆指标卡片。</p>
+
+<div class="cards">
+  <div class="card" data-choice="boss" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 老板经营看板</div>
+        <div class="mockup-body">
+          <div class="mock-nav">今日结论：收入、利润、现金占用、风险等级</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;">
+            <div class="placeholder">销售额</div>
+            <div class="placeholder">毛利率</div>
+            <div class="placeholder">库存资金</div>
+            <div class="placeholder">待审批</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:10px;margin-top:10px;">
+            <div class="placeholder" style="min-height:150px;">经营趋势 / 平台利润对比</div>
+            <div class="placeholder" style="min-height:150px;">Agent 给老板的 5 条建议</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 老板看盘</h3>
+      <p>适合你每天快速判断公司健康度：哪里赚钱、哪里亏钱、哪些决策要拍板。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="ops" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. 运营任务指挥台</div>
+        <div class="mockup-body">
+          <div class="mock-nav">今日任务：补资料、处理异常、批准上架、调整价格</div>
+          <div style="display:grid;grid-template-columns:220px 1fr 260px;gap:10px;margin-top:10px;">
+            <div class="mock-sidebar">待办队列<br>商品<br>订单<br>库存<br>客服<br>合规</div>
+            <div class="placeholder" style="min-height:170px;">任务详情 + Agent 建议 + 业务上下文</div>
+            <div class="placeholder" style="min-height:170px;">一键动作<br>批准 / 修改 / 分派 / 忽略</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 运营处理任务</h3>
+      <p>适合把系统变成每天工作的入口：Agent 把问题推给人，人只处理关键任务。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="agent" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. Agent 自动驾驶舱</div>
+        <div class="mockup-body">
+          <div class="mock-nav">Agent 团队运行状态：观察、建议、半自动、全自动</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+            <div class="placeholder" style="min-height:160px;">Agent 拓扑<br>G1 调度 A1-A7/G2/G3</div>
+            <div class="placeholder" style="min-height:160px;">自动化进度<br>执行中 / 待审批 / 失败 / 学习中</div>
+          </div>
+          <div class="placeholder" style="margin-top:10px;">规则健康 / 置信度 / 熵管理</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Agent 自动驾驶</h3>
+      <p>适合突出 AI 原生感：你看到的是 Agent 团队如何工作、哪里需要你接管。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p><strong>建议：</strong>第一版可以采用 B 作为主工作区，A 做顶部经营摘要，C 做右侧或二级页。这样既有老板视角，也能让系统每天可用。</p>
+</div>
