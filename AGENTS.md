@@ -89,3 +89,9 @@ All models in single file: `backend/app/models.py` (~1146 lines, v2.0.0).
 - **`.kilo/worktrees/`**: External tool-managed worktrees — do not touch or clean up.
 
 For full architecture details, see `CLAUDE.md`.
+
+## Documentation
+
+- **[`docs/INDEX.md`](docs/INDEX.md)** — Master index of all 54 documents, categorized
+- **[`docs/TIMELINE.md`](docs/TIMELINE.md)** — Development timeline, Gantt chart, P0/P1/P2 task board
+- **[`docs/features/`](docs/features/)** — Feature requests (add new ones using [`TEMPLATE.md`](docs/features/TEMPLATE.md))

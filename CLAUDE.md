@@ -156,3 +156,9 @@ All models in single `backend/app/models.py` (1146 lines). Key entities: Product
 - **Frontend**: TypeScript strict mode. Naive UI components. API clients via `@/api` central export or `apiModules` from auto-merged `modules/*.ts`
 - **Agent tests**: Phase-based test files (`test_agent_phase1.py` through `test_agent_phase6.py`) — phase 1=base, 2=G3/A5/A6, 5=entropy, 6=A1-A4/A7/G2
 - **Settings**: pydantic-settings in `backend/app/config.py` reads from env vars with defaults. Key overrides: `DATABASE_URL`, `AUTH_ENABLED`, `DEBUG`, `ENCRYPTION_KEY`. Version `2.0.0`.
+
+## Documentation
+
+- [`docs/INDEX.md`](docs/INDEX.md) — Master document index (54 docs, categorized)
+- [`docs/TIMELINE.md`](docs/TIMELINE.md) — Development timeline + P0/P1/P2 task board
+- [`docs/features/`](docs/features/) — Feature requests (use [`TEMPLATE.md`](docs/features/TEMPLATE.md))
