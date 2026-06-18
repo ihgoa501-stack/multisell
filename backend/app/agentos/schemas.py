@@ -1,61 +1,252 @@
+"""AgentOS 数据模型 — 聚合层对前端暴露的数据契约"""
+
 from datetime import datetime
-from typing import Any
+from enum import Enum
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 
-class BusinessObjectVO(BaseModel):
-    type: str | None = None
-    id: str | None = None
-    label: str | None = None
+class AutonomyLevel(str, Enum):
+    """自治等级（沿用现有 Hermes Agent 阶段）"""
+    OBSERVATION = "OBSERVATION"
+    SUGGESTION = "SUGGESTION"
+    SEMI_AUTONOMOUS = "SEMI_AUTONOMOUS"
+    FULL_AUTONOMOUS = "FULL_AUTONOMOUS"
+
+    @property
+    def label(self) -> str:
+        return _AUTONOMY_LABELS[self]
+
+    @property
+    def level(self) -> int:
+        return _AUTONOMY_LEVELS[self]
 
 
-class WorkItemVO(BaseModel):
+_AUTONOMY_LABELS = {
+    AutonomyLevel.OBSERVATION: "观察",
+    AutonomyLevel.SUGGESTION: "建议",
+    AutonomyLevel.SEMI_AUTONOMOUS: "半自主",
+    AutonomyLevel.FULL_AUTONOMOUS: "全自主",
+}
+
+_AUTONOMY_LEVELS = {
+    AutonomyLevel.OBSERVATION: 0,
+    AutonomyLevel.SUGGESTION: 1,
+    AutonomyLevel.SEMI_AUTONOMOUS: 2,
+    AutonomyLevel.FULL_AUTONOMOUS: 3,
+}
+
+
+class WorkItemPriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+    @property
+    def label(self) -> str:
+        return _PRIORITY_LABELS[self]
+
+
+_PRIORITY_LABELS = {
+    WorkItemPriority.LOW: "低",
+    WorkItemPriority.MEDIUM: "中",
+    WorkItemPriority.HIGH: "高",
+    WorkItemPriority.CRITICAL: "紧急",
+}
+
+
+class WorkItemStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
+
+    @property
+    def label(self) -> str:
+        return _STATUS_LABELS[self]
+
+
+_STATUS_LABELS = {
+    WorkItemStatus.PENDING: "待处理",
+    WorkItemStatus.IN_PROGRESS: "处理中",
+    WorkItemStatus.COMPLETED: "已完成",
+    WorkItemStatus.FAILED: "失败",
+    WorkItemStatus.BLOCKED: "已阻塞",
+    WorkItemStatus.CANCELLED: "已取消",
+}
+
+
+class RiskLevel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+    @property
+    def label(self) -> str:
+        return _RISK_LABELS[self]
+
+
+_RISK_LABELS = {
+    RiskLevel.LOW: "低风险",
+    RiskLevel.MEDIUM: "中风险",
+    RiskLevel.HIGH: "高风险",
+    RiskLevel.CRITICAL: "严重",
+}
+
+
+# ─── 核心数据模型 ─────────────────────────────────────────────
+
+
+class AgentOSAgent(BaseModel):
+    """Agent 团队成员"""
+    id: str
+    name: str
+    role: str
+    squad_id: str
+    status: str = "idle"
+    autonomy_level: AutonomyLevel = AutonomyLevel.SUGGESTION
+    current_workload: int = 0
+    success_rate: float = 0.0
+    last_activity_at: Optional[datetime] = None
+    risk_level: RiskLevel = RiskLevel.LOW
+
+
+class AgentOSSquad(BaseModel):
+    """Agent 小队"""
+    id: str
+    name: str
+    description: str = ""
+    domain: str = ""
+    status: str = "active"
+    autonomy_level: AutonomyLevel = AutonomyLevel.SUGGESTION
+    agents: list[AgentOSAgent] = Field(default_factory=list)
+    active_work_items: int = 0
+    pending_approvals: int = 0
+    risk_level: RiskLevel = RiskLevel.LOW
+    health_score: float = 0.0
+
+
+class AgentOSWorkItem(BaseModel):
+    """统一任务模型"""
     id: str
     source_type: str
     source_id: str
-    source_module: str | None = None
-    business_object: BusinessObjectVO = Field(default_factory=BusinessObjectVO)
-    squad: str
-    agent_id: str | None = None
     title: str
-    summary: str | None = None
-    recommendation: str | None = None
-    risk_level: str
-    approval_required: bool = False
-    status: str
-    action_type: str | None = None
-    context: dict[str, Any] = Field(default_factory=dict)
-    audit_link: str | None = None
-    created_at: datetime | None = None
+    description: Optional[str] = None
+    priority: WorkItemPriority = WorkItemPriority.MEDIUM
+    status: WorkItemStatus = WorkItemStatus.PENDING
+    risk_level: RiskLevel = RiskLevel.LOW
+    agent_id: Optional[str] = None
+    agent_name: Optional[str] = None
+    squad_id: Optional[str] = None
+    squad_name: Optional[str] = None
+    autonomy_level: AutonomyLevel = AutonomyLevel.SUGGESTION
+    requires_approval: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    due_at: Optional[datetime] = None
+    action_url: Optional[str] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class ControlCenterSummaryVO(BaseModel):
-    sales_today: float = 0
-    profit_today: float = 0
-    inventory_risks: int = 0
+class AgentOSOverview(BaseModel):
+    """全局概览"""
+    health_score: float = 0.0
+    active_agents: int = 0
     pending_approvals: int = 0
-    active_work_items: int = 0
-    agent_automation_rate: float = 0
+    critical_items: int = 0
 
 
-class SquadVO(BaseModel):
-    id: str
-    name: str
-    description: str
-    agents: list[str]
-    decision_count_7d: int = 0
-    pending_approvals: int = 0
-    risk_count: int = 0
-    adoption_rate: float = 0
-    autonomy_level: str = "suggestion"
+class AgentOSMetric(BaseModel):
+    """业务指标"""
+    key: str
+    label: str
+    value: float = 0.0
+    trend: Optional[str] = None  # up / down / stable
+    unit: str = ""
 
 
-class TemplateCardVO(BaseModel):
+class AgentOSTemplate(BaseModel):
+    """内置模板"""
     id: str
     title: str
-    squad: str
-    description: str
-    mode: str
-    route: str
+    description: str = ""
+    squad: str = ""
+    mode: str = "Agent"
+    route: str = ""
     phase: str = "phase_1"
+
+
+# ─── 响应模型 ─────────────────────────────────────────────
+
+
+class ControlCenterResponse(BaseModel):
+    """总控台响应"""
+    overview: AgentOSOverview = Field(default_factory=AgentOSOverview)
+    squads: list[AgentOSSquad] = Field(default_factory=list)
+    priority_work_items: list[AgentOSWorkItem] = Field(default_factory=list)
+    metrics: list[AgentOSMetric] = Field(default_factory=list)
+    recent_activity: list[AgentOSWorkItem] = Field(default_factory=list)
+
+
+class WorkItemsResponse(BaseModel):
+    """任务中心响应"""
+    items: list[AgentOSWorkItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+class SquadsResponse(BaseModel):
+    """团队页响应"""
+    squads: list[AgentOSSquad] = Field(default_factory=list)
+    summary: Optional[AgentOSOverview] = None
+
+
+class TemplatesResponse(BaseModel):
+    """模板响应"""
+    templates: list[AgentOSTemplate] = Field(default_factory=list)
+
+
+# ─── 请求模型（Phase 2 写入）─────────────────────────────────────
+
+
+class WorkItemStatusUpdate(BaseModel):
+    """更新 WorkItem 状态请求"""
+    status: WorkItemStatus
+    comment: Optional[str] = None
+
+
+class WorkItemApproval(BaseModel):
+    """审批 WorkItem 请求"""
+    action: Literal["approve", "reject"] = "approve"
+    comment: Optional[str] = None
+
+
+# ─── Phase 3 模型 ─────────────────────────────────────────
+
+
+class AgentOSOperationLogVO(BaseModel):
+    """操作审计日志"""
+    id: int
+    user_id: int
+    item_id: str
+    action: str
+    source_type: Optional[str] = None
+    previous_status: Optional[str] = None
+    new_status: Optional[str] = None
+    comment: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class OperationLogQuery(BaseModel):
+    item_id: Optional[str] = None
+    action: Optional[str] = None
+    source_type: Optional[str] = None
+    limit: int = 20
+    offset: int = 0
