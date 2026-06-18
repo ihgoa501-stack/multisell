@@ -603,3 +603,93 @@ class TestWorkItemApproval:
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert data["data"]["ok"] is True
+
+
+# ─── Phase 3: Autonomy Upgrade Tests ──────────────────────
+
+
+def test_suggest_upgrade_high_success_rate():
+    """成功率 > 90% 应建议升级"""
+    from app.agentos.autonomy_service import suggest_upgrade
+
+    result = suggest_upgrade(
+        agent_id="A5",
+        current_level="SUGGESTION",
+        success_rate=0.95,
+        adoption_rate=0.85,
+        recent_risk_levels=["low", "low", "medium"],
+        total_decisions=50,
+        recent_errors=1,
+    )
+    assert result["suggested"] is True
+    assert result["target_level"] == "SEMI_AUTONOMOUS"
+    assert result["confidence"] >= 0.7
+
+
+def test_suggest_upgrade_low_adoption():
+    """采纳率 < 30% 不应建议升级"""
+    from app.agentos.autonomy_service import suggest_upgrade
+
+    result = suggest_upgrade(
+        agent_id="A3",
+        current_level="SUGGESTION",
+        success_rate=0.85,
+        adoption_rate=0.20,
+        recent_risk_levels=["medium", "high"],
+        total_decisions=20,
+        recent_errors=3,
+    )
+    assert result["suggested"] is False
+
+
+def test_suggest_downgrade_high_errors():
+    """错误率高应建议降级"""
+    from app.agentos.autonomy_service import suggest_upgrade
+
+    result = suggest_upgrade(
+        agent_id="A6",
+        current_level="SEMI_AUTONOMOUS",
+        success_rate=0.50,
+        adoption_rate=0.40,
+        recent_risk_levels=["critical", "high", "high"],
+        total_decisions=10,
+        recent_errors=5,
+    )
+    # 当前为 SEMI_AUTONOMOUS 且错误率高 → 建议降级
+    assert result["suggested"] is True
+    assert result["target_level"] == "SUGGESTION"
+    assert result["direction"] == "downgrade"
+
+
+def test_suggest_upgrade_full_autonomous_blocked():
+    """FULL_AUTONOMOUS 不应再建议升级"""
+    from app.agentos.autonomy_service import suggest_upgrade
+
+    result = suggest_upgrade(
+        agent_id="G1",
+        current_level="FULL_AUTONOMOUS",
+        success_rate=0.99,
+        adoption_rate=0.95,
+        recent_risk_levels=["low"],
+        total_decisions=200,
+        recent_errors=0,
+    )
+    assert result["suggested"] is False
+    assert result["reason"] == "already_at_max"
+
+
+def test_suggest_upgrade_insufficient_data():
+    """决策量 < 10 条时不建议升级"""
+    from app.agentos.autonomy_service import suggest_upgrade
+
+    result = suggest_upgrade(
+        agent_id="A1",
+        current_level="OBSERVATION",
+        success_rate=1.0,
+        adoption_rate=1.0,
+        recent_risk_levels=["low"],
+        total_decisions=3,
+        recent_errors=0,
+    )
+    assert result["suggested"] is False
+    assert "insufficient" in result.get("reason", "").lower()

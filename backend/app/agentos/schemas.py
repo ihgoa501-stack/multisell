@@ -250,3 +250,16 @@ class OperationLogQuery(BaseModel):
     source_type: Optional[str] = None
     limit: int = 20
     offset: int = 0
+
+
+class AutonomyCandidateVO(BaseModel):
+    """自治等级升级候选"""
+    agent_id: str
+    agent_name: str
+    squad_id: str
+    current_level: str
+    suggested: bool
+    direction: Optional[str] = None  # upgrade / downgrade / None
+    target_level: Optional[str] = None
+    confidence: float = 0
+    reason: str = ""
