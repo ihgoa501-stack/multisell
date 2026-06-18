@@ -693,3 +693,95 @@ def test_suggest_upgrade_insufficient_data():
     )
     assert result["suggested"] is False
     assert "insufficient" in result.get("reason", "").lower()
+
+
+# ─── Phase 4: 自治等级真实写入测试 ──────────────────────
+
+
+@pytest.mark.usefixtures("prepare_db")
+class TestAutonomyLevelWrite:
+    """升级/降级 API 真实写入 AgentEvolutionConfig 测试"""
+
+    async def test_execute_upgrade_writes_stage(self, async_client):
+        """执行升级后 DB 中 current_stage 应更新"""
+        resp = await async_client.post(
+            "/api/agentos/agents/A5/upgrade?target_level=SEMI_AUTONOMOUS",
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == 200
+        assert data["data"]["ok"] is True
+
+        # 验证 DB
+        from app.database import async_session_factory
+        from app.agent.models import AgentEvolutionConfig
+
+        async with async_session_factory() as db:
+            stmt = select(AgentEvolutionConfig).where(
+                AgentEvolutionConfig.agent_id == "A5",
+            )
+            result = await db.execute(stmt)
+            config = result.scalar_one_or_none()
+            assert config is not None
+            assert config.current_stage == "semi_autonomous"
+
+    async def test_execute_downgrade_writes_stage(self, async_client):
+        """执行降级后 DB 中 current_stage 应更新"""
+        resp = await async_client.post(
+            "/api/agentos/agents/A5/downgrade?target_level=OBSERVATION",
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == 200
+        assert data["data"]["ok"] is True
+
+        # 验证 DB
+        from app.database import async_session_factory
+        from app.agent.models import AgentEvolutionConfig
+
+        async with async_session_factory() as db:
+            stmt = select(AgentEvolutionConfig).where(
+                AgentEvolutionConfig.agent_id == "A5",
+            )
+            result = await db.execute(stmt)
+            config = result.scalar_one_or_none()
+            assert config is not None
+            assert config.current_stage == "observation"
+
+
+# ─── Phase 4 Finale: Agent Detail 测试 ──────────────────────
+
+
+@pytest.mark.usefixtures("prepare_db")
+class TestAgentDetailAPI:
+    """Agent 详情接口测试"""
+
+    async def test_agent_detail_returns_basic_info(self, async_client):
+        """返回 Agent 基本信息"""
+        resp = await async_client.get("/api/agentos/agents/A5/detail")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == 200
+        detail = data["data"]
+        assert detail["agent"]["id"] == "A5"
+        assert detail["agent"]["name"] == "库存管家"
+        assert detail["squad_name"] == "履约小队"
+        assert "current_work_items" in detail
+        assert "recent_operations" in detail
+
+    async def test_agent_detail_unknown_agent(self, async_client):
+        """不存在的 Agent 返回基础结构"""
+        resp = await async_client.get("/api/agentos/agents/XX99/detail")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == 200
+        detail = data["data"]
+        assert detail["agent"]["id"] == "XX99"
+
+    async def test_agent_detail_has_stats(self, async_client):
+        """Agent 详情返回决策统计"""
+        resp = await async_client.get("/api/agentos/agents/A5/detail")
+        assert resp.status_code == 200
+        detail = resp.json()["data"]
+        assert "decision_count_7d" in detail
+        assert "adoption_rate_7d" in detail
