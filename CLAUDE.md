@@ -18,12 +18,13 @@ docker compose up -d db                       # DB only for local dev
 
 # Backend
 cd backend && uvicorn app.main:app --reload --port 8001   # Dev server
-cd backend && python3 -m pytest -q                        # All tests
-cd backend && python3 -m pytest tests/test_foo.py -q      # Single test file
-cd backend && python3 -m pytest tests/test_foo.py::test_bar -q  # Single test
-cd backend && alembic upgrade head                         # Apply migrations
-cd backend && alembic revision --autogenerate -m "desc"   # New migration
-cd backend && python seed.py                               # Seed demo data
+cd backend && PYTHONPATH="$PWD" .venv/bin/py.test -q                        # All tests
+cd backend && PYTHONPATH="$PWD" .venv/bin/py.test tests/test_foo.py -q      # Single test file
+cd backend && PYTHONPATH="$PWD" .venv/bin/py.test tests/test_foo.py::test_bar -q  # Single test
+cd backend && .venv/bin/alembic upgrade head                         # Apply migrations
+cd backend && .venv/bin/alembic revision --autogenerate -m "desc"   # New migration
+cd backend && PYTHONPATH="$PWD" python seed.py                               # Seed demo data
+cd backend && PYTHONPATH="$PWD" python seed_agent_demo.py                     # Seed agent demo
 cd backend && python scripts/db_reset.py                  # Reset DB
 
 # Frontend
@@ -114,23 +115,29 @@ Each agent defines `agent_id`, `decision_points` (named capabilities), and `DEFA
 
 `backend/app/decision/` implements pre-listing profitability decisions. `PreListingDecisionService.calculate()` chains: SKU lookup → shipping fee calculation (`shipping` module) → platform fee calculation (`platform_fee` module) → payment/other fees → profit margin → recommendation (approve/reject/needs_data). The compare endpoint runs the same logic across multiple platforms.
 
-### Newer modules (not yet in AGENTS.md table)
+### Full module list (31 modules)
 
 | Module | Role |
 |--------|------|
-| `decision` | Pre-listing profitability analysis, multi-platform comparison |
-| `shipping` | Logistics suppliers, channels, regions, quote rules, fee calculator |
-| `allocation` | Inventory/SKU allocation rules across warehouses |
-| `finance` | Financial tracking (profit, costs, settlements) |
-| `import_batch` | Batch import jobs with status tracking |
-| `order_import` | Platform order import (Excel/file-based) |
-| `platform_fee` | Per-platform fee rules (commission tiers by category/country) |
-| `settlement` | Settlement reconciliation tables |
-| `agent_actions` | Persisted agent action records (pending/executed/rejected) |
+| `core` `category` `brand` `sku` `price` `inventory` `supplier` | Product CRUD, category tree, SKU cartesian gen |
+| `platform` `listing` `listing_task` | Platform API keys, publish adapter registry, multi-platform task queue |
+| `agent` `agent_actions` | Hermes multi-agent system + action audit lifecycle |
+| `auth` `rbac` | JWT auth + RBAC permission system |
+| `operation_log` | Mutation audit trail |
+| `dashboard` `search` | Overview stats, global search |
+| `common` | Shared Result/PageResult schemas, upload, utilities |
+| `shipping` `platform_fee` `finance` `order` `settlement` | Order-to-settlement pipeline (quotes, fees, P&L) |
+| `decision` `allocation` | Pre-listing profitability analysis, inventory allocation |
+| `import_batch` `order_import` | Batch import jobs, order ingestion (CSV/JSON) |
+| `image_gen` | AI product image generation |
+| `notification` | System notifications and alerts |
+| `exceptions` | Exception workbench |
+| `platform_integrations` | Platform connection management |
+| `activity` | Cross-module activity feed |
 
 ### Database
 
-All models in single `backend/app/models.py` (932 lines). Key entities: Product, Sku, Category, Brand, Price, Inventory, Supplier, Platform, Listing, Order, Warehouse, AllocationRule, ShippingQuote, ImportBatch, PlatformFeeRule, Settlement, plus all agent-related tables (AgentDecision, AgentAction, PersonalRule, RuleMarkChange, SpcControlLimit, etc.).
+All models in single `backend/app/models.py` (1146 lines). Key entities: Product, Sku, Category, Brand, Price, Inventory, Supplier, Platform, ProductListing, ListingTask, Order, Warehouse, AllocationRule, ShippingQuoteRule, ImportBatch, PlatformFeeRule, Settlement, plus agent tables (AgentAction, AgentDecision, AgentEpisode, PersonalRule, SpcControlLimit, etc.) and new modules (ProductImageGen, PromptTemplate, Notification, AlertRule, FinanceAccount, etc.).
 
 ### Quickstart: creating a new module
 
@@ -148,4 +155,4 @@ All models in single `backend/app/models.py` (932 lines). Key entities: Product,
 - **Migrations**: Alembic with autogenerate. Run `alembic upgrade head` after pulling
 - **Frontend**: TypeScript strict mode. Naive UI components. API clients via `@/api` central export or `apiModules` from auto-merged `modules/*.ts`
 - **Agent tests**: Phase-based test files (`test_agent_phase1.py` through `test_agent_phase6.py`) — phase 1=base, 2=G3/A5/A6, 5=entropy, 6=A1-A4/A7/G2
-- **Settings**: pydantic-settings in `backend/app/config.py` reads from env vars with defaults. Key overrides: `DATABASE_URL`, `AUTH_ENABLED`, `DEBUG`, `ENCRYPTION_KEY`
+- **Settings**: pydantic-settings in `backend/app/config.py` reads from env vars with defaults. Key overrides: `DATABASE_URL`, `AUTH_ENABLED`, `DEBUG`, `ENCRYPTION_KEY`. Version `2.0.0`.
