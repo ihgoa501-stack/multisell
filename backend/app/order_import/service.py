@@ -230,6 +230,7 @@ class OrderImportService:
                 row.get("Order ID") or       # Shopee
                 row.get("Номер") or          # WB (Russian)
                 row.get("订单号") or          # 中文
+                row.get("platform_order_no") or
                 row.get("order_no") or
                 ""
             )
@@ -239,22 +240,22 @@ class OrderImportService:
             if platform_order_no not in orders_map:
                 orders_map[platform_order_no] = OrderImportRowData(
                     platform_order_no=platform_order_no,
-                    order_date=row.get("Дата") or row.get("Date") or row.get("日期"),
+                    order_date=row.get("Дата") or row.get("Date") or row.get("日期") or row.get("paid_at"),
                     status="paid",
-                    recipient_name=row.get("Получатель") or row.get("Recipient") or row.get("收件人"),
-                    recipient_phone=row.get("Телефон") or row.get("Phone") or row.get("电话"),
-                    shipping_address=row.get("Адрес") or row.get("Address") or row.get("地址"),
-                    country=row.get("Страна") or row.get("Country") or row.get("国家"),
+                    recipient_name=row.get("Получатель") or row.get("Recipient") or row.get("收件人") or row.get("recipient_name"),
+                    recipient_phone=row.get("Телефон") or row.get("Phone") or row.get("电话") or row.get("recipient_phone"),
+                    shipping_address=row.get("Адрес") or row.get("Address") or row.get("地址") or row.get("shipping_address"),
+                    country=row.get("Страна") or row.get("Country") or row.get("国家") or row.get("country_code"),
                     total_amount=float(row.get("Сумма") or row.get("Amount") or row.get("金额") or 0),
-                    shipping_fee=float(row.get("Доставка") or row.get("Shipping") or row.get("运费") or 0),
+                    shipping_fee=float(row.get("Доставка") or row.get("Shipping") or row.get("运费") or row.get("shipping_fee") or 0),
                     platform_fee=float(row.get("Комиссия") or row.get("Fee") or row.get("平台费") or 0),
                 )
 
             # 商品明细
             sku_code = row.get("SKU") or row.get("Артикул") or row.get("sku_code") or ""
             product_name = row.get("Товар") or row.get("Product Name") or row.get("商品名称") or ""
-            quantity = int(row.get("Количество") or row.get("Quantity") or row.get("数量") or 1)
-            unit_price = float(row.get("Цена") or row.get("Price") or row.get("单价") or 0)
+            quantity = int(row.get("Количество") or row.get("Quantity") or row.get("数量") or row.get("quantity") or 1)
+            unit_price = float(row.get("Цена") or row.get("Price") or row.get("单价") or row.get("unit_price") or 0)
 
             orders_map[platform_order_no].items.append({
                 "sku_code": sku_code,

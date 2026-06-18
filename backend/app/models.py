@@ -328,29 +328,6 @@ class Platform(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
-class PlatformFeeRule(Base):
-    """平台费用规则"""
-    __tablename__ = "platform_fee_rule"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=False, comment="平台ID")
-    site_code = Column(String(10), comment="站点/国家代码，空表示平台全局")
-    category_id = Column(BigInteger, ForeignKey("category.id"), comment="本地类目ID，空表示站点/平台通用")
-    commission_pct = Column(Numeric(8, 4), default=0, nullable=False, comment="平台佣金比例")
-    payment_fee_pct = Column(Numeric(8, 4), default=0, nullable=False, comment="支付手续费比例")
-    fixed_fee = Column(Numeric(10, 2), default=0, nullable=False, comment="固定交易费")
-    advertising_pct = Column(Numeric(8, 4), default=0, nullable=False, comment="广告/营销预留比例")
-    other_reserve_fee = Column(Numeric(10, 2), default=0, nullable=False, comment="其他固定预留费用")
-    priority = Column(Integer, default=0, nullable=False, comment="优先级，值小优先")
-    status = Column(SmallInteger, default=1, nullable=False, comment="状态: 0-禁用, 1-启用")
-    remark = Column(Text, comment="备注")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
-
-    platform = relationship("Platform", lazy="selectin")
-    category = relationship("Category", lazy="selectin")
-
-
 class ProductListing(Base):
     """商品在各平台的发布记录"""
     __tablename__ = "product_listing"
@@ -1093,42 +1070,6 @@ class AlertRule(Base):
     enabled = Column(SmallInteger, default=1, comment="是否启用: 0-禁用, 1-启用")
     config = Column(JSON, comment="配置 (如阈值、检查间隔等)")
     description = Column(String(500), comment="说明")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
-
-
-class ExceptionItem(Base):
-    """异常工作台条目"""
-    __tablename__ = "exception_item"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    source_module = Column(String(50), nullable=False, comment="来源模块: listing/shipping/settlement/finance")
-    source_type = Column(String(50), comment="来源类型")
-    source_id = Column(BigInteger, comment="来源ID")
-    severity = Column(String(20), default="medium", comment="严重程度: low/medium/high/critical")
-    status = Column(String(20), default="open", comment="状态: open/assigned/resolved/ignored")
-    title = Column(String(300), nullable=False, comment="异常标题")
-    description = Column(Text, comment="异常描述")
-    recommended_action = Column(String(500), comment="建议操作")
-    assigned_to = Column(String(100), comment="分配给")
-    resolved_at = Column(DateTime(timezone=True), comment="解决时间")
-    resolved_by = Column(String(100), comment="解决人")
-    note = Column(Text, comment="备注")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
-
-
-class ListingTask(Base):
-    """多平台上架任务"""
-    __tablename__ = "listing_task"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    name = Column(String(200), nullable=False, comment="任务名称")
-    status = Column(String(50), default="pending", comment="任务状态: pending/in_progress/completed/partial_failed/all_failed")
-    total_count = Column(Integer, default=0, comment="总条目数")
-    success_count = Column(Integer, default=0, comment="成功数")
-    failed_count = Column(Integer, default=0, comment="失败数")
-    created_by = Column(BigInteger, ForeignKey("user.id"), comment="创建人")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 

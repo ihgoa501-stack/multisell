@@ -451,13 +451,13 @@ async def ensure_platform_fee_rules(session: AsyncSession, summary: DemoDataSumm
         (platforms.get("Wildberries"), None, None, Decimal("15"), Decimal("1"), Decimal("0")),
     ]
 
-    for pid, cat_id, site, comm, pay, fixed in rules:
+    for pid, cat_id, country_code, fee_rate_pct, fixed_amount, _ in rules:
         if pid is None:
             continue
         existing = await session.execute(
             select(PlatformFeeRule).where(
                 PlatformFeeRule.platform_id == pid,
-                PlatformFeeRule.site_code == site,
+                PlatformFeeRule.country_code == country_code,
             )
         )
         if existing.scalar_one_or_none():
@@ -465,12 +465,12 @@ async def ensure_platform_fee_rules(session: AsyncSession, summary: DemoDataSumm
         rule = PlatformFeeRule(
             platform_id=pid,
             category_id=cat_id,
-            site_code=site,
-            commission_pct=comm,
-            payment_fee_pct=pay,
-            fixed_fee=fixed,
+            country_code=country_code,
+            fee_type="commission",
+            fee_rate_pct=fee_rate_pct,
+            fixed_amount=fixed_amount,
             priority=10,
-            status=1,
+            status="active",
             remark="Demo rule",
         )
         session.add(rule)
