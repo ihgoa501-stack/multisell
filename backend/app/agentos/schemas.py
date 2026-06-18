@@ -263,3 +263,13 @@ class AutonomyCandidateVO(BaseModel):
     target_level: Optional[str] = None
     confidence: float = 0
     reason: str = ""
+
+
+class AgentDetailResponse(BaseModel):
+    """Agent 详情响应"""
+    agent: AgentOSAgent
+    squad_name: str = ""
+    current_work_items: list[AgentOSWorkItem] = Field(default_factory=list)
+    recent_operations: list[AgentOSOperationLogVO] = Field(default_factory=list)
+    decision_count_7d: int = 0
+    adoption_rate_7d: float = 0.0

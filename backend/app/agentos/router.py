@@ -194,3 +194,17 @@ async def downgrade_agent_level(
         db, current_user.id, agent_id, target_level,
     )
     return Result.ok(result)
+
+
+# ── Phase 4 Finale: Agent Detail ──────────────────────────
+
+
+@router.get("/agentos/agents/{agent_id}/detail", summary="Agent 详情")
+async def get_agent_detail(
+    agent_id: str,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:view")),
+):
+    """返回单个 Agent 的详情、WorkItem 列表和操作记录"""
+    data = await AgentOSService.get_agent_detail(db, current_user.id, agent_id)
+    return Result.ok(data)

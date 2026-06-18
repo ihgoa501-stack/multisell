@@ -426,14 +426,16 @@ class AgentOSService:
         pending_approvals = sum(1 for i in all_items if i.requires_approval)
         overview.pending_approvals = pending_approvals
         overview.critical_items = critical_count
-        overview.active_agents = len(AGENT_TO_SQUAD)
-        overview.health_score = AgentOSService._compute_health_score(all_items)
+        overview.active_agents = await AgentOSService._count_active_agents(db)
+        decision_adoption = await AgentOSService._get_decision_adoption(db)
+        overview.health_score = AgentOSService._compute_health_score(all_items, decision_adoption)
 
         # 构建团队数据
         squads = AgentOSService._build_squads(all_items)
 
-        # 指标
-        metrics = AgentOSService._build_metrics(all_items)
+        # 指标（含实时财务摘要）
+        finance = await AgentOSService._get_finance_summary(db)
+        metrics = AgentOSService._build_metrics(all_items, finance)
 
         # 优先任务（高风险 + 需审批）
         priority_items = [i for i in all_items if i.risk_level in {RiskLevel.HIGH, RiskLevel.CRITICAL} or i.requires_approval][:10]
@@ -503,9 +505,10 @@ class AgentOSService:
 
         pending_approvals = sum(1 for i in all_items if i.requires_approval)
         critical_items = sum(1 for i in all_items if i.risk_level == RiskLevel.CRITICAL)
+        adoption_rate = await AgentOSService._get_decision_adoption(db)
         overview = AgentOSOverview(
-            health_score=AgentOSService._compute_health_score(all_items),
-            active_agents=len(AGENT_TO_SQUAD),
+            health_score=AgentOSService._compute_health_score(all_items, adoption_rate),
+            active_agents=await AgentOSService._count_active_agents(db),
             pending_approvals=pending_approvals,
             critical_items=critical_items,
         )
@@ -622,14 +625,48 @@ class AgentOSService:
         return squads
 
     @staticmethod
-    def _build_metrics(items: list[AgentOSWorkItem]) -> list[AgentOSMetric]:
+    async def _get_finance_summary(db: AsyncSession) -> dict[str, float]:
+        """获取今日财务摘要"""
+        result = {"sales_today": 0, "profit_today": 0}
+        try:
+            from app.models import FinanceLedgerEntry
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+            # 今日收入 (revenue 类型)
+            rev = await db.scalar(
+                select(sa_func.coalesce(sa_func.sum(FinanceLedgerEntry.amount), 0))
+                .where(
+                    FinanceLedgerEntry.entry_type == "revenue",
+                    FinanceLedgerEntry.created_at >= today_start,
+                )
+            )
+            result["sales_today"] = float(rev or 0)
+
+            # 今日利润 (所有条目加总)
+            profit = await db.scalar(
+                select(sa_func.coalesce(sa_func.sum(FinanceLedgerEntry.amount), 0))
+                .where(FinanceLedgerEntry.created_at >= today_start)
+            )
+            result["profit_today"] = float(profit or 0)
+        except Exception:
+            pass
+        return result
+
+    @staticmethod
+    def _build_metrics(
+        items: list[AgentOSWorkItem],
+        finance: dict[str, float] | None = None,
+    ) -> list[AgentOSMetric]:
         """构建业务指标"""
+        finance = finance or {}
         total = len(items)
         pending = sum(1 for i in items if i.status == WorkItemStatus.PENDING)
         critical = sum(1 for i in items if i.risk_level == RiskLevel.CRITICAL)
         approval = sum(1 for i in items if i.requires_approval)
 
         return [
+            AgentOSMetric(key="sales_today", label="今日销售", value=finance.get("sales_today", 0), unit="元"),
+            AgentOSMetric(key="profit_today", label="今日利润", value=finance.get("profit_today", 0), unit="元"),
             AgentOSMetric(key="total_items", label="总任务数", value=float(total), unit="个"),
             AgentOSMetric(key="pending_items", label="待处理", value=float(pending), unit="个"),
             AgentOSMetric(key="critical_items", label="严重风险", value=float(critical), unit="个"),
@@ -638,13 +675,52 @@ class AgentOSService:
         ]
 
     @staticmethod
-    def _compute_health_score(items: list[AgentOSWorkItem]) -> float:
+    async def _count_active_agents(db: AsyncSession) -> int:
+        """统计最近 7 天有活动的 Agent 数量"""
+        try:
+            from app.agent.models import AgentDecision
+            seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            result = await db.execute(
+                select(sa_func.count(sa_func.distinct(AgentDecision.agent_id)))
+                .where(AgentDecision.created_at >= seven_days_ago)
+            )
+            count = result.scalar() or 0
+            return max(count, len(AGENT_TO_SQUAD) if count == 0 else int(count))
+        except Exception:
+            return len(AGENT_TO_SQUAD)
+
+    @staticmethod
+    async def _get_decision_adoption(db: AsyncSession) -> float:
+        """获取最近 7 天决策采纳率"""
+        try:
+            from app.agent.models import AgentDecision
+            seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            total = await db.scalar(
+                select(sa_func.count()).select_from(AgentDecision)
+                .where(AgentDecision.created_at >= seven_days_ago)
+            ) or 0
+            if not total:
+                return 0
+            accepted = await db.scalar(
+                select(sa_func.count()).select_from(AgentDecision)
+                .where(AgentDecision.created_at >= seven_days_ago,
+                      AgentDecision.user_action == "accepted")
+            ) or 0
+            return accepted / total
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _compute_health_score(items: list[AgentOSWorkItem], adoption_rate: float = 0.0) -> float:
         """计算系统健康分 (0-100)"""
         if not items:
             return 85.0  # 无数据时默认健康
         critical_ratio = sum(1 for i in items if i.risk_level == RiskLevel.CRITICAL) / len(items)
         pending_ratio = sum(1 for i in items if i.status == WorkItemStatus.PENDING) / len(items)
-        score = 100 - (critical_ratio * 50) - (pending_ratio * 20)
+        base = 100 - (critical_ratio * 50) - (pending_ratio * 20)
+        # 采纳率 bonus：最高 +10 分
+        adoption_bonus = adoption_rate * 10
+        score = base + adoption_bonus
         return max(0, min(100, round(score, 1)))
 
     @staticmethod
@@ -832,6 +908,128 @@ class AgentOSService:
             })
         return result
 
+    # ── Phase 4 Finale: Agent Detail ──────────────────────────
+
+    @staticmethod
+    async def get_agent_detail(
+        db: AsyncSession,
+        user_id: int,
+        agent_id: str,
+    ) -> dict[str, Any]:
+        """获取单个 Agent 的详情聚合数据"""
+        meta = AGENT_META.get(agent_id, {})
+        squad_id = AGENT_TO_SQUAD.get(agent_id, "governance")
+
+        # 构建 AgentOSAgent
+        agent = AgentOSAgent(
+            id=agent_id,
+            name=meta.get("name", agent_id),
+            role=meta.get("role", ""),
+            squad_id=squad_id,
+            status="active",
+            autonomy_level=AutonomyLevel.SUGGESTION,
+        )
+
+        # 查询该 Agent 的 WorkItem
+        all_items = await AgentOSService._collect_all_work_items(db)
+        agent_items = [i for i in all_items if i.agent_id == agent_id]
+
+        # 查询操作日志
+        operations = []
+        try:
+            ops_result = await AgentOSService.get_operations(
+                db, limit=20, offset=0,
+            )
+            op_records = ops_result.get("records", [])
+            from app.agentos.schemas import AgentOSOperationLogVO
+            for op in op_records:
+                if isinstance(op, AgentOSOperationLogVO) and agent_id in op.item_id:
+                    operations.append(op)
+        except Exception:
+            pass
+
+        # 决策统计
+        decision_count = 0
+        adoption_rate = 0.0
+        try:
+            from app.agent.models import AgentDecision
+            seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            total = await db.scalar(
+                select(sa_func.count()).select_from(AgentDecision)
+                .where(
+                    AgentDecision.agent_id == agent_id,
+                    AgentDecision.created_at >= seven_days_ago,
+                )
+            ) or 0
+            accepted = await db.scalar(
+                select(sa_func.count()).select_from(AgentDecision)
+                .where(
+                    AgentDecision.agent_id == agent_id,
+                    AgentDecision.user_action == "accepted",
+                    AgentDecision.created_at >= seven_days_ago,
+                )
+            ) or 0
+            decision_count = int(total)
+            adoption_rate = round(accepted / total, 3) if total else 0
+        except Exception:
+            pass
+
+        return {
+            "agent": agent,
+            "squad_name": SQUAD_TO_NAME.get(squad_id, squad_id),
+            "current_work_items": agent_items[:20],
+            "recent_operations": operations[:20],
+            "decision_count_7d": decision_count,
+            "adoption_rate_7d": adoption_rate,
+        }
+
+    @staticmethod
+    @staticmethod
+    def _map_autonomy_level(level: str) -> str:
+        """将 AutonomyLevel 枚举值映射为 DB 存储的小写值"""
+        mapping = {
+            "OBSERVATION": "observation",
+            "SUGGESTION": "suggestion",
+            "SEMI_AUTONOMOUS": "semi_autonomous",
+            "FULL_AUTONOMOUS": "full_autonomous",
+        }
+        return mapping.get(level, level.lower())
+
+    @staticmethod
+    async def _update_agent_stage(
+        db: AsyncSession,
+        user_id: int,
+        agent_id: str,
+        target_level: str,
+    ) -> bool:
+        """更新 AgentEvolutionConfig 的 current_stage"""
+        try:
+            from app.agent.models import AgentEvolutionConfig
+
+            db_stage = AgentOSService._map_autonomy_level(target_level)
+            # 查找已有配置，不存在则创建
+            stmt = select(AgentEvolutionConfig).where(
+                AgentEvolutionConfig.user_id == user_id,
+                AgentEvolutionConfig.agent_id == agent_id,
+            )
+            result = await db.execute(stmt)
+            config = result.scalar_one_or_none()
+
+            if config:
+                config.current_stage = db_stage
+            else:
+                config = AgentEvolutionConfig(
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    decision_point="default",
+                    current_stage=db_stage,
+                    stage_updated_by="manual",
+                )
+                db.add(config)
+            return True
+        except Exception:
+            return False
+
     @staticmethod
     async def execute_upgrade(
         db: AsyncSession,
@@ -839,14 +1037,14 @@ class AgentOSService:
         agent_id: str,
         target_level: str,
     ) -> dict[str, Any]:
-        """执行自治等级升级（记录到 operation_log）"""
-        # Phase 3 仅记录升级操作，不修改 Agent 模型（需要真实的 Agent 等级字段支持）
+        """执行自治等级升级（更新 Agent 模型 + 记录操作日志）"""
+        updated = await AgentOSService._update_agent_stage(db, user_id, agent_id, target_level)
         await AgentOSService._write_operation_log(
             db, user_id, f"agent:{agent_id}", "autonomy_upgrade",
             previous_status=None, new_status=target_level,
             comment=f"自治等级升级至 {target_level}",
         )
-        return {"ok": True, "agent_id": agent_id, "new_level": target_level}
+        return {"ok": updated, "agent_id": agent_id, "new_level": target_level}
 
     @staticmethod
     async def execute_downgrade(
@@ -855,13 +1053,14 @@ class AgentOSService:
         agent_id: str,
         target_level: str,
     ) -> dict[str, Any]:
-        """执行自治等级降级"""
+        """执行自治等级降级（更新 Agent 模型 + 记录操作日志）"""
+        updated = await AgentOSService._update_agent_stage(db, user_id, agent_id, target_level)
         await AgentOSService._write_operation_log(
             db, user_id, f"agent:{agent_id}", "autonomy_downgrade",
             previous_status=None, new_status=target_level,
             comment=f"自治等级降级至 {target_level}",
         )
-        return {"ok": True, "agent_id": agent_id, "new_level": target_level}
+        return {"ok": updated, "agent_id": agent_id, "new_level": target_level}
 
     @staticmethod
     async def get_operations(
