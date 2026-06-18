@@ -163,6 +163,59 @@ export function rejectWorkItem(itemId: string, payload: WorkItemApprovalPayload)
   return http.post(`/agentos/work-items/${itemId}/reject`, payload)
 }
 
+// ── Phase 3: Operation Log ───────────────────────────────
+
+export interface AgentOSOperationLog {
+  id: number
+  user_id: number
+  item_id: string
+  action: string
+  source_type: string | null
+  previous_status: string | null
+  new_status: string | null
+  comment: string | null
+  created_at: string | null
+}
+
+export interface AutonomyCandidate {
+  agent_id: string
+  agent_name: string
+  squad_id: string
+  squad_name: string
+  current_level: string
+  suggested: boolean
+  direction: string | null
+  target_level: string | null
+  confidence: number
+  reason: string
+}
+
+export function getAgentOSOperations(params?: {
+  item_id?: string
+  action?: string
+  source_type?: string
+  limit?: number
+  offset?: number
+}) {
+  return http.get('/agentos/operations', { params })
+}
+
+export function getAgentOSUpgradeCandidates() {
+  return http.get('/agentos/agents/upgrade-candidates')
+}
+
+export function upgradeAgentLevel(agentId: string, targetLevel: string) {
+  return http.post(`/agentos/agents/${agentId}/upgrade`, null, {
+    params: { target_level: targetLevel },
+  })
+}
+
+export function downgradeAgentLevel(agentId: string, targetLevel: string) {
+  return http.post(`/agentos/agents/${agentId}/downgrade`, null, {
+    params: { target_level: targetLevel },
+  })
+}
+
 // ─── 兼容对象式导出（用于 apiModules 合并） ───────────────
 
 export const agentosApi = {
@@ -173,4 +226,8 @@ export const agentosApi = {
   updateWorkItemStatus,
   approveWorkItem,
   rejectWorkItem,
+  getAgentOSOperations,
+  getAgentOSUpgradeCandidates,
+  upgradeAgentLevel,
+  downgradeAgentLevel,
 }

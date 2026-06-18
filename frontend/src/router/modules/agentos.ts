@@ -45,6 +45,17 @@ export const routes: RouteRecordRaw[] = [
           perm: 'agentos:view',
         },
       },
+      {
+        path: 'autonomy',
+        name: 'AgentOSAutonomy',
+        component: () => import('@/views/agentos/AutonomyManagement.vue'),
+        meta: {
+          title: '自治管理',
+          icon: 'shield',
+          menu: true,
+          perm: 'agentos:view',
+        },
+      },
     ],
   },
 ]
