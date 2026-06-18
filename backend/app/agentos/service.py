@@ -209,3 +209,113 @@ class AgentOSService:
             "audit_link": row.link_url or "/notifications",
             "created_at": AgentOSService._iso(row.created_at),
         }
+
+    @staticmethod
+    def _sort_key(item: dict[str, Any]) -> datetime:
+        value = item.get("created_at")
+        if isinstance(value, datetime):
+            return value
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    async def list_work_items(
+        db: AsyncSession,
+        user_id: int,
+        source_type: str | None = None,
+        squad: str | None = None,
+        status: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        items: list[dict[str, Any]] = []
+
+        if source_type in (None, "agent_action"):
+            action_stmt = select(PendingAgentAction).where(PendingAgentAction.user_id == user_id)
+            if status:
+                action_stmt = action_stmt.where(PendingAgentAction.status == status)
+            action_result = await db.execute(action_stmt.order_by(PendingAgentAction.created_at.desc()).limit(100))
+            items.extend(AgentOSService.normalize_agent_pending_action(row) for row in action_result.scalars().all())
+
+        if source_type in (None, "exception"):
+            exception_stmt = select(ExceptionItem)
+            if status:
+                exception_stmt = exception_stmt.where(ExceptionItem.status == status)
+            exception_result = await db.execute(exception_stmt.order_by(ExceptionItem.created_at.desc()).limit(100))
+            items.extend(AgentOSService.normalize_exception(row) for row in exception_result.scalars().all())
+
+        if source_type in (None, "notification"):
+            notification_stmt = select(Notification).where(Notification.user_id == user_id)
+            if status == "unread":
+                notification_stmt = notification_stmt.where(Notification.is_read == 0)
+            notification_result = await db.execute(notification_stmt.order_by(Notification.created_at.desc()).limit(100))
+            items.extend(AgentOSService.normalize_notification(row) for row in notification_result.scalars().all())
+
+        if squad:
+            items = [item for item in items if item["squad"] == squad]
+
+        items.sort(key=AgentOSService._sort_key, reverse=True)
+        total = len(items)
+        start = (page - 1) * page_size
+        return items[start:start + page_size], total
+
+    @staticmethod
+    async def get_squads(db: AsyncSession, user_id: int) -> list[dict[str, Any]]:
+        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        squads = [dict(squad) for squad in AGENT_SQUADS]
+
+        for squad in squads:
+            agents = squad["agents"]
+            decisions = await db.scalar(
+                select(func.count()).select_from(AgentDecision).where(
+                    AgentDecision.user_id == user_id,
+                    AgentDecision.agent_id.in_(agents),
+                    AgentDecision.created_at >= seven_days_ago,
+                )
+            ) or 0
+            accepted = await db.scalar(
+                select(func.count()).select_from(AgentDecision).where(
+                    AgentDecision.user_id == user_id,
+                    AgentDecision.agent_id.in_(agents),
+                    AgentDecision.user_action == "accepted",
+                    AgentDecision.created_at >= seven_days_ago,
+                )
+            ) or 0
+            pending = await db.scalar(
+                select(func.count()).select_from(PendingAgentAction).where(
+                    PendingAgentAction.user_id == user_id,
+                    PendingAgentAction.agent_id.in_(agents),
+                    PendingAgentAction.status == "pending",
+                )
+            ) or 0
+            squad["decision_count_7d"] = int(decisions)
+            squad["pending_approvals"] = int(pending)
+            squad["risk_count"] = int(pending)
+            squad["adoption_rate"] = round(accepted / decisions, 3) if decisions else 0
+            squad["autonomy_level"] = "semi_autonomous" if pending else "suggestion"
+
+        return squads
+
+    @staticmethod
+    async def get_summary(db: AsyncSession, user_id: int) -> dict[str, Any]:
+        work_items, total = await AgentOSService.list_work_items(db, user_id, page=1, page_size=200)
+        pending_approvals = sum(1 for item in work_items if item["approval_required"])
+        inventory_risks = sum(1 for item in work_items if item["squad"] == "fulfillment")
+        executed = sum(1 for item in work_items if item["status"] in {"executed", "read", "resolved"})
+        return {
+            "sales_today": 0,
+            "profit_today": 0,
+            "inventory_risks": inventory_risks,
+            "pending_approvals": pending_approvals,
+            "active_work_items": total,
+            "agent_automation_rate": round(executed / total, 3) if total else 0,
+        }
+
+    @staticmethod
+    async def get_control_center(db: AsyncSession, user_id: int) -> dict[str, Any]:
+        work_items, _ = await AgentOSService.list_work_items(db, user_id, page=1, page_size=8)
+        return {
+            "summary": await AgentOSService.get_summary(db, user_id),
+            "work_items": work_items,
+            "squads": await AgentOSService.get_squads(db, user_id),
+            "templates": TEMPLATE_CARDS,
+        }
