@@ -153,3 +153,44 @@ async def reject_work_item(
             return Result.not_found("WorkItem not found")
         return Result.bad_request(result["error"])
     return Result.ok(result)
+
+
+# ── Phase 3: Autonomy Upgrade ────────────────────────────
+
+
+@router.get("/agentos/agents/upgrade-candidates", summary="自治等级升级候选")
+async def list_upgrade_candidates(
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:view")),
+):
+    """返回建议升级/降级的 Agent 候选列表"""
+    result = await AgentOSService.get_upgrade_candidates(db, current_user.id)
+    return Result.ok(result)
+
+
+@router.post("/agentos/agents/{agent_id}/upgrade", summary="执行自治等级升级")
+async def upgrade_agent_level(
+    agent_id: str,
+    target_level: str,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:approve")),
+):
+    """将 Agent 升级到目标自治等级"""
+    result = await AgentOSService.execute_upgrade(
+        db, current_user.id, agent_id, target_level,
+    )
+    return Result.ok(result)
+
+
+@router.post("/agentos/agents/{agent_id}/downgrade", summary="执行自治等级降级")
+async def downgrade_agent_level(
+    agent_id: str,
+    target_level: str,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:approve")),
+):
+    """将 Agent 降级到目标自治等级"""
+    result = await AgentOSService.execute_downgrade(
+        db, current_user.id, agent_id, target_level,
+    )
+    return Result.ok(result)

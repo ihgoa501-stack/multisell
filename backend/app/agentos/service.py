@@ -746,6 +746,123 @@ class AgentOSService:
         )
         db.add(log)
 
+    # ── Phase 3: Autonomy Upgrade ──────────────────────────
+
+    @staticmethod
+    async def get_upgrade_candidates(
+        db: AsyncSession,
+        user_id: int,
+    ) -> list[dict[str, Any]]:
+        """获取自治等级升级候选列表"""
+        from app.agentos.autonomy_service import batch_suggest_upgrades
+
+        # 从 AgentDecision 统计每个 Agent 的表现
+        from app.agent.models import AgentDecision, AgentAction as PendingAgentAction
+
+        agents_data = []
+        for agent_id, meta in AGENT_META.items():
+            squad_id = AGENT_TO_SQUAD.get(agent_id, "governance")
+
+            # 统计决策数和采纳率
+            decisions_total = 0
+            decisions_accepted = 0
+            try:
+                stmt = select(AgentDecision).where(AgentDecision.agent_id == agent_id)
+                all_decisions = (await db.execute(stmt)).scalars().all()
+                decisions_total = len(all_decisions)
+                decisions_accepted = sum(
+                    1 for d in all_decisions if d.user_action == "accepted"
+                )
+            except Exception:
+                pass
+
+            # 统计最近风险
+            recent_risks = []
+            try:
+                stmt = (
+                    select(PendingAgentAction)
+                    .where(PendingAgentAction.agent_id == agent_id)
+                    .order_by(PendingAgentAction.created_at.desc())
+                    .limit(20)
+                )
+                actions = (await db.execute(stmt)).scalars().all()
+                for a in actions:
+                    if a.status == "failed":
+                        recent_risks.append("high")
+                if not actions:
+                    recent_risks.append("low")
+            except Exception:
+                recent_risks.append("low")
+
+            # 成功率 = (总 - 失败) / 总
+            error_count = sum(1 for r in recent_risks if r == "high")
+            success_rate = max(0, 1 - (error_count / max(decisions_total, 1)))
+
+            adoption_rate = decisions_accepted / max(decisions_total, 1) if decisions_total else 0
+
+            agents_data.append({
+                "id": agent_id,
+                "autonomy_level": AutonomyLevel.SUGGESTION.value,
+                "success_rate": round(success_rate, 3),
+                "adoption_rate": round(adoption_rate, 3),
+                "recent_risk_levels": recent_risks,
+                "total_decisions": decisions_total,
+                "recent_errors": error_count,
+            })
+
+        candidates = batch_suggest_upgrades(agents_data)
+
+        # 关联 Agent 元数据
+        result = []
+        for c in candidates:
+            aid = c["agent_id"]
+            meta = AGENT_META.get(aid, {})
+            squad_id = AGENT_TO_SQUAD.get(aid, "governance")
+            result.append({
+                "agent_id": aid,
+                "agent_name": meta.get("name", aid),
+                "squad_id": squad_id,
+                "squad_name": SQUAD_TO_NAME.get(squad_id, squad_id),
+                "current_level": c.get("current_level", "SUGGESTION"),
+                "suggested": c["suggested"],
+                "direction": c["direction"],
+                "target_level": c["target_level"],
+                "confidence": c["confidence"],
+                "reason": c["reason"],
+            })
+        return result
+
+    @staticmethod
+    async def execute_upgrade(
+        db: AsyncSession,
+        user_id: int,
+        agent_id: str,
+        target_level: str,
+    ) -> dict[str, Any]:
+        """执行自治等级升级（记录到 operation_log）"""
+        # Phase 3 仅记录升级操作，不修改 Agent 模型（需要真实的 Agent 等级字段支持）
+        await AgentOSService._write_operation_log(
+            db, user_id, f"agent:{agent_id}", "autonomy_upgrade",
+            previous_status=None, new_status=target_level,
+            comment=f"自治等级升级至 {target_level}",
+        )
+        return {"ok": True, "agent_id": agent_id, "new_level": target_level}
+
+    @staticmethod
+    async def execute_downgrade(
+        db: AsyncSession,
+        user_id: int,
+        agent_id: str,
+        target_level: str,
+    ) -> dict[str, Any]:
+        """执行自治等级降级"""
+        await AgentOSService._write_operation_log(
+            db, user_id, f"agent:{agent_id}", "autonomy_downgrade",
+            previous_status=None, new_status=target_level,
+            comment=f"自治等级降级至 {target_level}",
+        )
+        return {"ok": True, "agent_id": agent_id, "new_level": target_level}
+
     @staticmethod
     async def get_operations(
         db: AsyncSession,
