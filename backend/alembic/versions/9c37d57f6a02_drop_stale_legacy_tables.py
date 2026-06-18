@@ -21,6 +21,7 @@ Create Date: 2026-06-17 15:41:31.123456
 from typing import Sequence, Union
 
 from alembic import op
+import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '9c37d57f6a02'
@@ -50,7 +51,7 @@ _STALE_TABLES = [
 
 def upgrade() -> None:
     for table_name in _STALE_TABLES:
-        op.drop_table(table_name)
+        op.execute(sa.text(f'DROP TABLE IF EXISTS "{table_name}" CASCADE'))
 
 
 def downgrade() -> None:

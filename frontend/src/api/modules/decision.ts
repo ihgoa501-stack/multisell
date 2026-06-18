@@ -61,10 +61,77 @@ export interface CompareDecisionResponse {
   results: CompareItem[]
 }
 
+export interface PreListingDecisionBatchItem extends PreListingDecisionRequest {
+  item_key?: string | null
+}
+
+export interface PreListingDecisionBatchRequest {
+  items: PreListingDecisionBatchItem[]
+}
+
+export interface PreListingDecisionBatchItemResult {
+  index: number
+  item_key?: string | null
+  sku_id?: number | null
+  status: 'success' | 'error'
+  result?: PreListingDecisionResponse | null
+  error_message?: string | null
+}
+
+export interface PreListingDecisionBatchSummary {
+  total_items: number
+  success_count: number
+  error_count: number
+  approve_count: number
+  reject_count: number
+  needs_data_count: number
+  average_profit_margin: number
+}
+
+export interface PreListingDecisionBatchResponse {
+  summary: PreListingDecisionBatchSummary
+  items: PreListingDecisionBatchItemResult[]
+}
+
+export interface PreListingDecisionExcelPreviewRow {
+  row_number: number
+  item?: PreListingDecisionBatchItem | null
+  errors: string[]
+}
+
+export interface PreListingDecisionExcelPreviewResponse {
+  total_rows: number
+  valid_rows: number
+  error_rows: number
+  items: PreListingDecisionExcelPreviewRow[]
+}
+
 export function calculatePreListingDecision(data: PreListingDecisionRequest) {
   return http.post('/decisions/prelisting', data)
 }
 
 export function comparePreListingDecision(data: CompareDecisionRequest) {
   return http.post('/decisions/prelisting/compare', data)
+}
+
+export function calculateBatchPreListingDecision(data: PreListingDecisionBatchRequest) {
+  return http.post('/decisions/prelisting/batch', data)
+}
+
+export async function downloadBatchPreListingDecisionTemplate() {
+  const resp = await http.get('/decisions/prelisting/batch/template', { responseType: 'blob' })
+  return resp.data
+}
+
+export function previewBatchPreListingDecisionExcel(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return http.post('/decisions/prelisting/batch/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export async function exportBatchPreListingDecisionResults(data: PreListingDecisionBatchResponse) {
+  const resp = await http.post('/decisions/prelisting/batch/export', data, { responseType: 'blob' })
+  return resp.data
 }

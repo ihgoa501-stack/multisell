@@ -1,97 +1,113 @@
-# 凌镜 LingMirror — 跨境电商 AgentOS
+# 凌镜 LingMirror — Agent Instructions
 
-技术名 MultiSell；Python FastAPI + Vue 3 + PostgreSQL 的 AI Agent 协作跨境电商运营平台。
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root). Use it before grep/find or opening source files when you need to understand or locate code:
+
+- MCP tools: `codegraph_explore` answers most code questions in one call with relevant symbols, verbatim source, and call paths. `codegraph_node` reads one symbol or a whole file with line numbers.
+- Shell fallback: `codegraph explore "<question or symbols>"` and `codegraph node <symbol-or-file>`.
+- Skip CodeGraph only for files it does not index well, such as Markdown, JSON, TOML, YAML, lockfiles, and generated artifacts.
+<!-- CODEGRAPH_END -->
 
 ## Project
 
-- **Stack**: Python 3.11+ / FastAPI / SQLAlchemy 2.0 async / PostgreSQL 15
-- **Frontend**: Vue 3 / TypeScript / Naive UI / Pinia / Vite
-- **Entry (backend)**: `backend/app/main.py` — auto-discovered routers under `/api`
-- **Entry (frontend)**: `frontend/src/main.ts`
-- **Venue**: `backend/.venv/` (Python 3.12, dependencies via `uv`)
+凌镜 LingMirror (technical name: MultiSell) is a cross-border e-commerce AI AgentOS.
+
+- Backend: Python 3.11+ / FastAPI / SQLAlchemy 2.0 async / PostgreSQL 15
+- Frontend: Vue 3 / TypeScript / Naive UI / Pinia / Vite
+- Backend entry: `backend/app/main.py` auto-discovers routers under `/api`
+- Frontend entry: `frontend/src/main.ts`
+- Python environment: `backend/.venv/` (Python 3.12, dependencies managed with `uv`/venv)
 
 ## Commands
 
 | Action | Command |
 |---|---|
-| Docker up | `docker compose up -d` |
-| Backend dev | `cd backend && uvicorn app.main:app --reload --port 8001` |
-| Backend test all | `cd backend && PYTHONPATH="$PWD" .venv/bin/py.test -q` |
-| Backend test file | `cd backend && PYTHONPATH="$PWD" .venv/bin/py.test tests/test_foo.py -q` |
-| Backend test single | `cd backend && PYTHONPATH="$PWD" .venv/bin/py.test tests/test_foo.py::test_bar -q` |
-| Alembic migrate | `.venv/bin/alembic upgrade head` (from `backend/`) |
-| Alembic new migration | `.venv/bin/alembic revision --autogenerate -m "desc"` |
-| Seed demo data | `cd backend && PYTHONPATH="$PWD" python seed.py` |
-| Seed agent demo | `cd backend && PYTHONPATH="$PWD" python seed_agent_demo.py` |
-| Reset DB | `cd backend && python scripts/db_reset.py` |
-| Frontend dev | `cd frontend && npm run dev` (:3001, proxies /api → :8001) |
+| Docker full stack | `docker compose up -d` |
+| Docker DB only | `docker compose up -d db` |
+| Backend dev | `cd backend && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001` |
+| Backend test all | `cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest -q` |
+| Backend test file | `cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_foo.py -q` |
+| Backend test single | `cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_foo.py::test_bar -q` |
+| Alembic migrate | `cd backend && .venv/bin/alembic upgrade heads` |
+| Alembic current | `cd backend && .venv/bin/alembic current --verbose` |
+| Alembic new migration | `cd backend && .venv/bin/alembic revision --autogenerate -m "desc"` |
+| Seed demo data | `cd backend && PYTHONPATH="$PWD" .venv/bin/python seed.py` |
+| Seed agent demo | `cd backend && PYTHONPATH="$PWD" .venv/bin/python seed_agent_demo.py` |
+| Reset DB | `cd backend && .venv/bin/python scripts/db_reset.py --force` |
+| Frontend dev | `cd frontend && npm run dev -- --host 127.0.0.1 --port 3001` |
 | Frontend build | `cd frontend && npm run build` |
 | Frontend preview | `cd frontend && npm run preview` |
 
-**Test database**: `product_management_test` (auto-created via `backend/scripts/init-db.sql`).
-Set `TEST_DATABASE_URL` env var; tests disable auth by default (`AUTH_ENABLED=False` in `conftest.py`).
-pytest config: `backend/pytest.ini` — `asyncio_mode = auto`, `asyncio_default_test_loop_scope = session`.
+Test database: `product_management_test`. Set `TEST_DATABASE_URL` when needed. Tests disable auth by default via `AUTH_ENABLED=False` in `backend/tests/conftest.py`.
 
 ## Backend
 
-**Module pattern**: Every module under `backend/app/<module>/` = `__init__.py` (exports `router`), `router.py`, `service.py` (static async methods), `schemas.py`. New module = create these files — `main.py` auto-discovers and mounts at `/api`.
+Module pattern: every module under `backend/app/<module>/` should use:
 
-**Key modules** (31 total):
+- `__init__.py` exporting `router`
+- `router.py` for FastAPI endpoints
+- `service.py` for business logic, usually static async service methods
+- `schemas.py` for Pydantic models
+
+`backend/app/main.py` auto-discovers subpackages with a `router` attribute and mounts them under `/api`.
+
+Key modules:
 
 | Module | Role |
 |---|---|
-| `core` `category` `brand` `sku` `price` `inventory` `supplier` | Product CRUD, category tree, SKU cartesian gen, pricing, stock, supplier binding |
-| `platform` `listing` `listing_task` | Platform API key config, one-click publish, task queue for multi-platform listings |
-| `agent` `agent_actions` | Hermes AI Agent framework (10 agents, 4 stages, entropy) + action audit trail |
-| `auth` `rbac` | JWT auth + RBAC (`require_permission("module:action")`) |
-| `operation_log` | Audit log for all mutation endpoints |
-| `dashboard` `search` | Overview stats, global search (hotkey `/`) |
-| `common` | Shared schemas (`Result`, `PageResult`), upload, utilities |
-| `shipping` `platform_fee` `finance` `order` `settlement` | Order-to-settlement pipeline (quotes, fees, P&L) |
-| `decision` `allocation` | Pre-listing profitability analysis, inventory allocation rules |
-| `import_batch` `order_import` | Batch import / order ingestion |
-| `image_gen` | AI product image generation (Replicate / OpenAI DALL-E) |
-| `notification` | System notifications and alerts |
-| `exceptions` | Exception workbench for error handling workflows |
-| `platform_integrations` | Platform connection management (OAuth, API test) |
+| `core` `category` `brand` `sku` `price` `inventory` `supplier` | Product catalog, categories, SKU generation, pricing, stock, suppliers |
+| `platform` `listing` `listing_task` | Platform config, adapter-based publishing, multi-platform task queue |
+| `agent` `agent_actions` | Hermes AI agents, evolution stages, action audit lifecycle |
+| `auth` `rbac` | JWT auth and permission checks |
+| `operation_log` | Mutation audit logs |
+| `dashboard` `search` | Overview stats and global search |
+| `shipping` `platform_fee` `finance` `order` `settlement` | Order-to-settlement, fees, ledger, profit |
+| `decision` `allocation` | Pre-listing profitability and inventory allocation |
+| `import_batch` `order_import` | Batch imports and order ingestion |
+| `image_gen` | Product image generation |
+| `notification` | Notifications and alert rules |
+| `exceptions` | Exception workbench |
+| `platform_integrations` | Platform connection management |
 
-All models in single file: `backend/app/models.py` (~1146 lines, v2.0.0).
+All primary SQLAlchemy models live in `backend/app/models.py`; agent-specific models also exist under `backend/app/agent/models.py` and import-related models under `backend/app/order_import/models.py`.
 
 ## Frontend
 
-- `src/api/index.ts` — `import.meta.glob` merge of `src/api/modules/*.ts` → access via `apiModules.<name>.*`
-- `src/router/index.ts` — `src/router/modules/*.ts` auto-merged as Layout children
-- `src/views/` — page components
-- `src/components/` — only `Layout.vue`
-- Auto-imports: Vue + Naive UI via `unplugin-auto-import`
-- Path alias: `@` → `src/`
-- TypeScript strict mode
-- 16 route modules, 19 API modules
+- API modules: `frontend/src/api/modules/*.ts`, auto-merged by `frontend/src/api/index.ts`.
+- Routes: `frontend/src/router/modules/*.ts`, auto-merged as layout children.
+- Views: `frontend/src/views/`.
+- Components: `frontend/src/components/`.
+- Alias: `@` points to `frontend/src`.
+- TypeScript strict mode is enabled.
+
+Prefer existing Naive UI patterns and existing module API style. If a component imports named functions from an API module, export named functions from that module as well as any object-style API used elsewhere.
 
 ## Conventions
 
-- **Responses**: `Result.ok()` / `Result.error()` / `PageResult.ok()` from `app.common.schemas`. Never raw dicts.
-- **DB session**: `Depends(get_db)` — auto-commits on success, rolls back on exception.
-- **Auth**: `require_permission("module:action")` on every endpoint. Admin role bypasses. `AUTH_ENABLED=False` returns mock admin.
-- **Audit log**: Mutation endpoints call `OperationLogService.log(db, module, action, resource_id, ...)` after data change.
-- **Async everywhere**: FastAPI + SQLAlchemy async engine + asyncpg. No sync DB calls.
-- **Migrations**: Alembic with autogenerate. Run `alembic upgrade head` after pulling.
-- **Tests**: `pytest` with `asyncio_mode = auto`. Fixtures: `prepare_db` (session schema + admin seed), `async_client` (per-test ASGI). Auth-enabled tests use `enable_auth` fixture from `tests/auth_helpers.py`.
-- **Agent tests**: Phase-based (`test_agent_phase1.py`–`test_agent_phase6.py`).
+- Responses: use `Result.ok()`, `Result.error()`, `Result.bad_request()`, `Result.not_found()`, or `PageResult.ok()` from `app.common.schemas`; do not return raw dicts from routers.
+- DB session: use `Depends(get_db)`. The dependency commits on success and rolls back on exceptions.
+- Auth: every endpoint should use `require_permission("module:action")` unless it is intentionally public. Admin bypasses checks. `AUTH_ENABLED=False` returns a mock admin.
+- Audit log: mutation endpoints should call `OperationLogService.log(...)` after the data change.
+- Async backend: use async SQLAlchemy and asyncpg. Do not introduce sync DB calls in request paths.
+- Migrations: this repo currently has multiple Alembic heads. Use `alembic upgrade heads`, not `upgrade head`.
+- Tests: pytest with `asyncio_mode = auto`; use focused tests for touched behavior.
+- Agent tests: phase files `test_agent_phase1.py` through `test_agent_phase6.py`.
+- Do not touch `.kilo/worktrees/`; it is managed by external tooling.
 
-## Architecture notes
+## Architecture Notes
 
-- **Listing adapters** (`backend/app/listing/adapters/`): registry pattern — `_ADAPTER_REGISTRY` maps platform_code → adapter class (`ozon`, `shopee`, `wildberries` + fallback `mock`). New platform = add class + register.
-- **Agent system** (Hermes, `backend/app/agent/`): 4 evolution stages (`OBSERVATION` → `SUGGESTION` → `SEMI_AUTONOMOUS` → `FULL_AUTONOMOUS`) with confidence thresholds. 10 agents (Governors G1-G3, Analysts A5-A7, Specialists A1-A4) via `@register_agent` decorator. Periodic async scheduler (`scheduler.py`) runs agents at intervals.
-- **Entropy system** (`backend/app/agent/entropy/`): TTL sweeper, budget enforcer, decay scheduler, merge detector, regret analyzer, SPC controller, rule health scorer. `EntropyService.run_defenses()` runs all.
-- **Decision pipeline** (`backend/app/decision/`): SKU lookup → shipping fee → platform fee → profit margin → recommendation.
-- **Config**: `backend/app/config.py` uses `pydantic-settings`. Version `2.0.0`. Key overrides: `DATABASE_URL`, `AUTH_ENABLED`, `DEBUG`, `ENCRYPTION_KEY`. Added LLM config block (`LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`) and Image Gen config.
-- **`.kilo/worktrees/`**: External tool-managed worktrees — do not touch or clean up.
-
-For full architecture details, see `CLAUDE.md`.
+- Listing adapters live in `backend/app/listing/adapters/`; `_ADAPTER_REGISTRY` maps platform codes to adapter classes (`ozon`, `shopee`, `wildberries`, fallback `mock`).
+- Agent system (`backend/app/agent/`) has 4 stages: `OBSERVATION` -> `SUGGESTION` -> `SEMI_AUTONOMOUS` -> `FULL_AUTONOMOUS`.
+- Agents are registered with `@register_agent`; 10 agents cover governors G1-G3, analysts A5-A7, and specialists A1-A4.
+- Entropy defenses live in `backend/app/agent/entropy/`; `EntropyService.run_defenses()` runs TTL, budget, decay, merge detection, regret, SPC, and health scoring.
+- Decision pipeline: SKU lookup -> shipping fee -> platform fee -> payment/other fees -> profit margin -> recommendation.
+- Config uses `backend/app/config.py` and pydantic-settings. Important env vars: `DATABASE_URL`, `DATABASE_URL_SYNC`, `AUTH_ENABLED`, `DEBUG`, `ENCRYPTION_KEY`, `LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`.
 
 ## Documentation
 
-- **[`docs/INDEX.md`](docs/INDEX.md)** — Master index of all 54 documents, categorized
-- **[`docs/TIMELINE.md`](docs/TIMELINE.md)** — Development timeline, Gantt chart, P0/P1/P2 task board
-- **[`docs/features/`](docs/features/)** — Feature requests (add new ones using [`TEMPLATE.md`](docs/features/TEMPLATE.md))
+- `docs/INDEX.md` — documentation index
+- `docs/TIMELINE.md` — timeline and task board
+- `docs/features/` — feature specs; use `docs/features/TEMPLATE.md` for new feature docs
+- `CLAUDE.md` — Claude Code-specific guidance; keep it consistent with this file

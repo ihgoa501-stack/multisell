@@ -12,6 +12,7 @@ from app.finance.schemas import (
     FinanceTransactionCreate, FinanceTransactionVO,
     FinanceReportQuery,
 )
+from app.finance.ledger_service import LedgerService
 from app.finance.service import FinanceService
 from app.operation_log.service import OperationLogService
 
@@ -92,6 +93,48 @@ async def get_profit_summary(
         db, period_start, period_end, platform_id
     )
     return Result.ok(summary)
+
+
+# ── 订单利润账本 ────────────────────────────────────────────────────
+
+
+@router.post("/finance/orders/{order_id}/ledger/rebuild", summary="重建订单利润账本")
+async def rebuild_order_ledger(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("finance:ledger:rebuild")),
+):
+    try:
+        result = await LedgerService.rebuild(db, order_id, _operator(current_user))
+        return Result.ok(result)
+    except ValueError as e:
+        return Result.not_found(str(e))
+
+
+@router.get("/finance/orders/{order_id}/ledger", summary="订单利润账本明细")
+async def get_order_ledger(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("finance:ledger:view")),
+):
+    try:
+        result = await LedgerService.get_ledger(db, order_id)
+        return Result.ok(result)
+    except ValueError as e:
+        return Result.not_found(str(e))
+
+
+@router.get("/finance/orders/{order_id}/profit", summary="订单利润账本汇总")
+async def get_order_profit(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("finance:ledger:view")),
+):
+    try:
+        result = await LedgerService.get_profit(db, order_id)
+        return Result.ok(result)
+    except ValueError as e:
+        return Result.not_found(str(e))
 
 
 # ── 模拟数据 ────────────────────────────────────────────────────

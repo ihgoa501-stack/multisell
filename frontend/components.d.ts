@@ -11,6 +11,8 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgentActionPanel: typeof import('./src/components/AgentActionPanel.vue')['default']
+    CostLayerTag: typeof import('./src/components/CostLayerTag.vue')['default']
     Layout: typeof import('./src/components/Layout.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
     NAutoComplete: typeof import('naive-ui')['NAutoComplete']
@@ -24,6 +26,7 @@ declare module 'vue' {
     NDivider: typeof import('naive-ui')['NDivider']
     NDrawer: typeof import('naive-ui')['NDrawer']
     NDrawerContent: typeof import('naive-ui')['NDrawerContent']
+    NDynamicInput: typeof import('naive-ui')['NDynamicInput']
     NEmpty: typeof import('naive-ui')['NEmpty']
     NForm: typeof import('naive-ui')['NForm']
     NFormItem: typeof import('naive-ui')['NFormItem']
@@ -38,6 +41,7 @@ declare module 'vue' {
     NListItem: typeof import('naive-ui')['NListItem']
     NModal: typeof import('naive-ui')['NModal']
     NPageHeader: typeof import('naive-ui')['NPageHeader']
+    NPopconfirm: typeof import('naive-ui')['NPopconfirm']
     NProgress: typeof import('naive-ui')['NProgress']
     NRadio: typeof import('naive-ui')['NRadio']
     NRadioButton: typeof import('naive-ui')['NRadioButton']
@@ -55,6 +59,7 @@ declare module 'vue' {
     NTree: typeof import('naive-ui')['NTree']
     NTreeSelect: typeof import('naive-ui')['NTreeSelect']
     NUpload: typeof import('naive-ui')['NUpload']
+    OrderProfitLedger: typeof import('./src/components/OrderProfitLedger.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }

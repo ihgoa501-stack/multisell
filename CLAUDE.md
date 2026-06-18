@@ -1,164 +1,148 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file gives Claude Code-specific guidance for working in this repository. The canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.
 
 ## Project
 
-凌镜 LingMirror (tech name: MultiSell) — Cross-border e-commerce AI Agent operations platform.
-**Stack**: Python 3.11+ / FastAPI / SQLAlchemy 2.0 async / PostgreSQL 15 | Vue 3 / TypeScript / Naive UI / Pinia / Vite
+凌镜 LingMirror (technical name: MultiSell) is a cross-border e-commerce AI AgentOS.
 
-See `AGENTS.md` for project governance, agent workflow rules, and completion standards.
+Stack:
+- Backend: Python 3.11+ / FastAPI / SQLAlchemy 2.0 async / PostgreSQL 15
+- Frontend: Vue 3 / TypeScript / Naive UI / Pinia / Vite
+- Backend entry: `backend/app/main.py`
+- Frontend entry: `frontend/src/main.ts`
+
+## First Steps
+
+1. This repo has `.codegraph/`; use CodeGraph before grep/find/opening source files when locating or understanding code.
+2. Check `git status --short` before edits. Preserve user changes and unrelated dirty files.
+3. Prefer the existing module patterns over new abstractions.
+4. Keep backend and frontend API contracts in sync.
+5. Run the smallest meaningful verification after changes, then broaden if the touched surface is shared.
 
 ## Commands
 
 ```bash
 # Docker
-docker compose up -d                          # Full stack (DB + backend :8000 + frontend :3000)
-docker compose up -d db                       # DB only for local dev
+docker compose up -d
+docker compose up -d db
 
 # Backend
-cd backend && uvicorn app.main:app --reload --port 8001   # Dev server
-cd backend && PYTHONPATH="$PWD" .venv/bin/py.test -q                        # All tests
-cd backend && PYTHONPATH="$PWD" .venv/bin/py.test tests/test_foo.py -q      # Single test file
-cd backend && PYTHONPATH="$PWD" .venv/bin/py.test tests/test_foo.py::test_bar -q  # Single test
-cd backend && .venv/bin/alembic upgrade head                         # Apply migrations
-cd backend && .venv/bin/alembic revision --autogenerate -m "desc"   # New migration
-cd backend && PYTHONPATH="$PWD" python seed.py                               # Seed demo data
-cd backend && PYTHONPATH="$PWD" python seed_agent_demo.py                     # Seed agent demo
-cd backend && python scripts/db_reset.py                  # Reset DB
+cd backend && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
+cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest -q
+cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_foo.py -q
+cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_foo.py::test_bar -q
+cd backend && .venv/bin/alembic upgrade heads
+cd backend && .venv/bin/alembic current --verbose
+cd backend && .venv/bin/alembic revision --autogenerate -m "desc"
+cd backend && PYTHONPATH="$PWD" .venv/bin/python seed.py
+cd backend && PYTHONPATH="$PWD" .venv/bin/python seed_agent_demo.py
 
 # Frontend
-cd frontend && npm run dev      # Dev server (:3001, proxies /api → :8001)
-cd frontend && npm run build    # Production build
-cd frontend && npm run preview  # Preview production build
+cd frontend && npm run dev -- --host 127.0.0.1 --port 3001
+cd frontend && npm run build
+cd frontend && npm run preview
 ```
 
-Tests use a separate database `product_management_test` (auto-created via `scripts/init-db.sql`). Set `TEST_DATABASE_URL` env var; tests disable auth by default (`AUTH_ENABLED=False`). `asyncio_mode = auto` in pytest config. Fixtures in `tests/conftest.py` provide `prepare_db` (session-level schema create) and `async_client` (per-test ASGI transport via httpx).
+Tests use `product_management_test`. `backend/tests/conftest.py` sets `AUTH_ENABLED=False` and creates schema via fixtures. Use `TEST_DATABASE_URL` to override.
 
-## Architecture
+## Backend Architecture
 
-### Backend module pattern
+Every backend module under `backend/app/<module>/` should follow this shape:
 
-Every module in `backend/app/<module>/` follows a strict 4-file pattern:
-- `__init__.py` — re-exports `router` (the module's APIRouter)
-- `router.py` — FastAPI routes, uses `Depends(get_db)` + `require_permission("module:action")`
-- `service.py` — static-method Service class (business logic, SQLAlchemy async queries)
-- `schemas.py` — Pydantic request/response models
+- `__init__.py` exports `router`
+- `router.py` defines FastAPI endpoints, `Depends(get_db)`, and permission dependencies
+- `service.py` contains business logic and async SQLAlchemy queries
+- `schemas.py` contains Pydantic request/response models
 
-**Routers are auto-discovered**: `main.py` scans `app.*` subpackages and includes any with a `router` attribute under `/api`. Adding a new module requires only these 4 files — no manual registration.
+`backend/app/main.py` auto-discovers routers from `app.*` subpackages and mounts them under `/api`.
 
-**Config**: `backend/app/config.py` uses `pydantic-settings` `BaseSettings`. Reads from environment / `.env` automatically.
+Common conventions:
+- Router responses use `Result` / `PageResult`; avoid raw dict returns.
+- Endpoints use `require_permission("module:action")` unless intentionally public.
+- Mutation endpoints log with `OperationLogService.log(...)`.
+- Async DB only in request paths.
+- `get_db` commits on success and rolls back on exception.
+- Alembic currently has multiple heads; use `upgrade heads`.
 
-**Exceptions**: `backend/app/exceptions/` for custom exception handlers. Global `HTTPException` handler in `main.py` returns `{"code", "message", "data"}`.
+Important backend areas:
+- `backend/app/models.py` — primary SQLAlchemy models.
+- `backend/app/common/` — `Result`, `PageResult`, upload, shared helpers.
+- `backend/app/auth/` and `backend/app/rbac/` — auth and permissions.
+- `backend/app/listing/adapters/` — platform adapter registry.
+- `backend/app/agent/` — Hermes agent framework.
+- `backend/app/agent/entropy/` — rule entropy defenses.
+- `backend/app/decision/` — pre-listing profitability.
+- `backend/app/finance/` — finance accounts, reports, ledger.
+- `backend/app/order_import/` — order ingestion chain.
 
-**Listing adapters**: `backend/app/listing/adapters/` implements a registry pattern for platform-specific publishing:
-- `base.py` — `ListingAdapter` abstract base
-- `adapters/__init__.py` — `_ADAPTER_REGISTRY` dict + `get_listing_adapter(platform_code)` factory
-- Per-platform files: `ozon.py`, `shopee.py`, `wildberries.py` + fallback `mock.py`
-- To add a new platform: create the adapter class, register it in `_ADAPTER_REGISTRY`
+## Frontend Architecture
 
-**Common utilities**: `backend/app/common/` exports:
-- `schemas.py` — `Result`, `PageResult`, `PageParam`, `ProductStatus`, `IdSchema`, `IdsSchema`, `StatusSchema`
-- `upload.py` — File upload router
-- `utils.py` — `build_tree()`, `save_upload_file()`, `allowed_file()`, `generate_filename()`, `utc_now()`
+Frontend patterns:
+- `frontend/src/api/modules/*.ts` are auto-merged by `frontend/src/api/index.ts`.
+- `frontend/src/router/modules/*.ts` are auto-merged by `frontend/src/router/index.ts`.
+- Views live in `frontend/src/views/`.
+- Shared components live in `frontend/src/components/`.
+- Alias `@` maps to `frontend/src`.
 
-### Frontend auto-merge patterns
+When adding a page:
+1. Add or update an API module under `src/api/modules`.
+2. Add route metadata under `src/router/modules`.
+3. Add the view under `src/views`.
+4. Use Naive UI components and existing layout patterns.
+5. Run `npm run build`.
 
-**API clients** in `frontend/src/api/modules/*.ts` are auto-merged via `import.meta.glob` in `frontend/src/api/index.ts`. New files in `modules/` are picked up automatically. Each file exports API objects directly (e.g. `export const allocationApi = { ... }`). Access via `import { apiModules } from '@/api'` and `apiModules.allocationApi.list()`.
+## Agent System
 
-**Routes** in `frontend/src/router/modules/*.ts` are auto-merged into the main router at `frontend/src/router/index.ts`. Each file exports `export const routes: RouteRecordRaw[]` with children under `path: 'agents'` etc. The route meta supports: `title`, `icon`, `menu` (show in nav), `perm` (permission code), `noAuth` (skip auth).
+Hermes agents live under `backend/app/agent/`.
 
-**Entry point**: `frontend/src/main.ts` — creates Pinia store + router, mounts App.
-**No separate stores/composables/utils directories yet** — state management and helpers live inside view files or as needed.
+Stages:
+- `OBSERVATION`
+- `SUGGESTION`
+- `SEMI_AUTONOMOUS`
+- `FULL_AUTONOMOUS`
 
-### Agent system (Hermes architecture)
+Agents are registered with `@register_agent`.
 
-The agent framework (`backend/app/agent/`) implements a multi-agent system with lifecycle evolution stages:
+Agent groups:
+- Governors: G1 dashboard, G2 warehouse/customs, G3 discount risk
+- Analysts: A5 inventory, A6 profit, A7 compliance
+- Specialists: A1 product scout, A2 listing optimizer, A3 ads, A4 customer service
 
-**Evolution stages** (in `base.py`): `OBSERVATION` → `SUGGESTION` → `SEMI_AUTONOMOUS` → `FULL_AUTONOMOUS`. Each stage has a confidence threshold (0.0 / 0.85 / 0.90 / 0.95); an agent only acts when confidence exceeds its current stage threshold.
+Agent decisions are recorded by `AgentService`. Action extraction/execution goes through `AgentActionService`. Entropy controls live in `backend/app/agent/entropy/`.
 
-**10 agents** across 3 classes, registered via `@register_agent` decorator on `AgentRegistry`:
-- **Governors (G1-G3)**: G1 Dashboard overview, G2 Warehouse/customs advice, G3 Discount risk guard
-- **Analysts (A5-A7)**: A5 Inventory alerts, A6 Profit watch, A7 Compliance guard
-- **Specialists (A1-A4)**: A1 Product scout, A2 Listing optimizer, A3 Ad advice, A4 Customer service
+## Database And Initialization
 
-Each agent defines `agent_id`, `decision_points` (named capabilities), and `DEFAULT_STAGES` (initial evolution stage per decision point). Agents implement `async decide(decision_point, context, db) → dict`.
+Use `.env` / environment variables for:
+- `DATABASE_URL`
+- `DATABASE_URL_SYNC`
+- `TEST_DATABASE_URL`
+- `AUTH_ENABLED`
+- `ENCRYPTION_KEY`
+- `LLM_API_URL`
+- `LLM_API_KEY`
+- `LLM_MODEL`
 
-**Agent sub-modules** (all under `backend/app/agent/`):
-| Path | Role |
-|------|------|
-| `base.py` | `BaseAgent`, `EvolutionStage` enum |
-| `registry.py` | `AgentRegistry` (class-level `_agents` dict), `@register_agent` |
-| `service.py` | `AgentService` — orchestrates agent invocations, records decisions |
-| `action_service.py` | `AgentActionService` — extracts actions from agent outputs, supports execute/reject lifecycle |
-| `llm_service.py` | `AgentLlmService` — LLM integration for agent natural-language explanations |
-| `config_service.py` | Per-agent/user configuration persistence |
-| `config_router.py` | REST endpoints for agent config CRUD |
-| `data_service.py` | Data provisioning for agent contexts |
-| `entropy/` | Self-cleaning rule management (see below) |
+For local development, prefer explicit IPv4 host `127.0.0.1` when a local PostgreSQL and Docker PostgreSQL may both exist.
 
-### Entropy / self-cleaning system
+Do not reset or drop an existing database unless the user explicitly approves the destructive action. For safe initialization, create a separate development database and seed it.
 
-`backend/app/agent/entropy/` manages rule entropy — preventing rule bloat and staleness:
+## Verification
 
-- **TTL Sweeper** — expires stale rules past TTL
-- **Budget Enforcer** — caps rule count per agent/user
-- **Decay Scheduler** — reduces unused rule weights over time
-- **Merge Detector** — finds duplicate/similar rules (candidates only, no auto-merge)
-- **Regret Analyzer** — tracks user overrides to improve rules
-- **SPC Controller** — statistical process control limits on agent behavior
-- **Rule Health Scorer** — scores each rule (active / shadow / warning / unhealthy)
+Use focused checks:
 
-`EntropyService.run_defenses()` runs all defenses and returns affected rules. The entropy index is a composite of unhealthy ratio × 0.4 + shadow ratio × 0.3 + (1 - avg_score) × 0.3.
+```bash
+cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_health.py -q
+cd frontend && npm run build
+```
 
-### Decision pipeline
-
-`backend/app/decision/` implements pre-listing profitability decisions. `PreListingDecisionService.calculate()` chains: SKU lookup → shipping fee calculation (`shipping` module) → platform fee calculation (`platform_fee` module) → payment/other fees → profit margin → recommendation (approve/reject/needs_data). The compare endpoint runs the same logic across multiple platforms.
-
-### Full module list (31 modules)
-
-| Module | Role |
-|--------|------|
-| `core` `category` `brand` `sku` `price` `inventory` `supplier` | Product CRUD, category tree, SKU cartesian gen |
-| `platform` `listing` `listing_task` | Platform API keys, publish adapter registry, multi-platform task queue |
-| `agent` `agent_actions` | Hermes multi-agent system + action audit lifecycle |
-| `auth` `rbac` | JWT auth + RBAC permission system |
-| `operation_log` | Mutation audit trail |
-| `dashboard` `search` | Overview stats, global search |
-| `common` | Shared Result/PageResult schemas, upload, utilities |
-| `shipping` `platform_fee` `finance` `order` `settlement` | Order-to-settlement pipeline (quotes, fees, P&L) |
-| `decision` `allocation` | Pre-listing profitability analysis, inventory allocation |
-| `import_batch` `order_import` | Batch import jobs, order ingestion (CSV/JSON) |
-| `image_gen` | AI product image generation |
-| `notification` | System notifications and alerts |
-| `exceptions` | Exception workbench |
-| `platform_integrations` | Platform connection management |
-| `activity` | Cross-module activity feed |
-
-### Database
-
-All models in single `backend/app/models.py` (1146 lines). Key entities: Product, Sku, Category, Brand, Price, Inventory, Supplier, Platform, ProductListing, ListingTask, Order, Warehouse, AllocationRule, ShippingQuoteRule, ImportBatch, PlatformFeeRule, Settlement, plus agent tables (AgentAction, AgentDecision, AgentEpisode, PersonalRule, SpcControlLimit, etc.) and new modules (ProductImageGen, PromptTemplate, Notification, AlertRule, FinanceAccount, etc.).
-
-### Quickstart: creating a new module
-
-**Backend**: Create `backend/app/<module>/` with 4 files → `__init__.py` exports `router`, `router.py` defines endpoints, `service.py` has business logic, `schemas.py` has Pydantic models. That's all — `main.py` auto-discovers the router.
-
-**Frontend**: Optionally create `frontend/src/api/modules/<module>.ts` for API client (auto-merged) and `frontend/src/router/modules/<module>.ts` for routes (auto-merged, children of the Layout route). View goes in `frontend/src/views/<module>/`.
-
-### Key conventions
-
-- **Responses**: Always use `Result.ok()` / `Result.error()` / `PageResult.ok()` from `app.common.schemas` — never raw dicts
-- **DB session**: `Depends(get_db)` — auto-commits on success, rolls back on exception
-- **Auth**: `require_permission("module:action")` dependency on every endpoint. Admin role bypasses permission checks. `AUTH_ENABLED=False` in tests returns mock admin user
-- **Audit log**: Mutation endpoints call `OperationLogService.log()` after data changes (see `core/router.py` for example pattern)
-- **Async everywhere**: FastAPI + SQLAlchemy async engine + asyncpg driver. No sync DB calls
-- **Migrations**: Alembic with autogenerate. Run `alembic upgrade head` after pulling
-- **Frontend**: TypeScript strict mode. Naive UI components. API clients via `@/api` central export or `apiModules` from auto-merged `modules/*.ts`
-- **Agent tests**: Phase-based test files (`test_agent_phase1.py` through `test_agent_phase6.py`) — phase 1=base, 2=G3/A5/A6, 5=entropy, 6=A1-A4/A7/G2
-- **Settings**: pydantic-settings in `backend/app/config.py` reads from env vars with defaults. Key overrides: `DATABASE_URL`, `AUTH_ENABLED`, `DEBUG`, `ENCRYPTION_KEY`. Version `2.0.0`.
+For backend changes, add or run tests near the touched module. For frontend API/view changes, run the production build at minimum.
 
 ## Documentation
 
-- [`docs/INDEX.md`](docs/INDEX.md) — Master document index (54 docs, categorized)
-- [`docs/TIMELINE.md`](docs/TIMELINE.md) — Development timeline + P0/P1/P2 task board
-- [`docs/features/`](docs/features/) — Feature requests (use [`TEMPLATE.md`](docs/features/TEMPLATE.md))
+- `AGENTS.md` — canonical cross-agent project instructions
+- `docs/INDEX.md` — documentation index
+- `docs/TIMELINE.md` — timeline and task board
+- `docs/features/` — feature specs and template
+
+Do not touch `.kilo/worktrees/`; it is managed by external tooling.
