@@ -82,6 +82,23 @@
         </n-grid-item>
       </n-grid>
 
+      <!-- 升级建议 -->
+      <template v-if="upgradeCandidates.length > 0">
+        <n-card title="自治等级升级建议" size="small" style="margin-top: 12px;">
+          <n-space>
+            <n-tag
+              v-for="c in upgradeCandidates"
+              :key="c.agent_id"
+              :type="c.direction === 'upgrade' ? 'success' : 'warning'"
+              style="cursor: pointer;"
+              @click="router.push('/agentos/autonomy')"
+            >
+              {{ c.agent_name }} → {{ c.target_level }}
+            </n-tag>
+          </n-space>
+        </n-card>
+      </template>
+
       <!-- 自治等级说明 -->
       <n-card title="自治等级说明" size="small" style="margin-top: 12px;">
         <n-grid :cols="4" :x-gap="12" :y-gap="8">
@@ -118,8 +135,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
-import { getAgentOSSquads } from '@/api/modules/agentos'
-import type { AgentOSSquad, SquadsResponse } from '@/api/modules/agentos'
+import { getAgentOSSquads, getAgentOSUpgradeCandidates } from '@/api/modules/agentos'
+import type { AgentOSSquad, SquadsResponse, AutonomyCandidate } from '@/api/modules/agentos'
 import AutonomyBadge from '@/components/agentos/AutonomyBadge.vue'
 import AgentStatusCard from '@/components/agentos/AgentStatusCard.vue'
 
@@ -129,6 +146,7 @@ const loading = ref(false)
 const loaded = ref(false)
 const error = ref<string | null>(null)
 const squads = ref<AgentOSSquad[]>([])
+const upgradeCandidates = ref<AutonomyCandidate[]>([])
 
 function squadRiskType(level: string): 'success' | 'warning' | 'error' | 'default' {
   const map: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
@@ -164,6 +182,12 @@ async function fetchSquads() {
     const data: SquadsResponse = res.data || res
     squads.value = data.squads || []
     loaded.value = true
+    try {
+      const candRes: any = await getAgentOSUpgradeCandidates()
+      upgradeCandidates.value = (candRes?.data || []).filter((c: AutonomyCandidate) => c.suggested)
+    } catch (_e) {
+      // 静默降级
+    }
   } catch (e: any) {
     error.value = e?.response?.data?.message || e?.message || '加载失败'
     message.error('加载 Agent 团队失败')
