@@ -1,0 +1,90 @@
+"""Background worker that executes pending listing task items."""
+
+import asyncio
+import logging
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import async_session_factory
+from app.listing.adapters import get_listing_adapter
+from app.models import ListingTaskItem, Platform, Product
+
+logger = logging.getLogger(__name__)
+
+
+class ListingWorker:
+    """Polls and executes pending listing task items."""
+
+    def __init__(self, poll_interval: float = 10.0):
+        self._poll_interval = poll_interval
+        self._task: asyncio.Task | None = None
+        self._stop_event = asyncio.Event()
+
+    async def start(self):
+        self._stop_event.clear()
+        self._task = asyncio.create_task(self._loop())
+        logger.info("ListingWorker started (poll every %ss)", self._poll_interval)
+
+    async def stop(self):
+        self._stop_event.set()
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        logger.info("ListingWorker stopped")
+
+    async def _loop(self):
+        while not self._stop_event.is_set():
+            try:
+                await self._tick()
+            except Exception:
+                logger.exception("ListingWorker tick failed")
+            await asyncio.sleep(self._poll_interval)
+
+    async def _tick(self):
+        async with async_session_factory() as db:
+            stmt = (
+                select(ListingTaskItem)
+                .where(ListingTaskItem.status == "pending")
+                .limit(5)
+            )
+            rows = (await db.execute(stmt)).scalars().all()
+            for item in rows:
+                await self._execute_one(db, item)
+            await db.commit()
+
+    async def _execute_one(self, db: AsyncSession, item: ListingTaskItem):
+        try:
+            platform = await db.get(Platform, item.platform_id)
+            product = await db.get(Product, item.product_id)
+            if not platform or not product:
+                item.status = "failed"
+                item.error_message = "Platform or Product not found"
+                await db.flush()
+                return
+
+            adapter = get_listing_adapter(platform.code)
+            result = await adapter.publish(
+                product=product,
+                platform=platform,
+                skus=[],
+                prices={},
+                inventories={},
+                db=db,
+            )
+            item.status = "success"
+            item.result = {
+                "platform_product_id": result.platform_product_id,
+                "platform_url": result.platform_url,
+                "platform_sku": result.platform_sku,
+            }
+            item.executed_at = datetime.now(timezone.utc)
+        except Exception as exc:
+            item.status = "failed"
+            item.error_message = str(exc)[:500]
+            item.retry_count = (item.retry_count or 0) + 1
+        await db.flush()

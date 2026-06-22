@@ -69,7 +69,16 @@ async def lifespan(app: FastAPI):
     from app.agent.scheduler import scheduler as _agent_scheduler
     await _agent_scheduler.start()
 
+    # ── 启动上架任务后台 Worker ──
+    from app.listing.worker import ListingWorker as _ListingWorker
+
+    _listing_worker = _ListingWorker()
+    await _listing_worker.start()
+
     yield
+
+    # ── 关闭上架任务后台 Worker ──
+    await _listing_worker.stop()
 
     # ── 关闭 Agent 调度引擎 ──
     await _agent_scheduler.stop()
