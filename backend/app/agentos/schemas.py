@@ -393,3 +393,15 @@ class OutcomeReviewVO(BaseModel):
     notes: Optional[str] = None
     reviewed_by: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class PolicyCreate(BaseModel):
+    agent_id_a: str = Field(min_length=1, max_length=20)
+    agent_id_b: str = Field(min_length=1, max_length=20)
+    decision_point: str = Field(min_length=1, max_length=50)
+    condition: Optional[dict[str, Any]] = None
+    winner: str = Field(min_length=1, max_length=20)
+    reason: str = Field(min_length=1, max_length=500)
+    priority: int = Field(default=100, ge=0)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

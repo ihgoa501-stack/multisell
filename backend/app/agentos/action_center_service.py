@@ -1,9 +1,12 @@
 """AgentOS action center service."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -240,6 +243,15 @@ class ActionCenterService:
             content=f"创建动作提案: {proposal.action_type} - {proposal.title}",
             operator=operator,
         )
+
+        # §2.3 自动仲裁：检查是否有冲突提案
+        if proposal.business_object_type and proposal.business_object_id and proposal.agent_id:
+            try:
+                from app.agentos.arbitrator import AutoArbitrator
+                await AutoArbitrator.detect_and_arbitrate(db, proposal)
+            except Exception:
+                logger.exception("Auto-arbitration failed for proposal %s", proposal.id)
+
         return ActionCenterService.proposal_to_work_item(proposal)
 
     @staticmethod

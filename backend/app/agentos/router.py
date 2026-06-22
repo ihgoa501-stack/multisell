@@ -1,6 +1,7 @@
 """AgentOS 聚合路由"""
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_permission
 from app.common.schemas import PageResult, Result
@@ -13,6 +14,7 @@ from .schemas import (
     ActionExecutionPayload,
     ActionProposalCreate,
     ActionReviewPayload,
+    PolicyCreate,
     WorkItemApproval,
     WorkItemStatusUpdate,
 )
@@ -346,3 +348,63 @@ async def get_agent_detail(
     """返回单个 Agent 的详情、WorkItem 列表和操作记录"""
     data = await AgentOSService.get_agent_detail(db, current_user.id, agent_id)
     return Result.ok(data)
+
+
+# ── 策略矩阵 ──
+
+
+@router.get("/agentos/policies", summary="策略矩阵列表")
+async def list_policies(
+    agent_id: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:view")),
+):
+    from .policy_service import PolicyService
+    records, total = await PolicyService.list_policies(db, current_user.id, agent_id, page, page_size)
+
+    def _to_dict(r):
+        return {
+            "id": r.id, "agent_id_a": r.agent_id_a, "agent_id_b": r.agent_id_b,
+            "decision_point": r.decision_point, "condition": r.condition,
+            "winner": r.winner, "reason": r.reason, "priority": r.priority,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+
+    return Result.ok({"records": [_to_dict(r) for r in records], "total": total})
+
+
+@router.post("/agentos/policies", summary="创建冲突仲裁策略")
+async def create_policy(
+    payload: PolicyCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:execute")),
+):
+    from .policy_service import PolicyService
+    try:
+        policy = await PolicyService.create_policy(
+            db, current_user.id, payload.model_dump(exclude_unset=True)
+        )
+        return Result.ok({
+            "id": policy.id, "agent_id_a": policy.agent_id_a,
+            "agent_id_b": policy.agent_id_b, "decision_point": policy.decision_point,
+            "condition": policy.condition, "winner": policy.winner,
+            "reason": policy.reason, "priority": policy.priority,
+        })
+    except ValueError as e:
+        return Result.bad_request(str(e))
+
+
+@router.delete("/agentos/policies/{policy_id}", summary="删除冲突仲裁策略")
+async def delete_policy(
+    policy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:execute")),
+):
+    from .policy_service import PolicyService
+    ok = await PolicyService.delete_policy(db, current_user.id, policy_id)
+    if not ok:
+        return Result.not_found("策略不存在")
+    return Result.ok()
