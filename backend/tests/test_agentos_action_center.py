@@ -1,5 +1,7 @@
 """AgentOS action center tests."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from sqlalchemy import select
 
@@ -9,6 +11,19 @@ from app.agentos.models import (
     CommandExecution,
     OutcomeReview,
 )
+
+
+@pytest.fixture(autouse=True)
+def _mock_command_handlers():
+    """Mock all business command handlers so integration tests don't need seed data."""
+    with patch("app.agentos.action_center_service.HANDLER_MAP", {
+        "profit_review": AsyncMock(return_value={"status": "allow", "profit_amount": 100.0}),
+        "inventory_allocate": AsyncMock(return_value={"mode": "manual", "allocations": [{"sku_id": 300, "allocated_qty": 20}]}),
+        "listing_draft": AsyncMock(return_value={"product_id": 200, "optimization": {"title": "Test"}}),
+        "daily_report": AsyncMock(return_value={"products": {"total": 10}, "orders": {"total": 5}}),
+        "notify": AsyncMock(return_value={"alerts_created": {}, "unread_summary": {}}),
+    }):
+        yield
 
 
 @pytest.mark.usefixtures("prepare_db")

@@ -27,14 +27,15 @@ from app.agentos.schemas import (
 from sqlalchemy import func as sa_func
 
 from app.operation_log.service import OperationLogService
+from app.agentos.command_handlers import HANDLER_MAP
 
 
 COMMAND_ADAPTERS: dict[str, dict[str, str]] = {
-    "daily_report": {"command_name": "daily_report", "execution_mode": "record_only"},
-    "listing_draft": {"command_name": "listing_draft", "execution_mode": "record_only"},
-    "profit_review": {"command_name": "profit_review", "execution_mode": "record_only"},
-    "inventory_allocate": {"command_name": "inventory_allocate", "execution_mode": "record_only"},
-    "notify": {"command_name": "notify", "execution_mode": "record_only"},
+    "daily_report": {"command_name": "daily_report", "execution_mode": "integrated"},
+    "listing_draft": {"command_name": "listing_draft", "execution_mode": "integrated"},
+    "profit_review": {"command_name": "profit_review", "execution_mode": "integrated"},
+    "inventory_allocate": {"command_name": "inventory_allocate", "execution_mode": "integrated"},
+    "notify": {"command_name": "notify", "execution_mode": "integrated"},
 }
 
 
@@ -323,36 +324,58 @@ class ActionCenterService:
             return None
         if proposal.requires_approval and proposal.status != "approved":
             raise ValueError("需要审批的动作必须先审批通过")
+
+        # 状态流转: current -> "executing"
+        ActionCenterService._ensure_transition(proposal.status, "executing")
         target_from = proposal.status
-        target = "executing"
-        if target in ACTION_PROPOSAL_STATUS_FLOW.get(target_from, set()):
-            proposal.status = target
-            await db.flush()
-        ActionCenterService._ensure_transition(proposal.status, "executed")
+        proposal.status = "executing"
+        await db.flush()
+
+        # 安全检查 + 解析适配器
         adapter = resolve_command_adapter(proposal.action_type)
+
+        # 创建执行记录（状态 start）
         execution = CommandExecution(
             proposal_id=proposal.id,
             command_name=adapter["command_name"],
             executor=executor or operator,
-            status="succeeded",
+            status="started",
             input_payload=proposal.proposed_payload or {},
-            result_payload={
-                "mode": adapter["execution_mode"],
-                "message": "Action center recorded execution; business command adapter will replace record-only behavior per command.",
-            },
-            finished_at=datetime.now(timezone.utc),
         )
-        proposal.status = "executed"
-        proposal.after_snapshot = execution.result_payload
         db.add(execution)
+        await db.flush()
+
+        # 调度到真实 handler
+        handler = HANDLER_MAP.get(proposal.action_type)
+        if handler is None:
+            # 没有注册 handler 时回退到 record_only
+            execution.status = "succeeded"
+            execution.result_payload = {
+                "mode": "record_only",
+                "message": "No business command handler registered for this action type.",
+            }
+            proposal.status = "executed"
+        else:
+            try:
+                result = await handler(db, proposal.proposed_payload or {})
+                execution.status = "succeeded"
+                execution.result_payload = result
+                proposal.status = "executed"
+                proposal.after_snapshot = result
+            except Exception as exc:
+                execution.status = "failed"
+                execution.error_message = str(exc)
+                proposal.status = "failed"
+                proposal.after_snapshot = {"error": str(exc)}
+
+        execution.finished_at = datetime.now(timezone.utc)
         db.add(AgentOSOperationLog(
             user_id=user_id,
             item_id=f"action_proposal:{proposal.id}",
             action="execute",
             source_type="action_proposal",
             previous_status=target_from,
-            new_status="executed",
-            comment=None,
+            new_status=proposal.status,
         ))
         await db.flush()
         await db.refresh(proposal)
@@ -365,6 +388,7 @@ class ActionCenterService:
                 "proposal_id": execution.proposal_id,
                 "status": execution.status,
                 "command_name": execution.command_name,
+                "error_message": execution.error_message,
             },
         }
 

@@ -3,12 +3,13 @@
 import pytest
 
 from app.agentos.action_center_service import resolve_command_adapter
+from app.agentos.command_handlers import HANDLER_MAP
 
 
 def test_low_risk_internal_commands_are_supported():
     adapter = resolve_command_adapter("daily_report")
     assert adapter["command_name"] == "daily_report"
-    assert adapter["execution_mode"] == "record_only"
+    assert adapter["execution_mode"] == "integrated"
 
 
 def test_high_risk_unknown_command_is_blocked():
@@ -37,7 +38,13 @@ def test_notify_is_registered():
     assert adapter["command_name"] == "notify"
 
 
-def test_all_adapters_are_record_only():
+def test_all_adapters_are_integrated():
     for name in ["daily_report", "listing_draft", "profit_review", "inventory_allocate", "notify"]:
         adapter = resolve_command_adapter(name)
-        assert adapter["execution_mode"] == "record_only"
+        assert adapter["execution_mode"] == "integrated"
+
+
+def test_handler_map_has_all_adapters():
+    for name in ["daily_report", "listing_draft", "profit_review", "inventory_allocate", "notify"]:
+        assert name in HANDLER_MAP, f"Missing handler for {name}"
+        assert callable(HANDLER_MAP[name]), f"Handler for {name} is not callable"
