@@ -7,10 +7,22 @@ from app.common.schemas import PageResult, Result
 from app.database import get_db
 from app.models import User
 
-from .schemas import WorkItemApproval, WorkItemStatusUpdate
+from .action_center_service import ActionCenterService
+from .schemas import (
+    ActionApprovalPayload,
+    ActionExecutionPayload,
+    ActionProposalCreate,
+    ActionReviewPayload,
+    WorkItemApproval,
+    WorkItemStatusUpdate,
+)
 from .service import AgentOSService
 
 router = APIRouter(tags=["AgentOS"])
+
+
+def _operator(current_user: User) -> str:
+    return current_user.username if current_user else "system"
 
 
 @router.get("/agentos/control-center", summary="AgentOS 总控台")
@@ -29,6 +41,7 @@ async def list_work_items(
     priority: str | None = None,
     squad: str | None = None,
     agent_id: str | None = None,
+    source_type: str | None = None,
     requires_approval: bool | None = None,
     limit: int = 20,
     offset: int = 0,
@@ -42,6 +55,7 @@ async def list_work_items(
         priority=priority,
         squad=squad,
         agent_id=agent_id,
+        source_type=source_type,
         requires_approval=requires_approval,
         limit=limit,
         offset=offset,
@@ -96,6 +110,112 @@ async def list_operations(
         page=(offset // limit) + 1,
         page_size=limit,
     )
+
+
+# ── Phase 2: Action Proposal 端点 ──────────────────────────
+
+
+@router.post("/agentos/action-proposals", summary="创建 AgentOS 动作提案")
+async def create_action_proposal(
+    body: ActionProposalCreate,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:operate")),
+):
+    item = await ActionCenterService.create_proposal(
+        db, body, operator=_operator(current_user),
+    )
+    return Result.ok(item)
+
+
+@router.post("/agentos/action-proposals/{proposal_id}/approve", summary="审批通过动作提案")
+async def approve_action_proposal(
+    proposal_id: int,
+    body: ActionApprovalPayload,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:approve")),
+):
+    try:
+        result = await ActionCenterService.approve(
+            db,
+            proposal_id,
+            operator=_operator(current_user),
+            user_id=current_user.id,
+            comment=body.comment,
+        )
+    except ValueError as exc:
+        return Result.bad_request(str(exc))
+    if result is None:
+        return Result.not_found("ActionProposal not found")
+    return Result.ok(result)
+
+
+@router.post("/agentos/action-proposals/{proposal_id}/reject", summary="拒绝动作提案")
+async def reject_action_proposal(
+    proposal_id: int,
+    body: ActionApprovalPayload,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:approve")),
+):
+    try:
+        result = await ActionCenterService.reject(
+            db,
+            proposal_id,
+            operator=_operator(current_user),
+            user_id=current_user.id,
+            comment=body.comment,
+        )
+    except ValueError as exc:
+        return Result.bad_request(str(exc))
+    if result is None:
+        return Result.not_found("ActionProposal not found")
+    return Result.ok(result)
+
+
+@router.post("/agentos/action-proposals/{proposal_id}/execute", summary="执行动作提案")
+async def execute_action_proposal(
+    proposal_id: int,
+    body: ActionExecutionPayload,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:operate")),
+):
+    try:
+        result = await ActionCenterService.execute(
+            db,
+            proposal_id,
+            operator=_operator(current_user),
+            user_id=current_user.id,
+            executor=body.executor,
+        )
+    except ValueError as exc:
+        return Result.bad_request(str(exc))
+    if result is None:
+        return Result.not_found("ActionProposal not found")
+    return Result.ok(result)
+
+
+@router.post("/agentos/action-proposals/{proposal_id}/review", summary="复盘动作结果")
+async def review_action_proposal(
+    proposal_id: int,
+    body: ActionReviewPayload,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:operate")),
+):
+    try:
+        result = await ActionCenterService.review(
+            db,
+            proposal_id,
+            operator=_operator(current_user),
+            user_id=current_user.id,
+            outcome=body.outcome,
+            business_metric=body.business_metric,
+            metric_delta=body.metric_delta,
+            notes=body.notes,
+        )
+    except ValueError as exc:
+        return Result.bad_request(str(exc))
+    if result is None:
+        return Result.not_found("ActionProposal not found")
+    return Result.ok(result)
 
 
 # ── Phase 2: Mutation 操作 ──────────────────────────────

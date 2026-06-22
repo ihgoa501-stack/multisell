@@ -41,6 +41,16 @@
           />
         </div>
         <div class="filter-group">
+          <span class="filter-label">来源</span>
+          <n-select
+            v-model:value="filters.sourceType"
+            clearable
+            :options="sourceOptions"
+            style="width: 130px;"
+            placeholder="全部来源"
+          />
+        </div>
+        <div class="filter-group">
           <span class="filter-label">需审批</span>
           <n-switch v-model:value="filters.requiresApproval" />
         </div>
@@ -98,6 +108,7 @@ const filters = reactive({
   status: null as string | null,
   priority: null as string | null,
   squad: null as string | null,
+  sourceType: null as string | null,
   requiresApproval: false,
 })
 
@@ -123,6 +134,14 @@ const squadOptions = [
   { label: '风控小队', value: 'risk' },
 ]
 
+const sourceOptions = [
+  { label: '动作提案', value: 'action_proposal' },
+  { label: 'Agent 动作', value: 'agent_action' },
+  { label: '异常', value: 'exception' },
+  { label: '通知', value: 'notification' },
+  { label: '上架任务', value: 'listing_task' },
+]
+
 async function fetchItems() {
   loading.value = true
   try {
@@ -133,6 +152,7 @@ async function fetchItems() {
     if (filters.status) query.status = filters.status
     if (filters.priority) query.priority = filters.priority
     if (filters.squad) query.squad = filters.squad
+    if (filters.sourceType) query.source_type = filters.sourceType
     if (filters.requiresApproval) query.requires_approval = true
 
     const res: any = await getAgentOSWorkItems(query)
@@ -155,6 +175,7 @@ function resetFilters() {
   filters.status = null
   filters.priority = null
   filters.squad = null
+  filters.sourceType = null
   filters.requiresApproval = false
   currentPage.value = 1
   fetchItems()

@@ -10,6 +10,7 @@
 | 文档 | 说明 |
 |------|------|
 | [项目状态](PROJECT_STATUS.md) | 当前完成进度、功能清单 |
+| [Agent Commerce OS 完整蓝图](LINGMIRROR_AGENT_COMMERCE_OS_BLUEPRINT.md) | 完整产品定位、系统分层、开发路径 |
 | [产品愿景与 MVP](PRODUCT_VISION_AND_MVP.md) | 产品定位、第一可用版本定义 |
 | [路线图](ROADMAP.md) | Phase 0–8 详细阶段规划 |
 | [项目治理与 Agent 协作规范](PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | 协作规则、验收标准 |
@@ -46,6 +47,7 @@
 |------|------|
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [AgentOS Phase 1 实现计划](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) | 第一版工程骨架总控台 |
+| [Agent Commerce 动作中枢计划](superpowers/plans/2026-06-22-agent-commerce-action-center.md) | Phase 2 动作提案、审批、执行、复盘 |
 | [核心模块架构](PERMISSIONS_AND_AUDIT.md) | 权限系统 + 审计日志设计 |
 | [物流与运费 PRD](LOGISTICS_AND_SHIPPING_PRD.md) | 物流需求 |
 | [物流与运费技术规格](LOGISTICS_SHIPPING_TECH_SPEC.md) | 物流技术实现 |

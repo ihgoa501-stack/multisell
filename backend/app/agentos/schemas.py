@@ -273,3 +273,113 @@ class AgentDetailResponse(BaseModel):
     recent_operations: list[AgentOSOperationLogVO] = Field(default_factory=list)
     decision_count_7d: int = 0
     adoption_rate_7d: float = 0.0
+
+
+# ─── Phase 2: Action Center Schemas ────────────────────────────
+
+
+class ActionProposalStatus(str, Enum):
+    SUGGESTED = "suggested"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    EXECUTING = "executing"
+    EXECUTED = "executed"
+    REVIEWED = "reviewed"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    BLOCKED_BY_POLICY = "blocked_by_policy"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ActionProposalCreate(BaseModel):
+    source_type: str = Field(min_length=1, max_length=50)
+    source_id: Optional[str] = Field(default=None, max_length=100)
+    agent_id: Optional[str] = Field(default=None, max_length=20)
+    squad_id: Optional[str] = Field(default=None, max_length=50)
+    action_type: str = Field(min_length=1, max_length=100)
+    business_object_type: Optional[str] = Field(default=None, max_length=50)
+    business_object_id: Optional[str] = Field(default=None, max_length=100)
+    title: str = Field(min_length=1, max_length=300)
+    description: Optional[str] = None
+    proposed_payload: dict[str, Any] = Field(default_factory=dict)
+    before_snapshot: Optional[dict[str, Any]] = None
+    risk_level: RiskLevel = RiskLevel.MEDIUM
+    requires_approval: bool = True
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
+class ActionProposalVO(BaseModel):
+    id: int
+    source_type: str
+    source_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    squad_id: Optional[str] = None
+    action_type: str
+    business_object_type: Optional[str] = None
+    business_object_id: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    proposed_payload: dict[str, Any] = Field(default_factory=dict)
+    before_snapshot: Optional[dict[str, Any]] = None
+    after_snapshot: Optional[dict[str, Any]] = None
+    risk_level: RiskLevel
+    requires_approval: bool
+    status: ActionProposalStatus
+    confidence: Optional[float] = None
+    proposed_by: Optional[str] = None
+    approved_by: Optional[str] = None
+    rejected_by: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class ActionApprovalPayload(BaseModel):
+    comment: Optional[str] = None
+
+
+class ActionExecutionPayload(BaseModel):
+    executor: Optional[str] = None
+
+
+class ActionReviewPayload(BaseModel):
+    outcome: Literal["positive", "neutral", "negative"]
+    business_metric: Optional[str] = Field(default=None, max_length=100)
+    metric_delta: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class ApprovalRequestVO(BaseModel):
+    id: int
+    proposal_id: int
+    requester: Optional[str] = None
+    approver: Optional[str] = None
+    decision: str
+    comment: Optional[str] = None
+    created_at: Optional[datetime] = None
+    decided_at: Optional[datetime] = None
+
+
+class CommandExecutionVO(BaseModel):
+    id: int
+    proposal_id: int
+    command_name: str
+    executor: Optional[str] = None
+    status: str
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: Optional[dict[str, Any]] = None
+    error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+
+class OutcomeReviewVO(BaseModel):
+    id: int
+    proposal_id: int
+    outcome: str
+    business_metric: Optional[str] = None
+    metric_delta: Optional[float] = None
+    notes: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    created_at: Optional[datetime] = None

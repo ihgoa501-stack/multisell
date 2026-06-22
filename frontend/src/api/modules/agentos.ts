@@ -116,6 +116,7 @@ export interface WorkItemQuery {
   priority?: string
   squad?: string
   agent_id?: string
+  source_type?: string
   requires_approval?: boolean
   limit?: number
   offset?: number
@@ -231,6 +232,60 @@ export function getAgentOSAgentDetail(agentId: string) {
   return http.get(`/agentos/agents/${agentId}/detail`)
 }
 
+// ── Phase 5: Action Proposal API ─────────────────────────────
+
+export interface ActionProposalCreatePayload {
+  source_type: string
+  source_id?: string | null
+  agent_id?: string | null
+  squad_id?: string | null
+  action_type: string
+  business_object_type?: string | null
+  business_object_id?: string | null
+  title: string
+  description?: string | null
+  proposed_payload?: Record<string, any>
+  before_snapshot?: Record<string, any> | null
+  risk_level: RiskLevel
+  requires_approval: boolean
+  confidence?: number | null
+}
+
+export interface ActionApprovalPayload {
+  comment?: string | null
+}
+
+export interface ActionExecutionPayload {
+  executor?: string | null
+}
+
+export interface ActionReviewPayload {
+  outcome: 'positive' | 'neutral' | 'negative'
+  business_metric?: string | null
+  metric_delta?: number | null
+  notes?: string | null
+}
+
+export function createActionProposal(payload: ActionProposalCreatePayload) {
+  return http.post('/agentos/action-proposals', payload)
+}
+
+export function approveActionProposal(proposalId: number, payload: ActionApprovalPayload) {
+  return http.post(`/agentos/action-proposals/${proposalId}/approve`, payload)
+}
+
+export function rejectActionProposal(proposalId: number, payload: ActionApprovalPayload) {
+  return http.post(`/agentos/action-proposals/${proposalId}/reject`, payload)
+}
+
+export function executeActionProposal(proposalId: number, payload: ActionExecutionPayload) {
+  return http.post(`/agentos/action-proposals/${proposalId}/execute`, payload)
+}
+
+export function reviewActionProposal(proposalId: number, payload: ActionReviewPayload) {
+  return http.post(`/agentos/action-proposals/${proposalId}/review`, payload)
+}
+
 // ─── 兼容对象式导出（用于 apiModules 合并） ───────────────
 
 export const agentosApi = {
@@ -246,4 +301,9 @@ export const agentosApi = {
   upgradeAgentLevel,
   downgradeAgentLevel,
   getAgentOSAgentDetail,
+  createActionProposal,
+  approveActionProposal,
+  rejectActionProposal,
+  executeActionProposal,
+  reviewActionProposal,
 }

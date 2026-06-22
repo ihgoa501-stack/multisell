@@ -22,7 +22,8 @@ from app.agentos.schemas import (
     WorkItemStatus,
 )
 from app.models import ExceptionItem, Notification
-from app.agentos.models import AgentOSOperationLog
+from app.agentos.action_center_service import ActionCenterService
+from app.agentos.models import ActionProposal, AgentOSOperationLog
 
 # ─── Agent → Squad 映射 ──────────────────────────────────────
 
@@ -462,6 +463,7 @@ class AgentOSService:
         priority: str | None = None,
         squad: str | None = None,
         agent_id: str | None = None,
+        source_type: str | None = None,
         requires_approval: bool | None = None,
         limit: int = 20,
         offset: int = 0,
@@ -478,6 +480,8 @@ class AgentOSService:
             all_items = [i for i in all_items if i.squad_id == squad]
         if agent_id:
             all_items = [i for i in all_items if i.agent_id == agent_id]
+        if source_type:
+            all_items = [i for i in all_items if i.source_type == source_type]
         if requires_approval is not None:
             all_items = [i for i in all_items if i.requires_approval == requires_approval]
 
@@ -571,6 +575,15 @@ class AgentOSService:
             result = await db.execute(stmt)
             for row in result.scalars().all():
                 items.append(AgentOSService.normalize_listing_task(row))
+        except Exception:
+            pass
+
+        # ActionProposal（动作中枢持久化提案）
+        try:
+            proposal_stmt = select(ActionProposal).order_by(ActionProposal.created_at.desc()).limit(100)
+            proposal_result = await db.execute(proposal_stmt)
+            for row in proposal_result.scalars().all():
+                items.append(ActionCenterService.proposal_to_work_item(row))
         except Exception:
             pass
 
@@ -941,9 +954,8 @@ class AgentOSService:
                 db, limit=20, offset=0,
             )
             op_records = ops_result.get("records", [])
-            from app.agentos.schemas import AgentOSOperationLogVO
             for op in op_records:
-                if isinstance(op, AgentOSOperationLogVO) and agent_id in op.item_id:
+                if isinstance(op, AgentOSOperationLogVO) and op.item_id == f"agent:{agent_id}":
                     operations.append(op)
         except Exception:
             pass
@@ -1002,22 +1014,24 @@ class AgentOSService:
         agent_id: str,
         target_level: str,
     ) -> bool:
-        """更新 AgentEvolutionConfig 的 current_stage"""
+        """更新 AgentEvolutionConfig 的 current_stage（不使用 ORM 以避免 session 状态问题）"""
         try:
             from app.agent.models import AgentEvolutionConfig
+            from sqlalchemy import update as sa_update
 
             db_stage = AgentOSService._map_autonomy_level(target_level)
-            # 查找已有配置，不存在则创建
-            stmt = select(AgentEvolutionConfig).where(
-                AgentEvolutionConfig.user_id == user_id,
-                AgentEvolutionConfig.agent_id == agent_id,
+            result = await db.execute(
+                sa_update(AgentEvolutionConfig)
+                .where(
+                    AgentEvolutionConfig.user_id == user_id,
+                    AgentEvolutionConfig.agent_id == agent_id,
+                )
+                .values(current_stage=db_stage)
+                .returning(AgentEvolutionConfig.id)
             )
-            result = await db.execute(stmt)
-            config = result.scalar_one_or_none()
-
-            if config:
-                config.current_stage = db_stage
-            else:
+            updated_id = result.scalar_one_or_none()
+            if updated_id is None:
+                # 没有已有配置，创建一条新的
                 config = AgentEvolutionConfig(
                     user_id=user_id,
                     agent_id=agent_id,
@@ -1027,7 +1041,10 @@ class AgentOSService:
                 )
                 db.add(config)
             return True
-        except Exception:
+        except Exception as e:
+            import sys, traceback
+            print(f"[UPDATE_STAGE_FAIL] user_id={user_id} agent={agent_id} target={target_level} exc={e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             return False
 
     @staticmethod
@@ -1191,6 +1208,15 @@ class AgentOSService:
         comment: str | None = None,
     ) -> dict[str, Any]:
         """审批通过一个 WorkItem，触发底层动作执行"""
+        if item_id.startswith("action_proposal:"):
+            source_id = item_id[len("action_proposal:"):]
+            result = await ActionCenterService.approve(
+                db, int(source_id), operator=str(user_id),
+                user_id=user_id, comment=comment,
+            )
+            if result is None:
+                return {"ok": False, "error": "not_found"}
+            return result
         if item_id.startswith("agent_action:"):
             try:
                 from app.agent.models import AgentAction as PendingAgentAction
@@ -1222,6 +1248,15 @@ class AgentOSService:
         comment: str | None = None,
     ) -> dict[str, Any]:
         """拒绝一个 WorkItem"""
+        if item_id.startswith("action_proposal:"):
+            source_id = item_id[len("action_proposal:"):]
+            result = await ActionCenterService.reject(
+                db, int(source_id), operator=str(user_id),
+                user_id=user_id, comment=comment,
+            )
+            if result is None:
+                return {"ok": False, "error": "not_found"}
+            return result
         if item_id.startswith("agent_action:"):
             try:
                 from app.agent.models import AgentAction as PendingAgentAction

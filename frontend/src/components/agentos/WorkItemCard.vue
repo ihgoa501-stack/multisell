@@ -15,6 +15,16 @@
 
     <p v-if="item.description" style="color: #666; font-size: 13px; margin: 4px 0;">{{ item.description }}</p>
 
+    <n-space v-if="item.metadata?.action_type" size="small" style="margin-top: 6px;">
+      <n-tag size="small" :bordered="false">{{ item.metadata.action_type }}</n-tag>
+      <n-tag v-if="item.metadata?.business_object_type" size="small" :bordered="false">
+        {{ item.metadata.business_object_type }}:{{ item.metadata.business_object_id || '-' }}
+      </n-tag>
+      <n-tag v-if="item.metadata?.confidence !== undefined" size="small" :bordered="false">
+        置信度 {{ Math.round(Number(item.metadata.confidence || 0) * 100) }}%
+      </n-tag>
+    </n-space>
+
     <n-grid :cols="4" :x-gap="12" :y-gap="8" style="margin-top: 8px;">
       <n-grid-item>
         <div class="meta-label">来源</div>
@@ -126,6 +136,7 @@ const riskType = computed(() => {
 
 const sourceLabel = computed(() => {
   const map: Record<string, string> = {
+    action_proposal: '动作提案',
     agent_action: 'Agent 动作',
     exception: '异常',
     notification: '通知',
