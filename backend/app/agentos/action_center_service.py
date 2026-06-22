@@ -1,7 +1,7 @@
 """AgentOS action center service."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -44,6 +44,31 @@ def resolve_command_adapter(action_type: str) -> dict[str, str]:
     if adapter is None:
         raise ValueError(f"Business command adapter not registered: {action_type}")
     return adapter
+
+
+def _build_compensation(action_type: str, payload: dict) -> dict | None:
+    """Build compensation definition for undoable actions."""
+    compensation_map = {
+        "replenish": {
+            "type": "cancel_purchase_order",
+            "risk_level": "medium",
+        },
+        "price_review": {
+            "type": "revert_price_change",
+            "risk_level": "medium",
+        },
+        "ad_action": {
+            "type": "revert_ad_change",
+            "risk_level": "low",
+        },
+    }
+    base = compensation_map.get(action_type)
+    if base is None:
+        return None  # not undoable
+    return {
+        **base,
+        "params": {"ref_id": f"{action_type}:{payload.get('sku_code', 'unknown')}"},
+    }
 
 
 RISK_TO_PRIORITY = {
@@ -114,6 +139,10 @@ class ActionCenterService:
             "approved_by": row.approved_by,
             "rejected_by": row.rejected_by,
             "rejection_reason": row.rejection_reason,
+            "store_id": row.store_id,
+            "approval_deadline": row.approval_deadline.isoformat() if row.approval_deadline else None,
+            "escalation_level": row.escalation_level or 0,
+            "auto_decision": row.auto_decision or "reject",
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }
@@ -156,6 +185,28 @@ class ActionCenterService:
         operator: str,
     ) -> AgentOSWorkItem:
         status = "pending_approval" if payload.requires_approval else "suggested"
+
+        # Compute approval_deadline and auto_decision based on risk_level
+        deadline_map = {
+            "critical": timedelta(minutes=30),
+            "high": timedelta(minutes=30),
+            "medium": timedelta(hours=4),
+            "low": timedelta(hours=24),
+        }
+        risk_level_str = (
+            payload.risk_level.value
+            if hasattr(payload.risk_level, "value")
+            else payload.risk_level
+        )
+        approval_deadline = datetime.now(timezone.utc) + deadline_map.get(
+            risk_level_str, timedelta(hours=24)
+        )
+        auto_decision = "reject"
+        if risk_level_str == "low":
+            amount = (payload.proposed_payload or {}).get("amount", 999)
+            if amount < 100:
+                auto_decision = "auto_execute"
+
         proposal = ActionProposal(
             source_type=payload.source_type,
             source_id=payload.source_id,
@@ -173,6 +224,10 @@ class ActionCenterService:
             status=status,
             confidence=payload.confidence,
             proposed_by=operator,
+            store_id=payload.store_id,
+            approval_deadline=approval_deadline,
+            escalation_level=payload.escalation_level if payload.escalation_level else 0,
+            auto_decision=auto_decision,
         )
         db.add(proposal)
         await db.flush()
@@ -345,6 +400,11 @@ class ActionCenterService:
         db.add(execution)
         await db.flush()
 
+        # Pre-fill compensation if this action type supports it
+        execution.compensation = _build_compensation(
+            proposal.action_type, proposal.proposed_payload or {}
+        )
+
         # 调度到真实 handler
         handler = HANDLER_MAP.get(proposal.action_type)
         if handler is None:
@@ -368,6 +428,18 @@ class ActionCenterService:
                 proposal.status = "failed"
                 proposal.after_snapshot = {"error": str(exc)}
 
+        # Link compensation back to original execution if this is a compensation action
+        if proposal.source_type == "compensation" and proposal.source_id and execution.status == "succeeded":
+            original_proposal_id = int(proposal.source_id)
+            orig_stmt = select(CommandExecution).where(
+                CommandExecution.proposal_id == original_proposal_id,
+                CommandExecution.status == "succeeded",
+            ).order_by(CommandExecution.id.desc()).limit(1)
+            orig_result = await db.execute(orig_stmt)
+            orig_exec = orig_result.scalar_one_or_none()
+            if orig_exec:
+                orig_exec.compensated_by = execution.id
+
         execution.finished_at = datetime.now(timezone.utc)
         db.add(AgentOSOperationLog(
             user_id=user_id,
@@ -389,6 +461,7 @@ class ActionCenterService:
                 "status": execution.status,
                 "command_name": execution.command_name,
                 "error_message": execution.error_message,
+                "compensation": execution.compensation,
             },
         }
 
@@ -442,3 +515,92 @@ class ActionCenterService:
                 "notes": review.notes,
             },
         }
+
+    # ── Phase 5: Compensation Operations ─────────────────────────
+
+    @staticmethod
+    async def create_compensation(
+        db: AsyncSession,
+        proposal_id: int,
+        operator: str,
+        user_id: int,
+    ) -> dict | None:
+        """Create a compensation ActionProposal to undo an executed command."""
+        proposal = await db.get(ActionProposal, proposal_id)
+        if not proposal or proposal.status != "executed":
+            return None
+
+        # Find the execution with compensation data
+        stmt = select(CommandExecution).where(
+            CommandExecution.proposal_id == proposal_id,
+            CommandExecution.status == "succeeded",
+        ).order_by(CommandExecution.id.desc()).limit(1)
+        result = await db.execute(stmt)
+        execution = result.scalar_one_or_none()
+        if not execution or not execution.compensation:
+            return None
+
+        comp = execution.compensation
+        risk_map = {
+            "low": RiskLevel.LOW,
+            "medium": RiskLevel.MEDIUM,
+            "high": RiskLevel.HIGH,
+        }
+
+        # Create new proposal for the compensation
+        comp_payload = ActionProposalCreate(
+            source_type="compensation",
+            source_id=str(proposal_id),
+            agent_id=proposal.agent_id,
+            squad_id=proposal.squad_id,
+            action_type=f"undo_{proposal.action_type}",
+            business_object_type=proposal.business_object_type,
+            business_object_id=proposal.business_object_id,
+            title=f"撤销: {proposal.title}",
+            description=f"补偿操作 — 撤销原始操作 #{proposal_id}",
+            proposed_payload=comp.get("params", {}),
+            risk_level=risk_map.get(comp.get("risk_level", "medium"), RiskLevel.MEDIUM),
+            requires_approval=True,
+            confidence=0.95,
+            store_id=proposal.store_id,
+        )
+
+        work_item = await ActionCenterService.create_proposal(db, comp_payload, operator)
+
+        return {"ok": True, "compensation_proposal": work_item}
+
+    # ── Phase 5: Approval Timeout Escalation (§3.2) ──────────────
+
+    @staticmethod
+    async def check_expired_approvals(db: AsyncSession):
+        """Check for proposals past their approval_deadline and escalate or auto-decide."""
+        now = datetime.now(timezone.utc)
+
+        # Find pending proposals past deadline
+        stmt = select(ActionProposal).where(
+            ActionProposal.status.in_(["pending_approval", "suggested"]),
+            ActionProposal.approval_deadline.isnot(None),
+            ActionProposal.approval_deadline < now,
+        )
+        result = await db.execute(stmt)
+        expired = list(result.scalars().all())
+
+        for proposal in expired:
+            if proposal.auto_decision == "reject":
+                proposal.status = "rejected"
+                proposal.rejection_reason = "审批超时自动拒绝"
+            elif proposal.auto_decision == "auto_execute":
+                # Low risk only — execute directly
+                proposal.status = "executed"
+            else:
+                # Escalate
+                new_level = (proposal.escalation_level or 0) + 1
+                if new_level >= 3:  # Max escalation
+                    proposal.status = "rejected"
+                    proposal.rejection_reason = "审批超时，已达最大升级层级"
+                else:
+                    proposal.escalation_level = new_level
+                    # Extend deadline
+                    proposal.approval_deadline = now + timedelta(hours=4)
+
+        await db.flush()

@@ -65,6 +65,16 @@
             @click="handleExecuteProposal"
           >执行</n-button>
 
+          <!-- 撤销按钮：已执行的 action_proposal（显示在复盘按钮之前） -->
+          <n-button
+            v-if="showUndo"
+            size="tiny"
+            type="warning"
+            ghost
+            :loading="undoing"
+            @click="showUndoConfirm = true"
+          >↩ 撤销</n-button>
+
           <!-- 复盘按钮：已执行的 action_proposal -->
           <n-button
             v-if="showReview"
@@ -130,6 +140,18 @@
         </n-space>
       </template>
     </n-modal>
+
+      <!-- 撤销确认弹窗 -->
+      <n-modal v-model:show="showUndoConfirm" title="确认撤销" preset="card" style="width: 400px;" :mask-closable="false">
+        <p style="margin-bottom: 12px;">确定要撤销操作 "{{ item.title }}" 吗？</p>
+        <p style="color: #888; font-size: 13px;">撤销操作会创建一个新的补偿提案，需经过审批和重新执行。</p>
+        <template #footer>
+          <n-space justify="end">
+            <n-button @click="showUndoConfirm = false" :disabled="undoing">取消</n-button>
+            <n-button type="warning" :loading="undoing" @click="handleUndo">确认撤销</n-button>
+          </n-space>
+        </template>
+      </n-modal>
   </n-card>
 </template>
 
@@ -144,6 +166,7 @@ import {
   rejectWorkItem,
   executeActionProposal,
   reviewActionProposal,
+  undoActionProposal,
 } from '@/api/modules/agentos'
 import AutonomyBadge from './AutonomyBadge.vue'
 
@@ -165,6 +188,8 @@ const mutating = ref(false)
 const execError = ref('')
 const showReviewModal = ref(false)
 const reviewing = ref(false)
+const showUndoConfirm = ref(false)
+const undoing = ref(false)
 const reviewForm = ref({
   outcome: 'positive' as 'positive' | 'neutral' | 'negative',
   business_metric: '',
@@ -190,6 +215,12 @@ const showExecute = computed(() =>
 )
 
 const showReview = computed(() =>
+  !props.hideActions &&
+  isActionProposal.value &&
+  status.value === 'completed'
+)
+
+const showUndo = computed(() =>
   !props.hideActions &&
   isActionProposal.value &&
   status.value === 'completed'
@@ -339,6 +370,23 @@ async function handleSubmitReview() {
     message.error(e?.response?.data?.message || '复盘提交失败')
   } finally {
     reviewing.value = false
+  }
+}
+
+async function handleUndo() {
+  if (!proposalId.value) return
+  undoing.value = true
+  try {
+    const res: any = await undoActionProposal(proposalId.value)
+    const proposalId = res?.data?.compensation_proposal?.source_id
+    message.success('撤销提案已创建，请审批后执行')
+    showUndoConfirm.value = false
+    emit('statusUpdated', props.item)
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '撤销失败')
+    showUndoConfirm.value = false
+  } finally {
+    undoing.value = false
   }
 }
 </script>

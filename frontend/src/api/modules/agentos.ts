@@ -286,6 +286,10 @@ export function reviewActionProposal(proposalId: number, payload: ActionReviewPa
   return http.post(`/agentos/action-proposals/${proposalId}/review`, payload)
 }
 
+export function undoActionProposal(proposalId: number) {
+  return http.post(`/agentos/action-proposals/${proposalId}/undo`)
+}
+
 // ─── 兼容对象式导出（用于 apiModules 合并） ───────────────
 
 export const agentosApi = {
@@ -306,4 +310,5 @@ export const agentosApi = {
   rejectActionProposal,
   executeActionProposal,
   reviewActionProposal,
+  undoActionProposal,
 }

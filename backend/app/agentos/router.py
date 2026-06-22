@@ -1,6 +1,6 @@
 """AgentOS 聚合路由"""
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 
 from app.auth import require_permission
 from app.common.schemas import PageResult, Result
@@ -215,6 +215,24 @@ async def review_action_proposal(
         return Result.bad_request(str(exc))
     if result is None:
         return Result.not_found("ActionProposal not found")
+    return Result.ok(result)
+
+
+@router.post("/agentos/action-proposals/{proposal_id}/undo", summary="撤销已执行的动作提案")
+async def undo_action_proposal(
+    proposal_id: int,
+    db=Depends(get_db),
+    current_user: User = Depends(require_permission("agentos:action")),
+):
+    """Create a compensation proposal for an executed action."""
+    result = await ActionCenterService.create_compensation(
+        db,
+        proposal_id,
+        operator=_operator(current_user),
+        user_id=current_user.id,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Action proposal not found or not undoable")
     return Result.ok(result)
 
 
