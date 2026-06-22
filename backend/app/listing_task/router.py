@@ -167,6 +167,30 @@ async def execute_task(
     })
 
 
+@router.post("/{task_id}/retry-failed", summary="重试任务下所有失败项")
+async def retry_all_failed_items(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("listing:publish")),
+):
+    task = await ListingTaskService.get_task(db, task_id)
+    if not task:
+        return Result.not_found("任务不存在")
+
+    count = await ListingTaskService.retry_all_failed(db, task_id)
+
+    await OperationLogService.log(
+        db,
+        module="listing_task",
+        action="retry_all_failed",
+        resource_id=str(task_id),
+        content=f"重试所有失败条目: task_id={task_id}, count={count}",
+        operator=current_user.username,
+    )
+
+    return Result.ok({"reset_count": count})
+
+
 @router.post("/{task_id}/items/{item_id}/retry", summary="重试单个条目")
 async def retry_item(
     task_id: int,

@@ -29,6 +29,15 @@
           @update:value="load"
         />
         <n-button :loading="loading" @click="load">刷新</n-button>
+        <n-button
+          v-if="hasFailedItems"
+          type="warning"
+          secondary
+          :loading="retryingAll"
+          @click="handleRetryAllFailed"
+        >
+          {{ retryingAll ? '重置中...' : '重试所有失败项' }}
+        </n-button>
       </n-space>
 
       <n-data-table
@@ -42,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton,
@@ -55,7 +64,7 @@ import {
   NTag,
   useMessage,
 } from 'naive-ui'
-import { fetchListingTaskDetail, retryListingItem } from '@/api/modules/listingTask'
+import { fetchListingTaskDetail, retryListingItem, retryAllFailed } from '@/api/modules/listingTask'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,6 +75,9 @@ const task = ref<any>(null)
 const items = ref<any[]>([])
 const statusFilter = ref<string | null>(null)
 const retryingIds = ref<Set<number>>(new Set())
+const retryingAll = ref(false)
+
+const hasFailedItems = computed(() => items.value.some((i: any) => i.status === 'failed'))
 
 const itemStatusOptions = [
   { label: '待处理', value: 'pending' },
@@ -166,6 +178,20 @@ async function handleRetry(itemId: number) {
     msg.error(err?.message || '重试失败')
   } finally {
     retryingIds.value.delete(itemId)
+  }
+}
+
+async function handleRetryAllFailed() {
+  const taskId = Number(route.params.id)
+  retryingAll.value = true
+  try {
+    const res = await retryAllFailed(taskId)
+    msg.success(`已重置 ${res.data?.reset_count || 0} 个失败条目`)
+    await load()
+  } catch (err: any) {
+    msg.error(err?.message || '重试失败')
+  } finally {
+    retryingAll.value = false
   }
 }
 

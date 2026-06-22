@@ -197,6 +197,24 @@ class ListingTaskService:
         return task
 
     @staticmethod
+    async def retry_all_failed(
+        db: AsyncSession,
+        task_id: int,
+    ) -> int:
+        """重置任务下所有失败条目为待处理状态"""
+        stmt = select(ListingTaskItem).where(
+            ListingTaskItem.task_id == task_id,
+            ListingTaskItem.status == "failed",
+        )
+        items = (await db.execute(stmt)).scalars().all()
+        for item in items:
+            item.status = "pending"
+            item.retry_count = 0
+            item.error_message = None
+        await db.flush()
+        return len(items)
+
+    @staticmethod
     async def retry_item(
         db: AsyncSession,
         task: ListingTask,
