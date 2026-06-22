@@ -44,9 +44,12 @@ COMMAND_ADAPTERS: dict[str, dict[str, str]] = {
 
 def resolve_command_adapter(action_type: str) -> dict[str, str]:
     adapter = COMMAND_ADAPTERS.get(action_type)
-    if adapter is None:
-        raise ValueError(f"Business command adapter not registered: {action_type}")
-    return adapter
+    if adapter is not None:
+        return adapter
+    # 补偿操作: undo_<action> 映射到 record_only（仅记录，不调外部）
+    if action_type.startswith("undo_"):
+        return {"command_name": action_type, "execution_mode": "record_only"}
+    raise ValueError(f"Business command adapter not registered: {action_type}")
 
 
 def _build_compensation(action_type: str, payload: dict) -> dict | None:
@@ -248,6 +251,7 @@ class ActionCenterService:
         if proposal.business_object_type and proposal.business_object_id and proposal.agent_id:
             try:
                 from app.agentos.arbitrator import AutoArbitrator
+                # TODO: pass real user_id from caller (needs create_proposal signature update)
                 await AutoArbitrator.detect_and_arbitrate(db, proposal)
             except Exception:
                 logger.exception("Auto-arbitration failed for proposal %s", proposal.id)

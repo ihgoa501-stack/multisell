@@ -19,7 +19,7 @@ class AutoArbitrator:
 
     @staticmethod
     async def detect_and_arbitrate(
-        db: AsyncSession, new_proposal: APModel
+        db: AsyncSession, new_proposal: APModel, user_id: int = 1
     ) -> None:
         """Detect conflicts within the window and trigger arbitration if needed."""
         cutoff = datetime.now(timezone.utc) - timedelta(
@@ -65,7 +65,7 @@ class AutoArbitrator:
                 new_proposal.agent_id,
                 c.action_type or new_proposal.action_type or "",
                 {},
-                user_id=1,  # ponytail: need user_id on ActionProposal to pass correct value
+                user_id=user_id,
             )
             if matrix_result:
                 # Apply matrix result: reject losing proposals
@@ -95,7 +95,7 @@ class AutoArbitrator:
                 return
 
         # Step 2: If Policy Matrix didn't cover it, try Arbiter G0
-        arbiter = G0ArbiterAgent(user_id=1)
+        arbiter = G0ArbiterAgent(user_id=user_id)
         arbiter_context = {
             "agent_id_a": conflicting[0].agent_id,
             "agent_id_b": new_proposal.agent_id,

@@ -7,6 +7,8 @@ from typing import Any, Optional
 
 import logging
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -194,7 +196,14 @@ def llm_resilient(func):
                 }
 
             try:
-                result = await func(self, decision_point, context, db=db)
+                # 切换 model 配置，实现真实降级
+                original_model = getattr(settings, 'LLM_MODEL', None)
+                settings.LLM_MODEL = model
+                try:
+                    result = await func(self, decision_point, context, db=db)
+                finally:
+                    settings.LLM_MODEL = original_model  # 始终恢复
+
                 cb_mgr.record_success(self.agent_id, decision_point)
                 result["_llm_model"] = model
                 # 写入缓存

@@ -127,10 +127,25 @@ async def handle_notify(db: AsyncSession, payload: dict[str, Any]) -> dict[str, 
 
 # ── 注册表 ────────────────────────────────────────────────────
 
+# ── Handler 6: undo (补偿操作通用处理器) ─────────────────────────
+
+
+async def handle_undo(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
+    """通用补偿处理器 — 记录补偿操作，不调外部服务"""
+    return {
+        "mode": "compensation",
+        "status": "recorded",
+        "message": f"补偿操作已记录: {payload.get('ref_id', 'unknown')}",
+    }
+
+
 HANDLER_MAP: dict[str, Any] = {
     "profit_review": handle_profit_review,
     "inventory_allocate": handle_inventory_allocate,
     "listing_draft": handle_listing_draft,
     "daily_report": handle_daily_report,
     "notify": handle_notify,
+    "cancel_purchase_order": handle_undo,
+    "revert_price_change": handle_undo,
+    "revert_ad_change": handle_undo,
 }
