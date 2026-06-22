@@ -1,5 +1,6 @@
 # SPEC: 凌镜 LingMirror AI Agent 模块垂直深挖
 
+> **状态: 设计草案 · 部分实现** — 详见 [SPEC_GAP.md](SPEC_GAP.md) 逐项追踪
 > 版本: v2.0.0-ai-deep-dive | 日期: 2026-06-22
 > 基于对 Hermes Agent 系统（OBSERVATION → FULL_AUTONOMOUS 四阶演进）的架构审计与扩张设计
 
