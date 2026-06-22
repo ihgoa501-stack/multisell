@@ -196,6 +196,37 @@ class ProductSupplier(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
 
 
+class Sourcing1688Product(Base):
+    """1688 货源采集候选池"""
+    __tablename__ = "sourcing_1688_product"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    source_url = Column(String(1000), nullable=False, unique=True, comment="1688 商品链接")
+    title = Column(String(500), comment="采集标题")
+    price = Column(Numeric(10, 2), comment="采集供货价")
+    moq = Column(Integer, default=1, comment="最小起订量")
+    supplier_name = Column(String(200), comment="供应商名称")
+    shop_url = Column(String(1000), comment="1688 店铺链接")
+    shop_location = Column(String(200), comment="店铺地区")
+    images = Column(JSON, comment="图片列表")
+    attributes = Column(JSON, comment="属性列表")
+    sku_variants = Column(JSON, comment="SKU 变体")
+    description = Column(Text, comment="描述")
+    package_length_cm = Column(Numeric(10, 2), comment="包装长(cm)")
+    package_width_cm = Column(Numeric(10, 2), comment="包装宽(cm)")
+    package_height_cm = Column(Numeric(10, 2), comment="包装高(cm)")
+    package_weight_kg = Column(Numeric(10, 2), comment="包装重量(kg)")
+    raw_data = Column(JSON, comment="完整原始 payload")
+    status = Column(String(50), default="collected", comment="状态: collected/imported/rejected")
+    product_id = Column(BigInteger, ForeignKey("product.id"), comment="导入后的商品 ID")
+    supplier_id = Column(BigInteger, ForeignKey("supplier.id"), comment="导入后的供应商 ID")
+    collected_by = Column(String(100), comment="采集人")
+    imported_by = Column(String(100), comment="导入人")
+    imported_at = Column(DateTime(timezone=True), comment="导入时间")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 class ShippingProvider(Base):
     """物流供应商"""
     __tablename__ = "shipping_provider"
@@ -565,6 +596,9 @@ class AgentAction(Base):
     executed_at = Column(DateTime(timezone=True), comment="执行时间")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+AgentActionProposal = AgentAction
 
 
 class PlatformIntegrationAccount(Base):
