@@ -30,3 +30,5 @@ src/main/
 
 # Playwright MCP
 .playwright-mcp/
+test-screenshot-*.png
+frontend/.sdd_finale_base
