@@ -7,6 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.models import AgentDecision, PersonalRule, AgentEpisode, HonchoProfile, RuleConflict
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import AgentRegistry
+from app.agent.llm_resilience import (
+    LLMCircuitBreakerManager,
+    _get_cached_decision,
+    _set_cached_decision,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -208,13 +213,18 @@ class AgentService:
     ) -> dict:
         start_time = time.time()
 
-        agent_output = await agent.decide(decision_point, context, db=db)
+        agent_output = await AgentService._call_with_resilience(
+            agent, decision_point, context, db=db
+        )
         confidence = agent_output.get("confidence", 0.0)
         stage = agent.get_stage(decision_point)
 
         decision, applied_rule_ids = await AgentService.apply_rules(
             db, agent.user_id, agent.agent_id, decision_point, agent_output
         )
+
+        # §5.3 输出验证
+        decision = AgentService._sanitize_output(agent.agent_id, decision)
 
         elapsed = int((time.time() - start_time) * 1000)
 
@@ -248,6 +258,97 @@ class AgentService:
             "rules_applied": applied_rule_ids,
             "decision_id": decision_id,
         }
+
+    # ── LLM 韧性辅助 ──────────────────────────────
+
+    @staticmethod
+    async def _call_with_resilience(
+        agent: BaseAgent,
+        decision_point: str,
+        context: dict,
+        db: Any = None,
+    ) -> dict:
+        """对 agent.decide() 调用添加熔断检查 + 缓存
+
+        熔断关闭时直接调用 agent.decide() 并记录成功/失败；
+        熔断开启时尝试命中缓存，都失败则返回降级决策。
+        """
+        cb_mgr = LLMCircuitBreakerManager()
+        agent_id = agent.agent_id
+
+        # 1. 检查熔断器
+        if not cb_mgr.can_proceed(agent_id, decision_point):
+            cached = await _get_cached_decision(db, agent_id, decision_point, context)
+            if cached:
+                return {**cached, "_from_cache": True, "_circuit_open": True}
+            return {
+                "confidence": 0.0,
+                "error": "circuit_open",
+                "summary": "断路器开启，跳过本轮",
+            }
+
+        # 2. 尝试缓存（跳过 LLM 调用）
+        cached = await _get_cached_decision(db, agent_id, decision_point, context)
+        if cached:
+            return {**cached, "_from_cache": True}
+
+        # 3. 正常调用
+        try:
+            result = await agent.decide(decision_point, context, db=db)
+            cb_mgr.record_success(agent_id, decision_point)
+            # 非错误响应才写入缓存
+            if result.get("error") is None:
+                await _set_cached_decision(db, agent_id, decision_point, context, result)
+            return result
+        except Exception as e:
+            cb_mgr.record_failure(agent_id, decision_point)
+            logger.warning(
+                "Agent.decide() failed for %s/%s: %s",
+                agent_id, decision_point, e,
+            )
+            # 尝试缓存兜底
+            cached = await _get_cached_decision(db, agent_id, decision_point, context)
+            if cached:
+                return {**cached, "_from_cache": True, "_circuit_open": True}
+            return {
+                "confidence": 0.0,
+                "error": str(e),
+                "summary": f"Agent.decide() 异常: {e}",
+            }
+
+    # ── §5.3 输出验证 ──────────────────────────────
+
+    @staticmethod
+    def _sanitize_output(agent_id: str, decision: dict) -> dict:
+        """轻量输出验证 — 不额外调 LLM
+
+        非负检查会阻断 action；存在性/合理性检查仅发出警告。
+        """
+        warnings = []
+        payload = decision.get("action_payload", {}) or {}
+
+        # 存在性检查（warn, don't block）
+        sku_code = payload.get("sku_code")
+        if sku_code is not None and not isinstance(sku_code, str):
+            warnings.append("sku_code invalid type")
+
+        # 非负检查（block）
+        for field in ["suggested_qty", "suggested_price", "final_price"]:
+            val = payload.get(field)
+            if val is not None and (not isinstance(val, (int, float)) or val < 0):
+                warnings.append(f"{field}={val} is negative, dropping action")
+                return {}  # 空决策 = 跳过该 action
+
+        # price > cost 合理性（warn only）
+        selling = payload.get("final_price") or payload.get("suggested_price")
+        cost = payload.get("cost_price")
+        if selling is not None and cost is not None and selling < cost:
+            warnings.append(f"selling_price({selling}) < cost_price({cost})")
+
+        if warnings:
+            decision["_validation_warnings"] = warnings
+
+        return decision
 
     @staticmethod
     async def get_or_create_honcho_profile(db: AsyncSession, user_id: int) -> HonchoProfile:
