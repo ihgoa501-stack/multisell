@@ -1,6 +1,7 @@
 """Tests for the background listing task worker."""
 
 import asyncio
+from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
 import pytest
@@ -110,7 +111,7 @@ async def test_worker_marks_item_failed_on_adapter_error(async_client):
 
     from app.listing.worker import ListingWorker
 
-    worker = ListingWorker(poll_interval=0.05)
+    worker = ListingWorker(poll_interval=0.05, max_retries=0)
     try:
         await worker.start()
         await asyncio.sleep(0.2)
@@ -124,6 +125,44 @@ async def test_worker_marks_item_failed_on_adapter_error(async_client):
         assert row.status == "failed", f"Expected failed, got {row.status}"
         assert row.error_message, "Should have error_message"
         assert row.retry_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_worker_re_queues_retryable_failures(async_client):
+    """Item with retry_count < max_retries gets re-queued to 'pending' after execution failure."""
+    async with async_session_factory() as session:
+        platform = await _get_or_create_mockfail_platform(session)
+        product = await _create_product(session)
+        task = await _create_listing_task(session, product.id, platform.id)
+        item = ListingTaskItem(
+            task_id=task.id,
+            product_id=product.id,
+            platform_id=platform.id,
+            status="failed",
+            retry_count=1,
+            error_message="transient",
+            executed_at=datetime.now(timezone.utc) - timedelta(seconds=300),
+        )
+        session.add(item)
+        await session.flush()
+        await session.commit()
+        item_id = item.id
+
+    from app.listing.worker import ListingWorker
+
+    worker = ListingWorker(poll_interval=1.0, max_retries=3, retry_delay_seconds=0)
+    try:
+        await worker.start()
+        await asyncio.sleep(0.2)
+    finally:
+        await worker.stop()
+
+    async with async_session_factory() as session:
+        stmt = select(ListingTaskItem).where(ListingTaskItem.id == item_id)
+        row = (await session.execute(stmt)).scalar_one_or_none()
+        assert row is not None, "Item should exist"
+        assert row.status == "pending", f"Expected pending, got {row.status}"
+        assert row.retry_count == 2, f"Expected retry_count=2, got {row.retry_count}"
 
 
 @pytest.mark.asyncio

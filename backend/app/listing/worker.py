@@ -17,8 +17,10 @@ logger = logging.getLogger(__name__)
 class ListingWorker:
     """Polls and executes pending listing task items."""
 
-    def __init__(self, poll_interval: float = 10.0):
+    def __init__(self, poll_interval: float = 10.0, max_retries: int = 3, retry_delay_seconds: float = 60.0):
         self._poll_interval = poll_interval
+        self._max_retries = max_retries
+        self._retry_delay = retry_delay_seconds
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
 
@@ -47,9 +49,18 @@ class ListingWorker:
 
     async def _tick(self):
         async with async_session_factory() as db:
+            now = datetime.now(timezone.utc)
             stmt = (
                 select(ListingTaskItem)
-                .where(ListingTaskItem.status == "pending")
+                .where(
+                    (ListingTaskItem.status == "pending")
+                    | (
+                        (ListingTaskItem.status == "failed")
+                        & (ListingTaskItem.retry_count < self._max_retries)
+                        & (ListingTaskItem.executed_at < now)
+                    )
+                )
+                .order_by(ListingTaskItem.executed_at.asc().nullsfirst())
                 .limit(5)
             )
             rows = (await db.execute(stmt)).scalars().all()
@@ -65,6 +76,7 @@ class ListingWorker:
                 item.status = "failed"
                 item.error_message = "Platform or Product not found"
                 item.retry_count = (item.retry_count or 0) + 1
+                item.executed_at = datetime.now(timezone.utc)
                 await db.flush()
                 return
 
@@ -85,8 +97,13 @@ class ListingWorker:
             }
             item.executed_at = datetime.now(timezone.utc)
         except Exception as exc:
-            item.status = "failed"
-            item.error_message = str(exc)[:500]
             item.retry_count = (item.retry_count or 0) + 1
-            logger.warning("Listing item %s failed: %s", item.id, exc)
+            if item.retry_count >= self._max_retries:
+                item.status = "failed"
+                item.error_message = f"[exhausted] {exc}"[:500]
+            else:
+                item.status = "pending"
+                item.error_message = str(exc)[:500]
+            item.executed_at = datetime.now(timezone.utc)
+            logger.warning("Listing item %s failed (retry %s/%s): %s", item.id, item.retry_count, self._max_retries, exc)
         await db.flush()
