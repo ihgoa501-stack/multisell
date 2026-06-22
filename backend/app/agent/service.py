@@ -302,6 +302,53 @@ class AgentService:
                     if actions_created:
                         await db.flush()
 
+            # ── 桥接到动作中枢：将 Agent 操作转为 ActionProposal ──
+            try:
+                from app.agentos.action_center_service import ActionCenterService
+                from app.agentos.schemas import ActionProposalCreate, RiskLevel
+                from app.agentos.service import AGENT_TO_SQUAD
+
+                squad_id = AGENT_TO_SQUAD.get(agent.agent_id, "governance")
+
+                # SEMI_AUTONOMOUS / FULL_AUTONOMOUS: 从 AgentAction 桥接
+                if stage != EvolutionStage.SUGGESTION and actions_created:
+                    for aa in db.new if hasattr(db, 'new') else []:
+                        if hasattr(aa, 'action_type') and hasattr(aa, 'action_payload'):
+                            risk, needs_approval = AgentService._derive_action_risk(aa.action_type, aa.action_payload or {}, stage)
+                            payload = ActionProposalCreate(
+                                source_type="agent_action",
+                                source_id=str(getattr(aa, 'id', 0)),
+                                agent_id=agent.agent_id,
+                                squad_id=squad_id,
+                                action_type=AgentService._map_action_type(aa.action_type),
+                                title=aa.summary or f"{agent.agent_id}: {aa.action_type}",
+                                description=aa.summary or "",
+                                proposed_payload=aa.action_payload or {},
+                                risk_level=risk,
+                                requires_approval=needs_approval,
+                                confidence=0.85,
+                            )
+                            await ActionCenterService.create_proposal(db, payload, operator="system")
+
+                # SUGGESTION: 从决策输出直接桥接
+                elif stage == EvolutionStage.SUGGESTION and decision:
+                    payload = ActionProposalCreate(
+                        source_type="agent_decision",
+                        source_id=str(decision_id or 0),
+                        agent_id=agent.agent_id,
+                        squad_id=squad_id,
+                        action_type=AgentService._map_action_type(decision.get("action_type", "notify")),
+                        title=f"{agent.agent_id} 建议: {decision.get('summary', decision_point)}",
+                        description=decision.get("detail", decision.get("summary", "")),
+                        proposed_payload=decision,
+                        risk_level=RiskLevel.MEDIUM,
+                        requires_approval=True,
+                        confidence=confidence,
+                    )
+                    await ActionCenterService.create_proposal(db, payload, operator="system")
+            except Exception:
+                pass  # 桥接失败不阻塞主流程
+
         return {
             "agent_id": agent.agent_id,
             "decision_point": decision_point,
@@ -345,6 +392,54 @@ class AgentService:
             return True
 
         return False
+
+    # ── 动作中枢桥接辅助函数 ──────────────────────────────────
+
+    ACTION_TYPE_MAP: dict[str, str] = {
+        "replenish": "inventory_allocate",
+        "price_review": "profit_review",
+        "discount_review": "profit_review",
+        "ad_action": "notify",
+    }
+
+    @staticmethod
+    def _map_action_type(action_type: str) -> str:
+        """将旧 AgentAction 类型映射到动作中枢 action_type"""
+        return AgentService.ACTION_TYPE_MAP.get(action_type, action_type)
+
+    @staticmethod
+    def _derive_action_risk(
+        action_type: str,
+        payload: dict,
+        stage: object,
+    ) -> tuple[object, bool]:
+        """根据操作类型、payload 和自治等级推导风险等级和是否需要审批"""
+        from app.agentos.schemas import RiskLevel
+        from app.agent.base import EvolutionStage
+
+        urgency = payload.get("urgency", "")
+        amount = abs(float(payload.get("suggested_qty", 0) or 0)) * \
+                 abs(float(payload.get("cost_price", 0) or 0))
+
+        if stage == EvolutionStage.FULL_AUTONOMOUS:
+            return RiskLevel.LOW, False
+
+        if stage == EvolutionStage.SUGGESTION:
+            return RiskLevel.MEDIUM, True
+
+        # SEMI_AUTONOMOUS
+        if action_type == "replenish" and urgency == "urgent":
+            return RiskLevel.HIGH, True
+        if action_type == "discount_review":
+            return RiskLevel.HIGH, True
+        if action_type == "price_review":
+            return RiskLevel.MEDIUM, True
+        if action_type == "ad_action":
+            return RiskLevel.CRITICAL if payload.get("status") == "critical" else RiskLevel.MEDIUM, False
+        if amount > 5000:
+            return RiskLevel.HIGH, True
+
+        return RiskLevel.MEDIUM, True
 
     @staticmethod
     async def get_or_create_honcho_profile(db: AsyncSession, user_id: int) -> HonchoProfile:
