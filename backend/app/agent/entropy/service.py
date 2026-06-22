@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.models import RuleMarkChange, PersonalRule
 from app.agent.entropy.defenses import TTLSweeper, BudgetEnforcer, DecayScheduler, MergeDetector, RegretAnalyzer
@@ -46,7 +46,20 @@ class EntropyService:
 
         duplicates = await self.merge.find_duplicates(db, user_id)
 
-        entropy_index = await self._calc_entropy_index(db, user_id, health_summary)
+        # Count existing conflict-shadowed rules from RuleMarkChange
+        conflict_count_stmt = select(func.count()).select_from(
+            select(RuleMarkChange).where(
+                RuleMarkChange.source_type == "gds",
+                RuleMarkChange.source_id == "conflict_detector",
+                RuleMarkChange.field_path == "$.status",
+                cast(RuleMarkChange.new_value, String) == "shadow",
+            ).subquery()
+        )
+        existing_conflicts = await db.scalar(conflict_count_stmt) or 0
+
+        entropy_index = await self._calc_entropy_index(
+            db, user_id, health_summary, conflict_count=existing_conflicts,
+        )
 
         return {
             "total_rules": total_rules,
@@ -58,9 +71,13 @@ class EntropyService:
             "pending_merge_count": len(duplicates),
             "recent_changes_count": recent_changes,
             "system_entropy_index": round(entropy_index, 4),
+            "conflict_count": existing_conflicts,
         }
 
-    async def _calc_entropy_index(self, db: AsyncSession, user_id: int, health_summary: dict) -> float:
+    async def _calc_entropy_index(
+        self, db: AsyncSession, user_id: int, health_summary: dict,
+        conflict_count: int = 0,
+    ) -> float:
         total = health_summary["total_rules"]
         if total == 0:
             return 0.0
@@ -68,8 +85,14 @@ class EntropyService:
         unhealthy_ratio = health_summary["unhealthy_count"] / max(total, 1)
         shadow_ratio = health_summary["shadow_rules"] / max(total, 1)
         avg_score = health_summary["avg_health_score"]
+        conflict_ratio = conflict_count / max(total, 1)
 
-        index = (unhealthy_ratio * 0.4 + shadow_ratio * 0.3 + (1.0 - avg_score) * 0.3)
+        index = (
+            unhealthy_ratio * 0.4
+            + shadow_ratio * 0.3
+            + (1.0 - avg_score) * 0.3
+            + conflict_ratio * 0.3  # §4.1 冲突率计入熵指数
+        )
         return min(1.0, index)
 
     async def run_defenses(self, db: AsyncSession, user_id: int) -> dict:
@@ -80,6 +103,9 @@ class EntropyService:
 
         # 规则合并只生成候选，不自动合并（Phase 5 原则）
         shadowed = await self._shadow_overridden_rules(db, user_id)
+
+        # §4.1 冲突检测
+        conflicts = await self.detect_conflicts(db, user_id)
 
         mark_changes = []
         for rule in expired + budget_exceeded:
@@ -96,8 +122,12 @@ class EntropyService:
                 "decay_applied": len(decayed),
                 "merged_candidates": len(duplicates),  # 只生成候选，不自动合并
                 "shadowed_by_overrides": len(shadowed),
+                "conflicts_detected": len(conflicts),  # §4.1 新增
             },
-            "total_affected": len(expired) + len(budget_exceeded) + len(decayed) + len(shadowed),
+            "total_affected": (
+                len(expired) + len(budget_exceeded) + len(decayed)
+                + len(shadowed) + len(conflicts)
+            ),
             "mark_changes": mark_changes,
             "duplicates_found": len(duplicates),
             "merge_candidates": [
@@ -110,15 +140,24 @@ class EntropyService:
                 }
                 for dup in duplicates[:10]
             ],
+            "conflicts": [  # §4.1 新增
+                {
+                    "kept_rule_id": c[0],
+                    "shadowed_rule_id": c[1],
+                    "conflicting_field": c[2],
+                }
+                for c in conflicts
+            ],
         }
 
     async def _shadow_overridden_rules(
         self, db: AsyncSession, user_id: int,
-        max_override_rate: float = 0.5, min_applied: int = 5,
+        max_override_rate: float = 0.5, min_applied: int = 3,
     ) -> list[PersonalRule]:
         """被用户频繁覆盖的规则降级为 shadow
 
         条件：应用次数 >= min_applied 且 覆盖率 > max_override_rate
+        跳过手动编辑冷却期内的规则 (§4.3)
         """
         stmt = select(PersonalRule).where(
             PersonalRule.user_id == user_id,
@@ -126,6 +165,11 @@ class EntropyService:
         )
         result = await db.execute(stmt)
         rules = list(result.scalars().all())
+
+        # Skip rules in manual-edit cooling period (§4.3)
+        now = datetime.now(timezone.utc)
+        cutoff_72h = now - timedelta(hours=72)
+        rules = [r for r in rules if not self._is_in_cooling_period(r, now, cutoff_72h)]
         shadowed = []
 
         for rule in rules:
@@ -163,6 +207,149 @@ class EntropyService:
         change = RuleMarkChange(**data)
         db.add(change)
         return change
+
+    def _is_in_cooling_period(
+        self,
+        rule: PersonalRule,
+        now: Optional[datetime] = None,
+        cutoff: Optional[datetime] = None,
+        min_applications: int = 3,
+        cooling_hours: int = 72,
+    ) -> bool:
+        """Check if a rule is in the manual edit cooling period.
+
+        Entropy defenses should skip rules that:
+        1. Have been applied fewer than min_applications times
+        2. Were manually edited within the last cooling_hours hours
+        """
+        if (rule.times_applied or 0) < min_applications:
+            return True
+        if rule.last_manual_edit_at:
+            now = now or datetime.now(timezone.utc)
+            cutoff = cutoff or (now - timedelta(hours=cooling_hours))
+            if rule.last_manual_edit_at > cutoff:
+                return True
+        return False
+
+    async def detect_conflicts(
+        self, db: AsyncSession, user_id: int, store_id: Optional[int] = None,
+    ) -> list[tuple[int, int, str]]:
+        """Detect conflicting PersonalRules within same (agent_id, decision_point).
+
+        Same (field + op) condition but conflicting action.override values
+        on the same field → lower priority rule is shadowed.
+
+        Rules that are already shadow/paused/retired are excluded.
+        Rules in manual-edit cooling period (§4.3) are skipped.
+
+        Returns: list of (kept_rule_id, shadowed_rule_id, conflicting_field) tuples
+        """
+        now = datetime.now(timezone.utc)
+        cutoff_72h = now - timedelta(hours=72)
+
+        conditions = [
+            PersonalRule.user_id == user_id,
+            PersonalRule.status == "active",
+        ]
+        if store_id is not None:
+            conditions.append(PersonalRule.store_id == store_id)
+
+        stmt = (
+            select(PersonalRule)
+            .where(*conditions)
+            .order_by(
+                PersonalRule.agent_id,
+                PersonalRule.decision_point,
+                PersonalRule.priority.desc(),
+                PersonalRule.created_at,
+            )
+        )
+        result = await db.execute(stmt)
+        rules = list(result.scalars().all())
+
+        # Filter out cooling-period rules
+        rules = [r for r in rules if not self._is_in_cooling_period(r, now, cutoff_72h)]
+
+        # Group by (agent_id, decision_point)
+        groups: dict[tuple[str, str], list[PersonalRule]] = {}
+        for rule in rules:
+            key = (rule.agent_id, rule.decision_point)
+            groups.setdefault(key, []).append(rule)
+
+        conflicts: list[tuple[int, int, str]] = []
+
+        for (_agent_id, _dp), group_rules in groups.items():
+            if len(group_rules) < 2:
+                continue
+
+            # Further subgroup by (field, op) in rule_condition
+            condition_groups: dict[tuple[str, str], list[PersonalRule]] = {}
+            for rule in group_rules:
+                cond = rule.rule_condition or {}
+                field = cond.get("field")
+                op = cond.get("op")
+                if field and op:
+                    ckey = (field, op)
+                    condition_groups.setdefault(ckey, []).append(rule)
+
+            for (_field, _op), cond_rules in condition_groups.items():
+                if len(cond_rules) < 2:
+                    continue
+
+                # Compare each pair for conflicting action.override values
+                for i in range(len(cond_rules)):
+                    for j in range(i + 1, len(cond_rules)):
+                        rule_a = cond_rules[i]
+                        rule_b = cond_rules[j]
+
+                        action_a = rule_a.rule_action or {}
+                        action_b = rule_b.rule_action or {}
+                        override_a = action_a.get("override", {})
+                        override_b = action_b.get("override", {})
+
+                        # Find same override field with different values
+                        for over_field, val_a in override_a.items():
+                            if over_field in override_b:
+                                val_b = override_b[over_field]
+                                if val_a != val_b:
+                                    # Lower priority rule is shadowed
+                                    # Rules are sorted by priority desc already
+                                    if rule_a.priority >= rule_b.priority:
+                                        keep, shadow = rule_a, rule_b
+                                    else:
+                                        keep, shadow = rule_b, rule_a
+
+                                    # Only shadow if still active
+                                    if shadow.status != "active":
+                                        continue
+
+                                    old_status = shadow.status
+                                    shadow.status = "shadow"
+                                    await self._log_rule_change(db, shadow, {
+                                        "target_type": "personal_rule",
+                                        "target_id": shadow.id,
+                                        "field_path": "$.status",
+                                        "old_value": old_status,
+                                        "new_value": "shadow",
+                                        "source_type": "gds",
+                                        "source_id": "conflict_detector",
+                                        "change_summary": (
+                                            f"冲突自动降级为shadow: 与规则R{keep.id}在 "
+                                            f"action.override.{over_field} 冲突({val_a} vs {val_b})"
+                                        ),
+                                        "context_json": {
+                                            "conflicting_rule_id": keep.id,
+                                            "conflicting_field": over_field,
+                                            "value_a": val_a,
+                                            "value_b": val_b,
+                                            "condition_field": _field,
+                                            "condition_op": _op,
+                                        },
+                                    })
+                                    conflicts.append((keep.id, shadow.id, over_field))
+
+        await db.flush()
+        return conflicts
 
     async def get_health_scores(self, db: AsyncSession, user_id: int) -> list[dict]:
         return await self.scorer.score_all_rules(db, user_id)

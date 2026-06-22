@@ -65,6 +65,10 @@ class PersonalRule(Base):
     times_applied = Column(Integer, default=0, comment="应用次数")
     times_overridden = Column(Integer, default=0, comment="被覆盖次数")
     last_applied_at = Column(DateTime(timezone=True), comment="最后应用时间")
+
+    store_id = Column(Integer, nullable=True, comment="店铺ID（null=全店铺通用）")
+    last_manual_edit_at = Column(DateTime(timezone=True), nullable=True, comment="最后手动编辑时间")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
