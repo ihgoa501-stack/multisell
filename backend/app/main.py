@@ -75,7 +75,16 @@ async def lifespan(app: FastAPI):
     _listing_worker = _ListingWorker()
     await _listing_worker.start()
 
+    # ── 启动订单同步后台 Worker (在 listing worker 之后) ──
+    from app.order_import.sync_worker import OrderSyncWorker as _OrderSyncWorker
+
+    _order_sync_worker = _OrderSyncWorker()
+    await _order_sync_worker.start()
+
     yield
+
+    # ── 关闭订单同步后台 Worker (在 listing worker 之前) ──
+    await _order_sync_worker.stop()
 
     # ── 关闭上架任务后台 Worker ──
     await _listing_worker.stop()

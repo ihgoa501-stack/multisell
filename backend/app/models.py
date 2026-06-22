@@ -772,6 +772,7 @@ class Order(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     order_no = Column(String(100), nullable=False, unique=True, comment="订单号")
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), comment="平台ID")
     status = Column(String(50), default="pending", comment="状态: pending/paid/shipped/delivered/completed/cancelled")
     tracking_number = Column(String(200), comment="运单号/追踪号")
     recipient_name = Column(String(100), comment="收件人")
