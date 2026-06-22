@@ -19,9 +19,10 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.common.crypto import decrypt_api_key
+from app.common.rate_limiter import get_limiter_for_platform
 from app.listing.adapters.base import PublishResult
 from app.models import Inventory, Platform, Price, Product, Sku, ExchangeRate
-from app.common.rate_limiter import get_limiter_for_platform
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,13 @@ class OzonListingAdapter:
     def _client(self, platform: Platform) -> httpx.AsyncClient:
         """构造带 Ozon 认证头部的 HTTP 客户端"""
         base = (platform.api_base_url or OZON_API_BASE).rstrip("/")
+        # ponytail: decrypt on read — store is encrypted, add caching if throughput matters
+        _api_key = decrypt_api_key(platform.api_key or "")
         return httpx.AsyncClient(
             base_url=base,
             headers={
                 "Client-Id": platform.client_id or "",
-                "Api-Key": platform.api_key or "",
+                "Api-Key": _api_key,
                 "Content-Type": "application/json",
             },
             timeout=DEFAULT_TIMEOUT,

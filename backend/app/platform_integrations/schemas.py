@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ── Adapter 注册表 ──────────────────────────────────────────────────────
@@ -45,8 +45,7 @@ class PlatformIntegrationAccountResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TestConnectionResponse(BaseModel):
@@ -78,8 +77,7 @@ class PlatformCategoryMappingResponse(BaseModel):
     created_by: Optional[str] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── 属性映射 ────────────────────────────────────────────────────────────
@@ -103,5 +101,4 @@ class PlatformAttributeMappingResponse(BaseModel):
     created_by: Optional[str] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

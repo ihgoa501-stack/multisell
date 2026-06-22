@@ -1,7 +1,7 @@
 """规格与SKU管理 - Pydantic Schema"""
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SpecValueItem(BaseModel):
@@ -45,8 +45,7 @@ class SpecNameVO(BaseModel):
     sort_order: int = 0
     values: List["SpecValueVO"] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SpecValueVO(BaseModel):
@@ -55,8 +54,7 @@ class SpecValueVO(BaseModel):
     value: str
     sort_order: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SkuVO(BaseModel):
@@ -83,5 +81,4 @@ class SkuVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

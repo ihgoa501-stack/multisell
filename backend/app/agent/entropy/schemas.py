@@ -1,7 +1,7 @@
 """熵管理 Pydantic Schema"""
 from datetime import datetime
 from typing import Optional, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class RuleMarkChangeVO(BaseModel):
@@ -19,8 +19,7 @@ class RuleMarkChangeVO(BaseModel):
     context_json: Optional[Any] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RuleHealthVO(BaseModel):

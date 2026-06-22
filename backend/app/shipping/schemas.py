@@ -3,7 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ── Provider ──────────────────────────────────────────────────────────────
@@ -36,8 +36,7 @@ class ProviderVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Channel ───────────────────────────────────────────────────────────────
@@ -82,8 +81,7 @@ class ChannelVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Zone ──────────────────────────────────────────────────────────────────
@@ -104,8 +102,7 @@ class ZoneVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Quote Rule ────────────────────────────────────────────────────────────
@@ -176,8 +173,7 @@ class RuleVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Calculate ─────────────────────────────────────────────────────────────

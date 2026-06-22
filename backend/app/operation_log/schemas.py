@@ -1,7 +1,7 @@
 """操作日志 - Pydantic Schema"""
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class OperationLogVO(BaseModel):
@@ -15,5 +15,4 @@ class OperationLogVO(BaseModel):
     duration: Optional[int] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

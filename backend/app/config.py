@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
 
+    # CORS — 生产环境应设为具体前端地址
+    CORS_ORIGINS: list[str] = ["*"]
+
     # 权限控制
     AUTH_ENABLED: bool = True
 
@@ -58,7 +61,15 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        if not self.ENCRYPTION_KEY:
+        if self.is_production:
+            if not self.ENCRYPTION_KEY:
+                raise RuntimeError(
+                    "ENCRYPTION_KEY 必须设置！生产环境不能使用空密钥。\n"
+                    "通过 .env 或环境变量设置，生成: python3 -c \"import secrets; print(secrets.token_hex(16))\""
+                )
+            if not self.AUTH_ENABLED:
+                raise RuntimeError("生产环境禁止关闭鉴权: 请设置 AUTH_ENABLED=True")
+        elif not self.ENCRYPTION_KEY:
             logger.warning(
                 "⚠️ ENCRYPTION_KEY 为空！平台 API 密钥等敏感数据将被明文存储。"
                 "请通过环境变量或 .env 文件设置 ENCRYPTION_KEY。"

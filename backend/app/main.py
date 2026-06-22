@@ -1,12 +1,16 @@
 """凌镜 LingMirror — FastAPI 入口"""
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
+from app.database import engine as _db_engine
 import importlib, pkgutil
 
 logging.basicConfig(level=logging.INFO)
@@ -78,6 +82,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── 请求 ID 中间件（可观测：追踪每请求） ──
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+# ── CORS（开发默认允许同站；生产配置可信来源） ──
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # 自动发现并注册路由
 _discover_routers(app)
 
@@ -97,5 +118,17 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.get("/api/health", tags=["系统"])
 async def health():
-    """健康检查"""
-    return {"status": "ok", "service": settings.APP_NAME}
+    """健康检查 — 含 DB 连通性"""
+    db_ok = False
+    try:
+        async with _db_engine.connect() as conn:
+            await conn.execute(importlib.import_module("sqlalchemy").text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "service": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "db": "up" if db_ok else "down",
+    }

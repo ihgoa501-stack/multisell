@@ -1,7 +1,7 @@
 """供应商管理 - Pydantic Schema"""
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SupplierCreate(BaseModel):
@@ -35,8 +35,7 @@ class SupplierVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductSupplierBind(BaseModel):
@@ -57,5 +56,4 @@ class ProductSupplierVO(BaseModel):
     min_order_qty: int = 1
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

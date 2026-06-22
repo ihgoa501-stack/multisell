@@ -1,7 +1,7 @@
 """Agent Pydantic Schema"""
 from datetime import datetime
 from typing import Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgentMetadataVO(BaseModel):
@@ -30,8 +30,7 @@ class DecisionLogVO(BaseModel):
     token_count: Optional[int] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonalRuleVO(BaseModel):
@@ -53,8 +52,7 @@ class PersonalRuleVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PersonalRuleCreate(BaseModel):
@@ -89,8 +87,7 @@ class HonchoProfileVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HonchoProfileUpdate(BaseModel):
@@ -137,8 +134,7 @@ class EpisodeVO(BaseModel):
     ended_at: datetime
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── 进化/等级控制相关 Pydantic 模型 ──────────────────────

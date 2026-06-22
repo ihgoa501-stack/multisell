@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class NotificationVO(BaseModel):
@@ -18,8 +18,7 @@ class NotificationVO(BaseModel):
     source_id: Optional[str] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AlertRuleVO(BaseModel):
@@ -31,8 +30,7 @@ class AlertRuleVO(BaseModel):
     config: Optional[dict] = None
     description: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AlertRuleUpdate(BaseModel):

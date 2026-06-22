@@ -1181,6 +1181,59 @@ class ProductCanvas(Base):
 
 
 # ========== 向后兼容导入（Agent 模型已移至 app/agent/models.py） ==========
+class ExchangeRate(Base):
+    """汇率"""
+    __tablename__ = "exchange_rate"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    from_currency = Column(String(10), nullable=False, comment="源币种")
+    to_currency = Column(String(10), nullable=False, comment="目标币种")
+    rate = Column(Numeric(14, 6), nullable=False, comment="汇率")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class AfterSalesOrder(Base):
+    """售后退货单"""
+    __tablename__ = "after_sales_order"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), nullable=False, comment="原始订单ID")
+    item_id = Column(BigInteger, ForeignKey("sales_order_item.id"), comment="订单明细ID")
+    sku_id = Column(BigInteger, ForeignKey("sku.id"), nullable=False, comment="退货SKU ID")
+    return_quantity = Column(Integer, nullable=False, comment="退货数量")
+    reason = Column(String(200), nullable=False, comment="退货原因")
+    status = Column(String(30), default="pending", comment="状态: pending/approved/rejected/received/refunded")
+    refund_amount = Column(Numeric(12, 2), comment="退款金额")
+    inspection_result = Column(Text, comment="验收结果")
+    rejection_reason = Column(String(500), comment="拒绝原因")
+    created_by = Column(String(100), comment="创建人")
+    approved_by = Column(String(100), comment="审批人")
+    approved_at = Column(DateTime(timezone=True), comment="审批时间")
+    rejected_by = Column(String(100), comment="驳回人")
+    rejected_at = Column(DateTime(timezone=True), comment="驳回时间")
+    received_by = Column(String(100), comment="入库人")
+    received_at = Column(DateTime(timezone=True), comment="入库时间")
+    refunded_by = Column(String(100), comment="退款操作人")
+    refunded_at = Column(DateTime(timezone=True), comment="退款时间")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class Store(Base):
+    """店铺"""
+    __tablename__ = "stores"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="所属用户ID")
+    name = Column(String(200), nullable=False, comment="店铺名称")
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), comment="关联平台ID")
+    platform_account_id = Column(String(100), comment="平台账号ID")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 from app.agent.models import (  # noqa: E402, F401
     AgentAction,
     AgentDecision,

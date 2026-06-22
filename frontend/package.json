@@ -9,10 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
     "@types/fabric": "^5.3.11",
     "@vicons/ionicons5": "^0.13.0",
+    "ant-design-vue": "^4.2.4",
     "axios": "^1.7.9",
     "date-fns": "^4.1.0",
+    "dayjs": "^1.11.21",
     "fabric": "^6.9.1",
     "naive-ui": "^2.41.0",
     "pinia": "^2.3.0",

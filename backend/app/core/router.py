@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, delete
 from app.database import get_db
@@ -114,7 +114,7 @@ async def export_products(
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=products_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"},
+        headers={"Content-Disposition": f"attachment; filename=products_{datetime.now(timezone.utc).strftime('%Y%m%d')}.xlsx"},
     )
 
 

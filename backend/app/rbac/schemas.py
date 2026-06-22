@@ -1,7 +1,7 @@
 """RBAC - Pydantic Schema"""
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RoleCreate(BaseModel):
@@ -27,8 +27,7 @@ class RoleVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PermissionCreate(BaseModel):
@@ -53,8 +52,7 @@ class PermissionVO(BaseModel):
     module: Optional[str] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AssignRolesData(BaseModel):

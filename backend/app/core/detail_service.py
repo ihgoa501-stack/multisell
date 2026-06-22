@@ -1,6 +1,6 @@
 """商品聚合详情 — 服务层"""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,7 +54,7 @@ class ProductDetailService:
                 "status": sku.status,
             }
             # 获取每个SKU的当前售价（按有效期过滤）
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             price_stmt = select(Price).where(
                 Price.sku_id == sku.id,
                 Price.price_type == "sale_price",

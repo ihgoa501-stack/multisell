@@ -1,5 +1,5 @@
 """价格管理 - 服务层"""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,7 +74,7 @@ class PriceService:
     @staticmethod
     async def get_current_price(db: AsyncSession, sku_id: int) -> Optional[Price]:
         """获取当前有效销售价（按 start_time <= now < end_time 计算）"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         stmt = select(Price).where(
             Price.sku_id == sku_id,
             Price.price_type == "sale_price",

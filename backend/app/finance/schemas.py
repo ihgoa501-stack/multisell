@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FinanceAccountCreate(BaseModel):
@@ -25,8 +25,7 @@ class FinanceAccountVO(BaseModel):
     balance: float
     status: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FinanceTransactionCreate(BaseModel):
@@ -57,8 +56,7 @@ class FinanceTransactionVO(BaseModel):
     transaction_date: Optional[datetime] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProfitSummary(BaseModel):

@@ -1,7 +1,7 @@
 """品牌管理 - Pydantic Schema"""
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BrandCreate(BaseModel):
@@ -29,5 +29,4 @@ class BrandVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

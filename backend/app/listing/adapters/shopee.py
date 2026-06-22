@@ -25,9 +25,10 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.common.crypto import decrypt_api_key
+from app.common.rate_limiter import get_limiter_for_platform
 from app.listing.adapters.base import PublishResult
 from app.models import Inventory, Platform, Price, Product, Sku, ExchangeRate
-from app.common.rate_limiter import get_limiter_for_platform
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +60,15 @@ class ShopeeListingAdapter:
     def _build_auth_params(self, platform: Platform, api_path: str) -> dict[str, Any]:
         """构造公共认证查询参数。"""
         extra = platform.extra_config or {}
+        # ponytail: decrypt on read — store is encrypted
+        _api_key = decrypt_api_key(platform.api_key or "")
         partner_id = int(platform.client_id) if platform.client_id else 0
         shop_id = int(extra.get("shop_id", 0))
         access_token = extra.get("access_token", "")
         timestamp = int(time.time())
 
         sign = self._sign(
-            api_key=platform.api_key or "",
+            api_key=_api_key,
             partner_id=partner_id,
             api_path=api_path,
             timestamp=timestamp,

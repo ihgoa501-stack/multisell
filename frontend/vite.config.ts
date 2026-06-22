@@ -4,6 +4,7 @@ import { resolve } from 'path'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
+import { AntDesignVueResolver } from 'unplugin-vue-components/resolvers'
 
 export default defineConfig({
   plugins: [
@@ -22,7 +23,7 @@ export default defineConfig({
       ],
     }),
     Components({
-      resolvers: [NaiveUiResolver()],
+      resolvers: [NaiveUiResolver(), AntDesignVueResolver({ importStyle: false })],
     }),
   ],
   resolve: {
@@ -46,7 +47,8 @@ export default defineConfig({
         manualChunks: {
           vue: ['vue', 'vue-router', 'pinia'],
           naive: ['naive-ui'],
-          icons: ['@vicons/ionicons5'],
+          antd: ['ant-design-vue'],
+          icons: ['@vicons/ionicons5', '@ant-design/icons-vue'],
         },
       },
     },

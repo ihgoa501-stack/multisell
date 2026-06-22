@@ -1,7 +1,7 @@
 """库存管理 - Pydantic Schema"""
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class InventoryUpdate(BaseModel):
@@ -33,8 +33,7 @@ class InventoryVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InventoryLogVO(BaseModel):
@@ -49,5 +48,4 @@ class InventoryLogVO(BaseModel):
     operator: Optional[str] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

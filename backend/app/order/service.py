@@ -1,6 +1,6 @@
 """订单管理 - 服务层"""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from sqlalchemy import func, select
@@ -276,7 +276,7 @@ class OrderService:
 
         old_status = order.status
         order.status = status
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if status == "paid":
             order.paid_at = now
         elif status == "shipped":
@@ -407,7 +407,7 @@ class OrderService:
 
     @staticmethod
     async def _generate_order_no(db: AsyncSession) -> str:
-        prefix = datetime.utcnow().strftime("MS%Y%m%d%H%M%S")
+        prefix = datetime.now(timezone.utc).strftime("MS%Y%m%d%H%M%S")
         count = await db.scalar(select(func.count()).select_from(Order)) or 0
         return f"{prefix}{count + 1:04d}"
 

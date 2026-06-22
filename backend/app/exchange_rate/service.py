@@ -11,8 +11,10 @@ from app.models import ExchangeRate
 class ExchangeRateService:
 
     @staticmethod
-    async def get_rate(db: AsyncSession, from_currency: str, to_currency: str) -> Optional[float]:
+    async def get_rate(db: Optional[AsyncSession], from_currency: str, to_currency: str) -> Optional[float]:
         """查询汇率，返回 float 或 None"""
+        if db is None:
+            return None
         stmt = select(ExchangeRate).where(
             ExchangeRate.from_currency == from_currency.upper(),
             ExchangeRate.to_currency == to_currency.upper(),
@@ -21,7 +23,7 @@ class ExchangeRateService:
         return float(row.rate) if row else None
 
     @staticmethod
-    async def get_rate_or_fallback(db: AsyncSession, from_currency: str, to_currency: str, fallback: float) -> float:
+    async def get_rate_or_fallback(db: Optional[AsyncSession], from_currency: str, to_currency: str, fallback: float) -> float:
         """查询汇率，查不到返回 fallback"""
         rate = await ExchangeRateService.get_rate(db, from_currency, to_currency)
         return rate if rate is not None else fallback

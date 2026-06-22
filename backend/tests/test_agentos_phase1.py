@@ -721,9 +721,9 @@ class TestAutonomyLevelWrite:
                 AgentEvolutionConfig.agent_id == "A5",
             )
             result = await db.execute(stmt)
-            config = result.scalar_one_or_none()
-            assert config is not None
-            assert config.current_stage == "semi_autonomous"
+            configs = result.scalars().all()
+            assert configs
+            assert {config.current_stage for config in configs} == {"semi_autonomous"}
 
     async def test_execute_downgrade_writes_stage(self, async_client):
         """执行降级后 DB 中 current_stage 应更新"""
@@ -744,9 +744,9 @@ class TestAutonomyLevelWrite:
                 AgentEvolutionConfig.agent_id == "A5",
             )
             result = await db.execute(stmt)
-            config = result.scalar_one_or_none()
-            assert config is not None
-            assert config.current_stage == "observation"
+            configs = result.scalars().all()
+            assert configs
+            assert {config.current_stage for config in configs} == {"observation"}
 
 
 # ─── Phase 4 Finale: Agent Detail 测试 ──────────────────────

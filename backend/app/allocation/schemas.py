@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WarehouseCreate(BaseModel):
@@ -38,8 +38,7 @@ class WarehouseVO(BaseModel):
     status: int
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AllocationRuleCreate(BaseModel):
@@ -64,8 +63,7 @@ class AllocationRuleVO(BaseModel):
     allocation_qty: int
     status: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InventoryWarehouseVO(BaseModel):
@@ -79,8 +77,7 @@ class InventoryWarehouseVO(BaseModel):
     safety_stock: int
     available_qty: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InventoryAllocateRequest(BaseModel):

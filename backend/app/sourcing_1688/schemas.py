@@ -1,7 +1,7 @@
 """1688 货源采集 - Pydantic Schema"""
 from datetime import datetime
 from typing import Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CollectPayload(BaseModel):
@@ -50,8 +50,7 @@ class Sourcing1688ProductVO(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ImportPayload(BaseModel):

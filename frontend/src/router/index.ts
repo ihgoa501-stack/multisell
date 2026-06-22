@@ -112,19 +112,33 @@ const baseRoutes: RouteRecordRaw[] = [
 // ========== 合并 router/modules/*.ts 中新模块的路由 ==========
 // 每个 AI 在 modules/ 下创建文件（如 modules/order.ts），导出 route 配置。
 // 路由格式见 modules/order.ts.example
+// meta.standalone = true 的路由注册在顶层，不包裹旧 Layout
 // ===============================================
 const _routeModules = import.meta.glob('./modules/*.ts', { eager: true })
 const _allChildren: RouteRecordRaw[] = [...(baseRoutes[1] as any).children]
+const _standaloneRoutes: RouteRecordRaw[] = []
 
 for (const mod of Object.values(_routeModules)) {
   const _mod = mod as Record<string, any>
   // 支持 export const routes = [...]
   if (Array.isArray(_mod.routes)) {
-    _allChildren.push(..._mod.routes)
+    for (const r of _mod.routes) {
+      if (r.meta?.standalone) {
+        _standaloneRoutes.push(r)
+      } else {
+        _allChildren.push(r)
+      }
+    }
   }
   // 支持 export default [...]
   if (Array.isArray(_mod.default)) {
-    _allChildren.push(..._mod.default)
+    for (const r of _mod.default) {
+      if (r.meta?.standalone) {
+        _standaloneRoutes.push(r)
+      } else {
+        _allChildren.push(r)
+      }
+    }
   }
 }
 
@@ -135,6 +149,7 @@ const routes: RouteRecordRaw[] = [
     ...baseRoutes[1],
     children: _allChildren,
   },
+  ..._standaloneRoutes,
 ]
 
 const router = createRouter({

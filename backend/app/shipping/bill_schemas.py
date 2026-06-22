@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 from app.finance.cost_layers import COST_LAYER_ACTUAL
@@ -24,8 +24,7 @@ class BillBatchResponse(BaseModel):
     created_by: Optional[str] = None
     created_at: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BillImportResponse(BaseModel):
@@ -66,8 +65,7 @@ class BillItemResponse(BaseModel):
     resolved_at: Optional[str] = None
     created_at: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BillItemResolveRequest(BaseModel):
