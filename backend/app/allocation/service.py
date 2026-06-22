@@ -233,7 +233,8 @@ class AllocationService:
             existing = await db.execute(
                 select(Warehouse).where(Warehouse.code == code)
             )
-            if not existing.scalar_one_or_none():
+            existing_wh = existing.scalar_one_or_none()
+            if not existing_wh:
                 wh = Warehouse(
                     name=name, code=code, address=addr,
                     is_default=1 if i == 0 else 0,
@@ -242,7 +243,7 @@ class AllocationService:
                 await db.flush()
                 warehouses.append(wh)
             else:
-                warehouses.append(existing.scalar_one())
+                warehouses.append(existing_wh)
 
         # 创建默认分配规则
         rules_data = [
@@ -253,13 +254,13 @@ class AllocationService:
 
         created_rules = 0
         for name, pri, rtype, wid, pct in rules_data:
-            existing = await db.execute(
+            rule_check = await db.execute(
                 select(AllocationRule).where(
                     AllocationRule.name == name,
                     AllocationRule.warehouse_id == wid,
                 )
             )
-            if not existing.scalar_one_or_none():
+            if not rule_check.scalar_one_or_none():
                 rule = AllocationRule(
                     name=name, priority=pri, rule_type=rtype,
                     warehouse_id=wid, allocation_pct=pct,
