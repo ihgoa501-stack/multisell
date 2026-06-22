@@ -301,6 +301,64 @@ class OzonListingAdapter:
             logger.warning("Ozon credential check failed: %s", exc)
             return False
 
+    async def fetch_orders(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """拉取 Ozon FBS 订单"""
+        orders: list[dict] = []
+        page = 1
+
+        while True:
+            limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+            await limiter.acquire()
+
+            payload = {
+                "dir": "ASC",
+                "filter": {"since": since.strftime("%Y-%m-%dT%H:%M:%S.000Z")},
+                "limit": 100,
+                "page": page,
+            }
+
+            async with self._client(platform) as client:
+                resp = await client.post("/v3/posting/fbs/list", json=payload)
+                body = self._parse_response(resp, "fetch_orders")
+
+            postings = body.get("result", {}).get("postings", [])
+            if not postings:
+                break
+
+            for p in postings:
+                items = []
+                for prod in p.get("financial_data", {}).get("products", []):
+                    items.append({
+                        "sku_code": prod.get("sku", ""),
+                        "quantity": prod.get("quantity", 0),
+                        "unit_price": str(prod.get("price", "0")),
+                    })
+                orders.append({
+                    "order_sn": p.get("posting_number", ""),
+                    "status": p.get("status", ""),
+                    "total_amount": str(sum(
+                        float(i["unit_price"]) * i["quantity"] for i in items
+                    )),
+                    "shipping_fee": str(
+                        p.get("analytics_data", {}).get("delivery_price", "0")
+                    ),
+                    "paid_at": p.get("in_process_at", ""),
+                    "recipient_name": "",
+                    "recipient_phone": "",
+                    "shipping_address": "",
+                    "items": items,
+                })
+
+            page += 1
+
+        return orders
+
     # ------------------------------------------------------------------ #
     #  辅助方法
     # ------------------------------------------------------------------ #

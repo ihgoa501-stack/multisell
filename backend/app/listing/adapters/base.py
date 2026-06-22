@@ -1,6 +1,7 @@
 """平台发布适配器基础类型。"""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,3 +41,22 @@ class ListingAdapter(Protocol):
 
     async def validate_credentials(self, *, platform: Platform) -> bool:
         """校验平台凭证是否可用。"""
+
+    async def fetch_orders(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """从平台拉取订单列表。返回 list[dict]，每个 dict 包含:
+        - order_sn: str — 平台订单号
+        - status: str — 平台状态
+        - total_amount: str — 金额字符串
+        - shipping_fee: str — 运费字符串
+        - paid_at: str — ISO 时间
+        - recipient_name: str
+        - recipient_phone: str
+        - shipping_address: str
+        - items: list[{"sku_code": str, "quantity": int, "unit_price": str}]
+        """
