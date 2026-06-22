@@ -266,7 +266,6 @@ class AgentService:
         start_time = time.time()
         stage = agent.get_stage(decision_point)
 
-<<<<<<< HEAD
         # ── OBSERVATION: 仅生成数据报告，不提出建议 ──
         if stage == EvolutionStage.OBSERVATION:
             agent_output = await AgentService._call_with_resilience(
