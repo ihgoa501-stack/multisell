@@ -7,22 +7,27 @@
   Partner ID + Partner Key + Access Token + Shop ID → HMAC-SHA256 签名
 
 关键端点:
-  POST /api/v2/product/add               — 创建商品
-  POST /api/v2/product/get_item_base_info — 查询商品状态
-  GET  /api/v2/shop/get_shop_info         — 店铺信息（凭证校验）
+  POST /api/v2/product/add                — 创建商品
+  POST /api/v2/product/get_item_base_info  — 查询商品状态
+  POST /api/v2/media_space/upload_image    — 上传图片
+  GET  /api/v2/shop/get_shop_info          — 店铺信息（凭证校验）
 """
 
 import hashlib
 import hmac
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.listing.adapters.base import PublishResult
-from app.models import Inventory, Platform, Price, Product, Sku
+from app.models import Inventory, Platform, Price, Product, Sku, ExchangeRate
+from app.common.rate_limiter import get_limiter_for_platform
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +96,38 @@ class ShopeeListingAdapter:
         )
 
     # ------------------------------------------------------------------ #
-    #  数据映射
+    #  图片上传与转换
+    # ------------------------------------------------------------------ #
+
+    async def _upload_local_image_if_needed(self, platform: Platform, image_url: str) -> str:
+        """若是系统本地图片则先上传至 Shopee 并返回其平台 URL，否则直接返回"""
+        from app.config import settings
+        
+        if image_url.startswith(settings.STATIC_URL):
+            filename = image_url[len(settings.STATIC_URL):].lstrip("/")
+            local_path = os.path.join(settings.UPLOAD_DIR, filename)
+            if os.path.exists(local_path):
+                api_path = "/api/v2/media_space/upload_image"
+                params = self._build_auth_params(platform, api_path)
+                
+                # 限流控制
+                limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+                await limiter.acquire()
+                
+                logger.info("Uploading local image to Shopee: %s", local_path)
+                async with self._client(platform) as client:
+                    with open(local_path, "rb") as f:
+                        files = {"image": (os.path.basename(local_path), f, "image/png")}
+                        resp = await client.post(api_path, params=params, files=files)
+                        body = self._parse_response(resp, "upload_image")
+                        
+                        info = body.get("response", {}).get("image_info", {})
+                        urls = info.get("image_url_list", [])
+                        return urls[0] if urls else image_url
+        return image_url
+
+    # ------------------------------------------------------------------ #
+    #  数据映射与定价
     # ------------------------------------------------------------------ #
 
     def _build_name(self, product: Product) -> str:
@@ -104,8 +140,19 @@ class ShopeeListingAdapter:
         desc = product.ai_description or product.description or ""
         return desc[:30000]
 
+    def _calculate_platform_price(self, cny_price: float, rate: float, extra: dict) -> float:
+        """定价公式: 售价 = (内部售价 * (1 + 利润加成) + 固定物流) * 汇率 / (1 - 佣金率)"""
+        markup = float(extra.get("markup_rate", 0.0))
+        commission = float(extra.get("commission_rate", 0.0))
+        shipping = float(extra.get("fixed_shipping_fee", 0.0))
+        
+        raw = (cny_price * (1.0 + markup) + shipping) * rate
+        if commission < 1.0:
+            raw = raw / (1.0 - commission)
+        return float(round(raw, 2))  # 新币保留 2 位小数
+
     def _build_variations(self, skus: list[Sku], prices: dict[int, Price],
-                          inventories: dict[int, Inventory]) -> list[dict]:
+                          inventories: dict[int, Inventory], rate: float, extra: dict) -> list[dict]:
         """Shopee 变体结构 (variations)"""
         variations = []
         for sku in skus:
@@ -113,10 +160,13 @@ class ShopeeListingAdapter:
             inventory = inventories.get(sku.id)
             specs = sku.spec_values or {}
 
+            cny_price = float(price.price) if price else 0.0
+            platform_price = self._calculate_platform_price(cny_price, rate, extra)
+
             variation: dict[str, Any] = {
                 "name": sku.spec_desc or sku.code or f"Var-{sku.id}",
                 "sku_code": sku.code or f"shopee-sku-{sku.id}",
-                "price": float(price.price) if price else 0.0,
+                "price": platform_price,
                 "stock": max(int(inventory.quantity) - int(inventory.locked_quantity), 0) if inventory else 0,
             }
 
@@ -129,7 +179,6 @@ class ShopeeListingAdapter:
             if sku.sku_height_cm:
                 variation["height"] = float(sku.sku_height_cm)
 
-            # Shopee 变体颜色/尺寸分隔
             if isinstance(specs, dict):
                 for spec_key, spec_val in specs.items():
                     variation.setdefault("variation_options", {})[spec_key] = spec_val
@@ -155,19 +204,6 @@ class ShopeeListingAdapter:
             logistic["package_height"] = float(product.package_height_cm)
         return [logistic]
 
-    def _build_images(self, product: Product) -> list[str]:
-        """Shopee 图片列表（最多 9 张）"""
-        images: list[str] = []
-        if product.main_image:
-            images.append(product.main_image)
-        if product.images and isinstance(product.images, list):
-            for img in product.images:
-                if len(images) >= 9:
-                    break
-                if img not in images:
-                    images.append(img)
-        return images
-
     def _build_wholesales(self) -> list[dict]:
         """Shopee 批发价设置"""
         return [
@@ -187,6 +223,7 @@ class ShopeeListingAdapter:
         skus: list[Sku],
         prices: dict[int, Price],
         inventories: dict[int, Inventory],
+        db: Optional[AsyncSession] = None,
     ) -> PublishResult:
         """发布商品到 Shopee（真实 API）。"""
         if not skus:
@@ -194,14 +231,40 @@ class ShopeeListingAdapter:
         if not product.package_weight_kg:
             raise RuntimeError("Shopee 发布失败: 缺少包装重量")
 
-        variations = self._build_variations(skus, prices, inventories)
+        from app.exchange_rate.service import ExchangeRateService
+
+        # 1. 汇率与定价换算 (CNY -> SGD)
+        rate_val = await ExchangeRateService.get_rate_or_fallback(db, "CNY", "SGD", 0.19)
+
+        extra = platform.extra_config or {}
+        variations = self._build_variations(skus, prices, inventories, rate_val, extra)
+
+        # 2. 优先将本地图片上传到官方图床
+        main_img = product.main_image
+        if main_img:
+            try:
+                main_img = await self._upload_local_image_if_needed(platform, main_img)
+            except Exception as e:
+                logger.warning("Upload main image to Shopee failed: %s", e)
+
+        resolved_images = [main_img] if main_img else []
+        if product.images and isinstance(product.images, list):
+            for img in product.images:
+                if img == product.main_image:
+                    continue
+                try:
+                    uploaded = await self._upload_local_image_if_needed(platform, img)
+                    resolved_images.append(uploaded)
+                except Exception as e:
+                    logger.warning("Upload detail image %s to Shopee failed: %s", img, e)
+                    resolved_images.append(img)
 
         payload = {
             "name": self._build_name(product),
             "description": self._build_description(product),
             "category_id": product.category_id or 0,
             "brand": {"brand_id": product.brand_id or 0},
-            "images": self._build_images(product),
+            "images": resolved_images[:9],
             "variations": variations,
             "logistics": self._build_logistics(product),
             "wholesales": self._build_wholesales(),
@@ -212,14 +275,33 @@ class ShopeeListingAdapter:
         api_path = "/api/v2/product/add"
         params = self._build_auth_params(platform, api_path)
 
+        # 限流控制
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
+
         logger.info(
             "publishing to Shopee: product_id=%s, skus=%d, shop_id=%s",
             product.id, len(skus), params.get("shop_id"),
         )
 
-        async with self._client(platform) as client:
-            resp = await client.post(api_path, params=params, json=payload)
-            body = self._parse_response(resp, "publish")
+        try:
+            async with self._client(platform) as client:
+                resp = await client.post(api_path, params=params, json=payload)
+                body = self._parse_response(resp, "publish")
+        except Exception as exc:
+            # 3. 冲突自动关联绑定 (检测重复商品或重复商家编码错误)
+            exc_str = str(exc)
+            if "duplicate" in exc_str or "already exists" in exc_str:
+                logger.info("Shopee duplicate offer_id detected: %s. Performing auto-binding.", exc_str)
+                platform_product_id = f"shopee-existing-{product.id}"
+                return PublishResult(
+                    platform_product_id=platform_product_id,
+                    platform_sku=skus[0].code or f"shopee-sku-{skus[0].id}",
+                    platform_url=f"https://shopee.ph/product/{platform_product_id}/",
+                    published_data={"message": "Auto-bound existing platform product"},
+                    sync_message=f"auto-bound duplicate product: {exc_str}",
+                )
+            raise exc
 
         item_id = body.get("response", {}).get("item_id", "")
         platform_product_id = f"shopee-{item_id}" if item_id else (
@@ -236,15 +318,17 @@ class ShopeeListingAdapter:
 
     async def sync_status(self, *, listing_id: int, platform: Platform,
                           platform_product_id: str) -> str:
-        """查询 Shopee 商品发布状态。
-
-        通过 get_item_base_info 获取商品当前状态。
-        """
+        """查询 Shopee 商品发布状态。"""
         if not platform_product_id or not platform_product_id.startswith("shopee-"):
             return "unknown"
 
         # 从 platform_product_id 提取 item_id
         item_id = platform_product_id.replace("shopee-", "", 1)
+        
+        # 若是冲突绑定的占位商品，直接视为已同步
+        if item_id.startswith("existing-"):
+            return "synced"
+
         try:
             int(item_id)
         except (ValueError, TypeError):
@@ -253,6 +337,10 @@ class ShopeeListingAdapter:
         payload = {"item_id": int(item_id)}
         api_path = "/api/v2/product/get_item_base_info"
         params = self._build_auth_params(platform, api_path)
+
+        # 限流控制
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
 
         async with self._client(platform) as client:
             resp = await client.post(api_path, params=params, json=payload)
@@ -278,6 +366,10 @@ class ShopeeListingAdapter:
 
         api_path = "/api/v2/shop/get_shop_info"
         params = self._build_auth_params(platform, api_path)
+
+        # 限流控制
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
 
         try:
             async with self._client(platform) as client:
