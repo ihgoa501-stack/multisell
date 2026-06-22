@@ -345,6 +345,71 @@ class TestOzonListingAdapter:
         assert result[0]["total_amount"] == "39.98"
         assert call_count == 2  # one with data + one empty to break loop
 
+    async def test_push_tracking_success(self, adapter: OzonListingAdapter, platform: Platform):
+        """push_tracking() 应成功推送追踪号并返回 True"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/v3/posting/fbs/ship")
+            body = json.loads(request.read())
+            assert body["posting_number"] == "test-posting-001"
+            assert body["tracking_number"] == "TRACK123456CN"
+            return httpx.Response(200, json={"result": True})
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.push_tracking(
+                platform=platform,
+                order_sn="test-posting-001",
+                tracking_number="TRACK123456CN",
+            )
+
+        assert result is True
+
+    async def test_push_tracking_with_carrier(self, adapter: OzonListingAdapter, platform: Platform):
+        """push_tracking() 应包含可选 carrier_code"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.read())
+            assert body["carrier_code"] == "RU_CDEK"
+            return httpx.Response(200, json={"result": True})
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.push_tracking(
+                platform=platform,
+                order_sn="test-posting-001",
+                tracking_number="TRACK123456CN",
+                carrier_code="RU_CDEK",
+            )
+
+        assert result is True
+
+    async def test_push_tracking_api_error(self, adapter: OzonListingAdapter, platform: Platform):
+        """API 返回错误时应抛出 RuntimeError"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(400, json={
+                "error": {"code": "INVALID_POSTING", "message": "无效发货单"},
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            with pytest.raises(RuntimeError, match="无效发货单"):
+                await adapter.push_tracking(
+                    platform=platform,
+                    order_sn="bad-posting",
+                    tracking_number="TRACK123",
+                )
+
     async def test_fetch_orders_pagination(self, adapter: OzonListingAdapter, platform: Platform):
         """fetch_orders() 应循环翻页直到无数据"""
         call_count = 0
@@ -756,6 +821,17 @@ class TestShopeeListingAdapter:
                     platform=shopee_platform,
                     since=datetime(2026, 6, 19),
                 )
+
+    async def test_push_tracking_returns_true(self, adapter: ShopeeListingAdapter,
+                                                shopee_platform: Platform):
+        """push_tracking() 应返回 True（Shopee 使用集成物流无需推送）"""
+        result = await adapter.push_tracking(
+            platform=shopee_platform,
+            order_sn="test-order-001",
+            tracking_number="TRACK123",
+            carrier_code="",
+        )
+        assert result is True
 
 
 # =================================================================== #

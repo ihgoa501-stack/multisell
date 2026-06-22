@@ -42,6 +42,17 @@ class ListingAdapter(Protocol):
     async def validate_credentials(self, *, platform: Platform) -> bool:
         """校验平台凭证是否可用。"""
 
+    async def push_tracking(
+        self,
+        *,
+        platform: Platform,
+        order_sn: str,
+        tracking_number: str,
+        carrier_code: str = "",
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        """将物流追踪号推回平台。"""
+
     async def fetch_orders(
         self,
         *,

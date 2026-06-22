@@ -143,7 +143,7 @@ async def update_order_status(
     current_user: User = Depends(_require_order_status_or_cancel),
 ):
     try:
-        order = await OrderService.update_status(db, order_id, data.status, data.remark, _operator(current_user))
+        order = await OrderService.update_status(db, order_id, data.status, data.remark, data.tracking_number, _operator(current_user))
     except ValueError as e:
         return Result.bad_request(str(e))
     if not order:

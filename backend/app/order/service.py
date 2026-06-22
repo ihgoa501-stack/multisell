@@ -1,5 +1,6 @@
 """订单管理 - 服务层"""
 
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -11,10 +12,12 @@ from app.finance.cost_layers import (
     resolve_profit_cost_layer,
 )
 from app.inventory.service import InventoryService
-from app.models import Order, OrderItem, OrderShippingSnapshot, OrderStatusLog, Price, Product, Sku
+from app.models import Order, OrderItem, OrderShippingSnapshot, OrderStatusLog, Platform, Price, Product, Sku
 from app.order.schemas import OrderCreate, OrderProfitInputsUpdate, OrderShippingQuoteBind
 from app.shipping.schemas import CalculateRequest
 from app.shipping.service import CalculateService
+
+logger = logging.getLogger(__name__)
 
 
 ALLOWED_TRANSITIONS = {
@@ -264,7 +267,7 @@ class OrderService:
         return order_to_dict(order, items, logs, shipping_snapshot)
 
     @staticmethod
-    async def update_status(db: AsyncSession, order_id: int, status: str, remark: str = None, operator: str = "system") -> Optional[dict]:
+    async def update_status(db: AsyncSession, order_id: int, status: str, remark: str = None, tracking_number: str = None, operator: str = "system") -> Optional[dict]:
         order = await db.get(Order, order_id)
         if not order:
             return None
@@ -281,10 +284,32 @@ class OrderService:
             order.paid_at = now
         elif status == "shipped":
             order.shipped_at = now
+            if tracking_number:
+                order.tracking_number = tracking_number
         elif status == "delivered":
             order.delivered_at = now
         elif status == "cancelled":
             order.cancelled_at = now
+
+        # 推送物流追踪号到平台
+        if status == "shipped" and order.tracking_number:
+            order_no = order.order_no or ""
+            for platform_code in ("ozon", "shopee", "wb"):
+                if order_no.upper().startswith(platform_code.upper()):
+                    try:
+                        from app.listing.adapters import get_listing_adapter
+
+                        adapter = get_listing_adapter(platform_code)
+                        platform = await db.get(Platform, order.platform_id)
+                        if platform and hasattr(adapter, "push_tracking"):
+                            await adapter.push_tracking(
+                                platform=platform,
+                                order_sn=order_no,
+                                tracking_number=order.tracking_number,
+                            )
+                    except Exception:
+                        logger.warning("Failed to push tracking for %s", order_no)
+                    break
 
         # 库存变动
         items = await OrderService._get_items(db, order.id)
