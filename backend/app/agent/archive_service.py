@@ -48,9 +48,9 @@ async def archive_old_decisions(db: AsyncSession, dry_run: bool = False) -> dict
             )
             .values(archived=True, archived_at=datetime.now(timezone.utc))
         )
-        await db.execute(stmt)
+        result = await db.execute(stmt)
         await db.flush()
-        archived += batch_size
+        archived += result.rowcount
 
     await db.commit()
     return {"archived_count": archived}

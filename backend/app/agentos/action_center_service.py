@@ -602,8 +602,8 @@ class ActionCenterService:
                 proposal.status = "rejected"
                 proposal.rejection_reason = "审批超时自动拒绝"
             elif proposal.auto_decision == "auto_execute":
-                # Low risk only — execute directly
-                proposal.status = "executed"
+                # Low risk only — set approved, execution requires handler
+                proposal.status = "approved"
             else:
                 # Escalate
                 new_level = (proposal.escalation_level or 0) + 1

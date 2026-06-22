@@ -132,6 +132,9 @@ class SchedulerContextBuilder:
         db, max_skus: int = 50, store_id: Optional[int] = None,
     ) -> list[dict]:
         """A5: 查询库存低于预警线的 SKU, 每个 SKU 生成一个上下文"""
+        # ponytail: store_id accepted but not filtered — needs StoreSKU association table
+        if store_id is not None:
+            logger.debug("build_stock_alert_contexts store_id=%s (filter not yet implemented)", store_id)
         stmt = (
             select(Sku, Inventory)
             .join(Inventory, Sku.id == Inventory.sku_id)
@@ -160,6 +163,8 @@ class SchedulerContextBuilder:
         db, max_skus: int = 50, store_id: Optional[int] = None,
     ) -> list[dict]:
         """A6: 查询所有 SKU 的成本和售价, 计算利润率"""
+        if store_id is not None:
+            logger.debug("build_profit_watch_contexts store_id=%s (filter not yet implemented)", store_id)
         stmt = select(Sku).limit(max_skus)
         result = await db.execute(stmt)
         skus = result.scalars().all()
@@ -181,6 +186,8 @@ class SchedulerContextBuilder:
         db, max_skus: int = 50, store_id: Optional[int] = None,
     ) -> list[dict]:
         """G3: 查询最近有价格变动的 SKU"""
+        if store_id is not None:
+            logger.debug("build_discount_risk_contexts store_id=%s (filter not yet implemented)", store_id)
         seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
         stmt = select(Sku).limit(max_skus)
         result = await db.execute(stmt)
@@ -200,6 +207,8 @@ class SchedulerContextBuilder:
         db, store_id: Optional[int] = None,
     ) -> dict:
         """通用上下文: 用于只需环境快照的 Agent"""
+        if store_id is not None:
+            logger.debug("build_generic_context store_id=%s (filter not yet implemented)", store_id)
         total_products = await db.scalar(select(func.count(Product.id))) or 0
         total_skus = await db.scalar(select(func.count(Sku.id))) or 0
         return {
@@ -213,6 +222,8 @@ class SchedulerContextBuilder:
         db, max_items: int = 10, store_id: Optional[int] = None,
     ) -> list[dict]:
         """A4: 查询近期待处理/异常订单"""
+        if store_id is not None:
+            logger.debug("build_customer_service_context store_id=%s (filter not yet implemented)", store_id)
         recent_order_stmt = (
             select(Order)
             .where(Order.status.in_(["pending", "paid"]))

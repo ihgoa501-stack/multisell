@@ -346,6 +346,7 @@ class AgentService:
                         agent.agent_id, decision, stage
                     )
 
+                    bridged_actions = []
                     for ad in action_defs:
                         action_status = "pending" if (
                             stage == EvolutionStage.SEMI_AUTONOMOUS and is_high_risk
@@ -362,6 +363,7 @@ class AgentService:
                         )
                         db.add(action)
                         actions_created += 1
+                        bridged_actions.append(action)
 
                     if actions_created:
                         await db.flush()
@@ -376,7 +378,7 @@ class AgentService:
 
                 # SEMI_AUTONOMOUS / FULL_AUTONOMOUS: 从 AgentAction 桥接
                 if stage != EvolutionStage.SUGGESTION and actions_created:
-                    for aa in db.new if hasattr(db, 'new') else []:
+                    for aa in bridged_actions:
                         if hasattr(aa, 'action_type') and hasattr(aa, 'action_payload'):
                             risk, needs_approval = AgentService._derive_action_risk(aa.action_type, aa.action_payload or {}, stage)
                             payload = ActionProposalCreate(
@@ -502,7 +504,8 @@ class AgentService:
             val = payload.get(field)
             if val is not None and (not isinstance(val, (int, float)) or val < 0):
                 warnings.append(f"{field}={val} is negative, dropping action")
-                return {}  # 空决策 = 跳过该 action
+                logger.warning("Agent %s: _sanitize_output dropped action — %s=%s negative", agent_id, field, val)
+                return {"_validation_error": f"{field}={val} negative, action dropped", "confidence": 0.0}
 
         # price > cost 合理性（warn only）
         selling = payload.get("final_price") or payload.get("suggested_price")

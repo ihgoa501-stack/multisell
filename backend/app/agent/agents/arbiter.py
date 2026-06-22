@@ -44,7 +44,7 @@ class G0ArbiterAgent(BaseAgent):
         # Step 1: Try Policy Matrix
         if db is not None:
             matrix_result = await PolicyService.resolve_conflict(
-                db, agent_id_a, agent_id_b, dp, context
+                db, agent_id_a, agent_id_b, dp, context, user_id=self.user_id
             )
             if matrix_result:
                 return {

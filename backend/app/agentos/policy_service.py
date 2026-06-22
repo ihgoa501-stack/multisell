@@ -77,6 +77,7 @@ class PolicyService:
         agent_id_b: str,
         decision_point: str,
         context: dict,
+        user_id: int = 1,
     ) -> dict | None:
         """Resolve a conflict using Policy Matrix.
 
@@ -85,7 +86,7 @@ class PolicyService:
         stmt = (
             select(ConflictPolicy)
             .where(
-                ConflictPolicy.user_id == 1,
+                ConflictPolicy.user_id == user_id,
                 or_(
                     and_(
                         ConflictPolicy.agent_id_a == agent_id_a,

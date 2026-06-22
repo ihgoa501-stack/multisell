@@ -65,6 +65,7 @@ class AutoArbitrator:
                 new_proposal.agent_id,
                 c.action_type or new_proposal.action_type or "",
                 {},
+                user_id=1,  # ponytail: need user_id on ActionProposal to pass correct value
             )
             if matrix_result:
                 # Apply matrix result: reject losing proposals
