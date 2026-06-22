@@ -1,7 +1,9 @@
-"""平台 Adapter 能力注册表 — 静态注册，不依赖真实 API。"""
+"""平台 Adapter 能力注册表 + 凭据校验（调用真实 adapter 的 validate_credentials）。"""
 
 from dataclasses import dataclass, field
 from typing import Optional
+
+from app import models
 
 
 @dataclass(frozen=True)
@@ -90,8 +92,16 @@ def list_adapters() -> list[AdapterCapability]:
     return list(ADAPTERS.values())
 
 
-def test_connection(adapter_code: str, credential_metadata: dict) -> tuple[bool, str]:
-    """Mock: 检查 adapter_code 是否存在，存在即返回 success。"""
-    if adapter_code in ADAPTERS:
-        return True, "连接测试通过（mock）"
-    return False, f"未知适配器: {adapter_code}"
+async def test_connection(adapter_code: str, platform: models.Platform) -> tuple[bool, str]:
+    """调用真实 adapter 的 validate_credentials() 校验凭据。"""
+    if adapter_code not in ADAPTERS:
+        return False, f"未知适配器: {adapter_code}"
+
+    from app.listing.adapters import get_listing_adapter
+
+    try:
+        adapter = get_listing_adapter(adapter_code)
+        ok = await adapter.validate_credentials(platform=platform)
+        return (ok, "验证通过" if ok else "凭证无效或API不可达")
+    except Exception as exc:
+        return (False, str(exc))

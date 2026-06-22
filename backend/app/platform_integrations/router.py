@@ -191,7 +191,7 @@ async def test_account(
     if not account:
         return Result.not_found("账号不存在")
 
-    success, message = await PlatformIntegrationService.test_account_connection(account)
+    success, message = await PlatformIntegrationService.test_account_connection(db, account)
 
     await OperationLogService.log(
         db,
