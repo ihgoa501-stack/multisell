@@ -1,6 +1,7 @@
 """Ozon, Shopee, Wildberries, Amazon & TikTok 真实 API 适配器单元测试"""
 
 import json
+from datetime import datetime
 from unittest.mock import patch
 
 import httpx
@@ -288,6 +289,111 @@ class TestOzonListingAdapter:
             result = await adapter.validate_credentials(platform=platform)
 
         assert result is False
+
+    async def test_fetch_orders(self, adapter: OzonListingAdapter, platform: Platform):
+        """fetch_orders() 应返回映射后的订单数据"""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            assert request.url.path.endswith("/v3/posting/fbs/list")
+            body = json.loads(request.read())
+            assert "filter" in body
+            assert "since" in body["filter"]
+            assert body["dir"] == "ASC"
+            assert body["limit"] == 100
+            if call_count == 1:
+                return httpx.Response(200, json={
+                    "result": {
+                        "postings": [{
+                            "posting_number": "12345",
+                            "status": "delivered",
+                            "analytics_data": {"delivery_price": "5.00"},
+                            "financial_data": {"products": [{
+                                "sku": "SKU001", "quantity": 2, "price": "19.99",
+                            }]},
+                            "in_process_at": "2026-06-20T10:00:00Z",
+                        }],
+                        "count": 1,
+                    }
+                })
+            return httpx.Response(200, json={
+                "result": {"postings": [], "count": 0}
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.side_effect = lambda p=None: AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.fetch_orders(
+                platform=platform,
+                since=datetime(2026, 6, 19),
+            )
+
+        assert len(result) == 1
+        assert result[0]["order_sn"] == "12345"
+        assert result[0]["status"] == "delivered"
+        assert result[0]["shipping_fee"] == "5.00"
+        assert result[0]["paid_at"] == "2026-06-20T10:00:00Z"
+        assert len(result[0]["items"]) == 1
+        assert result[0]["items"][0]["sku_code"] == "SKU001"
+        assert result[0]["items"][0]["quantity"] == 2
+        assert result[0]["items"][0]["unit_price"] == "19.99"
+        assert result[0]["total_amount"] == "39.98"
+        assert call_count == 2  # one with data + one empty to break loop
+
+    async def test_fetch_orders_pagination(self, adapter: OzonListingAdapter, platform: Platform):
+        """fetch_orders() 应循环翻页直到无数据"""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            body = json.loads(request.read())
+            page = body.get("page", 1)
+            if page == 1:
+                return httpx.Response(200, json={
+                    "result": {"postings": [{
+                        "posting_number": f"PAGE1-{page}",
+                        "status": "delivered",
+                        "analytics_data": {"delivery_price": "3.00"},
+                        "financial_data": {"products": [{"sku": "A", "quantity": 1, "price": "10.00"}]},
+                        "in_process_at": "2026-06-20T10:00:00Z",
+                    }], "count": 1}
+                })
+            elif page == 2:
+                return httpx.Response(200, json={
+                    "result": {"postings": [{
+                        "posting_number": f"PAGE2-{page}",
+                        "status": "delivered",
+                        "analytics_data": {"delivery_price": "4.00"},
+                        "financial_data": {"products": [{"sku": "B", "quantity": 3, "price": "15.00"}]},
+                        "in_process_at": "2026-06-21T10:00:00Z",
+                    }], "count": 1}
+                })
+            else:
+                return httpx.Response(200, json={
+                    "result": {"postings": [], "count": 0}
+                })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.side_effect = lambda p=None: AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.fetch_orders(
+                platform=platform,
+                since=datetime(2026, 6, 19),
+            )
+
+        assert len(result) == 2
+        assert result[0]["order_sn"] == "PAGE1-1"
+        assert result[1]["order_sn"] == "PAGE2-2"
+        assert call_count == 3
 
 
 # =================================================================== #
