@@ -97,7 +97,7 @@ class TestEvolutionAPI:
 
     async def test_agent_detail_not_found(self, auth_client):
         resp = await auth_client.get("/api/agents/evolution/NONEXISTENT")
-        assert resp.status_code == 404
+        assert resp.json()["code"] == 404
 
     async def test_pending_nudges_empty(self, auth_client):
         resp = await auth_client.get("/api/agents/evolution/nudge/pending")
@@ -134,7 +134,7 @@ class TestEvolutionAPI:
             "/api/agents/evolution/nudge/99999/respond",
             json={"response": "dismiss"},
         )
-        assert resp.status_code == 400
+        assert resp.json()["code"] == 400
 
     async def test_agent_decide_observation(self, auth_client):
         """OBSERVATION 阶段的 decide 返回数据但不创建操作"""

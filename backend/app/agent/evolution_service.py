@@ -466,6 +466,7 @@ class EvolutionService:
         agent_id: str,
         decision_point: str,
         target_stage: str,
+        manual: bool = True,
     ) -> dict:
         """变更某个 Agent 决策点的自治阶段"""
         # 验证 target_stage
@@ -477,9 +478,9 @@ class EvolutionService:
         config = await EvolutionService.get_or_create_config(db, user_id, agent_id, decision_point)
         current = EvolutionStage(config.current_stage)
 
-        # 如果是升级操作，检查信任评分门槛
+        # 如果是升级操作，检查信任评分门槛（手动覆盖时跳过，允许管理员强制变更）
         is_upgrade = list(EvolutionStage).index(target) > list(EvolutionStage).index(current)
-        if is_upgrade:
+        if is_upgrade and not manual:
             score_data = await TrustScoreCalculator.calculate(db, user_id, agent_id, decision_point)
             check = TrustScoreCalculator.check_promotion_eligibility(
                 current, target,
@@ -570,7 +571,7 @@ class EvolutionService:
         if response == "accepted":
             # 执行晋升
             stage_result = await EvolutionService.change_stage(
-                db, user_id, nudge.agent_id, nudge.decision_point, nudge.target_stage,
+                db, user_id, nudge.agent_id, nudge.decision_point, nudge.target_stage, manual=False,
             )
             await db.flush()
             return {

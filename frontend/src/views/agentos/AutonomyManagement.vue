@@ -1,9 +1,9 @@
 <template>
   <div>
-    <n-page-header subtitle="管理 Agent 自治等级与升级/降级操作">
+    <n-page-header subtitle="管理 Agent 自治等级升级与降级建议">
       <template #title>自治管理</template>
       <template #extra>
-        <n-button size="small" @click="fetchData" :loading="loading">刷新</n-button>
+        <n-button size="small" @click="fetchCandidates" :loading="loading">刷新</n-button>
       </template>
     </n-page-header>
 
@@ -13,143 +13,102 @@
 
     <n-result v-else-if="error" status="error" title="加载失败" :description="error">
       <template #footer>
-        <n-button @click="fetchData">重试</n-button>
+        <n-button @click="fetchCandidates">重试</n-button>
       </template>
     </n-result>
 
     <template v-else>
-      <!-- 升级候选 -->
-      <n-card title="候选升级" style="margin-top: 12px;">
-        <n-empty v-if="upgradeCandidates.length === 0" description="暂无候选升级" />
-        <n-table v-else :bordered="false" :single-line="false">
-          <thead>
-            <tr>
-              <th>Agent</th>
-              <th>小队</th>
-              <th>当前等级</th>
-              <th>建议</th>
-              <th>置信度</th>
-              <th>理由</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="c in upgradeCandidates" :key="c.agent_id">
-              <td>{{ c.agent_name }}</td>
-              <td>{{ c.squad_name }}</td>
-              <td>{{ c.current_level }}</td>
-              <td>
-                <n-tag v-if="c.suggested && c.direction === 'upgrade'" type="success">升级 {{ c.target_level }}</n-tag>
-                <n-tag v-else-if="c.suggested && c.direction === 'downgrade'" type="warning">降级 {{ c.target_level }}</n-tag>
-                <span v-else>无</span>
-              </td>
-              <td>{{ (c.confidence * 100).toFixed(0) }}%</td>
-              <td>{{ c.reason }}</td>
-              <td>
-                <n-button
-                  v-if="c.suggested"
-                  size="tiny"
-                  :type="c.direction === 'upgrade' ? 'success' : 'warning'"
-                  :loading="c.loading"
-                  @click="executeLevelChange(c)"
-                >
-                  {{ c.direction === 'upgrade' ? '升级' : '降级' }}
-                </n-button>
-              </td>
-            </tr>
-          </tbody>
-        </n-table>
+      <!-- 建议升级卡片 -->
+      <n-card title="升级建议" size="small" style="margin-top: 12px;">
+        <template v-if="upgradeCandidates.length === 0">
+          <n-empty description="暂无升级建议" style="padding: 20px 0;" />
+        </template>
+        <n-grid :cols="3" :x-gap="12" :y-gap="12">
+          <n-grid-item v-for="c in upgradeCandidates" :key="c.agent_id">
+            <AutonomyUpgradeCard
+              :candidate="c"
+              :actioning="actioning === c.agent_id"
+              @upgrade="handleUpgrade"
+              @downgrade="handleDowngrade"
+            />
+          </n-grid-item>
+        </n-grid>
       </n-card>
 
-      <!-- 操作日志 -->
-      <n-card title="操作记录" style="margin-top: 12px;">
-        <n-empty v-if="operations.length === 0" description="暂无操作记录" />
-        <n-table v-else :bordered="false" :single-line="false">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>Agent</th>
-              <th>动作</th>
-              <th>来源</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="op in operations" :key="op.id">
-              <td>{{ op.created_at ? new Date(op.created_at).toLocaleString() : '-' }}</td>
-              <td>{{ op.item_id }}</td>
-              <td>{{ op.action }}</td>
-              <td>{{ op.source_type || '-' }}</td>
-              <td>{{ op.comment || '-' }}</td>
-            </tr>
-          </tbody>
-        </n-table>
+      <!-- 自治等级说明 -->
+      <n-card title="自治等级体系" size="small" style="margin-top: 12px;">
+        <n-grid :cols="4" :x-gap="12" :y-gap="8">
+          <n-grid-item><n-alert type="default" :bordered="false"><template #header>L0 观察</template>只读数据，无建议</n-alert></n-grid-item>
+          <n-grid-item><n-alert type="info" :bordered="false"><template #header>L1 建议</template>生成建议，人执行</n-alert></n-grid-item>
+          <n-grid-item><n-alert type="success" :bordered="false"><template #header>L2 半自主</template>低风险自动，高风险审批</n-alert></n-grid-item>
+          <n-grid-item><n-alert type="warning" :bordered="false"><template #header>L3 全自主</template>边界内自动执行</n-alert></n-grid-item>
+        </n-grid>
       </n-card>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import {
-  getAgentOSUpgradeCandidates,
-  getAgentOSOperations,
-  upgradeAgentLevel,
-  downgradeAgentLevel,
-} from '@/api/modules/agentos'
-import type { AutonomyCandidate, AgentOSOperationLog } from '@/api/modules/agentos'
+import { computed, onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
+import { getAgentOSUpgradeCandidates, upgradeAgentLevel, downgradeAgentLevel } from '@/api/modules/agentos'
+import type { AutonomyCandidate } from '@/api/modules/agentos'
+import AutonomyUpgradeCard from '@/components/agentos/AutonomyUpgradeCard.vue'
 
 const message = useMessage()
 
 const loading = ref(false)
 const loaded = ref(false)
 const error = ref<string | null>(null)
+const actioning = ref<string | null>(null)
+const candidates = ref<AutonomyCandidate[]>([])
 
-const upgradeCandidates = ref<(AutonomyCandidate & { loading?: boolean })[]>([])
-const operations = ref<AgentOSOperationLog[]>([])
+const upgradeCandidates = computed(() =>
+  candidates.value.filter(c => c.suggested)
+)
 
-async function fetchData() {
+async function fetchCandidates() {
   loading.value = true
   error.value = null
   try {
-    const [candRes, opRes] = await Promise.all([
-      getAgentOSUpgradeCandidates(),
-      getAgentOSOperations({ limit: 20 }),
-    ])
-    const candBody = candRes as any
-    upgradeCandidates.value = (candBody.data?.candidates ?? candBody.data ?? []).map((c: AutonomyCandidate) => ({
-      ...c,
-      loading: false,
-    }))
-    const opBody = opRes as any
-    operations.value = opBody.data?.records ?? opBody.data ?? []
+    const res: any = await getAgentOSUpgradeCandidates()
+    candidates.value = res?.data || []
     loaded.value = true
   } catch (e: any) {
-    error.value = e?.message || '请求失败'
+    error.value = e?.response?.data?.message || e?.message || '加载失败'
+    message.error('加载升级候选失败')
   } finally {
     loading.value = false
   }
 }
 
-async function executeLevelChange(c: AutonomyCandidate & { loading?: boolean }) {
-  c.loading = true
+async function handleUpgrade(candidate: AutonomyCandidate) {
+  if (!candidate.target_level) return
+  actioning.value = candidate.agent_id
   try {
-    if (c.direction === 'upgrade') {
-      await upgradeAgentLevel(c.agent_id, c.target_level!)
-    } else if (c.direction === 'downgrade') {
-      await downgradeAgentLevel(c.agent_id, c.target_level!)
-    }
-    message.success(`${c.agent_name} 等级已变更`)
-    await fetchData()
+    await upgradeAgentLevel(candidate.agent_id, candidate.target_level)
+    message.success(`${candidate.agent_name} 已升级至 ${candidate.target_level}`)
+    await fetchCandidates()
   } catch (e: any) {
-    message.error(e?.message || '操作失败')
+    message.error(e?.response?.data?.message || '升级失败')
   } finally {
-    c.loading = false
+    actioning.value = null
   }
 }
 
-onMounted(() => {
-  fetchData()
-})
+async function handleDowngrade(candidate: AutonomyCandidate) {
+  if (!candidate.target_level) return
+  actioning.value = candidate.agent_id
+  try {
+    await downgradeAgentLevel(candidate.agent_id, candidate.target_level)
+    message.success(`${candidate.agent_name} 已降级至 ${candidate.target_level}`)
+    await fetchCandidates()
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || '降级失败')
+  } finally {
+    actioning.value = null
+  }
+}
+
+onMounted(fetchCandidates)
 </script>

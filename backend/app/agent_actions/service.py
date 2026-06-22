@@ -6,7 +6,7 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AgentAction, AGENT_ACTION_STATUS_FLOW
+from app.models import AgentActionProposal as AgentAction, AGENT_ACTION_STATUS_FLOW
 from app.operation_log.service import OperationLogService
 
 

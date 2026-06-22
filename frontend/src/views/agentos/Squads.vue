@@ -76,6 +76,8 @@
                 v-for="agent in squad.agents"
                 :key="agent.id"
                 :agent="agent"
+                style="cursor: pointer;"
+                @click="router.push(`/agentos/agents/${agent.id}`)"
               />
             </n-space>
           </n-card>
@@ -134,12 +136,14 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { getAgentOSSquads, getAgentOSUpgradeCandidates } from '@/api/modules/agentos'
 import type { AgentOSSquad, SquadsResponse, AutonomyCandidate } from '@/api/modules/agentos'
 import AutonomyBadge from '@/components/agentos/AutonomyBadge.vue'
 import AgentStatusCard from '@/components/agentos/AgentStatusCard.vue'
 
+const router = useRouter()
 const message = useMessage()
 
 const loading = ref(false)
