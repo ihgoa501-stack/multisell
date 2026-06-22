@@ -1,14 +1,18 @@
 """平台管理 - 路由"""
 
-from fastapi import APIRouter, Depends
+from datetime import datetime, timezone, timedelta
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_permission
 from app.database import get_db
 from app.common import Result
-from app.models import User
+from app.listing.adapters import get_listing_adapter
+from app.models import Platform, User
 from app.platform.schemas import PlatformCreate, PlatformUpdate, PlatformVO
 from app.platform.service import PlatformService
 from app.operation_log.service import OperationLogService
+from app.order_import.sync_worker import OrderSyncWorker
 
 router = APIRouter(tags=["平台管理"])
 
@@ -107,3 +111,37 @@ async def delete_platform(
         operator=current_user.username,
     )
     return Result.ok(message="删除成功")
+
+
+@router.post("/platforms/{platform_id}/backfill-orders", summary="回填历史订单")
+async def backfill_orders(
+    platform_id: int,
+    days_back: int = Query(7, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("order:create")),
+):
+    """从平台 API 回填最近 N 天的历史订单。"""
+    platform = await db.get(Platform, platform_id)
+    if not platform:
+        return Result.not_found("平台不存在")
+    adapter = get_listing_adapter(platform.code)
+    if not hasattr(adapter, "fetch_orders"):
+        return Result.bad_request(f"平台 {platform.code} 不支持订单导入")
+
+    since = datetime.now(timezone.utc) - timedelta(days=days_back)
+    raw_orders = await adapter.fetch_orders(platform=platform, since=since, db=db)
+
+    worker = OrderSyncWorker()
+    count = 0
+    for raw in raw_orders:
+        await worker._upsert_order(db, raw, platform.id)
+        count += 1
+    await db.flush()
+
+    await OperationLogService.log(
+        db, module="order_import", action="backfill",
+        resource_id=str(platform_id),
+        content=f"回填订单: {count} 条, 平台={platform.code}, 天数={days_back}",
+        operator=current_user.username,
+    )
+    return Result.ok({"platform_id": platform_id, "imported": count, "days_back": days_back})
