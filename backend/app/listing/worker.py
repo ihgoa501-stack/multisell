@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +50,7 @@ class ListingWorker:
     async def _tick(self):
         async with async_session_factory() as db:
             now = datetime.now(timezone.utc)
+            cutoff = now - timedelta(seconds=self._retry_delay)
             stmt = (
                 select(ListingTaskItem)
                 .where(
@@ -57,7 +58,7 @@ class ListingWorker:
                     | (
                         (ListingTaskItem.status == "failed")
                         & (ListingTaskItem.retry_count < self._max_retries)
-                        & (ListingTaskItem.executed_at < now)
+                        & (ListingTaskItem.executed_at < cutoff)
                     )
                 )
                 .order_by(ListingTaskItem.executed_at.asc().nullsfirst())
