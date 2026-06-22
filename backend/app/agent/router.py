@@ -6,6 +6,7 @@
 否则 FastAPI 会将 "decisions/rules/profile/episodes" 匹配为 {agent_id}。
 """
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.auth import require_permission
@@ -288,7 +289,7 @@ async def trigger_schedule(
     return Result.ok(result)
 
 
-# ── 进化/自治等级控制（放在动态路径之前） ──
+# ── 进化/自治等级控制 ──
 
 
 @router.get("/agents/evolution/overview", summary="Agent自治等级总览")
@@ -331,9 +332,6 @@ async def generate_nudges(
     return Result.ok({"generated": len(nudges), "nudges": nudges})
 
 
-# ── 进化动态路径 ──
-
-
 @router.get("/agents/evolution/{agent_id}", summary="Agent进化详情与等级控制")
 async def evolution_agent_detail(
     agent_id: str,
@@ -361,6 +359,60 @@ async def evolution_change_stage(
     return Result.ok(result)
 
 
+# ── 调度仪表盘 ──
+
+
+@router.get("/agents/scheduler/failures", summary="调度失败记录")
+async def get_scheduler_failures(
+    unresolved_only: bool = Query(True),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    from app.agent.models import ScheduleFailure
+    stmt = select(ScheduleFailure)
+    if unresolved_only:
+        stmt = stmt.where(ScheduleFailure.resolved == False)
+    stmt = stmt.order_by(ScheduleFailure.failed_at.desc())
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar() or 0
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(stmt)
+    failures = result.scalars().all()
+    agent_summary = {}
+    for f in failures:
+        agent_summary[f.agent_id] = agent_summary.get(f.agent_id, 0) + 1
+    return Result.ok({
+        "failures": [{"id": f.id, "agent_id": f.agent_id, "store_id": f.store_id,
+                      "decision_point": f.decision_point, "error_msg": f.error_msg,
+                      "failed_at": f.failed_at.isoformat() if f.failed_at else None,
+                      "retry_count": f.retry_count, "resolved": f.resolved} for f in failures],
+        "total": total, "agent_summary": agent_summary,
+    })
+
+
+@router.get("/agents/scheduler/dashboard", summary="调度仪表盘摘要")
+async def get_scheduler_dashboard(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    from app.agent.models import ScheduleFailure, PersonalRule
+    fail_stmt = select(func.count()).select_from(
+        select(ScheduleFailure.id).where(ScheduleFailure.resolved == False).subquery())
+    fail_count = (await db.execute(fail_stmt)).scalar() or 0
+    rule_stmt = select(func.count()).select_from(
+        select(PersonalRule.id).where(PersonalRule.status == "active").subquery())
+    rule_count = (await db.execute(rule_stmt)).scalar() or 0
+    capacity_warning = f"全局规则数({rule_count})超过200，建议审查" if rule_count > 200 else None
+    return Result.ok({
+        "unresolved_schedule_failures": fail_count, "total_active_rules": rule_count,
+        "capacity_warning": capacity_warning,
+        "agent_status": "warning" if fail_count > 0 else "healthy",
+    })
+
+
+# ── 动态路径（放在静态路径之后） ──
 
 
 @router.get("/agents/{agent_id}", summary="Agent详情")
