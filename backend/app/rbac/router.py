@@ -8,6 +8,7 @@ from app.common import Result, PageResult
 from app.models import User
 from app.rbac.schemas import RoleCreate, RoleUpdate, RoleVO, PermissionCreate, PermissionUpdate, PermissionVO, AssignRolesData
 from app.rbac.service import RbacService
+from app.operation_log.service import OperationLogService
 
 router = APIRouter(prefix="/rbac", tags=["权限管理"])
 
@@ -35,6 +36,7 @@ async def create_role(
     current_user: User = Depends(require_permission("rbac:manage")),
 ):
     r = await RbacService.create_role(db, data.model_dump())
+    await OperationLogService.log(db, "rbac", "create_role", str(r.id), f"创建角色: {data.name}", current_user.username)
     return Result.ok(role_to_vo(r))
 
 
@@ -48,6 +50,7 @@ async def update_role(
     r = await RbacService.update_role(db, role_id, data.model_dump(exclude_unset=True))
     if not r:
         return Result.not_found("角色不存在")
+    await OperationLogService.log(db, "rbac", "update_role", str(role_id), f"更新角色: {r.name}", current_user.username)
     return Result.ok(role_to_vo(r))
 
 
@@ -85,6 +88,7 @@ async def delete_role(
     ok = await RbacService.delete_role(db, role_id)
     if not ok:
         return Result.not_found("角色不存在")
+    await OperationLogService.log(db, "rbac", "delete_role", str(role_id), "删除角色", current_user.username)
     return Result.ok(message="删除成功")
 
 
@@ -97,6 +101,8 @@ async def assign_role_permissions(
 ):
     try:
         r = await RbacService.assign_permissions_to_role(db, role_id, data.role_ids)
+        await OperationLogService.log(db, "rbac", "assign_permissions", str(role_id),
+                                      f"分配权限: {data.role_ids}", current_user.username)
         return Result.ok(role_to_vo(r))
     except ValueError as e:
         return Result.bad_request(str(e))
@@ -123,6 +129,7 @@ async def create_permission(
     current_user: User = Depends(require_permission("rbac:manage")),
 ):
     p = await RbacService.create_permission(db, data.model_dump())
+    await OperationLogService.log(db, "rbac", "create_permission", str(p.id), f"创建权限: {data.name} ({data.code})", current_user.username)
     return Result.ok(permission_to_vo(p))
 
 
@@ -136,6 +143,7 @@ async def update_permission(
     p = await RbacService.update_permission(db, perm_id, data.model_dump(exclude_unset=True))
     if not p:
         return Result.not_found("权限不存在")
+    await OperationLogService.log(db, "rbac", "update_permission", str(perm_id), f"更新权限: {p.name}", current_user.username)
     return Result.ok(permission_to_vo(p))
 
 
@@ -174,6 +182,7 @@ async def delete_permission(
     ok = await RbacService.delete_permission(db, perm_id)
     if not ok:
         return Result.not_found("权限不存在")
+    await OperationLogService.log(db, "rbac", "delete_permission", str(perm_id), "删除权限", current_user.username)
     return Result.ok(message="删除成功")
 
 
@@ -190,6 +199,8 @@ async def assign_user_roles(
     try:
         user = await RbacService.assign_roles_to_user(db, user_id, data.role_ids)
 
+        await OperationLogService.log(db, "rbac", "assign_roles", str(user_id),
+                                      f"为用户分配角色: {data.role_ids}", current_user.username)
         # 返回用户信息（含角色）
         from app.auth.router import user_to_vo as auth_user_to_vo
         return Result.ok(auth_user_to_vo(user))

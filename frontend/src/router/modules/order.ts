@@ -14,7 +14,7 @@ export const routes: RouteRecordRaw[] = [
     path: 'orders',
     name: 'OrderList',
     component: () => import('@/views/order/OrderList.vue'),
-    meta: { title: '订单管理', icon: 'cart', menu: true },
+    meta: { title: '订单管理', icon: 'cart', menu: true, perm: 'order:view' },
   },
   {
     path: 'orders/:id',

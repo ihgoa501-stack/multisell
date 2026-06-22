@@ -13,6 +13,6 @@ export const routes: RouteRecordRaw[] = [
     path: 'reports',
     name: 'Report',
     component: () => import('@/views/report/index.vue'),
-    meta: { title: '数据报表', icon: 'chart', menu: true },
+    meta: { title: '数据报表', icon: 'chart', menu: true, perm: 'report:view' },
   },
 ]

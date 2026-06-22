@@ -656,6 +656,19 @@ ALLOWED_ALLOCATION_TYPES = ["first_leg", "fba", "overseas_warehouse", "other"]
 ALLOWED_ALLOCATION_METHODS = ["quantity", "weight", "volume", "value"]
 
 
+class ExchangeRate(Base):
+    """汇率"""
+    __tablename__ = "exchange_rate"
+    __table_args__ = (sa_UniqueConstraint("from_currency", "to_currency", name="uq_exchange_rate_pair"),)
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    from_currency = Column(String(10), nullable=False, comment="源货币")
+    to_currency = Column(String(10), nullable=False, comment="目标货币")
+    rate = Column(Numeric(14, 6), nullable=False, comment="汇率")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 class CostAllocationBatch(Base):
     """费用分摊批次"""
     __tablename__ = "cost_allocation_batch"
@@ -857,6 +870,39 @@ class OrderShippingSnapshot(Base):
     calculation_detail = Column(Text, comment="计算说明")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class AfterSalesOrder(Base):
+    """售后/退货单"""
+    __tablename__ = "after_sales_order"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(BigInteger, ForeignKey("sales_order.id"), nullable=False, comment="订单ID")
+    item_id = Column(BigInteger, ForeignKey("sales_order_item.id"), comment="订单明细ID（全单退货时为空）")
+    sku_id = Column(BigInteger, ForeignKey("sku.id"), nullable=False, comment="SKU ID")
+    return_quantity = Column(Integer, nullable=False, comment="退货数量")
+    reason = Column(String(100), nullable=False, comment="退货原因: defective/wrong_item/customer_return/other")
+    status = Column(String(30), default="requested", comment="状态: requested/approved/received/refunded/rejected")
+    refund_amount = Column(Numeric(12, 2), default=0, comment="退款金额")
+    inspection_result = Column(Text, comment="验货结果")
+    rejection_reason = Column(String(500), comment="驳回原因")
+
+    created_by = Column(String(100), comment="创建人")
+    approved_by = Column(String(100), comment="审批人")
+    approved_at = Column(DateTime(timezone=True), comment="审批时间")
+    rejected_by = Column(String(100), comment="驳回人")
+    rejected_at = Column(DateTime(timezone=True), comment="驳回时间")
+    received_by = Column(String(100), comment="收货人")
+    received_at = Column(DateTime(timezone=True), comment="收货时间")
+    refunded_by = Column(String(100), comment="退款操作人")
+    refunded_at = Column(DateTime(timezone=True), comment="退款时间")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    order = relationship("Order", lazy="selectin")
+    item = relationship("OrderItem", lazy="selectin")
+    sku = relationship("Sku", lazy="selectin")
 
 
 class ImportBatch(Base):

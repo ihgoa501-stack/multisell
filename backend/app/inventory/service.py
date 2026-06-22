@@ -174,6 +174,27 @@ class InventoryService:
         return inv
 
     @staticmethod
+    async def restock(
+        db: AsyncSession,
+        sku_id: int,
+        quantity: int,
+        remark: str = None,
+        operator: str = "system",
+    ) -> Inventory:
+        """退货入库：增加库存数量并记录日志。"""
+        inv = await InventoryService._get_inventory_for_update(db, sku_id)
+        if not inv:
+            raise ValueError("库存记录不存在")
+        before_qty = inv.quantity or 0
+        inv.quantity = before_qty + quantity
+        await db.flush()
+        await InventoryService._add_log(
+            db, sku_id, "in", quantity, before_qty, inv.quantity,
+            remark or f"退货入库: +{quantity}", operator,
+        )
+        return inv
+
+    @staticmethod
     async def get_inventory_logs(db: AsyncSession, sku_id: int, limit: int = 50) -> list[InventoryLog]:
         stmt = select(InventoryLog).where(
             InventoryLog.sku_id == sku_id

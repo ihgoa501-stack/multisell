@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.listing.adapters.base import PublishResult
-from app.models import Inventory, Platform, Price, Product, Sku, ExchangeRate
+from app.models import Inventory, Platform, Price, Product, Sku
 from app.common.rate_limiter import get_limiter_for_platform
 
 logger = logging.getLogger(__name__)

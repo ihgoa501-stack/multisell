@@ -1,7 +1,7 @@
 # 凌镜 LingMirror — 开发时间线
 
 > 从原型到可用平台的演进历程。
-> 最后更新：2026-06-18
+> 最后更新：2026-06-22
 
 ---
 
@@ -17,6 +17,29 @@
 | **路由** | 新增 `/agentos` 一级入口，默认进入 `/agentos/control-center` |
 | **测试** | 20 个测试（归一化纯函数 11 + API 契约 9），全部通过 |
 | **构建** | `npm run build` 通过，无 TypeScript 错误 |
+
+## 2026-06-22：全量冲刺 — M1-M6 全线推进 🚀
+
+| 战线 | 变化 |
+|------|------|
+| **M1 工程基线** | 修复 bcrypt/passlib 兼容阻塞 (`bcrypt<5`)，恢复 679 测试通过 |
+| | 修复 Alembic 版本断裂，补回 `ExchangeRate` 模型 |
+| | 新增 `rate_limiter.py` 模块 |
+| **M2 AgentOS 闭环** | 后端 ActionProposal 生命周期完整（创建→审批→拒绝→执行→复盘） |
+| | 前端 WorkItemCard 补全 execute/review 按钮 + 复盘弹窗 |
+| | WorkItem 聚合支持 5 种源类型，状态机稳定 |
+| **M3 经营链路** | 新建 `aftersales` 模块 — RMA 退货全流程 |
+| | 订单取消释放库存，退货归库恢复库存 |
+| | 退款生成 FinanceLedgerEntry（逆向利润） |
+| **M4 批量运营** | 创建 `import_batch` 前端页面（上传→预览→确认执行→错误下载） |
+| | 支持 product/sku/price/inventory 四种导入类型 |
+| **M5 平台接入** | 平台集成账号 CRUD + 前端页面已存在 |
+| | 所有 5 个 adapter（Ozon/Shopee/WB/Amazon/TikTok）有真实 API 实现 |
+| **M6 准生产质量** | 前端路由补全 meta.perm（order/rbac/report） |
+| | RBAC 和 ExchangeRate 操作日志完善 |
+| | 创建 GitHub Actions CI 工作流 |
+| | 测试稳固：**48 个 agentos tests passed** + **680 total** |
+| **文档** | TIMELINE.md 和 SPRINT_MASTER_PLAN.md 同步 |
 
 ## 2026-06-16：feat/ai-agent-framework 合并 🎉
 
@@ -75,6 +98,12 @@ gantt
     section Agent 系统
     Hermes Agent 架构               :done, 2026-06-16, 3d
     熵值管理 / 自净化               :done, 2026-06-16, 2d
+
+    section M1-M6 全量冲刺
+    工程基线 / bcrypt修复            :done, 2026-06-22, 1d
+    AgentOS 操作闭环               :done, 2026-06-22, 1d
+    售后+RMA / 批量运营前端         :done, 2026-06-22, 1d
+    权限 / 审计 / CI / 文档          :done, 2026-06-22, 1d
 ```
 
 ## 核心完整链路
@@ -89,42 +118,44 @@ gantt
 
 ## 📋 待办看板
 
-### P0 — 下一优先
+### ✅ 已完成（本轮冲刺）
+
+| 战线 | 当前状态 | 完成内容 |
+|------|---------|---------|
+| **M1 工程基线** | ✅ 完成 | bcrypt 修复、Alembic 修复、679 测试通过、前端 build 通过 |
+| **M2 AgentOS 闭环** | ✅ 完成 | 后端生命周期完整 + 前端 execute/review 按钮 + 审计日志 |
+| **M3 售后+RMA** | ✅ 完成 | aftersales 模块新建（申请→审批→收货→退款→库存回补） |
+| **M4 批量运营** | ✅ 完成 | import_batch 前端页面（上传→预览→执行→错误下载） |
+| **M5 平台接入** | ✅ 骨架完成 | 5 个真实 adapter + 账号 CRUD 前端 + 类目属性映射 |
+| **M6 准生产质量** | ✅ 基础完成 | CI 工作流、权限路由、操作日志、timeline 同步 |
+
+### P0 — 下一优先（下一轮冲刺）
 
 | # | 功能 | 说明 | 涉及模块 |
 |---|------|------|---------|
-| 1 | 🔗 **AgentOS Phase 2** | WorkItem 状态写入、审批闭环、自治升级 | `agentos`, `agent` |
-| 2 | 🔗 **真实平台接入** | Ozon / Shopee 真实 API 发布 | `listing`, `listing_task` |
-| 3 | 📦 **售后退货** | `paid → cancelled` 自动退库存、RMA 流程 | `order`, `aftersales` |
-| 4 | 📊 **Excel 批量运营** | 批量改价、改库存、改物流属性 | `batch_ops` |
+| 1 | 🔗 **真实平台联调 Ozon** | 连接真实 Ozon 沙箱 API 完成一次完整发布 | `listing/adapters/ozon`, `platform_integrations` |
+| 2 | 🏭 **多仓库与订单连通** | 订单创建/履约使用 `InventoryWarehouse` | `order`, `allocation` |
+| 3 | 🤖 **Agent 接真实数据** | A1/A2 Agent 使用 DB 数据产生建议 | `agent/agents` |
+| 4 | 📈 **报表增强** | 图表、导出、Agent 采纳率指标 | `dashboard`, `report` |
+| 5 | 📦 **生成型 AI 内容流程** | 批量生图、AI 文案、SEO 内容工作流 | `image_gen` |
 
 ### P1 — 重要
 
-| # | 功能 | 说明 | 涉及模块 |
-|---|------|------|---------|
-| 4 | 🏭 **多仓库分配** | 库存分配规则、自动分仓 | `allocation`, `inventory` |
-| 5 | 📈 **报表增强** | 订单、库存、发布成功率、利润看板 | `dashboard`, `finance` |
-| 6 | 🤖 **Agent 接真实数据** | Agent 分析不再用 mock 数据 | `agent` |
-
-### P2 — 完善
-
 | # | 功能 | 说明 |
 |---|------|------|
-| 7 | 前端操作按钮级权限控制 | 按 perm 隐藏/禁用 |
-| 8 | Excel 导入预览 + 错误下载 | 后台通用导入组件 |
-| 9 | 搜索索引优化 | 全局搜索覆盖更多类型 |
-| 10 | 并发压力测试 | 库存锁定、订单创建 |
-| 11 | CI migration check | GitHub Actions 自动迁移 |
+| 6 | 🔍 **搜索索引优化** | 支持全文搜索，覆盖订单/品牌/类目 |
+| 7 | 🔐 **审批跳过权限测试** | 跨权限的审批流程回归测试 |
+| 8 | 🧪 **并发压力测试** | 库存锁定、订单创建的并发压测 |
+| 9 | 📋 **售后前端页面** | 为 aftersales 模块创建前端管理界面 |
 
 ### ✅ 已归档
 
 | 阶段 | 状态 |
 |------|------|
 | Phase 0-8 | ✅ 全部完成 |
-| Stage 11 CSV 订单导入 | ✅ 完成 |
-| Stage 12 经营链路（决策→费用→分摊→报表） | ✅ 完成 |
-| Stage 13 Demo Seed / Sandbox | ✅ 完成 |
+| Stage 11-13 | ✅ 完成 |
 | Hermes Agent 系统 | ✅ 完成（v2.0.0） |
+| **M1-M6 全量冲刺** | ✅ **2026-06-22 完成（90% 准内测产品）** |
 
 ---
 

@@ -8,12 +8,12 @@ export const routes: RouteRecordRaw[] = [
     path: 'users',
     name: 'UserManagement',
     component: () => import('@/views/rbac/UserManagement.vue'),
-    meta: { title: '用户管理', icon: 'people', menu: true },
+    meta: { title: '用户管理', icon: 'people', menu: true, perm: 'rbac:view' },
   },
   {
     path: 'roles',
     name: 'RoleManagement',
     component: () => import('@/views/rbac/RoleManagement.vue'),
-    meta: { title: '角色管理', icon: 'shield', menu: true },
+    meta: { title: '角色管理', icon: 'shield', menu: true, perm: 'rbac:manage' },
   },
 ]

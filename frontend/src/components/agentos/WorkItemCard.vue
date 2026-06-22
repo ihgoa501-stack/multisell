@@ -44,6 +44,10 @@
       </n-grid-item>
     </n-grid>
 
+    <n-alert v-if="execError" type="error" closable style="margin-top: 8px;" @close="execError = ''">
+      {{ execError }}
+    </n-alert>
+
     <template #footer>
       <n-space justify="space-between" align="center">
         <div style="color: #999; font-size: 11px;">
@@ -51,15 +55,36 @@
         </div>
         <n-space size="small">
           <n-button v-if="item.action_url" size="tiny" @click="handleAction">查看详情</n-button>
+
+          <!-- 执行按钮：已审批或无需审批且待决的 action_proposal -->
           <n-button
-            v-if="!item.requires_approval && item.status === 'pending'"
+            v-if="showExecute"
+            size="tiny"
+            type="primary"
+            :loading="mutating"
+            @click="handleExecuteProposal"
+          >执行</n-button>
+
+          <!-- 复盘按钮：已执行的 action_proposal -->
+          <n-button
+            v-if="showReview"
+            size="tiny"
+            secondary
+            @click="showReviewModal = true"
+          >复盘</n-button>
+
+          <!-- 低风险非提案 → 直接标记完成 -->
+          <n-button
+            v-if="!item.requires_approval && item.status === 'pending' && !isActionProposal"
             size="tiny"
             secondary
             :loading="mutating"
             @click="handleComplete"
           >标记完成</n-button>
+
+          <!-- 审批按钮 -->
           <n-button
-            v-if="item.requires_approval"
+            v-if="showApprove"
             size="tiny"
             type="primary"
             ghost
@@ -67,7 +92,7 @@
             @click="handleApprove"
           >审批通过</n-button>
           <n-button
-            v-if="item.requires_approval"
+            v-if="showReject"
             size="tiny"
             type="warning"
             ghost
@@ -77,6 +102,34 @@
         </n-space>
       </n-space>
     </template>
+
+    <!-- 复盘弹窗 -->
+    <n-modal v-model:show="showReviewModal" title="提交复盘" preset="card" style="width: 420px;">
+      <n-form label-placement="top">
+        <n-form-item label="执行结果">
+          <n-radio-group v-model:value="reviewForm.outcome">
+            <n-radio value="positive">正面</n-radio>
+            <n-radio value="neutral">中性</n-radio>
+            <n-radio value="negative">负面</n-radio>
+          </n-radio-group>
+        </n-form-item>
+        <n-form-item label="业务指标">
+          <n-input v-model:value="reviewForm.business_metric" placeholder="如: 销售额变化" />
+        </n-form-item>
+        <n-form-item label="指标变化">
+          <n-input-number v-model:value="reviewForm.metric_delta" placeholder="数值" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="reviewForm.notes" type="textarea" :rows="3" placeholder="复盘说明" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showReviewModal = false">取消</n-button>
+          <n-button type="primary" :loading="reviewing" @click="handleSubmitReview">提交复盘</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </n-card>
 </template>
 
@@ -85,7 +138,13 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import type { AgentOSWorkItem } from '@/api/modules/agentos'
-import { updateWorkItemStatus, approveWorkItem, rejectWorkItem } from '@/api/modules/agentos'
+import {
+  updateWorkItemStatus,
+  approveWorkItem,
+  rejectWorkItem,
+  executeActionProposal,
+  reviewActionProposal,
+} from '@/api/modules/agentos'
 import AutonomyBadge from './AutonomyBadge.vue'
 
 const props = defineProps<{
@@ -103,6 +162,52 @@ const emit = defineEmits<{
 const router = useRouter()
 const message = useMessage()
 const mutating = ref(false)
+const execError = ref('')
+const showReviewModal = ref(false)
+const reviewing = ref(false)
+const reviewForm = ref({
+  outcome: 'positive' as 'positive' | 'neutral' | 'negative',
+  business_metric: '',
+  metric_delta: null as number | null,
+  notes: '',
+})
+
+const proposalId = computed(() => {
+  if (props.item.source_type === 'action_proposal' && props.item.id.startsWith('action_proposal:')) {
+    return parseInt(props.item.id.split(':')[1], 10)
+  }
+  return null
+})
+
+const isActionProposal = computed(() => proposalId.value !== null)
+
+const status = computed(() => props.item.status)
+
+const showExecute = computed(() =>
+  !props.hideActions &&
+  isActionProposal.value &&
+  status.value === 'in_progress'
+)
+
+const showReview = computed(() =>
+  !props.hideActions &&
+  isActionProposal.value &&
+  status.value === 'completed'
+)
+
+const showApprove = computed(() =>
+  !props.hideActions &&
+  isActionProposal.value &&
+  status.value === 'pending' &&
+  props.item.requires_approval
+)
+
+const showReject = computed(() =>
+  !props.hideActions &&
+  isActionProposal.value &&
+  status.value === 'pending' &&
+  props.item.requires_approval
+)
 
 const priorityLabel = computed(() => {
   const map: Record<string, string> = { low: '低', medium: '中', high: '高', critical: '紧急' }
@@ -172,6 +277,7 @@ async function handleComplete() {
 
 async function handleApprove() {
   mutating.value = true
+  execError.value = ''
   try {
     await approveWorkItem(props.item.id, { action: 'approve', comment: '批准执行' })
     message.success('已审批通过')
@@ -186,6 +292,7 @@ async function handleApprove() {
 
 async function handleReject() {
   mutating.value = true
+  execError.value = ''
   try {
     await rejectWorkItem(props.item.id, { action: 'reject', comment: '已拒绝' })
     message.success('已拒绝')
@@ -195,6 +302,43 @@ async function handleReject() {
     message.error(e?.response?.data?.message || '操作失败')
   } finally {
     mutating.value = false
+  }
+}
+
+async function handleExecuteProposal() {
+  if (!proposalId.value) return
+  mutating.value = true
+  execError.value = ''
+  try {
+    await executeActionProposal(proposalId.value, { executor: 'operator' })
+    message.success('执行成功')
+    emit('statusUpdated', props.item)
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || e?.message || '执行失败'
+    execError.value = msg
+    message.error(msg)
+  } finally {
+    mutating.value = false
+  }
+}
+
+async function handleSubmitReview() {
+  if (!proposalId.value) return
+  reviewing.value = true
+  try {
+    await reviewActionProposal(proposalId.value, {
+      outcome: reviewForm.value.outcome,
+      business_metric: reviewForm.value.business_metric || null,
+      metric_delta: reviewForm.value.metric_delta,
+      notes: reviewForm.value.notes || null,
+    })
+    message.success('复盘已提交')
+    showReviewModal.value = false
+    emit('statusUpdated', props.item)
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || '复盘提交失败')
+  } finally {
+    reviewing.value = false
   }
 }
 </script>
