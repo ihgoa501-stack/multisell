@@ -307,6 +307,10 @@ class ActionProposalCreate(BaseModel):
     risk_level: RiskLevel = RiskLevel.MEDIUM
     requires_approval: bool = True
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    store_id: Optional[int] = Field(default=None, description="店铺ID")
+    approval_deadline: Optional[datetime] = Field(default=None, description="审批截止时间")
+    escalation_level: int = Field(default=0, description="审批升级层级")
+    auto_decision: str = Field(default="reject", description="超时后动作: reject/auto_execute")
 
 
 class ActionProposalVO(BaseModel):
@@ -331,6 +335,10 @@ class ActionProposalVO(BaseModel):
     approved_by: Optional[str] = None
     rejected_by: Optional[str] = None
     rejection_reason: Optional[str] = None
+    store_id: Optional[int] = None
+    approval_deadline: Optional[datetime] = None
+    escalation_level: int = 0
+    auto_decision: str = "reject"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -370,6 +378,8 @@ class CommandExecutionVO(BaseModel):
     input_payload: dict[str, Any] = Field(default_factory=dict)
     result_payload: Optional[dict[str, Any]] = None
     error_message: Optional[str] = None
+    compensation: Optional[dict[str, Any]] = None
+    compensated_by: Optional[int] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
 

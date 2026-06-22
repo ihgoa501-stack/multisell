@@ -1,11 +1,12 @@
 """Agent 数据库模型"""
 
 from sqlalchemy import (
-    BigInteger, Column, DateTime, ForeignKey, Integer,
+    BigInteger, Boolean, Column, DateTime, ForeignKey, Integer,
     JSON, Numeric, SmallInteger, String, Text,
     UniqueConstraint as sa_UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -39,6 +40,14 @@ class AgentDecision(Base):
 
     session_id = Column(String(100), nullable=False, comment="会话ID")
     episode_id = Column(BigInteger, comment="Episode批次ID")
+
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=True, comment="店铺ID（null=全店铺通用）")
+    llm_model_used = Column(String(50), nullable=True, comment="实际使用的模型")
+    llm_errors = Column(JSON, nullable=True, comment="LLM错误列表 [{timestamp, error_type, model}]")
+    cached = Column(Boolean, default=False, comment="是否命中缓存")
+    archived = Column(Boolean, default=False, comment="是否已归档")
+    archived_at = Column(DateTime(timezone=True), nullable=True, comment="归档时间")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
 
 
@@ -65,6 +74,10 @@ class PersonalRule(Base):
     times_applied = Column(Integer, default=0, comment="应用次数")
     times_overridden = Column(Integer, default=0, comment="被覆盖次数")
     last_applied_at = Column(DateTime(timezone=True), comment="最后应用时间")
+
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=True, comment="店铺ID（null=全店铺通用）")
+    last_manual_edit_at = Column(DateTime(timezone=True), nullable=True, comment="最后手动编辑时间")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
@@ -129,6 +142,9 @@ class AgentAction(Base):
     summary = Column(String(500), nullable=False, comment="操作摘要")
     action_payload = Column(JSON, comment="执行参数")
     execution_result = Column(JSON, comment="执行结果")
+
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=True, comment="店铺ID（null=全店铺通用）")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
@@ -256,6 +272,63 @@ class AgentNudge(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ConflictPolicy(Base):
+    """Agent间冲突仲裁策略（Policy Matrix）"""
+    __tablename__ = "agent_conflict_policy"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    agent_id_a = Column(String(20), nullable=False, comment="冲突参与方A")
+    agent_id_b = Column(String(20), nullable=False, comment="冲突参与方B")
+    decision_point = Column(String(50), nullable=False, comment="适用的决策点")
+    condition = Column(JSON, nullable=True, comment="触发条件（可选，如金额范围）")
+    winner = Column(String(20), nullable=False, comment="冲突时谁的决策优先")
+    reason = Column(Text, nullable=False, comment="预置理由")
+    priority = Column(Integer, default=100, comment="匹配优先级")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ArbitrationLog(Base):
+    """仲裁日志"""
+    __tablename__ = "agent_arbitration_log"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    business_type = Column(String(50), nullable=False, comment="业务类型: sku/campaign/order")
+    business_id = Column(String(100), nullable=False, comment="业务ID")
+    conflict_keys = Column(ARRAY(Text), nullable=False, comment="冲突的decision_id列表")
+    stage = Column(String(20), nullable=False, comment="仲裁阶段: policy/arbiter/manual")
+    policy_id = Column(Integer, nullable=True, comment="命中的policy ID")
+    verdict = Column(String(20), nullable=True, comment="仲裁结论")
+    arbiter_output = Column(JSON, nullable=True, comment="G0的完整输出")
+    resolved_by = Column(String(100), nullable=False, comment="system/arbiter_G0/用户名")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+
+
+class AgentDecisionCache(Base):
+    """LLM决策缓存"""
+    __tablename__ = "agent_decision_cache"
+
+    cache_key = Column(String(64), primary_key=True, comment="缓存Key (SHA256)")
+    decision_json = Column(JSON, nullable=False, comment="缓存决策内容")
+    expires_at = Column(DateTime(timezone=True), nullable=False, comment="过期时间")
+
+
+class ScheduleFailure(Base):
+    """调度失败记录"""
+    __tablename__ = "agent_schedule_failure"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    agent_id = Column(String(20), nullable=False, comment="Agent标识")
+    store_id = Column(Integer, nullable=False, comment="店铺ID")
+    decision_point = Column(String(50), nullable=False, comment="决策点")
+    error_msg = Column(Text, nullable=True, comment="错误信息")
+    failed_at = Column(DateTime(timezone=True), server_default=func.now(), comment="失败时间")
+    retry_count = Column(Integer, default=0, comment="重试次数")
+    last_retry_at = Column(DateTime(timezone=True), nullable=True, comment="上次重试时间")
+    resolved = Column(Boolean, default=False, comment="是否已解决")
 
 
 class SystemConfig(Base):

@@ -716,6 +716,20 @@ class CostAllocationItem(Base):
     matched_order = relationship("Order", lazy="selectin")
 
 
+class Store(Base):
+    """店铺（多租户隔离）"""
+    __tablename__ = "stores"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    name = Column(String(200), nullable=False, comment="店铺名称")
+    platform_id = Column(BigInteger, ForeignKey("platform.id"), nullable=True, comment="关联平台ID")
+    platform_account_id = Column(String(100), nullable=True, comment="外部平台店铺/账号ID")
+    status = Column(SmallInteger, default=1, comment="状态: 0-禁用, 1-启用")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 class User(Base):
     """用户"""
     __tablename__ = "user"

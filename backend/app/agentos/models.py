@@ -79,6 +79,12 @@ class ActionProposal(Base):
     rejected_by = Column(String(100), nullable=True)
     rejected_at = Column(DateTime(timezone=True), nullable=True)
     rejection_reason = Column(Text, nullable=True)
+
+    store_id = Column(Integer, nullable=True, comment="店铺ID（null=全店铺通用）")
+    approval_deadline = Column(DateTime(timezone=True), nullable=True, comment="审批截止时间")
+    escalation_level = Column(Integer, default=0, comment="当前升级层级 (0=初始)")
+    auto_decision = Column(String(20), default="reject", comment="超时后动作: reject/auto_execute")
+
     created_at = Column(DateTime(timezone=True), server_default=sa_func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=sa_func.now(), onupdate=sa_func.now(), nullable=False)
 
@@ -133,6 +139,10 @@ class CommandExecution(Base):
     input_payload = Column(JSONType, nullable=False, default=dict)
     result_payload = Column(JSONType, nullable=True)
     error_message = Column(Text, nullable=True)
+
+    compensation = Column(JSON, nullable=True, comment="补偿操作定义")
+    compensated_by = Column(BigInteger, ForeignKey("agentos_command_execution.id"), nullable=True, comment="补偿记录ID（自引用）")
+
     started_at = Column(DateTime(timezone=True), server_default=sa_func.now(), nullable=False)
     finished_at = Column(DateTime(timezone=True), nullable=True)
 
