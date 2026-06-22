@@ -1029,8 +1029,8 @@ class AgentOSService:
                 .values(current_stage=db_stage)
                 .returning(AgentEvolutionConfig.id)
             )
-            updated_id = result.scalar_one_or_none()
-            if updated_id is None:
+            updated_ids = result.scalars().all()
+            if not updated_ids:
                 # 没有已有配置，创建一条新的
                 config = AgentEvolutionConfig(
                     user_id=user_id,

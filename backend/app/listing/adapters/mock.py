@@ -1,6 +1,7 @@
 """本地 mock 平台发布适配器。"""
 
-from typing import Any
+from typing import Any, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.listing.adapters.base import PublishResult
 from app.models import Inventory, Platform, Price, Product, Sku
@@ -15,6 +16,7 @@ class MockListingAdapter:
         skus: list[Sku],
         prices: dict[int, Price],
         inventories: dict[int, Inventory],
+        db: Optional[AsyncSession] = None,
     ) -> PublishResult:
         if platform.code == "mockfail":
             raise RuntimeError("mock publish failed")

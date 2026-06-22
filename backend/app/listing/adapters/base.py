@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Inventory, Platform, Price, Product, Sku
 
@@ -24,6 +25,7 @@ class ListingAdapter(Protocol):
         skus: list[Sku],
         prices: dict[int, Price],
         inventories: dict[int, Inventory],
+        db: Optional[AsyncSession] = None,
     ) -> PublishResult:
         """发布商品到平台并返回平台侧同步结果。"""
 

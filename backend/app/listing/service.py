@@ -146,6 +146,7 @@ class ListingService:
                 skus=skus,
                 prices=prices,
                 inventories=inventories,
+                db=db,
             )
         except Exception as exc:
             listing.status = "failed"

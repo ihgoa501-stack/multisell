@@ -15,6 +15,7 @@
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import httpx
 
@@ -142,6 +143,7 @@ class WildberriesListingAdapter:
         skus: list[Sku],
         prices: dict[int, Price],
         inventories: dict[int, Inventory],
+        db: Optional[AsyncSession] = None,
     ) -> PublishResult:
         """发布商品到 Wildberries（真实 API）。"""
         if not skus:
