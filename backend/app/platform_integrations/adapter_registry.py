@@ -101,6 +101,8 @@ async def test_connection(adapter_code: str, platform: models.Platform) -> tuple
 
     try:
         adapter = get_listing_adapter(adapter_code)
+        if adapter is None:
+            return False, f"适配器未注册: {adapter_code}"
         ok = await adapter.validate_credentials(platform=platform)
         return (ok, "验证通过" if ok else "凭证无效或API不可达")
     except Exception as exc:
