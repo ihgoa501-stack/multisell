@@ -124,3 +124,45 @@ async def test_worker_marks_item_failed_on_adapter_error(async_client):
         assert row.status == "failed", f"Expected failed, got {row.status}"
         assert row.error_message, "Should have error_message"
         assert row.retry_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_worker_marks_item_failed_platform_not_found(async_client):
+    """Item with non-existent platform_id gets status='failed' with appropriate error."""
+    from sqlalchemy import text
+
+    async with async_session_factory() as session:
+        product = await _create_product(session)
+        platform = await _create_platform(session)
+        task = await _create_listing_task(session, product.id, platform.id)
+        # Bypass FK checks to insert an item referencing a non-existent platform
+        await session.execute(text("SET session_replication_role = replica;"))
+        result = await session.execute(
+            text("""
+                INSERT INTO listing_task_item (task_id, product_id, platform_id, status)
+                VALUES (:task_id, :product_id, :platform_id, :status)
+                RETURNING id
+            """),
+            {"task_id": task.id, "product_id": product.id, "platform_id": 99999, "status": "pending"},
+        )
+        await session.execute(text("SET session_replication_role = origin;"))
+        item_id = result.scalar()
+        await session.commit()
+
+    from app.listing.worker import ListingWorker
+
+    worker = ListingWorker(poll_interval=0.05)
+    try:
+        await worker.start()
+        await asyncio.sleep(0.2)
+    finally:
+        await worker.stop()
+
+    async with async_session_factory() as session:
+        stmt = select(ListingTaskItem).where(ListingTaskItem.id == item_id)
+        row = (await session.execute(stmt)).scalar_one_or_none()
+        assert row is not None, "Item should exist"
+        assert row.status == "failed", f"Expected failed, got {row.status}"
+        assert row.error_message, "Should have error_message"
+        assert "Platform or Product not found" in row.error_message
+        assert row.retry_count >= 1

@@ -64,6 +64,7 @@ class ListingWorker:
             if not platform or not product:
                 item.status = "failed"
                 item.error_message = "Platform or Product not found"
+                item.retry_count = (item.retry_count or 0) + 1
                 await db.flush()
                 return
 
@@ -87,4 +88,5 @@ class ListingWorker:
             item.status = "failed"
             item.error_message = str(exc)[:500]
             item.retry_count = (item.retry_count or 0) + 1
+            logger.warning("Listing item %s failed: %s", item.id, exc)
         await db.flush()
