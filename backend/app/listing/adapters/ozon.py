@@ -301,6 +301,32 @@ class OzonListingAdapter:
             logger.warning("Ozon credential check failed: %s", exc)
             return False
 
+    async def push_tracking(
+        self,
+        *,
+        platform: Platform,
+        order_sn: str,
+        tracking_number: str,
+        carrier_code: str = "",
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        """通过 POST /v3/posting/fbs/ship 将追踪号推回 Ozon。"""
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
+
+        payload: dict[str, Any] = {
+            "posting_number": order_sn,
+            "tracking_number": tracking_number,
+        }
+        if carrier_code:
+            payload["carrier_code"] = carrier_code
+
+        async with self._client(platform) as client:
+            resp = await client.post("/v3/posting/fbs/ship", json=payload)
+            body = self._parse_response(resp, "push_tracking")
+
+        return bool(body.get("result", False))
+
     async def fetch_orders(
         self,
         *,

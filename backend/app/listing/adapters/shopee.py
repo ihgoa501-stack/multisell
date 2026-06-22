@@ -387,6 +387,22 @@ class ShopeeListingAdapter:
     #  订单拉取
     # ------------------------------------------------------------------ #
 
+    async def push_tracking(
+        self,
+        *,
+        platform: Platform,
+        order_sn: str,
+        tracking_number: str,
+        carrier_code: str = "",
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        """Shopee 使用集成物流，无需手动推送追踪号。"""
+        logger.warning(
+            "Shopee push_tracking skipped — Shopee uses integrated logistics "
+            "(order_sn=%s, tracking=%s)", order_sn, tracking_number,
+        )
+        return True
+
     async def fetch_orders(
         self,
         *,
