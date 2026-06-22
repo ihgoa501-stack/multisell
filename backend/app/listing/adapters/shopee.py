@@ -384,6 +384,63 @@ class ShopeeListingAdapter:
             return False
 
     # ------------------------------------------------------------------ #
+    #  订单拉取
+    # ------------------------------------------------------------------ #
+
+    async def fetch_orders(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """拉取 Shopee 订单列表。"""
+        api_path = "/api/v2/order/get_order_list"
+        params = self._build_auth_params(platform, api_path)
+        params["time_range_field"] = "create_time"
+        params["page_size"] = 100
+        params["create_time_from"] = int(since.timestamp())
+        params["create_time_to"] = int(datetime.now(timezone.utc).timestamp())
+
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
+
+        async with self._client(platform) as client:
+            resp = await client.get(api_path, params=params)
+            body = self._parse_response(resp, "fetch_orders")
+
+        orders = []
+        for order_sn in body.get("response", {}).get("order_list", []):
+            orders.append(await self._fetch_order_detail(platform, order_sn))
+        return orders
+
+    async def _fetch_order_detail(self, platform: Platform, order_sn: str) -> dict:
+        """拉取单个 Shopee 订单详情。"""
+        api_path = "/api/v2/order/get_order_detail"
+        params = self._build_auth_params(platform, api_path)
+        params["order_sn_list"] = order_sn
+        async with self._client(platform) as client:
+            resp = await client.get(api_path, params=params)
+            body = self._parse_response(resp, "fetch_order_detail")
+        detail = body.get("response", {}).get("order_list", [{}])[0]
+        items = [{
+            "sku_code": i.get("item_sku", ""),
+            "quantity": i.get("model_quantity_purchased", 0),
+            "unit_price": str(i.get("model_original_price", "0")),
+        } for i in detail.get("item_list", [])]
+        return {
+            "order_sn": order_sn,
+            "status": detail.get("order_status", ""),
+            "total_amount": str(detail.get("total_amount", {}).get("value", "0")),
+            "shipping_fee": "0",
+            "paid_at": detail.get("pay_time", ""),
+            "recipient_name": detail.get("recipient_address", {}).get("name", ""),
+            "recipient_phone": detail.get("recipient_address", {}).get("phone", ""),
+            "shipping_address": detail.get("recipient_address", {}).get("full_address", ""),
+            "items": items,
+        }
+
+    # ------------------------------------------------------------------ #
     #  辅助方法
     # ------------------------------------------------------------------ #
 

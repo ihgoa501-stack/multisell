@@ -644,6 +644,119 @@ class TestShopeeListingAdapter:
         assert params["timestamp"] > 0
         assert len(params["sign"]) == 64
 
+    async def test_fetch_orders(self, adapter: ShopeeListingAdapter,
+                                shopee_platform: Platform):
+        """fetch_orders() 应返回映射后的订单数据"""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # get_order_list
+                assert request.url.path.endswith("/api/v2/order/get_order_list")
+                assert "time_range_field=create_time" in str(request.url)
+                assert "page_size=100" in str(request.url)
+                assert "create_time_from" in str(request.url)
+                assert "create_time_to" in str(request.url)
+                return httpx.Response(200, json={
+                    "error": 0,
+                    "response": {"order_list": ["12345"]},
+                })
+            # get_order_detail
+            assert request.url.path.endswith("/api/v2/order/get_order_detail")
+            assert "order_sn_list=12345" in str(request.url)
+            return httpx.Response(200, json={
+                "error": 0,
+                "response": {
+                    "order_list": [{
+                        "order_sn": "12345",
+                        "order_status": "READY_TO_SHIP",
+                        "total_amount": {"value": 29.99},
+                        "pay_time": "2026-06-20T10:00:00Z",
+                        "recipient_address": {
+                            "name": "John Doe",
+                            "phone": "1234567890",
+                            "full_address": "123 Main St, City, Country",
+                        },
+                        "item_list": [{
+                            "item_sku": "SKU001",
+                            "model_quantity_purchased": 2,
+                            "model_original_price": 19.99,
+                        }],
+                    }],
+                },
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.side_effect = lambda p=None: AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://partner.shopeemobile.com",
+            )
+
+            result = await adapter.fetch_orders(
+                platform=shopee_platform,
+                since=datetime(2026, 6, 19),
+            )
+
+        assert len(result) == 1
+        assert result[0]["order_sn"] == "12345"
+        assert result[0]["status"] == "READY_TO_SHIP"
+        assert result[0]["total_amount"] == "29.99"
+        assert result[0]["shipping_fee"] == "0"
+        assert result[0]["paid_at"] == "2026-06-20T10:00:00Z"
+        assert result[0]["recipient_name"] == "John Doe"
+        assert result[0]["recipient_phone"] == "1234567890"
+        assert result[0]["shipping_address"] == "123 Main St, City, Country"
+        assert len(result[0]["items"]) == 1
+        assert result[0]["items"][0]["sku_code"] == "SKU001"
+        assert result[0]["items"][0]["quantity"] == 2
+        assert result[0]["items"][0]["unit_price"] == "19.99"
+        assert call_count == 2  # one list + one detail
+
+    async def test_fetch_orders_empty(self, adapter: ShopeeListingAdapter,
+                                      shopee_platform: Platform):
+        """fetch_orders() 应正确处理空列表"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={
+                "error": 0,
+                "response": {"order_list": []},
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.side_effect = lambda p=None: AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://partner.shopeemobile.com",
+            )
+
+            result = await adapter.fetch_orders(
+                platform=shopee_platform,
+                since=datetime(2026, 6, 19),
+            )
+
+        assert len(result) == 0
+
+    async def test_fetch_orders_api_error(self, adapter: ShopeeListingAdapter,
+                                          shopee_platform: Platform):
+        """fetch_orders API 错误时应抛出 RuntimeError"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={
+                "error": 1003,
+                "message": "Invalid access token",
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.side_effect = lambda p=None: AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://partner.shopeemobile.com",
+            )
+
+            with pytest.raises(RuntimeError, match="Invalid access token"):
+                await adapter.fetch_orders(
+                    platform=shopee_platform,
+                    since=datetime(2026, 6, 19),
+                )
+
 
 # =================================================================== #
 #  Wildberries Adapter Tests
