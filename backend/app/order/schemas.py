@@ -28,6 +28,7 @@ class OrderCreate(BaseModel):
 class OrderStatusUpdate(BaseModel):
     status: str = Field(..., max_length=50)
     remark: Optional[str] = None
+    tracking_number: Optional[str] = Field(None, max_length=200, description="运单号/追踪号")
     operator: str = "system"
 
 

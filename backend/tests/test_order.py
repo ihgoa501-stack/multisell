@@ -1,5 +1,11 @@
 """订单管理 API 测试"""
 
+from unittest.mock import AsyncMock, patch
+
+from app.database import async_session_factory
+from app.models import Order, Platform
+from app.order.service import OrderService
+
 
 async def _create_sellable_sku(async_client):
     product_resp = await async_client.post(
@@ -139,3 +145,78 @@ class TestOrders:
         detail_resp = await async_client.get(f"/api/orders/{order['id']}")
         logs = detail_resp.json()["data"]["status_logs"]
         assert [log["to_status"] for log in logs] == ["pending", "paid", "shipped"]
+
+    async def test_shipped_with_tracking_pushes_to_platform(self, async_client):
+        """发货时如有追踪号则推送到平台"""
+        product, sku = await _create_sellable_sku(async_client)
+
+        # 创建测试平台（若同 session 已有则跳过）
+        async with async_session_factory() as db:
+            existing = await db.get(Platform, 888)
+            if existing is None:
+                plat = Platform(id=888, code="testozon888", name="Test Ozon", status=1)
+                db.add(plat)
+                await db.commit()
+
+        mock_adapter = AsyncMock()
+        mock_adapter.push_tracking = AsyncMock(return_value=True)
+
+        with patch("app.listing.adapters.get_listing_adapter", return_value=mock_adapter):
+                # 用 OZON- 前缀的订单号触发平台检测
+                with patch.object(OrderService, "_generate_order_no", return_value="OZON-TEST-001"):
+                    order = await _create_order(async_client, sku["id"], quantity=1)
+
+                assert order["order_no"] == "OZON-TEST-001"
+
+                # 关联平台
+                async with async_session_factory() as db:
+                    db_order = await db.get(Order, order["id"])
+                    db_order.platform_id = 888
+                    await db.commit()
+
+                # 先付
+                await async_client.put(
+                    f"/api/orders/{order['id']}/status",
+                    json={"status": "paid"},
+                )
+
+                # 发货时携带追踪号
+                shipped_resp = await async_client.put(
+                    f"/api/orders/{order['id']}/status",
+                    json={"status": "shipped", "tracking_number": "TRACK123"},
+                )
+                assert shipped_resp.status_code == 200
+                assert shipped_resp.json()["code"] == 200
+
+                # 验证 push_tracking 被调用
+                mock_adapter.push_tracking.assert_awaited_once()
+                call_args = mock_adapter.push_tracking.call_args
+                assert call_args.kwargs["order_sn"] == "OZON-TEST-001"
+                assert call_args.kwargs["tracking_number"] == "TRACK123"
+
+    async def test_shipped_without_tracking_does_not_push(self, async_client):
+        """发货时无追踪号则不推送"""
+        product, sku = await _create_sellable_sku(async_client)
+
+        mock_adapter = AsyncMock()
+        mock_adapter.push_tracking = AsyncMock(return_value=True)
+
+        with patch("app.listing.adapters.get_listing_adapter", return_value=mock_adapter):
+            order = await _create_order(async_client, sku["id"], quantity=1)
+
+            # 先付
+            await async_client.put(
+                f"/api/orders/{order['id']}/status",
+                json={"status": "paid"},
+            )
+
+            # 发货时不带追踪号
+            resp = await async_client.put(
+                f"/api/orders/{order['id']}/status",
+                json={"status": "shipped"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["code"] == 200
+
+            # 没有追踪号 + 无平台前缀 => 不推送
+            mock_adapter.push_tracking.assert_not_awaited()
