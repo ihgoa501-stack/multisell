@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
 from app.listing.adapters import get_listing_adapter
-from app.models import ListingTaskItem, Platform, Product
+from app.models import Inventory, ListingTaskItem, Platform, Price, Product, Sku
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +81,32 @@ class ListingWorker:
                 await db.flush()
                 return
 
+            skus = (await db.execute(
+                select(Sku).where(Sku.product_id == product.id)
+            )).scalars().all()
+            sku_ids = [s.id for s in skus]
+
+            prices = {}
+            if sku_ids:
+                price_rows = (await db.execute(
+                    select(Price).where(Price.sku_id.in_(sku_ids))
+                )).scalars().all()
+                prices = {p.sku_id: p for p in price_rows}
+
+            inventories = {}
+            if sku_ids:
+                inv_rows = (await db.execute(
+                    select(Inventory).where(Inventory.sku_id.in_(sku_ids))
+                )).scalars().all()
+                inventories = {i.sku_id: i for i in inv_rows}
+
             adapter = get_listing_adapter(platform.code)
             result = await adapter.publish(
                 product=product,
                 platform=platform,
-                skus=[],
-                prices={},
-                inventories={},
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
                 db=db,
             )
             item.status = "success"
