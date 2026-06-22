@@ -1,11 +1,12 @@
 """Agent 数据库模型"""
 
 from sqlalchemy import (
-    BigInteger, Column, DateTime, ForeignKey, Integer,
+    BigInteger, Boolean, Column, DateTime, ForeignKey, Integer,
     JSON, Numeric, SmallInteger, String, Text,
     UniqueConstraint as sa_UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -218,3 +219,36 @@ class SystemConfig(Base):
     updated_by = Column(BigInteger, comment="更新人")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ConflictPolicy(Base):
+    """Agent间冲突仲裁策略（Policy Matrix）"""
+    __tablename__ = "agent_conflict_policy"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False, comment="用户ID")
+    agent_id_a = Column(String(20), nullable=False, comment="冲突参与方A")
+    agent_id_b = Column(String(20), nullable=False, comment="冲突参与方B")
+    decision_point = Column(String(50), nullable=False, comment="适用的决策点")
+    condition = Column(JSON, nullable=True, comment="触发条件（可选，如金额范围）")
+    winner = Column(String(20), nullable=False, comment="冲突时谁的决策优先")
+    reason = Column(Text, nullable=False, comment="预置理由")
+    priority = Column(Integer, default=100, comment="匹配优先级")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class ArbitrationLog(Base):
+    """仲裁日志"""
+    __tablename__ = "agent_arbitration_log"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    business_type = Column(String(50), nullable=False, comment="业务类型: sku/campaign/order")
+    business_id = Column(String(100), nullable=False, comment="业务ID")
+    conflict_keys = Column(ARRAY(Text), nullable=False, comment="冲突的decision_id列表")
+    stage = Column(String(20), nullable=False, comment="仲裁阶段: policy/arbiter/manual")
+    policy_id = Column(Integer, nullable=True, comment="命中的policy ID")
+    verdict = Column(String(20), nullable=True, comment="仲裁结论")
+    arbiter_output = Column(JSON, nullable=True, comment="G0的完整输出")
+    resolved_by = Column(String(100), nullable=False, comment="system/arbiter_G0/用户名")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")

@@ -207,10 +207,42 @@ class AgentService:
         dry_run: bool = False,
     ) -> dict:
         start_time = time.time()
+        stage = agent.get_stage(decision_point)
 
+        # ── OBSERVATION: 仅生成数据报告，不提出建议 ──
+        if stage == EvolutionStage.OBSERVATION:
+            agent_output = await agent.decide(decision_point, context, db=db)
+            decision = agent_output
+            elapsed = int((time.time() - start_time) * 1000)
+            record = agent.build_decision_record(
+                decision_point=decision_point,
+                context=context,
+                agent_output=agent_output,
+                final_decision=decision,
+                confidence=0.0,
+                user_action="ignored",
+                response_time_ms=elapsed,
+                rules_applied=[],
+            )
+            if not dry_run:
+                created = await AgentService.create_decision(db, record)
+                decision_id = created.id
+            else:
+                decision_id = None
+            return {
+                "agent_id": agent.agent_id,
+                "decision_point": decision_point,
+                "decision": decision,
+                "stage": stage.value,
+                "confidence": 0.0,
+                "rules_applied": [],
+                "decision_id": decision_id,
+                "note": "OBSERVATION: 仅收集数据，未应用规则或创建操作",
+            }
+
+        # ── SUGGESTION / SEMI_AUTONOMOUS / FULL_AUTONOMOUS ──
         agent_output = await agent.decide(decision_point, context, db=db)
         confidence = agent_output.get("confidence", 0.0)
-        stage = agent.get_stage(decision_point)
 
         decision, applied_rule_ids = await AgentService.apply_rules(
             db, agent.user_id, agent.agent_id, decision_point, agent_output
@@ -228,16 +260,164 @@ class AgentService:
             rules_applied=applied_rule_ids,
         )
 
+        decision_id = None
         if not dry_run:
             created = await AgentService.create_decision(db, record)
             decision_id = created.id
-            # 自动提取待执行操作
-            from app.agent.action_service import AgentActionService
-            actions = await AgentActionService.create_actions(
-                db, agent.user_id, agent.agent_id, decision_id, decision
-            )
-        else:
-            decision_id = None
+
+        # ── 根据阶段决定是否桥接到动作中枢 ──
+        if not dry_run:
+            try:
+                from app.agentos.action_center_service import ActionCenterService
+                from app.agentos.schemas import ActionProposalCreate, RiskLevel
+                from app.agentos.service import AGENT_TO_SQUAD
+
+                squad_id = AGENT_TO_SQUAD.get(agent.agent_id, "governance")
+
+                # Extract business object info for conflict detection
+                business_object_type = None
+                business_object_id = None
+                # Try from decision output
+                if decision.get("sku_code"):
+                    business_object_type = "sku"
+                    business_object_id = decision["sku_code"]
+                elif decision.get("campaign_id"):
+                    business_object_type = "campaign"
+                    business_object_id = decision["campaign_id"]
+                elif decision.get("order_id"):
+                    business_object_type = "order"
+                    business_object_id = decision["order_id"]
+                # Fall back to context
+                if not business_object_type:
+                    if context.get("sku_code"):
+                        business_object_type = "sku"
+                        business_object_id = context["sku_code"]
+                    elif context.get("campaign_id"):
+                        business_object_type = "campaign"
+                        business_object_id = context["campaign_id"]
+
+                # SUGGESTION: 从决策输出直接桥接
+                if stage == EvolutionStage.SUGGESTION and decision:
+                    payload = ActionProposalCreate(
+                        source_type="agent_decision",
+                        source_id=str(decision_id or 0),
+                        agent_id=agent.agent_id,
+                        squad_id=squad_id,
+                        action_type=AgentService._map_action_type(
+                            decision.get("action_type", "notify")
+                        ),
+                        business_object_type=business_object_type,
+                        business_object_id=business_object_id,
+                        title=(
+                            f"{agent.agent_id} 建议: "
+                            f"{decision.get('summary', decision_point)}"
+                        ),
+                        description=decision.get(
+                            "detail", decision.get("summary", "")
+                        ),
+                        proposed_payload=decision,
+                        risk_level=RiskLevel.MEDIUM,
+                        requires_approval=True,
+                        confidence=confidence,
+                    )
+                    await ActionCenterService.create_proposal(
+                        db, payload, operator="system"
+                    )
+
+                # SEMI_AUTONOMOUS / FULL_AUTONOMOUS
+                elif stage != EvolutionStage.SUGGESTION:
+                    from app.agent.action_service import extract_actions
+                    from app.agent.models import AgentAction
+
+                    action_defs = extract_actions(
+                        agent.agent_id, decision_id or 0, decision
+                    )
+                    if action_defs:
+                        is_high_risk = AgentService._is_high_risk_action(
+                            agent.agent_id, decision, stage
+                        )
+                        for ad in action_defs:
+                            action_status = (
+                                "pending"
+                                if (
+                                    stage == EvolutionStage.SEMI_AUTONOMOUS
+                                    and is_high_risk
+                                )
+                                else "executed"
+                            )
+                            action = AgentAction(
+                                user_id=agent.user_id,
+                                agent_id=agent.agent_id,
+                                decision_id=decision_id,
+                                action_type=ad["action_type"],
+                                status=action_status,
+                                summary=ad["summary"],
+                                action_payload=ad.get("action_payload"),
+                            )
+                            db.add(action)
+                        await db.flush()
+
+                        # Bridge to ActionCenter
+                        for aa in (
+                            db.new if hasattr(db, "new") else []
+                        ):
+                            if hasattr(aa, "action_type") and hasattr(
+                                aa, "action_payload"
+                            ):
+                                ap = aa.action_payload or {}
+                                risk, needs_approval = (
+                                    AgentService._derive_action_risk(
+                                        aa.action_type,
+                                        ap,
+                                        stage,
+                                    )
+                                )
+                                # Extract business object from action payload
+                                bo_type = None
+                                bo_id = None
+                                if ap.get("sku_code"):
+                                    bo_type = "sku"
+                                    bo_id = ap["sku_code"]
+                                elif ap.get("campaign_id"):
+                                    bo_type = "campaign"
+                                    bo_id = ap["campaign_id"]
+                                elif business_object_type:
+                                    bo_type = business_object_type
+                                    bo_id = business_object_id
+
+                                bridge_payload = ActionProposalCreate(
+                                    source_type="agent_action",
+                                    source_id=str(
+                                        getattr(aa, "id", 0)
+                                    ),
+                                    agent_id=agent.agent_id,
+                                    squad_id=squad_id,
+                                    action_type=(
+                                        AgentService._map_action_type(
+                                            aa.action_type
+                                        )
+                                    ),
+                                    business_object_type=bo_type,
+                                    business_object_id=bo_id,
+                                    title=(
+                                        aa.summary
+                                        or f"{agent.agent_id}: {aa.action_type}"
+                                    ),
+                                    description=aa.summary or "",
+                                    proposed_payload=ap,
+                                    risk_level=risk,
+                                    requires_approval=needs_approval,
+                                    confidence=0.85,
+                                )
+                                await ActionCenterService.create_proposal(
+                                    db, bridge_payload, operator="system"
+                                )
+            except Exception:
+                logger.warning(
+                    "Bridge to ActionCenter failed for %s/%s",
+                    agent.agent_id,
+                    decision_point,
+                )
 
         return {
             "agent_id": agent.agent_id,
@@ -248,6 +428,82 @@ class AgentService:
             "rules_applied": applied_rule_ids,
             "decision_id": decision_id,
         }
+
+    # ── 动作中枢桥接辅助函数 ──────────────────────────────────
+
+    ACTION_TYPE_MAP: dict[str, str] = {
+        "replenish": "inventory_allocate",
+        "price_review": "profit_review",
+        "discount_review": "profit_review",
+        "ad_action": "notify",
+    }
+
+    @staticmethod
+    def _map_action_type(action_type: str) -> str:
+        """将旧 AgentAction 类型映射到动作中枢 action_type"""
+        return AgentService.ACTION_TYPE_MAP.get(action_type, action_type)
+
+    @staticmethod
+    def _derive_action_risk(
+        action_type: str,
+        payload: dict,
+        stage: object,
+    ) -> tuple[object, bool]:
+        """根据操作类型、payload 和自治等级推导风险等级和是否需要审批"""
+        from app.agentos.schemas import RiskLevel
+
+        urgency = payload.get("urgency", "")
+        amount = abs(float(payload.get("suggested_qty", 0) or 0)) * \
+                 abs(float(payload.get("cost_price", 0) or 0))
+
+        if stage == EvolutionStage.FULL_AUTONOMOUS:
+            return RiskLevel.LOW, False
+
+        if stage == EvolutionStage.SUGGESTION:
+            return RiskLevel.MEDIUM, True
+
+        # SEMI_AUTONOMOUS
+        if action_type == "replenish" and urgency == "urgent":
+            return RiskLevel.HIGH, True
+        if action_type == "discount_review":
+            return RiskLevel.HIGH, True
+        if action_type == "price_review":
+            return RiskLevel.MEDIUM, True
+        if action_type == "ad_action":
+            return RiskLevel.CRITICAL if payload.get("status") == "critical" else RiskLevel.MEDIUM, False
+        if amount > 5000:
+            return RiskLevel.HIGH, True
+
+        return RiskLevel.MEDIUM, True
+
+    @staticmethod
+    def _is_high_risk_action(agent_id: str, decision: dict, stage: object) -> bool:
+        """判定是否高风险操作（SEMI_AUTONOMOUS 阶段需审批）"""
+        if stage != EvolutionStage.SEMI_AUTONOMOUS:
+            return False
+
+        amount_fields = {
+            "A5": "suggested_replenish_qty",
+            "G3": "final_price",
+            "A6": "suggested_price",
+            "A3": "bid_suggestion",
+        }
+        for field, _ in amount_fields.items():
+            if agent_id.startswith(field[0]) or agent_id == field:
+                cost = abs(decision.get("cost_price", 0) or 0)
+                qty = abs(decision.get("suggested_replenish_qty", 0) or 0)
+                total_amount = cost * qty if qty > 0 else cost
+                if total_amount > 500:
+                    return True
+
+        sku_count = len(decision.get("sku_codes", []) or [])
+        if sku_count > 20:
+            return True
+
+        if decision.get("is_first_operation"):
+            return True
+
+        return False
 
     @staticmethod
     async def get_or_create_honcho_profile(db: AsyncSession, user_id: int) -> HonchoProfile:

@@ -9,6 +9,7 @@ from app.agent.agents.listing_optimizer import A2ListingOptimizerAgent
 from app.agent.agents.customer_service import A4CustomerServiceAgent
 from app.agent.agents.compliance import A7ComplianceGuardAgent
 from app.agent.agents.warehouse_customs import G2WarehouseCustomsAgent
+from app.agent.agents.arbiter import G0ArbiterAgent
 
 __all__ = [
     "G3DiscountRiskAgent", "A5InventoryAlertAgent",
@@ -17,4 +18,5 @@ __all__ = [
     "A1ProductScoutAgent", "A2ListingOptimizerAgent",
     "A4CustomerServiceAgent", "A7ComplianceGuardAgent",
     "G2WarehouseCustomsAgent",
+    "G0ArbiterAgent",
 ]
