@@ -12,4 +12,12 @@ export const routes: RouteRecordRaw[] = [
       perm: 'listing:view',
     },
   },
+  {
+    path: 'listing-tasks/:id',
+    name: 'ListingTaskDetail',
+    component: () => import('@/views/listing_task/ListingTaskDetail.vue'),
+    meta: {
+      title: '上架任务详情',
+    },
+  },
 ]
