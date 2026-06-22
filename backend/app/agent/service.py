@@ -91,6 +91,58 @@ class AgentService:
 
     @staticmethod
     async def create_rule(db: AsyncSession, user_id: int, data: dict) -> PersonalRule:
+        """创建个人规则（含容量硬化检查 §4.2）"""
+        agent_id = data.get("agent_id", "")
+        decision_point = data.get("decision_point", "")
+
+        # ── Hard limit: 单决策点最多 20 条活跃规则 ──
+        if agent_id and decision_point:
+            dp_count_stmt = select(func.count()).select_from(
+                select(PersonalRule).where(
+                    PersonalRule.user_id == user_id,
+                    PersonalRule.agent_id == agent_id,
+                    PersonalRule.decision_point == decision_point,
+                    PersonalRule.status == "active",
+                ).subquery()
+            )
+            dp_count = await db.scalar(dp_count_stmt) or 0
+            if dp_count >= 20:
+                raise ValueError(
+                    f"决策点 {agent_id}:{decision_point} 已有 {dp_count} 条活跃规则，"
+                    f"达到上限 20 条。请合并或清理后再创建。"
+                )
+
+        # ── Soft limit: 单 Agent 达到 50 条时立即触发熵防御 ──
+        if agent_id:
+            agent_count_stmt = select(func.count()).select_from(
+                select(PersonalRule).where(
+                    PersonalRule.user_id == user_id,
+                    PersonalRule.agent_id == agent_id,
+                    PersonalRule.status == "active",
+                ).subquery()
+            )
+            agent_count = await db.scalar(agent_count_stmt) or 0
+            if agent_count >= 50:
+                logger.warning(
+                    f"Agent {agent_id} 活跃规则数 {agent_count} 达到软上限 50 条，立即触发熵防御扫描"
+                )
+                from app.agent.entropy.service import EntropyService
+                entropy = EntropyService()
+                await entropy.run_defenses(db, user_id)
+
+        # ── 全局警告线: 用户总规则 > 200 ──
+        total_stmt = select(func.count()).select_from(
+            select(PersonalRule).where(
+                PersonalRule.user_id == user_id,
+                PersonalRule.status == "active",
+            ).subquery()
+        )
+        total_rules = await db.scalar(total_stmt) or 0
+        if total_rules >= 200:
+            logger.warning(
+                f"用户 {user_id} 总活跃规则数 {total_rules} 已超过警告线 200 条，建议用户审查"
+            )
+
         rule = PersonalRule(user_id=user_id, **data)
         db.add(rule)
         await db.flush()

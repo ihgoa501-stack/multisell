@@ -3,6 +3,7 @@
 设计依据: hermes-self-evolving-agent-design.md §17.3
 Phase 1b (M2): TTL + Budget + Decay
 Phase 2a (M3): Regret + Merge
+Phase 3: 手动编辑冷却期 (Rule Health Governance)
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,26 @@ from app.agent.models import PersonalRule, AgentDecision, RuleMarkChange
 logger = logging.getLogger(__name__)
 
 
+def _rule_in_cooling_period(
+    rule: PersonalRule,
+    min_applications: int = 3,
+    cooling_hours: int = 72,
+) -> bool:
+    """Check if a rule is in the manual edit cooling period.
+
+    Entropy defenses should skip rules that:
+    1. Have been applied fewer than min_applications times
+    2. Were manually edited within the last cooling_hours hours
+    """
+    if (rule.times_applied or 0) < min_applications:
+        return True
+    if rule.last_manual_edit_at:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=cooling_hours)
+        if rule.last_manual_edit_at > cutoff:
+            return True
+    return False
+
+
 class TTLSweeper:
     """防线1 — TTL: 过期规则自动退休"""
 
@@ -24,11 +45,18 @@ class TTLSweeper:
         self, db: AsyncSession, user_id: int, ttl_days: int = DEFAULT_TTL_DAYS,
     ) -> list[PersonalRule]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=ttl_days)
+        cooling_cutoff = datetime.now(timezone.utc) - timedelta(hours=72)
         stmt = select(PersonalRule).where(
             PersonalRule.user_id == user_id,
             PersonalRule.status == "active",
             PersonalRule.last_applied_at.isnot(None),
             PersonalRule.last_applied_at < cutoff,
+            # Skip rules in manual-edit cooling period (§4.3)
+            PersonalRule.times_applied >= 3,
+            or_(
+                PersonalRule.last_manual_edit_at.is_(None),
+                PersonalRule.last_manual_edit_at < cooling_cutoff,
+            ),
         )
         result = await db.execute(stmt)
         rules = list(result.scalars().all())
@@ -81,8 +109,11 @@ class BudgetEnforcer:
             result = await db.execute(stmt)
             rules = list(result.scalars().all())
 
-            if len(rules) > limit:
-                excess = rules[limit:]
+            # Filter out rules in manual-edit cooling period (§4.3)
+            active_rules = [r for r in rules if not _rule_in_cooling_period(r)]
+
+            if len(active_rules) > limit:
+                excess = active_rules[limit:]
                 for rule in excess:
                     old_status = rule.status
                     rule.status = "shadow"
@@ -124,6 +155,9 @@ class DecayScheduler:
         )
         result = await db.execute(stmt)
         rules = list(result.scalars().all())
+
+        # Filter out rules in manual-edit cooling period (§4.3)
+        rules = [r for r in rules if not _rule_in_cooling_period(r)]
         affected = []
 
         for rule in rules:
@@ -166,6 +200,9 @@ class MergeDetector:
         ).order_by(PersonalRule.agent_id, PersonalRule.decision_point, PersonalRule.created_at)
         result = await db.execute(stmt)
         rules = list(result.scalars().all())
+
+        # Filter out rules in manual-edit cooling period (§4.3)
+        rules = [r for r in rules if not _rule_in_cooling_period(r)]
 
         groups: dict[str, list[PersonalRule]] = {}
         for rule in rules:
