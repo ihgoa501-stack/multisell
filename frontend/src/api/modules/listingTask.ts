@@ -37,6 +37,10 @@ export function retryListingItem(taskId: number, itemId: number) {
   return http.post(`/listing-tasks/${taskId}/items/${itemId}/retry`)
 }
 
+export function retryAllFailed(taskId: number) {
+  return http.post(`/listing-tasks/${taskId}/retry-failed`)
+}
+
 export function deleteListingTask(taskId: number) {
   return http.delete(`/listing-tasks/${taskId}`)
 }

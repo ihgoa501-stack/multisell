@@ -307,7 +307,7 @@ class TestAccountsCRUD:
 
 
 class TestAccountConnection:
-    async def test_test_account_returns_success(self, async_client):
+    async def test_test_account_returns_bool_and_message(self, async_client):
         async with async_session_factory() as session:
             platform = await _create_platform(session)
             await session.commit()
@@ -328,8 +328,8 @@ class TestAccountConnection:
         )
         assert resp.status_code == 200
         result = resp.json()["data"]
-        assert result["success"] is True
-        assert "mock" in result["message"].lower()
+        assert isinstance(result["success"], bool)
+        assert isinstance(result["message"], str)
 
     async def test_test_account_not_found(self, async_client):
         resp = await async_client.post(

@@ -103,10 +103,13 @@ class PlatformIntegrationService:
 
     @staticmethod
     async def test_account_connection(
+        db: AsyncSession,
         account: PlatformIntegrationAccount,
     ) -> tuple[bool, str]:
-        metadata = account.credential_metadata or {}
-        return test_connection(account.adapter_code, metadata)
+        platform = await db.get(Platform, account.platform_id)
+        if not platform:
+            return False, "关联平台不存在"
+        return await test_connection(account.adapter_code, platform)
 
     # ── Category Mappings ────────────────────────────────────────────────
 
