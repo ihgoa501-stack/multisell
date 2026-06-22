@@ -15,11 +15,13 @@
 
 import hashlib
 import hmac
+import json
 import logging
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import httpx
 
@@ -31,6 +33,10 @@ logger = logging.getLogger(__name__)
 LWA_TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 SP_API_BASE = "https://sellingpartnerapi-eu.amazon.com"
 DEFAULT_TIMEOUT = 30.0
+
+# LWA token cache: platform.id -> (token, expiry_timestamp)
+_lwa_token_cache: dict[int, tuple[str, float]] = {}
+LWA_TOKEN_EXPIRY_BUFFER = 60  # seconds before actual expiry to refresh
 
 # AWS Signature V4 常量
 AWS_SERVICE = "execute-api"
@@ -48,7 +54,15 @@ class AmazonListingAdapter:
     # ------------------------------------------------------------------ #
 
     async def _get_access_token(self, platform: Platform) -> str:
-        """通过 LWA 获取 access_token。"""
+        """通过 LWA 获取 access_token（带缓存，TTL 3600s）。"""
+        pid = platform.id
+        now = time.time()
+        cached = _lwa_token_cache.get(pid)
+        if cached:
+            token, expires_at = cached
+            if now < expires_at - LWA_TOKEN_EXPIRY_BUFFER:
+                return token
+
         extra = platform.extra_config or {}
         refresh_token = extra.get("refresh_token", "")
 
@@ -67,10 +81,15 @@ class AmazonListingAdapter:
             token = body.get("access_token", "")
             if not token:
                 raise RuntimeError("Amazon LWA 响应缺少 access_token")
+            # 缓存 token，默认 3600s 过期
+            expires_in = body.get("expires_in", 3600)
+            _lwa_token_cache[pid] = (token, now + expires_in)
             return token
 
     # ------------------------------------------------------------------ #
     #  AWS Signature V4
+    #  ponytail: hand-rolled rather than using boto3 (which is in deps) because SP-API uses a
+    #  custom signing scope. If boto3/botocore ever gain first-class SP-API support, swap to it.
     # ------------------------------------------------------------------ #
 
     @staticmethod
@@ -176,15 +195,8 @@ class AmazonListingAdapter:
 
         base = (platform.api_base_url or SP_API_BASE).rstrip("/")
         url = f"{base}{path}"
-        body_bytes = b"{}" if payload is None else (
-            httpx._models.to_bytes(payload) if hasattr(httpx._models, 'to_bytes')
-            else httpx._content.json_dumps(payload).encode("utf-8")
-        )
-
-        # 对 dict 序列化
-        if isinstance(payload, dict):
-            import json
-            body_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        # ponytail: default=str handles Decimal from DB models; drop when switching to boto3
+        body_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8") if isinstance(payload, dict) else b"{}"
 
         aws_access_key = extra.get("aws_access_key", "")
         aws_secret_key = extra.get("aws_secret_key", "")
@@ -287,6 +299,7 @@ class AmazonListingAdapter:
         skus: list[Sku],
         prices: dict[int, Price],
         inventories: dict[int, Inventory],
+        db: Optional[AsyncSession] = None,
     ) -> PublishResult:
         """发布商品到 Amazon（真实 SP-API）。"""
         if not skus:

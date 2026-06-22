@@ -16,7 +16,7 @@ class TestHandleProfitReview:
 
     async def test_missing_sku_id_raises(self):
         from app.agentos.command_handlers import handle_profit_review
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError, match="profit_review 需要 sku_id"):
             await handle_profit_review(None, {"target_sale_price": 100})
 
 

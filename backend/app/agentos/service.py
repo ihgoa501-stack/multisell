@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func as sa_func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1014,32 +1017,41 @@ class AgentOSService:
         agent_id: str,
         target_level: str,
     ) -> bool:
-        """更新 AgentEvolutionConfig 的 current_stage（不使用 ORM 以避免 session 状态问题）"""
-        try:
-            from app.agent.models import AgentEvolutionConfig
-            from sqlalchemy import update as sa_update
+        """更新 AgentEvolutionConfig 的 current_stage（委托 EvolutionService 确保一致的状态验证）。"""
+        from app.agent.evolution_service import EvolutionService
 
+        try:
             db_stage = AgentOSService._map_autonomy_level(target_level)
-            result = await db.execute(
-                sa_update(AgentEvolutionConfig)
-                .where(
-                    AgentEvolutionConfig.user_id == user_id,
-                    AgentEvolutionConfig.agent_id == agent_id,
-                )
-                .values(current_stage=db_stage)
-                .returning(AgentEvolutionConfig.id)
+            # 获取该 agent 所有 decision_point 的配置，统一升级
+            from app.agent.models import AgentEvolutionConfig
+            stmt = select(AgentEvolutionConfig).where(
+                AgentEvolutionConfig.user_id == user_id,
+                AgentEvolutionConfig.agent_id == agent_id,
             )
-            updated_ids = result.scalars().all()
-            if not updated_ids:
-                # 没有已有配置，创建一条新的
-                config = AgentEvolutionConfig(
-                    user_id=user_id,
-                    agent_id=agent_id,
-                    decision_point="default",
-                    current_stage=db_stage,
-                    stage_updated_by="manual",
+            configs = (await db.execute(stmt)).scalars().all()
+
+            if configs:
+                for config in configs:
+                    result = await EvolutionService.change_stage(
+                        db, user_id, agent_id, config.decision_point,
+                        db_stage, manual=True,
+                    )
+                    if not result.get("success"):
+                        logger.warning(
+                            "_update_agent_stage: change_stage failed for %s/%s/%s: %s",
+                            agent_id, config.decision_point, target_level, result.get("message"),
+                        )
+            else:
+                # ponytail: 没有已有配置时委托 EvolutionService 创建
+                result = await EvolutionService.change_stage(
+                    db, user_id, agent_id, "default", db_stage, manual=True,
                 )
-                db.add(config)
+                if not result.get("success"):
+                    logger.warning(
+                        "_update_agent_stage: change_stage failed (new config): %s",
+                        result.get("message"),
+                    )
+                    return False
             return True
         except Exception as e:
             import sys, traceback

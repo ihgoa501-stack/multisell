@@ -19,14 +19,19 @@ async def handle_profit_review(db: AsyncSession, payload: dict[str, Any]) -> dic
     from app.decision.schemas import PreListingDecisionRequest
     from app.decision.service import PreListingDecisionService
 
+    sku_id = payload.get("sku_id")
+    target_sale_price = payload.get("target_sale_price")
+    if sku_id is None or target_sale_price is None:
+        raise ValueError(f"profit_review 需要 sku_id 和 target_sale_price, 收到 payload keys: {list(payload.keys())}")
+
     kwargs = dict(destination_country="RU", cargo_type="normal")
     for key in ("destination_country", "platform_id", "product_cost", "platform_fee_pct",
                 "payment_fee_pct", "shipping_fee", "other_fee", "minimum_margin_pct", "cargo_type"):
         if key in payload:
             kwargs[key] = payload[key]
     req = PreListingDecisionRequest(
-        sku_id=payload["sku_id"],
-        target_sale_price=payload["target_sale_price"],
+        sku_id=sku_id,
+        target_sale_price=target_sale_price,
         **kwargs,
     )
     result = await PreListingDecisionService.calculate(db, req)
@@ -91,6 +96,14 @@ async def handle_listing_draft(db: AsyncSession, payload: dict[str, Any]) -> dic
             listing.published_data = optimization
             await db.flush()
             listing_id = listing.id
+        else:
+            logger.warning("listing_draft: _get_or_create_listing returned None for product=%s platform=%s", product_id, platform_id)
+
+    if listing_id is None and platform_id:
+        raise RuntimeError(
+            f"listing_draft: 无法为 product={product_id} platform={platform_id} 创建 listing, "
+            f"优化内容已计算但未持久化"
+        )
 
     return {
         "product_id": product_id,
