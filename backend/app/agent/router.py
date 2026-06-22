@@ -6,6 +6,7 @@
 否则 FastAPI 会将 "decisions/rules/profile/episodes" 匹配为 {agent_id}。
 """
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.auth import require_permission
@@ -284,6 +285,87 @@ async def trigger_schedule(
     if "error" in result:
         return Result.bad_request(result["error"])
     return Result.ok(result)
+
+
+@router.get("/agents/scheduler/failures", summary="调度失败记录")
+async def get_scheduler_failures(
+    unresolved_only: bool = Query(True),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    """Get scheduler failure records for dashboard warning."""
+    from app.agent.models import ScheduleFailure
+
+    stmt = select(ScheduleFailure)
+    if unresolved_only:
+        stmt = stmt.where(ScheduleFailure.resolved == False)
+    stmt = stmt.order_by(ScheduleFailure.failed_at.desc())
+
+    # Count (before pagination)
+    count_stmt = select(func.count(ScheduleFailure.id))
+    if unresolved_only:
+        count_stmt = count_stmt.where(ScheduleFailure.resolved == False)
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    # Paginate
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(stmt)
+    failures = result.scalars().all()
+
+    # Count by agent for dashboard summary
+    agent_summary = {}
+    for f in failures:
+        agent_summary[f.agent_id] = agent_summary.get(f.agent_id, 0) + 1
+
+    return Result.ok({
+        "failures": [{
+            "id": f.id,
+            "agent_id": f.agent_id,
+            "store_id": f.store_id,
+            "decision_point": f.decision_point,
+            "error_msg": f.error_msg,
+            "failed_at": f.failed_at.isoformat() if f.failed_at else None,
+            "retry_count": f.retry_count,
+            "resolved": f.resolved,
+        } for f in failures],
+        "total": total,
+        "agent_summary": agent_summary,
+    })
+
+
+@router.get("/agents/scheduler/dashboard", summary="调度仪表盘摘要")
+async def get_scheduler_dashboard(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("agent:view")),
+):
+    """Summary for the dashboard status cards — capacity warning for SS4.2."""
+    from app.agent.models import ScheduleFailure, PersonalRule, AgentDecision
+
+    # Unresolved failures count
+    fail_stmt = select(func.count()).select_from(
+        select(ScheduleFailure.id).where(ScheduleFailure.resolved == False).subquery()
+    )
+    fail_count = (await db.execute(fail_stmt)).scalar() or 0
+
+    # Total active rules count (for capacity warning)
+    rule_stmt = select(func.count()).select_from(
+        select(PersonalRule.id).where(PersonalRule.status == "active").subquery()
+    )
+    rule_count = (await db.execute(rule_stmt)).scalar() or 0
+
+    capacity_warning = None
+    if rule_count > 200:
+        capacity_warning = f"全局规则数({rule_count})超过200，建议审查"
+
+    return Result.ok({
+        "unresolved_schedule_failures": fail_count,
+        "total_active_rules": rule_count,
+        "capacity_warning": capacity_warning,
+        "agent_status": "warning" if fail_count > 0 else "healthy",
+    })
 
 
 # ── 动态路径（放在静态路径之后） ──

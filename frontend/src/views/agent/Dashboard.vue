@@ -4,6 +4,25 @@
       <template #title>运营驾驶舱</template>
     </n-page-header>
 
+    <!-- 容量/调度警告横幅（Phase 7） -->
+    <n-alert
+      v-if="capacityWarning"
+      type="warning"
+      closable
+      :bordered="false"
+      style="margin-bottom: 12px;"
+    >
+      {{ capacityWarning }}
+    </n-alert>
+    <n-alert
+      v-if="unresolvedFailures > 0"
+      type="warning"
+      :bordered="false"
+      style="margin-bottom: 12px;"
+    >
+      调度系统有 {{ unresolvedFailures }} 个未解决失败，请查看调度仪表盘。
+    </n-alert>
+
     <!-- 概览卡片 -->
     <n-grid :cols="4" :x-gap="12" style="margin-top: 12px;">
       <n-grid-item>
@@ -143,6 +162,10 @@ const actions = ref<any[]>([])
 const decisionsByAgent = reactive<Record<string, number>>({})
 const ruleHealth = reactive({ total: 0, active: 0, shadow: 0, retired_or_paused: 0 })
 
+// Phase 7: 调度/容量警告
+const capacityWarning = ref<string | null>(null)
+const unresolvedFailures = ref(0)
+
 function tagColor(agentId: string) {
   const colors: Record<string, string> = {
     A3: '#e67e22', A4: '#2ecc71', A5: '#e74c3c',
@@ -225,5 +248,20 @@ async function doReject(id: number) {
   }
 }
 
-onMounted(() => { fetchDashboard(); fetchActions() })
+// Phase 7: 获取调度仪表盘警告
+async function fetchSchedulerDashboard() {
+  try {
+    const res: any = await agentApi.getSchedulerDashboard()
+    const data = res?.data
+    if (!data) return
+    capacityWarning.value = data.capacity_warning || null
+    unresolvedFailures.value = data.unresolved_schedule_failures || 0
+  } catch { /* 调度仪表盘非关键路径，静默失败 */ }
+}
+
+onMounted(() => {
+  fetchDashboard()
+  fetchActions()
+  fetchSchedulerDashboard()
+})
 </script>

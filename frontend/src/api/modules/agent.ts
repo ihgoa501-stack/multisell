@@ -49,6 +49,14 @@ export const agentApi = {
   listEpisodes(params?: any) {
     return http.get('/agents/episodes', { params })
   },
+
+  // ── 调度仪表盘（Phase 7） ──
+  getSchedulerFailures(params?: any) {
+    return http.get('/agents/scheduler/failures', { params })
+  },
+  getSchedulerDashboard() {
+    return http.get('/agents/scheduler/dashboard')
+  },
 }
 
 export const entropyApi = {

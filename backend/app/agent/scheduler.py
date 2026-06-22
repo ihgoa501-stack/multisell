@@ -215,6 +215,7 @@ class AgentScheduler:
         self._running = False
         self._system_user_id = 1  # 系统调度使用管理员用户
         self._entropy_enabled = True
+        self._archive_enabled = True
 
         # 复制默认配置，运行时可变
         for agent_id, cfg in DEFAULT_SCHEDULES.items():
@@ -246,8 +247,16 @@ class AgentScheduler:
             )
             self._tasks["__entropy__"] = entropy_task
 
+        # 启动归档循环（每日一次）
+        if self._archive_enabled:
+            archive_task = asyncio.create_task(
+                self._run_archive_loop(),
+                name="agent-scheduler-archive",
+            )
+            self._tasks["__archive__"] = archive_task
+
         logger.info(
-            "AgentScheduler 已启动: %d/%d Agent + 熵防御",
+            "AgentScheduler 已启动: %d/%d Agent + 熵防御 + 归档",
             started, len(self._schedules),
         )
 
@@ -363,6 +372,33 @@ class AgentScheduler:
                 break
 
         logger.info("熵防御循环已停止")
+
+    async def run_archive_cycle(self, db):
+        """Run once per day — archive old decisions"""
+        from app.agent.archive_service import archive_old_decisions
+        result = await archive_old_decisions(db)
+        logger.info(f"Archive cycle: {result['archived_count']} decisions archived")
+        return result
+
+    async def _run_archive_loop(self):
+        """归档循环 — 每 24 小时归档一次旧决策"""
+        logger.info("归档循环启动: 间隔=86400s")
+
+        while self._running:
+            try:
+                async with async_session_factory() as db:
+                    await self.run_archive_cycle(db)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"归档循环失败: {e}")
+
+            try:
+                await asyncio.sleep(86400)  # 24 hours
+            except asyncio.CancelledError:
+                break
+
+        logger.info("归档循环已停止")
 
     async def _run_cycle(
         self,
