@@ -7,8 +7,6 @@
 4. 规则状态变更审计日志
 5. 规则合并候选生成
 """
-import pytest
-from decimal import Decimal
 
 
 # ================================================================
@@ -99,7 +97,7 @@ class TestRuleMarkChange:
         records = data.get("records", data.get("data", []))
         if isinstance(records, list):
             # 应该有一条规则状态变更记录
-            status_changes = [
+            [
                 r for r in records
                 if r.get("target_id") == rule_id
             ]

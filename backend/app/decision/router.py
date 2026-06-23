@@ -15,7 +15,6 @@ from app.decision.schemas import (
     PreListingDecisionBatchResponse,
     PreListingDecisionBatchSummary,
     PreListingDecisionRequest,
-    PreListingDecisionResponse,
 )
 from app.decision.service import PreListingDecisionService
 from app.models import Platform, User

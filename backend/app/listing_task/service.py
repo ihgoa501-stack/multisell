@@ -1,10 +1,10 @@
 """多平台上架任务 - 服务层"""
 
 from typing import Optional
-from sqlalchemy import select, func, or_
+from sqlalchemy import case, select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ListingTask, ListingTaskItem, Product, Platform, ProductListing
+from app.models import ListingTask, ListingTaskItem, Product, Platform
 from app.listing.service import ListingService, PublishValidationError, PublishFailedError
 
 

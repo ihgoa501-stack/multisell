@@ -1,6 +1,5 @@
 """仪表盘 & 报表测试"""
 
-import pytest
 
 
 class TestDashboard:

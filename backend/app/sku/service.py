@@ -1,7 +1,7 @@
 """规格与SKU管理 - 服务层"""
 import itertools
 from typing import Optional
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.models import Inventory, Price, SpecName, SpecValue, Sku

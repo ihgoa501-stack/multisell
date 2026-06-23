@@ -22,13 +22,12 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.crypto import decrypt_api_key
 from app.common.rate_limiter import get_limiter_for_platform
 from app.listing.adapters.base import PublishResult
-from app.models import Inventory, Platform, Price, Product, Sku, ExchangeRate
+from app.models import Inventory, Platform, Price, Product, Sku
 
 logger = logging.getLogger(__name__)
 
@@ -421,6 +420,21 @@ class ShopeeListingAdapter:
     # ------------------------------------------------------------------ #
     #  订单拉取
     # ------------------------------------------------------------------ #
+
+    # ------------------------------------------------------------------ #
+    #  退货/售后申请拉取
+    # ------------------------------------------------------------------ #
+
+    async def fetch_returns(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """Shopee 退货导入尚未实现 — Phase 1 返回空列表。"""
+        logger.warning("Shopee returns import not yet implemented")
+        return []
 
     async def fetch_orders(
         self,

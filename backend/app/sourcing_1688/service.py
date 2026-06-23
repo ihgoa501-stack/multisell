@@ -1,5 +1,4 @@
 """1688 货源采集 - 服务层"""
-import json
 from typing import Optional
 from decimal import Decimal
 from sqlalchemy import select, func

@@ -9,14 +9,14 @@
 - 结算对账统计
 """
 
-from sqlalchemy import select, func, and_, case, desc
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, timezone
 from app.models import (
     Product, Sku, Inventory, OperationLog,
     Brand, Supplier, Platform, ProductListing,
     Category, Order, Settlement,
-    FinanceTransaction, FinanceAccount,
+    FinanceAccount,
 )
 
 

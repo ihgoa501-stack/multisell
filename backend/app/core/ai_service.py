@@ -3,7 +3,6 @@
 import json
 import asyncio
 import re
-from typing import Optional
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,7 +76,6 @@ class AiEnhanceService:
             "Content-Type": "application/json",
         }
 
-        last_error: Optional[Exception] = None
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
@@ -105,8 +103,7 @@ class AiEnhanceService:
                         "description": result.get("description", description or name),
                         "keywords": result.get("keywords", [name]),
                     }
-            except Exception as e:
-                last_error = e
+            except Exception:
                 if attempt < 2:
                     await asyncio.sleep(1 * (attempt + 1))
 

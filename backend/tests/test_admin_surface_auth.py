@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.auth_helpers import enable_auth, register_and_login, grant_permission
+from tests.auth_helpers import register_and_login, grant_permission
 
 
 pytestmark = pytest.mark.usefixtures("enable_auth")

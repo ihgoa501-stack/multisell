@@ -40,7 +40,7 @@ class A3AdAdviceAgent(BaseAgent):
 
     async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
         if decision_point == "acos_analysis":
-            return await self._analyze_acos(context)
+            return await self._analyze_acos(context, db=db)
         elif decision_point == "ad_optimization":
             return self._suggest_ad_optimization(context)
         return {"action": "unknown", "confidence": 0.0}
@@ -48,7 +48,7 @@ class A3AdAdviceAgent(BaseAgent):
     # ──────────────────────────────
     #  1. ACoS 分析
     # ──────────────────────────────
-    async def _analyze_acos(self, context: dict) -> dict:
+    async def _analyze_acos(self, context: dict, db: Any = None) -> dict:
         missing = _missing_fields(context, REQUIRED_FIELDS)
         if missing:
             return self._insufficient("acos_analysis", missing)
@@ -198,7 +198,7 @@ class A3AdAdviceAgent(BaseAgent):
         spend = _safe_float(context.get("spend", 0))
         sales = _safe_float(context.get("sales", 0))
         acos = round(spend / sales * 100, 2) if sales > 0 else 0.0
-        clicks = _safe_float(context.get("clicks", 0))
+        _safe_float(context.get("clicks", 0))
         search_terms = context.get("search_terms", [])
         target_acos = _safe_float(context.get("target_acos", 30.0))
 

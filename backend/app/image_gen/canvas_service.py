@@ -1,11 +1,10 @@
 """AI 生图 - 画布业务逻辑"""
 
 import logging
-from typing import Optional, List
+from typing import Optional
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import ProductCanvas
-from app.models import User
 
 logger = logging.getLogger(__name__)
 

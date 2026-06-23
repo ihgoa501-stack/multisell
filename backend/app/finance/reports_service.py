@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import func, select, case, cast, Float
+from sqlalchemy import func, select, cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (

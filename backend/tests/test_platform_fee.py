@@ -1,7 +1,6 @@
 """平台费用规则管理 API 测试"""
 import pytest
 from uuid import uuid4
-from httpx import AsyncClient
 
 pytestmark = [pytest.mark.asyncio]
 

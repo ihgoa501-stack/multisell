@@ -57,7 +57,7 @@ class G2WarehouseCustomsAgent(BaseAgent):
         country = str(ctx.get("destination_country", "")).upper().strip()
         cargo = str(ctx.get("cargo_type", "")).lower().strip()
         value = _sf(ctx.get("declared_value", 0))
-        weight = _sf(ctx.get("weight_kg", 0))
+        _sf(ctx.get("weight_kg", 0))
 
         hs_code = HS_CODE_DB.get((cargo, country), "需要人工归类")
         duty_free = value < 800 and country == "US"
@@ -84,7 +84,7 @@ class G2WarehouseCustomsAgent(BaseAgent):
     def _warehouse(self, ctx: dict) -> dict:
         country = str(ctx.get("destination_country", "")).upper().strip()
         sales_volume = _sf(ctx.get("monthly_sales_volume", 0))
-        weight = _sf(ctx.get("weight_kg", 0))
+        _sf(ctx.get("weight_kg", 0))
 
         if country == "US":
             if sales_volume > 500:

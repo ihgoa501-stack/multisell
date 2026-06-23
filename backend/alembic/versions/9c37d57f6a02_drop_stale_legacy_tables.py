@@ -61,9 +61,9 @@ def downgrade() -> None:
     如需完整回滚，请从备份恢复。
     """
     from sqlalchemy import (
-        Column, BigInteger, String, Integer, Numeric,
-        DateTime, Text, JSON, SmallInteger, ForeignKey,
-        func, sa
+        Column, BigInteger, String, Numeric,
+        DateTime, JSON, ForeignKey,
+        func
     )
 
     # 13. platform_integration_account（无外键依赖）

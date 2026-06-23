@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user, require_permission
+from app.auth import require_permission
 from app.common import Result
 from app.config import settings
 from app.database import get_db

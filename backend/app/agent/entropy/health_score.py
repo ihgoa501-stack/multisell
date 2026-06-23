@@ -8,9 +8,8 @@
   5. 规则类型 (weight: 0.10): veto > threshold > strategy > style
 """
 import math
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.models import PersonalRule

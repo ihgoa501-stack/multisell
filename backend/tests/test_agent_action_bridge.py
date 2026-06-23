@@ -1,6 +1,6 @@
 """Agent → 动作中枢桥接测试"""
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
 
 from app.agent.base import EvolutionStage
 from app.agentos.schemas import RiskLevel
@@ -206,7 +206,6 @@ class TestAgentActionBridgeAPI:
     async def test_proposal_appears_in_work_items(self, async_client):
         """桥接创建的 ActionProposal 应在 WorkItems 中可见"""
         await self._set_agent_stage("A5", "stock_alert")
-        from app.database import async_session_factory
 
         # 触发 A5 决策
         await async_client.post(

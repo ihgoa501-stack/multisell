@@ -1,6 +1,5 @@
 """搜索接口测试"""
 
-import pytest
 
 
 class TestSearch:

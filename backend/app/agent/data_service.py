@@ -4,10 +4,9 @@
 Agent 只需传入最少标识字段（如 sku_code），剩余字段由本服务补齐。
 """
 import logging
-from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import Sku, Product, Inventory, Category, Brand
+from app.models import Sku, Product, Inventory, Category
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +99,6 @@ class AgentDataService:
     async def _get_category_name(db: AsyncSession, category_id) -> str:
         if not category_id:
             return ""
-        from app.models import Category
         stmt = select(Category).where(Category.id == int(category_id))
         result = await db.execute(stmt)
         cat = result.scalar_one_or_none()

@@ -8,13 +8,13 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import select, func, and_, delete as sa_delete, desc
+from sqlalchemy import select, func, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Notification, AlertRule,
     Inventory, Settlement, SettlementItem,
-    ProductListing, Order, Product,
+    ProductListing, Order,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,6 @@ class NotificationService:
     @staticmethod
     async def _check_settlement_pending(db: AsyncSession) -> int:
         """结算待对账预警"""
-        from app.models import Settlement
         stmt = select(Settlement).where(Settlement.status == "pending")
         result = await db.execute(stmt)
         count = 0
@@ -178,7 +177,7 @@ class NotificationService:
             if not exists.scalar_one_or_none():
                 notif = Notification(
                     user_id=1, alert_type="settlement_discrepancy",
-                    title=f"结算明细金额差异",
+                    title="结算明细金额差异",
                     content=item.reconciliation_note or f"差异金额: ¥{float(item.amount)}",
                     link_url=f"/settlements/{item.settlement_id}",
                     severity="error", source_id=f"item={item.id}",
@@ -206,7 +205,7 @@ class NotificationService:
             if not exists.scalar_one_or_none():
                 notif = Notification(
                     user_id=1, alert_type="listing_failed",
-                    title=f"商品发布失败",
+                    title="商品发布失败",
                     content=listing.sync_message or f"platform_id={listing.platform_id}",
                     link_url=f"/products/{listing.product_id}",
                     severity="error", source_id=f"listing={listing.id}",

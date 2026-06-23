@@ -22,7 +22,6 @@ from app.database import async_session_factory
 from app.agent.registry import AgentRegistry
 from app.agent.service import AgentService
 from app.agent.pipeline import evaluate_chains
-from app.agent.models import AgentDecision
 from app.agent.evolution_service import EvolutionService
 from app.agent.entropy.service import EntropyService
 from app.models import Sku, Inventory, Product, Order
@@ -154,7 +153,7 @@ class SchedulerContextBuilder:
     @staticmethod
     async def build_discount_risk_contexts(db, max_skus: int = 50) -> list[dict]:
         """G3: 查询最近有价格变动的 SKU"""
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        datetime.now(timezone.utc) - timedelta(days=7)
         stmt = select(Sku).limit(max_skus)
         result = await db.execute(stmt)
         skus = result.scalars().all()

@@ -1,16 +1,16 @@
 """库存分配 - 路由"""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_permission
 from app.common import Result
 from app.database import get_db
-from app.models import User, Warehouse, AllocationRule
+from app.models import User
 from app.allocation.schemas import (
     WarehouseCreate, WarehouseUpdate, WarehouseVO,
     AllocationRuleCreate, AllocationRuleVO,
-    InventoryAllocateRequest, InventoryWarehouseVO,
+    InventoryAllocateRequest,
 )
 from app.allocation.service import WarehouseService, AllocationService
 from app.operation_log.service import OperationLogService

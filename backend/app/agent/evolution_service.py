@@ -2,18 +2,16 @@
 
 与 PRD P0-2（信任评分计算引擎）和 P0-3（等级控制 + Nudge 机制）对应。
 """
-import math
 import logging
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.models import (
     AgentDecision, AgentEvolutionConfig, AgentNudge,
-    PersonalRule, SpcControlLimit,
+    PersonalRule,
 )
 from app.agent.base import EvolutionStage
 from app.agent.registry import AgentRegistry

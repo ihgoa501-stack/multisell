@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Sku, Product
+from app.models import Sku
 from app.platform_fee.schemas import PlatformFeeCalculateRequest
 from app.platform_fee.service import PlatformFeeService
 from app.shipping.schemas import CalculateRequest, CalculateResponse

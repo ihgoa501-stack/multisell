@@ -1,12 +1,11 @@
 """Agent 服务层"""
 import time
 import logging
-from typing import Optional, Any
-from sqlalchemy import select, func, and_
+from typing import Optional
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.agent.models import AgentDecision, PersonalRule, AgentEpisode, HonchoProfile, RuleConflict
+from app.agent.models import AgentDecision, PersonalRule, AgentEpisode, HonchoProfile
 from app.agent.base import BaseAgent, EvolutionStage
-from app.agent.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +271,7 @@ class AgentService:
             # SEMI_AUTONOMOUS: 创建操作，高风险需审批
             # FULL_AUTONOMOUS: 自动执行全部操作
             if stage != EvolutionStage.SUGGESTION:
-                from app.agent.action_service import AgentActionService, extract_actions
+                from app.agent.action_service import extract_actions
                 from app.agent.models import AgentAction
 
                 action_defs = extract_actions(agent.agent_id, decision_id, decision)

@@ -89,3 +89,21 @@ class ListingAdapter(Protocol):
         - occurred_at: str (ISO datetime)
         - description: str (optional)
         """
+
+    async def fetch_returns(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """从平台拉取售后/退货申请。返回 list[dict]:
+        - return_id: str — 平台退货ID
+        - order_sn: str
+        - sku_code: str
+        - quantity: int
+        - reason: str
+        - status: str — platform's return status
+        - created_at: str (ISO)
+        - refund_amount: str (optional)
+        """

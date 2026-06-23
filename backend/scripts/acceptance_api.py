@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Demo Acceptance — API-level verification against localhost:8000."""
 
-import json, os, subprocess, urllib.request, io, uuid
+import json
+import os
+import subprocess
+import urllib.request
+import io
+import uuid
 
 BASE = "http://localhost:8000/api"
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -41,7 +46,8 @@ def req(method, path, data=None, files=None, form=None, token=None):
     except urllib.error.HTTPError as e:
         body = e.read().decode()
         try: return e.code, json.loads(body)
-        except: return e.code, {"error": body}
+        except Exception:
+            return e.code, {"error": body}
 
 def main():
     results = []
@@ -56,7 +62,8 @@ def main():
         tok = d["data"]["access_token"]
         print(f"  + OK — role={d['data']['user']['role']}")
     else:
-        print(f"  ! FAIL: {d}"); return
+        print(f"  ! FAIL: {d}")
+        return
 
     # 1 — Products
     c, d = req("GET", "/products", token=tok)
@@ -105,7 +112,7 @@ def main():
     if c == 200:
         b = d["data"]
         bid = b["id"]
-        rc, coc, fc, cs = b["row_count"], b["created_order_count"], b["failed_count"], b["chain_status"]
+        rc, coc, fc, _cs = b["row_count"], b["created_order_count"], b["failed_count"], b["chain_status"]
         ok = rc >= 6 and coc >= 3
         results.append(("Order Import", "PASS" if ok else "FAIL", f"rows={rc}, orders={coc}, fail={fc}"))
         print(f"  {'+' if ok else '!'} rows={rc}, orders={coc}, fail={fc}")
@@ -158,7 +165,7 @@ def main():
         print(f"  + rows={r['total_rows']}")
     else:
         results.append(("Shipping Bill Import", "FAIL", str(d)))
-        print(f"  ! FAIL")
+        print("  ! FAIL")
         bid2 = None
 
     # 9 — Shipping Reconcile
@@ -187,7 +194,7 @@ def main():
         print(f"  + rows={r['total_rows']}")
     else:
         results.append(("Settlement Import", "FAIL", str(d)))
-        print(f"  ! FAIL")
+        print("  ! FAIL")
 
     # 11 — Exceptions
     print("\n[11] Exceptions...")

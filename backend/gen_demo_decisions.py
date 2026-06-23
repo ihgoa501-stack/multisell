@@ -1,5 +1,6 @@
 """通过 API 生成 Agent 演示决策"""
-import httpx, asyncio
+import httpx
+import asyncio
 
 API = "http://localhost:8001/api"
 

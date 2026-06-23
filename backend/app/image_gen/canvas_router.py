@@ -23,7 +23,7 @@ async def save_canvas(
         result = await CanvasService.save(
             db=db, user_id=current_user.id,
             product_id=req.product_id, name=req.name,
-            layers=[l.model_dump() for l in req.layers],
+            layers=[rec.model_dump() for rec in req.layers],
         )
         return Result.ok(result)
     except ValueError as e:

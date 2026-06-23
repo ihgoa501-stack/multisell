@@ -149,4 +149,4 @@ async def get_inventory_logs(
     current_user: User = Depends(require_permission("inventory:view")),
 ):
     logs = await InventoryService.get_inventory_logs(db, sku_id)
-    return Result.ok([log_to_vo(l) for l in logs])
+    return Result.ok([log_to_vo(rec) for rec in logs])

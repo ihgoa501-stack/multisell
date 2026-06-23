@@ -1,7 +1,6 @@
 """Tests for settlement sync worker — uses async session (test DB)."""
 
 import pytest
-from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -207,7 +206,7 @@ async def test_upsert_tx_refund_sets_refund_total():
 async def test_tick_skips_missing_adapter():
     """_tick handles platforms without fetch_settlements gracefully."""
     async with async_session_factory() as db:
-        platform = await _ensure_platform(db)
+        await _ensure_platform(db)
         worker = SettlementSyncWorker(poll_interval=999999)
         # platform.code = "test_settle_sync" won't match any real adapter
         await worker._tick()

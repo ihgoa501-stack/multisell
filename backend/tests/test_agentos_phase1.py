@@ -9,7 +9,6 @@ from sqlalchemy import select
 from app.agent.models import AgentAction
 from app.agentos.schemas import (
     AgentOSWorkItem,
-    AutonomyLevel,
     RiskLevel,
     WorkItemPriority,
     WorkItemStatus,

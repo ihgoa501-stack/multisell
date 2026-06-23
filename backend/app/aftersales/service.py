@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.inventory.service import InventoryService
-from app.models import AfterSalesOrder, Inventory, Order, OrderItem, Sku
+from app.models import AfterSalesOrder
 
 
 ALLOWED_TRANSITIONS = {

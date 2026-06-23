@@ -2,12 +2,10 @@
 
 覆盖 P0-2（信任评分引擎）, P0-3（等级控制 + Nudge）, P0-4（阶段行为差异）
 """
-import pytest
 import pytest_asyncio
-from datetime import datetime, timezone, timedelta
 
 from app.agent.base import EvolutionStage
-from app.agent.evolution_service import TrustScoreCalculator, EvolutionService, SCORE_WEIGHTS
+from app.agent.evolution_service import TrustScoreCalculator, SCORE_WEIGHTS
 
 
 # ── 辅助函数 ──────────────────────────────────────────────

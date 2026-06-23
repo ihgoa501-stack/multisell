@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import PlatformFeeRule
 from app.platform_fee.schemas import (

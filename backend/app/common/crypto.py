@@ -1,7 +1,8 @@
 """API密钥加密/解密工具"""
 
 from cryptography.fernet import Fernet
-import base64, hashlib
+import base64
+import hashlib
 from app.config import settings
 
 

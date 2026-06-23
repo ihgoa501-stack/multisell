@@ -1,7 +1,6 @@
 """物流供应商/渠道/区域/规则管理 API 测试"""
 import pytest
 from uuid import uuid4
-from httpx import AsyncClient
 from app.config import settings
 
 from tests.auth_helpers import register_and_login, grant_permission

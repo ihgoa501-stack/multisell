@@ -22,15 +22,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from decimal import Decimal
-from typing import Optional
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.database import Base
 from app.models import (
-    Brand, Category, Platform, Product, SpecName, SpecValue, Sku,
+    Brand, Category, Platform, Product, Sku,
     Inventory, Supplier, ShippingProvider, ShippingChannel, ShippingZone,
     ShippingQuoteRule, PlatformFeeRule, Permission,
     PlatformIntegrationAccount,

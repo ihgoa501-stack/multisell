@@ -581,6 +581,122 @@ class TestOzonListingAdapter:
                 )
 
 
+    # ------------------------------------------------------------------ #
+    #  fetch_returns tests
+    # ------------------------------------------------------------------ #
+
+    async def test_fetch_returns_success(
+        self, adapter: OzonListingAdapter, platform: Platform,
+    ):
+        """fetch_returns() 应返回映射后的退货数据"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/v3/returns/list")
+            body = json.loads(request.read())
+            assert "filter" in body
+            assert "last_change_from" in body["filter"]
+            assert body["limit"] == 100
+            return httpx.Response(200, json={
+                "result": {
+                    "returns": [
+                        {
+                            "return_id": 5001,
+                            "posting_number": "POST-001",
+                            "sku": "SKU-001",
+                            "quantity": 2,
+                            "reason": "商品破损",
+                            "status": "waiting_for_seller",
+                            "created_at": "2026-06-20T10:00:00Z",
+                            "refund_amount": "199.00",
+                        },
+                        {
+                            "return_id": 5002,
+                            "posting_number": "POST-002",
+                            "sku": "SKU-002",
+                            "quantity": 1,
+                            "reason": "买家取消",
+                            "status": "returned",
+                            "created_at": "2026-06-21T12:00:00Z",
+                            "refund_amount": "149.00",
+                        },
+                    ],
+                },
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.fetch_returns(
+                platform=platform,
+                since=datetime(2026, 6, 19),
+            )
+
+        assert len(result) == 2
+
+        assert result[0]["return_id"] == "5001"
+        assert result[0]["order_sn"] == "POST-001"
+        assert result[0]["sku_code"] == "SKU-001"
+        assert result[0]["quantity"] == 2
+        assert result[0]["reason"] == "商品破损"
+        assert result[0]["status"] == "waiting_for_seller"
+        assert result[0]["created_at"] == "2026-06-20T10:00:00Z"
+        assert result[0]["refund_amount"] == "199.00"
+
+        assert result[1]["return_id"] == "5002"
+        assert result[1]["order_sn"] == "POST-002"
+        assert result[1]["sku_code"] == "SKU-002"
+        assert result[1]["quantity"] == 1
+        assert result[1]["reason"] == "买家取消"
+        assert result[1]["status"] == "returned"
+        assert result[1]["created_at"] == "2026-06-21T12:00:00Z"
+        assert result[1]["refund_amount"] == "149.00"
+
+    async def test_fetch_returns_empty(
+        self, adapter: OzonListingAdapter, platform: Platform,
+    ):
+        """fetch_returns() 应正确处理空列表响应"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={
+                "result": {"returns": []},
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.fetch_returns(
+                platform=platform,
+                since=datetime(2026, 6, 19),
+            )
+
+        assert len(result) == 0
+
+    async def test_fetch_returns_api_error(
+        self, adapter: OzonListingAdapter, platform: Platform,
+    ):
+        """fetch_returns API 返回错误时应抛出 RuntimeError"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(400, json={
+                "error": {"code": "INVALID_DATE", "message": "无效日期范围"},
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            with pytest.raises(RuntimeError, match="无效日期范围"):
+                await adapter.fetch_returns(
+                    platform=platform,
+                    since=datetime(2026, 6, 19),
+                )
+
+
 # =================================================================== #
 #  Shopee Adapter Tests
 # =================================================================== #

@@ -20,14 +20,12 @@ import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from sqlalchemy import select, func, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.database import Base
 from app.models import (
-    Product, Sku, Inventory, AgentDecision, PersonalRule,
-    Category, Brand, Supplier,
+    Product, Sku, Inventory, PersonalRule,
 )
 
 API_BASE = "http://localhost:8001/api"

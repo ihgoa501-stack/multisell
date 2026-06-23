@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    Product, Sku, Price, Inventory, Brand,
+    Sku, Price, Inventory, Brand,
     ProductSupplier, Supplier, ProductListing, Platform,
 )
 from app.core.service import ProductService, product_to_vo

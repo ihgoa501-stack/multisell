@@ -1,6 +1,6 @@
 """平台 Adapter 能力注册表 + 凭据校验（调用真实 adapter 的 validate_credentials）。"""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from app import models

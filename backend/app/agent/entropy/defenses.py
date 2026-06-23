@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import select, func, and_, or_, update
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.models import PersonalRule, AgentDecision, RuleMarkChange
 

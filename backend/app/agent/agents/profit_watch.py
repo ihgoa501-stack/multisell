@@ -5,7 +5,7 @@
 - 输出单件利润、毛利率、费用拆分、亏损风险、调价建议
 - 数据不足时返回 insufficient_data
 """
-from typing import Any, Optional
+from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
 from app.agent.llm_service import AgentLlmService
@@ -128,7 +128,6 @@ class A6ProfitWatchAgent(BaseAgent):
         is_loss = profit_per_unit < 0
         below_threshold = gross_margin < min_margin_threshold
 
-        alerts = []
         anomaly_reason = ""
         optimization_suggestions = []
         confidence = 0.90

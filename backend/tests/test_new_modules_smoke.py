@@ -1,5 +1,4 @@
 """新模块冒烟测试 — 验证路由注册和基本功能"""
-import pytest
 
 
 def _check_endpoint(client, path: str, method: str = "GET") -> tuple[int, dict]:

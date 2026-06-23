@@ -1,6 +1,6 @@
 """平台集成 - 路由"""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_permission
 from app.database import get_db

@@ -1,6 +1,6 @@
 """平台管理 - 服务层"""
 from typing import Optional
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Platform
 from app.common.crypto import encrypt_api_key

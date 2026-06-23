@@ -6,7 +6,6 @@ from sqlalchemy import (
     UniqueConstraint as sa_UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import relationship
 
 from app.database import Base
 

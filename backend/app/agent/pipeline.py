@@ -10,11 +10,10 @@
 """
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Callable
 
 from app.agent.registry import AgentRegistry
 from app.agent.service import AgentService
-from app.agent.models import AgentDecision
 
 logger = logging.getLogger(__name__)
 

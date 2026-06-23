@@ -5,6 +5,10 @@ from uuid import uuid4
 import pytest
 
 
+# placeholder for ruff: all tests referencing this are @pytest.mark.skip
+ex_id: int = 0  # noqa: F811
+
+
 @pytest.fixture
 def aac():
     """Returns an async_client and helper to create a dummy exception."""
@@ -13,7 +17,8 @@ def aac():
 
 async def _create_exception(async_client) -> int:
     """Create a simple exception via shipping bill import+reconcile, return exception id."""
-    import csv, io
+    import csv
+    import io
     output = io.StringIO()
     w = csv.writer(output)
     w.writerow(["运单号", "物流商", "实际运费"])

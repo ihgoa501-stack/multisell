@@ -2,7 +2,6 @@
 
 from uuid import uuid4
 
-import pytest
 from sqlalchemy import select
 
 from app.database import async_session_factory

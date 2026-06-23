@@ -15,7 +15,7 @@
 import hashlib
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 

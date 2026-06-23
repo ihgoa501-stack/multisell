@@ -8,7 +8,7 @@ from app.common import Result, PageResult
 from app.database import get_db
 from app.models import User
 from app.operation_log.service import OperationLogService
-from app.order_import.schemas import OrderImportRequest, OrderImportRowData
+from app.order_import.schemas import OrderImportRequest
 from app.order_import.service import OrderImportService
 
 router = APIRouter(tags=["订单导入"])
