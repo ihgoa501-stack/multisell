@@ -179,7 +179,7 @@ class TestExceptionGenerate:
         await async_client.post(f"/api/shipping/bills/{batch_id}/reconcile")
 
         gen1 = await async_client.post("/api/exceptions/generate")
-        c1 = gen1.json()["data"]["created_count"]
+        gen1.json()["data"]["created_count"]
 
         gen2 = await async_client.post("/api/exceptions/generate")
         c2 = gen2.json()["data"]["created_count"]

@@ -3,13 +3,12 @@
 每个 Agent 决策可以产生可执行操作（action），
 用户确认后系统自动执行对应业务操作。
 """
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.agent.models import AgentAction, AgentDecision
+from app.agent.models import AgentAction
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -18,7 +18,6 @@ from app.finance.cost_layers import (
     COST_LAYER_SNAPSHOT,
     COST_LAYER_ACTUAL,
     COST_LAYER_ESTIMATED,
-    COST_LAYER_MIXED,
     resolve_profit_cost_layer,
 )
 
@@ -74,7 +73,7 @@ class LedgerService:
             db, order_id, ENTRY_REVENUE, revenue,
             cost_layer=COST_LAYER_ACTUAL,
             source_type="order", source_id=order.id,
-            description=f"订单商品总额",
+            description="订单商品总额",
         )
 
         # 3. Product cost
@@ -83,7 +82,7 @@ class LedgerService:
             db, order_id, ENTRY_PRODUCT_COST, -product_cost,
             cost_layer=COST_LAYER_ESTIMATED,
             source_type="order", source_id=order.id,
-            description=f"商品成本",
+            description="商品成本",
         )
 
         # 4. Shipping cost — prefer actual bill over snapshot over order default
@@ -210,7 +209,7 @@ class LedgerService:
         await db.flush()
 
         # 6. Calculate profit
-        profit_layer = resolve_profit_cost_layer(shipping_cost_layer, platform_fee_layer)
+        resolve_profit_cost_layer(shipping_cost_layer, platform_fee_layer)
 
         # Audit log
         await OperationLogService.log(

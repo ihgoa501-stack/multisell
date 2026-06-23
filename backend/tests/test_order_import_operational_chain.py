@@ -3,14 +3,10 @@ from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
 
 from app.database import async_session_factory
-from app.models import Order, OrderItem
-from app.order_import.models import OrderImportBatch, OrderImportItem
 from tests.auth_helpers import register_and_login, grant_permission
 from tests.test_order_import_csv_adapter import (
-    _code,
     _create_product_and_sku,
     _ensure_inventory,
     _make_csv,

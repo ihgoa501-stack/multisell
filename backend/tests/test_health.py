@@ -1,6 +1,5 @@
 """健康检查 & 系统接口测试"""
 
-import pytest
 
 
 class TestHealth:

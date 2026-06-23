@@ -1,6 +1,5 @@
 """通用API数据模型"""
 
-from datetime import datetime
 from typing import Optional, Generic, TypeVar, List, Any
 from pydantic import BaseModel
 

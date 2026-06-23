@@ -88,7 +88,7 @@ class WildberriesListingAdapter:
         sizes = []
         for sku in skus:
             price = prices.get(sku.id)
-            inventory = inventories.get(sku.id)
+            inventories.get(sku.id)
 
             size: dict[str, Any] = {
                 "price": float(price.price) if price else 0.0,

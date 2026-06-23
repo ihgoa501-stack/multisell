@@ -1,7 +1,7 @@
 """操作日志 - 路由"""
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_permission
 from app.database import get_db
@@ -38,7 +38,7 @@ async def list_operation_logs(
     current_user: User = Depends(require_permission("operation_log:view")),
 ):
     logs, total = await OperationLogService.list_logs(db, module, action, operator, page, page_size)
-    items = [log_to_vo(l) for l in logs]
+    items = [log_to_vo(rec) for rec in logs]
     return PageResult.ok(items, total, page, page_size)
 
 

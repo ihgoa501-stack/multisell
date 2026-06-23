@@ -12,9 +12,8 @@
 """
 import math
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
 from typing import Optional
-from sqlalchemy import select, func, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.models import AgentDecision, SpcControlLimit
 

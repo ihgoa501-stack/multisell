@@ -1,9 +1,9 @@
 """价格管理 - 服务层"""
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import Price, PriceChangeLog, Sku
+from app.models import Price, PriceChangeLog
 
 
 class PriceService:

@@ -2,14 +2,13 @@
 
 from typing import Optional
 
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     PlatformIntegrationAccount,
     PlatformCategoryMapping,
     PlatformAttributeMapping,
-    Category,
     Platform,
 )
 from app.platform_integrations.adapter_registry import test_connection

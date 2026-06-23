@@ -1,7 +1,6 @@
 """Agent 动作提案与审批 - Pydantic Schema"""
 
-from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 

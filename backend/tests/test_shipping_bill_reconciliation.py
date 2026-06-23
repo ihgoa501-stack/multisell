@@ -4,8 +4,6 @@ import csv
 import io
 from uuid import uuid4
 
-import pytest
-from httpx import AsyncClient
 
 from app.database import async_session_factory
 from app.models import (

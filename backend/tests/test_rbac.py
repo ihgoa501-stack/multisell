@@ -1,6 +1,5 @@
 """RBAC 权限管理测试"""
 
-import pytest
 
 
 class TestRbac:

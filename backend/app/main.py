@@ -8,10 +8,10 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.database import engine as _db_engine
-import importlib, pkgutil
+import importlib
+import pkgutil
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -87,7 +87,16 @@ async def lifespan(app: FastAPI):
     _settlement_sync_worker = _SettlementSyncWorker()
     await _settlement_sync_worker.start()
 
+    # ── 启动退货同步后台 Worker ──
+    from app.aftersales.sync_worker import ReturnSyncWorker as _ReturnSyncWorker
+
+    _return_sync_worker = _ReturnSyncWorker()
+    await _return_sync_worker.start()
+
     yield
+
+    # ── 关闭退货同步后台 Worker ──
+    await _return_sync_worker.stop()
 
     # ── 关闭结算同步后台 Worker ──
     await _settlement_sync_worker.stop()

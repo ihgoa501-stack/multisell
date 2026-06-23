@@ -11,13 +11,10 @@
 - 折扣阻断/预警逻辑正确
 - 多折扣叠加模拟正确
 """
-import json
 import pytest
 
 from app.agent.agents.inventory_alert import A5InventoryAlertAgent
 from app.agent.agents.discount_risk import G3DiscountRiskAgent
-from app.agent.service import AgentService
-from app.agent.base import EvolutionStage
 
 
 # ================================================================

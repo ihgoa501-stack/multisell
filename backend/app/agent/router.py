@@ -12,7 +12,7 @@ from app.auth import require_permission
 from app.common import Result, PageResult
 from app.models import User
 from app.agent.schemas import (
-    AgentMetadataVO, DecisionLogVO, PersonalRuleVO, PersonalRuleCreate,
+    DecisionLogVO, PersonalRuleVO, PersonalRuleCreate,
     PersonalRuleUpdate, HonchoProfileVO, HonchoProfileUpdate,
     AgentDecisionRequest, FeedbackRequest, EpisodeVO,
     StageChangeRequest, NudgeRespondRequest,
@@ -20,7 +20,7 @@ from app.agent.schemas import (
 from app.agent.registry import AgentRegistry
 from app.agent.service import AgentService
 from app.agent.action_service import AgentActionService
-from app.agent.evolution_service import EvolutionService, TrustScoreCalculator
+from app.agent.evolution_service import EvolutionService
 from app.agent.base import EvolutionStage
 from app.agent.scheduler import scheduler as _agent_scheduler
 from app.agent.pipeline import evaluate_chains
@@ -50,7 +50,7 @@ async def list_decisions(
         db, current_user.id, agent_id, decision_point, page, page_size
     )
     return PageResult.ok(
-        records=[DecisionLogVO.model_validate(l) for l in logs],
+        records=[DecisionLogVO.model_validate(rec) for rec in logs],
         total=total, page=page, page_size=page_size,
     )
 

@@ -1,6 +1,5 @@
 """认证接口测试"""
 
-import pytest
 
 
 class TestAuth:

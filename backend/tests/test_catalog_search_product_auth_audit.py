@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.database import async_session_factory
 from app.models import OperationLog
-from tests.auth_helpers import enable_auth, grant_permission, register_and_login
+from tests.auth_helpers import grant_permission, register_and_login
 
 
 pytestmark = pytest.mark.usefixtures("enable_auth")

@@ -11,7 +11,6 @@ from app.listing.task_schemas import (
     ListingTaskCreateFromDecisionResponse,
     ListingTaskCreateResult,
     ListingTaskResponse,
-    ListingTaskDecisionResult,
 )
 from app.models import ListingTask, Product, Platform, Sku
 from app.operation_log.service import OperationLogService

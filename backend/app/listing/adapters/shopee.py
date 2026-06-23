@@ -22,13 +22,12 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.crypto import decrypt_api_key
 from app.common.rate_limiter import get_limiter_for_platform
 from app.listing.adapters.base import PublishResult
-from app.models import Inventory, Platform, Price, Product, Sku, ExchangeRate
+from app.models import Inventory, Platform, Price, Product, Sku
 
 logger = logging.getLogger(__name__)
 

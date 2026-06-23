@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
-from sqlalchemy import func as sa_func, select, text
+from sqlalchemy import func as sa_func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agentos.schemas import (
@@ -1042,7 +1042,8 @@ class AgentOSService:
                 db.add(config)
             return True
         except Exception as e:
-            import sys, traceback
+            import sys
+            import traceback
             print(f"[UPDATE_STAGE_FAIL] user_id={user_id} agent={agent_id} target={target_level} exc={e}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
             return False

@@ -163,7 +163,7 @@ class OrderSyncWorker:
                 from_status=None,
                 to_status=mapped["status"],
                 operator="system",
-                remark=f"从平台同步",
+                remark="从平台同步",
             )
             db.add(status_log)
 

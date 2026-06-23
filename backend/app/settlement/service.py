@@ -2,14 +2,12 @@
 
 import logging
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select, func, and_, delete as sa_delete, case
+from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models import Settlement, SettlementItem, Order, Platform
+from app.models import Settlement, SettlementItem, Order
 
 logger = logging.getLogger(__name__)
 

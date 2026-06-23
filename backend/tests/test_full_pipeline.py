@@ -3,7 +3,6 @@
 验证核心业务管线端到端可用性。
 """
 
-import pytest
 
 
 def _ok(resp):
@@ -161,7 +160,7 @@ class TestFullPipeline:
         # 先有订单
         product = await self._create_product(async_client)
         sku = await self._create_sku(async_client, product["id"])
-        order = await self._create_order(async_client, sku["id"])
+        await self._create_order(async_client, sku["id"])
 
         # 生成模拟结算
         resp = await async_client.post(f"/api/settlements/mock?platform_id={self._platform_id}&count=3")
@@ -197,7 +196,7 @@ class TestFullPipeline:
         # 先有订单
         product = await self._create_product(async_client)
         sku = await self._create_sku(async_client, product["id"])
-        order = await self._create_order(async_client, sku["id"])
+        await self._create_order(async_client, sku["id"])
 
         # 生成模拟财务账户
         resp = await async_client.post("/api/finance/mock")
@@ -237,7 +236,7 @@ class TestFullPipeline:
         """阶段6: 订单导入 — 模拟生成"""
         # 先有商品 + SKU
         product = await self._create_product(async_client)
-        sku = await self._create_sku(async_client, product["id"])
+        await self._create_sku(async_client, product["id"])
 
         # 生成模拟导入订单
         resp = await async_client.post(f"/api/order-import/mock?platform_id={self._platform_id}&count=3")

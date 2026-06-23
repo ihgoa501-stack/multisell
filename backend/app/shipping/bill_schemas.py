@@ -1,6 +1,5 @@
 """运费账单导入与对账 - Pydantic Schema"""
 
-from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field

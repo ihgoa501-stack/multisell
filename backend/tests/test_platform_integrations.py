@@ -7,9 +7,6 @@ from sqlalchemy import select
 
 from app.database import async_session_factory
 from app.models import (
-    PlatformIntegrationAccount,
-    PlatformCategoryMapping,
-    PlatformAttributeMapping,
     OperationLog,
     Platform,
     Category,

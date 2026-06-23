@@ -2,7 +2,10 @@
 """
 演示数据补充脚本 — 用原始 SQL 创建物流、订单、库存等演示数据。
 """
-import asyncio, sys, os, random
+import asyncio
+import sys
+import os
+import random
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text

@@ -6,7 +6,6 @@
 
 import csv
 import io
-import json
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -17,10 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Order, OrderItem, OrderStatusLog,
-    Platform, Product, Sku,
+    Platform, Sku,
     OrderImport,
 )
-from app.order.service import OrderService
 from app.order_import.schemas import OrderImportRowData
 
 logger = logging.getLogger(__name__)

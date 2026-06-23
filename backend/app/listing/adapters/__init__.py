@@ -12,7 +12,6 @@
 """
 
 import logging
-from typing import Optional
 
 from app.listing.adapters.base import ListingAdapter
 from app.listing.adapters.mock import MockListingAdapter

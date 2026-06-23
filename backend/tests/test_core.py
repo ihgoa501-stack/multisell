@@ -1,6 +1,5 @@
 """商品管理 API 测试"""
 
-import pytest
 
 
 class TestProducts:

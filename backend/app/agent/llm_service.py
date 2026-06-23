@@ -4,9 +4,8 @@
 支持多提供商（OpenAI / Anthropic / Ollama），可从 DB 配置读取。
 无 Key 时回退到模板文案。
 """
-import json
 import logging
-from typing import Any, Optional
+from typing import Any
 import httpx
 from app.config import settings
 

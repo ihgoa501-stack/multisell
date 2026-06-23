@@ -1,1 +1,1 @@
-from app.aftersales.router import router
+from app.aftersales.router import router  # noqa: F401

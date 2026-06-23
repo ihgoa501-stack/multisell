@@ -24,7 +24,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from app.database import async_session_factory
 from app.agent.registry import AgentRegistry

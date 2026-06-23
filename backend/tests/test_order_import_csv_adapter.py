@@ -6,7 +6,7 @@ from httpx import AsyncClient
 
 from app.database import async_session_factory
 from app.models import Order, Platform, Product, Sku
-from app.order_import.models import OrderImportBatch, OrderImportItem
+from app.order_import.models import OrderImportItem
 from tests.auth_helpers import register_and_login, grant_permission
 
 

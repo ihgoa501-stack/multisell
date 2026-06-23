@@ -4,7 +4,7 @@
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     FinanceAccount, FinanceTransaction,
-    Order, Platform, Settlement,
+    Order, Platform,
 )
 
 logger = logging.getLogger(__name__)

@@ -59,12 +59,12 @@ class TestProfitSummary:
         assert "profit_amount" in data
 
     async def test_profit_summary_filters_by_date(self, async_client):
-        order_id = await _prepare_ledger_data(async_client)
+        await _prepare_ledger_data(async_client)
 
         # Use a wide date range that includes today
         resp = await async_client.get("/api/finance/profit-summary")
         assert resp.status_code == 200
-        data_full = resp.json()["data"]
+        resp.json()["data"]
 
         # Verify the API supports date params (even if they don't filter)
         resp = await async_client.get("/api/finance/profit-summary?date_from=2000-01-01&date_to=2099-12-31")
@@ -74,7 +74,7 @@ class TestProfitSummary:
 @pytest.mark.skip(reason="depends on /api/finance/orders/{id}/ledger/rebuild and /api/settlements/import which are not implemented")
 class TestOrderProfit:
     async def test_order_profit_lists_with_pagination(self, async_client):
-        order_id = await _prepare_ledger_data(async_client)
+        await _prepare_ledger_data(async_client)
 
         resp = await async_client.get("/api/finance/order-profit")
         assert resp.status_code == 200

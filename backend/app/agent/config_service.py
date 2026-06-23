@@ -4,8 +4,8 @@
 配置存储在 system_config 表，环境变量作为启动默认值。
 """
 import logging
-from typing import Any, Optional
-from sqlalchemy import select, func
+from typing import Any
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import SystemConfig
 

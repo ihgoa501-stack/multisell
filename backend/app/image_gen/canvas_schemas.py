@@ -1,6 +1,5 @@
 """AI 生图 - 画布数据模型"""
 
-from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
 

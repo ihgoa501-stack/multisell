@@ -48,7 +48,7 @@ class A4CustomerServiceAgent(BaseAgent):
 
     def _classify(self, ctx: dict) -> dict:
         msg = str(ctx.get("message", "")).lower()
-        lang = str(ctx.get("language", "en"))
+        str(ctx.get("language", "en"))
         high_risk = ["trademark", "lawsuit", "refund", "a-to-z", "chargeback",
                       "投诉", "律师", "起诉", "退款", "索赔"]
         if any(kw in msg for kw in high_risk):
@@ -68,7 +68,7 @@ class A4CustomerServiceAgent(BaseAgent):
     def _auto_reply(self, ctx: dict) -> dict:
         miss = _missing(ctx, REQUIRED)
         if miss: return self._insufficient("auto_reply", miss)
-        msg = str(ctx.get("message", ""))
+        str(ctx.get("message", ""))
         lang = str(ctx.get("language", "en"))
         order_ctx = ctx.get("order_context", {})
         eta = order_ctx.get("estimated_delivery_days", "5-7")

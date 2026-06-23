@@ -1,6 +1,6 @@
 """供应商管理 - Pydantic Schema"""
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 

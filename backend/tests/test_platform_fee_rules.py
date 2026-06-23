@@ -6,8 +6,8 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.database import async_session_factory
-from app.models import OperationLog, PlatformFeeRule, Platform
-from tests.auth_helpers import enable_auth, grant_permission, register_and_login
+from app.models import OperationLog, PlatformFeeRule
+from tests.auth_helpers import grant_permission, register_and_login
 
 
 pytestmark = pytest.mark.usefixtures("enable_auth")
@@ -124,7 +124,7 @@ class TestPlatformFeeService:
                 "remark": "country",
             })
             # category commission rule
-            cat_rule = await PlatformFeeService.create_rule(session, {
+            await PlatformFeeService.create_rule(session, {
                 "platform_id": platform_id,
                 "country_code": "RU",
                 "category_id": category_id,
@@ -169,7 +169,7 @@ class TestPlatformFeeService:
                 "status": "active",
                 "remark": "global",
             })
-            country_rule = await PlatformFeeService.create_rule(session, {
+            await PlatformFeeService.create_rule(session, {
                 "platform_id": platform_id,
                 "country_code": "RU",
                 "category_id": None,

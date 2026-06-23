@@ -6,11 +6,11 @@
 import logging
 from typing import Optional
 
-from sqlalchemy import select, func, delete as sa_delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    Sku, Product, Inventory,
+    Sku, Inventory,
     Warehouse, AllocationRule, InventoryWarehouse,
 )
 
@@ -218,7 +218,6 @@ class AllocationService:
     @staticmethod
     async def generate_mock_data(db: AsyncSession) -> dict:
         """生成模拟仓库和分配规则"""
-        import random
 
         mock_warehouses = [
             ("深圳保税仓", "sz-bonded", "深圳市南山区"),

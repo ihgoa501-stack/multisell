@@ -6,7 +6,6 @@
 3. A3 广告建议 — acos_analysis / ad_optimization
 4. Nudge/Shadow/熵规则健康
 """
-import json
 import pytest
 
 from app.agent.agents.profit_watch import A6ProfitWatchAgent

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from tests.auth_helpers import enable_auth, register_and_login, grant_permission
+from tests.auth_helpers import register_and_login, grant_permission
 
 
 pytestmark = pytest.mark.usefixtures("enable_auth")
@@ -12,8 +12,6 @@ pytestmark = pytest.mark.usefixtures("enable_auth")
 
 def _admin_headers(async_client):
     """获取 admin token + headers 用于测试数据准备。"""
-    from tests.auth_helpers import set_admin_role
-    import asyncio
     # set_admin_role is async
     return None  # 不在此处执行
 

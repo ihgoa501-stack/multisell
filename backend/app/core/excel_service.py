@@ -1,14 +1,12 @@
 """Excel 导出导入 — 服务层"""
 
 import io
-from datetime import datetime
 from typing import Optional
 
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.common import Result
 from app.core.schemas import ProductCreate, ProductQuery
 from app.core.service import ProductService
 
