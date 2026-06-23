@@ -403,6 +403,25 @@ class ShopeeListingAdapter:
         )
         return True
 
+    # ------------------------------------------------------------------ #
+    #  结算/交易记录拉取
+    # ------------------------------------------------------------------ #
+
+    async def fetch_settlements(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """Shopee 结算导入尚未实现 — Phase 1 返回空列表。"""
+        logger.warning("Shopee settlement import not yet implemented")
+        return []
+
+    # ------------------------------------------------------------------ #
+    #  订单拉取
+    # ------------------------------------------------------------------ #
+
     async def fetch_orders(
         self,
         *,

@@ -460,6 +460,126 @@ class TestOzonListingAdapter:
         assert result[1]["order_sn"] == "PAGE2-2"
         assert call_count == 3
 
+    # ------------------------------------------------------------------ #
+    #  fetch_settlements tests
+    # ------------------------------------------------------------------ #
+
+    async def test_fetch_settlements_success(
+        self, adapter: OzonListingAdapter, platform: Platform,
+    ):
+        """fetch_settlements() 应返回映射后的结算记录"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/v3/finance/transaction/list")
+            body = json.loads(request.read())
+            assert "filter" in body
+            assert "date" in body["filter"]
+            assert "from" in body["filter"]["date"]
+            return httpx.Response(200, json={
+                "result": {
+                    "operations": [
+                        {
+                            "operation_id": 100001,
+                            "operation_type": "sale",
+                            "operation_date": "2026-06-20T10:00:00Z",
+                            "amount": "1500.00",
+                            "currency_code": "RUB",
+                            "description": "Order payment",
+                            "posting": {"posting_number": "12345"},
+                        },
+                        {
+                            "operation_id": 100002,
+                            "operation_type": "commission",
+                            "operation_date": "2026-06-20T10:05:00Z",
+                            "amount": "-75.00",
+                            "currency_code": "RUB",
+                            "description": "Platform commission",
+                            "posting": {"posting_number": "12345"},
+                        },
+                        {
+                            "operation_id": 100003,
+                            "operation_type": "refund",
+                            "operation_date": "2026-06-21T12:00:00Z",
+                            "amount": "-500.00",
+                            "currency_code": "RUB",
+                            "description": "Customer refund",
+                            "posting": {"posting_number": "67890"},
+                        },
+                    ],
+                },
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.fetch_settlements(
+                platform=platform,
+                since=datetime(2026, 6, 19),
+            )
+
+        assert len(result) == 3
+
+        # sale → order_sale
+        assert result[0]["transaction_id"] == "100001"
+        assert result[0]["transaction_type"] == "order_sale"
+        assert result[0]["order_sn"] == "12345"
+        assert result[0]["amount"] == "1500.0"
+        assert result[0]["currency"] == "RUB"
+        assert result[0]["occurred_at"] == "2026-06-20T10:00:00Z"
+
+        # commission → platform_fee
+        assert result[1]["transaction_type"] == "platform_fee"
+        assert result[1]["amount"] == "75.0"
+
+        # refund
+        assert result[2]["transaction_type"] == "refund"
+        assert result[2]["order_sn"] == "67890"
+
+    async def test_fetch_settlements_empty(
+        self, adapter: OzonListingAdapter, platform: Platform,
+    ):
+        """fetch_settlements() 应正确处理空列表响应"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={
+                "result": {"operations": []},
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.fetch_settlements(
+                platform=platform,
+                since=datetime(2026, 6, 19),
+            )
+
+        assert len(result) == 0
+
+    async def test_fetch_settlements_api_error(
+        self, adapter: OzonListingAdapter, platform: Platform,
+    ):
+        """fetch_settlements API 返回错误时应抛出 RuntimeError"""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(400, json={
+                "error": {"code": "INVALID_DATE", "message": "无效日期范围"},
+            })
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            with pytest.raises(RuntimeError, match="无效日期范围"):
+                await adapter.fetch_settlements(
+                    platform=platform,
+                    since=datetime(2026, 6, 19),
+                )
+
 
 # =================================================================== #
 #  Shopee Adapter Tests

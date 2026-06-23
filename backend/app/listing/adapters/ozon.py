@@ -386,6 +386,51 @@ class OzonListingAdapter:
         return orders
 
     # ------------------------------------------------------------------ #
+    #  结算/交易记录拉取
+    # ------------------------------------------------------------------ #
+
+    async def fetch_settlements(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """从 Ozon 拉取结算/交易记录 (POST /v3/finance/transaction/list)。"""
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
+
+        payload = {
+            "filter": {"date": {"from": since.strftime("%Y-%m-%dT%H:%M:%S.000Z")}},
+            "page": 1,
+            "page_size": 100,
+        }
+        async with self._client(platform) as client:
+            resp = await client.post("/v3/finance/transaction/list", json=payload)
+            body = self._parse_response(resp, "fetch_settlements")
+
+        TYPE_MAP = {
+            "sale": "order_sale",
+            "refund": "refund",
+            "delivery": "shipping_fee",
+            "commission": "platform_fee",
+            "payment_commission": "payment_fee",
+        }
+        items = []
+        for tx in body.get("result", {}).get("operations", []):
+            items.append({
+                "transaction_id": str(tx.get("operation_id", "")),
+                "transaction_type": TYPE_MAP.get(tx.get("operation_type", ""), "other"),
+                "order_sn": tx.get("posting", {}).get("posting_number", ""),
+                "amount": str(abs(float(tx.get("amount", "0")))),
+                "fee": "0",
+                "currency": tx.get("currency_code", "RUB"),
+                "occurred_at": tx.get("operation_date", ""),
+                "description": tx.get("description", ""),
+            })
+        return items
+
+    # ------------------------------------------------------------------ #
     #  辅助方法
     # ------------------------------------------------------------------ #
 

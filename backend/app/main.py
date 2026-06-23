@@ -81,7 +81,16 @@ async def lifespan(app: FastAPI):
     _order_sync_worker = _OrderSyncWorker()
     await _order_sync_worker.start()
 
+    # ── 启动结算同步后台 Worker ──
+    from app.finance.settlement_sync_worker import SettlementSyncWorker as _SettlementSyncWorker
+
+    _settlement_sync_worker = _SettlementSyncWorker()
+    await _settlement_sync_worker.start()
+
     yield
+
+    # ── 关闭结算同步后台 Worker ──
+    await _settlement_sync_worker.stop()
 
     # ── 关闭订单同步后台 Worker (在 listing worker 之前) ──
     await _order_sync_worker.stop()

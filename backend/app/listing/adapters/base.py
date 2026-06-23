@@ -71,3 +71,21 @@ class ListingAdapter(Protocol):
         - shipping_address: str
         - items: list[{"sku_code": str, "quantity": int, "unit_price": str}]
         """
+
+    async def fetch_settlements(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """从平台拉取结算/交易记录。返回 list[dict]，每条包含：
+        - transaction_id: str
+        - transaction_type: str — order_sale / refund / shipping_fee / platform_fee / payment_fee
+        - order_sn: str (optional)
+        - amount: str
+        - fee: str (optional)
+        - currency: str
+        - occurred_at: str (ISO datetime)
+        - description: str (optional)
+        """
