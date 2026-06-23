@@ -42,6 +42,21 @@ class ListingAdapter(Protocol):
     async def validate_credentials(self, *, platform: Platform) -> bool:
         """校验平台凭证是否可用。"""
 
+    async def sync_inventory(
+        self,
+        *,
+        platform: Platform,
+        sku_code: str,
+        platform_sku: str,
+        quantity: int,
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        """将本地库存数量同步到平台。
+        - sku_code: 本地SKU编码
+        - platform_sku: 平台SKU ID (from ProductListing.platform_sku)
+        - quantity: 新的库存数量
+        """
+
     async def push_tracking(
         self,
         *,
