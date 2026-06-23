@@ -19,7 +19,9 @@ def upgrade() -> None:
     op.create_table(
         "finance_ledger_entry",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("order_id", sa.BigInteger(), sa.ForeignKey("sales_order.id"), nullable=False),
+        sa.Column(
+            "order_id", sa.BigInteger(), sa.ForeignKey("sales_order.id"), nullable=False
+        ),
         sa.Column("entry_type", sa.String(50), nullable=False),
         sa.Column("amount", sa.Numeric(14, 2), nullable=False),
         sa.Column("currency", sa.String(10), server_default="CNY"),
@@ -27,7 +29,9 @@ def upgrade() -> None:
         sa.Column("source_type", sa.String(50)),
         sa.Column("source_id", sa.BigInteger()),
         sa.Column("description", sa.String(500)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_ledger_order_id", "finance_ledger_entry", ["order_id"])
     op.create_index("ix_ledger_entry_type", "finance_ledger_entry", ["entry_type"])

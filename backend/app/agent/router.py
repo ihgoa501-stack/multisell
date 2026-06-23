@@ -5,6 +5,7 @@
 等静态路径必须定义在 /agents/{agent_id} 之前，
 否则 FastAPI 会将 "decisions/rules/profile/episodes" 匹配为 {agent_id}。
 """
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -12,10 +13,17 @@ from app.auth import require_permission
 from app.common import Result, PageResult
 from app.models import User
 from app.agent.schemas import (
-    DecisionLogVO, PersonalRuleVO, PersonalRuleCreate,
-    PersonalRuleUpdate, HonchoProfileVO, HonchoProfileUpdate,
-    AgentDecisionRequest, FeedbackRequest, EpisodeVO,
-    StageChangeRequest, NudgeRespondRequest,
+    DecisionLogVO,
+    PersonalRuleVO,
+    PersonalRuleCreate,
+    PersonalRuleUpdate,
+    HonchoProfileVO,
+    HonchoProfileUpdate,
+    AgentDecisionRequest,
+    FeedbackRequest,
+    EpisodeVO,
+    StageChangeRequest,
+    NudgeRespondRequest,
 )
 from app.agent.registry import AgentRegistry
 from app.agent.service import AgentService
@@ -51,7 +59,9 @@ async def list_decisions(
     )
     return PageResult.ok(
         records=[DecisionLogVO.model_validate(rec) for rec in logs],
-        total=total, page=page, page_size=page_size,
+        total=total,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -63,7 +73,9 @@ async def submit_feedback(
     current_user: User = Depends(require_permission("agent:execute")),
 ):
     decision = await AgentService.update_decision_feedback(
-        db, decision_id, req.user_action,
+        db,
+        decision_id,
+        req.user_action,
         user_overrides=req.user_overrides,
         user_feedback=req.user_feedback,
     )
@@ -99,7 +111,9 @@ async def list_actions(
             }
             for a in actions
         ],
-        total=total, page=page, page_size=page_size,
+        total=total,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -112,11 +126,13 @@ async def execute_action(
     action = await AgentActionService.execute_action(db, action_id, current_user.id)
     if not action:
         return Result.not_found("操作不存在或无权执行")
-    return Result.ok({
-        "id": action.id,
-        "status": action.status,
-        "execution_result": action.execution_result,
-    })
+    return Result.ok(
+        {
+            "id": action.id,
+            "status": action.status,
+            "execution_result": action.execution_result,
+        }
+    )
 
 
 @router.post("/agents/actions/{action_id}/reject", summary="拒绝操作")
@@ -148,7 +164,9 @@ async def list_rules(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("agent:view")),
 ):
-    rules = await AgentService.list_rules(db, current_user.id, agent_id, decision_point, status)
+    rules = await AgentService.list_rules(
+        db, current_user.id, agent_id, decision_point, status
+    )
     return Result.ok([PersonalRuleVO.model_validate(r) for r in rules])
 
 
@@ -169,7 +187,9 @@ async def update_rule(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("agent:execute")),
 ):
-    rule = await AgentService.update_rule(db, rule_id, current_user.id, data.model_dump(exclude_none=True))
+    rule = await AgentService.update_rule(
+        db, rule_id, current_user.id, data.model_dump(exclude_none=True)
+    )
     if not rule:
         return Result.not_found("规则不存在或无权修改")
     return Result.ok(PersonalRuleVO.model_validate(rule))
@@ -202,7 +222,9 @@ async def update_honcho_profile(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("agent:execute")),
 ):
-    profile = await AgentService.update_honcho_profile(db, current_user.id, data.model_dump(exclude_none=True))
+    profile = await AgentService.update_honcho_profile(
+        db, current_user.id, data.model_dump(exclude_none=True)
+    )
     return Result.ok(HonchoProfileVO.model_validate(profile))
 
 
@@ -214,10 +236,14 @@ async def list_episodes(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("agent:view")),
 ):
-    episodes, total = await AgentService.list_episodes(db, current_user.id, agent_id, page, page_size)
+    episodes, total = await AgentService.list_episodes(
+        db, current_user.id, agent_id, page, page_size
+    )
     return PageResult.ok(
         records=[EpisodeVO.model_validate(e) for e in episodes],
-        total=total, page=page, page_size=page_size,
+        total=total,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -316,7 +342,9 @@ async def respond_nudge(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("agent:execute")),
 ):
-    result = await EvolutionService.respond_nudge(db, current_user.id, nudge_id, req.response)
+    result = await EvolutionService.respond_nudge(
+        db, current_user.id, nudge_id, req.response
+    )
     if not result.get("success"):
         return Result.bad_request(result.get("message", "操作失败"))
     return Result.ok(result)
@@ -354,13 +382,15 @@ async def evolution_change_stage(
     current_user: User = Depends(require_permission("agent:execute")),
 ):
     result = await EvolutionService.change_stage(
-        db, current_user.id, agent_id, req.decision_point, req.target_stage,
+        db,
+        current_user.id,
+        agent_id,
+        req.decision_point,
+        req.target_stage,
     )
     if not result.get("success"):
         return Result.bad_request(result.get("message", "操作失败"))
     return Result.ok(result)
-
-
 
 
 @router.get("/agents/{agent_id}", summary="Agent详情")
@@ -384,8 +414,12 @@ async def agent_decide(
 
     # 从 DB 加载进化阶段配置
     from app.agent.evolution_service import EvolutionService as EvoSvc
+
     config = await EvoSvc.get_or_create_config(
-        db, current_user.id, agent_id, req.decision_point,
+        db,
+        current_user.id,
+        agent_id,
+        req.decision_point,
     )
     stage_override = {req.decision_point: EvolutionStage(config.current_stage)}
 
@@ -397,8 +431,11 @@ async def agent_decide(
     # ── 自动触发协作链 ──
     if not req.dry_run and result.get("decision_id"):
         chain_results = await evaluate_chains(
-            agent_id, req.decision_point, result,
-            current_user.id, db,
+            agent_id,
+            req.decision_point,
+            result,
+            current_user.id,
+            db,
         )
         result["chain_triggered"] = len(chain_results)
         if chain_results:

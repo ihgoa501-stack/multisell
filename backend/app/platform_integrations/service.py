@@ -31,7 +31,6 @@ def _mask_credentials(credentials: dict[str, str]) -> dict:
 
 
 class PlatformIntegrationService:
-
     # ── Accounts ─────────────────────────────────────────────────────────
 
     @staticmethod
@@ -88,7 +87,9 @@ class PlatformIntegrationService:
 
     @staticmethod
     async def list_accounts(
-        db: AsyncSession, adapter_code: Optional[str] = None, status: Optional[str] = None
+        db: AsyncSession,
+        adapter_code: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> list[PlatformIntegrationAccount]:
         stmt = select(PlatformIntegrationAccount).order_by(
             PlatformIntegrationAccount.created_at.desc()
@@ -139,9 +140,7 @@ class PlatformIntegrationService:
         platform_id: Optional[int] = None,
         adapter_code: Optional[str] = None,
     ) -> list[PlatformCategoryMapping]:
-        stmt = select(PlatformCategoryMapping).order_by(
-            PlatformCategoryMapping.id
-        )
+        stmt = select(PlatformCategoryMapping).order_by(PlatformCategoryMapping.id)
         if platform_id:
             stmt = stmt.where(PlatformCategoryMapping.platform_id == platform_id)
         if adapter_code:
@@ -177,9 +176,7 @@ class PlatformIntegrationService:
         platform_id: Optional[int] = None,
         adapter_code: Optional[str] = None,
     ) -> list[PlatformAttributeMapping]:
-        stmt = select(PlatformAttributeMapping).order_by(
-            PlatformAttributeMapping.id
-        )
+        stmt = select(PlatformAttributeMapping).order_by(PlatformAttributeMapping.id)
         if platform_id:
             stmt = stmt.where(PlatformAttributeMapping.platform_id == platform_id)
         if adapter_code:

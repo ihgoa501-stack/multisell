@@ -4,6 +4,7 @@
 支持多提供商（OpenAI / Anthropic / Ollama），可从 DB 配置读取。
 无 Key 时回退到模板文案。
 """
+
 import logging
 from typing import Any
 import httpx
@@ -56,7 +57,6 @@ AGENT_PROMPTS = {
 
 
 class AgentLlmService:
-
     @staticmethod
     async def explain(agent_id: str, summary: dict, db: Any = None) -> str:
         """生成自然语言解释
@@ -71,6 +71,7 @@ class AgentLlmService:
         # 读取 LLM 配置
         if db is not None:
             from app.agent.config_service import ConfigService
+
             llm_config = await ConfigService.get_llm_config(db)
             agent_overrides = llm_config.get("agent_overrides", {})
             model = agent_overrides.get(agent_id, llm_config["model"])
@@ -94,23 +95,38 @@ class AgentLlmService:
 
         try:
             if provider == "anthropic":
-                return await AgentLlmService._call_anthropic(api_key, model, system_prompt, prompt_text)
+                return await AgentLlmService._call_anthropic(
+                    api_key, model, system_prompt, prompt_text
+                )
             else:
-                return await AgentLlmService._call_openai(api_key, base_url, model, system_prompt, prompt_text)
+                return await AgentLlmService._call_openai(
+                    api_key, base_url, model, system_prompt, prompt_text
+                )
         except Exception as e:
             logger.warning("LLM 调用失败 (%s), 回退模板: %s", provider, e)
             return AgentLlmService._fallback_explanation(agent_id, summary)
 
     @staticmethod
-    async def _call_openai(api_key: str, base_url: str, model: str, sys: str, user: str) -> str:
+    async def _call_openai(
+        api_key: str, base_url: str, model: str, sys: str, user: str
+    ) -> str:
         payload = {
             "model": model,
-            "messages": [{"role": "system", "content": sys}, {"role": "user", "content": user}],
-            "temperature": 0.7, "max_tokens": 300,
+            "messages": [
+                {"role": "system", "content": sys},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.7,
+            "max_tokens": 300,
         }
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(base_url + "/chat/completions", json=payload, headers=headers)
+            resp = await client.post(
+                base_url + "/chat/completions", json=payload, headers=headers
+            )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"].strip()
 
@@ -122,9 +138,15 @@ class AgentLlmService:
             "messages": [{"role": "user", "content": user}],
             "max_tokens": 300,
         }
-        headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"}
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers)
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages", json=payload, headers=headers
+            )
             resp.raise_for_status()
             return resp.json()["content"][0]["text"].strip()
 
@@ -132,23 +154,51 @@ class AgentLlmService:
     def _fallback_explanation(agent_id: str, summary: dict) -> str:
         """模板回退"""
         if agent_id == "A5":
-            s, sku, days, reason = summary.get("status", ""), summary.get("sku", ""), summary.get("sellable_days", "?"), summary.get("risk_reason", "")
-            if s == "red": return f"⚠️ SKU {sku} 库存告急！仅可售 {days} 天。{reason}。建议立即安排紧急补货，优先选择空运。"
-            if s == "yellow": return f"⚡ SKU {sku} 库存预警，可售 {days} 天。{reason}。建议尽快安排补货。"
+            s, sku, days, reason = (
+                summary.get("status", ""),
+                summary.get("sku", ""),
+                summary.get("sellable_days", "?"),
+                summary.get("risk_reason", ""),
+            )
+            if s == "red":
+                return f"⚠️ SKU {sku} 库存告急！仅可售 {days} 天。{reason}。建议立即安排紧急补货，优先选择空运。"
+            if s == "yellow":
+                return f"⚡ SKU {sku} 库存预警，可售 {days} 天。{reason}。建议尽快安排补货。"
             return f"✅ SKU {sku} 库存充足，可售 {days} 天。"
         if agent_id == "G3":
-            act, sku, price, cost, reason = summary.get("action", ""), summary.get("sku", ""), summary.get("final_price", "?"), summary.get("cost_price", "?"), summary.get("reason", "")
-            if act == "block": return f"🚫 SKU {sku} 折扣已阻断！折后价 ¥{price} 低于成本 ¥{cost}。{reason}"
-            if act == "warn": return f"⚠️ SKU {sku} 折扣需要关注。{reason}"
+            act, sku, price, cost, reason = (
+                summary.get("action", ""),
+                summary.get("sku", ""),
+                summary.get("final_price", "?"),
+                summary.get("cost_price", "?"),
+                summary.get("reason", ""),
+            )
+            if act == "block":
+                return f"🚫 SKU {sku} 折扣已阻断！折后价 ¥{price} 低于成本 ¥{cost}。{reason}"
+            if act == "warn":
+                return f"⚠️ SKU {sku} 折扣需要关注。{reason}"
             return f"✅ SKU {sku} 折扣检查通过，折后价 ¥{price}。"
         if agent_id == "A6":
-            sku, profit, margin, loss = summary.get("sku", ""), summary.get("profit", "?"), summary.get("margin", "?"), summary.get("is_loss", False)
-            if loss: return f"🔴 SKU {sku} 亏损！单件亏 ¥{abs(float(profit)):.2f}，毛利率 {margin}%。建议提价或降成本。"
-            if margin != "?" and float(margin) < 15: return f"🟡 SKU {sku} 毛利率偏低 ({margin}%)。建议优化成本。"
+            sku, profit, margin, loss = (
+                summary.get("sku", ""),
+                summary.get("profit", "?"),
+                summary.get("margin", "?"),
+                summary.get("is_loss", False),
+            )
+            if loss:
+                return f"🔴 SKU {sku} 亏损！单件亏 ¥{abs(float(profit)):.2f}，毛利率 {margin}%。建议提价或降成本。"
+            if margin != "?" and float(margin) < 15:
+                return f"🟡 SKU {sku} 毛利率偏低 ({margin}%)。建议优化成本。"
             return f"✅ SKU {sku} 利润正常，毛利率 {margin}%。"
         if agent_id == "A3":
-            cid, acos, st = summary.get("campaign_id", ""), summary.get("acos", "?"), summary.get("status", "")
-            if st == "critical": return f"🔴 广告 {cid} 严重亏损！ACoS {acos}% 超过毛利率，建议暂停。"
-            if st == "warning": return f"🟡 广告 {cid} ACoS ({acos}%) 偏高，建议优化。"
+            cid, acos, st = (
+                summary.get("campaign_id", ""),
+                summary.get("acos", "?"),
+                summary.get("status", ""),
+            )
+            if st == "critical":
+                return f"🔴 广告 {cid} 严重亏损！ACoS {acos}% 超过毛利率，建议暂停。"
+            if st == "warning":
+                return f"🟡 广告 {cid} ACoS ({acos}%) 偏高，建议优化。"
             return f"✅ 广告 {cid} 效果正常，ACoS {acos}%。"
         return ""

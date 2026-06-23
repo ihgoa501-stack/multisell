@@ -121,14 +121,16 @@ class SchedulerContextBuilder:
         rows = result.all()
         contexts = []
         for sku, inv in rows:
-            contexts.append({
-                "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
-                "sellable_stock": inv.quantity or 0,
-                "locked_stock": inv.locked_quantity or 0,
-                "safety_stock": inv.safety_stock or 0,
-                "selling_price": float(sku.price or 0),
-                "cost_price": float(sku.cost_price or 0),
-            })
+            contexts.append(
+                {
+                    "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
+                    "sellable_stock": inv.quantity or 0,
+                    "locked_stock": inv.locked_quantity or 0,
+                    "safety_stock": inv.safety_stock or 0,
+                    "selling_price": float(sku.price or 0),
+                    "cost_price": float(sku.cost_price or 0),
+                }
+            )
         return contexts
 
     @staticmethod
@@ -142,12 +144,14 @@ class SchedulerContextBuilder:
             price = float(sku.price or 0)
             cost = float(sku.cost_price or 0)
             margin = ((price - cost) / price * 100) if price > 0 else 0
-            contexts.append({
-                "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
-                "selling_price": price,
-                "cost_price": cost,
-                "margin_pct": round(margin, 2),
-            })
+            contexts.append(
+                {
+                    "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
+                    "selling_price": price,
+                    "cost_price": cost,
+                    "margin_pct": round(margin, 2),
+                }
+            )
         return contexts
 
     @staticmethod
@@ -159,12 +163,14 @@ class SchedulerContextBuilder:
         skus = result.scalars().all()
         contexts = []
         for sku in skus:
-            contexts.append({
-                "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
-                "selling_price": float(sku.price or 0),
-                "cost_price": float(sku.cost_price or 0),
-                "stock": 0,  # 会在 data_service 中补齐
-            })
+            contexts.append(
+                {
+                    "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
+                    "selling_price": float(sku.price or 0),
+                    "cost_price": float(sku.cost_price or 0),
+                    "stock": 0,  # 会在 data_service 中补齐
+                }
+            )
         return contexts
 
     @staticmethod
@@ -191,12 +197,14 @@ class SchedulerContextBuilder:
         orders = result.scalars().all()
         contexts = []
         for o in orders:
-            contexts.append({
-                "order_id": o.id,
-                "order_no": getattr(o, "order_no", f"ORDER#{o.id}"),
-                "status": o.status,
-                "total_amount": float(getattr(o, "total_amount", 0)),
-            })
+            contexts.append(
+                {
+                    "order_id": o.id,
+                    "order_no": getattr(o, "order_no", f"ORDER#{o.id}"),
+                    "status": o.status,
+                    "total_amount": float(getattr(o, "total_amount", 0)),
+                }
+            )
         return contexts
 
 
@@ -248,7 +256,8 @@ class AgentScheduler:
 
         logger.info(
             "AgentScheduler 已启动: %d/%d Agent + 熵防御",
-            started, len(self._schedules),
+            started,
+            len(self._schedules),
         )
 
     async def stop(self):
@@ -317,7 +326,9 @@ class AgentScheduler:
 
         logger.info(
             "调度 [%s] 启动: 间隔=%ds 决策点=%s",
-            agent_id, interval, decision_points,
+            agent_id,
+            interval,
+            decision_points,
         )
 
         while self._running:
@@ -390,7 +401,10 @@ class AgentScheduler:
                     # 从 DB 加载该用户在该决策点的阶段配置
                     stage_override = {}
                     config = await EvolutionService.get_or_create_config(
-                        db, self._system_user_id, agent_id, dp,
+                        db,
+                        self._system_user_id,
+                        agent_id,
+                        dp,
                     )
                     stage_override[dp] = config.current_stage
 
@@ -399,14 +413,21 @@ class AgentScheduler:
                         stage_override=stage_override,
                     )
                     result = await AgentService.execute_decision(
-                        db, agent, dp, ctx, dry_run=False,
+                        db,
+                        agent,
+                        dp,
+                        ctx,
+                        dry_run=False,
                     )
 
                     # 自动触发协作链
                     if result.get("decision_id"):
                         chain_results = await evaluate_chains(
-                            agent_id, dp, result,
-                            self._system_user_id, db,
+                            agent_id,
+                            dp,
+                            result,
+                            self._system_user_id,
+                            db,
                         )
                         if chain_results:
                             result["chain_triggered"] = len(chain_results)
@@ -415,7 +436,9 @@ class AgentScheduler:
                 except Exception as e:
                     logger.error(
                         "Agent [%s] 决策点 [%s] 执行失败: %s",
-                        agent_id, dp, e,
+                        agent_id,
+                        dp,
+                        e,
                     )
 
         summary = {
@@ -426,11 +449,15 @@ class AgentScheduler:
         }
         logger.info(
             "调度 [%s] 周期完成: %d 个决策点, %d 条决策",
-            agent_id, len(decision_points), len(results),
+            agent_id,
+            len(decision_points),
+            len(results),
         )
         return summary
 
-    async def _build_contexts(self, agent_id: str, decision_point: str, db) -> Union[list[dict], dict]:
+    async def _build_contexts(
+        self, agent_id: str, decision_point: str, db
+    ) -> Union[list[dict], dict]:
         """为 Agent 构建决策上下文"""
         builder = SchedulerContextBuilder()
 

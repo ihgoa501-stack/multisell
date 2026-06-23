@@ -30,10 +30,12 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
         user, token = await AuthService.register(
             db, data.username, data.password, data.display_name, data.email
         )
-        return Result.ok(TokenVO(
-            access_token=token,
-            user=user_to_vo(user),
-        ).model_dump())
+        return Result.ok(
+            TokenVO(
+                access_token=token,
+                user=user_to_vo(user),
+            ).model_dump()
+        )
     except ValueError as e:
         return Result.bad_request(str(e))
 
@@ -42,10 +44,12 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
 async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
     try:
         user, token = await AuthService.login(db, data.username, data.password)
-        return Result.ok(TokenVO(
-            access_token=token,
-            user=user_to_vo(user),
-        ).model_dump())
+        return Result.ok(
+            TokenVO(
+                access_token=token,
+                user=user_to_vo(user),
+            ).model_dump()
+        )
     except ValueError as e:
         return Result.bad_request(str(e))
 
@@ -63,6 +67,7 @@ async def get_me(
     else:
         from sqlalchemy import select
         from app.models import Permission, RolePermission, UserRole
+
         stmt = (
             select(Permission.code)
             .join(RolePermission, RolePermission.permission_id == Permission.id)

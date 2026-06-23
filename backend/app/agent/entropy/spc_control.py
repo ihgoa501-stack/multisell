@@ -10,6 +10,7 @@
   - 单点越 UWL/LWL (μ±2σ) → 注意告警
   - 连续 7 点同侧 → 趋势异常
 """
+
 import math
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -19,28 +20,37 @@ from app.agent.models import AgentDecision, SpcControlLimit
 
 
 class SpcController:
-
     RECALC_DAYS = 7
     BASELINE_DAYS = 30
     CONSECUTIVE_LIMIT = 7
 
     async def recalc_limits(
-        self, db: AsyncSession, user_id: int, agent_id: str, decision_point: str, metric_name: str,
+        self,
+        db: AsyncSession,
+        user_id: int,
+        agent_id: str,
+        decision_point: str,
+        metric_name: str,
     ) -> Optional[SpcControlLimit]:
         window_start = datetime.now(timezone.utc) - timedelta(days=self.BASELINE_DAYS)
 
-        values_stmt = select(AgentDecision.__table__.c.get(metric_name, AgentDecision.confidence)).where(
+        values_stmt = select(
+            AgentDecision.__table__.c.get(metric_name, AgentDecision.confidence)
+        ).where(
             AgentDecision.user_id == user_id,
             AgentDecision.agent_id == agent_id,
             AgentDecision.decision_point == decision_point,
             AgentDecision.created_at >= window_start,
         )
 
-        metric_col = getattr(AgentDecision, {
-            "acceptance_rate": "confidence",
-            "confidence": "confidence",
-            "override_rate": "confidence",
-        }.get(metric_name, "confidence"))
+        metric_col = getattr(
+            AgentDecision,
+            {
+                "acceptance_rate": "confidence",
+                "confidence": "confidence",
+                "override_rate": "confidence",
+            }.get(metric_name, "confidence"),
+        )
 
         values_stmt = select(metric_col).where(
             AgentDecision.user_id == user_id,
@@ -91,9 +101,12 @@ class SpcController:
             return limit
         else:
             limit = SpcControlLimit(
-                user_id=user_id, agent_id=agent_id,
-                decision_point=decision_point, metric_name=metric_name,
-                consecutive_same_side=0, **data,
+                user_id=user_id,
+                agent_id=agent_id,
+                decision_point=decision_point,
+                metric_name=metric_name,
+                consecutive_same_side=0,
+                **data,
             )
             db.add(limit)
             await db.flush()
@@ -101,7 +114,13 @@ class SpcController:
             return limit
 
     async def check_point(
-        self, db: AsyncSession, user_id: int, agent_id: str, decision_point: str, metric_name: str, current_value: float,
+        self,
+        db: AsyncSession,
+        user_id: int,
+        agent_id: str,
+        decision_point: str,
+        metric_name: str,
+        current_value: float,
     ) -> dict:
         stmt = select(SpcControlLimit).where(
             SpcControlLimit.user_id == user_id,
@@ -113,7 +132,9 @@ class SpcController:
         limit = result.scalar_one_or_none()
 
         if not limit:
-            limit = await self.recalc_limits(db, user_id, agent_id, decision_point, metric_name)
+            limit = await self.recalc_limits(
+                db, user_id, agent_id, decision_point, metric_name
+            )
             if not limit:
                 return {
                     "status": "insufficient_data",
@@ -148,23 +169,29 @@ class SpcController:
         if current_value > ucl or current_value < lcl:
             is_out_of_control = True
             limit.last_breach_at = datetime.now(timezone.utc)
-            alerts.append({
-                "level": "critical",
-                "message": f"{metric_name} 越控制线: {current_value:.4f} (限: [{lcl:.4f}, {ucl:.4f}])",
-            })
+            alerts.append(
+                {
+                    "level": "critical",
+                    "message": f"{metric_name} 越控制线: {current_value:.4f} (限: [{lcl:.4f}, {ucl:.4f}])",
+                }
+            )
 
         if current_value > uwl or current_value < lwl:
             is_warning = True
-            alerts.append({
-                "level": "warning",
-                "message": f"{metric_name} 越警戒线: {current_value:.4f} (限: [{lwl:.4f}, {uwl:.4f}])",
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": f"{metric_name} 越警戒线: {current_value:.4f} (限: [{lwl:.4f}, {uwl:.4f}])",
+                }
+            )
 
         if abs(limit.consecutive_same_side) >= self.CONSECUTIVE_LIMIT:
-            alerts.append({
-                "level": "warning",
-                "message": f"连续 {abs(limit.consecutive_same_side)} 点同侧 ({side}), 趋势异常",
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": f"连续 {abs(limit.consecutive_same_side)} 点同侧 ({side}), 趋势异常",
+                }
+            )
 
         await db.flush()
 
@@ -188,17 +215,24 @@ class SpcController:
         }
 
     async def get_all_limits(
-        self, db: AsyncSession, user_id: int,
+        self,
+        db: AsyncSession,
+        user_id: int,
     ) -> list[SpcControlLimit]:
         stmt = select(SpcControlLimit).where(SpcControlLimit.user_id == user_id)
         result = await db.execute(stmt)
         limits = result.scalars().all()
 
         for limit in limits:
-            if datetime.now(timezone.utc) >= (limit.next_recalc_at or datetime.now(timezone.utc)):
+            if datetime.now(timezone.utc) >= (
+                limit.next_recalc_at or datetime.now(timezone.utc)
+            ):
                 await self.recalc_limits(
-                    db, user_id, limit.agent_id,
-                    limit.decision_point, limit.metric_name,
+                    db,
+                    user_id,
+                    limit.agent_id,
+                    limit.decision_point,
+                    limit.metric_name,
                 )
 
         return list(limits)

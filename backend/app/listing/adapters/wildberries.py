@@ -77,13 +77,19 @@ class WildberriesListingAdapter:
                 "liquid": "Жидкость",
                 "sensitive": "Чувствительный",
             }
-            chars.append({"Тип товара": type_map.get(product.cargo_type, product.cargo_type)})
+            chars.append(
+                {"Тип товара": type_map.get(product.cargo_type, product.cargo_type)}
+            )
         if product.seo_keywords and isinstance(product.seo_keywords, list):
             chars.append({"Ключевые слова": ", ".join(product.seo_keywords[:5])})
         return chars
 
-    def _build_sizes(self, skus: list[Sku], prices: dict[int, Price],
-                     inventories: dict[int, Inventory]) -> list[dict]:
+    def _build_sizes(
+        self,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ) -> list[dict]:
         """WB 尺寸/价格结构"""
         sizes = []
         for sku in skus:
@@ -92,7 +98,9 @@ class WildberriesListingAdapter:
 
             size: dict[str, Any] = {
                 "price": float(price.price) if price else 0.0,
-                "skus": [sku.barcode] if sku.barcode else [sku.code or f"wb-sku-{sku.id}"],
+                "skus": [sku.barcode]
+                if sku.barcode
+                else [sku.code or f"wb-sku-{sku.id}"],
             }
 
             if sku.spec_desc:
@@ -172,7 +180,9 @@ class WildberriesListingAdapter:
 
         logger.info(
             "publishing to Wildberries: product_id=%s, skus=%d, vendor_code=%s",
-            product.id, len(skus), first_code,
+            product.id,
+            len(skus),
+            first_code,
         )
 
         async with self._client(platform) as client:
@@ -185,7 +195,8 @@ class WildberriesListingAdapter:
             nm_id = str(data_list[0].get("nmID", ""))
 
         platform_product_id = (
-            f"wb-{nm_id}" if nm_id
+            f"wb-{nm_id}"
+            if nm_id
             else f"wb-{product.id}-{int(datetime.now(timezone.utc).timestamp())}"
         )
 
@@ -194,11 +205,13 @@ class WildberriesListingAdapter:
             platform_sku=first_code,
             platform_url=(
                 f"https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
-                if nm_id else ""
+                if nm_id
+                else ""
             ),
             published_data={"api_response": body, "request_payload": payload},
-            sync_message=f"published to Wildberries (nmID={nm_id})" if nm_id else
-                         "published to Wildberries",
+            sync_message=f"published to Wildberries (nmID={nm_id})"
+            if nm_id
+            else "published to Wildberries",
         )
 
     async def sync_status(
@@ -217,10 +230,13 @@ class WildberriesListingAdapter:
         offer_id = f"sku-{listing_id}"
 
         async with self._client(platform) as client:
-            resp = await client.post("/api/v3/cards/filter", json={
-                "vendorCodes": [offer_id],
-                "allowedCategories": [],
-            })
+            resp = await client.post(
+                "/api/v3/cards/filter",
+                json={
+                    "vendorCodes": [offer_id],
+                    "allowedCategories": [],
+                },
+            )
             body = self._parse_response(resp, "sync_status")
 
         data_list = body.get("data", [])
@@ -248,7 +264,9 @@ class WildberriesListingAdapter:
             return False
         try:
             async with self._client(platform) as client:
-                resp = await client.get("/api/v3/cards/cursor/list", params={"limit": 1})
+                resp = await client.get(
+                    "/api/v3/cards/cursor/list", params={"limit": 1}
+                )
                 return resp.status_code == 200
         except Exception as exc:
             logger.warning("Wildberries credential check failed: %s", exc)
@@ -264,7 +282,9 @@ class WildberriesListingAdapter:
         try:
             body = resp.json()
         except Exception:
-            raise RuntimeError(f"WB {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}")
+            raise RuntimeError(
+                f"WB {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}"
+            )
 
         if resp.status_code >= 400:
             msg = body.get("error", body.get("message", resp.text[:300]))

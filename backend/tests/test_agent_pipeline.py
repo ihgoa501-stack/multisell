@@ -1,4 +1,5 @@
 """Agent 协作流水线测试"""
+
 import pytest
 
 
@@ -12,6 +13,7 @@ class TestChainConditions:
             _chain_discount_block,
             _chain_a6_loss,
         )
+
         return {
             "stock_red": _chain_stock_red_to_a5,
             "discount_block": _chain_discount_block,
@@ -73,6 +75,7 @@ class TestChainContextMappers:
 
     def test_stock_context_has_required_fields(self):
         from app.agent.pipeline import _chain_stock_ctx
+
         result = {
             "final_decision": {
                 "sku_code": "SKU001",
@@ -89,6 +92,7 @@ class TestChainContextMappers:
 
     def test_discount_context_has_required_fields(self):
         from app.agent.pipeline import _chain_discount_ctx
+
         result = {
             "final_decision": {
                 "sku_code": "SKU001",
@@ -104,6 +108,7 @@ class TestChainContextMappers:
 
     def test_a6_loss_context_has_required_fields(self):
         from app.agent.pipeline import _chain_a6_loss_ctx
+
         result = {
             "final_decision": {
                 "sku_code": "SKU001",
@@ -121,6 +126,7 @@ class TestChainDefinitions:
 
     def test_all_chains_defined(self):
         from app.agent.pipeline import CHAINS
+
         assert "A5" in CHAINS
         assert "G3" in CHAINS
         assert "A6" in CHAINS
@@ -129,18 +135,23 @@ class TestChainDefinitions:
         """链目标 Agent 必须注册"""
         from app.agent.pipeline import CHAINS
         from app.agent.registry import AgentRegistry
+
         for src, dps in CHAINS.items():
             for dp, rules in dps.items():
                 for rule in rules:
-                    assert AgentRegistry.get_agent_class(rule.target_agent) is not None, \
-                        f"链 {src}[{dp}] → {rule.target_agent} 目标未注册"
+                    assert (
+                        AgentRegistry.get_agent_class(rule.target_agent) is not None
+                    ), f"链 {src}[{dp}] → {rule.target_agent} 目标未注册"
 
     def test_all_chains_have_description(self):
         from app.agent.pipeline import CHAINS
+
         for src, dps in CHAINS.items():
             for dp, rules in dps.items():
                 for rule in rules:
-                    assert rule.description, f"{src}[{dp}] → {rule.target_agent} 缺少描述"
+                    assert rule.description, (
+                        f"{src}[{dp}] → {rule.target_agent} 缺少描述"
+                    )
 
 
 class TestEvaluateChains:
@@ -150,9 +161,14 @@ class TestEvaluateChains:
         """无链规则的 Agent → 空结果"""
         from app.agent.pipeline import evaluate_chains
         from app.database import async_session_factory
+
         async with async_session_factory() as db:
             result = await evaluate_chains(
-                "A1", "product_scout", {"decision_id": 1}, 1, db,
+                "A1",
+                "product_scout",
+                {"decision_id": 1},
+                1,
+                db,
             )
         assert result == []
 
@@ -160,6 +176,7 @@ class TestEvaluateChains:
         """条件不满足时 → 空结果"""
         from app.agent.pipeline import evaluate_chains
         from app.database import async_session_factory
+
         result_data = {
             "agent_id": "A5",
             "decision_point": "stock_alert",
@@ -169,6 +186,10 @@ class TestEvaluateChains:
         }
         async with async_session_factory() as db:
             result = await evaluate_chains(
-                "A5", "stock_alert", result_data, 1, db,
+                "A5",
+                "stock_alert",
+                result_data,
+                1,
+                db,
             )
         assert result == []

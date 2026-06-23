@@ -13,8 +13,8 @@
 #  熵管理防守测试
 # ================================================================
 
-class TestEntropyDefenses:
 
+class TestEntropyDefenses:
     async def test_entropy_dashboard(self, async_client):
         """熵驾驶舱返回数据结构正确"""
         resp = await async_client.get("/api/entropy/dashboard")
@@ -62,8 +62,8 @@ class TestEntropyDefenses:
 #  规则审计日志测试
 # ================================================================
 
-class TestRuleMarkChange:
 
+class TestRuleMarkChange:
     async def test_rule_status_change_logged(self, async_client):
         """用户修改规则状态时写入 rule_mark_change"""
         # 先创建一条规则
@@ -97,10 +97,7 @@ class TestRuleMarkChange:
         records = data.get("records", data.get("data", []))
         if isinstance(records, list):
             # 应该有一条规则状态变更记录
-            [
-                r for r in records
-                if r.get("target_id") == rule_id
-            ]
+            [r for r in records if r.get("target_id") == rule_id]
             # 由于每次 test session 可能复用数据，不做严格断言
             pass
 
@@ -126,8 +123,8 @@ class TestRuleMarkChange:
 #  规则健康评分逻辑测试
 # ================================================================
 
-class TestRuleHealthScore:
 
+class TestRuleHealthScore:
     async def test_health_score_api_returns_scores(self, async_client):
         """健康评分 API 返回每条规则的评分和风险等级"""
         resp = await async_client.get("/api/entropy/health")

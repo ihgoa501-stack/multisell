@@ -14,7 +14,9 @@ from tests.auth_helpers import grant_permission, register_and_login
 pytestmark = pytest.mark.usefixtures("enable_auth")
 
 
-async def _count_logs(module: str, action: str, resource_id: Optional[str] = None) -> int:
+async def _count_logs(
+    module: str, action: str, resource_id: Optional[str] = None
+) -> int:
     async with async_session_factory() as session:
         stmt = select(OperationLog).where(
             OperationLog.module == module,
@@ -48,7 +50,9 @@ class TestProductReadAuth:
 
         assert resp.status_code == 200
 
-    async def test_product_detail_requires_product_view_before_not_found(self, async_client):
+    async def test_product_detail_requires_product_view_before_not_found(
+        self, async_client
+    ):
         _uid, token = await register_and_login(async_client, "prod_detail_no")
 
         resp = await async_client.get(

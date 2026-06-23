@@ -21,7 +21,9 @@ def enable_auth():
         settings.AUTH_ENABLED = original
 
 
-async def register_and_login(async_client, username_prefix: str = "rbac_user") -> tuple[int, str]:
+async def register_and_login(
+    async_client, username_prefix: str = "rbac_user"
+) -> tuple[int, str]:
     """注册一个新用户并返回 (user_id, access_token)。"""
     username = f"{username_prefix}_{uuid4().hex[:8]}"
     resp = await async_client.post(
@@ -52,7 +54,9 @@ async def grant_permission(user_id: int, permission_code: str):
             permission = Permission(
                 name=f"测试权限 {permission_code} {suffix}",
                 code=permission_code,
-                module=permission_code.split(":")[0] if ":" in permission_code else "test",
+                module=permission_code.split(":")[0]
+                if ":" in permission_code
+                else "test",
             )
             session.add(permission)
             await session.flush()

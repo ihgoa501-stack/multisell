@@ -4,6 +4,7 @@
 - 产品合规检查：认证要求、禁限售、标签要求、税务合规
 - 输入产品信息和目标市场，输出合规风险和所需认证清单
 """
+
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -12,25 +13,76 @@ from app.agent.data_service import AgentDataService
 REQUIRED = ["product_name", "category", "target_country", "target_platform"]
 
 COMPLIANCE_RULES = {
-    ("electronics", "US"): {"certifications": ["FCC", "UL"], "restrictions": [], "risk": "medium"},
-    ("electronics", "EU"): {"certifications": ["CE", "RoHS", "WEEE"], "restrictions": [], "risk": "medium"},
-    ("electronics", "UK"): {"certifications": ["UKCA", "RoHS"], "restrictions": [], "risk": "medium"},
-    ("electronics", "JP"): {"certifications": ["PSE", "MIC"], "restrictions": [], "risk": "medium"},
-    ("baby", "US"): {"certifications": ["CPC", "ASTM F963"], "restrictions": [], "risk": "high"},
-    ("baby", "EU"): {"certifications": ["CE", "EN 71"], "restrictions": [], "risk": "high"},
-    ("baby", "UK"): {"certifications": ["UKCA", "EN 71"], "restrictions": [], "risk": "high"},
-    ("cosmetics", "EU"): {"certifications": ["CPNP"], "restrictions": ["动物测试"], "risk": "high"},
-    ("cosmetics", "US"): {"certifications": ["FDA"], "restrictions": [], "risk": "medium"},
+    ("electronics", "US"): {
+        "certifications": ["FCC", "UL"],
+        "restrictions": [],
+        "risk": "medium",
+    },
+    ("electronics", "EU"): {
+        "certifications": ["CE", "RoHS", "WEEE"],
+        "restrictions": [],
+        "risk": "medium",
+    },
+    ("electronics", "UK"): {
+        "certifications": ["UKCA", "RoHS"],
+        "restrictions": [],
+        "risk": "medium",
+    },
+    ("electronics", "JP"): {
+        "certifications": ["PSE", "MIC"],
+        "restrictions": [],
+        "risk": "medium",
+    },
+    ("baby", "US"): {
+        "certifications": ["CPC", "ASTM F963"],
+        "restrictions": [],
+        "risk": "high",
+    },
+    ("baby", "EU"): {
+        "certifications": ["CE", "EN 71"],
+        "restrictions": [],
+        "risk": "high",
+    },
+    ("baby", "UK"): {
+        "certifications": ["UKCA", "EN 71"],
+        "restrictions": [],
+        "risk": "high",
+    },
+    ("cosmetics", "EU"): {
+        "certifications": ["CPNP"],
+        "restrictions": ["动物测试"],
+        "risk": "high",
+    },
+    ("cosmetics", "US"): {
+        "certifications": ["FDA"],
+        "restrictions": [],
+        "risk": "medium",
+    },
     ("food", "US"): {"certifications": ["FDA"], "restrictions": [], "risk": "high"},
-    ("food", "EU"): {"certifications": ["EU Novel Food"], "restrictions": [], "risk": "high"},
-    ("toys", "US"): {"certifications": ["CPC", "ASTM F963"], "restrictions": [], "risk": "high"},
-    ("toys", "EU"): {"certifications": ["CE", "EN 71"], "restrictions": [], "risk": "high"},
+    ("food", "EU"): {
+        "certifications": ["EU Novel Food"],
+        "restrictions": [],
+        "risk": "high",
+    },
+    ("toys", "US"): {
+        "certifications": ["CPC", "ASTM F963"],
+        "restrictions": [],
+        "risk": "high",
+    },
+    ("toys", "EU"): {
+        "certifications": ["CE", "EN 71"],
+        "restrictions": [],
+        "risk": "high",
+    },
 }
 
 
 def _sf(v: Any, d: float = 0.0) -> float:
-    try: return float(v)
-    except (TypeError, ValueError): return d
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return d
+
 
 def _missing(c: dict, r: list) -> list:
     return [f for f in r if f not in c or c[f] is None]
@@ -51,13 +103,16 @@ class A7ComplianceGuardAgent(BaseAgent):
     async def decide(self, point: str, ctx: dict, db: Any = None) -> dict:
         if db is not None and point == "compliance_check":
             ctx = await AgentDataService.fill_product_context(db, ctx)
-        if point == "compliance_check": return self._check(ctx)
-        if point == "certification_lookup": return self._lookup(ctx)
+        if point == "compliance_check":
+            return self._check(ctx)
+        if point == "certification_lookup":
+            return self._lookup(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
     def _check(self, ctx: dict) -> dict:
         miss = _missing(ctx, REQUIRED)
-        if miss: return self._insufficient("compliance_check", miss)
+        if miss:
+            return self._insufficient("compliance_check", miss)
         name = str(ctx.get("product_name", ""))
         cat = str(ctx.get("category", "")).lower().strip()
         country = str(ctx.get("target_country", "")).upper().strip()
@@ -65,18 +120,30 @@ class A7ComplianceGuardAgent(BaseAgent):
 
         rule = COMPLIANCE_RULES.get((cat, country))
         if not rule:
-            rule = {"certifications": [], "restrictions": ["请人工核实具体认证要求"], "risk": "unknown"}
+            rule = {
+                "certifications": [],
+                "restrictions": ["请人工核实具体认证要求"],
+                "risk": "unknown",
+            }
 
         certs = rule["certifications"]
         restrictions = rule["restrictions"]
         risk = rule["risk"]
 
         blocked_platforms = []
-        if platform == "amazon" and cat == "electronics" and country == "US" and "FCC" not in certs:
+        if (
+            platform == "amazon"
+            and cat == "electronics"
+            and country == "US"
+            and "FCC" not in certs
+        ):
             blocked_platforms.append("Amazon US (FCC 要求)")
 
         return {
-            "product": name, "category": cat, "country": country, "platform": platform,
+            "product": name,
+            "category": cat,
+            "country": country,
+            "platform": platform,
             "required_certifications": certs,
             "restrictions": restrictions,
             "risk_level": risk,
@@ -94,10 +161,19 @@ class A7ComplianceGuardAgent(BaseAgent):
             "FDA": "FDA 认证（美国）：食品、药品、化妆品的 FDA 注册",
         }
         return {
-            "certification": cert, "country": country,
-            "description": known.get(cert.upper(), f"请人工核实 {cert} 在 {country} 的具体要求"),
+            "certification": cert,
+            "country": country,
+            "description": known.get(
+                cert.upper(), f"请人工核实 {cert} 在 {country} 的具体要求"
+            ),
             "confidence": 0.85 if cert.upper() in known else 0.50,
         }
 
     def _insufficient(self, p: str, m: list) -> dict:
-        return {"status": "insufficient_data", "decision_point": p, "missing_fields": m, "message": f"缺少: {', '.join(m)}", "confidence": 0.0}
+        return {
+            "status": "insufficient_data",
+            "decision_point": p,
+            "missing_fields": m,
+            "message": f"缺少: {', '.join(m)}",
+            "confidence": 0.0,
+        }

@@ -6,10 +6,15 @@ from app.models import OperationLog
 
 
 class OperationLogService:
-
     @staticmethod
-    async def list_logs(db: AsyncSession, module: str = None, action: str = None,
-                         operator: str = None, page: int = 1, page_size: int = 20) -> tuple[list[OperationLog], int]:
+    async def list_logs(
+        db: AsyncSession,
+        module: str = None,
+        action: str = None,
+        operator: str = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[OperationLog], int]:
         stmt = select(OperationLog)
 
         if module:
@@ -23,7 +28,11 @@ class OperationLogService:
         total = await db.scalar(count_stmt) or 0
 
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(OperationLog.created_at.desc()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(OperationLog.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
 
         result = await db.execute(stmt)
         logs = result.scalars().all()
@@ -31,8 +40,16 @@ class OperationLogService:
         return list(logs), total
 
     @staticmethod
-    async def log(db: AsyncSession, module: str, action: str, resource_id: str = None,
-                  content: str = None, operator: str = "system", ip: str = None, duration: int = None):
+    async def log(
+        db: AsyncSession,
+        module: str,
+        action: str,
+        resource_id: str = None,
+        content: str = None,
+        operator: str = "system",
+        ip: str = None,
+        duration: int = None,
+    ):
         """记录操作日志"""
         log = OperationLog(
             module=module,

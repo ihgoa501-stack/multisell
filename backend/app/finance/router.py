@@ -8,7 +8,8 @@ from app.common import Result, PageResult
 from app.database import get_db
 from app.models import User
 from app.finance.schemas import (
-    FinanceAccountCreate, FinanceTransactionCreate,
+    FinanceAccountCreate,
+    FinanceTransactionCreate,
 )
 from app.finance.ledger_service import LedgerService
 from app.finance.service import FinanceService
@@ -52,12 +53,14 @@ async def create_transaction(
     current_user: User = Depends(require_permission("finance:manage")),
 ):
     txn = await FinanceService.create_transaction(db, data.model_dump())
-    return Result.ok({
-        "id": txn.id,
-        "account_id": txn.account_id,
-        "amount": float(txn.amount),
-        "transaction_type": txn.transaction_type,
-    })
+    return Result.ok(
+        {
+            "id": txn.id,
+            "account_id": txn.account_id,
+            "amount": float(txn.amount),
+            "transaction_type": txn.transaction_type,
+        }
+    )
 
 
 @router.get("/finance/transactions", summary="流水列表")
@@ -143,7 +146,9 @@ async def generate_mock_finance(
     current_user: User = Depends(require_permission("finance:manage")),
 ):
     accounts = await FinanceService.generate_mock_data(db)
-    return Result.ok({
-        "accounts_created": len(accounts),
-        "message": "模拟财务数据生成成功",
-    })
+    return Result.ok(
+        {
+            "accounts_created": len(accounts),
+            "message": "模拟财务数据生成成功",
+        }
+    )

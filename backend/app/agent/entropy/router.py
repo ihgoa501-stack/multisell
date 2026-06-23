@@ -1,4 +1,5 @@
 """熵管理 API 路由"""
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -57,9 +58,15 @@ async def get_change_log(
     current_user: User = Depends(require_permission("agent:view")),
 ):
     changes, total = await entropy_service.get_change_log(
-        db, current_user.id, source_type, page, page_size,
+        db,
+        current_user.id,
+        source_type,
+        page,
+        page_size,
     )
     return PageResult.ok(
         records=[RuleMarkChangeVO.model_validate(c) for c in changes],
-        total=total, page=page, page_size=page_size,
+        total=total,
+        page=page,
+        page_size=page_size,
     )

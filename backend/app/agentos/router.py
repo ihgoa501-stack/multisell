@@ -101,8 +101,13 @@ async def list_operations(
 ):
     """查询审批/状态变更操作日志"""
     data = await AgentOSService.get_operations(
-        db, item_id=item_id, action=action, source_type=source_type,
-        user_id=user_id, limit=limit, offset=offset,
+        db,
+        item_id=item_id,
+        action=action,
+        source_type=source_type,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
     )
     return PageResult.ok(
         records=data["records"],
@@ -122,12 +127,16 @@ async def create_action_proposal(
     current_user: User = Depends(require_permission("agentos:operate")),
 ):
     item = await ActionCenterService.create_proposal(
-        db, body, operator=_operator(current_user),
+        db,
+        body,
+        operator=_operator(current_user),
     )
     return Result.ok(item)
 
 
-@router.post("/agentos/action-proposals/{proposal_id}/approve", summary="审批通过动作提案")
+@router.post(
+    "/agentos/action-proposals/{proposal_id}/approve", summary="审批通过动作提案"
+)
 async def approve_action_proposal(
     proposal_id: int,
     body: ActionApprovalPayload,
@@ -230,7 +239,10 @@ async def update_work_item_status(
 ):
     """标记 WorkItem 为已读/处理中/已完成"""
     result = await AgentOSService.update_work_item_status(
-        db, item_id, current_user.id, body.status.value,
+        db,
+        item_id,
+        current_user.id,
+        body.status.value,
     )
     if not result["ok"]:
         if result.get("error") == "not_found":
@@ -248,7 +260,10 @@ async def approve_work_item(
 ):
     """审批通过并触发底层执行"""
     result = await AgentOSService.approve_work_item(
-        db, item_id, current_user.id, body.comment,
+        db,
+        item_id,
+        current_user.id,
+        body.comment,
     )
     if not result["ok"]:
         if result.get("error") == "not_found":
@@ -266,7 +281,10 @@ async def reject_work_item(
 ):
     """拒绝 WorkItem 并记录理由"""
     result = await AgentOSService.reject_work_item(
-        db, item_id, current_user.id, body.comment,
+        db,
+        item_id,
+        current_user.id,
+        body.comment,
     )
     if not result["ok"]:
         if result.get("error") == "not_found":
@@ -297,7 +315,10 @@ async def upgrade_agent_level(
 ):
     """将 Agent 升级到目标自治等级"""
     result = await AgentOSService.execute_upgrade(
-        db, current_user.id, agent_id, target_level,
+        db,
+        current_user.id,
+        agent_id,
+        target_level,
     )
     return Result.ok(result)
 
@@ -311,7 +332,10 @@ async def downgrade_agent_level(
 ):
     """将 Agent 降级到目标自治等级"""
     result = await AgentOSService.execute_downgrade(
-        db, current_user.id, agent_id, target_level,
+        db,
+        current_user.id,
+        agent_id,
+        target_level,
     )
     return Result.ok(result)
 

@@ -28,7 +28,9 @@ def _product_payload(name: str = None) -> dict:
     }
 
 
-async def _register_and_login(async_client, username_prefix: str = "rbac_user") -> tuple[int, str]:
+async def _register_and_login(
+    async_client, username_prefix: str = "rbac_user"
+) -> tuple[int, str]:
     username = f"{username_prefix}_{uuid4().hex[:8]}"
     resp = await async_client.post(
         "/api/auth/register",
@@ -48,6 +50,7 @@ async def _grant_permission(user_id: int, permission_code: str):
     async with async_session_factory() as session:
         # 幂等：检查是否已有该权限
         from sqlalchemy import select as _select
+
         existing = await session.scalar(
             _select(Permission).where(Permission.code == permission_code).limit(1)
         )
@@ -58,7 +61,9 @@ async def _grant_permission(user_id: int, permission_code: str):
             permission = Permission(
                 name=f"测试权限 {permission_code} {suffix}",
                 code=permission_code,
-                module=permission_code.split(":")[0] if ":" in permission_code else "product",
+                module=permission_code.split(":")[0]
+                if ":" in permission_code
+                else "product",
             )
             session.add(permission)
             await session.flush()
@@ -90,7 +95,9 @@ class TestAuthRbacAuditIntegration:
         assert resp.status_code == 401
         assert resp.json()["code"] == 401
 
-    async def test_user_without_product_create_permission_is_forbidden(self, async_client):
+    async def test_user_without_product_create_permission_is_forbidden(
+        self, async_client
+    ):
         _user_id, token = await _register_and_login(async_client, "no_perm")
 
         resp = await async_client.post(
@@ -102,7 +109,9 @@ class TestAuthRbacAuditIntegration:
         assert resp.status_code == 403
         assert resp.json()["code"] == 403
 
-    async def test_product_create_permission_allows_write_and_records_audit_log(self, async_client):
+    async def test_product_create_permission_allows_write_and_records_audit_log(
+        self, async_client
+    ):
         user_id, token = await _register_and_login(async_client, "with_perm")
         await _grant_permission(user_id, "product:create")
         await _grant_permission(user_id, "operation_log:view")

@@ -64,31 +64,42 @@ async def compare_prelisting_decision(
             r = await PreListingDecisionService.calculate(db, req)
             # Lookup platform name
             stmt = select(Platform.name).where(Platform.id == platform_id)
-            platform_name = (await db.execute(stmt)).scalar_one_or_none() or f"平台{platform_id}"
-            results.append({
-                "platform_id": platform_id,
-                "platform_name": platform_name,
-                "product_cost": r.product_cost,
-                "shipping_fee": r.shipping_fee,
-                "platform_fee": r.platform_fee,
-                "payment_fee": r.payment_fee,
-                "total_cost": round(
-                    r.product_cost + r.shipping_fee + r.platform_fee + r.payment_fee + data.other_fee, 2
-                ),
-                "profit_amount": r.profit_amount,
-                "profit_margin": r.profit_margin,
-                "recommendation": r.recommendation,
-                "blocking_reasons": r.blocking_reasons,
-                "warnings": r.warnings,
-            })
+            platform_name = (
+                await db.execute(stmt)
+            ).scalar_one_or_none() or f"平台{platform_id}"
+            results.append(
+                {
+                    "platform_id": platform_id,
+                    "platform_name": platform_name,
+                    "product_cost": r.product_cost,
+                    "shipping_fee": r.shipping_fee,
+                    "platform_fee": r.platform_fee,
+                    "payment_fee": r.payment_fee,
+                    "total_cost": round(
+                        r.product_cost
+                        + r.shipping_fee
+                        + r.platform_fee
+                        + r.payment_fee
+                        + data.other_fee,
+                        2,
+                    ),
+                    "profit_amount": r.profit_amount,
+                    "profit_margin": r.profit_margin,
+                    "recommendation": r.recommendation,
+                    "blocking_reasons": r.blocking_reasons,
+                    "warnings": r.warnings,
+                }
+            )
         except (ValueError, HTTPException):
             continue
-    return Result.ok({
-        "sku_id": data.sku_id,
-        "destination_country": data.destination_country,
-        "target_sale_price": data.target_sale_price,
-        "results": results,
-    })
+    return Result.ok(
+        {
+            "sku_id": data.sku_id,
+            "destination_country": data.destination_country,
+            "target_sale_price": data.target_sale_price,
+            "results": results,
+        }
+    )
 
 
 @router.post("/prelisting/batch", summary="批量上架前经营决策")
@@ -113,21 +124,25 @@ async def batch_prelisting_decision(
             elif result.recommendation == "needs_data":
                 needs_data_count += 1
             profit_margins.append(result.profit_margin)
-            items.append(PreListingDecisionBatchItemResult(
-                index=index,
-                item_key=item.item_key,
-                sku_id=item.sku_id,
-                status="success",
-                result=result,
-            ))
+            items.append(
+                PreListingDecisionBatchItemResult(
+                    index=index,
+                    item_key=item.item_key,
+                    sku_id=item.sku_id,
+                    status="success",
+                    result=result,
+                )
+            )
         except Exception as e:
-            items.append(PreListingDecisionBatchItemResult(
-                index=index,
-                item_key=item.item_key,
-                sku_id=item.sku_id,
-                status="error",
-                error_message=str(e),
-            ))
+            items.append(
+                PreListingDecisionBatchItemResult(
+                    index=index,
+                    item_key=item.item_key,
+                    sku_id=item.sku_id,
+                    status="error",
+                    error_message=str(e),
+                )
+            )
 
     success_count = sum(1 for item in items if item.status == "success")
     error_count = len(items) - success_count
@@ -138,7 +153,9 @@ async def batch_prelisting_decision(
         approve_count=approve_count,
         reject_count=reject_count,
         needs_data_count=needs_data_count,
-        average_profit_margin=round(sum(profit_margins) / len(profit_margins), 2) if profit_margins else 0,
+        average_profit_margin=round(sum(profit_margins) / len(profit_margins), 2)
+        if profit_margins
+        else 0,
     )
     return Result.ok(PreListingDecisionBatchResponse(summary=summary, items=items))
 
@@ -151,7 +168,9 @@ async def download_batch_prelisting_template(
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="prelisting_decision_template.xlsx"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="prelisting_decision_template.xlsx"'
+        },
     )
 
 
@@ -179,5 +198,7 @@ async def export_batch_prelisting_results(
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="prelisting_decision_results.xlsx"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="prelisting_decision_results.xlsx"'
+        },
     )

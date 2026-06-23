@@ -1,9 +1,20 @@
-from sqlalchemy import Column, Integer, String, BigInteger, DateTime, JSON, Float, ForeignKey, func
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    BigInteger,
+    DateTime,
+    JSON,
+    Float,
+    ForeignKey,
+    func,
+)
 from app.database import Base
 
 
 class OrderImportBatch(Base):
     """订单导入批次"""
+
     __tablename__ = "order_import_batch"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -16,21 +27,38 @@ class OrderImportBatch(Base):
     skipped_duplicate_count = Column(Integer, default=0, comment="跳过重复数")
     failed_count = Column(Integer, default=0, comment="失败数")
     imported_by = Column(String(100), comment="导入人")
-    chain_status = Column(String(50), server_default="chain_pending", comment="chain_pending/chain_processed/chain_failed")
+    chain_status = Column(
+        String(50),
+        server_default="chain_pending",
+        comment="chain_pending/chain_processed/chain_failed",
+    )
     ledger_rebuilt_count = Column(Integer, default=0, comment="已重建账本订单数")
     exception_generated_count = Column(Integer, default=0, comment="生成异常数")
     chain_failure_count = Column(Integer, default=0, comment="链路处理失败数")
     processed_at = Column(DateTime(timezone=True), comment="链路处理时间")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), comment="创建时间"
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="更新时间",
+    )
 
 
 class OrderImportItem(Base):
     """订单导入行"""
+
     __tablename__ = "order_import_item"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    batch_id = Column(BigInteger, ForeignKey("order_import_batch.id"), nullable=False, comment="批次ID")
+    batch_id = Column(
+        BigInteger,
+        ForeignKey("order_import_batch.id"),
+        nullable=False,
+        comment="批次ID",
+    )
     row_number = Column(Integer, nullable=False, comment="原始行号")
     platform = Column(String(100), comment="平台名称")
     store_name = Column(String(200), comment="店铺名称")
@@ -48,9 +76,19 @@ class OrderImportItem(Base):
     shipping_fee = Column(Float, default=0, comment="运费")
     tracking_number = Column(String(200), comment="追踪号")
     paid_at = Column(String(50), comment="支付时间/日期")
-    status = Column(String(50), nullable=False, comment="imported/created_order/skipped_duplicate/failed")
+    status = Column(
+        String(50),
+        nullable=False,
+        comment="imported/created_order/skipped_duplicate/failed",
+    )
     failure_reason = Column(String(500), comment="失败原因")
-    chain_status = Column(String(50), server_default="chain_pending", comment="chain_pending/ledger_rebuilt/exception_generated/chain_failed")
+    chain_status = Column(
+        String(50),
+        server_default="chain_pending",
+        comment="chain_pending/ledger_rebuilt/exception_generated/chain_failed",
+    )
     chain_failure_reason = Column(String(500), comment="链路处理失败原因")
     raw_payload = Column(JSON, comment="原始行数据")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), comment="创建时间"
+    )

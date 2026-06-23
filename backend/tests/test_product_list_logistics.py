@@ -28,7 +28,6 @@ async def _create_product(async_client, **overrides):
 
 
 class TestProductLogisticsReadiness:
-
     async def test_product_list_returns_logistics_readiness(self, async_client):
         """完整物流信息的商品返回 complete"""
         product = await _create_product(
@@ -40,7 +39,9 @@ class TestProductLogisticsReadiness:
             package_weight_kg=0.8,
         )
 
-        resp = await async_client.get("/api/products", params={"page": 1, "page_size": 50})
+        resp = await async_client.get(
+            "/api/products", params={"page": 1, "page_size": 50}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -62,7 +63,9 @@ class TestProductLogisticsReadiness:
             package_height_cm=5.0,
         )
 
-        resp = await async_client.get("/api/products", params={"page": 1, "page_size": 50})
+        resp = await async_client.get(
+            "/api/products", params={"page": 1, "page_size": 50}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -82,7 +85,9 @@ class TestProductLogisticsReadiness:
             name="全缺商品",
         )
 
-        resp = await async_client.get("/api/products", params={"page": 1, "page_size": 50})
+        resp = await async_client.get(
+            "/api/products", params={"page": 1, "page_size": 50}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -97,7 +102,9 @@ class TestProductLogisticsReadiness:
         assert "包装重量" in missing
         assert p["package_volume_weight_kg"] is None
 
-    async def test_package_volume_weight_returns_none_when_missing_dimensions(self, async_client):
+    async def test_package_volume_weight_returns_none_when_missing_dimensions(
+        self, async_client
+    ):
         """包装尺寸任一缺失时体积重返回 None"""
         product = await _create_product(
             async_client,
@@ -130,19 +137,23 @@ class TestProductLogisticsReadiness:
 
 
 class TestProductListFilters:
-
     async def test_product_list_filters_by_cargo_type(self, async_client):
         """按货品类型筛选"""
         await _create_product(async_client, name="普通商品", cargo_type="normal")
         await _create_product(async_client, name="电池商品", cargo_type="battery")
         await _create_product(async_client, name="液体商品", cargo_type="liquid")
 
-        resp = await async_client.get("/api/products", params={"cargo_type": "battery", "page": 1, "page_size": 50})
+        resp = await async_client.get(
+            "/api/products",
+            params={"cargo_type": "battery", "page": 1, "page_size": 50},
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
         for item in data["records"]:
-            assert item["cargo_type"] == "battery", f"Expected battery, got {item['cargo_type']}"
+            assert item["cargo_type"] == "battery", (
+                f"Expected battery, got {item['cargo_type']}"
+            )
 
     async def test_product_list_filters_by_incomplete_logistics(self, async_client):
         """按 logistics_status=incomplete 筛选"""
@@ -162,7 +173,10 @@ class TestProductListFilters:
             package_height_cm=5.0,
         )
 
-        resp = await async_client.get("/api/products", params={"logistics_status": "incomplete", "page": 1, "page_size": 50})
+        resp = await async_client.get(
+            "/api/products",
+            params={"logistics_status": "incomplete", "page": 1, "page_size": 50},
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -189,7 +203,10 @@ class TestProductListFilters:
             package_height_cm=5.0,
         )
 
-        resp = await async_client.get("/api/products", params={"logistics_status": "complete", "page": 1, "page_size": 50})
+        resp = await async_client.get(
+            "/api/products",
+            params={"logistics_status": "complete", "page": 1, "page_size": 50},
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -200,7 +217,6 @@ class TestProductListFilters:
 
 
 class TestProductExcelLogistics:
-
     async def _export_and_parse(self, async_client, params: dict = None) -> list[dict]:
         """导出 Excel 并解析为 dict 列表"""
         if params is None:
@@ -234,9 +250,16 @@ class TestProductExcelLogistics:
         rows, headers = await self._export_and_parse(async_client)
 
         required_columns = [
-            "商品长(cm)", "商品宽(cm)", "商品高(cm)", "商品重量(kg)",
-            "包装长(cm)", "包装宽(cm)", "包装高(cm)", "包装重量(kg)",
-            "货品类型", "物流状态",
+            "商品长(cm)",
+            "商品宽(cm)",
+            "商品高(cm)",
+            "商品重量(kg)",
+            "包装长(cm)",
+            "包装宽(cm)",
+            "包装高(cm)",
+            "包装重量(kg)",
+            "货品类型",
+            "物流状态",
         ]
         for col in required_columns:
             assert col in headers, f"导出缺少列: {col}"
@@ -257,9 +280,18 @@ class TestProductExcelLogistics:
         headers = [str(cell.value).strip() if cell.value else "" for cell in ws[1]]
 
         required_columns = [
-            "商品名称", "副标题", "单位", "状态",
-            "商品长(cm)", "商品宽(cm)", "商品高(cm)", "商品重量(kg)",
-            "包装长(cm)", "包装宽(cm)", "包装高(cm)", "包装重量(kg)",
+            "商品名称",
+            "副标题",
+            "单位",
+            "状态",
+            "商品长(cm)",
+            "商品宽(cm)",
+            "商品高(cm)",
+            "商品重量(kg)",
+            "包装长(cm)",
+            "包装宽(cm)",
+            "包装高(cm)",
+            "包装重量(kg)",
             "货品类型",
         ]
         for col in required_columns:
@@ -271,9 +303,18 @@ class TestProductExcelLogistics:
         ws = wb.active
         ws.title = "商品导入模板"
         headers = [
-            "商品名称", "副标题", "单位", "状态",
-            "商品长(cm)", "商品宽(cm)", "商品高(cm)", "商品重量(kg)",
-            "包装长(cm)", "包装宽(cm)", "包装高(cm)", "包装重量(kg)",
+            "商品名称",
+            "副标题",
+            "单位",
+            "状态",
+            "商品长(cm)",
+            "商品宽(cm)",
+            "商品高(cm)",
+            "商品重量(kg)",
+            "包装长(cm)",
+            "包装宽(cm)",
+            "包装高(cm)",
+            "包装重量(kg)",
             "货品类型",
         ]
         for col, h in enumerate(headers, 1):
@@ -282,14 +323,14 @@ class TestProductExcelLogistics:
         ws.cell(row=2, column=1, value="导入物流测试商品")
         ws.cell(row=2, column=3, value="件")
         ws.cell(row=2, column=4, value="上架")
-        ws.cell(row=2, column=5, value=15.0)   # 商品长
-        ws.cell(row=2, column=6, value=8.0)    # 商品宽
-        ws.cell(row=2, column=7, value=5.0)    # 商品高
-        ws.cell(row=2, column=8, value=0.3)    # 商品重量
-        ws.cell(row=2, column=9, value=18.0)   # 包装长
+        ws.cell(row=2, column=5, value=15.0)  # 商品长
+        ws.cell(row=2, column=6, value=8.0)  # 商品宽
+        ws.cell(row=2, column=7, value=5.0)  # 商品高
+        ws.cell(row=2, column=8, value=0.3)  # 商品重量
+        ws.cell(row=2, column=9, value=18.0)  # 包装长
         ws.cell(row=2, column=10, value=10.0)  # 包装宽
-        ws.cell(row=2, column=11, value=6.0)   # 包装高
-        ws.cell(row=2, column=12, value=0.5)   # 包装重量
+        ws.cell(row=2, column=11, value=6.0)  # 包装高
+        ws.cell(row=2, column=12, value=0.5)  # 包装重量
         ws.cell(row=2, column=13, value="battery")  # 货品类型
 
         output = io.BytesIO()
@@ -298,7 +339,13 @@ class TestProductExcelLogistics:
 
         resp = await async_client.post(
             "/api/products/import",
-            files={"file": ("test.xlsx", output, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            files={
+                "file": (
+                    "test.xlsx",
+                    output,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -307,7 +354,10 @@ class TestProductExcelLogistics:
         assert len(data["data"]["errors"]) == 0
 
         # 验证导入字段
-        list_resp = await async_client.get("/api/products", params={"name": "导入物流测试商品", "page": 1, "page_size": 10})
+        list_resp = await async_client.get(
+            "/api/products",
+            params={"name": "导入物流测试商品", "page": 1, "page_size": 10},
+        )
         assert list_resp.status_code == 200
         list_data = list_resp.json()
         assert list_data["code"] == 200
@@ -322,9 +372,18 @@ class TestProductExcelLogistics:
         wb = openpyxl.Workbook()
         ws = wb.active
         headers = [
-            "商品名称", "副标题", "单位", "状态",
-            "商品长(cm)", "商品宽(cm)", "商品高(cm)", "商品重量(kg)",
-            "包装长(cm)", "包装宽(cm)", "包装高(cm)", "包装重量(kg)",
+            "商品名称",
+            "副标题",
+            "单位",
+            "状态",
+            "商品长(cm)",
+            "商品宽(cm)",
+            "商品高(cm)",
+            "商品重量(kg)",
+            "包装长(cm)",
+            "包装宽(cm)",
+            "包装高(cm)",
+            "包装重量(kg)",
             "货品类型",
         ]
         for col, h in enumerate(headers, 1):
@@ -341,10 +400,18 @@ class TestProductExcelLogistics:
 
         resp = await async_client.post(
             "/api/products/import",
-            files={"file": ("bad.xlsx", output, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            files={
+                "file": (
+                    "bad.xlsx",
+                    output,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["data"]["imported"] == 0
         assert len(data["data"]["errors"]) == 1
-        assert "包装长" in data["data"]["errors"][0] or "数字" in data["data"]["errors"][0]
+        assert (
+            "包装长" in data["data"]["errors"][0] or "数字" in data["data"]["errors"][0]
+        )

@@ -8,44 +8,89 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ImportBatch, ImportBatchRow, Product, Sku, Price, PriceChangeLog, Inventory, InventoryLog
+from app.models import (
+    ImportBatch,
+    ImportBatchRow,
+    Product,
+    Sku,
+    Price,
+    PriceChangeLog,
+    Inventory,
+    InventoryLog,
+)
 
 IMPORT_TYPES = frozenset({"product", "sku", "price", "inventory"})
 
 TEMPLATE_HEADERS = {
     "product": [
-        "商品名称", "副标题", "单位", "状态",
-        "商品长(cm)", "商品宽(cm)", "商品高(cm)", "商品重量(kg)",
-        "包装长(cm)", "包装宽(cm)", "包装高(cm)", "包装重量(kg)",
+        "商品名称",
+        "副标题",
+        "单位",
+        "状态",
+        "商品长(cm)",
+        "商品宽(cm)",
+        "商品高(cm)",
+        "商品重量(kg)",
+        "包装长(cm)",
+        "包装宽(cm)",
+        "包装高(cm)",
+        "包装重量(kg)",
         "货品类型",
     ],
     "sku": [
-        "SKU编码", "所属商品ID", "条码", "规格描述", "规格值(JSON)",
-        "销售价", "成本价", "市场价", "库存", "状态", "重量(kg)",
+        "SKU编码",
+        "所属商品ID",
+        "条码",
+        "规格描述",
+        "规格值(JSON)",
+        "销售价",
+        "成本价",
+        "市场价",
+        "库存",
+        "状态",
+        "重量(kg)",
     ],
     "price": [
-        "SKU编码", "价格类型", "价格", "生效时间", "失效时间",
+        "SKU编码",
+        "价格类型",
+        "价格",
+        "生效时间",
+        "失效时间",
     ],
     "inventory": [
-        "SKU编码", "仓库", "货位", "数量", "模式", "安全库存",
+        "SKU编码",
+        "仓库",
+        "货位",
+        "数量",
+        "模式",
+        "安全库存",
     ],
 }
 
 STATUS_MAP = {"草稿": 0, "上架": 1, "下架": 2}
-VALID_PRICE_TYPES = {"sale_price", "market_price", "cost_price", "vip_price", "wholesale_price"}
+VALID_PRICE_TYPES = {
+    "sale_price",
+    "market_price",
+    "cost_price",
+    "vip_price",
+    "wholesale_price",
+}
 
 
 class ImportStyle:
     HEADER_FONT = Font(bold=True, color="FFFFFF")
-    HEADER_FILL = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
+    HEADER_FILL = PatternFill(
+        start_color="2C3E50", end_color="2C3E50", fill_type="solid"
+    )
     THIN_BORDER = Border(
-        left=Side(style="thin"), right=Side(style="thin"),
-        top=Side(style="thin"), bottom=Side(style="thin"),
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
     )
 
 
 class ImportBatchService:
-
     @staticmethod
     def _apply_header_style(ws, headers: list[str]):
         for col, header in enumerate(headers, 1):
@@ -94,7 +139,9 @@ class ImportBatchService:
             return None
 
     @staticmethod
-    def _validate_row(import_type: str, row, header_map: dict, row_idx: int) -> Optional[str]:
+    def _validate_row(
+        import_type: str, row, header_map: dict, row_idx: int
+    ) -> Optional[str]:
         errors = []
 
         if import_type == "product":
@@ -114,7 +161,9 @@ class ImportBatchService:
                 errors.append("SKU编码不能为空")
             price_type = ImportBatchService._cell_value(row, header_map, "价格类型")
             if price_type not in VALID_PRICE_TYPES:
-                errors.append(f"价格类型无效(可选: {', '.join(sorted(VALID_PRICE_TYPES))})")
+                errors.append(
+                    f"价格类型无效(可选: {', '.join(sorted(VALID_PRICE_TYPES))})"
+                )
             price_val = ImportBatchService._cell_value(row, header_map, "价格")
             if price_val is None or price_val == "":
                 errors.append("价格不能为空")
@@ -186,14 +235,18 @@ class ImportBatchService:
         valid_rows = 0
         error_rows = 0
 
-        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        for row_idx, row in enumerate(
+            ws.iter_rows(min_row=2, values_only=True), start=2
+        ):
             total_rows += 1
             raw_data = {}
             for h, idx in header_map.items():
                 if idx < len(row):
                     raw_data[h] = row[idx]
 
-            error_msg = ImportBatchService._validate_row(import_type, row, header_map, row_idx)
+            error_msg = ImportBatchService._validate_row(
+                import_type, row, header_map, row_idx
+            )
 
             row_record = ImportBatchRow(
                 batch_id=batch.id,
@@ -234,10 +287,14 @@ class ImportBatchService:
         if batch.status != "previewed":
             raise ValueError(f"批次状态不是previewed，当前: {batch.status}")
 
-        stmt = select(ImportBatchRow).where(
-            ImportBatchRow.batch_id == batch_id,
-            ImportBatchRow.status == "pending",
-        ).order_by(ImportBatchRow.row_index)
+        stmt = (
+            select(ImportBatchRow)
+            .where(
+                ImportBatchRow.batch_id == batch_id,
+                ImportBatchRow.status == "pending",
+            )
+            .order_by(ImportBatchRow.row_index)
+        )
         result = await db.execute(stmt)
         pending_rows = list(result.scalars().all())
 
@@ -263,7 +320,9 @@ class ImportBatchService:
                 row_record.status = "error"
                 row_record.error_message = str(e)
                 error_count += 1
-                errors.append({"row_index": row_record.row_index, "error_message": str(e)})
+                errors.append(
+                    {"row_index": row_record.row_index, "error_message": str(e)}
+                )
 
         batch.success_count = success_count
         batch.error_count = error_count
@@ -363,7 +422,9 @@ class ImportBatchService:
                 product_id=product_id_val or 0,
                 code=code,
                 barcode=str(raw.get("条码", "")).strip() if raw.get("条码") else None,
-                spec_desc=str(raw.get("规格描述", "")).strip() if raw.get("规格描述") else None,
+                spec_desc=str(raw.get("规格描述", "")).strip()
+                if raw.get("规格描述")
+                else None,
                 spec_values=spec_values,
                 price=ImportBatchService._to_float(raw.get("销售价")) or 0,
                 cost_price=ImportBatchService._to_float(raw.get("成本价")) or 0,
@@ -377,7 +438,9 @@ class ImportBatchService:
         await db.flush()
 
     @staticmethod
-    async def _commit_price(db: AsyncSession, row_record: ImportBatchRow, operator: str):
+    async def _commit_price(
+        db: AsyncSession, row_record: ImportBatchRow, operator: str
+    ):
         raw = row_record.raw_data or {}
         sku_code = str(raw.get("SKU编码", "")).strip()
         price_type = str(raw.get("价格类型", "")).strip()
@@ -405,8 +468,16 @@ class ImportBatchService:
             if raw.get("失效时间"):
                 existing.end_time = datetime.fromisoformat(str(raw.get("失效时间")))
         else:
-            start_time = datetime.fromisoformat(str(raw.get("生效时间"))) if raw.get("生效时间") else None
-            end_time = datetime.fromisoformat(str(raw.get("失效时间"))) if raw.get("失效时间") else None
+            start_time = (
+                datetime.fromisoformat(str(raw.get("生效时间")))
+                if raw.get("生效时间")
+                else None
+            )
+            end_time = (
+                datetime.fromisoformat(str(raw.get("失效时间")))
+                if raw.get("失效时间")
+                else None
+            )
             price_obj = Price(
                 sku_id=sku.id,
                 price_type=price_type,
@@ -429,7 +500,9 @@ class ImportBatchService:
         await db.flush()
 
     @staticmethod
-    async def _commit_inventory(db: AsyncSession, row_record: ImportBatchRow, operator: str):
+    async def _commit_inventory(
+        db: AsyncSession, row_record: ImportBatchRow, operator: str
+    ):
         raw = row_record.raw_data or {}
         sku_code = str(raw.get("SKU编码", "")).strip()
         warehouse = str(raw.get("仓库", "默认仓库")).strip()
@@ -495,7 +568,9 @@ class ImportBatchService:
 
     @staticmethod
     async def list_batches(
-        db: AsyncSession, page: int, page_size: int,
+        db: AsyncSession,
+        page: int,
+        page_size: int,
     ) -> tuple[list[ImportBatch], int]:
         stmt = select(ImportBatch).order_by(ImportBatch.created_at.desc())
         count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -516,10 +591,14 @@ class ImportBatchService:
         if not batch:
             raise ValueError("批次不存在")
 
-        stmt = select(ImportBatchRow).where(
-            ImportBatchRow.batch_id == batch_id,
-            ImportBatchRow.status == "error",
-        ).order_by(ImportBatchRow.row_index)
+        stmt = (
+            select(ImportBatchRow)
+            .where(
+                ImportBatchRow.batch_id == batch_id,
+                ImportBatchRow.status == "error",
+            )
+            .order_by(ImportBatchRow.row_index)
+        )
         result = await db.execute(stmt)
         error_rows = list(result.scalars().all())
 

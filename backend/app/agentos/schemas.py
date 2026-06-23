@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class AutonomyLevel(str, Enum):
     """自治等级（沿用现有 Hermes Agent 阶段）"""
+
     OBSERVATION = "OBSERVATION"
     SUGGESTION = "SUGGESTION"
     SEMI_AUTONOMOUS = "SEMI_AUTONOMOUS"
@@ -104,6 +105,7 @@ _RISK_LABELS = {
 
 class AgentOSAgent(BaseModel):
     """Agent 团队成员"""
+
     id: str
     name: str
     role: str
@@ -118,6 +120,7 @@ class AgentOSAgent(BaseModel):
 
 class AgentOSSquad(BaseModel):
     """Agent 小队"""
+
     id: str
     name: str
     description: str = ""
@@ -133,6 +136,7 @@ class AgentOSSquad(BaseModel):
 
 class AgentOSWorkItem(BaseModel):
     """统一任务模型"""
+
     id: str
     source_type: str
     source_id: str
@@ -156,6 +160,7 @@ class AgentOSWorkItem(BaseModel):
 
 class AgentOSOverview(BaseModel):
     """全局概览"""
+
     health_score: float = 0.0
     active_agents: int = 0
     pending_approvals: int = 0
@@ -164,6 +169,7 @@ class AgentOSOverview(BaseModel):
 
 class AgentOSMetric(BaseModel):
     """业务指标"""
+
     key: str
     label: str
     value: float = 0.0
@@ -173,6 +179,7 @@ class AgentOSMetric(BaseModel):
 
 class AgentOSTemplate(BaseModel):
     """内置模板"""
+
     id: str
     title: str
     description: str = ""
@@ -187,6 +194,7 @@ class AgentOSTemplate(BaseModel):
 
 class ControlCenterResponse(BaseModel):
     """总控台响应"""
+
     overview: AgentOSOverview = Field(default_factory=AgentOSOverview)
     squads: list[AgentOSSquad] = Field(default_factory=list)
     priority_work_items: list[AgentOSWorkItem] = Field(default_factory=list)
@@ -196,6 +204,7 @@ class ControlCenterResponse(BaseModel):
 
 class WorkItemsResponse(BaseModel):
     """任务中心响应"""
+
     items: list[AgentOSWorkItem] = Field(default_factory=list)
     total: int = 0
     limit: int = 20
@@ -204,12 +213,14 @@ class WorkItemsResponse(BaseModel):
 
 class SquadsResponse(BaseModel):
     """团队页响应"""
+
     squads: list[AgentOSSquad] = Field(default_factory=list)
     summary: Optional[AgentOSOverview] = None
 
 
 class TemplatesResponse(BaseModel):
     """模板响应"""
+
     templates: list[AgentOSTemplate] = Field(default_factory=list)
 
 
@@ -218,12 +229,14 @@ class TemplatesResponse(BaseModel):
 
 class WorkItemStatusUpdate(BaseModel):
     """更新 WorkItem 状态请求"""
+
     status: WorkItemStatus
     comment: Optional[str] = None
 
 
 class WorkItemApproval(BaseModel):
     """审批 WorkItem 请求"""
+
     action: Literal["approve", "reject"] = "approve"
     comment: Optional[str] = None
 
@@ -233,6 +246,7 @@ class WorkItemApproval(BaseModel):
 
 class AgentOSOperationLogVO(BaseModel):
     """操作审计日志"""
+
     id: int
     user_id: int
     item_id: str
@@ -254,6 +268,7 @@ class OperationLogQuery(BaseModel):
 
 class AutonomyCandidateVO(BaseModel):
     """自治等级升级候选"""
+
     agent_id: str
     agent_name: str
     squad_id: str
@@ -267,6 +282,7 @@ class AutonomyCandidateVO(BaseModel):
 
 class AgentDetailResponse(BaseModel):
     """Agent 详情响应"""
+
     agent: AgentOSAgent
     squad_name: str = ""
     current_work_items: list[AgentOSWorkItem] = Field(default_factory=list)

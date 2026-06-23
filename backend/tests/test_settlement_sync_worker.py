@@ -47,10 +47,14 @@ async def test_upsert_tx_creates_settlement_and_item():
 
     async with async_session_factory() as db:
         settlements = (
-            await db.execute(
-                select(Settlement).where(Settlement.platform_id == platform.id)
+            (
+                await db.execute(
+                    select(Settlement).where(Settlement.platform_id == platform.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(settlements) == 1
         s = settlements[0]
         assert s.period_start.month == 6
@@ -63,12 +67,14 @@ async def test_upsert_tx_creates_settlement_and_item():
 
         # Verify SettlementItem was created
         items = (
-            await db.execute(
-                select(SettlementItem).where(
-                    SettlementItem.settlement_id == s.id
+            (
+                await db.execute(
+                    select(SettlementItem).where(SettlementItem.settlement_id == s.id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(items) == 1
         item = items[0]
         assert item.transaction_id == "TXN-001"
@@ -101,18 +107,26 @@ async def test_upsert_tx_dedup():
 
     async with async_session_factory() as db:
         settlements = (
-            await db.execute(
-                select(Settlement).where(Settlement.platform_id == platform.id)
-            )
-        ).scalars().all()
-        assert len(settlements) == 1
-        items = (
-            await db.execute(
-                select(SettlementItem).join(Settlement).where(
-                    Settlement.platform_id == platform.id
+            (
+                await db.execute(
+                    select(Settlement).where(Settlement.platform_id == platform.id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
+        assert len(settlements) == 1
+        items = (
+            (
+                await db.execute(
+                    select(SettlementItem)
+                    .join(Settlement)
+                    .where(Settlement.platform_id == platform.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(items) == 1  # still one item after dedup
 
 
@@ -138,10 +152,14 @@ async def test_upsert_tx_grouped_by_period():
 
     async with async_session_factory() as db:
         settlements = (
-            await db.execute(
-                select(Settlement).where(Settlement.platform_id == platform.id)
+            (
+                await db.execute(
+                    select(Settlement).where(Settlement.platform_id == platform.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(settlements) == 1  # same month → one batch
         s = settlements[0]
         assert s.total_revenue == Decimal("90.00")  # 30 * 3
@@ -149,12 +167,14 @@ async def test_upsert_tx_grouped_by_period():
         assert s.total_net == Decimal("81.00")  # (30-3) * 3
 
         items = (
-            await db.execute(
-                select(SettlementItem).where(
-                    SettlementItem.settlement_id == s.id
+            (
+                await db.execute(
+                    select(SettlementItem).where(SettlementItem.settlement_id == s.id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(items) == 3
 
 
@@ -189,10 +209,14 @@ async def test_upsert_tx_refund_sets_refund_total():
 
     async with async_session_factory() as db:
         settlements = (
-            await db.execute(
-                select(Settlement).where(Settlement.platform_id == platform.id)
+            (
+                await db.execute(
+                    select(Settlement).where(Settlement.platform_id == platform.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(settlements) == 1
         s = settlements[0]
         assert s.total_revenue == Decimal("200.00")

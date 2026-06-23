@@ -1,7 +1,6 @@
 """仪表盘 & 报表测试"""
 
 
-
 class TestDashboard:
     """仪表盘"""
 

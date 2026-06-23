@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ProductCreate(BaseModel):
     """创建商品"""
+
     name: str = Field(..., min_length=1, max_length=200, description="商品名称")
     subtitle: Optional[str] = Field(None, max_length=500, description="副标题")
     description: Optional[str] = Field(None, description="商品描述")
@@ -24,11 +25,14 @@ class ProductCreate(BaseModel):
     package_width_cm: Optional[float] = Field(None, gt=0, description="包装宽(cm)")
     package_height_cm: Optional[float] = Field(None, gt=0, description="包装高(cm)")
     package_weight_kg: Optional[float] = Field(None, gt=0, description="包装重量(kg)")
-    cargo_type: Literal["normal", "battery", "liquid", "sensitive"] = Field("normal", description="货品类型")
+    cargo_type: Literal["normal", "battery", "liquid", "sensitive"] = Field(
+        "normal", description="货品类型"
+    )
 
 
 class ProductUpdate(BaseModel):
     """更新商品"""
+
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     subtitle: Optional[str] = Field(None, max_length=500)
     description: Optional[str] = None
@@ -51,6 +55,7 @@ class ProductUpdate(BaseModel):
 
 class ProductVO(BaseModel):
     """商品响应"""
+
     id: int
     name: str
     subtitle: Optional[str] = None
@@ -87,11 +92,16 @@ class ProductVO(BaseModel):
 
 class ProductQuery(BaseModel):
     """商品查询参数"""
+
     name: Optional[str] = Field(None, description="商品名称(模糊搜索)")
     category_id: Optional[int] = Field(None, description="分类ID")
     status: Optional[int] = Field(None, description="状态")
     brand_id: Optional[int] = Field(None, description="品牌ID")
-    cargo_type: Optional[Literal["normal", "battery", "liquid", "sensitive"]] = Field(None, description="货品类型")
-    logistics_status: Optional[Literal["complete", "incomplete"]] = Field(None, description="物流完整状态")
+    cargo_type: Optional[Literal["normal", "battery", "liquid", "sensitive"]] = Field(
+        None, description="货品类型"
+    )
+    logistics_status: Optional[Literal["complete", "incomplete"]] = Field(
+        None, description="物流完整状态"
+    )
     page: int = Field(1, ge=1)
     page_size: int = Field(20, ge=1, le=100)

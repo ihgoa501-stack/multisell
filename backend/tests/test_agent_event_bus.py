@@ -1,4 +1,5 @@
 """Agent 事件总线测试"""
+
 import pytest
 
 
@@ -8,6 +9,7 @@ class TestEventBusRoutes:
     @pytest.fixture
     def bus(self):
         from app.agent.event_bus import AgentEventBus
+
         return AgentEventBus()
 
     def test_default_routes_loaded(self, bus):
@@ -47,32 +49,40 @@ class TestEventBusMatch:
     @pytest.fixture
     def bus(self):
         from app.agent.event_bus import AgentEventBus
+
         return AgentEventBus()
 
     def test_exact_match(self, bus):
         """精确匹配"""
         from app.agent.event_bus import _match_event
+
         assert _match_event("inventory.low_stock", "inventory.low_stock") is True
 
     def test_prefix_match(self, bus):
         """前缀匹配"""
         from app.agent.event_bus import _match_event
+
         assert _match_event("inventory.low_stock", "inventory.") is True
 
     def test_no_match(self, bus):
         """不匹配"""
         from app.agent.event_bus import _match_event
+
         assert _match_event("order.created", "inventory") is False
 
     def test_wildcard_suffix(self, bus):
         """后缀通配"""
         from app.agent.event_bus import _match_event
+
         assert _match_event("inventory.low_stock", "inventory.*") is True
 
     def test_partial_match(self, bus):
         """部分前缀匹配"""
         from app.agent.event_bus import _match_event
-        assert _match_event("inventory.low_stock.stockout", "inventory.low_stock") is True
+
+        assert (
+            _match_event("inventory.low_stock.stockout", "inventory.low_stock") is True
+        )
 
 
 class TestEventBusAPI:
@@ -111,5 +121,6 @@ class TestEventIntegration:
     async def test_emit_helper(self, async_client):
         """from app.events import emit_agent_event"""
         from app.events import emit_agent_event
+
         matched = await emit_agent_event("test.integration", {"key": "value"}, "test")
         assert matched == 0  # 未匹配路由

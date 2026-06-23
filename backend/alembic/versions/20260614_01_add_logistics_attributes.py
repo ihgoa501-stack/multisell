@@ -33,7 +33,9 @@ def upgrade() -> None:
         ("sku", "sku_weight_kg", "NUMERIC(10, 2)"),
     ]
     for table, col, dtype in columns:
-        conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {dtype}"))
+        conn.execute(
+            sa.text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {dtype}")
+        )
 
 
 def downgrade() -> None:

@@ -5,6 +5,7 @@
 - 意图分类 + 置信度路由
 - 不接真实消息接口，数据通过请求体传入
 """
+
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -22,8 +23,11 @@ FAQ_RESPONSES = {
 
 
 def _sf(v: Any, d: float = 0.0) -> float:
-    try: return float(v)
-    except (TypeError, ValueError): return d
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return d
+
 
 def _missing(c: dict, r: list) -> list:
     return [f for f in r if f not in c or c[f] is None]
@@ -42,23 +46,49 @@ class A4CustomerServiceAgent(BaseAgent):
     }
 
     async def decide(self, point: str, ctx: dict, db: Any = None) -> dict:
-        if point == "auto_reply": return self._auto_reply(ctx)
-        if point == "intent_classify": return self._classify(ctx)
+        if point == "auto_reply":
+            return self._auto_reply(ctx)
+        if point == "intent_classify":
+            return self._classify(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
     def _classify(self, ctx: dict) -> dict:
         msg = str(ctx.get("message", "")).lower()
         str(ctx.get("language", "en"))
-        high_risk = ["trademark", "lawsuit", "refund", "a-to-z", "chargeback",
-                      "投诉", "律师", "起诉", "退款", "索赔"]
+        high_risk = [
+            "trademark",
+            "lawsuit",
+            "refund",
+            "a-to-z",
+            "chargeback",
+            "投诉",
+            "律师",
+            "起诉",
+            "退款",
+            "索赔",
+        ]
         if any(kw in msg for kw in high_risk):
-            return {"intent": "high_risk", "confidence": 0.95, "action": "escalate_human"}
+            return {
+                "intent": "high_risk",
+                "confidence": 0.95,
+                "action": "escalate_human",
+            }
         faq_map = {
-            "where is my order": "shipping", "tracking": "shipping", "物流": "shipping",
-            "return": "return", "refund": "return", "退货": "return", "退款": "return",
-            "size": "size", "尺码": "size", "fit": "size",
-            "promotion": "promotion", "coupon": "promotion", "折扣": "promotion",
-            "how to use": "product_use", "如何使用": "product_use",
+            "where is my order": "shipping",
+            "tracking": "shipping",
+            "物流": "shipping",
+            "return": "return",
+            "refund": "return",
+            "退货": "return",
+            "退款": "return",
+            "size": "size",
+            "尺码": "size",
+            "fit": "size",
+            "promotion": "promotion",
+            "coupon": "promotion",
+            "折扣": "promotion",
+            "how to use": "product_use",
+            "如何使用": "product_use",
         }
         for kw, intent in faq_map.items():
             if kw in msg:
@@ -67,7 +97,8 @@ class A4CustomerServiceAgent(BaseAgent):
 
     def _auto_reply(self, ctx: dict) -> dict:
         miss = _missing(ctx, REQUIRED)
-        if miss: return self._insufficient("auto_reply", miss)
+        if miss:
+            return self._insufficient("auto_reply", miss)
         str(ctx.get("message", ""))
         lang = str(ctx.get("language", "en"))
         order_ctx = ctx.get("order_context", {})
@@ -79,8 +110,10 @@ class A4CustomerServiceAgent(BaseAgent):
 
         if classification.get("action") == "escalate_human":
             return {
-                "auto_reply": None, "action": "escalate",
-                "intent": intent, "confidence": confidence,
+                "auto_reply": None,
+                "action": "escalate",
+                "intent": intent,
+                "confidence": confidence,
                 "reason": "高风险或低置信度，需人工处理",
                 "suggested_reply": None,
             }
@@ -88,10 +121,18 @@ class A4CustomerServiceAgent(BaseAgent):
         template = FAQ_RESPONSES.get(intent, FAQ_RESPONSES["default"])
         reply = template.format(eta=eta)
         return {
-            "auto_reply": reply, "action": "auto_reply",
-            "intent": intent, "confidence": confidence,
+            "auto_reply": reply,
+            "action": "auto_reply",
+            "intent": intent,
+            "confidence": confidence,
             "language": lang,
         }
 
     def _insufficient(self, p: str, m: list) -> dict:
-        return {"status": "insufficient_data", "decision_point": p, "missing_fields": m, "message": f"缺少: {', '.join(m)}", "confidence": 0.0}
+        return {
+            "status": "insufficient_data",
+            "decision_point": p,
+            "missing_fields": m,
+            "message": f"缺少: {', '.join(m)}",
+            "confidence": 0.0,
+        }

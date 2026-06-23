@@ -19,16 +19,19 @@ def _auth_disabled():
 
 
 async def _create_sku(async_client) -> int:
-    resp = await async_client.post("/api/products", json={
-        "name": f"库存闭环商品-{uuid4().hex[:8]}",
-        "unit": "件",
-        "status": 1,
-        "package_length_cm": 10,
-        "package_width_cm": 10,
-        "package_height_cm": 10,
-        "package_weight_kg": 0.5,
-        "cargo_type": "normal",
-    })
+    resp = await async_client.post(
+        "/api/products",
+        json={
+            "name": f"库存闭环商品-{uuid4().hex[:8]}",
+            "unit": "件",
+            "status": 1,
+            "package_length_cm": 10,
+            "package_width_cm": 10,
+            "package_height_cm": 10,
+            "package_weight_kg": 0.5,
+            "cargo_type": "normal",
+        },
+    )
     assert resp.status_code == 200, resp.text
     product_id = resp.json()["data"]["id"]
 
@@ -59,18 +62,20 @@ async def _get_inventory(async_client, sku_id: int):
 
 
 async def _create_order(async_client, sku_id: int, quantity: int = 2):
-    resp = await async_client.post("/api/orders", json={
-        "recipient_name": "库存闭环测试",
-        "recipient_phone": "13900000000",
-        "shipping_address": "测试地址",
-        "payment_method": "mock",
-        "items": [{"sku_id": sku_id, "quantity": quantity, "unit_price": 100}],
-    })
+    resp = await async_client.post(
+        "/api/orders",
+        json={
+            "recipient_name": "库存闭环测试",
+            "recipient_phone": "13900000000",
+            "shipping_address": "测试地址",
+            "payment_method": "mock",
+            "items": [{"sku_id": sku_id, "quantity": quantity, "unit_price": 100}],
+        },
+    )
     return resp
 
 
 class TestOrderInventoryClosure:
-
     async def test_create_order_locks_available_stock(self, async_client):
         """创建订单锁定可用库存"""
         sku_id = await _create_sku(async_client)
@@ -85,7 +90,9 @@ class TestOrderInventoryClosure:
         assert inv["locked_quantity"] == 3
         assert inv["available_quantity"] == 7
 
-    async def test_create_order_blocks_when_available_stock_is_insufficient(self, async_client):
+    async def test_create_order_blocks_when_available_stock_is_insufficient(
+        self, async_client
+    ):
         """库存不足时阻止创建订单"""
         sku_id = await _create_sku(async_client)
         await _set_inventory(async_client, sku_id, 2)
@@ -108,7 +115,9 @@ class TestOrderInventoryClosure:
         order_resp = await _create_order(async_client, sku_id, quantity=3)
         order_id = order_resp.json()["data"]["id"]
 
-        resp = await async_client.put(f"/api/orders/{order_id}/status", json={"status": "paid"})
+        resp = await async_client.put(
+            f"/api/orders/{order_id}/status", json={"status": "paid"}
+        )
 
         assert resp.status_code == 200, resp.text
         inv = await _get_inventory(async_client, sku_id)
@@ -123,7 +132,9 @@ class TestOrderInventoryClosure:
         order_resp = await _create_order(async_client, sku_id, quantity=3)
         order_id = order_resp.json()["data"]["id"]
 
-        resp = await async_client.put(f"/api/orders/{order_id}/status", json={"status": "cancelled"})
+        resp = await async_client.put(
+            f"/api/orders/{order_id}/status", json={"status": "cancelled"}
+        )
 
         assert resp.status_code == 200, resp.text
         inv = await _get_inventory(async_client, sku_id)
@@ -138,7 +149,9 @@ class TestOrderInventoryClosure:
         order_resp = await _create_order(async_client, sku_id, quantity=2)
         order_no = order_resp.json()["data"]["order_no"]
         order_id = order_resp.json()["data"]["id"]
-        await async_client.put(f"/api/orders/{order_id}/status", json={"status": "paid"})
+        await async_client.put(
+            f"/api/orders/{order_id}/status", json={"status": "paid"}
+        )
 
         logs_resp = await async_client.get(f"/api/inventory/{sku_id}/logs")
 

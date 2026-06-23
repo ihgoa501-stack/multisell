@@ -1,4 +1,5 @@
 """库存管理 - Pydantic Schema"""
+
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
@@ -6,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class InventoryUpdate(BaseModel):
     """更新库存"""
+
     warehouse: Optional[str] = Field(None, description="仓库")
     location: Optional[str] = Field(None, description="货位")
     quantity: int = Field(..., description="库存数量（最终值）")
@@ -15,6 +17,7 @@ class InventoryUpdate(BaseModel):
 
 class InventoryCheck(BaseModel):
     """库存预占/释放"""
+
     sku_id: int = Field(..., description="SKU ID")
     quantity: int = Field(..., description="数量（正数为预占，负数为释放）")
     order_no: Optional[str] = Field(None, description="订单号")
@@ -22,6 +25,7 @@ class InventoryCheck(BaseModel):
 
 class InventoryVO(BaseModel):
     """库存响应"""
+
     id: int = 0
     sku_id: int
     warehouse: str = "默认仓库"
@@ -38,6 +42,7 @@ class InventoryVO(BaseModel):
 
 class InventoryLogVO(BaseModel):
     """库存变动记录响应"""
+
     id: int
     sku_id: int
     change_type: str

@@ -29,9 +29,19 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from app.config import settings
 from app.database import Base
 from app.models import (
-    Brand, Category, Platform, Product, Sku,
-    Inventory, Supplier, ShippingProvider, ShippingChannel, ShippingZone,
-    ShippingQuoteRule, PlatformFeeRule, Permission,
+    Brand,
+    Category,
+    Platform,
+    Product,
+    Sku,
+    Inventory,
+    Supplier,
+    ShippingProvider,
+    ShippingChannel,
+    ShippingZone,
+    ShippingQuoteRule,
+    PlatformFeeRule,
+    Permission,
     PlatformIntegrationAccount,
 )
 from app.auth.service import hash_password
@@ -59,18 +69,38 @@ SEED_PERMISSIONS = [
     {"code": "exception:manage", "name": "管理异常", "module": "exception"},
     {"code": "order_import:import", "name": "导入订单", "module": "order_import"},
     {"code": "order_import:view", "name": "查看订单导入", "module": "order_import"},
-    {"code": "order_import:process", "name": "处理订单导入链路", "module": "order_import"},
+    {
+        "code": "order_import:process",
+        "name": "处理订单导入链路",
+        "module": "order_import",
+    },
     {"code": "platform_fee:view", "name": "查看平台费用规则", "module": "platform_fee"},
-    {"code": "platform_fee:manage", "name": "管理平台费用规则", "module": "platform_fee"},
-    {"code": "platform_fee:calculate", "name": "匹配平台费用规则", "module": "platform_fee"},
+    {
+        "code": "platform_fee:manage",
+        "name": "管理平台费用规则",
+        "module": "platform_fee",
+    },
+    {
+        "code": "platform_fee:calculate",
+        "name": "匹配平台费用规则",
+        "module": "platform_fee",
+    },
     {"code": "decision:calculate", "name": "上架前决策计算", "module": "decision"},
     {"code": "listing:view", "name": "查看发布", "module": "listing"},
     {"code": "listing:task_manage", "name": "管理上架任务", "module": "listing"},
     {"code": "listing:publish", "name": "发布上架任务", "module": "listing"},
     {"code": "finance:report:view", "name": "查看财务报表", "module": "finance"},
     {"code": "dashboard:view", "name": "查看仪表盘", "module": "dashboard"},
-    {"code": "platform_integration:view", "name": "查看平台集成", "module": "platform_integration"},
-    {"code": "platform_integration:manage", "name": "管理平台集成", "module": "platform_integration"},
+    {
+        "code": "platform_integration:view",
+        "name": "查看平台集成",
+        "module": "platform_integration",
+    },
+    {
+        "code": "platform_integration:manage",
+        "name": "管理平台集成",
+        "module": "platform_integration",
+    },
     {"code": "agent_action:propose", "name": "提议Agent动作", "module": "agent_action"},
     {"code": "agent_action:view", "name": "查看Agent动作", "module": "agent_action"},
 ]
@@ -84,8 +114,22 @@ DEMO_PRODUCTS = [
         "category_name": "电子产品",
         "unit": "副",
         "skus": [
-            {"code": "DEMO-BT-BLACK", "spec_desc": "黑色", "price": 299, "cost_price": 180, "stock": 200, "weight": 0.30},
-            {"code": "DEMO-BT-WHITE", "spec_desc": "白色", "price": 299, "cost_price": 180, "stock": 150, "weight": 0.30},
+            {
+                "code": "DEMO-BT-BLACK",
+                "spec_desc": "黑色",
+                "price": 299,
+                "cost_price": 180,
+                "stock": 200,
+                "weight": 0.30,
+            },
+            {
+                "code": "DEMO-BT-WHITE",
+                "spec_desc": "白色",
+                "price": 299,
+                "cost_price": 180,
+                "stock": 150,
+                "weight": 0.30,
+            },
         ],
     },
     {
@@ -96,8 +140,22 @@ DEMO_PRODUCTS = [
         "category_name": "智能穿戴",
         "unit": "块",
         "skus": [
-            {"code": "DEMO-WATCH-BLACK-SPORT", "spec_desc": "午夜黑-运动款", "price": 599, "cost_price": 350, "stock": 100, "weight": 0.25},
-            {"code": "DEMO-WATCH-BLACK-LEATHER", "spec_desc": "午夜黑-皮质款", "price": 699, "cost_price": 400, "stock": 80, "weight": 0.28},
+            {
+                "code": "DEMO-WATCH-BLACK-SPORT",
+                "spec_desc": "午夜黑-运动款",
+                "price": 599,
+                "cost_price": 350,
+                "stock": 100,
+                "weight": 0.25,
+            },
+            {
+                "code": "DEMO-WATCH-BLACK-LEATHER",
+                "spec_desc": "午夜黑-皮质款",
+                "price": 699,
+                "cost_price": 400,
+                "stock": 80,
+                "weight": 0.28,
+            },
         ],
     },
     {
@@ -108,8 +166,22 @@ DEMO_PRODUCTS = [
         "category_name": "男装",
         "unit": "件",
         "skus": [
-            {"code": "DEMO-JACKET-BLUE-L", "spec_desc": "深蓝-L", "price": 259, "cost_price": 130, "stock": 80, "weight": 0.50},
-            {"code": "DEMO-JACKET-BLUE-XL", "spec_desc": "深蓝-XL", "price": 279, "cost_price": 140, "stock": 50, "weight": 0.55},
+            {
+                "code": "DEMO-JACKET-BLUE-L",
+                "spec_desc": "深蓝-L",
+                "price": 259,
+                "cost_price": 130,
+                "stock": 80,
+                "weight": 0.50,
+            },
+            {
+                "code": "DEMO-JACKET-BLUE-XL",
+                "spec_desc": "深蓝-XL",
+                "price": 279,
+                "cost_price": 140,
+                "stock": 50,
+                "weight": 0.55,
+            },
         ],
     },
     {
@@ -120,8 +192,22 @@ DEMO_PRODUCTS = [
         "category_name": "家居用品",
         "unit": "个",
         "skus": [
-            {"code": "DEMO-CUP-WHITE", "spec_desc": "极光白", "price": 89, "cost_price": 45, "stock": 300, "weight": 0.35},
-            {"code": "DEMO-CUP-BLACK", "spec_desc": "曜石黑", "price": 89, "cost_price": 45, "stock": 250, "weight": 0.35},
+            {
+                "code": "DEMO-CUP-WHITE",
+                "spec_desc": "极光白",
+                "price": 89,
+                "cost_price": 45,
+                "stock": 300,
+                "weight": 0.35,
+            },
+            {
+                "code": "DEMO-CUP-BLACK",
+                "spec_desc": "曜石黑",
+                "price": 89,
+                "cost_price": 45,
+                "stock": 250,
+                "weight": 0.35,
+            },
         ],
     },
     {
@@ -132,8 +218,22 @@ DEMO_PRODUCTS = [
         "category_name": "护肤品",
         "unit": "瓶",
         "skus": [
-            {"code": "DEMO-BTL-30ML", "spec_desc": "30ml", "price": 168, "cost_price": 80, "stock": 180, "weight": 0.12},
-            {"code": "DEMO-BTL-50ML", "spec_desc": "50ml", "price": 238, "cost_price": 120, "stock": 120, "weight": 0.15},
+            {
+                "code": "DEMO-BTL-30ML",
+                "spec_desc": "30ml",
+                "price": 168,
+                "cost_price": 80,
+                "stock": 180,
+                "weight": 0.12,
+            },
+            {
+                "code": "DEMO-BTL-50ML",
+                "spec_desc": "50ml",
+                "price": 238,
+                "cost_price": 120,
+                "stock": 120,
+                "weight": 0.15,
+            },
         ],
     },
     {
@@ -144,8 +244,22 @@ DEMO_PRODUCTS = [
         "category_name": "休闲零食",
         "unit": "袋",
         "skus": [
-            {"code": "DEMO-NUT-1KG", "spec_desc": "1kg", "price": 128, "cost_price": 75, "stock": 500, "weight": 1.0},
-            {"code": "DEMO-NUT-500G", "spec_desc": "500g", "price": 69, "cost_price": 40, "stock": 600, "weight": 0.5},
+            {
+                "code": "DEMO-NUT-1KG",
+                "spec_desc": "1kg",
+                "price": 128,
+                "cost_price": 75,
+                "stock": 500,
+                "weight": 1.0,
+            },
+            {
+                "code": "DEMO-NUT-500G",
+                "spec_desc": "500g",
+                "price": 69,
+                "cost_price": 40,
+                "stock": 600,
+                "weight": 0.5,
+            },
         ],
     },
     {
@@ -156,8 +270,22 @@ DEMO_PRODUCTS = [
         "category_name": "运动户外",
         "unit": "张",
         "skus": [
-            {"code": "DEMO-YOGA-MAT-PURPLE-10", "spec_desc": "深紫-10mm", "price": 99, "cost_price": 45, "stock": 350, "weight": 0.8},
-            {"code": "DEMO-YOGA-MAT-BLUE-10", "spec_desc": "湖蓝-10mm", "price": 99, "cost_price": 45, "stock": 300, "weight": 0.8},
+            {
+                "code": "DEMO-YOGA-MAT-PURPLE-10",
+                "spec_desc": "深紫-10mm",
+                "price": 99,
+                "cost_price": 45,
+                "stock": 350,
+                "weight": 0.8,
+            },
+            {
+                "code": "DEMO-YOGA-MAT-BLUE-10",
+                "spec_desc": "湖蓝-10mm",
+                "price": 99,
+                "cost_price": 45,
+                "stock": 300,
+                "weight": 0.8,
+            },
         ],
     },
 ]
@@ -165,6 +293,7 @@ DEMO_PRODUCTS = [
 
 class DemoDataSummary:
     """Demo seed 执行摘要"""
+
     def __init__(self):
         self.products_created = 0
         self.products_updated = 0
@@ -188,7 +317,10 @@ class DemoDataSummary:
 
 # ── 辅助函数 ────────────────────────────────────────────────────────
 
-async def get_or_create(session: AsyncSession, model, defaults: dict | None = None, **filters):
+
+async def get_or_create(
+    session: AsyncSession, model, defaults: dict | None = None, **filters
+):
     stmt = select(model).filter_by(**filters)
     result = await session.execute(stmt)
     instance = result.scalar_one_or_none()
@@ -224,7 +356,8 @@ async def ensure_admin_user(session: AsyncSession):
 async def ensure_demo_user(session: AsyncSession):
     """创建或更新 demo 用户"""
     user, created = await get_or_create(
-        session, User,
+        session,
+        User,
         defaults=dict(
             password_hash=hash_password("demo123"),
             display_name="Demo 演示用户",
@@ -246,7 +379,8 @@ async def ensure_permissions(session: AsyncSession):
     count = 0
     for item in SEED_PERMISSIONS:
         _, created = await get_or_create(
-            session, Permission,
+            session,
+            Permission,
             defaults={"name": item["name"], "module": item["module"]},
             code=item["code"],
         )
@@ -265,8 +399,11 @@ async def ensure_platforms(session: AsyncSession):
     created_ids = []
     for name, code, api_base, sort_order in platforms_data:
         plat, created = await get_or_create(
-            session, Platform,
-            defaults=dict(name=name, api_base_url=api_base, sort_order=sort_order, status=1),
+            session,
+            Platform,
+            defaults=dict(
+                name=name, api_base_url=api_base, sort_order=sort_order, status=1
+            ),
             code=code,
         )
         created_ids.append(plat.id)
@@ -287,7 +424,8 @@ async def ensure_categories(session: AsyncSession):
     name_id_map = {}
     for name, parent_id, level, sort in cats:
         cat, _ = await get_or_create(
-            session, Category,
+            session,
+            Category,
             defaults=dict(parent_id=parent_id, level=level, sort_order=sort, status=1),
             name=name,
         )
@@ -298,10 +436,17 @@ async def ensure_categories(session: AsyncSession):
 async def ensure_brands(session: AsyncSession):
     """创建演示品牌"""
     brands = [
-        "TechPro", "NatureHome", "StyleWear", "BeautyGlow", "FreshFood", "SportMax",
+        "TechPro",
+        "NatureHome",
+        "StyleWear",
+        "BeautyGlow",
+        "FreshFood",
+        "SportMax",
     ]
     for name in brands:
-        await get_or_create(session, Brand, defaults=dict(status=1, sort_order=0), name=name)
+        await get_or_create(
+            session, Brand, defaults=dict(status=1, sort_order=0), name=name
+        )
 
 
 async def ensure_suppliers(session: AsyncSession):
@@ -314,7 +459,8 @@ async def ensure_suppliers(session: AsyncSession):
     supplier_ids = {}
     for name, code in suppliers_data:
         sup, created = await get_or_create(
-            session, Supplier,
+            session,
+            Supplier,
             defaults=dict(status=1),
             name=name,
         )
@@ -322,83 +468,116 @@ async def ensure_suppliers(session: AsyncSession):
     return supplier_ids
 
 
-async def ensure_shipping_providers_and_rules(session: AsyncSession, summary: DemoDataSummary):
+async def ensure_shipping_providers_and_rules(
+    session: AsyncSession, summary: DemoDataSummary
+):
     """创建物流供应商、渠道、区域和报价规则"""
     # 供应商 CDEK
     cdek, _ = await get_or_create(
-        session, ShippingProvider,
+        session,
+        ShippingProvider,
         defaults=dict(code="CDEK", status=1, remark="Demo CDEK 物流"),
         name="CDEK",
     )
     # 俄语速运
     rus_post, _ = await get_or_create(
-        session, ShippingProvider,
+        session,
+        ShippingProvider,
         defaults=dict(code="RUS_POST", status=1, remark="Demo 俄罗斯邮政"),
         name="Russian Post",
     )
     # Shopee Xpress
     shx, _ = await get_or_create(
-        session, ShippingProvider,
+        session,
+        ShippingProvider,
         defaults=dict(code="SHX", status=1, remark="Demo Shopee Xpress"),
         name="Shopee Xpress",
     )
 
     # 渠道
     cdek_eco, _ = await get_or_create(
-        session, ShippingChannel,
+        session,
+        ShippingChannel,
         defaults=dict(
-            provider_id=cdek.id, code="CDEK_ECO", volumetric_divisor=6000,
-            cargo_types=["normal"], estimated_delivery_min=10, estimated_delivery_max=20,
-            currency="CNY", status=1,
+            provider_id=cdek.id,
+            code="CDEK_ECO",
+            volumetric_divisor=6000,
+            cargo_types=["normal"],
+            estimated_delivery_min=10,
+            estimated_delivery_max=20,
+            currency="CNY",
+            status=1,
         ),
         name="CDEK Economy",
     )
     cdek_std, _ = await get_or_create(
-        session, ShippingChannel,
+        session,
+        ShippingChannel,
         defaults=dict(
-            provider_id=cdek.id, code="CDEK_STD", volumetric_divisor=6000,
-            cargo_types=["normal"], estimated_delivery_min=7, estimated_delivery_max=14,
-            currency="CNY", status=1,
+            provider_id=cdek.id,
+            code="CDEK_STD",
+            volumetric_divisor=6000,
+            cargo_types=["normal"],
+            estimated_delivery_min=7,
+            estimated_delivery_max=14,
+            currency="CNY",
+            status=1,
         ),
         name="CDEK Standard",
     )
     rus_ems, _ = await get_or_create(
-        session, ShippingChannel,
+        session,
+        ShippingChannel,
         defaults=dict(
-            provider_id=rus_post.id, code="RUS_EMS", volumetric_divisor=6000,
-            cargo_types=["normal"], estimated_delivery_min=14, estimated_delivery_max=28,
-            currency="CNY", status=1,
+            provider_id=rus_post.id,
+            code="RUS_EMS",
+            volumetric_divisor=6000,
+            cargo_types=["normal"],
+            estimated_delivery_min=14,
+            estimated_delivery_max=28,
+            currency="CNY",
+            status=1,
         ),
         name="EMS",
     )
     shx_std, _ = await get_or_create(
-        session, ShippingChannel,
+        session,
+        ShippingChannel,
         defaults=dict(
-            provider_id=shx.id, code="SHX_STD", volumetric_divisor=6000,
-            cargo_types=["normal"], estimated_delivery_min=5, estimated_delivery_max=10,
-            currency="SGD", status=1,
+            provider_id=shx.id,
+            code="SHX_STD",
+            volumetric_divisor=6000,
+            cargo_types=["normal"],
+            estimated_delivery_min=5,
+            estimated_delivery_max=10,
+            currency="SGD",
+            status=1,
         ),
         name="Standard",
     )
 
     # 区域：RU
     ru_zone, _ = await get_or_create(
-        session, ShippingZone,
+        session,
+        ShippingZone,
         defaults=dict(country_code="RU", status=1),
         channel_id=cdek_eco.id,
     )
     ru_zone2, _ = await get_or_create(
-        session, ShippingZone,
+        session,
+        ShippingZone,
         defaults=dict(country_code="RU", status=1),
         channel_id=cdek_std.id,
     )
     ru_zone3, _ = await get_or_create(
-        session, ShippingZone,
+        session,
+        ShippingZone,
         defaults=dict(country_code="RU", status=1),
         channel_id=rus_ems.id,
     )
     sg_zone, _ = await get_or_create(
-        session, ShippingZone,
+        session,
+        ShippingZone,
         defaults=dict(country_code="SG", status=1),
         channel_id=shx_std.id,
     )
@@ -407,15 +586,26 @@ async def ensure_shipping_providers_and_rules(session: AsyncSession, summary: De
     rules_specs = [
         (cdek_eco.id, ru_zone.id, "fixed_plus_per_kg", 1, Decimal("20"), Decimal("2")),
         (cdek_std.id, ru_zone2.id, "fixed_plus_per_kg", 1, Decimal("25"), Decimal("3")),
-        (rus_ems.id, ru_zone3.id, "fixed_plus_per_kg", 1, Decimal("15"), Decimal("1.5")),
+        (
+            rus_ems.id,
+            ru_zone3.id,
+            "fixed_plus_per_kg",
+            1,
+            Decimal("15"),
+            Decimal("1.5"),
+        ),
         (shx_std.id, sg_zone.id, "first_weight_plus_increment", 1, Decimal("3"), 0),
     ]
 
     for ch_id, z_id, rtype, pri, base, per_kg in rules_specs:
         # first_weight_plus_increment needs first_kg
         defaults = dict(
-            rule_type=rtype, priority=pri, first_kg=Decimal("0.5"),
-            first_price=base, per_kg_price=per_kg, status=1,
+            rule_type=rtype,
+            priority=pri,
+            first_kg=Decimal("0.5"),
+            first_price=base,
+            per_kg_price=per_kg,
+            status=1,
         )
         # Use very specific filter: we need a unique identifier
         existing = await session.execute(
@@ -426,9 +616,7 @@ async def ensure_shipping_providers_and_rules(session: AsyncSession, summary: De
             )
         )
         if not existing.scalar_one_or_none():
-            rule = ShippingQuoteRule(
-                channel_id=ch_id, zone_id=z_id, **defaults
-            )
+            rule = ShippingQuoteRule(channel_id=ch_id, zone_id=z_id, **defaults)
             session.add(rule)
             summary.shipping_rules_seeded += 1
 
@@ -439,15 +627,38 @@ async def ensure_shipping_providers_and_rules(session: AsyncSession, summary: De
 async def ensure_platform_fee_rules(session: AsyncSession, summary: DemoDataSummary):
     """创建平台费用规则"""
     # 获取 platform IDs
-    platforms = {p.name: p.id for p in (await session.execute(select(Platform))).scalars().all()}
+    platforms = {
+        p.name: p.id for p in (await session.execute(select(Platform))).scalars().all()
+    }
 
     rules = [
         (platforms.get("Ozon"), None, "RU", Decimal("10"), Decimal("1"), Decimal("0")),
         (platforms.get("Ozon"), None, None, Decimal("12"), Decimal("1"), Decimal("0")),
         (platforms.get("Shopee"), None, "SG", Decimal("8"), Decimal("2"), Decimal("0")),
-        (platforms.get("Shopee"), None, None, Decimal("10"), Decimal("2"), Decimal("0")),
-        (platforms.get("Wildberries"), None, "RU", Decimal("15"), Decimal("1"), Decimal("0")),
-        (platforms.get("Wildberries"), None, None, Decimal("15"), Decimal("1"), Decimal("0")),
+        (
+            platforms.get("Shopee"),
+            None,
+            None,
+            Decimal("10"),
+            Decimal("2"),
+            Decimal("0"),
+        ),
+        (
+            platforms.get("Wildberries"),
+            None,
+            "RU",
+            Decimal("15"),
+            Decimal("1"),
+            Decimal("0"),
+        ),
+        (
+            platforms.get("Wildberries"),
+            None,
+            None,
+            Decimal("15"),
+            Decimal("1"),
+            Decimal("0"),
+        ),
     ]
 
     for pid, cat_id, country_code, fee_rate_pct, fixed_amount, _ in rules:
@@ -501,18 +712,26 @@ async def ensure_csv_order_adapter(session: AsyncSession):
     await session.flush()
 
 
-async def ensure_demo_products_and_skus(session: AsyncSession, summary: DemoDataSummary):
+async def ensure_demo_products_and_skus(
+    session: AsyncSession, summary: DemoDataSummary
+):
     """创建 demo 商品和 SKU"""
-    brands_map = {b.name: b.id for b in (await session.execute(select(Brand))).scalars().all()}
-    categories_map = {c.name: c.id for c in (await session.execute(select(Category))).scalars().all()}
+    brands_map = {
+        b.name: b.id for b in (await session.execute(select(Brand))).scalars().all()
+    }
+    categories_map = {
+        c.name: c.id for c in (await session.execute(select(Category))).scalars().all()
+    }
 
     for prod_data in DEMO_PRODUCTS:
         brand_id = brands_map.get(prod_data["brand_name"], 0)
         cat_id = categories_map.get(prod_data["category_name"], 0)
 
-        existing = (await session.execute(
-            select(Product).where(Product.name == prod_data["name"])
-        )).scalar_one_or_none()
+        existing = (
+            await session.execute(
+                select(Product).where(Product.name == prod_data["name"])
+            )
+        ).scalar_one_or_none()
         if existing:
             product = existing
         else:
@@ -530,9 +749,9 @@ async def ensure_demo_products_and_skus(session: AsyncSession, summary: DemoData
             summary.products_created += 1
 
         for sku_data in prod_data["skus"]:
-            existing_sku = (await session.execute(
-                select(Sku).where(Sku.code == sku_data["code"])
-            )).scalar_one_or_none()
+            existing_sku = (
+                await session.execute(select(Sku).where(Sku.code == sku_data["code"]))
+            ).scalar_one_or_none()
             if existing_sku:
                 sku = existing_sku
             else:
@@ -552,9 +771,11 @@ async def ensure_demo_products_and_skus(session: AsyncSession, summary: DemoData
                 summary.skus_created += 1
 
             # 库存
-            existing_inv = (await session.execute(
-                select(Inventory).where(Inventory.sku_id == sku.id)
-            )).scalar_one_or_none()
+            existing_inv = (
+                await session.execute(
+                    select(Inventory).where(Inventory.sku_id == sku.id)
+                )
+            ).scalar_one_or_none()
             if not existing_inv:
                 inv = Inventory(
                     sku_id=sku.id,
@@ -569,6 +790,7 @@ async def ensure_demo_products_and_skus(session: AsyncSession, summary: DemoData
 
 
 # ── 主函数 ──────────────────────────────────────────────────────────
+
 
 async def load_demo_data(session: AsyncSession) -> DemoDataSummary:
     """加载全部 demo 数据。幂等可重复执行。"""
@@ -613,7 +835,9 @@ async def load_demo_data(session: AsyncSession) -> DemoDataSummary:
     await ensure_demo_products_and_skus(session, summary)
 
     # demo CSV 路径
-    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    repo_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     demo_dir = os.path.join(repo_root, "docs", "demo-data")
     summary.csv_paths = [
         os.path.join(demo_dir, "order_import_demo.csv"),
@@ -627,11 +851,13 @@ async def load_demo_data(session: AsyncSession) -> DemoDataSummary:
 async def main():
     """CLI 入口"""
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
-    print(f"\n{'='*55}")
+    print(f"\n{'=' * 55}")
     print("  凌镜 LingMirror Demo 数据加载")
-    print(f"{'='*55}\n")
+    print(f"{'=' * 55}\n")
     print(f"📦 数据库: {settings.DATABASE_URL}")
     print("🔄 连接中...")
 
@@ -645,9 +871,9 @@ async def main():
             summary = await load_demo_data(session)
             await session.commit()
 
-            print(f"\n{'='*55}")
+            print(f"\n{'=' * 55}")
             print("  ✅ Demo 数据加载完成！")
-            print(f"{'='*55}")
+            print(f"{'=' * 55}")
             print()
             print(summary)
 

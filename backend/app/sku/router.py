@@ -22,7 +22,10 @@ def spec_name_to_vo(spec) -> SpecNameVO:
         id=spec.id,
         name=spec.name,
         sort_order=spec.sort_order,
-        values=[SpecValueVO(id=v.id, value=v.value, sort_order=v.sort_order) for v in spec.values],
+        values=[
+            SpecValueVO(id=v.id, value=v.value, sort_order=v.sort_order)
+            for v in spec.values
+        ],
     )
 
 
@@ -41,10 +44,16 @@ def sku_to_vo(sku, stock=None) -> SkuVO:
         lock_stock=sku.lock_stock or 0,
         warning_stock=sku.warning_stock or 0,
         weight=float(sku.weight) if sku.weight else None,
-        sku_length_cm=float(sku.sku_length_cm) if sku.sku_length_cm is not None else None,
+        sku_length_cm=float(sku.sku_length_cm)
+        if sku.sku_length_cm is not None
+        else None,
         sku_width_cm=float(sku.sku_width_cm) if sku.sku_width_cm is not None else None,
-        sku_height_cm=float(sku.sku_height_cm) if sku.sku_height_cm is not None else None,
-        sku_weight_kg=float(sku.sku_weight_kg) if sku.sku_weight_kg is not None else None,
+        sku_height_cm=float(sku.sku_height_cm)
+        if sku.sku_height_cm is not None
+        else None,
+        sku_weight_kg=float(sku.sku_weight_kg)
+        if sku.sku_weight_kg is not None
+        else None,
         image=sku.image,
         status=sku.status,
         created_at=sku.created_at,
@@ -59,7 +68,9 @@ async def define_specs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("sku:create")),
 ):
-    specs = await SpecService.define_specs(db, product_id, [s.model_dump() for s in data.specs])
+    specs = await SpecService.define_specs(
+        db, product_id, [s.model_dump() for s in data.specs]
+    )
     await OperationLogService.log(
         db,
         module="sku",
@@ -112,7 +123,9 @@ async def get_skus(
     stock_by_sku: dict[int, int] = {}
     if sku_ids:
         result = await db.execute(
-            select(Inventory.sku_id, Inventory.quantity).where(Inventory.sku_id.in_(sku_ids))
+            select(Inventory.sku_id, Inventory.quantity).where(
+                Inventory.sku_id.in_(sku_ids)
+            )
         )
         stock_by_sku = {sku_id: quantity for sku_id, quantity in result.all()}
     return Result.ok([sku_to_vo(s, stock_by_sku.get(s.id)) for s in skus])
@@ -138,13 +151,23 @@ async def update_sku(
     )
 
     # Agent 事件：价格变动触发折扣风险检查
-    if data.price is not None and sku.price is not None and float(data.price) != float(sku.price):
-        asyncio.ensure_future(emit_agent_event("price.changed", {
-            "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
-            "original_price": float(sku.price),
-            "new_price": float(data.price),
-            "sku_id": sku_id,
-        }, source="sku.router"))
+    if (
+        data.price is not None
+        and sku.price is not None
+        and float(data.price) != float(sku.price)
+    ):
+        asyncio.ensure_future(
+            emit_agent_event(
+                "price.changed",
+                {
+                    "sku_code": sku.code or sku.spec_desc or f"SKU#{sku.id}",
+                    "original_price": float(sku.price),
+                    "new_price": float(data.price),
+                    "sku_id": sku_id,
+                },
+                source="sku.router",
+            )
+        )
 
     return Result.ok(sku_to_vo(sku))
 

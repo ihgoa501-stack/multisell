@@ -1,4 +1,5 @@
 """1688 货源采集 - Pydantic Schema"""
+
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
@@ -6,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class CollectPayload(BaseModel):
     """油猴脚本采集 payload"""
+
     url: str = Field(..., max_length=1000, description="1688 商品链接")
     title: Optional[str] = Field(None, max_length=500, description="采集标题")
     price: Optional[float] = Field(None, description="采集供货价")
@@ -25,6 +27,7 @@ class CollectPayload(BaseModel):
 
 class Sourcing1688ProductVO(BaseModel):
     """候选池响应视图"""
+
     id: int
     source_url: str
     title: Optional[str] = None
@@ -55,6 +58,7 @@ class Sourcing1688ProductVO(BaseModel):
 
 class ImportPayload(BaseModel):
     """确认导入时的补充信息"""
+
     category_id: Optional[int] = Field(None, description="分类 ID")
     brand_id: Optional[int] = Field(None, description="品牌 ID")
     cargo_type: Optional[str] = Field("normal", description="货品类型")

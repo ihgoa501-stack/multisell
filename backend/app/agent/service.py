@@ -1,4 +1,5 @@
 """Agent 服务层"""
+
 import time
 import logging
 from typing import Optional
@@ -11,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 class AgentService:
-
     @staticmethod
     async def get_decision_logs(
         db: AsyncSession,
@@ -31,7 +31,11 @@ class AgentService:
         total = await db.scalar(count_stmt) or 0
 
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(AgentDecision.created_at.desc()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(AgentDecision.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
         result = await db.execute(stmt)
         logs = result.scalars().all()
         return list(logs), total
@@ -79,7 +83,9 @@ class AgentService:
             stmt = stmt.where(PersonalRule.decision_point == decision_point)
         if status:
             stmt = stmt.where(PersonalRule.status == status)
-        stmt = stmt.order_by(PersonalRule.priority.desc(), PersonalRule.created_at.desc())
+        stmt = stmt.order_by(
+            PersonalRule.priority.desc(), PersonalRule.created_at.desc()
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
@@ -92,7 +98,9 @@ class AgentService:
         return rule
 
     @staticmethod
-    async def update_rule(db: AsyncSession, rule_id: int, user_id: int, data: dict) -> Optional[PersonalRule]:
+    async def update_rule(
+        db: AsyncSession, rule_id: int, user_id: int, data: dict
+    ) -> Optional[PersonalRule]:
         rule = await db.get(PersonalRule, rule_id)
         if not rule or rule.user_id != user_id:
             return None
@@ -105,6 +113,7 @@ class AgentService:
         # 记录状态变更到 rule_mark_change
         if "status" in data and data["status"] != old_status:
             from app.agent.models import RuleMarkChange
+
             change = RuleMarkChange(
                 target_type="personal_rule",
                 target_id=rule.id,
@@ -282,9 +291,13 @@ class AgentService:
                     )
 
                     for ad in action_defs:
-                        action_status = "pending" if (
-                            stage == EvolutionStage.SEMI_AUTONOMOUS and is_high_risk
-                        ) else "executed"
+                        action_status = (
+                            "pending"
+                            if (
+                                stage == EvolutionStage.SEMI_AUTONOMOUS and is_high_risk
+                            )
+                            else "executed"
+                        )
 
                         action = AgentAction(
                             user_id=agent.user_id,
@@ -311,23 +324,30 @@ class AgentService:
 
                 # SEMI_AUTONOMOUS / FULL_AUTONOMOUS: 从 AgentAction 桥接
                 if stage != EvolutionStage.SUGGESTION and actions_created:
-                    for aa in db.new if hasattr(db, 'new') else []:
-                        if hasattr(aa, 'action_type') and hasattr(aa, 'action_payload'):
-                            risk, needs_approval = AgentService._derive_action_risk(aa.action_type, aa.action_payload or {}, stage)
+                    for aa in db.new if hasattr(db, "new") else []:
+                        if hasattr(aa, "action_type") and hasattr(aa, "action_payload"):
+                            risk, needs_approval = AgentService._derive_action_risk(
+                                aa.action_type, aa.action_payload or {}, stage
+                            )
                             payload = ActionProposalCreate(
                                 source_type="agent_action",
-                                source_id=str(getattr(aa, 'id', 0)),
+                                source_id=str(getattr(aa, "id", 0)),
                                 agent_id=agent.agent_id,
                                 squad_id=squad_id,
-                                action_type=AgentService._map_action_type(aa.action_type),
-                                title=aa.summary or f"{agent.agent_id}: {aa.action_type}",
+                                action_type=AgentService._map_action_type(
+                                    aa.action_type
+                                ),
+                                title=aa.summary
+                                or f"{agent.agent_id}: {aa.action_type}",
                                 description=aa.summary or "",
                                 proposed_payload=aa.action_payload or {},
                                 risk_level=risk,
                                 requires_approval=needs_approval,
                                 confidence=0.85,
                             )
-                            await ActionCenterService.create_proposal(db, payload, operator="system")
+                            await ActionCenterService.create_proposal(
+                                db, payload, operator="system"
+                            )
 
                 # SUGGESTION: 从决策输出直接桥接
                 elif stage == EvolutionStage.SUGGESTION and decision:
@@ -336,7 +356,9 @@ class AgentService:
                         source_id=str(decision_id or 0),
                         agent_id=agent.agent_id,
                         squad_id=squad_id,
-                        action_type=AgentService._map_action_type(decision.get("action_type", "notify")),
+                        action_type=AgentService._map_action_type(
+                            decision.get("action_type", "notify")
+                        ),
                         title=f"{agent.agent_id} 建议: {decision.get('summary', decision_point)}",
                         description=decision.get("detail", decision.get("summary", "")),
                         proposed_payload=decision,
@@ -344,7 +366,9 @@ class AgentService:
                         requires_approval=True,
                         confidence=confidence,
                     )
-                    await ActionCenterService.create_proposal(db, payload, operator="system")
+                    await ActionCenterService.create_proposal(
+                        db, payload, operator="system"
+                    )
             except Exception:
                 pass  # 桥接失败不阻塞主流程
 
@@ -360,7 +384,9 @@ class AgentService:
         }
 
     @staticmethod
-    def _is_high_risk_action(agent_id: str, decision: dict, stage: EvolutionStage) -> bool:
+    def _is_high_risk_action(
+        agent_id: str, decision: dict, stage: EvolutionStage
+    ) -> bool:
         """判定是否高风险操作（SEMI_AUTONOMOUS 阶段需审批）"""
         if stage != EvolutionStage.SEMI_AUTONOMOUS:
             return False
@@ -417,8 +443,9 @@ class AgentService:
         from app.agent.base import EvolutionStage
 
         urgency = payload.get("urgency", "")
-        amount = abs(float(payload.get("suggested_qty", 0) or 0)) * \
-                 abs(float(payload.get("cost_price", 0) or 0))
+        amount = abs(float(payload.get("suggested_qty", 0) or 0)) * abs(
+            float(payload.get("cost_price", 0) or 0)
+        )
 
         if stage == EvolutionStage.FULL_AUTONOMOUS:
             return RiskLevel.LOW, False
@@ -434,14 +461,18 @@ class AgentService:
         if action_type == "price_review":
             return RiskLevel.MEDIUM, True
         if action_type == "ad_action":
-            return RiskLevel.CRITICAL if payload.get("status") == "critical" else RiskLevel.MEDIUM, False
+            return RiskLevel.CRITICAL if payload.get(
+                "status"
+            ) == "critical" else RiskLevel.MEDIUM, False
         if amount > 5000:
             return RiskLevel.HIGH, True
 
         return RiskLevel.MEDIUM, True
 
     @staticmethod
-    async def get_or_create_honcho_profile(db: AsyncSession, user_id: int) -> HonchoProfile:
+    async def get_or_create_honcho_profile(
+        db: AsyncSession, user_id: int
+    ) -> HonchoProfile:
         stmt = select(HonchoProfile).where(HonchoProfile.user_id == user_id)
         result = await db.execute(stmt)
         profile = result.scalar_one_or_none()
@@ -453,7 +484,9 @@ class AgentService:
         return profile
 
     @staticmethod
-    async def update_honcho_profile(db: AsyncSession, user_id: int, data: dict) -> Optional[HonchoProfile]:
+    async def update_honcho_profile(
+        db: AsyncSession, user_id: int, data: dict
+    ) -> Optional[HonchoProfile]:
         profile = await AgentService.get_or_create_honcho_profile(db, user_id)
         for k, v in data.items():
             if v is not None:
@@ -478,7 +511,9 @@ class AgentService:
         total = await db.scalar(count_stmt) or 0
 
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(AgentEpisode.ended_at.desc()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(AgentEpisode.ended_at.desc()).offset(offset).limit(page_size)
+        )
         result = await db.execute(stmt)
         episodes = result.scalars().all()
         return list(episodes), total
@@ -511,11 +546,16 @@ class AgentService:
             by_agent[d.agent_id] = by_agent.get(d.agent_id, 0) + 1
 
         # ── 待确认决策（ignored 且 recent） ──
-        pending_stmt = select(AgentDecision).where(
-            AgentDecision.user_id == user_id,
-            AgentDecision.user_action == "ignored",
-            AgentDecision.created_at >= seven_days_ago,
-        ).order_by(AgentDecision.created_at.desc()).limit(20)
+        pending_stmt = (
+            select(AgentDecision)
+            .where(
+                AgentDecision.user_id == user_id,
+                AgentDecision.user_action == "ignored",
+                AgentDecision.created_at >= seven_days_ago,
+            )
+            .order_by(AgentDecision.created_at.desc())
+            .limit(20)
+        )
         pending_result = await db.execute(pending_stmt)
         pending_decisions = pending_result.scalars().all()
 
@@ -528,75 +568,110 @@ class AgentService:
             if d.agent_id == "A5":
                 status = output.get("stock_status", decision.get("stock_status", ""))
                 if status == "red":
-                    risk_items.append({
-                        "agent_id": "A5",
-                        "decision_id": d.id,
-                        "risk_type": "即将断货",
-                        "sku": output.get("sku_code", decision.get("sku_code", "")),
-                        "detail": output.get("risk_reason", decision.get("risk_reason", "")),
-                        "severity": "high",
-                        "created_at": d.created_at.isoformat() if d.created_at else None,
-                    })
+                    risk_items.append(
+                        {
+                            "agent_id": "A5",
+                            "decision_id": d.id,
+                            "risk_type": "即将断货",
+                            "sku": output.get("sku_code", decision.get("sku_code", "")),
+                            "detail": output.get(
+                                "risk_reason", decision.get("risk_reason", "")
+                            ),
+                            "severity": "high",
+                            "created_at": d.created_at.isoformat()
+                            if d.created_at
+                            else None,
+                        }
+                    )
                 elif status == "yellow":
-                    risk_items.append({
-                        "agent_id": "A5",
-                        "decision_id": d.id,
-                        "risk_type": "库存预警",
-                        "sku": output.get("sku_code", decision.get("sku_code", "")),
-                        "detail": output.get("risk_reason", decision.get("risk_reason", "")),
-                        "severity": "medium",
-                        "created_at": d.created_at.isoformat() if d.created_at else None,
-                    })
+                    risk_items.append(
+                        {
+                            "agent_id": "A5",
+                            "decision_id": d.id,
+                            "risk_type": "库存预警",
+                            "sku": output.get("sku_code", decision.get("sku_code", "")),
+                            "detail": output.get(
+                                "risk_reason", decision.get("risk_reason", "")
+                            ),
+                            "severity": "medium",
+                            "created_at": d.created_at.isoformat()
+                            if d.created_at
+                            else None,
+                        }
+                    )
 
             elif d.agent_id == "G3":
                 action = output.get("action", decision.get("action", ""))
                 if action == "block":
-                    risk_items.append({
-                        "agent_id": "G3",
-                        "decision_id": d.id,
-                        "risk_type": "折扣风险（已阻断）",
-                        "sku": output.get("sku_code", decision.get("sku_code", "")),
-                        "detail": output.get("reason", decision.get("reason", "")),
-                        "severity": "high",
-                        "created_at": d.created_at.isoformat() if d.created_at else None,
-                    })
+                    risk_items.append(
+                        {
+                            "agent_id": "G3",
+                            "decision_id": d.id,
+                            "risk_type": "折扣风险（已阻断）",
+                            "sku": output.get("sku_code", decision.get("sku_code", "")),
+                            "detail": output.get("reason", decision.get("reason", "")),
+                            "severity": "high",
+                            "created_at": d.created_at.isoformat()
+                            if d.created_at
+                            else None,
+                        }
+                    )
                 elif action == "warn":
-                    risk_items.append({
-                        "agent_id": "G3",
-                        "decision_id": d.id,
-                        "risk_type": "折扣风险（预警）",
-                        "sku": output.get("sku_code", decision.get("sku_code", "")),
-                        "detail": output.get("reason", decision.get("reason", "")),
-                        "severity": "medium",
-                        "created_at": d.created_at.isoformat() if d.created_at else None,
-                    })
+                    risk_items.append(
+                        {
+                            "agent_id": "G3",
+                            "decision_id": d.id,
+                            "risk_type": "折扣风险（预警）",
+                            "sku": output.get("sku_code", decision.get("sku_code", "")),
+                            "detail": output.get("reason", decision.get("reason", "")),
+                            "severity": "medium",
+                            "created_at": d.created_at.isoformat()
+                            if d.created_at
+                            else None,
+                        }
+                    )
 
             elif d.agent_id == "A6":
                 is_loss = output.get("is_loss", decision.get("is_loss", False))
-                below = output.get("below_threshold", decision.get("below_threshold", False))
+                below = output.get(
+                    "below_threshold", decision.get("below_threshold", False)
+                )
                 if is_loss:
-                    risk_items.append({
-                        "agent_id": "A6",
-                        "decision_id": d.id,
-                        "risk_type": "亏损 SKU",
-                        "sku": output.get("sku_code", decision.get("sku_code", "")),
-                        "detail": output.get("anomaly_reason", decision.get("anomaly_reason", "")),
-                        "severity": "high",
-                        "created_at": d.created_at.isoformat() if d.created_at else None,
-                    })
+                    risk_items.append(
+                        {
+                            "agent_id": "A6",
+                            "decision_id": d.id,
+                            "risk_type": "亏损 SKU",
+                            "sku": output.get("sku_code", decision.get("sku_code", "")),
+                            "detail": output.get(
+                                "anomaly_reason", decision.get("anomaly_reason", "")
+                            ),
+                            "severity": "high",
+                            "created_at": d.created_at.isoformat()
+                            if d.created_at
+                            else None,
+                        }
+                    )
                 elif below:
-                    risk_items.append({
-                        "agent_id": "A6",
-                        "decision_id": d.id,
-                        "risk_type": "低毛利 SKU",
-                        "sku": output.get("sku_code", decision.get("sku_code", "")),
-                        "detail": output.get("anomaly_reason", decision.get("anomaly_reason", "")),
-                        "severity": "medium",
-                        "created_at": d.created_at.isoformat() if d.created_at else None,
-                    })
+                    risk_items.append(
+                        {
+                            "agent_id": "A6",
+                            "decision_id": d.id,
+                            "risk_type": "低毛利 SKU",
+                            "sku": output.get("sku_code", decision.get("sku_code", "")),
+                            "detail": output.get(
+                                "anomaly_reason", decision.get("anomaly_reason", "")
+                            ),
+                            "severity": "medium",
+                            "created_at": d.created_at.isoformat()
+                            if d.created_at
+                            else None,
+                        }
+                    )
 
         # ── 规则健康概览（从 PersonalRule 统计） ──
         from app.agent.models import PersonalRule
+
         rules_stmt = select(PersonalRule).where(
             PersonalRule.user_id == user_id,
         )

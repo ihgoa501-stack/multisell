@@ -10,15 +10,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    Sku, Inventory,
-    Warehouse, AllocationRule, InventoryWarehouse,
+    Sku,
+    Inventory,
+    Warehouse,
+    AllocationRule,
+    InventoryWarehouse,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class WarehouseService:
-
     @staticmethod
     async def create(db: AsyncSession, data: dict) -> Warehouse:
         warehouse = Warehouse(**data)
@@ -28,7 +30,9 @@ class WarehouseService:
         return warehouse
 
     @staticmethod
-    async def update(db: AsyncSession, warehouse_id: int, data: dict) -> Optional[Warehouse]:
+    async def update(
+        db: AsyncSession, warehouse_id: int, data: dict
+    ) -> Optional[Warehouse]:
         wh = await db.get(Warehouse, warehouse_id)
         if not wh:
             return None
@@ -61,7 +65,6 @@ class WarehouseService:
 
 
 class AllocationService:
-
     @staticmethod
     async def create_rule(db: AsyncSession, data: dict) -> AllocationRule:
         rule = AllocationRule(**data)
@@ -95,39 +98,41 @@ class AllocationService:
 
     @staticmethod
     async def get_warehouse_inventory(
-        db: AsyncSession, sku_id: int,
+        db: AsyncSession,
+        sku_id: int,
     ) -> list[dict]:
         """查询SKU在各仓库的库存分布"""
-        stmt = select(InventoryWarehouse).where(
-            InventoryWarehouse.sku_id == sku_id
-        )
+        stmt = select(InventoryWarehouse).where(InventoryWarehouse.sku_id == sku_id)
         result = await db.execute(stmt)
         records = result.scalars().all()
 
         rows = []
         for r in records:
             wh = await db.get(Warehouse, r.warehouse_id)
-            rows.append({
-                "id": r.id,
-                "sku_id": r.sku_id,
-                "warehouse_id": r.warehouse_id,
-                "warehouse_name": wh.name if wh else "未知仓库",
-                "quantity": r.quantity,
-                "locked_quantity": r.locked_quantity,
-                "safety_stock": r.safety_stock,
-                "available_qty": max(r.quantity - r.locked_quantity, 0),
-            })
+            rows.append(
+                {
+                    "id": r.id,
+                    "sku_id": r.sku_id,
+                    "warehouse_id": r.warehouse_id,
+                    "warehouse_name": wh.name if wh else "未知仓库",
+                    "quantity": r.quantity,
+                    "locked_quantity": r.locked_quantity,
+                    "safety_stock": r.safety_stock,
+                    "available_qty": max(r.quantity - r.locked_quantity, 0),
+                }
+            )
         return rows
 
     @staticmethod
     async def allocate(
-        db: AsyncSession, sku_id: int, warehouse_id: int, quantity: int,
+        db: AsyncSession,
+        sku_id: int,
+        warehouse_id: int,
+        quantity: int,
     ) -> dict:
         """将库存从总库存分配到指定仓库"""
         # 获取总库存
-        inv = await db.execute(
-            select(Inventory).where(Inventory.sku_id == sku_id)
-        )
+        inv = await db.execute(select(Inventory).where(Inventory.sku_id == sku_id))
         total_inv = inv.scalar_one_or_none()
         if not total_inv:
             raise ValueError("SKU库存不存在")
@@ -181,9 +186,7 @@ class AllocationService:
         )
         rules = rules.scalars().all()
 
-        inv = await db.execute(
-            select(Inventory).where(Inventory.sku_id == sku_id)
-        )
+        inv = await db.execute(select(Inventory).where(Inventory.sku_id == sku_id))
         total_inv = inv.scalar_one_or_none()
         if not total_inv:
             raise ValueError("SKU库存不存在")
@@ -229,13 +232,13 @@ class AllocationService:
 
         warehouses = []
         for i, (name, code, addr) in enumerate(mock_warehouses):
-            existing = await db.execute(
-                select(Warehouse).where(Warehouse.code == code)
-            )
+            existing = await db.execute(select(Warehouse).where(Warehouse.code == code))
             existing_wh = existing.scalar_one_or_none()
             if not existing_wh:
                 wh = Warehouse(
-                    name=name, code=code, address=addr,
+                    name=name,
+                    code=code,
+                    address=addr,
                     is_default=1 if i == 0 else 0,
                 )
                 db.add(wh)
@@ -261,8 +264,11 @@ class AllocationService:
             )
             if not rule_check.scalar_one_or_none():
                 rule = AllocationRule(
-                    name=name, priority=pri, rule_type=rtype,
-                    warehouse_id=wid, allocation_pct=pct,
+                    name=name,
+                    priority=pri,
+                    rule_type=rtype,
+                    warehouse_id=wid,
+                    allocation_pct=pct,
                 )
                 db.add(rule)
                 created_rules += 1

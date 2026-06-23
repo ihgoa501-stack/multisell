@@ -47,7 +47,9 @@ async def set_price(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("price:update")),
 ):
-    p = await PriceService.set_price(db, data.sku_id, data.price_type, data.price, data.start_time, data.end_time)
+    p = await PriceService.set_price(
+        db, data.sku_id, data.price_type, data.price, data.start_time, data.end_time
+    )
     await OperationLogService.log(
         db,
         module="price",
@@ -98,7 +100,9 @@ async def get_current_price(
     price = await PriceService.get_current_price(db, sku_id)
     if not price:
         return Result.ok({"sku_id": sku_id, "price": None, "price_type": None})
-    return Result.ok({"sku_id": sku_id, "price": float(price.price), "price_type": price.price_type})
+    return Result.ok(
+        {"sku_id": sku_id, "price": float(price.price), "price_type": price.price_type}
+    )
 
 
 @router.get("/skus/{sku_id}/price-history", summary="调价历史")

@@ -50,10 +50,10 @@ class ReturnSyncWorker:
     async def _tick(self):
         async with async_session_factory() as db:
             platforms = (
-                await db.execute(
-                    select(Platform).where(Platform.status == 1)
-                )
-            ).scalars().all()
+                (await db.execute(select(Platform).where(Platform.status == 1)))
+                .scalars()
+                .all()
+            )
 
             for platform in platforms:
                 adapter = get_listing_adapter(platform.code)
@@ -67,9 +67,7 @@ class ReturnSyncWorker:
                     for r in returns:
                         await self._upsert_return(db, r)
                 except Exception:
-                    logger.exception(
-                        "Failed to fetch returns for %s", platform.code
-                    )
+                    logger.exception("Failed to fetch returns for %s", platform.code)
             await db.commit()
 
     async def _upsert_return(self, db: AsyncSession, r: dict):
@@ -83,9 +81,7 @@ class ReturnSyncWorker:
 
         # Look up local Order by order_no
         order = (
-            await db.execute(
-                select(Order).where(Order.order_no == order_sn)
-            )
+            await db.execute(select(Order).where(Order.order_no == order_sn))
         ).scalar_one_or_none()
 
         if not order:
@@ -102,7 +98,8 @@ class ReturnSyncWorker:
         if not sku:
             logger.warning(
                 "SKU %s not found for return %s — skipping",
-                sku_code, return_id,
+                sku_code,
+                return_id,
             )
             return
 
@@ -119,7 +116,8 @@ class ReturnSyncWorker:
         if existing:
             logger.debug(
                 "Return %s already exists as AfterSalesOrder %s — skipping",
-                return_id, existing.id,
+                return_id,
+                existing.id,
             )
             return
 
@@ -137,5 +135,8 @@ class ReturnSyncWorker:
         await db.flush()
         logger.info(
             "Created AfterSalesOrder %s for return %s (order=%s, sku=%s)",
-            rma.id, return_id, order_sn, sku_code,
+            rma.id,
+            return_id,
+            order_sn,
+            sku_code,
         )

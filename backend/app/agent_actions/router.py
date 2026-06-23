@@ -28,7 +28,9 @@ async def create_agent_action(
     current_user: User = Depends(require_permission("agent_action:propose")),
 ):
     result = await AgentActionService.create(
-        db, data.model_dump(exclude_unset=True), operator=_operator(current_user),
+        db,
+        data.model_dump(exclude_unset=True),
+        operator=_operator(current_user),
     )
     return Result.ok(result)
 
@@ -40,7 +42,9 @@ async def list_agent_actions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("agent_action:view")),
 ):
-    items = await AgentActionService.list_actions(db, exception_id=exception_id, status=status)
+    items = await AgentActionService.list_actions(
+        db, exception_id=exception_id, status=status
+    )
     return Result.ok(items)
 
 
@@ -63,7 +67,9 @@ async def approve_agent_action(
     current_user: User = Depends(require_permission("agent_action:approve")),
 ):
     try:
-        item = await AgentActionService.approve(db, action_id, operator=_operator(current_user))
+        item = await AgentActionService.approve(
+            db, action_id, operator=_operator(current_user)
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not item:
@@ -80,7 +86,10 @@ async def reject_agent_action(
 ):
     try:
         item = await AgentActionService.reject(
-            db, action_id, rejection_reason=data.rejection_reason, operator=_operator(current_user),
+            db,
+            action_id,
+            rejection_reason=data.rejection_reason,
+            operator=_operator(current_user),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -98,7 +107,10 @@ async def mark_executed_agent_action(
 ):
     try:
         item = await AgentActionService.mark_executed(
-            db, action_id, after_snapshot=data.after_snapshot, operator=_operator(current_user),
+            db,
+            action_id,
+            after_snapshot=data.after_snapshot,
+            operator=_operator(current_user),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

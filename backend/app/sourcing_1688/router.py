@@ -1,11 +1,16 @@
 """1688 货源采集 - 路由"""
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_permission
 from app.database import get_db
 from app.common import Result, PageResult
 from app.models import User
-from app.sourcing_1688.schemas import CollectPayload, Sourcing1688ProductVO, ImportPayload
+from app.sourcing_1688.schemas import (
+    CollectPayload,
+    Sourcing1688ProductVO,
+    ImportPayload,
+)
 from app.sourcing_1688.service import Sourcing1688Service
 from app.operation_log.service import OperationLogService
 
@@ -69,11 +74,17 @@ async def list_products(
     current_user: User = Depends(require_permission("sourcing:view")),
 ):
     items, total = await Sourcing1688Service.list_products(
-        db, status=status, keyword=keyword, page=page, page_size=page_size,
+        db,
+        status=status,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
     )
     return PageResult.ok(
         [_to_vo(p) for p in items],
-        total=total, page=page, page_size=page_size,
+        total=total,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -97,7 +108,9 @@ async def import_product(
     current_user: User = Depends(require_permission("sourcing:import")),
 ):
     try:
-        p = await Sourcing1688Service.import_product(db, candidate_id, data, current_user.username)
+        p = await Sourcing1688Service.import_product(
+            db, candidate_id, data, current_user.username
+        )
     except ValueError as e:
         return Result.bad_request(str(e))
 

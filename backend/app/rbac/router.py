@@ -6,7 +6,15 @@ from app.auth import require_permission
 from app.database import get_db
 from app.common import Result, PageResult
 from app.models import User
-from app.rbac.schemas import RoleCreate, RoleUpdate, RoleVO, PermissionCreate, PermissionUpdate, PermissionVO, AssignRolesData
+from app.rbac.schemas import (
+    RoleCreate,
+    RoleUpdate,
+    RoleVO,
+    PermissionCreate,
+    PermissionUpdate,
+    PermissionVO,
+    AssignRolesData,
+)
 from app.rbac.service import RbacService
 
 router = APIRouter(prefix="/rbac", tags=["权限管理"])
@@ -22,7 +30,9 @@ def role_to_vo(r) -> RoleVO:
         code=r.code,
         description=r.description,
         status=r.status,
-        permission_ids=[p.id for p in r.permissions] if hasattr(r, 'permissions') else [],
+        permission_ids=[p.id for p in r.permissions]
+        if hasattr(r, "permissions")
+        else [],
         created_at=r.created_at,
         updated_at=r.updated_at,
     )
@@ -133,7 +143,9 @@ async def update_permission(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("rbac:manage")),
 ):
-    p = await RbacService.update_permission(db, perm_id, data.model_dump(exclude_unset=True))
+    p = await RbacService.update_permission(
+        db, perm_id, data.model_dump(exclude_unset=True)
+    )
     if not p:
         return Result.not_found("权限不存在")
     return Result.ok(permission_to_vo(p))
@@ -192,6 +204,7 @@ async def assign_user_roles(
 
         # 返回用户信息（含角色）
         from app.auth.router import user_to_vo as auth_user_to_vo
+
         return Result.ok(auth_user_to_vo(user))
     except ValueError as e:
         return Result.bad_request(str(e))
@@ -219,10 +232,11 @@ async def list_users(
     users, total = await RbacService.list_users(db, username, page, page_size)
 
     from app.auth.router import user_to_vo as auth_user_to_vo
+
     items = []
     for u in users:
         vo = auth_user_to_vo(u).model_dump()
-        vo["role_ids"] = [r.id for r in u.roles] if hasattr(u, 'roles') else []
-        vo["role_names"] = [r.name for r in u.roles] if hasattr(u, 'roles') else []
+        vo["role_ids"] = [r.id for r in u.roles] if hasattr(u, "roles") else []
+        vo["role_names"] = [r.name for r in u.roles] if hasattr(u, "roles") else []
         items.append(vo)
     return PageResult.ok(items, total, page, page_size)

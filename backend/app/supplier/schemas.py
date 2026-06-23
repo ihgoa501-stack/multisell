@@ -1,4 +1,5 @@
 """供应商管理 - Pydantic Schema"""
+
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
@@ -40,6 +41,7 @@ class SupplierVO(BaseModel):
 
 class ProductSupplierBind(BaseModel):
     """绑定商品-供应商"""
+
     product_id: int = Field(..., description="商品ID")
     supplier_id: int = Field(..., description="供应商ID")
     supply_price: Optional[float] = Field(None, description="供货价")
@@ -48,6 +50,7 @@ class ProductSupplierBind(BaseModel):
 
 class ProductSupplierVO(BaseModel):
     """商品-供应商关联响应"""
+
     id: int
     product_id: int
     supplier_id: int

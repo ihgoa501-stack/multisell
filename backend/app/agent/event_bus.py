@@ -37,10 +37,13 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Event:
     """系统事件"""
+
     type: str
     payload: dict
     source: str = ""  # 来源模块标识
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 # ── 事件 → Agent 决策映射 ──────────────────────────────────
@@ -86,37 +89,30 @@ def _discount_ctx(payload: dict, user_id: int) -> dict:
 
 EVENT_ROUTES: list[tuple[str, str, str, EventHandler]] = [
     # 库存事件 → A5
-    ("inventory.low_stock",      "A5", "stock_alert",       _stock_alert_ctx),
-    ("inventory.out_of_stock",   "A5", "stock_alert",       _stock_alert_ctx),
-    ("inventory.recovered",      "A5", "stock_alert",       _stock_alert_ctx),
-
+    ("inventory.low_stock", "A5", "stock_alert", _stock_alert_ctx),
+    ("inventory.out_of_stock", "A5", "stock_alert", _stock_alert_ctx),
+    ("inventory.recovered", "A5", "stock_alert", _stock_alert_ctx),
     # 订单事件 → A4 客服
-    ("order.exception",          "A4", "customer_service",  _identity_ctx),
-    ("order.refund",             "A4", "customer_service",  _identity_ctx),
-
+    ("order.exception", "A4", "customer_service", _identity_ctx),
+    ("order.refund", "A4", "customer_service", _identity_ctx),
     # 价格/折扣事件 → G3 风控
-    ("price.changed",            "G3", "discount_risk_check", _discount_ctx),
-    ("discount.proposed",        "G3", "discount_risk_check", _discount_ctx),
-    ("promotion.created",        "G3", "discount_risk_check", _discount_ctx),
-
+    ("price.changed", "G3", "discount_risk_check", _discount_ctx),
+    ("discount.proposed", "G3", "discount_risk_check", _discount_ctx),
+    ("promotion.created", "G3", "discount_risk_check", _discount_ctx),
     # 上架事件 → A2 优化
-    ("listing.failed",           "A2", "listing_optimize",  _identity_ctx),
-    ("listing.created",          "A2", "listing_optimize",  _identity_ctx),
-
+    ("listing.failed", "A2", "listing_optimize", _identity_ctx),
+    ("listing.created", "A2", "listing_optimize", _identity_ctx),
     # 财务事件 → A6 利润监控
-    ("finance.profit_anomaly",   "A6", "profit_watch",      _identity_ctx),
-    ("settlement.discrepancy",   "A6", "profit_watch",      _identity_ctx),
-
+    ("finance.profit_anomaly", "A6", "profit_watch", _identity_ctx),
+    ("settlement.discrepancy", "A6", "profit_watch", _identity_ctx),
     # 新产品 → A1 侦查
-    ("product.created",          "A1", "product_scout",     _identity_ctx),
-
+    ("product.created", "A1", "product_scout", _identity_ctx),
     # 合规事件 → A7
-    ("compliance.alert",         "A7", "compliance_check",  _identity_ctx),
-    ("platform.rule_changed",    "A7", "compliance_check",  _identity_ctx),
-
+    ("compliance.alert", "A7", "compliance_check", _identity_ctx),
+    ("platform.rule_changed", "A7", "compliance_check", _identity_ctx),
     # 通关事件 → G2
-    ("customs.delay",            "G2", "customs_advice",    _identity_ctx),
-    ("customs.cleared",          "G2", "customs_advice",    _identity_ctx),
+    ("customs.delay", "G2", "customs_advice", _identity_ctx),
+    ("customs.cleared", "G2", "customs_advice", _identity_ctx),
 ]
 
 
@@ -138,13 +134,22 @@ class AgentEventBus:
         """设置系统调度用户 ID"""
         self._system_user_id = user_id
 
-    def add_route(self, event_type: str, agent_id: str, decision_point: str,
-                  context_builder: Optional[EventHandler] = None):
+    def add_route(
+        self,
+        event_type: str,
+        agent_id: str,
+        decision_point: str,
+        context_builder: Optional[EventHandler] = None,
+    ):
         """动态添加事件路由"""
-        self._handlers.append((
-            event_type, agent_id, decision_point,
-            context_builder or _identity_ctx,
-        ))
+        self._handlers.append(
+            (
+                event_type,
+                agent_id,
+                decision_point,
+                context_builder or _identity_ctx,
+            )
+        )
 
     def add_custom_handler(self, handler: Callable[[Event], bool]) -> None:
         """添加自定义事件处理器，返回 True 表示已处理"""
@@ -184,8 +189,13 @@ class AgentEventBus:
 
         return matched
 
-    async def _dispatch(self, event: Event, agent_id: str, decision_point: str,
-                        ctx_builder: EventHandler):
+    async def _dispatch(
+        self,
+        event: Event,
+        agent_id: str,
+        decision_point: str,
+        ctx_builder: EventHandler,
+    ):
         """将事件派发给指定的 Agent"""
         try:
             agent_cls = AgentRegistry.get_agent_class(agent_id)
@@ -200,26 +210,38 @@ class AgentEventBus:
             async with async_session_factory() as db:
                 agent = agent_cls(user_id=self._system_user_id)
                 result = await AgentService.execute_decision(
-                    db, agent, decision_point, ctx, dry_run=False,
+                    db,
+                    agent,
+                    decision_point,
+                    ctx,
+                    dry_run=False,
                 )
 
                 # 触发协作链
                 if result.get("decision_id"):
                     await evaluate_chains(
-                        agent_id, decision_point, result,
-                        self._system_user_id, db,
+                        agent_id,
+                        decision_point,
+                        result,
+                        self._system_user_id,
+                        db,
                     )
 
                 logger.info(
                     "事件 %s → %s[%s] 决策完成 (decision_id=%s)",
-                    event.type, agent_id, decision_point,
+                    event.type,
+                    agent_id,
+                    decision_point,
                     result.get("decision_id"),
                 )
 
         except Exception as e:
             logger.exception(
                 "事件分发失败: %s → %s[%s]: %s",
-                event.type, agent_id, decision_point, e,
+                event.type,
+                agent_id,
+                decision_point,
+                e,
             )
 
     def get_routes(self) -> list[dict]:

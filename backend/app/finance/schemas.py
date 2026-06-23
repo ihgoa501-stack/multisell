@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class FinanceAccountCreate(BaseModel):
     """创建账户"""
+
     name: str = Field(..., description="账户名称")
     account_type: str = Field(..., description="platform/payment/bank/cash")
     platform_id: Optional[int] = None
@@ -16,6 +17,7 @@ class FinanceAccountCreate(BaseModel):
 
 class FinanceAccountVO(BaseModel):
     """账户视图"""
+
     id: int
     name: str
     account_type: str
@@ -30,6 +32,7 @@ class FinanceAccountVO(BaseModel):
 
 class FinanceTransactionCreate(BaseModel):
     """创建流水"""
+
     account_id: int = Field(..., description="账户ID")
     transaction_type: str = Field(..., description="revenue/cost/fee/refund/transfer")
     amount: float = Field(..., description="金额")
@@ -42,6 +45,7 @@ class FinanceTransactionCreate(BaseModel):
 
 class FinanceTransactionVO(BaseModel):
     """流水视图"""
+
     id: int
     account_id: int
     account_name: Optional[str] = None
@@ -61,6 +65,7 @@ class FinanceTransactionVO(BaseModel):
 
 class ProfitSummary(BaseModel):
     """利润汇总"""
+
     period_start: str
     period_end: str
     total_revenue: float
@@ -77,6 +82,7 @@ class ProfitSummary(BaseModel):
 
 class FinanceReportQuery(BaseModel):
     """财务查询"""
+
     period_start: Optional[str] = None
     period_end: Optional[str] = None
     platform_id: Optional[int] = None

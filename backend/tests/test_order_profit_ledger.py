@@ -10,30 +10,55 @@ import pytest
 async def _create_minimal_order(async_client) -> tuple[int, str, int]:
     """Create order + shipping provider/channel. Returns (order_id, order_no, sku_id)."""
     uid = uuid4().hex[:6]
-    resp = await async_client.post("/api/products", json={
-        "name": f"LED_{uid}",
-        "package_length_cm": 30, "package_width_cm": 20,
-        "package_height_cm": 10, "package_weight_kg": 0.5,
-    })
+    resp = await async_client.post(
+        "/api/products",
+        json={
+            "name": f"LED_{uid}",
+            "package_length_cm": 30,
+            "package_width_cm": 20,
+            "package_height_cm": 10,
+            "package_weight_kg": 0.5,
+        },
+    )
     pid = resp.json()["data"]["id"]
-    await async_client.post(f"/api/products/{pid}/specs", json={"specs": [{"name": "颜色", "values": ["标准"]}]})
+    await async_client.post(
+        f"/api/products/{pid}/specs",
+        json={"specs": [{"name": "颜色", "values": ["标准"]}]},
+    )
     sku_resp = await async_client.post(f"/api/products/{pid}/skus/generate")
     sku_id = sku_resp.json()["data"]["skus"][0]["id"]
     await async_client.put(f"/api/skus/{sku_id}", json={"cost_price": 300})
-    await async_client.post("/api/prices", json={"sku_id": sku_id, "price_type": "sale_price", "price": 100})
+    await async_client.post(
+        "/api/prices", json={"sku_id": sku_id, "price_type": "sale_price", "price": 100}
+    )
     await async_client.put(f"/api/inventory/{sku_id}", json={"quantity": 10})
 
     # Create provider + channel
-    pv_resp = await async_client.post("/api/shipping/providers", json={"name": f"PV_{uid}", "code": f"pv_{uid}"})
+    pv_resp = await async_client.post(
+        "/api/shipping/providers", json={"name": f"PV_{uid}", "code": f"pv_{uid}"}
+    )
     pv_id = pv_resp.json()["data"]["id"]
-    ch_resp = await async_client.post("/api/shipping/channels", json={
-        "provider_id": pv_id, "name": f"CH_{uid}", "code": f"ch_{uid}", "cargo_types": ["normal"],
-    })
+    ch_resp = await async_client.post(
+        "/api/shipping/channels",
+        json={
+            "provider_id": pv_id,
+            "name": f"CH_{uid}",
+            "code": f"ch_{uid}",
+            "cargo_types": ["normal"],
+        },
+    )
     ch_id = ch_resp.json()["data"]["id"]
-    await async_client.post(f"/api/shipping/channels/{ch_id}/zones", json={"country_code": "RU"})
-    await async_client.post(f"/api/shipping/channels/{ch_id}/rules", json={
-        "rule_type": "fixed_plus_per_kg", "fixed_fee": 10, "per_kg_price": 20,
-    })
+    await async_client.post(
+        f"/api/shipping/channels/{ch_id}/zones", json={"country_code": "RU"}
+    )
+    await async_client.post(
+        f"/api/shipping/channels/{ch_id}/rules",
+        json={
+            "rule_type": "fixed_plus_per_kg",
+            "fixed_fee": 10,
+            "per_kg_price": 20,
+        },
+    )
 
     order_resp = await async_client.post(
         "/api/orders",
@@ -53,9 +78,13 @@ async def _create_minimal_order(async_client) -> tuple[int, str, int]:
 class TestLedgerRebuild:
     """POST /api/finance/orders/{order_id}/ledger/rebuild"""
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_rebuild_creates_revenue_and_product_cost(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
 
         resp = await async_client.post(f"/api/finance/orders/{order_id}/ledger/rebuild")
         assert resp.status_code == 200
@@ -73,33 +102,52 @@ class TestLedgerRebuild:
         assert "shipping_cost" in entry_types
         assert "platform_fee" in entry_types
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_rebuild_uses_shipping_snapshot_when_no_bill(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
 
         # Bind shipping quote to create snapshot
         await async_client.post(
             f"/api/orders/{order_id}/shipping-quote",
-            json={"sku_id": sku_id, "quantity": 1, "destination_country": "RU", "cargo_type": "normal"},
+            json={
+                "sku_id": sku_id,
+                "quantity": 1,
+                "destination_country": "RU",
+                "cargo_type": "normal",
+            },
         )
 
         resp = await async_client.post(f"/api/finance/orders/{order_id}/ledger/rebuild")
         data = resp.json()["data"]
         assert data["shipping_cost_layer"] == "snapshot"
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_rebuild_prefers_actual_bill_over_snapshot(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
 
         # Bind shipping quote to create snapshot
         await async_client.post(
             f"/api/orders/{order_id}/shipping-quote",
-            json={"sku_id": sku_id, "quantity": 1, "destination_country": "RU", "cargo_type": "normal"},
+            json={
+                "sku_id": sku_id,
+                "quantity": 1,
+                "destination_country": "RU",
+                "cargo_type": "normal",
+            },
         )
 
         # Set tracking number on order for bill matching
         from app.database import async_session_factory
         from app.models import Order
+
         async with async_session_factory() as session:
             order = await session.get(Order, order_id)
             order.tracking_number = "TRK-LEDGER-BILL"
@@ -125,9 +173,13 @@ class TestLedgerRebuild:
         assert data["shipping_cost"] == 25.0
         assert data["shipping_cost_layer"] == "actual"
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_rebuild_includes_settlement_platform_fee(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
 
         # Import a settlement row that matches the order
         output = io.StringIO()
@@ -147,9 +199,13 @@ class TestLedgerRebuild:
         assert data["platform_fee"] == 60.0
         assert data["platform_fee_cost_layer"] == "actual"
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_rebuild_refund_reduces_profit(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
 
         # Import a refund settlement row
         output = io.StringIO()
@@ -167,14 +223,23 @@ class TestLedgerRebuild:
         data = resp.json()["data"]
         assert data["refund"] == -50.0  # refund is stored as negative
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_rebuild_profit_cost_layer_mixed(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
 
         # Bind shipping quote (snapshot) and import settlement (actual platform_fee)
         await async_client.post(
             f"/api/orders/{order_id}/shipping-quote",
-            json={"sku_id": sku_id, "quantity": 1, "destination_country": "RU", "cargo_type": "normal"},
+            json={
+                "sku_id": sku_id,
+                "quantity": 1,
+                "destination_country": "RU",
+                "cargo_type": "normal",
+            },
         )
 
         output = io.StringIO()
@@ -193,32 +258,48 @@ class TestLedgerRebuild:
         # shipping=snapshot, platform_fee=actual, so profit_cost_layer=mixed
         assert data["profit_cost_layer"] == "mixed"
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_rebuild_is_idempotent(self, async_client):
         """Rebuild twice produces same result."""
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
 
-        resp1 = await async_client.post(f"/api/finance/orders/{order_id}/ledger/rebuild")
+        resp1 = await async_client.post(
+            f"/api/finance/orders/{order_id}/ledger/rebuild"
+        )
         data1 = resp1.json()["data"]
 
-        resp2 = await async_client.post(f"/api/finance/orders/{order_id}/ledger/rebuild")
+        resp2 = await async_client.post(
+            f"/api/finance/orders/{order_id}/ledger/rebuild"
+        )
         data2 = resp2.json()["data"]
 
         assert data1["profit_amount"] == data2["profit_amount"]
         assert data1["revenue_amount"] == data2["revenue_amount"]
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_rebuild_requires_permission(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
         resp = await async_client.post(f"/api/finance/orders/{order_id}/ledger/rebuild")
         # AUTH_ENABLED=False so it should be 200
         assert resp.status_code == 200
 
 
 class TestLedgerGet:
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_get_ledger_entries(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
         await async_client.post(f"/api/finance/orders/{order_id}/ledger/rebuild")
 
         resp = await async_client.get(f"/api/finance/orders/{order_id}/ledger")
@@ -226,9 +307,13 @@ class TestLedgerGet:
         data = resp.json()["data"]
         assert data["total_entries"] >= 4
 
-    @pytest.mark.skip(reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/finance/orders/{order_id}/ledger/rebuild not implemented yet"
+    )
     async def test_get_profit_summary(self, async_client):
-        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(async_client)
+        order_id, order_no, sku_id, pv_id, ch_id = await _create_minimal_order(
+            async_client
+        )
         await async_client.post(f"/api/finance/orders/{order_id}/ledger/rebuild")
 
         resp = await async_client.get(f"/api/finance/orders/{order_id}/profit")

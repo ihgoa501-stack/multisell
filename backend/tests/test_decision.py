@@ -1,4 +1,5 @@
 """上架前经营决策 API 测试"""
+
 import pytest
 from uuid import uuid4
 
@@ -28,12 +29,15 @@ async def _ensure_brand(async_client):
 
 async def _create_product(async_client, category_id, brand_id):
     name = _uc("决策测试商品")
-    resp = await async_client.post("/api/products", json={
-        "name": name,
-        "category_id": category_id,
-        "brand_id": brand_id,
-        "unit": "件",
-    })
+    resp = await async_client.post(
+        "/api/products",
+        json={
+            "name": name,
+            "category_id": category_id,
+            "brand_id": brand_id,
+            "unit": "件",
+        },
+    )
     assert resp.status_code == 200
     return resp.json()["data"]
 
@@ -54,13 +58,16 @@ async def _create_sku_with_logistics(async_client, product_id):
     sku_id = skus[0]["id"]
 
     # 更新SKU设置成本价和物流数据
-    resp = await async_client.put(f"/api/skus/{sku_id}", json={
-        "cost_price": 50.0,
-        "sku_length_cm": 20.0,
-        "sku_width_cm": 15.0,
-        "sku_height_cm": 10.0,
-        "sku_weight_kg": 0.5,
-    })
+    resp = await async_client.put(
+        f"/api/skus/{sku_id}",
+        json={
+            "cost_price": 50.0,
+            "sku_length_cm": 20.0,
+            "sku_width_cm": 15.0,
+            "sku_height_cm": 10.0,
+            "sku_weight_kg": 0.5,
+        },
+    )
     assert resp.status_code == 200
     return sku_id
 
@@ -78,31 +85,41 @@ async def _create_sku_without_logistics(async_client, product_id):
     skus = resp.json()["data"]["skus"]
     sku_id = skus[0]["id"]
 
-    resp = await async_client.put(f"/api/skus/{sku_id}", json={
-        "cost_price": 30.0,
-    })
+    resp = await async_client.put(
+        f"/api/skus/{sku_id}",
+        json={
+            "cost_price": 30.0,
+        },
+    )
     assert resp.status_code == 200
     return sku_id
 
 
 async def _create_platform(async_client):
     name = _uc("决策测试平台")
-    resp = await async_client.post("/api/platforms", json={
-        "name": name, "code": f"p_{uuid4().hex[:4]}",
-    })
+    resp = await async_client.post(
+        "/api/platforms",
+        json={
+            "name": name,
+            "code": f"p_{uuid4().hex[:4]}",
+        },
+    )
     assert resp.status_code == 200
     return resp.json()["data"]["id"]
 
 
 async def _create_platform_fee_rule(async_client, platform_id):
-    resp = await async_client.post("/api/platform-fee/rules", json={
-        "platform_id": platform_id,
-        "fee_type": "commission",
-        "fee_rate_pct": 8.0,
-        "currency": "CNY",
-        "status": "active",
-        "priority": 1,
-    })
+    resp = await async_client.post(
+        "/api/platform-fee/rules",
+        json={
+            "platform_id": platform_id,
+            "fee_type": "commission",
+            "fee_rate_pct": 8.0,
+            "currency": "CNY",
+            "status": "active",
+            "priority": 1,
+        },
+    )
     assert resp.status_code == 200
     return resp.json()["data"]
 
@@ -118,48 +135,60 @@ async def _ensure_shipping_infrastructure(async_client):
         return existing[0]["id"], None, None
 
     # 创建供应商
-    resp = await async_client.post("/api/shipping/providers", json={
-        "name": "测试物流商",
-        "code": "test_logistics",
-        "status": 1,
-    })
+    resp = await async_client.post(
+        "/api/shipping/providers",
+        json={
+            "name": "测试物流商",
+            "code": "test_logistics",
+            "status": 1,
+        },
+    )
     assert resp.status_code == 200, f"create provider failed: {resp.text}"
     provider_id = resp.json()["data"]["id"]
 
     # 创建渠道
-    resp = await async_client.post("/api/shipping/channels", json={
-        "provider_id": provider_id,
-        "name": "标准快递",
-        "code": "standard",
-        "volumetric_divisor": 5000,
-        "cargo_types": ["normal", "battery"],
-        "estimated_delivery_min": 7,
-        "estimated_delivery_max": 15,
-        "currency": "CNY",
-        "status": 1,
-    })
+    resp = await async_client.post(
+        "/api/shipping/channels",
+        json={
+            "provider_id": provider_id,
+            "name": "标准快递",
+            "code": "standard",
+            "volumetric_divisor": 5000,
+            "cargo_types": ["normal", "battery"],
+            "estimated_delivery_min": 7,
+            "estimated_delivery_max": 15,
+            "currency": "CNY",
+            "status": 1,
+        },
+    )
     assert resp.status_code == 200, f"create channel failed: {resp.text}"
     channel_id = resp.json()["data"]["id"]
 
     # 创建区域
-    resp = await async_client.post(f"/api/shipping/channels/{channel_id}/zones", json={
-        "country_code": "RU",
-    })
+    resp = await async_client.post(
+        f"/api/shipping/channels/{channel_id}/zones",
+        json={
+            "country_code": "RU",
+        },
+    )
     assert resp.status_code == 200, f"create zone failed: {resp.text}"
     zone_id = resp.json()["data"]["id"]
 
     # 创建报价规则
-    resp = await async_client.post(f"/api/shipping/channels/{channel_id}/rules", json={
-        "zone_id": zone_id,
-        "rule_type": "fixed_plus_per_kg",
-        "base_fee": 15.0,
-        "per_kg_fee": 8.0,
-        "currency": "CNY",
-        "min_weight_kg": 0,
-        "max_weight_kg": 30,
-        "priority": 1,
-        "status": 1,
-    })
+    resp = await async_client.post(
+        f"/api/shipping/channels/{channel_id}/rules",
+        json={
+            "zone_id": zone_id,
+            "rule_type": "fixed_plus_per_kg",
+            "base_fee": 15.0,
+            "per_kg_fee": 8.0,
+            "currency": "CNY",
+            "min_weight_kg": 0,
+            "max_weight_kg": 30,
+            "priority": 1,
+            "status": 1,
+        },
+    )
     assert resp.status_code == 200, f"create rule failed: {resp.text}"
 
     return provider_id, channel_id, zone_id
@@ -170,11 +199,14 @@ class TestDecisionBasic:
 
     async def test_sku_not_found(self, async_client):
         """SKU不存在时返回404"""
-        resp = await async_client.post("/api/decisions/prelisting", json={
-            "sku_id": 999999,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting",
+            json={
+                "sku_id": 999999,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+            },
+        )
         assert resp.status_code == 404
 
     async def test_approve_with_full_data(self, async_client):
@@ -185,16 +217,19 @@ class TestDecisionBasic:
         sku_id = await _create_sku_with_logistics(async_client, product["id"])
         await _ensure_shipping_infrastructure(async_client)
 
-        resp = await async_client.post("/api/decisions/prelisting", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-            "platform_fee_pct": 10,
-            "payment_fee_pct": 3,
-            "other_fee": 5,
-            "minimum_margin_pct": 10,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+                "platform_fee_pct": 10,
+                "payment_fee_pct": 3,
+                "other_fee": 5,
+                "minimum_margin_pct": 10,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["recommendation"] == "approve"
@@ -210,16 +245,19 @@ class TestDecisionBasic:
         sku_id = await _create_sku_with_logistics(async_client, product["id"])
         await _ensure_shipping_infrastructure(async_client)
 
-        resp = await async_client.post("/api/decisions/prelisting", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 80,
-            "platform_fee_pct": 15,
-            "payment_fee_pct": 3,
-            "other_fee": 5,
-            "minimum_margin_pct": 30,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 80,
+                "platform_fee_pct": 15,
+                "payment_fee_pct": 3,
+                "other_fee": 5,
+                "minimum_margin_pct": 30,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["recommendation"] == "reject"
@@ -232,16 +270,19 @@ class TestDecisionBasic:
         product = await _create_product(async_client, cat_id, brand_id)
         sku_id = await _create_sku_without_logistics(async_client, product["id"])
 
-        resp = await async_client.post("/api/decisions/prelisting", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-            "platform_fee_pct": 10,
-            "payment_fee_pct": 3,
-            "other_fee": 0,
-            "minimum_margin_pct": 20,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+                "platform_fee_pct": 10,
+                "payment_fee_pct": 3,
+                "other_fee": 0,
+                "minimum_margin_pct": 20,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["recommendation"] == "needs_data"
@@ -255,16 +296,19 @@ class TestDecisionBasic:
         await _ensure_shipping_infrastructure(async_client)
 
         # higher margin case - should approve with warning
-        resp = await async_client.post("/api/decisions/prelisting", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-            "platform_fee_pct": 5,
-            "payment_fee_pct": 1,
-            "other_fee": 0,
-            "minimum_margin_pct": 30,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+                "platform_fee_pct": 5,
+                "payment_fee_pct": 1,
+                "other_fee": 0,
+                "minimum_margin_pct": 30,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         # Just verify we can call the endpoint successfully
@@ -284,17 +328,20 @@ class TestDecisionWithPlatformFee:
         platform_id = await _create_platform(async_client)
         await _create_platform_fee_rule(async_client, platform_id)
 
-        resp = await async_client.post("/api/decisions/prelisting", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-            "platform_id": platform_id,
-            "platform_fee_pct": 0,  # 应被规则覆盖
-            "payment_fee_pct": 3,
-            "other_fee": 0,
-            "minimum_margin_pct": 10,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+                "platform_id": platform_id,
+                "platform_fee_pct": 0,  # 应被规则覆盖
+                "payment_fee_pct": 3,
+                "other_fee": 0,
+                "minimum_margin_pct": 10,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         # 平台费 = 200 * 8% = 16
@@ -310,17 +357,20 @@ class TestDecisionWithPlatformFee:
         await _ensure_shipping_infrastructure(async_client)
         platform_id = await _create_platform(async_client)
 
-        resp = await async_client.post("/api/decisions/prelisting", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-            "platform_id": platform_id,
-            "platform_fee_pct": 7,  # 无规则时仍用此值？不—平台费返回0
-            "payment_fee_pct": 3,
-            "other_fee": 0,
-            "minimum_margin_pct": 10,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+                "platform_id": platform_id,
+                "platform_fee_pct": 7,  # 无规则时仍用此值？不—平台费返回0
+                "payment_fee_pct": 3,
+                "other_fee": 0,
+                "minimum_margin_pct": 10,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         # 无规则匹配 → platform_fee = 0（service仅except时回退）
@@ -336,16 +386,19 @@ class TestDecisionWithPlatformFee:
         sku_id = await _create_sku_with_logistics(async_client, product["id"])
         await _ensure_shipping_infrastructure(async_client)
 
-        resp = await async_client.post("/api/decisions/prelisting", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-            "platform_fee_pct": 12,
-            "payment_fee_pct": 3,
-            "other_fee": 0,
-            "minimum_margin_pct": 10,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+                "platform_fee_pct": 12,
+                "payment_fee_pct": 3,
+                "other_fee": 0,
+                "minimum_margin_pct": 10,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         # 平台费 = 200 * 12% = 24
@@ -368,16 +421,19 @@ class TestDecisionCompare:
         await _create_platform_fee_rule(async_client, p1)  # 8%
         await _create_platform_fee_rule(async_client, p2)  # 8%
 
-        resp = await async_client.post("/api/decisions/prelisting/compare", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-            "platform_ids": [p1, p2],
-            "payment_fee_pct": 3,
-            "other_fee": 0,
-            "minimum_margin_pct": 10,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting/compare",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+                "platform_ids": [p1, p2],
+                "payment_fee_pct": 3,
+                "other_fee": 0,
+                "minimum_margin_pct": 10,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["sku_id"] == sku_id
@@ -398,16 +454,19 @@ class TestDecisionCompare:
         await _create_platform_fee_rule(async_client, p1)
 
         # p2 = 999999 不存在的平台ID
-        resp = await async_client.post("/api/decisions/prelisting/compare", json={
-            "sku_id": sku_id,
-            "destination_country": "RU",
-            "target_sale_price": 200,
-            "platform_ids": [p1, 999999],
-            "payment_fee_pct": 3,
-            "other_fee": 0,
-            "minimum_margin_pct": 10,
-            "cargo_type": "normal",
-        })
+        resp = await async_client.post(
+            "/api/decisions/prelisting/compare",
+            json={
+                "sku_id": sku_id,
+                "destination_country": "RU",
+                "target_sale_price": 200,
+                "platform_ids": [p1, 999999],
+                "payment_fee_pct": 3,
+                "other_fee": 0,
+                "minimum_margin_pct": 10,
+                "cargo_type": "normal",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         # 无效平台被静默跳过

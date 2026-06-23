@@ -5,6 +5,7 @@
 - 输出库存状态、可售天数、建议补货量、建议物流方式、风险原因、建议操作
 - 数据不足时返回 insufficient_data，不允许编造数据
 """
+
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -14,12 +15,18 @@ from app.agent.data_service import AgentDataService
 
 # ── 必填字段列表（缺少其中任一即返回 insufficient_data） ──
 REQUIRED_STOCK_FIELDS = [
-    "sku_code", "sellable_stock", "sales_7d",
-    "lead_time_days", "safety_stock_days",
+    "sku_code",
+    "sellable_stock",
+    "sales_7d",
+    "lead_time_days",
+    "safety_stock_days",
 ]
 REQUIRED_REPLENISH_FIELDS = [
-    "sku_code", "sellable_stock", "sales_30d",
-    "lead_time_days", "moq",
+    "sku_code",
+    "sellable_stock",
+    "sales_30d",
+    "lead_time_days",
+    "moq",
 ]
 
 
@@ -55,7 +62,9 @@ class A5InventoryAlertAgent(BaseAgent):
         "logistics_choice": EvolutionStage.SUGGESTION,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+    async def decide(
+        self, decision_point: str, context: dict[str, Any], db: Any = None
+    ) -> dict[str, Any]:
         # 自动从 DB 补齐数据
         if db is not None and decision_point in ("stock_alert", "replenishment_plan"):
             context = await AgentDataService.fill_sku_context(db, context)
@@ -98,7 +107,9 @@ class A5InventoryAlertAgent(BaseAgent):
         moq = _safe_int(context.get("moq", 0))
 
         # 可售天数计算
-        sellable_days = round(valid_stock / daily_sales, 1) if daily_sales > 0 else 999.0
+        sellable_days = (
+            round(valid_stock / daily_sales, 1) if daily_sales > 0 else 999.0
+        )
 
         # ---- 三级预警判定 ----
         red_threshold = lead_time * 0.5  # 小于半个提前期 → 红色
@@ -261,67 +272,81 @@ class A5InventoryAlertAgent(BaseAgent):
             # 紧急：空运或快递
             suggested_logistics = "空运/国际快递"
             if cargo_value > 50:
-                options.append({
-                    "method": "air_express",
-                    "name": "空运/国际快递 (DHL/UPS)",
-                    "estimated_days": "3-7",
-                    "cost_estimate": "高",
-                    "suitability": "recommended",
-                })
-            options.append({
-                "method": "air_freight",
-                "name": "空运 + 海运快船并行",
-                "estimated_days": "7-15",
-                "cost_estimate": "中高",
-                "suitability": "alternative",
-            })
+                options.append(
+                    {
+                        "method": "air_express",
+                        "name": "空运/国际快递 (DHL/UPS)",
+                        "estimated_days": "3-7",
+                        "cost_estimate": "高",
+                        "suitability": "recommended",
+                    }
+                )
+            options.append(
+                {
+                    "method": "air_freight",
+                    "name": "空运 + 海运快船并行",
+                    "estimated_days": "7-15",
+                    "cost_estimate": "中高",
+                    "suitability": "alternative",
+                }
+            )
             confidence = 0.90
         elif stock_status == "yellow":
             # 预警：快船或空运备选
             suggested_logistics = "快船"
-            options.append({
-                "method": "express_sea",
-                "name": "快船 (美森/以星)",
-                "estimated_days": "10-15",
-                "cost_estimate": "中",
-                "suitability": "recommended",
-            })
-            options.append({
-                "method": "air_freight",
-                "name": "空运 (备选)",
-                "estimated_days": "7-12",
-                "cost_estimate": "高",
-                "suitability": "alternative",
-            })
+            options.append(
+                {
+                    "method": "express_sea",
+                    "name": "快船 (美森/以星)",
+                    "estimated_days": "10-15",
+                    "cost_estimate": "中",
+                    "suitability": "recommended",
+                }
+            )
+            options.append(
+                {
+                    "method": "air_freight",
+                    "name": "空运 (备选)",
+                    "estimated_days": "7-12",
+                    "cost_estimate": "高",
+                    "suitability": "alternative",
+                }
+            )
             confidence = 0.88
         else:
             # 正常：海运
             sea_days = "15-20" if destination == "US" else "25-35"
-            options.append({
-                "method": "sea_freight",
-                "name": "海运",
-                "estimated_days": sea_days,
-                "cost_estimate": "低",
-                "suitability": "recommended",
-            })
+            options.append(
+                {
+                    "method": "sea_freight",
+                    "name": "海运",
+                    "estimated_days": sea_days,
+                    "cost_estimate": "低",
+                    "suitability": "recommended",
+                }
+            )
             if destination == "EU":
-                options.append({
-                    "method": "rail",
-                    "name": "中欧班列",
-                    "estimated_days": "15-20",
-                    "cost_estimate": "中低",
-                    "suitability": "alternative",
-                })
+                options.append(
+                    {
+                        "method": "rail",
+                        "name": "中欧班列",
+                        "estimated_days": "15-20",
+                        "cost_estimate": "中低",
+                        "suitability": "alternative",
+                    }
+                )
             confidence = 0.85
 
         if is_peak_season and options:
-            options.append({
-                "method": "advance_buffer",
-                "name": "旺季建议提前2周备货",
-                "estimated_days": "提前2周",
-                "cost_estimate": "—",
-                "suitability": "warning",
-            })
+            options.append(
+                {
+                    "method": "advance_buffer",
+                    "name": "旺季建议提前2周备货",
+                    "estimated_days": "提前2周",
+                    "cost_estimate": "—",
+                    "suitability": "warning",
+                }
+            )
             confidence = max(0.80, confidence - 0.05)
 
         return {

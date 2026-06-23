@@ -1,4 +1,5 @@
 """分类管理 - 路由"""
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -52,7 +53,9 @@ async def update_category(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("category:update")),
 ):
-    cat = await CategoryService.update(db, category_id, data.model_dump(exclude_unset=True))
+    cat = await CategoryService.update(
+        db, category_id, data.model_dump(exclude_unset=True)
+    )
     if not cat:
         return Result.not_found("分类不存在")
     await OperationLogService.log(
@@ -75,16 +78,18 @@ async def get_category_tree(
     # 构建树
     items = []
     for cat in categories:
-        items.append({
-            "id": cat.id,
-            "name": cat.name,
-            "parent_id": cat.parent_id,
-            "level": cat.level,
-            "sort_order": cat.sort_order,
-            "status": cat.status,
-            "created_at": cat.created_at,
-            "updated_at": cat.updated_at,
-        })
+        items.append(
+            {
+                "id": cat.id,
+                "name": cat.name,
+                "parent_id": cat.parent_id,
+                "level": cat.level,
+                "sort_order": cat.sort_order,
+                "status": cat.status,
+                "created_at": cat.created_at,
+                "updated_at": cat.updated_at,
+            }
+        )
     tree = build_tree(items, parent_id=0)
     return Result.ok(tree)
 

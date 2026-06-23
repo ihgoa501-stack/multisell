@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class SettlementService:
-
     # ── 导入 ────────────────────────────────────────────────────────
 
     @staticmethod
@@ -85,7 +84,9 @@ class SettlementService:
         total = (await db.execute(count_stmt)).scalar() or 0
 
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(Settlement.created_at.desc()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(Settlement.created_at.desc()).offset(offset).limit(page_size)
+        )
         result = await db.execute(stmt)
         settlements = result.scalars().all()
 
@@ -98,27 +99,31 @@ class SettlementService:
             # 统计对账状态
             item_counts = await SettlementService._item_status_counts(db, s.id)
 
-            rows.append({
-                "id": s.id,
-                "platform_id": s.platform_id,
-                "platform_name": platform_name,
-                "settlement_no": s.settlement_no,
-                "period_start": s.period_start.isoformat() if s.period_start else None,
-                "period_end": s.period_end.isoformat() if s.period_end else None,
-                "currency": s.currency,
-                "total_revenue": float(s.total_revenue),
-                "total_fee": float(s.total_fee),
-                "total_refund": float(s.total_refund),
-                "total_net": float(s.total_net),
-                "status": s.status,
-                "item_count": item_counts["total"],
-                "matched_count": item_counts["matched"],
-                "unmatched_count": item_counts["unmatched"],
-                "discrepancy_count": item_counts["discrepancy"],
-                "imported_at": s.imported_at.isoformat() if s.imported_at else None,
-                "created_at": s.created_at.isoformat() if s.created_at else None,
-                "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-            })
+            rows.append(
+                {
+                    "id": s.id,
+                    "platform_id": s.platform_id,
+                    "platform_name": platform_name,
+                    "settlement_no": s.settlement_no,
+                    "period_start": s.period_start.isoformat()
+                    if s.period_start
+                    else None,
+                    "period_end": s.period_end.isoformat() if s.period_end else None,
+                    "currency": s.currency,
+                    "total_revenue": float(s.total_revenue),
+                    "total_fee": float(s.total_fee),
+                    "total_refund": float(s.total_refund),
+                    "total_net": float(s.total_net),
+                    "status": s.status,
+                    "item_count": item_counts["total"],
+                    "matched_count": item_counts["matched"],
+                    "unmatched_count": item_counts["unmatched"],
+                    "discrepancy_count": item_counts["discrepancy"],
+                    "imported_at": s.imported_at.isoformat() if s.imported_at else None,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                    "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                }
+            )
 
         return rows, total
 
@@ -127,9 +132,17 @@ class SettlementService:
         """获取明细对账状态统计"""
         stmt = select(
             func.count().label("total"),
-            func.sum(case((SettlementItem.reconciliation_status == "matched", 1), else_=0)).label("matched"),
-            func.sum(case((SettlementItem.reconciliation_status == "unmatched", 1), else_=0)).label("unmatched"),
-            func.sum(case((SettlementItem.reconciliation_status == "discrepancy", 1), else_=0)).label("discrepancy"),
+            func.sum(
+                case((SettlementItem.reconciliation_status == "matched", 1), else_=0)
+            ).label("matched"),
+            func.sum(
+                case((SettlementItem.reconciliation_status == "unmatched", 1), else_=0)
+            ).label("unmatched"),
+            func.sum(
+                case(
+                    (SettlementItem.reconciliation_status == "discrepancy", 1), else_=0
+                )
+            ).label("discrepancy"),
         ).where(SettlementItem.settlement_id == settlement_id)
 
         row = (await db.execute(stmt)).one()
@@ -141,7 +154,9 @@ class SettlementService:
         }
 
     @staticmethod
-    async def get_settlement_detail(db: AsyncSession, settlement_id: int) -> Optional[dict]:
+    async def get_settlement_detail(
+        db: AsyncSession, settlement_id: int
+    ) -> Optional[dict]:
         """获取结算单详情"""
         settlement = await db.get(Settlement, settlement_id)
         if not settlement:
@@ -155,8 +170,12 @@ class SettlementService:
             "platform_id": settlement.platform_id,
             "platform_name": platform_name,
             "settlement_no": settlement.settlement_no,
-            "period_start": settlement.period_start.isoformat() if settlement.period_start else None,
-            "period_end": settlement.period_end.isoformat() if settlement.period_end else None,
+            "period_start": settlement.period_start.isoformat()
+            if settlement.period_start
+            else None,
+            "period_end": settlement.period_end.isoformat()
+            if settlement.period_end
+            else None,
             "currency": settlement.currency,
             "total_revenue": float(settlement.total_revenue),
             "total_fee": float(settlement.total_fee),
@@ -167,9 +186,15 @@ class SettlementService:
             "matched_count": item_counts["matched"],
             "unmatched_count": item_counts["unmatched"],
             "discrepancy_count": item_counts["discrepancy"],
-            "imported_at": settlement.imported_at.isoformat() if settlement.imported_at else None,
-            "created_at": settlement.created_at.isoformat() if settlement.created_at else None,
-            "updated_at": settlement.updated_at.isoformat() if settlement.updated_at else None,
+            "imported_at": settlement.imported_at.isoformat()
+            if settlement.imported_at
+            else None,
+            "created_at": settlement.created_at.isoformat()
+            if settlement.created_at
+            else None,
+            "updated_at": settlement.updated_at.isoformat()
+            if settlement.updated_at
+            else None,
         }
 
     # ── 明细 ────────────────────────────────────────────────────────
@@ -184,46 +209,68 @@ class SettlementService:
         page_size: int = 20,
     ) -> tuple[list[dict], int]:
         """分页查询结算明细"""
-        stmt = select(SettlementItem).where(SettlementItem.settlement_id == settlement_id)
-        count_stmt = select(func.count()).select_from(SettlementItem).where(
+        stmt = select(SettlementItem).where(
             SettlementItem.settlement_id == settlement_id
+        )
+        count_stmt = (
+            select(func.count())
+            .select_from(SettlementItem)
+            .where(SettlementItem.settlement_id == settlement_id)
         )
 
         if reconciliation_status:
-            stmt = stmt.where(SettlementItem.reconciliation_status == reconciliation_status)
-            count_stmt = count_stmt.where(SettlementItem.reconciliation_status == reconciliation_status)
+            stmt = stmt.where(
+                SettlementItem.reconciliation_status == reconciliation_status
+            )
+            count_stmt = count_stmt.where(
+                SettlementItem.reconciliation_status == reconciliation_status
+            )
         if transaction_type:
             stmt = stmt.where(SettlementItem.transaction_type == transaction_type)
-            count_stmt = count_stmt.where(SettlementItem.transaction_type == transaction_type)
+            count_stmt = count_stmt.where(
+                SettlementItem.transaction_type == transaction_type
+            )
 
         total = (await db.execute(count_stmt)).scalar() or 0
 
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(SettlementItem.occurred_at.desc().nulls_last()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(SettlementItem.occurred_at.desc().nulls_last())
+            .offset(offset)
+            .limit(page_size)
+        )
         result = await db.execute(stmt)
         items = result.scalars().all()
 
         rows = []
         for item in items:
-            rows.append({
-                "id": item.id,
-                "settlement_id": item.settlement_id,
-                "transaction_type": item.transaction_type,
-                "transaction_id": item.transaction_id,
-                "order_no": item.order_no,
-                "order_id": item.order_id,
-                "sku_id": item.sku_id,
-                "amount": float(item.amount),
-                "fee": float(item.fee),
-                "net": float(item.net),
-                "quantity": item.quantity,
-                "occurred_at": item.occurred_at.isoformat() if item.occurred_at else None,
-                "created_at": item.created_at.isoformat() if item.created_at else None,
-                "reconciliation_status": item.reconciliation_status,
-                "reconciliation_note": item.reconciliation_note,
-                "reconciled_at": item.reconciled_at.isoformat() if item.reconciled_at else None,
-                "reconciled_by": item.reconciled_by,
-            })
+            rows.append(
+                {
+                    "id": item.id,
+                    "settlement_id": item.settlement_id,
+                    "transaction_type": item.transaction_type,
+                    "transaction_id": item.transaction_id,
+                    "order_no": item.order_no,
+                    "order_id": item.order_id,
+                    "sku_id": item.sku_id,
+                    "amount": float(item.amount),
+                    "fee": float(item.fee),
+                    "net": float(item.net),
+                    "quantity": item.quantity,
+                    "occurred_at": item.occurred_at.isoformat()
+                    if item.occurred_at
+                    else None,
+                    "created_at": item.created_at.isoformat()
+                    if item.created_at
+                    else None,
+                    "reconciliation_status": item.reconciliation_status,
+                    "reconciliation_note": item.reconciliation_note,
+                    "reconciled_at": item.reconciled_at.isoformat()
+                    if item.reconciled_at
+                    else None,
+                    "reconciled_by": item.reconciled_by,
+                }
+            )
 
         return rows, total
 
@@ -282,9 +329,7 @@ class SettlementService:
                     actual_amount = float(item.amount)
                     if abs(expected_amount - actual_amount) > 0.01:
                         item.reconciliation_status = "discrepancy"
-                        item.reconciliation_note = (
-                            f"金额不一致: 内部订单 {expected_amount} vs 平台结算 {actual_amount}"
-                        )
+                        item.reconciliation_note = f"金额不一致: 内部订单 {expected_amount} vs 平台结算 {actual_amount}"
 
                     matched += 1
                 else:
@@ -317,7 +362,11 @@ class SettlementService:
         item_counts = await SettlementService._item_status_counts(db, settlement_id)
 
         # 若全部匹配则自动标记为已对账
-        if item_counts["unmatched"] == 0 and item_counts["discrepancy"] == 0 and item_counts["total"] > 0:
+        if (
+            item_counts["unmatched"] == 0
+            and item_counts["discrepancy"] == 0
+            and item_counts["total"] > 0
+        ):
             settlement.status = "reconciled"
         else:
             settlement.status = "reconciling"
@@ -406,44 +455,50 @@ class SettlementService:
         for order in orders:
             amount = float(order.pay_amount or 0)
             fee = float(order.platform_fee or 0) + float(order.payment_fee or 0)
-            items_data.append(SettlementItem(
-                settlement_id=settlement.id,
-                transaction_type="order_sale",
-                transaction_id=f"TXN-{order.order_no}",
-                order_no=order.order_no,
-                order_id=order.id,
-                amount=amount,
-                fee=fee,
-                net=amount - fee,
-                quantity=1,
-                occurred_at=order.paid_at or order.created_at,
-            ))
+            items_data.append(
+                SettlementItem(
+                    settlement_id=settlement.id,
+                    transaction_type="order_sale",
+                    transaction_id=f"TXN-{order.order_no}",
+                    order_no=order.order_no,
+                    order_id=order.id,
+                    amount=amount,
+                    fee=fee,
+                    net=amount - fee,
+                    quantity=1,
+                    occurred_at=order.paid_at or order.created_at,
+                )
+            )
 
         # 加入一些退款和费用
         if orders:
             refund_amount = float(orders[0].pay_amount or 0) * 0.5
-            items_data.append(SettlementItem(
-                settlement_id=settlement.id,
-                transaction_type="refund",
-                transaction_id=f"REF-{settlement_no}",
-                order_no=orders[0].order_no,
-                order_id=orders[0].id,
-                amount=-refund_amount,
-                fee=0,
-                net=-refund_amount,
-                quantity=1,
-                occurred_at=now - timedelta(days=1),
-            ))
-            items_data.append(SettlementItem(
-                settlement_id=settlement.id,
-                transaction_type="platform_fee",
-                transaction_id=f"FEE-{settlement_no}",
-                amount=0,
-                fee=50.00,
-                net=-50.00,
-                quantity=1,
-                occurred_at=now - timedelta(days=1),
-            ))
+            items_data.append(
+                SettlementItem(
+                    settlement_id=settlement.id,
+                    transaction_type="refund",
+                    transaction_id=f"REF-{settlement_no}",
+                    order_no=orders[0].order_no,
+                    order_id=orders[0].id,
+                    amount=-refund_amount,
+                    fee=0,
+                    net=-refund_amount,
+                    quantity=1,
+                    occurred_at=now - timedelta(days=1),
+                )
+            )
+            items_data.append(
+                SettlementItem(
+                    settlement_id=settlement.id,
+                    transaction_type="platform_fee",
+                    transaction_id=f"FEE-{settlement_no}",
+                    amount=0,
+                    fee=50.00,
+                    net=-50.00,
+                    quantity=1,
+                    occurred_at=now - timedelta(days=1),
+                )
+            )
 
         for item in items_data:
             db.add(item)

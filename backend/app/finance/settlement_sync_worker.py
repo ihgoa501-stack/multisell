@@ -30,7 +30,9 @@ class SettlementSyncWorker:
     async def start(self):
         self._stop.clear()
         self._task = asyncio.create_task(self._loop())
-        logger.info("SettlementSyncWorker started (poll every %ss)", self._poll_interval)
+        logger.info(
+            "SettlementSyncWorker started (poll every %ss)", self._poll_interval
+        )
 
     async def stop(self):
         self._stop.set()
@@ -53,8 +55,10 @@ class SettlementSyncWorker:
         """One poll cycle: iterate active platforms, fetch settlements, upsert."""
         async with async_session_factory() as db:
             platforms = (
-                await db.execute(select(Platform).where(Platform.status == 1))
-            ).scalars().all()
+                (await db.execute(select(Platform).where(Platform.status == 1)))
+                .scalars()
+                .all()
+            )
 
             for platform in platforms:
                 adapter = get_listing_adapter(platform.code)
@@ -91,10 +95,10 @@ class SettlementSyncWorker:
             return
 
         # Parse occurred_at and derive the period start (first of the month)
-        occurred_at = datetime.fromisoformat(
-            tx["occurred_at"].replace("Z", "+00:00")
+        occurred_at = datetime.fromisoformat(tx["occurred_at"].replace("Z", "+00:00"))
+        period_start = occurred_at.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
         )
-        period_start = occurred_at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         # Find or create the Settlement batch for this platform + period
         settlement = (

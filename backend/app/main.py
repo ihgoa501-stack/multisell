@@ -67,6 +67,7 @@ async def lifespan(app: FastAPI):
 
     # ── 启动 Agent 调度引擎 ──
     from app.agent.scheduler import scheduler as _agent_scheduler
+
     await _agent_scheduler.start()
 
     # ── 启动上架任务后台 Worker ──
@@ -82,7 +83,9 @@ async def lifespan(app: FastAPI):
     await _order_sync_worker.start()
 
     # ── 启动结算同步后台 Worker ──
-    from app.finance.settlement_sync_worker import SettlementSyncWorker as _SettlementSyncWorker
+    from app.finance.settlement_sync_worker import (
+        SettlementSyncWorker as _SettlementSyncWorker,
+    )
 
     _settlement_sync_worker = _SettlementSyncWorker()
     await _settlement_sync_worker.start()
@@ -118,6 +121,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # ── 请求 ID 中间件（可观测：追踪每请求） ──
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
@@ -126,10 +130,11 @@ async def add_request_id(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
     return response
 
+
 # ── CORS（开发默认允许同站；生产配置可信来源） ──
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -140,8 +145,11 @@ _discover_routers(app)
 
 # ========== 挂载静态文件（上传目录） ==========
 import os
+
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-app.mount(settings.STATIC_URL, StaticFiles(directory=settings.UPLOAD_DIR), name="static")
+app.mount(
+    settings.STATIC_URL, StaticFiles(directory=settings.UPLOAD_DIR), name="static"
+)
 
 
 @app.exception_handler(HTTPException)

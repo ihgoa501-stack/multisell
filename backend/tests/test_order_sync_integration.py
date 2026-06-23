@@ -21,7 +21,9 @@ async def _ensure_data(db):
 
 async def _cleanup(db):
     """Remove test data."""
-    await db.execute(OrderItem.__table__.delete().where(OrderItem.sku_code.like("INTEG-%")))
+    await db.execute(
+        OrderItem.__table__.delete().where(OrderItem.sku_code.like("INTEG-%"))
+    )
     await db.execute(OrderStatusLog.__table__.delete())
     await db.execute(Order.__table__.delete().where(Order.order_no.like("INTEG-%")))
     await db.execute(Sku.__table__.delete().where(Sku.id == 9999))
@@ -46,7 +48,9 @@ async def test_upsert_new_order_db():
             "recipient_name": "Bob",
             "recipient_phone": "999",
             "shipping_address": "Test City, Street 1",
-            "items": [{"sku_code": "INTEG-SKU-001", "quantity": 3, "unit_price": "25.00"}],
+            "items": [
+                {"sku_code": "INTEG-SKU-001", "quantity": 3, "unit_price": "25.00"}
+            ],
         }
 
         async with async_session_factory() as db:
@@ -54,28 +58,32 @@ async def test_upsert_new_order_db():
             await db.commit()
 
         async with async_session_factory() as db:
-            order = (await db.execute(
-                select(Order).where(Order.order_no == "INTEG-001")
-            )).scalar_one_or_none()
+            order = (
+                await db.execute(select(Order).where(Order.order_no == "INTEG-001"))
+            ).scalar_one_or_none()
             assert order is not None
             assert order.platform_id == 999
             assert order.status == "delivered"
             assert float(order.total_amount) == 75.00
 
-            item = (await db.execute(
-                select(OrderItem).where(
-                    OrderItem.order_id == order.id,
-                    OrderItem.sku_code == "INTEG-SKU-001",
+            item = (
+                await db.execute(
+                    select(OrderItem).where(
+                        OrderItem.order_id == order.id,
+                        OrderItem.sku_code == "INTEG-SKU-001",
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             assert item is not None
             assert item.sku_id == 9999
             assert item.product_id == 9999
             assert item.quantity == 3
 
-            log = (await db.execute(
-                select(OrderStatusLog).where(OrderStatusLog.order_id == order.id)
-            )).scalar_one_or_none()
+            log = (
+                await db.execute(
+                    select(OrderStatusLog).where(OrderStatusLog.order_id == order.id)
+                )
+            ).scalar_one_or_none()
             assert log is not None
             assert log.to_status == "delivered"
 
@@ -118,14 +126,16 @@ async def test_upsert_existing_order_updates_status():
             await db.commit()
 
         async with async_session_factory() as db:
-            order = (await db.execute(
-                select(Order).where(Order.order_no == "INTEG-002")
-            )).scalar_one_or_none()
+            order = (
+                await db.execute(select(Order).where(Order.order_no == "INTEG-002"))
+            ).scalar_one_or_none()
             assert order is not None
             assert order.status == "shipped"
 
     finally:
         async with async_session_factory() as db:
             await _cleanup(db)
-            await db.execute(Order.__table__.delete().where(Order.order_no == "INTEG-002"))
+            await db.execute(
+                Order.__table__.delete().where(Order.order_no == "INTEG-002")
+            )
             await db.commit()

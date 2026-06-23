@@ -5,6 +5,7 @@ Python 的 import 系统会在首次导入子模块时将其设为包属性，
 因此 __getattr__ 导入子模块后需主动清理该属性，防止子模块对象
 遮蔽 APIRouter 的访问。
 """
+
 import importlib as _importlib
 import sys as _sys
 

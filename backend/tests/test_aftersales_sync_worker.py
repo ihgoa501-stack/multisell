@@ -33,9 +33,9 @@ async def _ensure_data(db):
 
 async def _cleanup(db):
     """Remove test data."""
-    await db.execute(AfterSalesOrder.__table__.delete().where(
-        AfterSalesOrder.order_id == 9999
-    ))
+    await db.execute(
+        AfterSalesOrder.__table__.delete().where(AfterSalesOrder.order_id == 9999)
+    )
     await db.execute(Order.__table__.delete().where(Order.id == 9999))
     await db.execute(Sku.__table__.delete().where(Sku.id == 9999))
     await db.execute(Product.__table__.delete().where(Product.id == 9999))
@@ -116,13 +116,17 @@ async def test_upsert_duplicate_return_skipped():
 
         async with async_session_factory() as db:
             rmas = (
-                await db.execute(
-                    select(AfterSalesOrder).where(
-                        AfterSalesOrder.order_id == 9999,
-                        AfterSalesOrder.sku_id == 9999,
+                (
+                    await db.execute(
+                        select(AfterSalesOrder).where(
+                            AfterSalesOrder.order_id == 9999,
+                            AfterSalesOrder.sku_id == 9999,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
             assert len(rmas) == 1, "Duplicate return should be skipped"
     finally:
@@ -157,12 +161,12 @@ async def test_upsert_return_no_order_skipped():
         async with async_session_factory() as db:
             rma = (
                 await db.execute(
-                    select(AfterSalesOrder).where(
-                        AfterSalesOrder.reason == "无此订单"
-                    )
+                    select(AfterSalesOrder).where(AfterSalesOrder.reason == "无此订单")
                 )
             ).scalar_one_or_none()
-            assert rma is None, "No AfterSalesOrder should be created when order is missing"
+            assert rma is None, (
+                "No AfterSalesOrder should be created when order is missing"
+            )
     finally:
         async with async_session_factory() as db:
             await _cleanup(db)
@@ -195,12 +199,12 @@ async def test_upsert_return_no_sku_skipped():
         async with async_session_factory() as db:
             rma = (
                 await db.execute(
-                    select(AfterSalesOrder).where(
-                        AfterSalesOrder.reason == "无此SKU"
-                    )
+                    select(AfterSalesOrder).where(AfterSalesOrder.reason == "无此SKU")
                 )
             ).scalar_one_or_none()
-            assert rma is None, "No AfterSalesOrder should be created when SKU is missing"
+            assert rma is None, (
+                "No AfterSalesOrder should be created when SKU is missing"
+            )
     finally:
         async with async_session_factory() as db:
             await _cleanup(db)

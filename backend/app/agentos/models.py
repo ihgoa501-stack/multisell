@@ -1,4 +1,5 @@
 """AgentOS 持久化模型"""
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -23,7 +24,14 @@ JSONType = JSON().with_variant(JSONB, "postgresql")
 
 
 ACTION_PROPOSAL_STATUS_FLOW = {
-    "suggested": {"pending_approval", "approved", "executing", "rejected", "expired", "blocked_by_policy"},
+    "suggested": {
+        "pending_approval",
+        "approved",
+        "executing",
+        "rejected",
+        "expired",
+        "blocked_by_policy",
+    },
     "pending_approval": {"approved", "rejected", "expired", "blocked_by_policy"},
     "approved": {"executing", "cancelled", "blocked_by_policy"},
     "executing": {"executed", "failed"},
@@ -39,21 +47,33 @@ ACTION_PROPOSAL_STATUS_FLOW = {
 
 class AgentOSOperationLog(Base):
     """AgentOS 操作审计日志"""
+
     __tablename__ = "agentos_operation_log"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False, index=True)
-    item_id = Column(String(128), nullable=False, comment="WorkItem ID (e.g. exception:42)")
-    action = Column(String(32), nullable=False, comment="approve / reject / status_update")
-    source_type = Column(String(32), nullable=True, comment="agent_action / exception / notification / listing_task")
+    item_id = Column(
+        String(128), nullable=False, comment="WorkItem ID (e.g. exception:42)"
+    )
+    action = Column(
+        String(32), nullable=False, comment="approve / reject / status_update"
+    )
+    source_type = Column(
+        String(32),
+        nullable=True,
+        comment="agent_action / exception / notification / listing_task",
+    )
     previous_status = Column(String(32), nullable=True)
     new_status = Column(String(32), nullable=True)
     comment = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=sa_func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=sa_func.now(), nullable=False
+    )
 
 
 class ActionProposal(Base):
     """AgentOS 统一动作提案"""
+
     __tablename__ = "agentos_action_proposal"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -79,11 +99,22 @@ class ActionProposal(Base):
     rejected_by = Column(String(100), nullable=True)
     rejected_at = Column(DateTime(timezone=True), nullable=True)
     rejection_reason = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=sa_func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=sa_func.now(), onupdate=sa_func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=sa_func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=sa_func.now(),
+        onupdate=sa_func.now(),
+        nullable=False,
+    )
 
-    approvals = relationship("ApprovalRequest", back_populates="proposal", lazy="selectin")
-    executions = relationship("CommandExecution", back_populates="proposal", lazy="selectin")
+    approvals = relationship(
+        "ApprovalRequest", back_populates="proposal", lazy="selectin"
+    )
+    executions = relationship(
+        "CommandExecution", back_populates="proposal", lazy="selectin"
+    )
     reviews = relationship("OutcomeReview", back_populates="proposal", lazy="selectin")
 
     __table_args__ = (
@@ -100,18 +131,25 @@ class ActionProposal(Base):
 
 class ApprovalRequest(Base):
     """ActionProposal 审批记录"""
+
     __tablename__ = "agentos_approval_request"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    proposal_id = Column(BigInteger, ForeignKey("agentos_action_proposal.id"), nullable=False, index=True)
+    proposal_id = Column(
+        BigInteger, ForeignKey("agentos_action_proposal.id"), nullable=False, index=True
+    )
     requester = Column(String(100), nullable=True)
     approver = Column(String(100), nullable=True)
     decision = Column(String(30), nullable=False, default="pending")
     comment = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=sa_func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=sa_func.now(), nullable=False
+    )
     decided_at = Column(DateTime(timezone=True), nullable=True)
 
-    proposal = relationship("ActionProposal", back_populates="approvals", lazy="selectin")
+    proposal = relationship(
+        "ActionProposal", back_populates="approvals", lazy="selectin"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -123,20 +161,27 @@ class ApprovalRequest(Base):
 
 class CommandExecution(Base):
     """业务命令执行记录"""
+
     __tablename__ = "agentos_command_execution"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    proposal_id = Column(BigInteger, ForeignKey("agentos_action_proposal.id"), nullable=False, index=True)
+    proposal_id = Column(
+        BigInteger, ForeignKey("agentos_action_proposal.id"), nullable=False, index=True
+    )
     command_name = Column(String(100), nullable=False)
     executor = Column(String(100), nullable=True)
     status = Column(String(30), nullable=False, default="started")
     input_payload = Column(JSONType, nullable=False, default=dict)
     result_payload = Column(JSONType, nullable=True)
     error_message = Column(Text, nullable=True)
-    started_at = Column(DateTime(timezone=True), server_default=sa_func.now(), nullable=False)
+    started_at = Column(
+        DateTime(timezone=True), server_default=sa_func.now(), nullable=False
+    )
     finished_at = Column(DateTime(timezone=True), nullable=True)
 
-    proposal = relationship("ActionProposal", back_populates="executions", lazy="selectin")
+    proposal = relationship(
+        "ActionProposal", back_populates="executions", lazy="selectin"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -148,16 +193,21 @@ class CommandExecution(Base):
 
 class OutcomeReview(Base):
     """动作执行后的经营结果复盘"""
+
     __tablename__ = "agentos_outcome_review"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    proposal_id = Column(BigInteger, ForeignKey("agentos_action_proposal.id"), nullable=False, index=True)
+    proposal_id = Column(
+        BigInteger, ForeignKey("agentos_action_proposal.id"), nullable=False, index=True
+    )
     outcome = Column(String(30), nullable=False)
     business_metric = Column(String(100), nullable=True)
     metric_delta = Column(Numeric(14, 4), nullable=True)
     notes = Column(Text, nullable=True)
     reviewed_by = Column(String(100), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=sa_func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=sa_func.now(), nullable=False
+    )
 
     proposal = relationship("ActionProposal", back_populates="reviews", lazy="selectin")
 

@@ -1,4 +1,5 @@
 """供应商管理 - 服务层"""
+
 from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +7,6 @@ from app.models import Supplier, ProductSupplier
 
 
 class SupplierService:
-
     @staticmethod
     async def create(db: AsyncSession, data: dict) -> Supplier:
         supplier = Supplier(**data)
@@ -16,7 +16,9 @@ class SupplierService:
         return supplier
 
     @staticmethod
-    async def update(db: AsyncSession, supplier_id: int, data: dict) -> Optional[Supplier]:
+    async def update(
+        db: AsyncSession, supplier_id: int, data: dict
+    ) -> Optional[Supplier]:
         supplier = await db.get(Supplier, supplier_id)
         if not supplier:
             return None
@@ -32,8 +34,9 @@ class SupplierService:
         return await db.get(Supplier, supplier_id)
 
     @staticmethod
-    async def list_suppliers(db: AsyncSession, name: str = None,
-                              page: int = 1, page_size: int = 20) -> tuple[list[Supplier], int]:
+    async def list_suppliers(
+        db: AsyncSession, name: str = None, page: int = 1, page_size: int = 20
+    ) -> tuple[list[Supplier], int]:
         stmt = select(Supplier)
         if name:
             stmt = stmt.where(Supplier.name.like(f"%{name}%"))
@@ -56,8 +59,13 @@ class SupplierService:
         return True
 
     @staticmethod
-    async def bind_product(db: AsyncSession, product_id: int, supplier_id: int,
-                            supply_price: float = None, min_order_qty: int = 1) -> ProductSupplier:
+    async def bind_product(
+        db: AsyncSession,
+        product_id: int,
+        supplier_id: int,
+        supply_price: float = None,
+        min_order_qty: int = 1,
+    ) -> ProductSupplier:
         """绑定商品到供应商"""
         # 检查是否已绑定
         stmt = select(ProductSupplier).where(
@@ -95,19 +103,23 @@ class SupplierService:
         result = await db.execute(stmt)
         rows = []
         for ps, supplier_name in result.all():
-            rows.append({
-                "id": ps.id,
-                "product_id": ps.product_id,
-                "supplier_id": ps.supplier_id,
-                "supplier_name": supplier_name,
-                "supply_price": float(ps.supply_price) if ps.supply_price else None,
-                "min_order_qty": ps.min_order_qty or 1,
-                "created_at": ps.created_at,
-            })
+            rows.append(
+                {
+                    "id": ps.id,
+                    "product_id": ps.product_id,
+                    "supplier_id": ps.supplier_id,
+                    "supplier_name": supplier_name,
+                    "supply_price": float(ps.supply_price) if ps.supply_price else None,
+                    "min_order_qty": ps.min_order_qty or 1,
+                    "created_at": ps.created_at,
+                }
+            )
         return rows
 
     @staticmethod
-    async def unbind_product(db: AsyncSession, product_id: int, supplier_id: int) -> bool:
+    async def unbind_product(
+        db: AsyncSession, product_id: int, supplier_id: int
+    ) -> bool:
         stmt = select(ProductSupplier).where(
             ProductSupplier.product_id == product_id,
             ProductSupplier.supplier_id == supplier_id,

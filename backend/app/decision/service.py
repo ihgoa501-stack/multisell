@@ -15,7 +15,6 @@ from app.decision.schemas import (
 
 
 class PreListingDecisionService:
-
     @staticmethod
     async def calculate(
         db: AsyncSession,
@@ -43,7 +42,9 @@ class PreListingDecisionService:
                 destination_country=req.destination_country,
                 cargo_type=req.cargo_type,
             )
-            calc_resp: CalculateResponse = await CalculateService.calculate(db, calc_req)
+            calc_resp: CalculateResponse = await CalculateService.calculate(
+                db, calc_req
+            )
             if not calc_resp.results:
                 blocking_reasons.append("无可用物流渠道报价")
             else:
@@ -80,9 +81,15 @@ class PreListingDecisionService:
         # 4. 计算支付费用及其他
         payment_fee = req.target_sale_price * req.payment_fee_pct / 100
 
-        total_cost = product_cost + shipping_fee + platform_fee + payment_fee + req.other_fee
+        total_cost = (
+            product_cost + shipping_fee + platform_fee + payment_fee + req.other_fee
+        )
         profit_amount = req.target_sale_price - total_cost
-        profit_margin = (profit_amount / req.target_sale_price * 100) if req.target_sale_price > 0 else 0
+        profit_margin = (
+            (profit_amount / req.target_sale_price * 100)
+            if req.target_sale_price > 0
+            else 0
+        )
         profit_margin = round(profit_margin, 2)
         profit_amount = round(profit_amount, 2)
 
@@ -92,7 +99,9 @@ class PreListingDecisionService:
         elif profit_margin >= req.minimum_margin_pct:
             recommendation = "approve"
             if profit_margin < req.minimum_margin_pct + 5:
-                warnings.append(f"利润率仅{profit_margin}%，接近最低阈值{req.minimum_margin_pct}%")
+                warnings.append(
+                    f"利润率仅{profit_margin}%，接近最低阈值{req.minimum_margin_pct}%"
+                )
         else:
             recommendation = "reject"
             blocking_reasons.append(

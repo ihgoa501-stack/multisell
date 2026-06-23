@@ -1,19 +1,24 @@
 """1688 货源采集 - 服务层"""
+
 from typing import Optional
 from decimal import Decimal
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
-    Sourcing1688Product, Product, Supplier,
-    ProductSupplier, Sku,
+    Sourcing1688Product,
+    Product,
+    Supplier,
+    ProductSupplier,
+    Sku,
 )
 from app.sourcing_1688.schemas import CollectPayload, ImportPayload
 
 
 class Sourcing1688Service:
-
     @staticmethod
-    async def collect(db: AsyncSession, data: CollectPayload, username: str) -> Sourcing1688Product:
+    async def collect(
+        db: AsyncSession, data: CollectPayload, username: str
+    ) -> Sourcing1688Product:
         """采集/更新 1688 商品到候选池（按 source_url upsert）"""
         # 按 source_url 查找已有记录
         stmt = select(Sourcing1688Product).where(
@@ -38,9 +43,15 @@ class Sourcing1688Service:
             "attributes": data.attributes,
             "sku_variants": data.skuVariants,
             "description": data.description,
-            "package_length_cm": Decimal(str(data.length_cm)) if data.length_cm is not None else None,
-            "package_width_cm": Decimal(str(data.width_cm)) if data.width_cm is not None else None,
-            "package_height_cm": Decimal(str(data.height_cm)) if data.height_cm is not None else None,
+            "package_length_cm": Decimal(str(data.length_cm))
+            if data.length_cm is not None
+            else None,
+            "package_width_cm": Decimal(str(data.width_cm))
+            if data.width_cm is not None
+            else None,
+            "package_height_cm": Decimal(str(data.height_cm))
+            if data.height_cm is not None
+            else None,
             "package_weight_kg": weight_kg,
             "raw_data": data.model_dump(),
             "collected_by": username,
@@ -87,22 +98,28 @@ class Sourcing1688Service:
         if keyword:
             like = f"%{keyword}%"
             stmt = stmt.where(
-                Sourcing1688Product.title.ilike(like) |
-                Sourcing1688Product.supplier_name.ilike(like)
+                Sourcing1688Product.title.ilike(like)
+                | Sourcing1688Product.supplier_name.ilike(like)
             )
             count_stmt = count_stmt.where(
-                Sourcing1688Product.title.ilike(like) |
-                Sourcing1688Product.supplier_name.ilike(like)
+                Sourcing1688Product.title.ilike(like)
+                | Sourcing1688Product.supplier_name.ilike(like)
             )
 
         total = await db.scalar(count_stmt) or 0
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(Sourcing1688Product.created_at.desc()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(Sourcing1688Product.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all()), total
 
     @staticmethod
-    async def get_product(db: AsyncSession, product_id: int) -> Optional[Sourcing1688Product]:
+    async def get_product(
+        db: AsyncSession, product_id: int
+    ) -> Optional[Sourcing1688Product]:
         """获取候选商品详情"""
         return await db.get(Sourcing1688Product, product_id)
 
@@ -189,7 +206,9 @@ class Sourcing1688Service:
                     product_id=product.id,
                     spec_desc=spec,
                     spec_values=spec_values if spec_values else None,
-                    cost_price=Decimal(str(cost_price)) if cost_price is not None else None,
+                    cost_price=Decimal(str(cost_price))
+                    if cost_price is not None
+                    else None,
                     stock=variant.get("stock", 0) or 0,
                 )
                 db.add(sku)
@@ -215,7 +234,9 @@ class Sourcing1688Service:
         return candidate
 
     @staticmethod
-    async def reject_product(db: AsyncSession, candidate_id: int) -> Optional[Sourcing1688Product]:
+    async def reject_product(
+        db: AsyncSession, candidate_id: int
+    ) -> Optional[Sourcing1688Product]:
         """驳回候选商品"""
         candidate = await db.get(Sourcing1688Product, candidate_id)
         if not candidate:

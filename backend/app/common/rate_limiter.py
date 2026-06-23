@@ -8,6 +8,7 @@ Default rates (requests/second, burst):
 
 ponytail: per-account limits if one SB account uses multiple tenants.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,7 +54,9 @@ _limiters: dict[str, _TokenBucket] = {}
 _init_lock = asyncio.Lock()
 
 
-async def get_limiter_for_platform(platform_code: str, platform_id: Any = None) -> _TokenBucket:
+async def get_limiter_for_platform(
+    platform_code: str, platform_id: Any = None
+) -> _TokenBucket:
     async with _init_lock:
         limiter = _limiters.get(platform_code)
         if limiter is None:

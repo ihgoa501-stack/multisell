@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # ── Adapter 注册表 ──────────────────────────────────────────────────────
 
+
 class AdapterCapabilityResponse(BaseModel):
     adapter_code: str
     display_name: str
@@ -18,6 +19,7 @@ class AdapterCapabilityResponse(BaseModel):
 
 
 # ── 平台账号/连接配置 ────────────────────────────────────────────────────
+
 
 class PlatformIntegrationAccountCreate(BaseModel):
     platform_id: int
@@ -55,6 +57,7 @@ class TestConnectionResponse(BaseModel):
 
 # ── 类目映射 ────────────────────────────────────────────────────────────
 
+
 class PlatformCategoryMappingCreate(BaseModel):
     platform_id: int
     adapter_code: str = Field(..., min_length=1, max_length=50)
@@ -81,6 +84,7 @@ class PlatformCategoryMappingResponse(BaseModel):
 
 
 # ── 属性映射 ────────────────────────────────────────────────────────────
+
 
 class PlatformAttributeMappingCreate(BaseModel):
     platform_id: int

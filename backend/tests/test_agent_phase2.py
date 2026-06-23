@@ -6,6 +6,7 @@
 3. A3 广告建议 — acos_analysis / ad_optimization
 4. Nudge/Shadow/熵规则健康
 """
+
 import pytest
 
 from app.agent.agents.profit_watch import A6ProfitWatchAgent
@@ -15,8 +16,8 @@ from app.agent.agents.profit_watch import A6ProfitWatchAgent
 #  G1 运营驾驶舱 测试
 # ================================================================
 
-class TestG1Dashboard:
 
+class TestG1Dashboard:
     async def test_dashboard_empty(self, async_client):
         """空数据时返回默认值（或无数据时正常响应）"""
         resp = await async_client.get("/api/agents/dashboard")
@@ -29,38 +30,47 @@ class TestG1Dashboard:
     async def test_dashboard_with_agent_decisions(self, async_client):
         """有决策数据时驾驶舱正常聚合"""
         # 创建一个 A5 红色预警决策
-        await async_client.post("/api/agents/A5/decide", json={
-            "decision_point": "stock_alert",
-            "context": {
-                "sku_code": "DASH-SKU-001",
-                "sellable_stock": 5,
-                "sales_7d": 14,
-                "lead_time_days": 20,
-                "safety_stock_days": 14,
+        await async_client.post(
+            "/api/agents/A5/decide",
+            json={
+                "decision_point": "stock_alert",
+                "context": {
+                    "sku_code": "DASH-SKU-001",
+                    "sellable_stock": 5,
+                    "sales_7d": 14,
+                    "lead_time_days": 20,
+                    "safety_stock_days": 14,
+                },
             },
-        })
+        )
         # 创建一个 G3 阻断决策
-        await async_client.post("/api/agents/G3/decide", json={
-            "decision_point": "discount_check",
-            "context": {
-                "sku_code": "DASH-SKU-002",
-                "selling_price": 100,
-                "cost_price": 90,
-                "active_discounts": [{"type": "coupon", "value": 15}],
-                "platform": "amazon",
+        await async_client.post(
+            "/api/agents/G3/decide",
+            json={
+                "decision_point": "discount_check",
+                "context": {
+                    "sku_code": "DASH-SKU-002",
+                    "selling_price": 100,
+                    "cost_price": 90,
+                    "active_discounts": [{"type": "coupon", "value": 15}],
+                    "platform": "amazon",
+                },
             },
-        })
+        )
         # 创建一个 A6 亏损决策
-        await async_client.post("/api/agents/A6/decide", json={
-            "decision_point": "profit_check",
-            "context": {
-                "sku_code": "DASH-SKU-003",
-                "selling_price": 100,
-                "cost_price": 95,
-                "platform_fee_rate": 15,
-                "shipping_fee": 20,
+        await async_client.post(
+            "/api/agents/A6/decide",
+            json={
+                "decision_point": "profit_check",
+                "context": {
+                    "sku_code": "DASH-SKU-003",
+                    "selling_price": 100,
+                    "cost_price": 95,
+                    "platform_fee_rate": 15,
+                    "shipping_fee": 20,
+                },
             },
-        })
+        )
 
         resp = await async_client.get("/api/agents/dashboard")
         assert resp.status_code == 200
@@ -82,8 +92,8 @@ class TestG1Dashboard:
 #  A6 利润监控 Agent 测试
 # ================================================================
 
-class TestA6ProfitWatch:
 
+class TestA6ProfitWatch:
     @pytest.fixture
     def agent(self):
         return A6ProfitWatchAgent(user_id=1)
@@ -216,8 +226,14 @@ class TestA6ProfitWatch:
         assert "refund_cost" in fees
         assert "total" in fees
         # Verify total = sum of all fees
-        expected_total = (fees["platform_fee"] + fees["shipping_fee"] + fees["fixed_fee"]
-                          + fees["discount"] + fees["ad_cost"] + fees["refund_cost"])
+        expected_total = (
+            fees["platform_fee"]
+            + fees["shipping_fee"]
+            + fees["fixed_fee"]
+            + fees["discount"]
+            + fees["ad_cost"]
+            + fees["refund_cost"]
+        )
         assert fees["total"] == round(expected_total, 2)
 
     async def test_profit_insufficient_data(self, agent):
@@ -281,8 +297,8 @@ class TestA6ProfitWatch:
 #  A6 决策日志集成测试
 # ================================================================
 
-class TestA6DecisionLogging:
 
+class TestA6DecisionLogging:
     async def test_a6_decision_creates_log(self, async_client):
         """A6 利润决策写入 agent_decision"""
         resp = await async_client.post(
@@ -316,11 +332,12 @@ class TestA6DecisionLogging:
 #  A3 广告建议 Agent 测试
 # ================================================================
 
-class TestA3AdAdvice:
 
+class TestA3AdAdvice:
     @pytest.fixture
     def agent(self):
         from app.agent.agents.ad_advice import A3AdAdviceAgent
+
         return A3AdAdviceAgent(user_id=1)
 
     # ── acos_analysis ────────────────────────────────────────
@@ -434,7 +451,9 @@ class TestA3AdAdvice:
         }
         result = await agent.decide("ad_optimization", ctx)
         # "cheap product": ACOS=200%, clicks=50 ≥ 10 → should be in negative keywords
-        neg_items = [i for i in result["optimization_items"] if i["type"] == "negative_keyword"]
+        neg_items = [
+            i for i in result["optimization_items"] if i["type"] == "negative_keyword"
+        ]
         assert len(neg_items) > 0
 
     async def test_ad_optimization_insufficient(self, agent):

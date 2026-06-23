@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class ExceptionItemResponse(BaseModel):
     """异常条目响应"""
+
     id: int
     source_module: str
     source_type: Optional[str] = None

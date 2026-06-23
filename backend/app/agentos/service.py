@@ -188,7 +188,9 @@ class AgentOSService:
     ) -> RiskLevel:
         payload = payload or {}
         try:
-            amount = abs(float(payload.get("amount") or payload.get("total_amount") or 0))
+            amount = abs(
+                float(payload.get("amount") or payload.get("total_amount") or 0)
+            )
         except (TypeError, ValueError):
             amount = 0
         sku_codes = payload.get("sku_codes") or payload.get("sku_ids") or []
@@ -211,7 +213,10 @@ class AgentOSService:
 
     @staticmethod
     def _approval_required(risk: RiskLevel, status: str) -> bool:
-        return status in {"pending", "proposed"} and risk in {RiskLevel.HIGH, RiskLevel.CRITICAL}
+        return status in {"pending", "proposed"} and risk in {
+            RiskLevel.HIGH,
+            RiskLevel.CRITICAL,
+        }
 
     @staticmethod
     def _to_datetime(val: Any) -> datetime | None:
@@ -228,7 +233,8 @@ class AgentOSService:
         """将 Agent 待执行操作归一化为 WorkItem"""
         risk = AgentOSService._risk_from_action(
             getattr(row, "action_type", None),
-            getattr(row, "action_payload", None) or getattr(row, "proposed_payload", None),
+            getattr(row, "action_payload", None)
+            or getattr(row, "proposed_payload", None),
         )
         squad_id = AgentOSService._squad_for_agent(getattr(row, "agent_id", None))
         status_raw = getattr(row, "status", "pending")
@@ -255,7 +261,11 @@ class AgentOSService:
             metadata={
                 "action_type": getattr(row, "action_type", ""),
                 "decision_id": str(getattr(row, "decision_id", "")),
-                "payload": (getattr(row, "action_payload", None) or getattr(row, "proposed_payload", None) or {}),
+                "payload": (
+                    getattr(row, "action_payload", None)
+                    or getattr(row, "proposed_payload", None)
+                    or {}
+                ),
             },
         )
 
@@ -327,7 +337,9 @@ class AgentOSService:
     def normalize_listing_task(row: Any) -> AgentOSWorkItem:
         """将上架任务归一化为 WorkItem"""
         status_raw = getattr(row, "status", "blocked")
-        risk = RiskLevel.HIGH if status_raw in {"failed", "blocked"} else RiskLevel.MEDIUM
+        risk = (
+            RiskLevel.HIGH if status_raw in {"failed", "blocked"} else RiskLevel.MEDIUM
+        )
 
         return AgentOSWorkItem(
             id=f"listing_task:{getattr(row, 'id', 0)}",
@@ -365,7 +377,11 @@ class AgentOSService:
         critical_count = 0
         exception_items: list[AgentOSWorkItem] = []
         try:
-            stmt = select(ExceptionItem).order_by(ExceptionItem.created_at.desc()).limit(20)
+            stmt = (
+                select(ExceptionItem)
+                .order_by(ExceptionItem.created_at.desc())
+                .limit(20)
+            )
             result = await db.execute(stmt)
             for row in result.scalars().all():
                 item = AgentOSService.normalize_exception(row)
@@ -378,7 +394,9 @@ class AgentOSService:
         # 统计通知
         notification_items: list[AgentOSWorkItem] = []
         try:
-            stmt = select(Notification).order_by(Notification.created_at.desc()).limit(20)
+            stmt = (
+                select(Notification).order_by(Notification.created_at.desc()).limit(20)
+            )
             result = await db.execute(stmt)
             for row in result.scalars().all():
                 notification_items.append(AgentOSService.normalize_notification(row))
@@ -398,7 +416,9 @@ class AgentOSService:
             )
             result = await db.execute(stmt)
             for row in result.scalars().all():
-                pending_actions.append(AgentOSService.normalize_agent_pending_action(row))
+                pending_actions.append(
+                    AgentOSService.normalize_agent_pending_action(row)
+                )
         except Exception:
             pass
 
@@ -420,8 +440,16 @@ class AgentOSService:
             pass
 
         # 合并所有 WorkItem 并按风险排序
-        all_items = exception_items + notification_items + pending_actions + listing_items
-        all_items.sort(key=lambda x: (_PRIORITY_SORT.get(x.priority, 0), x.created_at or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+        all_items = (
+            exception_items + notification_items + pending_actions + listing_items
+        )
+        all_items.sort(
+            key=lambda x: (
+                _PRIORITY_SORT.get(x.priority, 0),
+                x.created_at or datetime.min.replace(tzinfo=timezone.utc),
+            ),
+            reverse=True,
+        )
 
         # 统计摘要
         pending_approvals = sum(1 for i in all_items if i.requires_approval)
@@ -429,7 +457,9 @@ class AgentOSService:
         overview.critical_items = critical_count
         overview.active_agents = await AgentOSService._count_active_agents(db)
         decision_adoption = await AgentOSService._get_decision_adoption(db)
-        overview.health_score = AgentOSService._compute_health_score(all_items, decision_adoption)
+        overview.health_score = AgentOSService._compute_health_score(
+            all_items, decision_adoption
+        )
 
         # 构建团队数据
         squads = AgentOSService._build_squads(all_items)
@@ -439,12 +469,21 @@ class AgentOSService:
         metrics = AgentOSService._build_metrics(all_items, finance)
 
         # 优先任务（高风险 + 需审批）
-        priority_items = [i for i in all_items if i.risk_level in {RiskLevel.HIGH, RiskLevel.CRITICAL} or i.requires_approval][:10]
+        priority_items = [
+            i
+            for i in all_items
+            if i.risk_level in {RiskLevel.HIGH, RiskLevel.CRITICAL}
+            or i.requires_approval
+        ][:10]
 
         # 最近活动
         recent = sorted(
             all_items,
-            key=lambda x: x.updated_at or x.created_at or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda x: (
+                x.updated_at
+                or x.created_at
+                or datetime.min.replace(tzinfo=timezone.utc)
+            ),
             reverse=True,
         )[:10]
 
@@ -483,11 +522,16 @@ class AgentOSService:
         if source_type:
             all_items = [i for i in all_items if i.source_type == source_type]
         if requires_approval is not None:
-            all_items = [i for i in all_items if i.requires_approval == requires_approval]
+            all_items = [
+                i for i in all_items if i.requires_approval == requires_approval
+            ]
 
         # 排序：风险优先，时间次之
         all_items.sort(
-            key=lambda x: (_PRIORITY_SORT.get(x.priority, 0), x.created_at or datetime.min.replace(tzinfo=timezone.utc)),
+            key=lambda x: (
+                _PRIORITY_SORT.get(x.priority, 0),
+                x.created_at or datetime.min.replace(tzinfo=timezone.utc),
+            ),
             reverse=True,
         )
 
@@ -535,7 +579,11 @@ class AgentOSService:
 
         # 异常
         try:
-            stmt = select(ExceptionItem).order_by(ExceptionItem.created_at.desc()).limit(100)
+            stmt = (
+                select(ExceptionItem)
+                .order_by(ExceptionItem.created_at.desc())
+                .limit(100)
+            )
             result = await db.execute(stmt)
             for row in result.scalars().all():
                 items.append(AgentOSService.normalize_exception(row))
@@ -544,7 +592,9 @@ class AgentOSService:
 
         # 通知
         try:
-            stmt = select(Notification).order_by(Notification.created_at.desc()).limit(100)
+            stmt = (
+                select(Notification).order_by(Notification.created_at.desc()).limit(100)
+            )
             result = await db.execute(stmt)
             for row in result.scalars().all():
                 items.append(AgentOSService.normalize_notification(row))
@@ -555,7 +605,11 @@ class AgentOSService:
         try:
             from app.agent.models import AgentAction as PendingAgentAction
 
-            stmt = select(PendingAgentAction).order_by(PendingAgentAction.created_at.desc()).limit(100)
+            stmt = (
+                select(PendingAgentAction)
+                .order_by(PendingAgentAction.created_at.desc())
+                .limit(100)
+            )
             result = await db.execute(stmt)
             for row in result.scalars().all():
                 items.append(AgentOSService.normalize_agent_pending_action(row))
@@ -580,7 +634,11 @@ class AgentOSService:
 
         # ActionProposal（动作中枢持久化提案）
         try:
-            proposal_stmt = select(ActionProposal).order_by(ActionProposal.created_at.desc()).limit(100)
+            proposal_stmt = (
+                select(ActionProposal)
+                .order_by(ActionProposal.created_at.desc())
+                .limit(100)
+            )
             proposal_result = await db.execute(proposal_stmt)
             for row in proposal_result.scalars().all():
                 items.append(ActionCenterService.proposal_to_work_item(row))
@@ -613,28 +671,40 @@ class AgentOSService:
             ]
 
             # 统计
-            pending_count = sum(1 for i in squad_items if i.status == WorkItemStatus.PENDING)
+            pending_count = sum(
+                1 for i in squad_items if i.status == WorkItemStatus.PENDING
+            )
             approval_count = sum(1 for i in squad_items if i.requires_approval)
             squad_risk_levels = [i.risk_level for i in squad_items if i.risk_level]
-            squad_risk = RiskLevel.CRITICAL if any(r == RiskLevel.CRITICAL for r in squad_risk_levels) else (
-                RiskLevel.HIGH if any(r == RiskLevel.HIGH for r in squad_risk_levels) else
-                RiskLevel.MEDIUM if any(r == RiskLevel.MEDIUM for r in squad_risk_levels) else
-                RiskLevel.LOW
+            squad_risk = (
+                RiskLevel.CRITICAL
+                if any(r == RiskLevel.CRITICAL for r in squad_risk_levels)
+                else (
+                    RiskLevel.HIGH
+                    if any(r == RiskLevel.HIGH for r in squad_risk_levels)
+                    else RiskLevel.MEDIUM
+                    if any(r == RiskLevel.MEDIUM for r in squad_risk_levels)
+                    else RiskLevel.LOW
+                )
             )
 
-            squads.append(AgentOSSquad(
-                id=squad_id,
-                name=sq["name"],
-                description=sq["description"],
-                domain=sq.get("domain", ""),
-                status="active",
-                autonomy_level=AutonomyLevel.SUGGESTION,
-                agents=agents,
-                active_work_items=pending_count,
-                pending_approvals=approval_count,
-                risk_level=squad_risk,
-                health_score=AgentOSService._compute_squad_health(squad_items, agents),
-            ))
+            squads.append(
+                AgentOSSquad(
+                    id=squad_id,
+                    name=sq["name"],
+                    description=sq["description"],
+                    domain=sq.get("domain", ""),
+                    status="active",
+                    autonomy_level=AutonomyLevel.SUGGESTION,
+                    agents=agents,
+                    active_work_items=pending_count,
+                    pending_approvals=approval_count,
+                    risk_level=squad_risk,
+                    health_score=AgentOSService._compute_squad_health(
+                        squad_items, agents
+                    ),
+                )
+            )
         return squads
 
     @staticmethod
@@ -643,12 +713,16 @@ class AgentOSService:
         result = {"sales_today": 0, "profit_today": 0}
         try:
             from app.models import FinanceLedgerEntry
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+            today_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
 
             # 今日收入 (revenue 类型)
             rev = await db.scalar(
-                select(sa_func.coalesce(sa_func.sum(FinanceLedgerEntry.amount), 0))
-                .where(
+                select(
+                    sa_func.coalesce(sa_func.sum(FinanceLedgerEntry.amount), 0)
+                ).where(
                     FinanceLedgerEntry.entry_type == "revenue",
                     FinanceLedgerEntry.created_at >= today_start,
                 )
@@ -657,8 +731,9 @@ class AgentOSService:
 
             # 今日利润 (所有条目加总)
             profit = await db.scalar(
-                select(sa_func.coalesce(sa_func.sum(FinanceLedgerEntry.amount), 0))
-                .where(FinanceLedgerEntry.created_at >= today_start)
+                select(
+                    sa_func.coalesce(sa_func.sum(FinanceLedgerEntry.amount), 0)
+                ).where(FinanceLedgerEntry.created_at >= today_start)
             )
             result["profit_today"] = float(profit or 0)
         except Exception:
@@ -678,13 +753,39 @@ class AgentOSService:
         approval = sum(1 for i in items if i.requires_approval)
 
         return [
-            AgentOSMetric(key="sales_today", label="今日销售", value=finance.get("sales_today", 0), unit="元"),
-            AgentOSMetric(key="profit_today", label="今日利润", value=finance.get("profit_today", 0), unit="元"),
-            AgentOSMetric(key="total_items", label="总任务数", value=float(total), unit="个"),
-            AgentOSMetric(key="pending_items", label="待处理", value=float(pending), unit="个"),
-            AgentOSMetric(key="critical_items", label="严重风险", value=float(critical), unit="个"),
-            AgentOSMetric(key="pending_approvals", label="待审批", value=float(approval), unit="个"),
-            AgentOSMetric(key="agent_count", label="Agent 数", value=float(len(AGENT_TO_SQUAD)), unit="个"),
+            AgentOSMetric(
+                key="sales_today",
+                label="今日销售",
+                value=finance.get("sales_today", 0),
+                unit="元",
+            ),
+            AgentOSMetric(
+                key="profit_today",
+                label="今日利润",
+                value=finance.get("profit_today", 0),
+                unit="元",
+            ),
+            AgentOSMetric(
+                key="total_items", label="总任务数", value=float(total), unit="个"
+            ),
+            AgentOSMetric(
+                key="pending_items", label="待处理", value=float(pending), unit="个"
+            ),
+            AgentOSMetric(
+                key="critical_items", label="严重风险", value=float(critical), unit="个"
+            ),
+            AgentOSMetric(
+                key="pending_approvals",
+                label="待审批",
+                value=float(approval),
+                unit="个",
+            ),
+            AgentOSMetric(
+                key="agent_count",
+                label="Agent 数",
+                value=float(len(AGENT_TO_SQUAD)),
+                unit="个",
+            ),
         ]
 
     @staticmethod
@@ -692,10 +793,12 @@ class AgentOSService:
         """统计最近 7 天有活动的 Agent 数量"""
         try:
             from app.agent.models import AgentDecision
+
             seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
             result = await db.execute(
-                select(sa_func.count(sa_func.distinct(AgentDecision.agent_id)))
-                .where(AgentDecision.created_at >= seven_days_ago)
+                select(sa_func.count(sa_func.distinct(AgentDecision.agent_id))).where(
+                    AgentDecision.created_at >= seven_days_ago
+                )
             )
             count = result.scalar() or 0
             return max(count, len(AGENT_TO_SQUAD) if count == 0 else int(count))
@@ -707,29 +810,46 @@ class AgentOSService:
         """获取最近 7 天决策采纳率"""
         try:
             from app.agent.models import AgentDecision
+
             seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-            total = await db.scalar(
-                select(sa_func.count()).select_from(AgentDecision)
-                .where(AgentDecision.created_at >= seven_days_ago)
-            ) or 0
+            total = (
+                await db.scalar(
+                    select(sa_func.count())
+                    .select_from(AgentDecision)
+                    .where(AgentDecision.created_at >= seven_days_ago)
+                )
+                or 0
+            )
             if not total:
                 return 0
-            accepted = await db.scalar(
-                select(sa_func.count()).select_from(AgentDecision)
-                .where(AgentDecision.created_at >= seven_days_ago,
-                      AgentDecision.user_action == "accepted")
-            ) or 0
+            accepted = (
+                await db.scalar(
+                    select(sa_func.count())
+                    .select_from(AgentDecision)
+                    .where(
+                        AgentDecision.created_at >= seven_days_ago,
+                        AgentDecision.user_action == "accepted",
+                    )
+                )
+                or 0
+            )
             return accepted / total
         except Exception:
             return 0
 
     @staticmethod
-    def _compute_health_score(items: list[AgentOSWorkItem], adoption_rate: float = 0.0) -> float:
+    def _compute_health_score(
+        items: list[AgentOSWorkItem], adoption_rate: float = 0.0
+    ) -> float:
         """计算系统健康分 (0-100)"""
         if not items:
             return 85.0  # 无数据时默认健康
-        critical_ratio = sum(1 for i in items if i.risk_level == RiskLevel.CRITICAL) / len(items)
-        pending_ratio = sum(1 for i in items if i.status == WorkItemStatus.PENDING) / len(items)
+        critical_ratio = sum(
+            1 for i in items if i.risk_level == RiskLevel.CRITICAL
+        ) / len(items)
+        pending_ratio = sum(
+            1 for i in items if i.status == WorkItemStatus.PENDING
+        ) / len(items)
         base = 100 - (critical_ratio * 50) - (pending_ratio * 20)
         # 采纳率 bonus：最高 +10 分
         adoption_bonus = adoption_rate * 10
@@ -887,17 +1007,21 @@ class AgentOSService:
             error_count = sum(1 for r in recent_risks if r == "high")
             success_rate = max(0, 1 - (error_count / max(decisions_total, 1)))
 
-            adoption_rate = decisions_accepted / max(decisions_total, 1) if decisions_total else 0
+            adoption_rate = (
+                decisions_accepted / max(decisions_total, 1) if decisions_total else 0
+            )
 
-            agents_data.append({
-                "id": agent_id,
-                "autonomy_level": AutonomyLevel.SUGGESTION.value,
-                "success_rate": round(success_rate, 3),
-                "adoption_rate": round(adoption_rate, 3),
-                "recent_risk_levels": recent_risks,
-                "total_decisions": decisions_total,
-                "recent_errors": error_count,
-            })
+            agents_data.append(
+                {
+                    "id": agent_id,
+                    "autonomy_level": AutonomyLevel.SUGGESTION.value,
+                    "success_rate": round(success_rate, 3),
+                    "adoption_rate": round(adoption_rate, 3),
+                    "recent_risk_levels": recent_risks,
+                    "total_decisions": decisions_total,
+                    "recent_errors": error_count,
+                }
+            )
 
         candidates = batch_suggest_upgrades(agents_data)
 
@@ -907,18 +1031,20 @@ class AgentOSService:
             aid = c["agent_id"]
             meta = AGENT_META.get(aid, {})
             squad_id = AGENT_TO_SQUAD.get(aid, "governance")
-            result.append({
-                "agent_id": aid,
-                "agent_name": meta.get("name", aid),
-                "squad_id": squad_id,
-                "squad_name": SQUAD_TO_NAME.get(squad_id, squad_id),
-                "current_level": c.get("current_level", "SUGGESTION"),
-                "suggested": c["suggested"],
-                "direction": c["direction"],
-                "target_level": c["target_level"],
-                "confidence": c["confidence"],
-                "reason": c["reason"],
-            })
+            result.append(
+                {
+                    "agent_id": aid,
+                    "agent_name": meta.get("name", aid),
+                    "squad_id": squad_id,
+                    "squad_name": SQUAD_TO_NAME.get(squad_id, squad_id),
+                    "current_level": c.get("current_level", "SUGGESTION"),
+                    "suggested": c["suggested"],
+                    "direction": c["direction"],
+                    "target_level": c["target_level"],
+                    "confidence": c["confidence"],
+                    "reason": c["reason"],
+                }
+            )
         return result
 
     # ── Phase 4 Finale: Agent Detail ──────────────────────────
@@ -951,11 +1077,16 @@ class AgentOSService:
         operations = []
         try:
             ops_result = await AgentOSService.get_operations(
-                db, limit=20, offset=0,
+                db,
+                limit=20,
+                offset=0,
             )
             op_records = ops_result.get("records", [])
             for op in op_records:
-                if isinstance(op, AgentOSOperationLogVO) and op.item_id == f"agent:{agent_id}":
+                if (
+                    isinstance(op, AgentOSOperationLogVO)
+                    and op.item_id == f"agent:{agent_id}"
+                ):
                     operations.append(op)
         except Exception:
             pass
@@ -965,22 +1096,31 @@ class AgentOSService:
         adoption_rate = 0.0
         try:
             from app.agent.models import AgentDecision
+
             seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-            total = await db.scalar(
-                select(sa_func.count()).select_from(AgentDecision)
-                .where(
-                    AgentDecision.agent_id == agent_id,
-                    AgentDecision.created_at >= seven_days_ago,
+            total = (
+                await db.scalar(
+                    select(sa_func.count())
+                    .select_from(AgentDecision)
+                    .where(
+                        AgentDecision.agent_id == agent_id,
+                        AgentDecision.created_at >= seven_days_ago,
+                    )
                 )
-            ) or 0
-            accepted = await db.scalar(
-                select(sa_func.count()).select_from(AgentDecision)
-                .where(
-                    AgentDecision.agent_id == agent_id,
-                    AgentDecision.user_action == "accepted",
-                    AgentDecision.created_at >= seven_days_ago,
+                or 0
+            )
+            accepted = (
+                await db.scalar(
+                    select(sa_func.count())
+                    .select_from(AgentDecision)
+                    .where(
+                        AgentDecision.agent_id == agent_id,
+                        AgentDecision.user_action == "accepted",
+                        AgentDecision.created_at >= seven_days_ago,
+                    )
                 )
-            ) or 0
+                or 0
+            )
             decision_count = int(total)
             adoption_rate = round(accepted / total, 3) if total else 0
         except Exception:
@@ -1044,7 +1184,11 @@ class AgentOSService:
         except Exception as e:
             import sys
             import traceback
-            print(f"[UPDATE_STAGE_FAIL] user_id={user_id} agent={agent_id} target={target_level} exc={e}", file=sys.stderr)
+
+            print(
+                f"[UPDATE_STAGE_FAIL] user_id={user_id} agent={agent_id} target={target_level} exc={e}",
+                file=sys.stderr,
+            )
             traceback.print_exc(file=sys.stderr)
             return False
 
@@ -1056,10 +1200,16 @@ class AgentOSService:
         target_level: str,
     ) -> dict[str, Any]:
         """执行自治等级升级（更新 Agent 模型 + 记录操作日志）"""
-        updated = await AgentOSService._update_agent_stage(db, user_id, agent_id, target_level)
+        updated = await AgentOSService._update_agent_stage(
+            db, user_id, agent_id, target_level
+        )
         await AgentOSService._write_operation_log(
-            db, user_id, f"agent:{agent_id}", "autonomy_upgrade",
-            previous_status=None, new_status=target_level,
+            db,
+            user_id,
+            f"agent:{agent_id}",
+            "autonomy_upgrade",
+            previous_status=None,
+            new_status=target_level,
             comment=f"自治等级升级至 {target_level}",
         )
         return {"ok": updated, "agent_id": agent_id, "new_level": target_level}
@@ -1072,10 +1222,16 @@ class AgentOSService:
         target_level: str,
     ) -> dict[str, Any]:
         """执行自治等级降级（更新 Agent 模型 + 记录操作日志）"""
-        updated = await AgentOSService._update_agent_stage(db, user_id, agent_id, target_level)
+        updated = await AgentOSService._update_agent_stage(
+            db, user_id, agent_id, target_level
+        )
         await AgentOSService._write_operation_log(
-            db, user_id, f"agent:{agent_id}", "autonomy_downgrade",
-            previous_status=None, new_status=target_level,
+            db,
+            user_id,
+            f"agent:{agent_id}",
+            "autonomy_downgrade",
+            previous_status=None,
+            new_status=target_level,
             comment=f"自治等级降级至 {target_level}",
         )
         return {"ok": updated, "agent_id": agent_id, "new_level": target_level}
@@ -1107,12 +1263,16 @@ class AgentOSService:
         total = (await db.execute(count_q)).scalar() or 0
 
         rows = (
-            await db.execute(
-                query.order_by(AgentOSOperationLog.created_at.desc())
-                .offset(offset)
-                .limit(limit)
+            (
+                await db.execute(
+                    query.order_by(AgentOSOperationLog.created_at.desc())
+                    .offset(offset)
+                    .limit(limit)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         return {
             "records": [AgentOSOperationLogVO.model_validate(r) for r in rows],
@@ -1134,7 +1294,7 @@ class AgentOSService:
         old_status: str | None = None
         if item_id.startswith("exception:"):
             try:
-                uid = int(item_id[len("exception:"):])
+                uid = int(item_id[len("exception:") :])
                 stmt = select(ExceptionItem).where(ExceptionItem.id == uid)
                 result = await db.execute(stmt)
                 row = result.scalar_one_or_none()
@@ -1148,12 +1308,15 @@ class AgentOSService:
                 elif new_status == "cancelled":
                     row.status = "ignored"
                 else:
-                    return {"ok": False, "error": f"status '{new_status}' not allowed for exceptions"}
+                    return {
+                        "ok": False,
+                        "error": f"status '{new_status}' not allowed for exceptions",
+                    }
             except ValueError:
                 return {"ok": False, "error": "invalid_id"}
         elif item_id.startswith("notification:"):
             try:
-                uid = int(item_id[len("notification:"):])
+                uid = int(item_id[len("notification:") :])
                 stmt = select(Notification).where(Notification.id == uid)
                 result = await db.execute(stmt)
                 row = result.scalar_one_or_none()
@@ -1168,7 +1331,8 @@ class AgentOSService:
         elif item_id.startswith("agent_action:"):
             try:
                 from app.agent.models import AgentAction as PendingAgentAction
-                uid = int(item_id[len("agent_action:"):])
+
+                uid = int(item_id[len("agent_action:") :])
                 stmt = select(PendingAgentAction).where(PendingAgentAction.id == uid)
                 result = await db.execute(stmt)
                 row = result.scalar_one_or_none()
@@ -1186,7 +1350,7 @@ class AgentOSService:
                 return {"ok": False, "error": "invalid_id"}
         elif item_id.startswith("listing_task:"):
             try:
-                uid = int(item_id[len("listing_task:"):])
+                uid = int(item_id[len("listing_task:") :])
                 stmt = select(type("LT", (object,), {"id": int}))
                 stmt = select(ExceptionItem).where(ExceptionItem.id == -1)  # fallback
                 return {"ok": False, "error": "listing_task update not yet supported"}
@@ -1196,8 +1360,12 @@ class AgentOSService:
             return {"ok": False, "error": f"unknown source_type in '{item_id}'"}
 
         await AgentOSService._write_operation_log(
-            db, user_id, item_id, "status_update",
-            previous_status=old_status, new_status=new_status,
+            db,
+            user_id,
+            item_id,
+            "status_update",
+            previous_status=old_status,
+            new_status=new_status,
         )
         return {"ok": True, "new_status": new_status}
 
@@ -1210,10 +1378,13 @@ class AgentOSService:
     ) -> dict[str, Any]:
         """审批通过一个 WorkItem，触发底层动作执行"""
         if item_id.startswith("action_proposal:"):
-            source_id = item_id[len("action_proposal:"):]
+            source_id = item_id[len("action_proposal:") :]
             result = await ActionCenterService.approve(
-                db, int(source_id), operator=str(user_id),
-                user_id=user_id, comment=comment,
+                db,
+                int(source_id),
+                operator=str(user_id),
+                user_id=user_id,
+                comment=comment,
             )
             if result is None:
                 return {"ok": False, "error": "not_found"}
@@ -1221,7 +1392,8 @@ class AgentOSService:
         if item_id.startswith("agent_action:"):
             try:
                 from app.agent.models import AgentAction as PendingAgentAction
-                uid = int(item_id[len("agent_action:"):])
+
+                uid = int(item_id[len("agent_action:") :])
                 stmt = select(PendingAgentAction).where(PendingAgentAction.id == uid)
                 result = await db.execute(stmt)
                 row = result.scalar_one_or_none()
@@ -1232,11 +1404,17 @@ class AgentOSService:
                 return {"ok": False, "error": "invalid_id"}
         else:
             # 非 AgentAction 类型通过 status update 处理即可
-            return await AgentOSService.update_work_item_status(db, item_id, user_id, "in_progress")
+            return await AgentOSService.update_work_item_status(
+                db, item_id, user_id, "in_progress"
+            )
 
         await AgentOSService._write_operation_log(
-            db, user_id, item_id, "approve",
-            previous_status="pending", new_status="in_progress",
+            db,
+            user_id,
+            item_id,
+            "approve",
+            previous_status="pending",
+            new_status="in_progress",
             comment=comment,
         )
         return {"ok": True, "action": "approved", "comment": comment}
@@ -1250,10 +1428,13 @@ class AgentOSService:
     ) -> dict[str, Any]:
         """拒绝一个 WorkItem"""
         if item_id.startswith("action_proposal:"):
-            source_id = item_id[len("action_proposal:"):]
+            source_id = item_id[len("action_proposal:") :]
             result = await ActionCenterService.reject(
-                db, int(source_id), operator=str(user_id),
-                user_id=user_id, comment=comment,
+                db,
+                int(source_id),
+                operator=str(user_id),
+                user_id=user_id,
+                comment=comment,
             )
             if result is None:
                 return {"ok": False, "error": "not_found"}
@@ -1261,7 +1442,8 @@ class AgentOSService:
         if item_id.startswith("agent_action:"):
             try:
                 from app.agent.models import AgentAction as PendingAgentAction
-                uid = int(item_id[len("agent_action:"):])
+
+                uid = int(item_id[len("agent_action:") :])
                 stmt = select(PendingAgentAction).where(PendingAgentAction.id == uid)
                 result = await db.execute(stmt)
                 row = result.scalar_one_or_none()
@@ -1271,11 +1453,17 @@ class AgentOSService:
             except (ImportError, ValueError):
                 return {"ok": False, "error": "invalid_id"}
         else:
-            return await AgentOSService.update_work_item_status(db, item_id, user_id, "cancelled")
+            return await AgentOSService.update_work_item_status(
+                db, item_id, user_id, "cancelled"
+            )
 
         await AgentOSService._write_operation_log(
-            db, user_id, item_id, "reject",
-            previous_status="pending", new_status="cancelled",
+            db,
+            user_id,
+            item_id,
+            "reject",
+            previous_status="pending",
+            new_status="cancelled",
             comment=comment,
         )
         return {"ok": True, "action": "rejected", "comment": comment}

@@ -1,4 +1,5 @@
 """Agent Pydantic Schema"""
+
 from datetime import datetime
 from typing import Optional, Any
 from pydantic import BaseModel, ConfigDict, Field
@@ -91,8 +92,12 @@ class HonchoProfileVO(BaseModel):
 
 
 class HonchoProfileUpdate(BaseModel):
-    risk_tolerance: Optional[str] = Field(None, pattern="^(conservative|moderate|aggressive)$")
-    communication_style: Optional[str] = Field(None, pattern="^(concise|balanced|detailed)$")
+    risk_tolerance: Optional[str] = Field(
+        None, pattern="^(conservative|moderate|aggressive)$"
+    )
+    communication_style: Optional[str] = Field(
+        None, pattern="^(concise|balanced|detailed)$"
+    )
     notification_prefs: Optional[dict] = None
     agent_profiles: Optional[dict] = None
 

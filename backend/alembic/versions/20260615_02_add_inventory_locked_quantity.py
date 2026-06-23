@@ -18,7 +18,13 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "inventory",
-        sa.Column("locked_quantity", sa.Integer(), server_default="0", nullable=False, comment="锁定库存"),
+        sa.Column(
+            "locked_quantity",
+            sa.Integer(),
+            server_default="0",
+            nullable=False,
+            comment="锁定库存",
+        ),
     )
 
 

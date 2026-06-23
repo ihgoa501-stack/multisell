@@ -41,10 +41,14 @@ def decode_access_token(token: str) -> Optional[dict]:
 
 
 class AuthService:
-
     @staticmethod
-    async def register(db: AsyncSession, username: str, password: str,
-                       display_name: str = None, email: str = None) -> tuple[User, str]:
+    async def register(
+        db: AsyncSession,
+        username: str,
+        password: str,
+        display_name: str = None,
+        email: str = None,
+    ) -> tuple[User, str]:
         """注册用户，返回(用户, token)"""
         # 检查用户名是否已存在
         stmt = select(User).where(User.username == username)
@@ -63,7 +67,9 @@ class AuthService:
         await db.flush()
         await db.refresh(user)
 
-        token = create_access_token({"sub": str(user.id), "username": user.username, "role": user.role})
+        token = create_access_token(
+            {"sub": str(user.id), "username": user.username, "role": user.role}
+        )
         return user, token
 
     @staticmethod
@@ -80,7 +86,9 @@ class AuthService:
             raise ValueError("账号已被禁用")
 
         user.last_login_at = datetime.now(timezone.utc)
-        token = create_access_token({"sub": str(user.id), "username": user.username, "role": user.role})
+        token = create_access_token(
+            {"sub": str(user.id), "username": user.username, "role": user.role}
+        )
         return user, token
 
     @staticmethod

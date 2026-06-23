@@ -1,4 +1,5 @@
 """Agent 基类与生命周期"""
+
 from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
@@ -26,7 +27,9 @@ class BaseAgent:
     decision_points: list[str] = []
     version: str = "1.0.0"
 
-    def __init__(self, user_id: int, stage_override: Optional[dict[str, EvolutionStage]] = None):
+    def __init__(
+        self, user_id: int, stage_override: Optional[dict[str, EvolutionStage]] = None
+    ):
         self.user_id = user_id
         self.session_id = str(uuid4())
         self._stage_overrides = stage_override or {}
@@ -44,7 +47,9 @@ class BaseAgent:
         }
         return thresholds[stage]
 
-    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+    async def decide(
+        self, decision_point: str, context: dict[str, Any], db: Any = None
+    ) -> dict[str, Any]:
         raise NotImplementedError
 
     def build_decision_record(

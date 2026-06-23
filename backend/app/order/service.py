@@ -12,8 +12,21 @@ from app.finance.cost_layers import (
     resolve_profit_cost_layer,
 )
 from app.inventory.service import InventoryService
-from app.models import Order, OrderItem, OrderShippingSnapshot, OrderStatusLog, Platform, Price, Product, Sku
-from app.order.schemas import OrderCreate, OrderProfitInputsUpdate, OrderShippingQuoteBind
+from app.models import (
+    Order,
+    OrderItem,
+    OrderShippingSnapshot,
+    OrderStatusLog,
+    Platform,
+    Price,
+    Product,
+    Sku,
+)
+from app.order.schemas import (
+    OrderCreate,
+    OrderProfitInputsUpdate,
+    OrderShippingQuoteBind,
+)
 from app.shipping.schemas import CalculateRequest
 from app.shipping.service import CalculateService
 
@@ -118,9 +131,13 @@ def order_to_dict(
     else:
         product_name = f"{items[0].product_name} 等{len(items)}件"
 
-    shipping_cost_layer = COST_LAYER_SNAPSHOT if shipping_snapshot else COST_LAYER_ESTIMATED
+    shipping_cost_layer = (
+        COST_LAYER_SNAPSHOT if shipping_snapshot else COST_LAYER_ESTIMATED
+    )
     platform_fee_cost_layer = COST_LAYER_ESTIMATED
-    profit_cost_layer = resolve_profit_cost_layer(shipping_cost_layer, platform_fee_cost_layer)
+    profit_cost_layer = resolve_profit_cost_layer(
+        shipping_cost_layer, platform_fee_cost_layer
+    )
 
     return {
         "id": order.id,
@@ -191,7 +208,11 @@ class OrderService:
         total_amount = Decimal("0")
         for input_item in data.items:
             sku, product = await OrderService._get_sku_product(db, input_item.sku_id)
-            unit_price = Decimal(str(input_item.unit_price)) if input_item.unit_price is not None else await OrderService._get_sale_price(db, sku)
+            unit_price = (
+                Decimal(str(input_item.unit_price))
+                if input_item.unit_price is not None
+                else await OrderService._get_sale_price(db, sku)
+            )
             subtotal = unit_price * input_item.quantity
             total_amount += subtotal
             item = OrderItem(
@@ -241,13 +262,19 @@ class OrderService:
         return order_to_dict(order, items, [log])
 
     @staticmethod
-    async def list_orders(db: AsyncSession, status: Optional[str], page: int, page_size: int) -> tuple[list[dict], int]:
+    async def list_orders(
+        db: AsyncSession, status: Optional[str], page: int, page_size: int
+    ) -> tuple[list[dict], int]:
         stmt = select(Order)
         if status:
             stmt = stmt.where(Order.status == status)
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await db.scalar(count_stmt) or 0
-        stmt = stmt.order_by(Order.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        stmt = (
+            stmt.order_by(Order.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
         result = await db.execute(stmt)
         orders = list(result.scalars().all())
         rows = []
@@ -267,7 +294,14 @@ class OrderService:
         return order_to_dict(order, items, logs, shipping_snapshot)
 
     @staticmethod
-    async def update_status(db: AsyncSession, order_id: int, status: str, remark: str = None, tracking_number: str = None, operator: str = "system") -> Optional[dict]:
+    async def update_status(
+        db: AsyncSession,
+        order_id: int,
+        status: str,
+        remark: str = None,
+        tracking_number: str = None,
+        operator: str = "system",
+    ) -> Optional[dict]:
         order = await db.get(Order, order_id)
         if not order:
             return None
@@ -316,14 +350,20 @@ class OrderService:
         if old_status == "pending" and status == "paid":
             for item in items:
                 await InventoryService.confirm_locked_stock_deduction(
-                    db, sku_id=item.sku_id, quantity=item.quantity,
-                    order_no=order.order_no, operator=operator,
+                    db,
+                    sku_id=item.sku_id,
+                    quantity=item.quantity,
+                    order_no=order.order_no,
+                    operator=operator,
                 )
         elif old_status == "pending" and status == "cancelled":
             for item in items:
                 await InventoryService.release_locked_stock(
-                    db, sku_id=item.sku_id, quantity=item.quantity,
-                    order_no=order.order_no, operator=operator,
+                    db,
+                    sku_id=item.sku_id,
+                    quantity=item.quantity,
+                    order_no=order.order_no,
+                    operator=operator,
                 )
         # paid -> cancelled does not restore physical stock in this phase.
         # Returns/refunds need a separate after-sale workflow.
@@ -356,7 +396,9 @@ class OrderService:
         order.pay_amount = revenue + _decimal(order.shipping_fee)
 
     @staticmethod
-    async def bind_shipping_quote(db: AsyncSession, order_id: int, data: OrderShippingQuoteBind) -> Optional[dict]:
+    async def bind_shipping_quote(
+        db: AsyncSession, order_id: int, data: OrderShippingQuoteBind
+    ) -> Optional[dict]:
         order = await db.get(Order, order_id)
         if not order:
             return None
@@ -375,7 +417,10 @@ class OrderService:
             raise ValueError("没有可用物流报价")
 
         if data.channel_id is not None:
-            selected = next((item for item in calc.results if item.channel_id == data.channel_id), None)
+            selected = next(
+                (item for item in calc.results if item.channel_id == data.channel_id),
+                None,
+            )
             if selected is None:
                 raise ValueError("指定物流渠道不可用")
         else:
@@ -418,7 +463,9 @@ class OrderService:
         return await OrderService.get_detail(db, order_id)
 
     @staticmethod
-    async def update_profit_inputs(db: AsyncSession, order_id: int, data: OrderProfitInputsUpdate) -> Optional[dict]:
+    async def update_profit_inputs(
+        db: AsyncSession, order_id: int, data: OrderProfitInputsUpdate
+    ) -> Optional[dict]:
         order = await db.get(Order, order_id)
         if not order:
             return None
@@ -453,7 +500,11 @@ class OrderService:
     async def _get_sale_price(db: AsyncSession, sku: Sku) -> Decimal:
         stmt = (
             select(Price)
-            .where(Price.sku_id == sku.id, Price.price_type == "sale_price", Price.status == 1)
+            .where(
+                Price.sku_id == sku.id,
+                Price.price_type == "sale_price",
+                Price.status == 1,
+            )
             .order_by(Price.created_at.desc())
             .limit(1)
         )
@@ -466,21 +517,29 @@ class OrderService:
     @staticmethod
     async def _get_items(db: AsyncSession, order_id: int) -> list[OrderItem]:
         result = await db.execute(
-            select(OrderItem).where(OrderItem.order_id == order_id).order_by(OrderItem.id)
+            select(OrderItem)
+            .where(OrderItem.order_id == order_id)
+            .order_by(OrderItem.id)
         )
         return list(result.scalars().all())
 
     @staticmethod
     async def _get_logs(db: AsyncSession, order_id: int) -> list[OrderStatusLog]:
         result = await db.execute(
-            select(OrderStatusLog).where(OrderStatusLog.order_id == order_id).order_by(OrderStatusLog.id)
+            select(OrderStatusLog)
+            .where(OrderStatusLog.order_id == order_id)
+            .order_by(OrderStatusLog.id)
         )
         return list(result.scalars().all())
 
     @staticmethod
-    async def _get_shipping_snapshot_model(db: AsyncSession, order_id: int) -> Optional[OrderShippingSnapshot]:
+    async def _get_shipping_snapshot_model(
+        db: AsyncSession, order_id: int
+    ) -> Optional[OrderShippingSnapshot]:
         result = await db.execute(
-            select(OrderShippingSnapshot).where(OrderShippingSnapshot.order_id == order_id)
+            select(OrderShippingSnapshot).where(
+                OrderShippingSnapshot.order_id == order_id
+            )
         )
         return result.scalar_one_or_none()
 

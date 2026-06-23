@@ -60,7 +60,9 @@ class AmazonListingAdapter:
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             resp = await client.post(LWA_TOKEN_URL, json=payload)
             if resp.status_code >= 400:
-                raise RuntimeError(f"Amazon LWA token 获取失败: {resp.status_code} {resp.text[:300]}")
+                raise RuntimeError(
+                    f"Amazon LWA token 获取失败: {resp.status_code} {resp.text[:300]}"
+                )
             body = resp.json()
             token = body.get("access_token", "")
             if not token:
@@ -79,7 +81,9 @@ class AmazonListingAdapter:
     def _hmac_sha256(key: bytes, msg: str) -> bytes:
         return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
-    def _get_signing_key(self, secret_key: str, date_stamp: str, region: str, service: str) -> bytes:
+    def _get_signing_key(
+        self, secret_key: str, date_stamp: str, region: str, service: str
+    ) -> bytes:
         k_date = self._hmac_sha256(f"AWS4{secret_key}".encode("utf-8"), date_stamp)
         k_region = self._hmac_sha256(k_date, region)
         k_service = self._hmac_sha256(k_region, service)
@@ -117,7 +121,9 @@ class AmazonListingAdapter:
 
         # 按 header name 排序
         sorted_headers = sorted(signed_headers_map.keys())
-        canonical_headers = "".join(f"{h}:{signed_headers_map[h]}\n" for h in sorted_headers)
+        canonical_headers = "".join(
+            f"{h}:{signed_headers_map[h]}\n" for h in sorted_headers
+        )
         signed_headers_str = ";".join(sorted_headers)
 
         # Canonical Request
@@ -142,7 +148,9 @@ class AmazonListingAdapter:
 
         # Sign
         signing_key = self._get_signing_key(secret_key, date_stamp, region, AWS_SERVICE)
-        signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+        signature = hmac.new(
+            signing_key, string_to_sign.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
         authorization = (
             f"{algorithm} Credential={access_key}/{credential_scope}, "
@@ -174,15 +182,23 @@ class AmazonListingAdapter:
 
         base = (platform.api_base_url or SP_API_BASE).rstrip("/")
         url = f"{base}{path}"
-        body_bytes = b"{}" if payload is None else (
-            httpx._models.to_bytes(payload) if hasattr(httpx._models, 'to_bytes')
-            else httpx._content.json_dumps(payload).encode("utf-8")
+        body_bytes = (
+            b"{}"
+            if payload is None
+            else (
+                httpx._models.to_bytes(payload)
+                if hasattr(httpx._models, "to_bytes")
+                else httpx._content.json_dumps(payload).encode("utf-8")
+            )
         )
 
         # 对 dict 序列化
         if isinstance(payload, dict):
             import json
-            body_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+            body_bytes = json.dumps(
+                payload, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
 
         aws_access_key = extra.get("aws_access_key", "")
         aws_secret_key = extra.get("aws_secret_key", "")
@@ -197,8 +213,12 @@ class AmazonListingAdapter:
             token=access_token,
         )
 
-        async with httpx.AsyncClient(base_url=base, timeout=DEFAULT_TIMEOUT, cookies={}) as client:
-            resp = await client.request(method, path, headers=headers, content=body_bytes)
+        async with httpx.AsyncClient(
+            base_url=base, timeout=DEFAULT_TIMEOUT, cookies={}
+        ) as client:
+            resp = await client.request(
+                method, path, headers=headers, content=body_bytes
+            )
             return resp
 
     # ------------------------------------------------------------------ #
@@ -227,50 +247,92 @@ class AmazonListingAdapter:
         """Amazon 属性结构"""
         attributes: dict[str, Any] = {
             "item_name": [{"value": self._build_item_name(product)}],
-            "brand": [{"value": str(product.brand_id) if product.brand_id else "Generic"}],
+            "brand": [
+                {"value": str(product.brand_id) if product.brand_id else "Generic"}
+            ],
             "description": [{"value": self._build_description(product)}],
         }
 
         if product.main_image:
             attributes["main_image"] = [{"value": product.main_image}]
 
-        if product.images and isinstance(product.images, list) and len(product.images) > 1:
+        if (
+            product.images
+            and isinstance(product.images, list)
+            and len(product.images) > 1
+        ):
             attributes["other_images"] = [{"value": img} for img in product.images[1:6]]
 
         if product.package_weight_kg:
-            attributes["item_package_weight"] = [{
-                "value": float(product.package_weight_kg),
-                "unit": "kilograms",
-            }]
+            attributes["item_package_weight"] = [
+                {
+                    "value": float(product.package_weight_kg),
+                    "unit": "kilograms",
+                }
+            ]
 
         dimensions = []
         if product.package_length_cm:
-            dimensions.append({"name": "length", "value": {"value": float(product.package_length_cm), "unit": "centimeters"}})
+            dimensions.append(
+                {
+                    "name": "length",
+                    "value": {
+                        "value": float(product.package_length_cm),
+                        "unit": "centimeters",
+                    },
+                }
+            )
         if product.package_width_cm:
-            dimensions.append({"name": "width", "value": {"value": float(product.package_width_cm), "unit": "centimeters"}})
+            dimensions.append(
+                {
+                    "name": "width",
+                    "value": {
+                        "value": float(product.package_width_cm),
+                        "unit": "centimeters",
+                    },
+                }
+            )
         if product.package_height_cm:
-            dimensions.append({"name": "height", "value": {"value": float(product.package_height_cm), "unit": "centimeters"}})
+            dimensions.append(
+                {
+                    "name": "height",
+                    "value": {
+                        "value": float(product.package_height_cm),
+                        "unit": "centimeters",
+                    },
+                }
+            )
         if dimensions:
             attributes["item_package_dimensions"] = dimensions
 
         return attributes
 
-    def _build_offers(self, skus: list[Sku], prices: dict[int, Price],
-                      inventories: dict[int, Inventory]) -> list[dict]:
+    def _build_offers(
+        self,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ) -> list[dict]:
         """Amazon 报价结构"""
         offers = []
         for sku in skus:
             price = prices.get(sku.id)
             inventory = inventories.get(sku.id)
-            offers.append({
-                "sku": sku.code or f"amz-sku-{sku.id}",
-                "price": {
-                    "currency_code": "USD",
-                    "amount": float(price.price) if price else 0.0,
-                },
-                "quantity": max(int(inventory.quantity) - int(inventory.locked_quantity), 0) if inventory else 0,
-                "condition": "New",
-            })
+            offers.append(
+                {
+                    "sku": sku.code or f"amz-sku-{sku.id}",
+                    "price": {
+                        "currency_code": "USD",
+                        "amount": float(price.price) if price else 0.0,
+                    },
+                    "quantity": max(
+                        int(inventory.quantity) - int(inventory.locked_quantity), 0
+                    )
+                    if inventory
+                    else 0,
+                    "condition": "New",
+                }
+            )
         return offers
 
     # ------------------------------------------------------------------ #
@@ -314,10 +376,14 @@ class AmazonListingAdapter:
 
         logger.info(
             "publishing to Amazon: product_id=%s, sku=%s, marketplace=%s",
-            product.id, sku_code, marketplace_id,
+            product.id,
+            sku_code,
+            marketplace_id,
         )
 
-        resp = await self._signed_request("PUT", f"{path}?{params}", platform, access_token, payload)
+        resp = await self._signed_request(
+            "PUT", f"{path}?{params}", platform, access_token, payload
+        )
         body = self._parse_response(resp, "publish")
 
         listing_id = body.get("sellingPartnerId", "")
@@ -326,9 +392,13 @@ class AmazonListingAdapter:
         return PublishResult(
             platform_product_id=platform_product_id,
             platform_sku=sku_code,
-            platform_url=f"https://www.amazon.com/dp/{listing_id}" if listing_id else "",
+            platform_url=f"https://www.amazon.com/dp/{listing_id}"
+            if listing_id
+            else "",
             published_data={"api_response": body, "request_payload": payload},
-            sync_message=f"published to Amazon (listing_id={listing_id})" if listing_id else "published to Amazon",
+            sync_message=f"published to Amazon (listing_id={listing_id})"
+            if listing_id
+            else "published to Amazon",
         )
 
     async def sync_status(
@@ -362,7 +432,9 @@ class AmazonListingAdapter:
         params = f"marketplaceIds={marketplace_id}"
 
         try:
-            resp = await self._signed_request("GET", f"{path}?{params}", platform, access_token)
+            resp = await self._signed_request(
+                "GET", f"{path}?{params}", platform, access_token
+            )
             body = self._parse_response(resp, "sync_status")
         except Exception as exc:
             logger.warning("Amazon sync_status 查询失败: %s", exc)
@@ -381,14 +453,20 @@ class AmazonListingAdapter:
     async def validate_credentials(self, *, platform: Platform) -> bool:
         """用 Amazon Marketplace Participations API 校验凭证。"""
         extra = platform.extra_config or {}
-        if not extra.get("refresh_token") or not extra.get("aws_access_key") or not extra.get("aws_secret_key"):
+        if (
+            not extra.get("refresh_token")
+            or not extra.get("aws_access_key")
+            or not extra.get("aws_secret_key")
+        ):
             return False
         if not platform.client_id or not platform.api_key:
             return False
 
         try:
             access_token = await self._get_access_token(platform)
-            resp = await self._signed_request("GET", "/sellers/v1/marketplaceParticipations", platform, access_token)
+            resp = await self._signed_request(
+                "GET", "/sellers/v1/marketplaceParticipations", platform, access_token
+            )
             body = resp.json()
             return resp.status_code == 200 and "payload" in body
         except Exception as exc:
@@ -405,7 +483,9 @@ class AmazonListingAdapter:
         try:
             body = resp.json()
         except Exception:
-            raise RuntimeError(f"Amazon {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}")
+            raise RuntimeError(
+                f"Amazon {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}"
+            )
 
         if resp.status_code >= 400:
             msg = body.get("message", body.get("errors", resp.text[:300]))

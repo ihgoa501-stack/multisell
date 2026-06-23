@@ -1,4 +1,5 @@
 """平台管理 - 服务层"""
+
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +8,6 @@ from app.common.crypto import encrypt_api_key
 
 
 class PlatformService:
-
     @staticmethod
     async def create(db: AsyncSession, data: dict) -> Platform:
         # 加密API密钥
@@ -20,7 +20,9 @@ class PlatformService:
         return platform
 
     @staticmethod
-    async def update(db: AsyncSession, platform_id: int, data: dict) -> Optional[Platform]:
+    async def update(
+        db: AsyncSession, platform_id: int, data: dict
+    ) -> Optional[Platform]:
         platform = await db.get(Platform, platform_id)
         if not platform:
             return None

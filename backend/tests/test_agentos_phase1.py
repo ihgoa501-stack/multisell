@@ -238,7 +238,9 @@ class TestControlCenterAPI:
         overview = result["overview"]
         assert "health_score" in overview
         assert "active_agents" in overview
-        assert overview["active_agents"] >= 1  # 静态定义中为 10，全量测试中可能为实际活跃数
+        assert (
+            overview["active_agents"] >= 1
+        )  # 静态定义中为 10，全量测试中可能为实际活跃数
         assert "pending_approvals" in overview
         assert "critical_items" in overview
 
@@ -373,9 +375,9 @@ class TestWorkItemStatusUpdate:
         from app.models import ExceptionItem
 
         async with async_session_factory() as db:
-            existing = (await db.execute(
-                select(ExceptionItem).where(ExceptionItem.id == 100)
-            )).scalar_one_or_none()
+            existing = (
+                await db.execute(select(ExceptionItem).where(ExceptionItem.id == 100))
+            ).scalar_one_or_none()
             if existing:
                 return existing.id
             exc = ExceptionItem(
@@ -399,9 +401,9 @@ class TestWorkItemStatusUpdate:
         from app.models import Notification
 
         async with async_session_factory() as db:
-            existing = (await db.execute(
-                select(Notification).where(Notification.id == 100)
-            )).scalar_one_or_none()
+            existing = (
+                await db.execute(select(Notification).where(Notification.id == 100))
+            ).scalar_one_or_none()
             if existing:
                 return existing.id
             notif = Notification(
@@ -424,9 +426,9 @@ class TestWorkItemStatusUpdate:
         from app.database import async_session_factory
 
         async with async_session_factory() as db:
-            existing = (await db.execute(
-                select(AgentAction).where(AgentAction.id == 100)
-            )).scalar_one_or_none()
+            existing = (
+                await db.execute(select(AgentAction).where(AgentAction.id == 100))
+            ).scalar_one_or_none()
             if existing:
                 return existing.id
             action = AgentAction(
@@ -514,9 +516,9 @@ class TestWorkItemApproval:
         from app.database import async_session_factory
 
         async with async_session_factory() as db:
-            existing = (await db.execute(
-                select(AgentAction).where(AgentAction.id == 200)
-            )).scalar_one_or_none()
+            existing = (
+                await db.execute(select(AgentAction).where(AgentAction.id == 200))
+            ).scalar_one_or_none()
             if existing:
                 return existing.id
             action = AgentAction(
@@ -538,9 +540,9 @@ class TestWorkItemApproval:
         from app.models import ExceptionItem
 
         async with async_session_factory() as db:
-            existing = (await db.execute(
-                select(ExceptionItem).where(ExceptionItem.id == 201)
-            )).scalar_one_or_none()
+            existing = (
+                await db.execute(select(ExceptionItem).where(ExceptionItem.id == 201))
+            ).scalar_one_or_none()
             if existing:
                 return existing.id
             exc = ExceptionItem(

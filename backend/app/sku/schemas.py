@@ -1,4 +1,5 @@
 """规格与SKU管理 - Pydantic Schema"""
+
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field
@@ -6,22 +7,30 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SpecValueItem(BaseModel):
     """规格值项"""
+
     value: str = Field(..., min_length=1, max_length=100, description="规格值")
 
 
 class SpecItem(BaseModel):
     """规格项"""
-    name: str = Field(..., min_length=1, max_length=100, description="规格名称（如：颜色）")
-    values: List[str] = Field(..., min_length=1, description="规格值列表（如：['红','蓝']）")
+
+    name: str = Field(
+        ..., min_length=1, max_length=100, description="规格名称（如：颜色）"
+    )
+    values: List[str] = Field(
+        ..., min_length=1, description="规格值列表（如：['红','蓝']）"
+    )
 
 
 class SpecDefine(BaseModel):
     """定义规格模板"""
+
     specs: List[SpecItem] = Field(..., min_length=1, description="规格列表")
 
 
 class SkuUpdate(BaseModel):
     """更新SKU"""
+
     price: Optional[float] = Field(None, description="销售价")
     cost_price: Optional[float] = Field(None, description="成本价")
     market_price: Optional[float] = Field(None, description="市场价")
@@ -40,6 +49,7 @@ class SkuUpdate(BaseModel):
 
 class SpecNameVO(BaseModel):
     """规格名称响应"""
+
     id: int
     name: str
     sort_order: int = 0
@@ -50,6 +60,7 @@ class SpecNameVO(BaseModel):
 
 class SpecValueVO(BaseModel):
     """规格值响应"""
+
     id: int
     value: str
     sort_order: int = 0
@@ -59,6 +70,7 @@ class SpecValueVO(BaseModel):
 
 class SkuVO(BaseModel):
     """SKU响应"""
+
     id: int
     product_id: int
     code: Optional[str] = None

@@ -7,6 +7,7 @@ import pytest
 from app.database import async_session_factory
 from app.models import Platform
 from app.platform_integrations.adapter_registry import test_connection
+
 test_connection.__test__ = False  # prevent pytest from treating this as a test
 
 

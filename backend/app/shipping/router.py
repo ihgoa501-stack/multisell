@@ -10,14 +10,22 @@ from app.database import get_db
 from app.models import User
 from app.operation_log.service import OperationLogService
 from app.shipping.schemas import (
-    ProviderCreate, ProviderUpdate,
-    ChannelCreate, ChannelUpdate,
-    ZoneCreate, RuleCreate, RuleUpdate,
+    ProviderCreate,
+    ProviderUpdate,
+    ChannelCreate,
+    ChannelUpdate,
+    ZoneCreate,
+    RuleCreate,
+    RuleUpdate,
     CalculateRequest,
 )
 from app.shipping.service import (
-    ProviderService, ChannelService, ZoneService, RuleService,
-    CalculateService, ImportService,
+    ProviderService,
+    ChannelService,
+    ZoneService,
+    RuleService,
+    CalculateService,
+    ImportService,
 )
 
 router = APIRouter(tags=["物流运费"])
@@ -28,6 +36,7 @@ def _operator(current_user: User) -> str:
 
 
 # ── Provider ──────────────────────────────────────────────────────────────
+
 
 @router.get("/shipping/providers", summary="物流供应商列表")
 async def list_providers(
@@ -46,7 +55,9 @@ async def create_provider(
 ):
     provider = await ProviderService.create(db, data)
     await OperationLogService.log(
-        db, module="shipping_provider", action="create",
+        db,
+        module="shipping_provider",
+        action="create",
         resource_id=str(provider["id"]),
         content=f"创建物流供应商: {provider['name']}",
         operator=_operator(current_user),
@@ -65,7 +76,9 @@ async def update_provider(
     if not provider:
         return Result.not_found("物流供应商不存在")
     await OperationLogService.log(
-        db, module="shipping_provider", action="update",
+        db,
+        module="shipping_provider",
+        action="update",
         resource_id=str(provider_id),
         content=f"更新物流供应商: {provider['name']}",
         operator=_operator(current_user),
@@ -83,7 +96,9 @@ async def delete_provider(
     if not ok:
         return Result.not_found("物流供应商不存在")
     await OperationLogService.log(
-        db, module="shipping_provider", action="delete",
+        db,
+        module="shipping_provider",
+        action="delete",
         resource_id=str(provider_id),
         content=f"禁用物流供应商 ID={provider_id}",
         operator=_operator(current_user),
@@ -92,6 +107,7 @@ async def delete_provider(
 
 
 # ── Channel ───────────────────────────────────────────────────────────────
+
 
 @router.get("/shipping/channels", summary="物流渠道列表")
 async def list_channels(
@@ -111,7 +127,9 @@ async def create_channel(
 ):
     channel = await ChannelService.create(db, data)
     await OperationLogService.log(
-        db, module="shipping_channel", action="create",
+        db,
+        module="shipping_channel",
+        action="create",
         resource_id=str(channel["id"]),
         content=f"创建物流渠道: {channel['name']} (供应商ID={data.provider_id})",
         operator=_operator(current_user),
@@ -130,7 +148,9 @@ async def update_channel(
     if not channel:
         return Result.not_found("物流渠道不存在")
     await OperationLogService.log(
-        db, module="shipping_channel", action="update",
+        db,
+        module="shipping_channel",
+        action="update",
         resource_id=str(channel_id),
         content=f"更新物流渠道: {channel['name']}",
         operator=_operator(current_user),
@@ -148,7 +168,9 @@ async def delete_channel(
     if not ok:
         return Result.not_found("物流渠道不存在")
     await OperationLogService.log(
-        db, module="shipping_channel", action="delete",
+        db,
+        module="shipping_channel",
+        action="delete",
         resource_id=str(channel_id),
         content=f"禁用物流渠道 ID={channel_id}",
         operator=_operator(current_user),
@@ -157,6 +179,7 @@ async def delete_channel(
 
 
 # ── Zone ──────────────────────────────────────────────────────────────────
+
 
 @router.get("/shipping/channels/{channel_id}/zones", summary="物流区域列表")
 async def list_zones(
@@ -177,7 +200,9 @@ async def create_zone(
 ):
     zone = await ZoneService.create(db, channel_id, data)
     await OperationLogService.log(
-        db, module="shipping_zone", action="create",
+        db,
+        module="shipping_zone",
+        action="create",
         resource_id=str(zone["id"]),
         content=f"创建物流区域: {zone['country_code']} (渠道ID={channel_id})",
         operator=_operator(current_user),
@@ -195,7 +220,9 @@ async def delete_zone(
     if not ok:
         return Result.not_found("物流区域不存在")
     await OperationLogService.log(
-        db, module="shipping_zone", action="delete",
+        db,
+        module="shipping_zone",
+        action="delete",
         resource_id=str(zone_id),
         content=f"删除物流区域 ID={zone_id}",
         operator=_operator(current_user),
@@ -204,6 +231,7 @@ async def delete_zone(
 
 
 # ── Rules ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/shipping/channels/{channel_id}/rules", summary="报价规则列表")
 async def list_rules(
@@ -224,7 +252,9 @@ async def create_rule(
 ):
     rule = await RuleService.create(db, channel_id, data)
     await OperationLogService.log(
-        db, module="shipping_quote_rule", action="create",
+        db,
+        module="shipping_quote_rule",
+        action="create",
         resource_id=str(rule["id"]),
         content=f"创建报价规则: {rule['rule_type']} (渠道ID={channel_id})",
         operator=_operator(current_user),
@@ -243,7 +273,9 @@ async def update_rule(
     if not rule:
         return Result.not_found("报价规则不存在")
     await OperationLogService.log(
-        db, module="shipping_quote_rule", action="update",
+        db,
+        module="shipping_quote_rule",
+        action="update",
         resource_id=str(rule_id),
         content=f"更新报价规则 ID={rule_id}",
         operator=_operator(current_user),
@@ -261,7 +293,9 @@ async def delete_rule(
     if not ok:
         return Result.not_found("报价规则不存在")
     await OperationLogService.log(
-        db, module="shipping_quote_rule", action="delete",
+        db,
+        module="shipping_quote_rule",
+        action="delete",
         resource_id=str(rule_id),
         content=f"删除报价规则 ID={rule_id}",
         operator=_operator(current_user),
@@ -270,6 +304,7 @@ async def delete_rule(
 
 
 # ── Import ────────────────────────────────────────────────────────────────
+
 
 @router.post("/shipping/import-rules", summary="导入物流报价表")
 async def import_shipping_rules(
@@ -281,7 +316,9 @@ async def import_shipping_rules(
         content = await file.read()
         if len(content) > settings.MAX_UPLOAD_SIZE:
             max_mb = settings.MAX_UPLOAD_SIZE // 1024 // 1024
-            return Result.bad_request(f"文件过大，最大支持 {max_mb}MB，当前文件 {len(content) // 1024 // 1024}MB")
+            return Result.bad_request(
+                f"文件过大，最大支持 {max_mb}MB，当前文件 {len(content) // 1024 // 1024}MB"
+            )
         result = await ImportService.import_rules(db, file.filename or "", content)
     except ValueError as e:
         return Result.bad_request(str(e))
@@ -298,6 +335,7 @@ async def import_shipping_rules(
 
 # ── Calculate ─────────────────────────────────────────────────────────────
 
+
 @router.post("/shipping/calculate", summary="运费计算")
 async def calculate_shipping(
     data: CalculateRequest,
@@ -313,6 +351,7 @@ async def calculate_shipping(
 
 # ── Bill Import / Reconciliation ─────────────────────────────────────────
 
+
 @router.post("/shipping/bills/import", summary="导入运费账单")
 async def import_shipping_bills(
     file: UploadFile = File(...),
@@ -321,15 +360,16 @@ async def import_shipping_bills(
 ):
     from app.shipping.bill_service import ShippingBillService
 
-    if not file.filename or not (
-        file.filename.lower().endswith(".csv")
-    ):
+    if not file.filename or not (file.filename.lower().endswith(".csv")):
         return Result.bad_request("仅支持 .csv 格式的运费账单")
 
     content = await file.read()
     try:
         result = await ShippingBillService.import_bills(
-            db, file.filename, content, operator=_operator(current_user),
+            db,
+            file.filename,
+            content,
+            operator=_operator(current_user),
         )
     except ValueError as e:
         return Result.bad_request(str(e))
@@ -399,7 +439,9 @@ async def reconcile_bill_batch(
     from app.shipping.bill_service import ShippingBillService
 
     result = await ShippingBillService.reconcile_batch(
-        db, batch_id, operator=_operator(current_user),
+        db,
+        batch_id,
+        operator=_operator(current_user),
     )
     if result is None:
         return Result.not_found("账单批次不存在")
@@ -420,7 +462,10 @@ async def resolve_bill_item(
         return Result.bad_request("请填写解决说明")
 
     result = await ShippingBillService.resolve_item(
-        db, item_id, note, operator=_operator(current_user),
+        db,
+        item_id,
+        note,
+        operator=_operator(current_user),
     )
     if result is None:
         return Result.not_found("账单行不存在")

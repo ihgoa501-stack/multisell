@@ -21,8 +21,10 @@ async def save_canvas(
 ):
     try:
         result = await CanvasService.save(
-            db=db, user_id=current_user.id,
-            product_id=req.product_id, name=req.name,
+            db=db,
+            user_id=current_user.id,
+            product_id=req.product_id,
+            name=req.name,
             layers=[rec.model_dump() for rec in req.layers],
         )
         return Result.ok(result)

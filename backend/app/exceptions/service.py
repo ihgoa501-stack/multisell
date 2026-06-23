@@ -11,7 +11,6 @@ from app.operation_log.service import OperationLogService
 
 
 class ExceptionService:
-
     # ── List / Get ─────────────────────────────────────────────────────
 
     @staticmethod
@@ -78,7 +77,9 @@ class ExceptionService:
         await db.refresh(item)
 
         await OperationLogService.log(
-            db, module="exception", action="assign",
+            db,
+            module="exception",
+            action="assign",
             resource_id=str(exception_id),
             content=f"分配异常给 {assigned_to}: {item.title}",
             operator=operator or "system",
@@ -104,7 +105,9 @@ class ExceptionService:
         await db.refresh(item)
 
         await OperationLogService.log(
-            db, module="exception", action="resolve",
+            db,
+            module="exception",
+            action="resolve",
             resource_id=str(exception_id),
             content=f"解决异常: {item.title}",
             operator=operator or "system",
@@ -128,7 +131,9 @@ class ExceptionService:
         await db.refresh(item)
 
         await OperationLogService.log(
-            db, module="exception", action="ignore",
+            db,
+            module="exception",
+            action="ignore",
             resource_id=str(exception_id),
             content=f"忽略异常: {item.title}",
             operator=operator or "system",

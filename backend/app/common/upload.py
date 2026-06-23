@@ -15,12 +15,16 @@ async def upload_file(file: UploadFile = File(...)):
         return Result.bad_request("文件名为空")
 
     if not allowed_file(file.filename):
-        return Result.bad_request(f"不支持的文件格式，允许: {', '.join(settings.ALLOWED_EXTENSIONS)}")
+        return Result.bad_request(
+            f"不支持的文件格式，允许: {', '.join(settings.ALLOWED_EXTENSIONS)}"
+        )
 
     # 检查文件大小
     content = await file.read()
     if len(content) > settings.MAX_UPLOAD_SIZE:
-        return Result.bad_request(f"文件过大，最大 {settings.MAX_UPLOAD_SIZE // 1024 // 1024}MB")
+        return Result.bad_request(
+            f"文件过大，最大 {settings.MAX_UPLOAD_SIZE // 1024 // 1024}MB"
+        )
 
     url = await save_upload_file(content, file.filename)
     return Result.ok({"url": url})

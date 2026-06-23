@@ -25,13 +25,15 @@ def _uc(prefix: str) -> str:
 async def _seed_product_sku(async_client, *, with_package: bool = True) -> int:
     payload = {"name": f"订单运费商品-{uuid4().hex[:8]}", "unit": "件", "status": 1}
     if with_package:
-        payload.update({
-            "package_length_cm": 30,
-            "package_width_cm": 20,
-            "package_height_cm": 10,
-            "package_weight_kg": 0.8,
-            "cargo_type": "normal",
-        })
+        payload.update(
+            {
+                "package_length_cm": 30,
+                "package_width_cm": 20,
+                "package_height_cm": 10,
+                "package_weight_kg": 0.8,
+                "cargo_type": "normal",
+            }
+        )
     resp = await async_client.post("/api/products", json=payload)
     assert resp.status_code == 200, resp.text
     product_id = resp.json()["data"]["id"]
@@ -53,20 +55,26 @@ async def _seed_product_sku(async_client, *, with_package: bool = True) -> int:
 
 
 async def _seed_shipping_channel(async_client, country: str = "US") -> dict:
-    resp = await async_client.post("/api/shipping/providers", json={
-        "name": f"订单快照物流商-{uuid4().hex[:6]}",
-        "code": _uc("order_provider"),
-    })
+    resp = await async_client.post(
+        "/api/shipping/providers",
+        json={
+            "name": f"订单快照物流商-{uuid4().hex[:6]}",
+            "code": _uc("order_provider"),
+        },
+    )
     assert resp.status_code == 200, resp.text
     provider_id = resp.json()["data"]["id"]
-    resp = await async_client.post("/api/shipping/channels", json={
-        "provider_id": provider_id,
-        "name": f"订单快照渠道-{uuid4().hex[:6]}",
-        "code": _uc("order_channel"),
-        "volumetric_divisor": 6000,
-        "cargo_types": ["normal"],
-        "currency": "CNY",
-    })
+    resp = await async_client.post(
+        "/api/shipping/channels",
+        json={
+            "provider_id": provider_id,
+            "name": f"订单快照渠道-{uuid4().hex[:6]}",
+            "code": _uc("order_channel"),
+            "volumetric_divisor": 6000,
+            "cargo_types": ["normal"],
+            "currency": "CNY",
+        },
+    )
     assert resp.status_code == 200, resp.text
     channel_id = resp.json()["data"]["id"]
     resp = await async_client.post(
@@ -89,16 +97,19 @@ async def _seed_shipping_channel(async_client, country: str = "US") -> dict:
 
 
 async def _create_order(async_client, sku_id: int, quantity: int = 1) -> dict:
-    resp = await async_client.post("/api/orders", json={
-        "recipient_name": "订单运费测试",
-        "recipient_phone": "13900000000",
-        "shipping_address": "测试地址",
-        "payment_method": "mock",
-        "items": [{"sku_id": sku_id, "quantity": quantity, "unit_price": 120}],
-        "platform_fee": 12,
-        "payment_fee": 3,
-        "other_fee": 5,
-    })
+    resp = await async_client.post(
+        "/api/orders",
+        json={
+            "recipient_name": "订单运费测试",
+            "recipient_phone": "13900000000",
+            "shipping_address": "测试地址",
+            "payment_method": "mock",
+            "items": [{"sku_id": sku_id, "quantity": quantity, "unit_price": 120}],
+            "platform_fee": 12,
+            "payment_fee": 3,
+            "other_fee": 5,
+        },
+    )
     assert resp.status_code == 200, resp.text
     return resp.json()["data"]
 
@@ -143,12 +154,19 @@ async def test_shipping_snapshot_does_not_change_when_rule_changes(async_client)
 
     bind_resp = await async_client.post(
         f"/api/orders/{order['id']}/shipping-quote",
-        json={"sku_id": sku_id, "quantity": 1, "destination_country": "US", "cargo_type": "normal"},
+        json={
+            "sku_id": sku_id,
+            "quantity": 1,
+            "destination_country": "US",
+            "cargo_type": "normal",
+        },
     )
     assert bind_resp.status_code == 200, bind_resp.text
     assert bind_resp.json()["data"]["shipping_snapshot"]["total_shipping_fee"] == 50.0
 
-    rules_resp = await async_client.get(f"/api/shipping/channels/{seeded['channel_id']}/rules")
+    rules_resp = await async_client.get(
+        f"/api/shipping/channels/{seeded['channel_id']}/rules"
+    )
     rule_id = rules_resp.json()["data"][0]["id"]
     update_resp = await async_client.put(
         f"/api/shipping/rules/{rule_id}",
@@ -169,7 +187,12 @@ async def test_bind_shipping_quote_requires_complete_package_data(async_client):
 
     resp = await async_client.post(
         f"/api/orders/{order['id']}/shipping-quote",
-        json={"sku_id": sku_id, "quantity": 1, "destination_country": "US", "cargo_type": "normal"},
+        json={
+            "sku_id": sku_id,
+            "quantity": 1,
+            "destination_country": "US",
+            "cargo_type": "normal",
+        },
     )
 
     assert resp.status_code == 200
@@ -184,7 +207,12 @@ async def test_update_profit_inputs_recalculates_profit(async_client):
     order = await _create_order(async_client, sku_id, quantity=1)
     await async_client.post(
         f"/api/orders/{order['id']}/shipping-quote",
-        json={"sku_id": sku_id, "quantity": 1, "destination_country": "US", "cargo_type": "normal"},
+        json={
+            "sku_id": sku_id,
+            "quantity": 1,
+            "destination_country": "US",
+            "cargo_type": "normal",
+        },
     )
 
     resp = await async_client.put(

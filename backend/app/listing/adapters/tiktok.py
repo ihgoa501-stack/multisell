@@ -90,8 +90,12 @@ class TikTokShopListingAdapter:
         desc = product.ai_description or product.description or ""
         return desc[:5000]
 
-    def _build_skus(self, skus: list[Sku], prices: dict[int, Price],
-                    inventories: dict[int, Inventory]) -> list[dict]:
+    def _build_skus(
+        self,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ) -> list[dict]:
         """TikTok SKU 变体结构"""
         sku_list = []
         for sku in skus:
@@ -102,16 +106,24 @@ class TikTokShopListingAdapter:
             spec_values = sku.spec_values or {}
             if isinstance(spec_values, dict):
                 for spec_key, spec_val in spec_values.items():
-                    sales_attrs.append({
-                        "name": spec_key,
-                        "value": str(spec_val),
-                    })
+                    sales_attrs.append(
+                        {
+                            "name": spec_key,
+                            "value": str(spec_val),
+                        }
+                    )
 
             sku_item: dict[str, Any] = {
                 "id": sku.code or f"tt-sku-{sku.id}",
                 "price": float(price.price) if price else 0.0,
-                "quantity": max(int(inventory.quantity) - int(inventory.locked_quantity), 0) if inventory else 0,
-                "sales_attributes": sales_attrs if sales_attrs else [{"name": "Default", "value": "Default"}],
+                "quantity": max(
+                    int(inventory.quantity) - int(inventory.locked_quantity), 0
+                )
+                if inventory
+                else 0,
+                "sales_attributes": sales_attrs
+                if sales_attrs
+                else [{"name": "Default", "value": "Default"}],
             }
 
             if sku.barcode:
@@ -198,7 +210,8 @@ class TikTokShopListingAdapter:
 
         logger.info(
             "publishing to TikTok Shop: product_id=%s, skus=%d",
-            product.id, len(skus),
+            product.id,
+            len(skus),
         )
 
         async with self._client(platform) as client:
@@ -207,8 +220,10 @@ class TikTokShopListingAdapter:
 
         data = body.get("data", {}) or {}
         product_id = data.get("product_id", "")
-        platform_product_id = f"tt-{product_id}" if product_id else (
-            f"tt-{product.id}-{int(datetime.now(timezone.utc).timestamp())}"
+        platform_product_id = (
+            f"tt-{product_id}"
+            if product_id
+            else (f"tt-{product.id}-{int(datetime.now(timezone.utc).timestamp())}")
         )
 
         return PublishResult(
@@ -218,8 +233,9 @@ class TikTokShopListingAdapter:
                 f"https://shop.tiktok.com/product/{product_id}" if product_id else ""
             ),
             published_data={"api_response": body, "request_payload": payload},
-            sync_message=f"published to TikTok Shop (product_id={product_id})" if product_id else
-                         "published to TikTok Shop",
+            sync_message=f"published to TikTok Shop (product_id={product_id})"
+            if product_id
+            else "published to TikTok Shop",
         )
 
     async def sync_status(
@@ -234,7 +250,11 @@ class TikTokShopListingAdapter:
         通过 GET /product/202309/products/{id} 查询。
         platform_product_id 格式: tt-{product_id}
         """
-        product_id = platform_product_id.replace("tt-", "", 1) if platform_product_id.startswith("tt-") else ""
+        product_id = (
+            platform_product_id.replace("tt-", "", 1)
+            if platform_product_id.startswith("tt-")
+            else ""
+        )
 
         if not product_id:
             return "unknown"
@@ -243,7 +263,9 @@ class TikTokShopListingAdapter:
         params = {"common": common}
 
         async with self._client(platform) as client:
-            resp = await client.get(f"/product/202309/products/{product_id}", params=params)
+            resp = await client.get(
+                f"/product/202309/products/{product_id}", params=params
+            )
             body = self._parse_response(resp, "sync_status")
 
         data = body.get("data", {}) or {}
@@ -262,7 +284,11 @@ class TikTokShopListingAdapter:
     async def validate_credentials(self, *, platform: Platform) -> bool:
         """用 TikTok Shop 店铺信息 API 校验凭证。"""
         extra = platform.extra_config or {}
-        if not extra.get("access_token") or not platform.client_id or not platform.api_key:
+        if (
+            not extra.get("access_token")
+            or not platform.client_id
+            or not platform.api_key
+        ):
             return False
 
         common = self._build_common_params(platform)
@@ -288,7 +314,9 @@ class TikTokShopListingAdapter:
         try:
             body = resp.json()
         except Exception:
-            raise RuntimeError(f"TikTok {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}")
+            raise RuntimeError(
+                f"TikTok {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}"
+            )
 
         if resp.status_code >= 400:
             msg = body.get("message", body.get("error", resp.text[:300]))

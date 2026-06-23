@@ -1,4 +1,5 @@
 """RBAC - 服务层"""
+
 from typing import Optional
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +7,6 @@ from app.models import Role, Permission, UserRole, RolePermission, User
 
 
 class RbacService:
-
     # ========== 角色 CRUD ==========
 
     @staticmethod
@@ -34,8 +34,9 @@ class RbacService:
         return await db.get(Role, role_id)
 
     @staticmethod
-    async def list_roles(db: AsyncSession, name: str = None,
-                         page: int = 1, page_size: int = 20) -> tuple[list[Role], int]:
+    async def list_roles(
+        db: AsyncSession, name: str = None, page: int = 1, page_size: int = 20
+    ) -> tuple[list[Role], int]:
         stmt = select(Role)
         if name:
             stmt = stmt.where(Role.name.like(f"%{name}%"))
@@ -53,7 +54,9 @@ class RbacService:
             return False
         # 删除关联
         await db.execute(delete(UserRole).where(UserRole.role_id == role_id))
-        await db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
+        await db.execute(
+            delete(RolePermission).where(RolePermission.role_id == role_id)
+        )
         await db.delete(role)
         await db.flush()
         return True
@@ -69,7 +72,9 @@ class RbacService:
         return perm
 
     @staticmethod
-    async def update_permission(db: AsyncSession, perm_id: int, data: dict) -> Optional[Permission]:
+    async def update_permission(
+        db: AsyncSession, perm_id: int, data: dict
+    ) -> Optional[Permission]:
         perm = await db.get(Permission, perm_id)
         if not perm:
             return None
@@ -85,8 +90,13 @@ class RbacService:
         return await db.get(Permission, perm_id)
 
     @staticmethod
-    async def list_permissions(db: AsyncSession, name: str = None, module: str = None,
-                               page: int = 1, page_size: int = 20) -> tuple[list[Permission], int]:
+    async def list_permissions(
+        db: AsyncSession,
+        name: str = None,
+        module: str = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[Permission], int]:
         stmt = select(Permission)
         if name:
             stmt = stmt.where(Permission.name.like(f"%{name}%"))
@@ -105,7 +115,9 @@ class RbacService:
         if not perm:
             return False
         # 删除关联
-        await db.execute(delete(RolePermission).where(RolePermission.permission_id == perm_id))
+        await db.execute(
+            delete(RolePermission).where(RolePermission.permission_id == perm_id)
+        )
         await db.delete(perm)
         await db.flush()
         return True
@@ -113,7 +125,9 @@ class RbacService:
     # ========== 用户角色分配 ==========
 
     @staticmethod
-    async def assign_roles_to_user(db: AsyncSession, user_id: int, role_ids: list[int]) -> User:
+    async def assign_roles_to_user(
+        db: AsyncSession, user_id: int, role_ids: list[int]
+    ) -> User:
         user = await db.get(User, user_id)
         if not user:
             raise ValueError("用户不存在")
@@ -155,12 +169,16 @@ class RbacService:
         return role.permissions
 
     @staticmethod
-    async def assign_permissions_to_role(db: AsyncSession, role_id: int, permission_ids: list[int]) -> Role:
+    async def assign_permissions_to_role(
+        db: AsyncSession, role_id: int, permission_ids: list[int]
+    ) -> Role:
         role = await db.get(Role, role_id)
         if not role:
             raise ValueError("角色不存在")
         # 清除旧关联
-        await db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
+        await db.execute(
+            delete(RolePermission).where(RolePermission.role_id == role_id)
+        )
         # 添加新关联
         for pid in permission_ids:
             perm = await db.get(Permission, pid)
@@ -171,8 +189,9 @@ class RbacService:
         return role
 
     @staticmethod
-    async def list_users(db: AsyncSession, username: str = None,
-                         page: int = 1, page_size: int = 20) -> tuple[list[User], int]:
+    async def list_users(
+        db: AsyncSession, username: str = None, page: int = 1, page_size: int = 20
+    ) -> tuple[list[User], int]:
         stmt = select(User)
         if username:
             stmt = stmt.where(User.username.like(f"%{username}%"))

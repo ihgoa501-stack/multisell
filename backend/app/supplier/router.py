@@ -7,8 +7,11 @@ from app.database import get_db
 from app.common import Result, PageResult
 from app.models import User
 from app.supplier.schemas import (
-    SupplierCreate, SupplierUpdate, SupplierVO,
-    ProductSupplierBind, ProductSupplierVO,
+    SupplierCreate,
+    SupplierUpdate,
+    SupplierVO,
+    ProductSupplierBind,
+    ProductSupplierVO,
 )
 from app.supplier.service import SupplierService
 from app.operation_log.service import OperationLogService
@@ -32,6 +35,7 @@ def supplier_to_vo(s) -> SupplierVO:
 
 
 # ========== 供应商CRUD ==========
+
 
 @router.post("/suppliers", summary="创建供应商")
 async def create_supplier(
@@ -58,7 +62,9 @@ async def update_supplier(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("supplier:update")),
 ):
-    s = await SupplierService.update(db, supplier_id, data.model_dump(exclude_unset=True))
+    s = await SupplierService.update(
+        db, supplier_id, data.model_dump(exclude_unset=True)
+    )
     if not s:
         return Result.not_found("供应商不存在")
     await OperationLogService.log(
@@ -119,14 +125,16 @@ async def delete_supplier(
 
 # ========== 商品-供应商关联 ==========
 
+
 @router.post("/product-supplier", summary="绑定商品到供应商")
 async def bind_product_supplier(
     data: ProductSupplierBind,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("supplier:create")),
 ):
-    ps = await SupplierService.bind_product(db, data.product_id, data.supplier_id,
-                                             data.supply_price, data.min_order_qty)
+    ps = await SupplierService.bind_product(
+        db, data.product_id, data.supplier_id, data.supply_price, data.min_order_qty
+    )
     await OperationLogService.log(
         db,
         module="supplier",
@@ -135,14 +143,16 @@ async def bind_product_supplier(
         content=f"绑定商品到供应商: product_id={data.product_id}, supplier_id={data.supplier_id}",
         operator=current_user.username,
     )
-    return Result.ok(ProductSupplierVO(
-        id=ps.id,
-        product_id=ps.product_id,
-        supplier_id=ps.supplier_id,
-        supply_price=float(ps.supply_price) if ps.supply_price else None,
-        min_order_qty=ps.min_order_qty or 1,
-        created_at=ps.created_at,
-    ))
+    return Result.ok(
+        ProductSupplierVO(
+            id=ps.id,
+            product_id=ps.product_id,
+            supplier_id=ps.supplier_id,
+            supply_price=float(ps.supply_price) if ps.supply_price else None,
+            min_order_qty=ps.min_order_qty or 1,
+            created_at=ps.created_at,
+        )
+    )
 
 
 @router.get("/products/{product_id}/suppliers", summary="查询商品的供应商列表")

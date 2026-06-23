@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_permission
 from app.database import get_db
 from app.common import Result
-from app.inventory.schemas import InventoryUpdate, InventoryCheck, InventoryVO, InventoryLogVO
+from app.inventory.schemas import (
+    InventoryUpdate,
+    InventoryCheck,
+    InventoryVO,
+    InventoryLogVO,
+)
 from app.inventory.service import InventoryService
 from app.models import User
 from app.operation_log.service import OperationLogService
@@ -27,23 +32,29 @@ async def get_inventory_alerts(
         select(Inventory, Sku, Product.name)
         .join(Sku, Inventory.sku_id == Sku.id)
         .join(Product, Sku.product_id == Product.id)
-        .where(and_(Inventory.safety_stock > 0, Inventory.quantity <= Inventory.safety_stock))
+        .where(
+            and_(
+                Inventory.safety_stock > 0, Inventory.quantity <= Inventory.safety_stock
+            )
+        )
         .order_by(Inventory.quantity.asc())
     )
     result = await db.execute(stmt)
     alerts = []
     for inv, sku, product_name in result.all():
-        alerts.append({
-            "sku_id": inv.sku_id,
-            "sku_code": sku.code,
-            "spec_desc": sku.spec_desc,
-            "product_name": product_name,
-            "product_id": sku.product_id,
-            "quantity": inv.quantity,
-            "safety_stock": inv.safety_stock,
-            "warehouse": inv.warehouse,
-            "updated_at": inv.updated_at.isoformat() if inv.updated_at else None,
-        })
+        alerts.append(
+            {
+                "sku_id": inv.sku_id,
+                "sku_code": sku.code,
+                "spec_desc": sku.spec_desc,
+                "product_name": product_name,
+                "product_id": sku.product_id,
+                "quantity": inv.quantity,
+                "safety_stock": inv.safety_stock,
+                "warehouse": inv.warehouse,
+                "updated_at": inv.updated_at.isoformat() if inv.updated_at else None,
+            }
+        )
     return Result.ok(alerts)
 
 
@@ -86,8 +97,13 @@ async def update_inventory(
     current_user: User = Depends(require_permission("inventory:update")),
 ):
     inv = await InventoryService.update_inventory(
-        db, sku_id, data.quantity, data.warehouse or "默认仓库",
-        data.location, data.safety_stock, data.remark
+        db,
+        sku_id,
+        data.quantity,
+        data.warehouse or "默认仓库",
+        data.location,
+        data.safety_stock,
+        data.remark,
     )
     await OperationLogService.log(
         db,
@@ -100,20 +116,38 @@ async def update_inventory(
 
     # Agent 事件：库存异常通知
     if data.quantity is not None or data.safety_stock is not None:
-        qty = data.quantity if data.quantity is not None else (inv.quantity if inv else 0)
-        safe = data.safety_stock if data.safety_stock is not None else (inv.safety_stock if inv else 0)
+        qty = (
+            data.quantity if data.quantity is not None else (inv.quantity if inv else 0)
+        )
+        safe = (
+            data.safety_stock
+            if data.safety_stock is not None
+            else (inv.safety_stock if inv else 0)
+        )
         if safe > 0 and qty <= 0:
-            asyncio.ensure_future(emit_agent_event("inventory.out_of_stock", {
-                "sku_id": sku_id,
-                "current_stock": qty,
-                "safety_stock": safe,
-            }, source="inventory.router"))
+            asyncio.ensure_future(
+                emit_agent_event(
+                    "inventory.out_of_stock",
+                    {
+                        "sku_id": sku_id,
+                        "current_stock": qty,
+                        "safety_stock": safe,
+                    },
+                    source="inventory.router",
+                )
+            )
         elif safe > 0 and qty <= safe:
-            asyncio.ensure_future(emit_agent_event("inventory.low_stock", {
-                "sku_id": sku_id,
-                "current_stock": qty,
-                "safety_stock": safe,
-            }, source="inventory.router"))
+            asyncio.ensure_future(
+                emit_agent_event(
+                    "inventory.low_stock",
+                    {
+                        "sku_id": sku_id,
+                        "current_stock": qty,
+                        "safety_stock": safe,
+                    },
+                    source="inventory.router",
+                )
+            )
 
     return Result.ok(inv_to_vo(inv))
 
@@ -126,7 +160,11 @@ async def get_inventory(
 ):
     inv = await InventoryService.get_inventory(db, sku_id)
     if not inv:
-        return Result.ok(InventoryVO(sku_id=sku_id, quantity=0, locked_quantity=0, available_quantity=0))
+        return Result.ok(
+            InventoryVO(
+                sku_id=sku_id, quantity=0, locked_quantity=0, available_quantity=0
+            )
+        )
     return Result.ok(inv_to_vo(inv))
 
 

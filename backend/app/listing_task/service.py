@@ -5,11 +5,14 @@ from sqlalchemy import case, select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ListingTask, ListingTaskItem, Product, Platform
-from app.listing.service import ListingService, PublishValidationError, PublishFailedError
+from app.listing.service import (
+    ListingService,
+    PublishValidationError,
+    PublishFailedError,
+)
 
 
 class ListingTaskService:
-
     @staticmethod
     async def create(
         db: AsyncSession,
@@ -75,7 +78,9 @@ class ListingTaskService:
         page_size: int = 20,
     ) -> tuple[list[dict], int]:
         base_q = select(ListingTaskItem).where(ListingTaskItem.task_id == task_id)
-        count_q = select(func.count(ListingTaskItem.id)).where(ListingTaskItem.task_id == task_id)
+        count_q = select(func.count(ListingTaskItem.id)).where(
+            ListingTaskItem.task_id == task_id
+        )
 
         if status_filter:
             base_q = base_q.where(ListingTaskItem.status == status_filter)
@@ -85,8 +90,7 @@ class ListingTaskService:
         total = total_result.scalar() or 0
 
         q = (
-            base_q
-            .order_by(ListingTaskItem.id)
+            base_q.order_by(ListingTaskItem.id)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -98,20 +102,28 @@ class ListingTaskService:
         for item in items:
             product = await db.get(Product, item.product_id)
             platform = await db.get(Platform, item.platform_id)
-            item_dicts.append({
-                "id": item.id,
-                "task_id": item.task_id,
-                "product_id": item.product_id,
-                "platform_id": item.platform_id,
-                "product_name": product.name if product else f"ID:{item.product_id}",
-                "platform_name": platform.name if platform else f"ID:{item.platform_id}",
-                "platform_code": platform.code if platform else None,
-                "status": item.status,
-                "result": item.result,
-                "error_message": item.error_message,
-                "retry_count": item.retry_count,
-                "executed_at": item.executed_at.isoformat() if item.executed_at else None,
-            })
+            item_dicts.append(
+                {
+                    "id": item.id,
+                    "task_id": item.task_id,
+                    "product_id": item.product_id,
+                    "platform_id": item.platform_id,
+                    "product_name": product.name
+                    if product
+                    else f"ID:{item.product_id}",
+                    "platform_name": platform.name
+                    if platform
+                    else f"ID:{item.platform_id}",
+                    "platform_code": platform.code if platform else None,
+                    "status": item.status,
+                    "result": item.result,
+                    "error_message": item.error_message,
+                    "retry_count": item.retry_count,
+                    "executed_at": item.executed_at.isoformat()
+                    if item.executed_at
+                    else None,
+                }
+            )
 
         return item_dicts, total
 

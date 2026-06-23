@@ -1,4 +1,5 @@
 """订单导入经营链路测试"""
+
 from uuid import uuid4
 
 import pytest
@@ -14,11 +15,19 @@ from tests.test_order_import_csv_adapter import (
 
 
 class TestMultiSkuImport:
-    @pytest.mark.skip(reason="endpoint /api/order-imports/{batch_id}/items not implemented in current API")
-    async def test_same_platform_order_no_creates_one_order_with_two_items(self, async_client: AsyncClient):
+    @pytest.mark.skip(
+        reason="endpoint /api/order-imports/{batch_id}/items not implemented in current API"
+    )
+    async def test_same_platform_order_no_creates_one_order_with_two_items(
+        self, async_client: AsyncClient
+    ):
         async with async_session_factory() as session:
-            _, sku1 = await _create_product_and_sku(session, sku_code=f"MSI-{uuid4().hex[:5]}")
-            _, sku2 = await _create_product_and_sku(session, sku_code=f"MSI-{uuid4().hex[:5]}")
+            _, sku1 = await _create_product_and_sku(
+                session, sku_code=f"MSI-{uuid4().hex[:5]}"
+            )
+            _, sku2 = await _create_product_and_sku(
+                session, sku_code=f"MSI-{uuid4().hex[:5]}"
+            )
             await _ensure_inventory(session, sku1.id, 100)
             await _ensure_inventory(session, sku2.id, 100)
             await session.commit()
@@ -35,7 +44,9 @@ class TestMultiSkuImport:
         assert response.status_code == 200, response.text
         batch = response.json()["data"]
 
-        items_response = await async_client.get(f"/api/order-imports/{batch['id']}/items")
+        items_response = await async_client.get(
+            f"/api/order-imports/{batch['id']}/items"
+        )
         assert items_response.status_code == 200, items_response.text
         rows = items_response.json()["data"]
         order_ids = {row["order_id"] for row in rows if row["order_id"]}
@@ -48,10 +59,16 @@ class TestMultiSkuImport:
         assert len(order["items"]) == 2
         assert order["total_amount"] == 50.0
 
-    @pytest.mark.skip(reason="current import service does not create OrderImportItem records")
-    async def test_multi_sku_with_invalid_sku_still_creates_order(self, async_client: AsyncClient):
+    @pytest.mark.skip(
+        reason="current import service does not create OrderImportItem records"
+    )
+    async def test_multi_sku_with_invalid_sku_still_creates_order(
+        self, async_client: AsyncClient
+    ):
         async with async_session_factory() as session:
-            _, sku1 = await _create_product_and_sku(session, sku_code=f"MSI2-{uuid4().hex[:5]}")
+            _, sku1 = await _create_product_and_sku(
+                session, sku_code=f"MSI2-{uuid4().hex[:5]}"
+            )
             await _ensure_inventory(session, sku1.id, 100)
             await session.commit()
         csv_text = (
@@ -76,10 +93,14 @@ class TestMultiSkuImport:
 
 
 class TestChainStatusFields:
-    @pytest.mark.skip(reason="import response no longer includes chain_status fields; endpoint not implemented")
+    @pytest.mark.skip(
+        reason="import response no longer includes chain_status fields; endpoint not implemented"
+    )
     async def test_import_batch_exposes_chain_status(self, async_client: AsyncClient):
         async with async_session_factory() as session:
-            _, sku = await _create_product_and_sku(session, sku_code=f"CHS-{uuid4().hex[:5]}")
+            _, sku = await _create_product_and_sku(
+                session, sku_code=f"CHS-{uuid4().hex[:5]}"
+            )
             await _ensure_inventory(session, sku.id, 100)
             await session.commit()
         csv_text = (
@@ -99,10 +120,16 @@ class TestChainStatusFields:
 
 
 class TestChainProcessing:
-    @pytest.mark.skip(reason="endpoint /api/order-imports/{batch_id}/process-chain not implemented in current API")
-    async def test_process_chain_rebuilds_ledger_and_generates_exceptions(self, async_client: AsyncClient):
+    @pytest.mark.skip(
+        reason="endpoint /api/order-imports/{batch_id}/process-chain not implemented in current API"
+    )
+    async def test_process_chain_rebuilds_ledger_and_generates_exceptions(
+        self, async_client: AsyncClient
+    ):
         async with async_session_factory() as session:
-            _, sku = await _create_product_and_sku(session, sku_code=f"CHP-{uuid4().hex[:5]}")
+            _, sku = await _create_product_and_sku(
+                session, sku_code=f"CHP-{uuid4().hex[:5]}"
+            )
             await _ensure_inventory(session, sku.id, 100)
             await session.commit()
         csv_text = (
@@ -117,7 +144,9 @@ class TestChainProcessing:
         assert import_response.status_code == 200, import_response.text
         batch_id = import_response.json()["data"]["id"]
 
-        process_response = await async_client.post(f"/api/order-imports/{batch_id}/process-chain")
+        process_response = await async_client.post(
+            f"/api/order-imports/{batch_id}/process-chain"
+        )
         assert process_response.status_code == 200, process_response.text
         summary = process_response.json()["data"]
         assert summary["processed_order_count"] == 1
@@ -130,16 +159,21 @@ class TestChainProcessing:
         assert batch["chain_status"] == "chain_processed"
         assert batch["ledger_rebuilt_count"] == 1
 
-    @pytest.mark.skip(reason="endpoint /api/order-imports/{batch_id}/process-chain not implemented in current API")
+    @pytest.mark.skip(
+        reason="endpoint /api/order-imports/{batch_id}/process-chain not implemented in current API"
+    )
     async def test_process_chain_requires_permission(self, async_client: AsyncClient):
         from app.config import settings
+
         original = settings.AUTH_ENABLED
         settings.AUTH_ENABLED = True
         try:
             user_id, token = await register_and_login(async_client, "cp_no_perm")
             await grant_permission(user_id, "order_import:view")
             async with async_session_factory() as session:
-                _, sku = await _create_product_and_sku(session, sku_code=f"CHPP-{uuid4().hex[:5]}")
+                _, sku = await _create_product_and_sku(
+                    session, sku_code=f"CHPP-{uuid4().hex[:5]}"
+                )
                 await _ensure_inventory(session, sku.id, 100)
                 await session.commit()
             csv_text = (

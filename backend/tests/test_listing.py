@@ -61,12 +61,16 @@ async def _make_product_publishable(async_client, product_id: int):
 
 
 class TestListings:
-    async def test_publish_rejects_product_with_incomplete_logistics_data(self, async_client):
+    async def test_publish_rejects_product_with_incomplete_logistics_data(
+        self, async_client
+    ):
         platform = await _create_platform(async_client, code="mocklogistics")
         product = await _create_product(async_client, main_image="/static/demo.jpg")
         await _make_product_publishable(async_client, product["id"])
 
-        resp = await async_client.post(f"/api/products/{product['id']}/publish/{platform['id']}")
+        resp = await async_client.post(
+            f"/api/products/{product['id']}/publish/{platform['id']}"
+        )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -75,11 +79,15 @@ class TestListings:
         missing = data["data"]["missing_requirements"]
         assert "logistics" in missing
 
-    async def test_publish_rejects_incomplete_product_with_missing_requirements(self, async_client):
+    async def test_publish_rejects_incomplete_product_with_missing_requirements(
+        self, async_client
+    ):
         platform = await _create_platform(async_client, code="mockincomplete")
         product = await _create_product(async_client)
 
-        resp = await async_client.post(f"/api/products/{product['id']}/publish/{platform['id']}")
+        resp = await async_client.post(
+            f"/api/products/{product['id']}/publish/{platform['id']}"
+        )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -102,7 +110,9 @@ class TestListings:
         )
         await _make_product_publishable(async_client, product["id"])
 
-        resp = await async_client.post(f"/api/products/{product['id']}/publish/{platform['id']}")
+        resp = await async_client.post(
+            f"/api/products/{product['id']}/publish/{platform['id']}"
+        )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -110,7 +120,10 @@ class TestListings:
         listing = data["data"]
         assert listing["status"] == "synced"
         assert listing["platform_product_id"].startswith("mockpublish-")
-        assert listing["platform_url"] == f"https://mockpublish.example.com/products/{product['id']}"
+        assert (
+            listing["platform_url"]
+            == f"https://mockpublish.example.com/products/{product['id']}"
+        )
 
         detail_resp = await async_client.get(f"/api/products/{product['id']}/listings")
         assert detail_resp.status_code == 200
@@ -129,7 +142,9 @@ class TestListings:
         )
         await _make_product_publishable(async_client, product["id"])
 
-        resp = await async_client.post(f"/api/products/{product['id']}/publish/{platform['id']}")
+        resp = await async_client.post(
+            f"/api/products/{product['id']}/publish/{platform['id']}"
+        )
 
         assert resp.status_code == 200
         data = resp.json()

@@ -17,7 +17,6 @@ IMPORT_ORDER_STATUSES = {"created_order", "imported", "skipped_duplicate"}
 
 
 class OrderImportChainService:
-
     @staticmethod
     async def process_chain(
         db: AsyncSession,
@@ -72,7 +71,9 @@ class OrderImportChainService:
                 if item.chain_status == "ledger_rebuilt":
                     item.chain_status = "exception_generated"
 
-        batch.chain_status = "chain_processed" if chain_failure_count == 0 else "chain_failed"
+        batch.chain_status = (
+            "chain_processed" if chain_failure_count == 0 else "chain_failed"
+        )
         batch.ledger_rebuilt_count = ledger_rebuilt_count
         batch.exception_generated_count = exception_generated_count
         batch.chain_failure_count = chain_failure_count

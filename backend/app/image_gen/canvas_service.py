@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class CanvasService:
-
     @staticmethod
     async def save(
         db: AsyncSession,
@@ -72,16 +71,18 @@ class CanvasService:
         rows = (await db.execute(query)).scalars().all()
         items = []
         for c in rows:
-            items.append({
-                "id": c.id,
-                "product_id": c.product_id,
-                "name": c.name,
-                "layers": c.layers if c.layers else [],
-                "thumbnail": c.thumbnail,
-                "created_by": c.created_by,
-                "created_at": str(c.created_at),
-                "updated_at": str(c.updated_at),
-            })
+            items.append(
+                {
+                    "id": c.id,
+                    "product_id": c.product_id,
+                    "name": c.name,
+                    "layers": c.layers if c.layers else [],
+                    "thumbnail": c.thumbnail,
+                    "created_by": c.created_by,
+                    "created_at": str(c.created_at),
+                    "updated_at": str(c.updated_at),
+                }
+            )
         return {"items": items, "total": total}
 
     @staticmethod

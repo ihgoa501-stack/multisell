@@ -4,6 +4,7 @@
 Phase 1b (M2): TTL + Budget + Decay
 Phase 2a (M3): Regret + Merge
 """
+
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -21,7 +22,10 @@ class TTLSweeper:
     DEFAULT_TTL_DAYS = 90
 
     async def expire_stale_rules(
-        self, db: AsyncSession, user_id: int, ttl_days: int = DEFAULT_TTL_DAYS,
+        self,
+        db: AsyncSession,
+        user_id: int,
+        ttl_days: int = DEFAULT_TTL_DAYS,
     ) -> list[PersonalRule]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=ttl_days)
         stmt = select(PersonalRule).where(
@@ -35,22 +39,31 @@ class TTLSweeper:
 
         for rule in rules:
             rule.status = "retired"
-            await self._log_change(db, rule, {
-                "target_type": "personal_rule",
-                "target_id": rule.id,
-                "field_path": "$.status",
-                "old_value": "active",
-                "new_value": "retired",
-                "source_type": "gds",
-                "source_id": "ttl_sweeper",
-                "change_summary": f"TTL过期自动退休: 超过{ttl_days}天未使用",
-                "context_json": {"ttl_days": ttl_days, "cutoff": cutoff.isoformat()},
-            })
+            await self._log_change(
+                db,
+                rule,
+                {
+                    "target_type": "personal_rule",
+                    "target_id": rule.id,
+                    "field_path": "$.status",
+                    "old_value": "active",
+                    "new_value": "retired",
+                    "source_type": "gds",
+                    "source_id": "ttl_sweeper",
+                    "change_summary": f"TTL过期自动退休: 超过{ttl_days}天未使用",
+                    "context_json": {
+                        "ttl_days": ttl_days,
+                        "cutoff": cutoff.isoformat(),
+                    },
+                },
+            )
 
         await db.flush()
         return rules
 
-    async def _log_change(self, db: AsyncSession, rule: PersonalRule, data: dict) -> RuleMarkChange:
+    async def _log_change(
+        self, db: AsyncSession, rule: PersonalRule, data: dict
+    ) -> RuleMarkChange:
         change = RuleMarkChange(**data)
         db.add(change)
         return change
@@ -67,17 +80,27 @@ class BudgetEnforcer:
     }
 
     async def enforce_budgets(
-        self, db: AsyncSession, user_id: int, budgets: Optional[dict[str, int]] = None,
+        self,
+        db: AsyncSession,
+        user_id: int,
+        budgets: Optional[dict[str, int]] = None,
     ) -> list[PersonalRule]:
         budgets = budgets or self.DEFAULT_BUDGETS
         all_exceeded = []
 
         for rule_type, limit in budgets.items():
-            stmt = select(PersonalRule).where(
-                PersonalRule.user_id == user_id,
-                PersonalRule.rule_type == rule_type,
-                PersonalRule.status == "active",
-            ).order_by(PersonalRule.priority.desc(), PersonalRule.last_applied_at.desc().nullslast())
+            stmt = (
+                select(PersonalRule)
+                .where(
+                    PersonalRule.user_id == user_id,
+                    PersonalRule.rule_type == rule_type,
+                    PersonalRule.status == "active",
+                )
+                .order_by(
+                    PersonalRule.priority.desc(),
+                    PersonalRule.last_applied_at.desc().nullslast(),
+                )
+            )
             result = await db.execute(stmt)
             rules = list(result.scalars().all())
 
@@ -86,23 +109,33 @@ class BudgetEnforcer:
                 for rule in excess:
                     old_status = rule.status
                     rule.status = "shadow"
-                    await self._log_change(db, rule, {
-                        "target_type": "personal_rule",
-                        "target_id": rule.id,
-                        "field_path": "$.status",
-                        "old_value": old_status,
-                        "new_value": "shadow",
-                        "source_type": "gds",
-                        "source_id": "budget_enforcer",
-                        "change_summary": f"Budget超限: {rule_type}最多{limit}条, 降级为shadow",
-                        "context_json": {"rule_type": rule_type, "limit": limit, "total": len(rules)},
-                    })
+                    await self._log_change(
+                        db,
+                        rule,
+                        {
+                            "target_type": "personal_rule",
+                            "target_id": rule.id,
+                            "field_path": "$.status",
+                            "old_value": old_status,
+                            "new_value": "shadow",
+                            "source_type": "gds",
+                            "source_id": "budget_enforcer",
+                            "change_summary": f"Budget超限: {rule_type}最多{limit}条, 降级为shadow",
+                            "context_json": {
+                                "rule_type": rule_type,
+                                "limit": limit,
+                                "total": len(rules),
+                            },
+                        },
+                    )
                 all_exceeded.extend(excess)
 
         await db.flush()
         return all_exceeded
 
-    async def _log_change(self, db: AsyncSession, rule: PersonalRule, data: dict) -> RuleMarkChange:
+    async def _log_change(
+        self, db: AsyncSession, rule: PersonalRule, data: dict
+    ) -> RuleMarkChange:
         change = RuleMarkChange(**data)
         db.add(change)
         return change
@@ -115,7 +148,10 @@ class DecayScheduler:
     MIN_CONFIDENCE = Decimal("0.1")
 
     async def apply_decay(
-        self, db: AsyncSession, user_id: int, decay_rate: Decimal = DECAY_RATE,
+        self,
+        db: AsyncSession,
+        user_id: int,
+        decay_rate: Decimal = DECAY_RATE,
     ) -> list[PersonalRule]:
         stmt = select(PersonalRule).where(
             PersonalRule.user_id == user_id,
@@ -130,23 +166,29 @@ class DecayScheduler:
             old_conf = rule.confidence
             new_conf = max(rule.confidence - decay_rate, self.MIN_CONFIDENCE)
             rule.confidence = new_conf
-            await self._log_change(db, rule, {
-                "target_type": "personal_rule",
-                "target_id": rule.id,
-                "field_path": "$.confidence",
-                "old_value": float(old_conf),
-                "new_value": float(new_conf),
-                "source_type": "gds",
-                "source_id": "decay_scheduler",
-                "change_summary": f"置信度衰减: {float(old_conf):.3f} → {float(new_conf):.3f}",
-                "context_json": {"decay_rate": float(decay_rate)},
-            })
+            await self._log_change(
+                db,
+                rule,
+                {
+                    "target_type": "personal_rule",
+                    "target_id": rule.id,
+                    "field_path": "$.confidence",
+                    "old_value": float(old_conf),
+                    "new_value": float(new_conf),
+                    "source_type": "gds",
+                    "source_id": "decay_scheduler",
+                    "change_summary": f"置信度衰减: {float(old_conf):.3f} → {float(new_conf):.3f}",
+                    "context_json": {"decay_rate": float(decay_rate)},
+                },
+            )
             affected.append(rule)
 
         await db.flush()
         return affected
 
-    async def _log_change(self, db: AsyncSession, rule: PersonalRule, data: dict) -> RuleMarkChange:
+    async def _log_change(
+        self, db: AsyncSession, rule: PersonalRule, data: dict
+    ) -> RuleMarkChange:
         change = RuleMarkChange(**data)
         db.add(change)
         return change
@@ -158,12 +200,22 @@ class MergeDetector:
     SIMILARITY_THRESHOLD = 0.85
 
     async def find_duplicates(
-        self, db: AsyncSession, user_id: int,
+        self,
+        db: AsyncSession,
+        user_id: int,
     ) -> list[dict]:
-        stmt = select(PersonalRule).where(
-            PersonalRule.user_id == user_id,
-            PersonalRule.status.in_(["active", "shadow"]),
-        ).order_by(PersonalRule.agent_id, PersonalRule.decision_point, PersonalRule.created_at)
+        stmt = (
+            select(PersonalRule)
+            .where(
+                PersonalRule.user_id == user_id,
+                PersonalRule.status.in_(["active", "shadow"]),
+            )
+            .order_by(
+                PersonalRule.agent_id,
+                PersonalRule.decision_point,
+                PersonalRule.created_at,
+            )
+        )
         result = await db.execute(stmt)
         rules = list(result.scalars().all())
 
@@ -179,11 +231,13 @@ class MergeDetector:
             for i in range(len(group)):
                 for j in range(i + 1, len(group)):
                     if self._are_similar(group[i], group[j]):
-                        duplicates.append({
-                            "keep": group[i],
-                            "remove": group[j],
-                            "similarity": self.SIMILARITY_THRESHOLD,
-                        })
+                        duplicates.append(
+                            {
+                                "keep": group[i],
+                                "remove": group[j],
+                                "similarity": self.SIMILARITY_THRESHOLD,
+                            }
+                        )
 
         return duplicates
 
@@ -198,7 +252,10 @@ class MergeDetector:
         return False
 
     async def merge_rules(
-        self, db: AsyncSession, keep_id: int, remove_id: int,
+        self,
+        db: AsyncSession,
+        keep_id: int,
+        remove_id: int,
     ) -> Optional[PersonalRule]:
         keep = await db.get(PersonalRule, keep_id)
         remove = await db.get(PersonalRule, remove_id)
@@ -206,7 +263,9 @@ class MergeDetector:
             return None
 
         keep.times_applied = (keep.times_applied or 0) + (remove.times_applied or 0)
-        keep.times_overridden = (keep.times_overridden or 0) + (remove.times_overridden or 0)
+        keep.times_overridden = (keep.times_overridden or 0) + (
+            remove.times_overridden or 0
+        )
         old_confidence = keep.confidence
         keep.confidence = max(keep.confidence, remove.confidence)
 
@@ -223,7 +282,8 @@ class MergeDetector:
             source_id="merge_detector",
             change_summary=f"合并规则: {remove.rule_name}(#{remove_id}) → {keep.rule_name}(#{keep_id})",
             context_json={
-                "keep_id": keep_id, "remove_id": remove_id,
+                "keep_id": keep_id,
+                "remove_id": remove_id,
                 "old_confidence": float(old_confidence) if old_confidence else None,
                 "new_confidence": float(keep.confidence),
             },
@@ -253,14 +313,22 @@ class RegretAnalyzer:
     REGRET_THRESHOLD = Decimal("0.15")
 
     async def find_regrettable_changes(
-        self, db: AsyncSession, user_id: int,
+        self,
+        db: AsyncSession,
+        user_id: int,
     ) -> list[dict]:
-        window_start = datetime.now(timezone.utc) - timedelta(hours=self.REGRET_WINDOW_HOURS)
+        window_start = datetime.now(timezone.utc) - timedelta(
+            hours=self.REGRET_WINDOW_HOURS
+        )
 
-        recent_changes_stmt = select(RuleMarkChange).where(
-            RuleMarkChange.source_type.in_(["gds", "gds_proxy", "nudge"]),
-            RuleMarkChange.created_at >= window_start,
-        ).order_by(RuleMarkChange.created_at.desc())
+        recent_changes_stmt = (
+            select(RuleMarkChange)
+            .where(
+                RuleMarkChange.source_type.in_(["gds", "gds_proxy", "nudge"]),
+                RuleMarkChange.created_at >= window_start,
+            )
+            .order_by(RuleMarkChange.created_at.desc())
+        )
         result = await db.execute(recent_changes_stmt)
         changes = list(result.scalars().all())
 
@@ -290,18 +358,22 @@ class RegretAnalyzer:
             after_avg = await db.scalar(after_stmt) or Decimal(0)
 
             if before_avg > 0 and (before_avg - after_avg) >= self.REGRET_THRESHOLD:
-                regrettable.append({
-                    "change": change,
-                    "rule": rule,
-                    "before_avg": float(before_avg),
-                    "after_avg": float(after_avg),
-                    "drop": float(before_avg - after_avg),
-                })
+                regrettable.append(
+                    {
+                        "change": change,
+                        "rule": rule,
+                        "before_avg": float(before_avg),
+                        "after_avg": float(after_avg),
+                        "drop": float(before_avg - after_avg),
+                    }
+                )
 
         return regrettable
 
     async def rollback_change(
-        self, db: AsyncSession, change_id: int,
+        self,
+        db: AsyncSession,
+        change_id: int,
     ) -> Optional[PersonalRule]:
         change = await db.get(RuleMarkChange, change_id)
         if not change or change.target_type != "personal_rule":

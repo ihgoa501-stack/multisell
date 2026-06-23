@@ -1,4 +1,5 @@
 """汇率 Pydantic 模型"""
+
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field

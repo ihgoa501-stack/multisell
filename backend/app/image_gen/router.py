@@ -45,7 +45,9 @@ async def generate_image(
             count=req.count,
         )
         await OperationLogService.log(
-            db, module="image_gen", action="generate",
+            db,
+            module="image_gen",
+            action="generate",
             resource_id=str(req.product_id),
             operator_id=current_user.id,
             content=f"生图: product_id={req.product_id}, style={req.style}",
@@ -74,7 +76,9 @@ async def save_image(
         )
         action_detail = "设为主图" if req.set_as_main else "加入图库"
         await OperationLogService.log(
-            db, module="image_gen", action="save",
+            db,
+            module="image_gen",
+            action="save",
             resource_id=str(req.product_id),
             operator_id=current_user.id,
             content=f"保存图片到商品: {action_detail}",
@@ -95,7 +99,10 @@ async def get_history(
 ):
     """查询某个商品或全部的 AI 生图历史"""
     result = await ImageGenService.get_history(
-        db=db, product_id=product_id, page=page, page_size=page_size,
+        db=db,
+        product_id=product_id,
+        page=page,
+        page_size=page_size,
     )
     return Result.ok(result)
 
@@ -110,14 +117,19 @@ async def batch_generate(
     """为多个商品批量生成 AI 图片"""
     try:
         result = await ImageGenService.batch_generate(
-            db=db, user_id=current_user.id,
+            db=db,
+            user_id=current_user.id,
             product_ids=req.product_ids,
-            prompt=req.prompt, style=req.style,
+            prompt=req.prompt,
+            style=req.style,
             negative_prompt=req.negative_prompt or "",
-            size=req.size, count=req.count,
+            size=req.size,
+            count=req.count,
         )
         await OperationLogService.log(
-            db, module="image_gen", action="batch_generate",
+            db,
+            module="image_gen",
+            action="batch_generate",
             resource_id=req.batch_id or ",".join(str(x) for x in req.product_ids[:5]),
             operator_id=current_user.id,
             content=f"批量生图: {len(req.product_ids)} 个商品, style={req.style}",
@@ -137,7 +149,8 @@ async def remove_background(
     """对指定图片做去背景处理"""
     try:
         result = await ImageGenService.remove_background(
-            db=db, image_url=req.image_url,
+            db=db,
+            image_url=req.image_url,
         )
         if result:
             return Result.ok({"url": result})
@@ -147,6 +160,7 @@ async def remove_background(
 
 
 # ====== Prompt 模板 CRUD ======
+
 
 @router.get("/templates", summary="查询 Prompt 模板列表")
 async def list_templates(
@@ -159,8 +173,11 @@ async def list_templates(
 ):
     """查询可用的 Prompt 模板（共享的 + 自己创建的）"""
     result = await ImageGenService.list_templates(
-        db=db, user_id=current_user.id,
-        platform_code=platform_code, page=page, page_size=page_size,
+        db=db,
+        user_id=current_user.id,
+        platform_code=platform_code,
+        page=page,
+        page_size=page_size,
     )
     return Result.ok(result)
 
@@ -175,11 +192,14 @@ async def create_template(
     """创建新的 Prompt 模板"""
     try:
         result = await ImageGenService.create_template(
-            db=db, user_id=current_user.id,
-            name=req.name, prompt=req.prompt,
+            db=db,
+            user_id=current_user.id,
+            name=req.name,
+            prompt=req.prompt,
             description=req.description or "",
             negative_prompt=req.negative_prompt or "",
-            style=req.style, size=req.size,
+            style=req.style,
+            size=req.size,
             platform_code=req.platform_code,
             is_shared=req.is_shared,
         )
@@ -200,8 +220,10 @@ async def update_template(
     try:
         updates = {k: v for k, v in req.model_dump().items() if v is not None}
         result = await ImageGenService.update_template(
-            db=db, template_id=template_id,
-            user_id=current_user.id, updates=updates,
+            db=db,
+            template_id=template_id,
+            user_id=current_user.id,
+            updates=updates,
         )
         return Result.ok(result)
     except ValueError as e:
@@ -222,7 +244,9 @@ async def delete_template(
     """删除 Prompt 模板（仅创建者可删除）"""
     try:
         await ImageGenService.delete_template(
-            db=db, template_id=template_id, user_id=current_user.id,
+            db=db,
+            template_id=template_id,
+            user_id=current_user.id,
         )
         return Result.ok(message="模板已删除")
     except ValueError as e:
@@ -242,7 +266,8 @@ async def inpaint_image(
 ):
     try:
         result = await ImageGenService.inpaint(
-            db=db, user_id=current_user.id,
+            db=db,
+            user_id=current_user.id,
             image_url=req.image_url,
             mask_base64=req.mask_base64,
             prompt=req.prompt,
@@ -262,7 +287,8 @@ async def outpaint_image(
 ):
     try:
         result = await ImageGenService.outpaint(
-            db=db, user_id=current_user.id,
+            db=db,
+            user_id=current_user.id,
             image_url=req.image_url,
             direction=req.direction,
             prompt=req.prompt,
@@ -282,7 +308,8 @@ async def generate_video(
 ):
     try:
         result = await ImageGenService.generate_video(
-            db=db, user_id=current_user.id,
+            db=db,
+            user_id=current_user.id,
             prompt=req.prompt,
             image_url=req.image_url,
         )
@@ -313,7 +340,8 @@ async def create_slideshow(
 ):
     try:
         result = await ImageGenService.create_slideshow(
-            db=db, user_id=current_user.id,
+            db=db,
+            user_id=current_user.id,
             image_urls=req.image_urls,
             duration_per_frame=req.duration_per_frame,
             transition=req.transition,

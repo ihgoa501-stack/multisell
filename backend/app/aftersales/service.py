@@ -1,4 +1,5 @@
 """售后退货 — service"""
+
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -20,7 +21,6 @@ ALLOWED_TRANSITIONS = {
 
 
 class AfterSalesService:
-
     @staticmethod
     async def create(db: AsyncSession, data: dict, created_by: str) -> AfterSalesOrder:
         """创建退货申请"""
@@ -39,7 +39,9 @@ class AfterSalesService:
         return rma
 
     @staticmethod
-    async def approve(db: AsyncSession, rma_id: int, approved_by: str, refund_amount: Decimal) -> Optional[AfterSalesOrder]:
+    async def approve(
+        db: AsyncSession, rma_id: int, approved_by: str, refund_amount: Decimal
+    ) -> Optional[AfterSalesOrder]:
         """审批通过退货"""
         rma = await db.get(AfterSalesOrder, rma_id)
         if not rma or rma.status != "pending":
@@ -53,7 +55,9 @@ class AfterSalesService:
         return rma
 
     @staticmethod
-    async def reject(db: AsyncSession, rma_id: int, rejected_by: str, reason: str) -> Optional[AfterSalesOrder]:
+    async def reject(
+        db: AsyncSession, rma_id: int, rejected_by: str, reason: str
+    ) -> Optional[AfterSalesOrder]:
         """驳回退货"""
         rma = await db.get(AfterSalesOrder, rma_id)
         if not rma or rma.status not in ("pending", "approved"):
@@ -67,7 +71,12 @@ class AfterSalesService:
         return rma
 
     @staticmethod
-    async def receive(db: AsyncSession, rma_id: int, received_by: str, inspection: Optional[str] = None) -> Optional[AfterSalesOrder]:
+    async def receive(
+        db: AsyncSession,
+        rma_id: int,
+        received_by: str,
+        inspection: Optional[str] = None,
+    ) -> Optional[AfterSalesOrder]:
         """入库验收 — 恢复库存"""
         rma = await db.get(AfterSalesOrder, rma_id)
         if not rma or rma.status != "approved":
@@ -80,7 +89,9 @@ class AfterSalesService:
         inv = await InventoryService.get_inventory(db, rma.sku_id)
         current = inv.quantity if inv else 0
         await InventoryService.update_inventory(
-            db, rma.sku_id, current + rma.return_quantity,
+            db,
+            rma.sku_id,
+            current + rma.return_quantity,
             remark=f"退货入库 rma_id={rma_id}",
         )
         await db.flush()
@@ -88,7 +99,9 @@ class AfterSalesService:
         return rma
 
     @staticmethod
-    async def refund(db: AsyncSession, rma_id: int, refunded_by: str) -> Optional[AfterSalesOrder]:
+    async def refund(
+        db: AsyncSession, rma_id: int, refunded_by: str
+    ) -> Optional[AfterSalesOrder]:
         """确认退款"""
         rma = await db.get(AfterSalesOrder, rma_id)
         if not rma or rma.status != "received":
@@ -106,14 +119,18 @@ class AfterSalesService:
 
     @staticmethod
     async def list_by_order(db: AsyncSession, order_id: int) -> list[AfterSalesOrder]:
-        stmt = select(AfterSalesOrder).where(
-            AfterSalesOrder.order_id == order_id
-        ).order_by(AfterSalesOrder.created_at.desc())
+        stmt = (
+            select(AfterSalesOrder)
+            .where(AfterSalesOrder.order_id == order_id)
+            .order_by(AfterSalesOrder.created_at.desc())
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
     @staticmethod
-    async def list_all(db: AsyncSession, status: Optional[str] = None, limit: int = 50) -> list[AfterSalesOrder]:
+    async def list_all(
+        db: AsyncSession, status: Optional[str] = None, limit: int = 50
+    ) -> list[AfterSalesOrder]:
         stmt = select(AfterSalesOrder)
         if status:
             stmt = stmt.where(AfterSalesOrder.status == status)

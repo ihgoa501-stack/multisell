@@ -14,6 +14,7 @@ class TestInventoryAuthAudit:
     async def _create_sku(self, async_client) -> int:
         """创建测试 SKU（admin）"""
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",
@@ -44,7 +45,9 @@ class TestInventoryAuthAudit:
 
     async def test_inventory_view_without_permission_is_forbidden(self, async_client):
         _uid, token = await register_and_login(async_client, "inv_vw")
-        resp = await async_client.get("/api/inventory/1", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/inventory/1", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_inventory_view_with_permission_succeeds(self, async_client):
@@ -59,12 +62,16 @@ class TestInventoryAuthAudit:
 
     async def test_inventory_alerts_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "inv_alt")
-        resp = await async_client.get("/api/inventory/alerts", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/inventory/alerts", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_inventory_logs_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "inv_log")
-        resp = await async_client.get("/api/inventory/1/logs", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/inventory/1/logs", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_inventory_check_requires_view(self, async_client):
@@ -85,7 +92,9 @@ class TestInventoryAuthAudit:
         )
         assert resp.status_code == 403
 
-    async def test_inventory_update_with_permission_succeeds_and_logs(self, async_client):
+    async def test_inventory_update_with_permission_succeeds_and_logs(
+        self, async_client
+    ):
         uid, token = await register_and_login(async_client, "inv_up2")
         sku_id = await self._create_sku(async_client)
         await grant_permission(uid, "inventory:view")
@@ -112,6 +121,7 @@ class TestInventoryAuthAudit:
 class TestPriceAuthAudit:
     async def _create_sku(self, async_client) -> int:
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",
@@ -142,17 +152,23 @@ class TestPriceAuthAudit:
 
     async def test_price_view_without_permission_is_forbidden(self, async_client):
         _uid, token = await register_and_login(async_client, "prc_vw")
-        resp = await async_client.get("/api/skus/1/prices", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/skus/1/prices", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_current_price_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "prc_cu")
-        resp = await async_client.get("/api/skus/1/current-price", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/skus/1/current-price", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_price_history_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "prc_hi")
-        resp = await async_client.get("/api/skus/1/price-history", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/skus/1/price-history", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_price_set_requires_update_permission(self, async_client):
@@ -213,6 +229,7 @@ class TestPriceAuthAudit:
 
     async def test_admin_bypasses_price_permission(self, async_client):
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",

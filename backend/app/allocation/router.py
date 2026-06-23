@@ -8,8 +8,11 @@ from app.common import Result
 from app.database import get_db
 from app.models import User
 from app.allocation.schemas import (
-    WarehouseCreate, WarehouseUpdate, WarehouseVO,
-    AllocationRuleCreate, AllocationRuleVO,
+    WarehouseCreate,
+    WarehouseUpdate,
+    WarehouseVO,
+    AllocationRuleCreate,
+    AllocationRuleVO,
     InventoryAllocateRequest,
 )
 from app.allocation.service import WarehouseService, AllocationService
@@ -32,9 +35,14 @@ async def create_warehouse(
     current_user: User = Depends(require_permission("inventory:update")),
 ):
     wh = await WarehouseService.create(db, data.model_dump())
-    await OperationLogService.log(db, module="allocation", action="create_warehouse",
-                                   resource_id=str(wh.id), content=f"创建仓库: {wh.name}",
-                                   operator=_operator(current_user))
+    await OperationLogService.log(
+        db,
+        module="allocation",
+        action="create_warehouse",
+        resource_id=str(wh.id),
+        content=f"创建仓库: {wh.name}",
+        operator=_operator(current_user),
+    )
     return Result.ok({"id": wh.id, "name": wh.name, "code": wh.code})
 
 
@@ -49,11 +57,14 @@ async def list_warehouses(
 
 @router.put("/warehouses/{warehouse_id}", summary="更新仓库")
 async def update_warehouse(
-    warehouse_id: int, data: WarehouseUpdate,
+    warehouse_id: int,
+    data: WarehouseUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("inventory:update")),
 ):
-    wh = await WarehouseService.update(db, warehouse_id, data.model_dump(exclude_unset=True))
+    wh = await WarehouseService.update(
+        db, warehouse_id, data.model_dump(exclude_unset=True)
+    )
     if not wh:
         return Result.not_found("仓库不存在")
     return Result.ok({"id": wh.id, "name": wh.name})
@@ -126,10 +137,14 @@ async def allocate_inventory(
         )
     except ValueError as e:
         return Result.bad_request(str(e))
-    await OperationLogService.log(db, module="allocation", action="allocate",
-                                   resource_id=f"sku={data.sku_id}",
-                                   content=f"分配库存: SKU={data.sku_id} 仓库={result['warehouse_name']} 数量={data.quantity}",
-                                   operator=_operator(current_user))
+    await OperationLogService.log(
+        db,
+        module="allocation",
+        action="allocate",
+        resource_id=f"sku={data.sku_id}",
+        content=f"分配库存: SKU={data.sku_id} 仓库={result['warehouse_name']} 数量={data.quantity}",
+        operator=_operator(current_user),
+    )
     return Result.ok(result)
 
 

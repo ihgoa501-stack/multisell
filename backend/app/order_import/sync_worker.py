@@ -34,12 +34,14 @@ def map_platform_order(platform_order: dict, platform_id: int) -> dict:
     for i in platform_order.get("items", []):
         unit_price = Decimal(str(i.get("unit_price", "0")))
         quantity = i.get("quantity", 0)
-        items.append({
-            "sku_code": i.get("sku_code", ""),
-            "quantity": quantity,
-            "unit_price": unit_price,
-            "subtotal": unit_price * quantity,
-        })
+        items.append(
+            {
+                "sku_code": i.get("sku_code", ""),
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "subtotal": unit_price * quantity,
+            }
+        )
 
     total = sum(i["subtotal"] for i in items)
     fee = Decimal(str(platform_order.get("shipping_fee", "0")))
@@ -100,10 +102,10 @@ class OrderSyncWorker:
     async def _tick(self):
         async with async_session_factory() as db:
             platforms = (
-                await db.execute(
-                    select(Platform).where(Platform.status == 1)
-                )
-            ).scalars().all()
+                (await db.execute(select(Platform).where(Platform.status == 1)))
+                .scalars()
+                .all()
+            )
 
             for platform in platforms:
                 adapter = get_listing_adapter(platform.code)
@@ -117,9 +119,7 @@ class OrderSyncWorker:
                     for order in orders:
                         await self._upsert_order(db, order, platform.id)
                 except Exception:
-                    logger.exception(
-                        "Failed to fetch orders for %s", platform.code
-                    )
+                    logger.exception("Failed to fetch orders for %s", platform.code)
             await db.commit()
 
     async def _upsert_order(
@@ -129,9 +129,7 @@ class OrderSyncWorker:
 
         # Check for existing order by order_no
         existing = (
-            await db.execute(
-                select(Order).where(Order.order_no == mapped["order_no"])
-            )
+            await db.execute(select(Order).where(Order.order_no == mapped["order_no"]))
         ).scalar_one_or_none()
 
         if existing:
@@ -194,7 +192,8 @@ class OrderSyncWorker:
             else:
                 logger.warning(
                     "SKU %s not found for order %s — skipping item",
-                    sku_code, order.order_no,
+                    sku_code,
+                    order.order_no,
                 )
                 continue
 
@@ -213,14 +212,16 @@ class OrderSyncWorker:
                 existing_item.unit_price = unit_price
                 existing_item.subtotal = unit_price * quantity
             else:
-                db.add(OrderItem(
-                    order_id=order.id,
-                    sku_id=sku_id,
-                    product_id=product_id,
-                    product_name=product_name,
-                    sku_code=sku_code,
-                    spec_desc=spec_desc,
-                    unit_price=unit_price,
-                    quantity=quantity,
-                    subtotal=unit_price * quantity,
-                ))
+                db.add(
+                    OrderItem(
+                        order_id=order.id,
+                        sku_id=sku_id,
+                        product_id=product_id,
+                        product_name=product_name,
+                        sku_code=sku_code,
+                        spec_desc=spec_desc,
+                        unit_price=unit_price,
+                        quantity=quantity,
+                        subtotal=unit_price * quantity,
+                    )
+                )

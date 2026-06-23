@@ -1,4 +1,5 @@
 """平台管理 - Pydantic Schema"""
+
 from datetime import datetime
 from typing import Optional, Any
 from pydantic import BaseModel, ConfigDict, Field
@@ -6,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class PlatformCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="平台名称")
-    code: str = Field(..., min_length=1, max_length=50, description="平台代码（ozon, shopee, wb）")
+    code: str = Field(
+        ..., min_length=1, max_length=50, description="平台代码（ozon, shopee, wb）"
+    )
     api_base_url: Optional[str] = Field(None, max_length=500, description="API基础地址")
     api_key: Optional[str] = Field(None, max_length=500, description="API密钥")
     client_id: Optional[str] = Field(None, max_length=200, description="Client ID")

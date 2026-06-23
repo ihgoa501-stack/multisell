@@ -27,7 +27,9 @@ class AiEnhanceService:
 
         # ----- 尝试调用真实 LLM -----
         if settings.LLM_API_KEY:
-            result = await AiEnhanceService._call_llm_with_retry(name, subtitle, description)
+            result = await AiEnhanceService._call_llm_with_retry(
+                name, subtitle, description
+            )
         else:
             result = AiEnhanceService._fallback_data(name, description)
 
@@ -47,9 +49,7 @@ class AiEnhanceService:
         }
 
     @staticmethod
-    async def _call_llm_with_retry(
-        name: str, subtitle: str, description: str
-    ) -> dict:
+    async def _call_llm_with_retry(name: str, subtitle: str, description: str) -> dict:
         """调用 LLM，带 3 次重试，全部失败则回退"""
         prompt = f"""你是一个电商商品标题和描述优化专家。
 请根据以下商品信息，生成优化的标题、描述和SEO关键词。
@@ -92,7 +92,7 @@ class AiEnhanceService:
                     try:
                         result = json.loads(content)
                     except json.JSONDecodeError:
-                        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', content)
+                        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
                         if json_match:
                             result = json.loads(json_match.group(1))
                         else:

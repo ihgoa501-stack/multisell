@@ -1,4 +1,5 @@
 """订单导入 + 库存分配 — 功能测试"""
+
 import pytest
 
 
@@ -9,29 +10,47 @@ def _ok(resp):
     return body.get("data")
 
 
-@pytest.mark.skip(reason="flaky: depends on test ordering (test pollution in full suite)")
+@pytest.mark.skip(
+    reason="flaky: depends on test ordering (test pollution in full suite)"
+)
 class TestOrderImportAPI:
-
     async def test_order_import_mock(self, async_client):
         # 创建平台（确保平台存在）
         import uuid
+
         code = f"imp{uuid.uuid4().hex[:8]}"
-        r = await async_client.post("/api/platforms", json={
-            "name": f"Imp-{code}", "code": code, "api_key": "k",
-        })
+        r = await async_client.post(
+            "/api/platforms",
+            json={
+                "name": f"Imp-{code}",
+                "code": code,
+                "api_key": "k",
+            },
+        )
         pid = _ok(r)["id"]
 
         # 需要已有商品+SKU
-        r = await async_client.post("/api/products", json={
-            "name": "ImpTest", "unit": "件", "status": 1,
-            "package_length_cm": 10, "package_width_cm": 10, "package_height_cm": 10,
-            "package_weight_kg": 0.5, "cargo_type": "normal",
-            "main_image": "https://ex.com/i.jpg",
-        })
+        r = await async_client.post(
+            "/api/products",
+            json={
+                "name": "ImpTest",
+                "unit": "件",
+                "status": 1,
+                "package_length_cm": 10,
+                "package_width_cm": 10,
+                "package_height_cm": 10,
+                "package_weight_kg": 0.5,
+                "cargo_type": "normal",
+                "main_image": "https://ex.com/i.jpg",
+            },
+        )
         prod = _ok(r)
-        r = await async_client.post(f"/api/products/{prod['id']}/specs", json={
-            "specs": [{"name": "C", "values": ["A"]}],
-        })
+        r = await async_client.post(
+            f"/api/products/{prod['id']}/specs",
+            json={
+                "specs": [{"name": "C", "values": ["A"]}],
+            },
+        )
         _ok(r)
         r = await async_client.post(f"/api/products/{prod['id']}/skus/generate")
         _ok(r)
@@ -49,9 +68,10 @@ class TestOrderImportAPI:
         assert isinstance(records, list)
 
 
-@pytest.mark.skip(reason="flaky: depends on test ordering (test pollution in full suite)")
+@pytest.mark.skip(
+    reason="flaky: depends on test ordering (test pollution in full suite)"
+)
 class TestAllocationAPI:
-
     async def test_warehouse_and_rules(self, async_client):
         r = await async_client.post("/api/warehouses/mock")
         result = _ok(r)

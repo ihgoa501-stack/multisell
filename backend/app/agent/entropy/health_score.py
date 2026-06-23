@@ -7,6 +7,7 @@
   4. 应用频次 (weight: 0.15): sigmoid(times_applied)
   5. 规则类型 (weight: 0.10): veto > threshold > strategy > style
 """
+
 import math
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -16,7 +17,6 @@ from app.agent.models import PersonalRule
 
 
 class RuleHealthScorer:
-
     WEIGHTS = {
         "acceptance": Decimal("0.30"),
         "confidence": Decimal("0.25"),
@@ -41,7 +41,9 @@ class RuleHealthScorer:
         applied = rule.times_applied or 0
         overridden = rule.times_overridden or 0
 
-        acceptance = Decimal("1.0") - (Decimal(str(overridden)) / max(Decimal(str(applied)), Decimal("1")))
+        acceptance = Decimal("1.0") - (
+            Decimal(str(overridden)) / max(Decimal(str(applied)), Decimal("1"))
+        )
         acceptance_score = max(Decimal("0"), acceptance)
 
         confidence_score = Decimal(str(rule.confidence or 0))
@@ -52,7 +54,9 @@ class RuleHealthScorer:
         else:
             freshness_score = Decimal("0.2")
 
-        frequency_score = Decimal("1.0") / (Decimal("1.0") + Decimal(str(math.exp(-0.1 * applied))))
+        frequency_score = Decimal("1.0") / (
+            Decimal("1.0") + Decimal(str(math.exp(-0.1 * applied)))
+        )
         frequency_score = Decimal(str(round(float(frequency_score), 4)))
 
         type_score = Decimal(str(self.TYPE_SCORES.get(rule.rule_type, 0.5)))
@@ -83,15 +87,21 @@ class RuleHealthScorer:
             "times_applied": applied,
             "times_overridden": overridden,
             "override_rate": round(float(overridden / max(applied, 1)), 4),
-            "days_since_last_applied": (now - rule.last_applied_at).days if rule.last_applied_at else None,
+            "days_since_last_applied": (now - rule.last_applied_at).days
+            if rule.last_applied_at
+            else None,
             "confidence": float(rule.confidence or 0),
-            "risk_level": "unhealthy" if total < self.UNHEALTHY_THRESHOLD
-                         else "warning" if total < self.WARNING_THRESHOLD
-                         else "healthy",
+            "risk_level": "unhealthy"
+            if total < self.UNHEALTHY_THRESHOLD
+            else "warning"
+            if total < self.WARNING_THRESHOLD
+            else "healthy",
         }
 
     async def score_all_rules(
-        self, db: AsyncSession, user_id: int,
+        self,
+        db: AsyncSession,
+        user_id: int,
     ) -> list[dict]:
         stmt = select(PersonalRule).where(
             PersonalRule.user_id == user_id,
@@ -112,9 +122,13 @@ class RuleHealthScorer:
         total = len(scores)
         if total == 0:
             return {
-                "total_rules": 0, "active_rules": 0, "shadow_rules": 0,
-                "avg_health_score": 0, "unhealthy_count": 0,
-                "healthy_count": 0, "warning_count": 0,
+                "total_rules": 0,
+                "active_rules": 0,
+                "shadow_rules": 0,
+                "avg_health_score": 0,
+                "unhealthy_count": 0,
+                "healthy_count": 0,
+                "warning_count": 0,
             }
 
         avg_score = sum(s["score"] for s in scores) / total
@@ -123,16 +137,20 @@ class RuleHealthScorer:
         healthy = [s for s in scores if s["risk_level"] == "healthy"]
 
         stmt_active = select(func.count()).select_from(
-            select(PersonalRule).where(
+            select(PersonalRule)
+            .where(
                 PersonalRule.user_id == user_id,
                 PersonalRule.status == "active",
-            ).subquery()
+            )
+            .subquery()
         )
         stmt_shadow = select(func.count()).select_from(
-            select(PersonalRule).where(
+            select(PersonalRule)
+            .where(
                 PersonalRule.user_id == user_id,
                 PersonalRule.status == "shadow",
-            ).subquery()
+            )
+            .subquery()
         )
 
         active_count = await db.scalar(stmt_active) or 0

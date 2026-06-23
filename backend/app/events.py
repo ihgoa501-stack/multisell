@@ -24,6 +24,7 @@ async def emit_agent_event(
     """触发 Agent 事件，返回匹配到的路由数"""
     try:
         from app.agent.event_bus import event_bus
+
         return await event_bus.emit(event_type, payload or {}, source)
     except Exception as e:
         logger.warning("Agent 事件发送失败 (%s): %s", event_type, e)

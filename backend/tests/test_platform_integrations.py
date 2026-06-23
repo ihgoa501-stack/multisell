@@ -163,11 +163,19 @@ class TestAccountsCRUD:
 
         await async_client.post(
             "/api/platform-integrations/accounts",
-            json={"platform_id": p1.id, "adapter_code": "amazon", "account_name": "Acc1"},
+            json={
+                "platform_id": p1.id,
+                "adapter_code": "amazon",
+                "account_name": "Acc1",
+            },
         )
         await async_client.post(
             "/api/platform-integrations/accounts",
-            json={"platform_id": p2.id, "adapter_code": "tiktok", "account_name": "Acc2"},
+            json={
+                "platform_id": p2.id,
+                "adapter_code": "tiktok",
+                "account_name": "Acc2",
+            },
         )
 
         resp = await async_client.get("/api/platform-integrations/accounts")
@@ -329,9 +337,7 @@ class TestAccountConnection:
         assert isinstance(result["message"], str)
 
     async def test_test_account_not_found(self, async_client):
-        resp = await async_client.post(
-            "/api/platform-integrations/accounts/99999/test"
-        )
+        resp = await async_client.post("/api/platform-integrations/accounts/99999/test")
         assert resp.json()["code"] == 404
 
     async def test_test_account_unknown_adapter_fails(self, async_client):
@@ -574,7 +580,9 @@ class TestAttributeMappings:
 
 
 class TestAuditLog:
-    async def _count_logs(self, module: str, action: str, resource_id: str = None) -> int:
+    async def _count_logs(
+        self, module: str, action: str, resource_id: str = None
+    ) -> int:
         async with async_session_factory() as session:
             stmt = select(OperationLog).where(
                 OperationLog.module == module,
@@ -688,6 +696,7 @@ class TestPermissions:
     @pytest.fixture(autouse=True)
     def _enable_auth(self):
         from app.config import settings
+
         original = settings.AUTH_ENABLED
         settings.AUTH_ENABLED = True
         yield

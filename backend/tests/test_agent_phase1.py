@@ -11,6 +11,7 @@
 - 折扣阻断/预警逻辑正确
 - 多折扣叠加模拟正确
 """
+
 import pytest
 
 from app.agent.agents.inventory_alert import A5InventoryAlertAgent
@@ -21,8 +22,8 @@ from app.agent.agents.discount_risk import G3DiscountRiskAgent
 #  A5 库存预警 Agent 测试
 # ================================================================
 
-class TestA5InventoryAlert:
 
+class TestA5InventoryAlert:
     @pytest.fixture
     def agent(self):
         return A5InventoryAlertAgent(user_id=1)
@@ -221,8 +222,8 @@ class TestA5InventoryAlert:
 #  G3 折扣风控 Agent 测试
 # ================================================================
 
-class TestG3DiscountRisk:
 
+class TestG3DiscountRisk:
     @pytest.fixture
     def agent(self):
         return G3DiscountRiskAgent(user_id=1)
@@ -251,8 +252,8 @@ class TestG3DiscountRisk:
             "selling_price": 100,
             "cost_price": 80,
             "active_discounts": [
-                {"type": "coupon", "value": 15},       # 15%
-                {"type": "promotion", "value": 10},     # 10%
+                {"type": "coupon", "value": 15},  # 15%
+                {"type": "promotion", "value": 10},  # 10%
             ],
             "platform": "amazon",
             "min_margin_threshold": 10,
@@ -400,8 +401,8 @@ class TestG3DiscountRisk:
 #  决策日志闭环 测试
 # ================================================================
 
-class TestDecisionLogging:
 
+class TestDecisionLogging:
     async def test_execute_decision_creates_log(self, async_client):
         """执行 A5 决策后日志被写入"""
         resp = await async_client.post(

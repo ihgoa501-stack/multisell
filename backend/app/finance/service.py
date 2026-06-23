@@ -12,15 +12,16 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    FinanceAccount, FinanceTransaction,
-    Order, Platform,
+    FinanceAccount,
+    FinanceTransaction,
+    Order,
+    Platform,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class FinanceService:
-
     @staticmethod
     async def create_account(db: AsyncSession, data: dict) -> FinanceAccount:
         account = FinanceAccount(**data)
@@ -31,9 +32,7 @@ class FinanceService:
 
     @staticmethod
     async def list_accounts(db: AsyncSession) -> list[dict]:
-        result = await db.execute(
-            select(FinanceAccount).order_by(FinanceAccount.id)
-        )
+        result = await db.execute(select(FinanceAccount).order_by(FinanceAccount.id))
         accounts = result.scalars().all()
         rows = []
         for a in accounts:
@@ -41,16 +40,18 @@ class FinanceService:
             if a.platform_id:
                 p = await db.get(Platform, a.platform_id)
                 platform_name = p.name if p else None
-            rows.append({
-                "id": a.id,
-                "name": a.name,
-                "account_type": a.account_type,
-                "platform_id": a.platform_id,
-                "platform_name": platform_name,
-                "currency": a.currency,
-                "balance": float(a.balance),
-                "status": a.status,
-            })
+            rows.append(
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "account_type": a.account_type,
+                    "platform_id": a.platform_id,
+                    "platform_name": platform_name,
+                    "currency": a.currency,
+                    "balance": float(a.balance),
+                    "status": a.status,
+                }
+            )
         return rows
 
     @staticmethod
@@ -82,11 +83,17 @@ class FinanceService:
             count_stmt = count_stmt.where(FinanceTransaction.account_id == account_id)
         if transaction_type:
             stmt = stmt.where(FinanceTransaction.transaction_type == transaction_type)
-            count_stmt = count_stmt.where(FinanceTransaction.transaction_type == transaction_type)
+            count_stmt = count_stmt.where(
+                FinanceTransaction.transaction_type == transaction_type
+            )
 
         total = (await db.execute(count_stmt)).scalar() or 0
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(FinanceTransaction.created_at.desc()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(FinanceTransaction.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
         result = await db.execute(stmt)
         txns = result.scalars().all()
 
@@ -97,21 +104,25 @@ class FinanceService:
             if t.platform_id:
                 p = await db.get(Platform, t.platform_id)
                 platform_name = p.name if p else None
-            rows.append({
-                "id": t.id,
-                "account_id": t.account_id,
-                "account_name": account.name if account else None,
-                "transaction_type": t.transaction_type,
-                "amount": float(t.amount),
-                "currency": t.currency,
-                "order_id": t.order_id,
-                "settlement_id": t.settlement_id,
-                "platform_id": t.platform_id,
-                "platform_name": platform_name,
-                "description": t.description,
-                "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
-                "created_at": t.created_at.isoformat() if t.created_at else None,
-            })
+            rows.append(
+                {
+                    "id": t.id,
+                    "account_id": t.account_id,
+                    "account_name": account.name if account else None,
+                    "transaction_type": t.transaction_type,
+                    "amount": float(t.amount),
+                    "currency": t.currency,
+                    "order_id": t.order_id,
+                    "settlement_id": t.settlement_id,
+                    "platform_id": t.platform_id,
+                    "platform_name": platform_name,
+                    "description": t.description,
+                    "transaction_date": t.transaction_date.isoformat()
+                    if t.transaction_date
+                    else None,
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                }
+            )
         return rows, total
 
     @staticmethod
@@ -174,20 +185,31 @@ class FinanceService:
             pm["revenue"] += rev
             pm["cost"] += cost + ship + pf + payf + other
 
-        total_profit = total_revenue - total_cost - total_shipping - total_platform_fee - total_payment_fee - total_other
+        total_profit = (
+            total_revenue
+            - total_cost
+            - total_shipping
+            - total_platform_fee
+            - total_payment_fee
+            - total_other
+        )
         margin = float(total_profit / total_revenue * 100) if total_revenue > 0 else 0
 
         platform_breakdown = []
         for _, pm in platform_map.items():
             p_profit = pm["revenue"] - pm["cost"]
-            platform_breakdown.append({
-                "platform_name": pm["platform_name"],
-                "order_count": pm["order_count"],
-                "revenue": float(pm["revenue"]),
-                "cost": float(pm["cost"]),
-                "profit": float(p_profit),
-                "margin": float(p_profit / pm["revenue"] * 100) if pm["revenue"] > 0 else 0,
-            })
+            platform_breakdown.append(
+                {
+                    "platform_name": pm["platform_name"],
+                    "order_count": pm["order_count"],
+                    "revenue": float(pm["revenue"]),
+                    "cost": float(pm["cost"]),
+                    "profit": float(p_profit),
+                    "margin": float(p_profit / pm["revenue"] * 100)
+                    if pm["revenue"] > 0
+                    else 0,
+                }
+            )
 
         return {
             "total_revenue": float(total_revenue),
@@ -231,8 +253,10 @@ class FinanceService:
             )
             if not existing.scalar_one_or_none():
                 account = FinanceAccount(
-                    name=name, account_type=atype,
-                    platform_id=pid, currency=currency,
+                    name=name,
+                    account_type=atype,
+                    platform_id=pid,
+                    currency=currency,
                     balance=100000.00,
                 )
                 db.add(account)

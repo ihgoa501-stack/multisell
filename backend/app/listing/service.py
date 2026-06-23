@@ -31,7 +31,9 @@ def listing_to_dict(listing: ProductListing) -> dict:
         "status": listing.status,
         "platform_url": listing.platform_url,
         "sync_message": listing.sync_message,
-        "last_sync_at": listing.last_sync_at.isoformat() if listing.last_sync_at else None,
+        "last_sync_at": listing.last_sync_at.isoformat()
+        if listing.last_sync_at
+        else None,
         "created_at": listing.created_at.isoformat() if listing.created_at else None,
     }
 
@@ -84,7 +86,9 @@ class ListingService:
         return prices
 
     @staticmethod
-    async def _inventories(db: AsyncSession, sku_ids: list[int]) -> dict[int, Inventory]:
+    async def _inventories(
+        db: AsyncSession, sku_ids: list[int]
+    ) -> dict[int, Inventory]:
         if not sku_ids:
             return {}
 
@@ -129,15 +133,22 @@ class ListingService:
         return list(dict.fromkeys(missing)), skus, prices, inventories
 
     @staticmethod
-    async def publish(db: AsyncSession, product: Product, platform: Platform) -> ProductListing:
-        missing, skus, prices, inventories = await ListingService.validate_publish_ready(
-            db, product, platform
-        )
+    async def publish(
+        db: AsyncSession, product: Product, platform: Platform
+    ) -> ProductListing:
+        (
+            missing,
+            skus,
+            prices,
+            inventories,
+        ) = await ListingService.validate_publish_ready(db, product, platform)
         if missing:
             raise PublishValidationError(missing)
 
         adapter = get_listing_adapter(platform.code)
-        listing = await ListingService._get_or_create_listing(db, product.id, platform.id)
+        listing = await ListingService._get_or_create_listing(
+            db, product.id, platform.id
+        )
 
         try:
             result = await adapter.publish(

@@ -73,7 +73,9 @@ async def list_imports(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("order:view")),
 ):
-    rows, total = await OrderImportService.list_imports(db, source_type, page, page_size)
+    rows, total = await OrderImportService.list_imports(
+        db, source_type, page, page_size
+    )
     return PageResult.ok(records=rows, total=total, page=page, page_size=page_size)
 
 

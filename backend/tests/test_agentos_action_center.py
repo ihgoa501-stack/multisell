@@ -16,13 +16,29 @@ from app.agentos.models import (
 @pytest.fixture(autouse=True)
 def _mock_command_handlers():
     """Mock all business command handlers so integration tests don't need seed data."""
-    with patch("app.agentos.action_center_service.HANDLER_MAP", {
-        "profit_review": AsyncMock(return_value={"status": "allow", "profit_amount": 100.0}),
-        "inventory_allocate": AsyncMock(return_value={"mode": "manual", "allocations": [{"sku_id": 300, "allocated_qty": 20}]}),
-        "listing_draft": AsyncMock(return_value={"product_id": 200, "optimization": {"title": "Test"}}),
-        "daily_report": AsyncMock(return_value={"products": {"total": 10}, "orders": {"total": 5}}),
-        "notify": AsyncMock(return_value={"alerts_created": {}, "unread_summary": {}}),
-    }):
+    with patch(
+        "app.agentos.action_center_service.HANDLER_MAP",
+        {
+            "profit_review": AsyncMock(
+                return_value={"status": "allow", "profit_amount": 100.0}
+            ),
+            "inventory_allocate": AsyncMock(
+                return_value={
+                    "mode": "manual",
+                    "allocations": [{"sku_id": 300, "allocated_qty": 20}],
+                }
+            ),
+            "listing_draft": AsyncMock(
+                return_value={"product_id": 200, "optimization": {"title": "Test"}}
+            ),
+            "daily_report": AsyncMock(
+                return_value={"products": {"total": 10}, "orders": {"total": 5}}
+            ),
+            "notify": AsyncMock(
+                return_value={"alerts_created": {}, "unread_summary": {}}
+            ),
+        },
+    ):
         yield
 
 
@@ -89,7 +105,9 @@ class TestActionProposalAPI:
 
 @pytest.mark.usefixtures("prepare_db")
 class TestActionApprovalFlow:
-    async def _create_proposal(self, async_client, risk_level="high", requires_approval=True):
+    async def _create_proposal(
+        self, async_client, risk_level="high", requires_approval=True
+    ):
         resp = await async_client.post(
             "/api/agentos/action-proposals",
             json={
@@ -139,7 +157,9 @@ class TestActionApprovalFlow:
         assert data["proposal"]["status"] == "rejected"
         assert data["approval"]["decision"] == "rejected"
 
-    async def test_execute_requires_approved_or_low_risk_auto_action(self, async_client):
+    async def test_execute_requires_approved_or_low_risk_auto_action(
+        self, async_client
+    ):
         proposal_id = await self._create_proposal(async_client)
 
         blocked = await async_client.post(
@@ -166,7 +186,9 @@ class TestActionApprovalFlow:
         assert data["execution"]["status"] == "succeeded"
 
     async def test_review_executed_proposal(self, async_client):
-        proposal_id = await self._create_proposal(async_client, risk_level="low", requires_approval=False)
+        proposal_id = await self._create_proposal(
+            async_client, risk_level="low", requires_approval=False
+        )
 
         executed = await async_client.post(
             f"/api/agentos/action-proposals/{proposal_id}/execute",
@@ -235,22 +257,40 @@ class TestActionCenterPersistence:
             assert proposal.status == "reviewed"
 
             approvals = (
-                await db.execute(
-                    select(ApprovalRequest).where(ApprovalRequest.proposal_id == proposal_id)
+                (
+                    await db.execute(
+                        select(ApprovalRequest).where(
+                            ApprovalRequest.proposal_id == proposal_id
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert approvals == []
 
             executions = (
-                await db.execute(
-                    select(CommandExecution).where(CommandExecution.proposal_id == proposal_id)
+                (
+                    await db.execute(
+                        select(CommandExecution).where(
+                            CommandExecution.proposal_id == proposal_id
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(executions) == 1
 
             reviews = (
-                await db.execute(
-                    select(OutcomeReview).where(OutcomeReview.proposal_id == proposal_id)
+                (
+                    await db.execute(
+                        select(OutcomeReview).where(
+                            OutcomeReview.proposal_id == proposal_id
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(reviews) == 1

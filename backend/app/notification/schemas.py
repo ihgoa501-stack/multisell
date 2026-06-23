@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 class NotificationVO(BaseModel):
     """通知视图"""
+
     id: int
     user_id: int
     alert_type: str
@@ -23,6 +24,7 @@ class NotificationVO(BaseModel):
 
 class AlertRuleVO(BaseModel):
     """预警规则视图"""
+
     id: int
     name: str
     alert_type: str
@@ -35,6 +37,7 @@ class AlertRuleVO(BaseModel):
 
 class AlertRuleUpdate(BaseModel):
     """更新预警规则"""
+
     enabled: Optional[bool] = None
     config: Optional[dict] = None
     description: Optional[str] = None
@@ -42,5 +45,6 @@ class AlertRuleUpdate(BaseModel):
 
 class UnreadCountVO(BaseModel):
     """未读数"""
+
     total: int = 0
     by_type: dict = {}

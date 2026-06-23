@@ -1,4 +1,5 @@
 """Agent 注册中心"""
+
 from typing import Optional
 from app.agent.base import BaseAgent
 

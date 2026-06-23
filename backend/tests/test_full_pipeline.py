@@ -4,7 +4,6 @@
 """
 
 
-
 def _ok(resp):
     """断言 HTTP 200 + 业务 code 200"""
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text}"
@@ -14,7 +13,6 @@ def _ok(resp):
 
 
 class TestFullPipeline:
-
     _platform_id = None
     _category_id = None
 
@@ -25,42 +23,60 @@ class TestFullPipeline:
             return
 
         import uuid
+
         code = f"pipe{uuid.uuid4().hex[:8]}"
 
         # 创建平台
-        resp = await client.post("/api/platforms", json={
-            "name": f"PipeTest-{code}", "code": code,
-            "api_base_url": "https://mock.example.com",
-            "client_id": "test_client",
-            "api_key": "test_key",
-            "status": 1,
-        })
+        resp = await client.post(
+            "/api/platforms",
+            json={
+                "name": f"PipeTest-{code}",
+                "code": code,
+                "api_base_url": "https://mock.example.com",
+                "client_id": "test_client",
+                "api_key": "test_key",
+                "status": 1,
+            },
+        )
         data = _ok(resp)
         cls._platform_id = data["id"]
 
         # 创建分类
-        resp = await client.post("/api/categories", json={
-            "name": "测试分类", "parent_id": 0, "level": 0, "sort_order": 1,
-        })
+        resp = await client.post(
+            "/api/categories",
+            json={
+                "name": "测试分类",
+                "parent_id": 0,
+                "level": 0,
+                "sort_order": 1,
+            },
+        )
         data = _ok(resp)
         cls._category_id = data["id"]
 
     async def _create_product(self, client) -> dict:
         """创建基础商品"""
         await self._ensure_ref_data(client)
-        resp = await client.post("/api/products", json={
-            "name": "全链路测试商品",
-            "subtitle": "集成测试用",
-            "unit": "件",
-            "status": 1,
-            "category_id": self._category_id,
-            "product_length_cm": 20, "product_width_cm": 15, "product_height_cm": 10,
-            "product_weight_kg": 0.5,
-            "package_length_cm": 22, "package_width_cm": 17, "package_height_cm": 12,
-            "package_weight_kg": 0.6,
-            "cargo_type": "normal",
-            "main_image": "https://example.com/test.jpg",
-        })
+        resp = await client.post(
+            "/api/products",
+            json={
+                "name": "全链路测试商品",
+                "subtitle": "集成测试用",
+                "unit": "件",
+                "status": 1,
+                "category_id": self._category_id,
+                "product_length_cm": 20,
+                "product_width_cm": 15,
+                "product_height_cm": 10,
+                "product_weight_kg": 0.5,
+                "package_length_cm": 22,
+                "package_width_cm": 17,
+                "package_height_cm": 12,
+                "package_weight_kg": 0.6,
+                "cargo_type": "normal",
+                "main_image": "https://example.com/test.jpg",
+            },
+        )
         product = _ok(resp)
         assert product["id"] > 0
         return product
@@ -68,9 +84,12 @@ class TestFullPipeline:
     async def _create_sku(self, client, product_id: int) -> dict:
         """创建规格 + 生成SKU + 设置所有SKU的价格+库存"""
         # 定义规格
-        resp = await client.post(f"/api/products/{product_id}/specs", json={
-            "specs": [{"name": "颜色", "values": ["黑色", "白色"]}],
-        })
+        resp = await client.post(
+            f"/api/products/{product_id}/specs",
+            json={
+                "specs": [{"name": "颜色", "values": ["黑色", "白色"]}],
+            },
+        )
         _ok(resp)
 
         # 生成 SKU
@@ -82,13 +101,23 @@ class TestFullPipeline:
 
         # 为所有 SKU 设置价格 + 库存（publish 会校验所有 SKU）
         for s in skus:
-            resp = await client.post("/api/prices", json={
-                "sku_id": s["id"], "price_type": "sale_price", "price": 199.0,
-            })
+            resp = await client.post(
+                "/api/prices",
+                json={
+                    "sku_id": s["id"],
+                    "price_type": "sale_price",
+                    "price": 199.0,
+                },
+            )
             _ok(resp)
-            resp = await client.post("/api/prices", json={
-                "sku_id": s["id"], "price_type": "cost_price", "price": 120.0,
-            })
+            resp = await client.post(
+                "/api/prices",
+                json={
+                    "sku_id": s["id"],
+                    "price_type": "cost_price",
+                    "price": 120.0,
+                },
+            )
             _ok(resp)
             resp = await client.put(f"/api/inventory/{s['id']}", json={"quantity": 100})
             _ok(resp)
@@ -97,13 +126,17 @@ class TestFullPipeline:
 
     async def _create_order(self, client, sku_id: int) -> dict:
         """创建订单"""
-        resp = await client.post("/api/orders", json={
-            "recipient_name": "测试用户", "recipient_phone": "13800138000",
-            "shipping_address": "测试地址",
-            "payment_method": "card",
-            "shipping_fee": 15.0,
-            "items": [{"sku_id": sku_id, "quantity": 2}],
-        })
+        resp = await client.post(
+            "/api/orders",
+            json={
+                "recipient_name": "测试用户",
+                "recipient_phone": "13800138000",
+                "shipping_address": "测试地址",
+                "payment_method": "card",
+                "shipping_fee": 15.0,
+                "items": [{"sku_id": sku_id, "quantity": 2}],
+            },
+        )
         order = _ok(resp)
         assert order["order_no"].startswith("MS")
         assert order["status"] == "pending"
@@ -111,7 +144,9 @@ class TestFullPipeline:
         assert order["pay_amount"] == 413.0
 
         # 更新为已支付
-        resp = await client.put(f"/api/orders/{order['id']}/status", json={"status": "paid"})
+        resp = await client.put(
+            f"/api/orders/{order['id']}/status", json={"status": "paid"}
+        )
         _ok(resp)
 
         return order
@@ -126,7 +161,9 @@ class TestFullPipeline:
         await self._create_sku(async_client, product["id"])
 
         # 发布到平台 (mock adapter)
-        resp = await async_client.post(f"/api/products/{product['id']}/publish/{self._platform_id}")
+        resp = await async_client.post(
+            f"/api/products/{product['id']}/publish/{self._platform_id}"
+        )
         listing = _ok(resp)
         assert listing["status"] == "synced"
 
@@ -163,7 +200,9 @@ class TestFullPipeline:
         await self._create_order(async_client, sku["id"])
 
         # 生成模拟结算
-        resp = await async_client.post(f"/api/settlements/mock?platform_id={self._platform_id}&count=3")
+        resp = await async_client.post(
+            f"/api/settlements/mock?platform_id={self._platform_id}&count=3"
+        )
         mock_result = _ok(resp)
         assert mock_result["id"] > 0
         assert mock_result["settlement_no"].startswith("STL-")
@@ -239,7 +278,9 @@ class TestFullPipeline:
         await self._create_sku(async_client, product["id"])
 
         # 生成模拟导入订单
-        resp = await async_client.post(f"/api/order-import/mock?platform_id={self._platform_id}&count=3")
+        resp = await async_client.post(
+            f"/api/order-import/mock?platform_id={self._platform_id}&count=3"
+        )
         result = _ok(resp)
         assert result["success"] >= 1
         assert result["total"] == 3

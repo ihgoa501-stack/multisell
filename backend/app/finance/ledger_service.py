@@ -48,7 +48,6 @@ def _pct(numerator: Decimal, denominator: Decimal) -> float:
 
 
 class LedgerService:
-
     @staticmethod
     async def rebuild(
         db: AsyncSession,
@@ -70,18 +69,26 @@ class LedgerService:
         # 2. Revenue — 订单商品总额
         revenue = _decimal(order.total_amount)
         await LedgerService._add_entry(
-            db, order_id, ENTRY_REVENUE, revenue,
+            db,
+            order_id,
+            ENTRY_REVENUE,
+            revenue,
             cost_layer=COST_LAYER_ACTUAL,
-            source_type="order", source_id=order.id,
+            source_type="order",
+            source_id=order.id,
             description="订单商品总额",
         )
 
         # 3. Product cost
         product_cost = _decimal(order.product_cost)
         await LedgerService._add_entry(
-            db, order_id, ENTRY_PRODUCT_COST, -product_cost,
+            db,
+            order_id,
+            ENTRY_PRODUCT_COST,
+            -product_cost,
             cost_layer=COST_LAYER_ESTIMATED,
-            source_type="order", source_id=order.id,
+            source_type="order",
+            source_id=order.id,
             description="商品成本",
         )
 
@@ -97,7 +104,9 @@ class LedgerService:
             select(ShippingBillItem)
             .where(
                 ShippingBillItem.matched_order_id == order_id,
-                ShippingBillItem.reconciliation_status.in_(["matched", "amount_mismatch", "manual_resolved"]),
+                ShippingBillItem.reconciliation_status.in_(
+                    ["matched", "amount_mismatch", "manual_resolved"]
+                ),
             )
             .order_by(ShippingBillItem.created_at.desc())
             .limit(1)
@@ -121,24 +130,27 @@ class LedgerService:
             if snapshot:
                 shipping_amount = _decimal(snapshot.total_shipping_fee)
                 shipping_cost_layer = COST_LAYER_SNAPSHOT
-                shipping_description = f"运费快照: {snapshot.provider_name} {snapshot.channel_name}"
+                shipping_description = (
+                    f"运费快照: {snapshot.provider_name} {snapshot.channel_name}"
+                )
                 shipping_source_type = "shipping_snapshot"
                 shipping_source_id = snapshot.id
 
         await LedgerService._add_entry(
-            db, order_id, ENTRY_SHIPPING_COST, -shipping_amount,
+            db,
+            order_id,
+            ENTRY_SHIPPING_COST,
+            -shipping_amount,
             cost_layer=shipping_cost_layer,
-            source_type=shipping_source_type, source_id=shipping_source_id,
+            source_type=shipping_source_type,
+            source_id=shipping_source_id,
             description=shipping_description,
         )
 
         # 5. Platform settlement rows matched to this order
-        settlement_stmt = (
-            select(PlatformSettlementItem)
-            .where(
-                PlatformSettlementItem.matched_order_id == order_id,
-                PlatformSettlementItem.match_status == "matched",
-            )
+        settlement_stmt = select(PlatformSettlementItem).where(
+            PlatformSettlementItem.matched_order_id == order_id,
+            PlatformSettlementItem.match_status == "matched",
         )
         settlement_result = await db.execute(settlement_stmt)
         settlement_items = settlement_result.scalars().all()
@@ -158,41 +170,61 @@ class LedgerService:
                 platform_fee_total += amount
                 platform_fee_layer = COST_LAYER_ACTUAL
                 await LedgerService._add_entry(
-                    db, order_id, ENTRY_PLATFORM_FEE, -amount,
+                    db,
+                    order_id,
+                    ENTRY_PLATFORM_FEE,
+                    -amount,
                     cost_layer=COST_LAYER_ACTUAL,
-                    source_type="settlement_row", source_id=si.id,
+                    source_type="settlement_row",
+                    source_id=si.id,
                     description=desc,
                 )
             elif si.transaction_type == "payment_fee":
                 payment_fee_total += amount
                 await LedgerService._add_entry(
-                    db, order_id, ENTRY_PAYMENT_FEE, -amount,
+                    db,
+                    order_id,
+                    ENTRY_PAYMENT_FEE,
+                    -amount,
                     cost_layer=COST_LAYER_ACTUAL,
-                    source_type="settlement_row", source_id=si.id,
+                    source_type="settlement_row",
+                    source_id=si.id,
                     description=desc,
                 )
             elif si.transaction_type == "refund":
                 refund_total += amount
                 await LedgerService._add_entry(
-                    db, order_id, ENTRY_REFUND, amount,  # refund reduces profit, keep signed value
+                    db,
+                    order_id,
+                    ENTRY_REFUND,
+                    amount,  # refund reduces profit, keep signed value
                     cost_layer=COST_LAYER_ACTUAL,
-                    source_type="settlement_row", source_id=si.id,
+                    source_type="settlement_row",
+                    source_id=si.id,
                     description=desc,
                 )
             elif si.transaction_type == "adjustment":
                 adjustment_total += amount
                 await LedgerService._add_entry(
-                    db, order_id, ENTRY_ADJUSTMENT, -amount,
+                    db,
+                    order_id,
+                    ENTRY_ADJUSTMENT,
+                    -amount,
                     cost_layer=COST_LAYER_ACTUAL,
-                    source_type="settlement_row", source_id=si.id,
+                    source_type="settlement_row",
+                    source_id=si.id,
                     description=desc,
                 )
             elif si.transaction_type == "other":
                 other_fee_total += amount
                 await LedgerService._add_entry(
-                    db, order_id, ENTRY_OTHER_FEE, -amount,
+                    db,
+                    order_id,
+                    ENTRY_OTHER_FEE,
+                    -amount,
                     cost_layer=COST_LAYER_ACTUAL,
-                    source_type="settlement_row", source_id=si.id,
+                    source_type="settlement_row",
+                    source_id=si.id,
                     description=desc,
                 )
 
@@ -200,9 +232,13 @@ class LedgerService:
         if platform_fee_total == 0 and _decimal(order.platform_fee) > 0:
             platform_fee_layer = COST_LAYER_ESTIMATED
             await LedgerService._add_entry(
-                db, order_id, ENTRY_PLATFORM_FEE, -_decimal(order.platform_fee),
+                db,
+                order_id,
+                ENTRY_PLATFORM_FEE,
+                -_decimal(order.platform_fee),
                 cost_layer=COST_LAYER_ESTIMATED,
-                source_type="order", source_id=order.id,
+                source_type="order",
+                source_id=order.id,
                 description="平台佣金（未导入结算时）",
             )
 
@@ -290,10 +326,7 @@ class LedgerService:
             raise ValueError("订单不存在")
 
         # Calculate from ledger if exists, else from order defaults
-        stmt = (
-            select(FinanceLedgerEntry)
-            .where(FinanceLedgerEntry.order_id == order_id)
-        )
+        stmt = select(FinanceLedgerEntry).where(FinanceLedgerEntry.order_id == order_id)
         result = await db.execute(stmt)
         entries = result.scalars().all()
 
@@ -307,9 +340,20 @@ class LedgerService:
             other_fee = _money(order.other_fee)
             shipping_cost_layer = COST_LAYER_ESTIMATED
             platform_fee_cost_layer = COST_LAYER_ESTIMATED
-            profit_amount = revenue - product_cost - shipping_fee - platform_fee - payment_fee - other_fee
-            profit_margin = _pct(_decimal(profit_amount), _decimal(revenue)) if revenue > 0 else 0
-            profit_cost_layer = resolve_profit_cost_layer(shipping_cost_layer, platform_fee_cost_layer)
+            profit_amount = (
+                revenue
+                - product_cost
+                - shipping_fee
+                - platform_fee
+                - payment_fee
+                - other_fee
+            )
+            profit_margin = (
+                _pct(_decimal(profit_amount), _decimal(revenue)) if revenue > 0 else 0
+            )
+            profit_cost_layer = resolve_profit_cost_layer(
+                shipping_cost_layer, platform_fee_cost_layer
+            )
             return {
                 "order_id": order_id,
                 "revenue_amount": revenue,
@@ -332,7 +376,9 @@ class LedgerService:
         totals = {}
         layers = set()
         for e in entries:
-            totals[e.entry_type] = (_decimal(totals.get(e.entry_type, 0)) + _decimal(e.amount))
+            totals[e.entry_type] = _decimal(totals.get(e.entry_type, 0)) + _decimal(
+                e.amount
+            )
             if e.cost_layer:
                 layers.add(e.cost_layer)
 
@@ -345,8 +391,21 @@ class LedgerService:
         adjustment = -float(totals.get(ENTRY_ADJUSTMENT, 0))
         other_fee = -float(totals.get(ENTRY_OTHER_FEE, 0))
 
-        profit_amount = revenue_amount - product_cost - shipping_cost - platform_fee - payment_fee + refund - adjustment - other_fee
-        profit_margin = _pct(_decimal(profit_amount), _decimal(revenue_amount)) if revenue_amount > 0 else 0
+        profit_amount = (
+            revenue_amount
+            - product_cost
+            - shipping_cost
+            - platform_fee
+            - payment_fee
+            + refund
+            - adjustment
+            - other_fee
+        )
+        profit_margin = (
+            _pct(_decimal(profit_amount), _decimal(revenue_amount))
+            if revenue_amount > 0
+            else 0
+        )
 
         # Determine cost layers
         shipping_cost_layer = COST_LAYER_ESTIMATED
@@ -357,7 +416,9 @@ class LedgerService:
             if e.entry_type == ENTRY_PLATFORM_FEE and e.cost_layer:
                 platform_fee_cost_layer = e.cost_layer
 
-        profit_cost_layer = resolve_profit_cost_layer(shipping_cost_layer, platform_fee_cost_layer)
+        profit_cost_layer = resolve_profit_cost_layer(
+            shipping_cost_layer, platform_fee_cost_layer
+        )
 
         return {
             "order_id": order_id,

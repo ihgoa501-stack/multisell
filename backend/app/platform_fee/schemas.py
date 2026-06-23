@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class PlatformFeeRuleCreate(BaseModel):
     """创建费用规则"""
+
     platform_id: int = Field(..., description="平台ID")
     country_code: Optional[str] = Field(None, description="国家代码，null表示平台默认")
     category_id: Optional[int] = Field(None, description="类目ID，null表示类目默认")
@@ -25,6 +26,7 @@ class PlatformFeeRuleCreate(BaseModel):
 
 class PlatformFeeRuleUpdate(BaseModel):
     """更新费用规则"""
+
     country_code: Optional[str] = None
     category_id: Optional[int] = None
     fee_type: Optional[str] = None
@@ -42,6 +44,7 @@ class PlatformFeeRuleUpdate(BaseModel):
 
 class PlatformFeeRuleVO(BaseModel):
     """费用规则响应"""
+
     id: int
     platform_id: int
     country_code: Optional[str] = None
@@ -65,6 +68,7 @@ class PlatformFeeRuleVO(BaseModel):
 
 class PlatformFeeRuleQuery(BaseModel):
     """费用规则查询参数"""
+
     platform_id: Optional[int] = Field(None, description="平台ID")
     country_code: Optional[str] = Field(None, description="国家代码")
     fee_type: Optional[str] = Field(None, description="费用类型")
@@ -75,6 +79,7 @@ class PlatformFeeRuleQuery(BaseModel):
 
 class PlatformFeeCalculateRequest(BaseModel):
     """费用计算请求"""
+
     platform_id: int = Field(..., description="平台ID")
     country_code: str = Field("RU", description="国家代码")
     category_id: Optional[int] = Field(None, description="类目ID")
@@ -84,6 +89,7 @@ class PlatformFeeCalculateRequest(BaseModel):
 
 class PlatformFeeCalculateItem(BaseModel):
     """费用明细项"""
+
     fee_type: str
     rule_id: int
     description: str
@@ -92,6 +98,7 @@ class PlatformFeeCalculateItem(BaseModel):
 
 class PlatformFeeCalculateResponse(BaseModel):
     """费用计算结果"""
+
     platform_id: int
     country_code: str
     category_id: Optional[int] = None

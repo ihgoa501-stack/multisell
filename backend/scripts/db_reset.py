@@ -42,9 +42,9 @@ async def create_all_tables(engine):
 async def reset():
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print("  MultiSell 数据库重置工具")
-    print(f"{'='*50}\n")
+    print(f"{'=' * 50}\n")
     print(f"📦 数据库: {settings.DATABASE_URL}")
     print()
 
@@ -55,7 +55,9 @@ async def reset():
 
     # 运行 seed 脚本
     print("🌱 运行 seed.py 填充演示数据...\n")
-    seed_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed.py")
+    seed_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed.py"
+    )
     os.execv(sys.executable, [sys.executable, seed_path])
 
 

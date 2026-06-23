@@ -1,4 +1,5 @@
 """平台费用规则管理 API 测试"""
+
 import pytest
 from uuid import uuid4
 
@@ -11,7 +12,9 @@ def _uc(name: str) -> str:
 
 async def _get_platform_id(async_client, name=None):
     name = name or f"Ozon_{uuid4().hex[:6]}"
-    resp = await async_client.post("/api/platforms", json={"name": name, "code": name.lower()})
+    resp = await async_client.post(
+        "/api/platforms", json={"name": name, "code": name.lower()}
+    )
     assert resp.status_code == 200, f"Create platform failed: {resp.text}"
     return resp.json()["data"]["id"]
 
@@ -47,7 +50,13 @@ class TestRuleCRUD:
 
     async def test_create_commission_rule(self, async_client):
         pid = await _get_platform_id(async_client)
-        rule = await _create_rule(async_client, pid, country_code="RU", fee_type="commission", fee_rate_pct=5.0)
+        rule = await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="commission",
+            fee_rate_pct=5.0,
+        )
         assert rule["fee_type"] == "commission"
         assert rule["fee_rate_pct"] == 5.0
         assert rule["country_code"] == "RU"
@@ -57,33 +66,51 @@ class TestRuleCRUD:
 
     async def test_create_rule_with_null_country(self, async_client):
         pid = await _get_platform_id(async_client)
-        rule = await _create_rule(async_client, pid, country_code=None, fee_type="fixed", fixed_amount=10.0)
+        rule = await _create_rule(
+            async_client, pid, country_code=None, fee_type="fixed", fixed_amount=10.0
+        )
         assert rule["country_code"] is None
         assert rule["fee_type"] == "fixed"
         assert rule["fixed_amount"] == 10.0
 
     async def test_list_rules_with_filters(self, async_client):
         pid = await _get_platform_id(async_client)
-        await _create_rule(async_client, pid, country_code="RU", fee_type="commission", fee_rate_pct=3.0)
-        await _create_rule(async_client, pid, country_code="RU", fee_type="fixed", fixed_amount=5.0)
+        await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="commission",
+            fee_rate_pct=3.0,
+        )
+        await _create_rule(
+            async_client, pid, country_code="RU", fee_type="fixed", fixed_amount=5.0
+        )
 
-        resp = await async_client.get(f"/api/platform-fee/rules?platform_id={pid}&country_code=RU")
+        resp = await async_client.get(
+            f"/api/platform-fee/rules?platform_id={pid}&country_code=RU"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
         assert len(data["records"]) >= 2
 
-        resp = await async_client.get("/api/platform-fee/rules?fee_type=commission&status=active")
+        resp = await async_client.get(
+            "/api/platform-fee/rules?fee_type=commission&status=active"
+        )
         assert resp.status_code == 200
         for r in resp.json()["records"]:
             assert r["fee_type"] == "commission"
 
     async def test_update_rule(self, async_client):
         pid = await _get_platform_id(async_client)
-        rule = await _create_rule(async_client, pid, country_code="RU", fee_rate_pct=3.0)
+        rule = await _create_rule(
+            async_client, pid, country_code="RU", fee_rate_pct=3.0
+        )
         rule_id = rule["id"]
 
-        resp = await async_client.put(f"/api/platform-fee/rules/{rule_id}", json={"fee_rate_pct": 8.5})
+        resp = await async_client.put(
+            f"/api/platform-fee/rules/{rule_id}", json={"fee_rate_pct": 8.5}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -104,10 +131,19 @@ class TestRuleCRUD:
 
     async def test_get_single_rule(self, async_client):
         pid = await _get_platform_id(async_client)
-        rule = await _create_rule(async_client, pid, country_code="RU", fee_type="payment", fee_rate_pct=2.0, remark="test get")
+        rule = await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="payment",
+            fee_rate_pct=2.0,
+            remark="test get",
+        )
         rule_id = rule["id"]
 
-        resp = await async_client.get(f"/api/platform-fee/rules?platform_id={pid}&country_code=RU")
+        resp = await async_client.get(
+            f"/api/platform-fee/rules?platform_id={pid}&country_code=RU"
+        )
         records = resp.json()["records"]
         matched = [r for r in records if r["id"] == rule_id]
         assert len(matched) == 1
@@ -122,14 +158,24 @@ class TestCalculateFee:
     async def test_exact_match(self, async_client):
         pid = await _get_platform_id(async_client)
         cid = await _ensure_category(async_client)
-        await _create_rule(async_client, pid, country_code="RU", category_id=cid, fee_type="commission", fee_rate_pct=5.0)
+        await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            category_id=cid,
+            fee_type="commission",
+            fee_rate_pct=5.0,
+        )
 
-        resp = await async_client.post("/api/platform-fee/calculate", json={
-            "platform_id": pid,
-            "country_code": "RU",
-            "category_id": cid,
-            "sale_price": 200,
-        })
+        resp = await async_client.post(
+            "/api/platform-fee/calculate",
+            json={
+                "platform_id": pid,
+                "country_code": "RU",
+                "category_id": cid,
+                "sale_price": 200,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -141,14 +187,29 @@ class TestCalculateFee:
 
     async def test_fallback_to_platform_default(self, async_client):
         pid = await _get_platform_id(async_client)
-        await _create_rule(async_client, pid, country_code="RU", fee_type="commission", fee_rate_pct=5.0)
-        await _create_rule(async_client, pid, country_code=None, fee_type="commission", fee_rate_pct=10.0)
+        await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="commission",
+            fee_rate_pct=5.0,
+        )
+        await _create_rule(
+            async_client,
+            pid,
+            country_code=None,
+            fee_type="commission",
+            fee_rate_pct=10.0,
+        )
 
-        resp = await async_client.post("/api/platform-fee/calculate", json={
-            "platform_id": pid,
-            "country_code": "US",
-            "sale_price": 100,
-        })
+        resp = await async_client.post(
+            "/api/platform-fee/calculate",
+            json={
+                "platform_id": pid,
+                "country_code": "US",
+                "sale_price": 100,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -158,14 +219,30 @@ class TestCalculateFee:
 
     async def test_multiple_fee_types(self, async_client):
         pid = await _get_platform_id(async_client)
-        await _create_rule(async_client, pid, country_code="RU", fee_type="commission", fee_rate_pct=5.0)
-        await _create_rule(async_client, pid, country_code="RU", fee_type="fixed", fixed_amount=3.0, fee_rate_pct=0)
+        await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="commission",
+            fee_rate_pct=5.0,
+        )
+        await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="fixed",
+            fixed_amount=3.0,
+            fee_rate_pct=0,
+        )
 
-        resp = await async_client.post("/api/platform-fee/calculate", json={
-            "platform_id": pid,
-            "country_code": "RU",
-            "sale_price": 200,
-        })
+        resp = await async_client.post(
+            "/api/platform-fee/calculate",
+            json={
+                "platform_id": pid,
+                "country_code": "RU",
+                "sale_price": 200,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -178,13 +255,23 @@ class TestCalculateFee:
 
     async def test_min_amount_respected(self, async_client):
         pid = await _get_platform_id(async_client)
-        await _create_rule(async_client, pid, country_code="RU", fee_type="commission", fee_rate_pct=5.0, min_amount=50.0)
+        await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="commission",
+            fee_rate_pct=5.0,
+            min_amount=50.0,
+        )
 
-        resp = await async_client.post("/api/platform-fee/calculate", json={
-            "platform_id": pid,
-            "country_code": "RU",
-            "sale_price": 100,
-        })
+        resp = await async_client.post(
+            "/api/platform-fee/calculate",
+            json={
+                "platform_id": pid,
+                "country_code": "RU",
+                "sale_price": 100,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -194,14 +281,30 @@ class TestCalculateFee:
 
     async def test_only_active_rules(self, async_client):
         pid = await _get_platform_id(async_client)
-        await _create_rule(async_client, pid, country_code="RU", fee_type="commission", fee_rate_pct=5.0)
-        await _create_rule(async_client, pid, country_code="RU", fee_type="fixed", fixed_amount=10.0, status="inactive")
+        await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="commission",
+            fee_rate_pct=5.0,
+        )
+        await _create_rule(
+            async_client,
+            pid,
+            country_code="RU",
+            fee_type="fixed",
+            fixed_amount=10.0,
+            status="inactive",
+        )
 
-        resp = await async_client.post("/api/platform-fee/calculate", json={
-            "platform_id": pid,
-            "country_code": "RU",
-            "sale_price": 100,
-        })
+        resp = await async_client.post(
+            "/api/platform-fee/calculate",
+            json={
+                "platform_id": pid,
+                "country_code": "RU",
+                "sale_price": 100,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200
@@ -213,11 +316,14 @@ class TestCalculateFee:
     async def test_no_rules_matched(self, async_client):
         pid = await _get_platform_id(async_client)
 
-        resp = await async_client.post("/api/platform-fee/calculate", json={
-            "platform_id": pid,
-            "country_code": "RU",
-            "sale_price": 100,
-        })
+        resp = await async_client.post(
+            "/api/platform-fee/calculate",
+            json={
+                "platform_id": pid,
+                "country_code": "RU",
+                "sale_price": 100,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == 200

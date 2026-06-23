@@ -10,8 +10,10 @@ from app.finance.cost_layers import COST_LAYER_ACTUAL
 
 # ── Bill Batch ──────────────────────────────────────────────────────────────
 
+
 class BillBatchResponse(BaseModel):
     """账单批次响应"""
+
     id: int
     source_filename: str
     row_count: int = 0
@@ -28,6 +30,7 @@ class BillBatchResponse(BaseModel):
 
 class BillImportResponse(BaseModel):
     """导入响应"""
+
     batch_id: Optional[int] = None
     total_rows: int
     imported_rows: int
@@ -37,8 +40,10 @@ class BillImportResponse(BaseModel):
 
 # ── Bill Item ───────────────────────────────────────────────────────────────
 
+
 class BillItemResponse(BaseModel):
     """账单行响应"""
+
     id: int
     batch_id: int
     row_number: int
@@ -69,13 +74,16 @@ class BillItemResponse(BaseModel):
 
 class BillItemResolveRequest(BaseModel):
     """手动解决请求"""
+
     note: str = Field(..., min_length=1, max_length=1000, description="解决说明")
 
 
 # ── Reconciliation ─────────────────────────────────────────────────────────
 
+
 class BillReconcileResponse(BaseModel):
     """对账结果"""
+
     batch_id: int
     total_items: int
     matched_count: int
@@ -85,6 +93,7 @@ class BillReconcileResponse(BaseModel):
 
 class BillReconciliationSummaryResponse(BaseModel):
     """对账汇总"""
+
     total_batches: int
     reconciled_batches: int
     total_items: int

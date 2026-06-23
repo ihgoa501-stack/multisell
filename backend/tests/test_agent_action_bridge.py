@@ -1,4 +1,5 @@
 """Agent → 动作中枢桥接测试"""
+
 import pytest
 from unittest.mock import patch
 
@@ -11,22 +12,27 @@ class TestAgentActionMapping:
 
     def test_map_replenish_to_inventory_allocate(self):
         from app.agent.service import AgentService
+
         assert AgentService._map_action_type("replenish") == "inventory_allocate"
 
     def test_map_price_review_to_profit_review(self):
         from app.agent.service import AgentService
+
         assert AgentService._map_action_type("price_review") == "profit_review"
 
     def test_map_discount_review_to_profit_review(self):
         from app.agent.service import AgentService
+
         assert AgentService._map_action_type("discount_review") == "profit_review"
 
     def test_map_ad_action_to_notify(self):
         from app.agent.service import AgentService
+
         assert AgentService._map_action_type("ad_action") == "notify"
 
     def test_map_unknown_preserves(self):
         from app.agent.service import AgentService
+
         assert AgentService._map_action_type("unknown_type") == "unknown_type"
 
 
@@ -35,6 +41,7 @@ class TestActionRiskDerivation:
 
     def test_full_autonomous_low_risk(self):
         from app.agent.service import AgentService
+
         risk, need_approval = AgentService._derive_action_risk(
             "replenish", {}, EvolutionStage.FULL_AUTONOMOUS
         )
@@ -43,6 +50,7 @@ class TestActionRiskDerivation:
 
     def test_suggestion_medium_with_approval(self):
         from app.agent.service import AgentService
+
         risk, need_approval = AgentService._derive_action_risk(
             "price_review", {}, EvolutionStage.SUGGESTION
         )
@@ -51,6 +59,7 @@ class TestActionRiskDerivation:
 
     def test_semi_autonomous_urgent_replenish_high_risk(self):
         from app.agent.service import AgentService
+
         risk, need_approval = AgentService._derive_action_risk(
             "replenish", {"urgency": "urgent"}, EvolutionStage.SEMI_AUTONOMOUS
         )
@@ -59,6 +68,7 @@ class TestActionRiskDerivation:
 
     def test_semi_autonomous_discount_review_high_risk(self):
         from app.agent.service import AgentService
+
         risk, need_approval = AgentService._derive_action_risk(
             "discount_review", {}, EvolutionStage.SEMI_AUTONOMOUS
         )
@@ -67,6 +77,7 @@ class TestActionRiskDerivation:
 
     def test_semi_autonomous_price_review_medium_risk(self):
         from app.agent.service import AgentService
+
         risk, need_approval = AgentService._derive_action_risk(
             "price_review", {}, EvolutionStage.SEMI_AUTONOMOUS
         )
@@ -75,6 +86,7 @@ class TestActionRiskDerivation:
 
     def test_semi_autonomous_ad_critical(self):
         from app.agent.service import AgentService
+
         risk, need_approval = AgentService._derive_action_risk(
             "ad_action", {"status": "critical"}, EvolutionStage.SEMI_AUTONOMOUS
         )
@@ -83,6 +95,7 @@ class TestActionRiskDerivation:
 
     def test_semi_autonomous_ad_warning(self):
         from app.agent.service import AgentService
+
         risk, need_approval = AgentService._derive_action_risk(
             "ad_action", {"status": "warning"}, EvolutionStage.SEMI_AUTONOMOUS
         )
@@ -94,7 +107,9 @@ class TestActionRiskDerivation:
 class TestAgentActionBridgeAPI:
     """通过 API 触发 Agent 决策后验证 ActionProposal 被桥接创建"""
 
-    async def _set_agent_stage(self, agent_id: str, decision_point: str, stage: str = "suggestion"):
+    async def _set_agent_stage(
+        self, agent_id: str, decision_point: str, stage: str = "suggestion"
+    ):
         """设置 Agent 自治等级，确保桥接代码执行"""
         from app.database import async_session_factory
         from app.agent.models import AgentEvolutionConfig
@@ -109,7 +124,8 @@ class TestAgentActionBridgeAPI:
             config = (await db.execute(stmt)).scalar_one_or_none()
             if not config:
                 config = AgentEvolutionConfig(
-                    user_id=1, agent_id=agent_id,
+                    user_id=1,
+                    agent_id=agent_id,
                     decision_point=decision_point,
                     current_stage=stage,
                 )
@@ -121,7 +137,10 @@ class TestAgentActionBridgeAPI:
     async def _count_proposals(self, db) -> int:
         from sqlalchemy import select, func
         from app.agentos.models import ActionProposal
-        return (await db.execute(select(func.count()).select_from(ActionProposal))).scalar() or 0
+
+        return (
+            await db.execute(select(func.count()).select_from(ActionProposal))
+        ).scalar() or 0
 
     async def test_agent_decision_creates_action_proposal(self, async_client):
         """执行 A5 决策后验证至少有一个 ActionProposal 被创建"""
@@ -183,7 +202,9 @@ class TestAgentActionBridgeAPI:
     async def test_bridge_failure_does_not_block_decision(self, async_client):
         """桥接异常时主决策流程不应中断"""
         await self._set_agent_stage("A5", "stock_alert")
-        with patch("app.agentos.action_center_service.ActionCenterService.create_proposal") as mock:
+        with patch(
+            "app.agentos.action_center_service.ActionCenterService.create_proposal"
+        ) as mock:
             mock.side_effect = RuntimeError("Bridge failed")
             resp = await async_client.post(
                 "/api/agents/A5/decide",
@@ -225,9 +246,11 @@ class TestAgentActionBridgeAPI:
         )
 
         # 在 WorkItems 中检查
-        resp = await async_client.get("/api/agentos/work-items?source_type=action_proposal")
+        resp = await async_client.get(
+            "/api/agentos/work-items?source_type=action_proposal"
+        )
         assert resp.status_code == 200
         records = resp.json().get("records", [])
-        assert any(
-            item.get("source_type") == "action_proposal" for item in records
-        ), "WorkItems 应包含 action_proposal"
+        assert any(item.get("source_type") == "action_proposal" for item in records), (
+            "WorkItems 应包含 action_proposal"
+        )

@@ -29,15 +29,24 @@ def upgrade() -> None:
         sa.Column("status", sa.String(30), server_default="imported"),
         sa.Column("posted_count", sa.Integer(), server_default="0"),
         sa.Column("created_by", sa.String(100)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_alloc_batch_status", "cost_allocation_batch", ["status"])
 
     op.create_table(
         "cost_allocation_item",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("batch_id", sa.BigInteger(), sa.ForeignKey("cost_allocation_batch.id"), nullable=False),
+        sa.Column(
+            "batch_id",
+            sa.BigInteger(),
+            sa.ForeignKey("cost_allocation_batch.id"),
+            nullable=False,
+        ),
         sa.Column("row_number", sa.Integer(), nullable=False),
         sa.Column("sku_id", sa.BigInteger(), sa.ForeignKey("sku.id")),
         sa.Column("sku_code", sa.String(100)),
@@ -51,7 +60,9 @@ def upgrade() -> None:
         sa.Column("cost_layer", sa.String(30), server_default="allocated"),
         sa.Column("posted_to_ledger", sa.Integer(), server_default="0"),
         sa.Column("raw_payload", JSON()),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_alloc_item_batch_id", "cost_allocation_item", ["batch_id"])
 

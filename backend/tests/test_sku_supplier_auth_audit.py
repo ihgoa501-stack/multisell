@@ -19,6 +19,7 @@ def _admin_headers(async_client):
 class TestSkuAuthAudit:
     async def _admin_token(self, async_client) -> tuple[int, str]:
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",
@@ -165,6 +166,7 @@ class TestSkuAuthAudit:
 class TestSupplierAuthAudit:
     async def _admin_token(self, async_client) -> tuple[int, str]:
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",
@@ -176,17 +178,23 @@ class TestSupplierAuthAudit:
     # --- supplier:view ---
     async def test_list_suppliers_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "sp_vw1")
-        resp = await async_client.get("/api/suppliers", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/suppliers", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_get_supplier_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "sp_vw2")
-        resp = await async_client.get("/api/suppliers/1", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/suppliers/1", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_product_suppliers_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "sp_vw3")
-        resp = await async_client.get("/api/products/1/suppliers", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/products/1/suppliers", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     # --- supplier:create ---
@@ -208,7 +216,9 @@ class TestSupplierAuthAudit:
         )
         assert resp.status_code == 403
 
-    async def test_create_supplier_with_permission_succeeds_and_logs(self, async_client):
+    async def test_create_supplier_with_permission_succeeds_and_logs(
+        self, async_client
+    ):
         uid, token = await self._admin_token(async_client)
         await grant_permission(uid, "supplier:create")
         resp = await async_client.post(
@@ -235,7 +245,9 @@ class TestSupplierAuthAudit:
         )
         assert resp.status_code == 403
 
-    async def test_update_supplier_with_permission_succeeds_and_logs(self, async_client):
+    async def test_update_supplier_with_permission_succeeds_and_logs(
+        self, async_client
+    ):
         uid, token = await self._admin_token(async_client)
         await grant_permission(uid, "supplier:create")
         await grant_permission(uid, "supplier:update")
@@ -263,7 +275,9 @@ class TestSupplierAuthAudit:
     # --- supplier:delete ---
     async def test_delete_supplier_requires_delete(self, async_client):
         _uid, token = await register_and_login(async_client, "sp_dl1")
-        resp = await async_client.delete("/api/suppliers/1", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.delete(
+            "/api/suppliers/1", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_unbind_product_supplier_requires_delete(self, async_client):
@@ -274,7 +288,9 @@ class TestSupplierAuthAudit:
         )
         assert resp.status_code == 403
 
-    async def test_delete_supplier_with_permission_succeeds_and_logs(self, async_client):
+    async def test_delete_supplier_with_permission_succeeds_and_logs(
+        self, async_client
+    ):
         uid, token = await self._admin_token(async_client)
         await grant_permission(uid, "supplier:create")
         await grant_permission(uid, "supplier:delete")

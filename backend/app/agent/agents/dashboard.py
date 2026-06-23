@@ -8,6 +8,7 @@
 G1 的 dashboard 数据通过专用 API 端点获取，
 这里只定义 Agent 元数据和决策点。
 """
+
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -25,7 +26,9 @@ class G1DashboardAgent(BaseAgent):
         "dashboard_overview": EvolutionStage.OBSERVATION,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+    async def decide(
+        self, decision_point: str, context: dict[str, Any], db: Any = None
+    ) -> dict[str, Any]:
         # G1 dashboard data is provided via dedicated API endpoint
         # This method is a fallback for future extensibility
         if decision_point == "dashboard_overview":

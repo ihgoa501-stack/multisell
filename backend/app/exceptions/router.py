@@ -30,7 +30,10 @@ async def list_exceptions(
     current_user: User = Depends(require_permission("exception:view")),
 ):
     items = await ExceptionService.list_items(
-        db, source_module=source_module, severity=severity, status=status,
+        db,
+        source_module=source_module,
+        severity=severity,
+        status=status,
     )
     return Result.ok(items)
 
@@ -55,7 +58,10 @@ async def assign_exception(
     current_user: User = Depends(require_permission("exception:manage")),
 ):
     item = await ExceptionService.assign_item(
-        db, exception_id, assigned_to=data.assigned_to, operator=_operator(current_user),
+        db,
+        exception_id,
+        assigned_to=data.assigned_to,
+        operator=_operator(current_user),
     )
     if not item:
         raise HTTPException(status_code=404, detail="异常不存在")
@@ -70,7 +76,10 @@ async def resolve_exception(
     current_user: User = Depends(require_permission("exception:manage")),
 ):
     item = await ExceptionService.resolve_item(
-        db, exception_id, note=data.note, operator=_operator(current_user),
+        db,
+        exception_id,
+        note=data.note,
+        operator=_operator(current_user),
     )
     if not item:
         raise HTTPException(status_code=404, detail="异常不存在")
@@ -85,7 +94,10 @@ async def ignore_exception(
     current_user: User = Depends(require_permission("exception:manage")),
 ):
     item = await ExceptionService.ignore_item(
-        db, exception_id, note=data.note, operator=_operator(current_user),
+        db,
+        exception_id,
+        note=data.note,
+        operator=_operator(current_user),
     )
     if not item:
         raise HTTPException(status_code=404, detail="异常不存在")

@@ -9,32 +9,51 @@ from app.finance.cost_layers import COST_LAYER_ESTIMATED
 
 class PreListingDecisionRequest(BaseModel):
     """上架前经营决策请求"""
+
     sku_id: int = Field(..., description="SKU ID")
-    destination_country: str = Field(..., min_length=2, max_length=10, description="目的国代码(ISO 3166-1 alpha-2)")
+    destination_country: str = Field(
+        ..., min_length=2, max_length=10, description="目的国代码(ISO 3166-1 alpha-2)"
+    )
     target_sale_price: float = Field(..., gt=0, description="目标售价")
-    platform_id: Optional[int] = Field(None, description="平台ID，提供后自动计算平台费用")
-    category_id: Optional[int] = Field(None, description="本地类目ID；为空时从SKU所属商品读取")
-    platform_fee_pct: float = Field(default=10, ge=0, le=100, description="平台费率(%)，未提供platform_id时使用")
+    platform_id: Optional[int] = Field(
+        None, description="平台ID，提供后自动计算平台费用"
+    )
+    category_id: Optional[int] = Field(
+        None, description="本地类目ID；为空时从SKU所属商品读取"
+    )
+    platform_fee_pct: float = Field(
+        default=10, ge=0, le=100, description="平台费率(%)，未提供platform_id时使用"
+    )
     payment_fee_pct: float = Field(default=3, ge=0, le=100, description="支付费率(%)")
     other_fee: float = Field(default=0, ge=0, description="其他费用")
-    minimum_margin_pct: float = Field(default=20, ge=0, le=100, description="最低利润率(%)")
+    minimum_margin_pct: float = Field(
+        default=20, ge=0, le=100, description="最低利润率(%)"
+    )
     cargo_type: str = Field(default="normal", description="货品类型")
 
 
 class CompareDecisionRequest(BaseModel):
     """多平台经营决策对比请求"""
+
     sku_id: int = Field(..., description="SKU ID")
-    destination_country: str = Field(..., min_length=2, max_length=10, description="目的国代码")
+    destination_country: str = Field(
+        ..., min_length=2, max_length=10, description="目的国代码"
+    )
     target_sale_price: float = Field(..., gt=0, description="目标售价")
-    platform_ids: list[int] = Field(..., min_length=1, description="平台ID列表（1个以上）")
+    platform_ids: list[int] = Field(
+        ..., min_length=1, description="平台ID列表（1个以上）"
+    )
     payment_fee_pct: float = Field(default=3, ge=0, le=100, description="支付费率(%)")
     other_fee: float = Field(default=0, ge=0, description="其他费用")
-    minimum_margin_pct: float = Field(default=20, ge=0, le=100, description="最低利润率(%)")
+    minimum_margin_pct: float = Field(
+        default=20, ge=0, le=100, description="最低利润率(%)"
+    )
     cargo_type: str = Field(default="normal", description="货品类型")
 
 
 class PreListingDecisionResponse(BaseModel):
     """上架前经营决策响应"""
+
     sku_id: int
     destination_country: str
     target_sale_price: float
@@ -60,11 +79,15 @@ class PreListingDecisionResponse(BaseModel):
 
 class PreListingDecisionBatchItem(PreListingDecisionRequest):
     """批量上架前经营决策单行请求"""
-    item_key: Optional[str] = Field(None, max_length=100, description="前端行标识，原样返回")
+
+    item_key: Optional[str] = Field(
+        None, max_length=100, description="前端行标识，原样返回"
+    )
 
 
 class PreListingDecisionBatchRequest(BaseModel):
     """批量上架前经营决策请求"""
+
     items: list[PreListingDecisionBatchItem] = Field(
         ...,
         min_length=1,
@@ -75,6 +98,7 @@ class PreListingDecisionBatchRequest(BaseModel):
 
 class PreListingDecisionBatchItemResult(BaseModel):
     """批量上架前经营决策单行结果"""
+
     index: int
     item_key: Optional[str] = None
     sku_id: Optional[int] = None
@@ -85,6 +109,7 @@ class PreListingDecisionBatchItemResult(BaseModel):
 
 class PreListingDecisionBatchSummary(BaseModel):
     """批量上架前经营决策汇总"""
+
     total_items: int
     success_count: int
     error_count: int
@@ -96,6 +121,7 @@ class PreListingDecisionBatchSummary(BaseModel):
 
 class PreListingDecisionExcelPreviewRow(BaseModel):
     """批量上架决策 Excel 预览单行"""
+
     row_number: int
     item: Optional[PreListingDecisionBatchItem] = None
     errors: list[str] = []
@@ -103,6 +129,7 @@ class PreListingDecisionExcelPreviewRow(BaseModel):
 
 class PreListingDecisionExcelPreviewResponse(BaseModel):
     """批量上架决策 Excel 预览响应"""
+
     total_rows: int
     valid_rows: int
     error_rows: int
@@ -111,5 +138,6 @@ class PreListingDecisionExcelPreviewResponse(BaseModel):
 
 class PreListingDecisionBatchResponse(BaseModel):
     """批量上架前经营决策响应"""
+
     summary: PreListingDecisionBatchSummary
     items: list[PreListingDecisionBatchItemResult]

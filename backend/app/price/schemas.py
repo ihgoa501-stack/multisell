@@ -1,4 +1,5 @@
 """价格管理 - Pydantic Schema"""
+
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field
@@ -6,8 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class PriceCreate(BaseModel):
     """设置价格"""
+
     sku_id: int = Field(..., description="SKU ID")
-    price_type: str = Field(..., description="价格类型: sale_price/market_price/cost_price/vip_price/wholesale_price")
+    price_type: str = Field(
+        ...,
+        description="价格类型: sale_price/market_price/cost_price/vip_price/wholesale_price",
+    )
     price: float = Field(..., gt=0, description="价格")
     start_time: Optional[datetime] = Field(None, description="生效时间")
     end_time: Optional[datetime] = Field(None, description="失效时间")
@@ -15,6 +20,7 @@ class PriceCreate(BaseModel):
 
 class PriceBatchCreate(BaseModel):
     """批量调价"""
+
     sku_ids: List[int] = Field(..., min_length=1, description="SKU ID列表")
     price_type: str = Field(..., description="价格类型")
     price: float = Field(..., gt=0, description="新价格")
@@ -24,6 +30,7 @@ class PriceBatchCreate(BaseModel):
 
 class PriceVO(BaseModel):
     """价格响应"""
+
     id: int
     sku_id: int
     price_type: str
@@ -39,6 +46,7 @@ class PriceVO(BaseModel):
 
 class PriceChangeLogVO(BaseModel):
     """调价记录响应"""
+
     id: int
     sku_id: int
     old_price: Optional[float] = None

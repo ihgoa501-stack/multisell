@@ -1,4 +1,5 @@
 """AgentOS action center service."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -34,7 +35,10 @@ COMMAND_ADAPTERS: dict[str, dict[str, str]] = {
     "daily_report": {"command_name": "daily_report", "execution_mode": "integrated"},
     "listing_draft": {"command_name": "listing_draft", "execution_mode": "integrated"},
     "profit_review": {"command_name": "profit_review", "execution_mode": "integrated"},
-    "inventory_allocate": {"command_name": "inventory_allocate", "execution_mode": "integrated"},
+    "inventory_allocate": {
+        "command_name": "inventory_allocate",
+        "execution_mode": "integrated",
+    },
     "notify": {"command_name": "notify", "execution_mode": "integrated"},
 }
 
@@ -128,14 +132,19 @@ class ActionCenterService:
             title=row.title,
             description=row.description,
             priority=RISK_TO_PRIORITY.get(row.risk_level, WorkItemPriority.MEDIUM),
-            status=PROPOSAL_STATUS_TO_WORK_STATUS.get(row.status, WorkItemStatus.PENDING),
+            status=PROPOSAL_STATUS_TO_WORK_STATUS.get(
+                row.status, WorkItemStatus.PENDING
+            ),
             risk_level=risk,
             agent_id=row.agent_id,
             agent_name=None,
             squad_id=row.squad_id,
             squad_name=None,
             autonomy_level=AutonomyLevel.SUGGESTION,
-            requires_approval=bool(row.requires_approval and row.status in {"suggested", "pending_approval"}),
+            requires_approval=bool(
+                row.requires_approval
+                and row.status in {"suggested", "pending_approval"}
+            ),
             created_at=row.created_at,
             updated_at=row.updated_at,
             action_url=f"/agentos/work-items?action_proposal={row.id}",
@@ -239,15 +248,17 @@ class ActionCenterService:
             decided_at=datetime.now(timezone.utc),
         )
         db.add(approval)
-        db.add(AgentOSOperationLog(
-            user_id=user_id,
-            item_id=f"action_proposal:{proposal.id}",
-            action="approve",
-            source_type="action_proposal",
-            previous_status=previous,
-            new_status="approved",
-            comment=comment,
-        ))
+        db.add(
+            AgentOSOperationLog(
+                user_id=user_id,
+                item_id=f"action_proposal:{proposal.id}",
+                action="approve",
+                source_type="action_proposal",
+                previous_status=previous,
+                new_status="approved",
+                comment=comment,
+            )
+        )
         await db.flush()
         await db.refresh(proposal)
         await db.refresh(approval)
@@ -288,15 +299,17 @@ class ActionCenterService:
             decided_at=datetime.now(timezone.utc),
         )
         db.add(approval)
-        db.add(AgentOSOperationLog(
-            user_id=user_id,
-            item_id=f"action_proposal:{proposal.id}",
-            action="reject",
-            source_type="action_proposal",
-            previous_status=previous,
-            new_status="rejected",
-            comment=comment,
-        ))
+        db.add(
+            AgentOSOperationLog(
+                user_id=user_id,
+                item_id=f"action_proposal:{proposal.id}",
+                action="reject",
+                source_type="action_proposal",
+                previous_status=previous,
+                new_status="rejected",
+                comment=comment,
+            )
+        )
         await db.flush()
         await db.refresh(proposal)
         await db.refresh(approval)
@@ -369,14 +382,16 @@ class ActionCenterService:
                 proposal.after_snapshot = {"error": str(exc)}
 
         execution.finished_at = datetime.now(timezone.utc)
-        db.add(AgentOSOperationLog(
-            user_id=user_id,
-            item_id=f"action_proposal:{proposal.id}",
-            action="execute",
-            source_type="action_proposal",
-            previous_status=target_from,
-            new_status=proposal.status,
-        ))
+        db.add(
+            AgentOSOperationLog(
+                user_id=user_id,
+                item_id=f"action_proposal:{proposal.id}",
+                action="execute",
+                source_type="action_proposal",
+                previous_status=target_from,
+                new_status=proposal.status,
+            )
+        )
         await db.flush()
         await db.refresh(proposal)
         await db.refresh(execution)
@@ -418,15 +433,17 @@ class ActionCenterService:
             reviewed_by=operator,
         )
         db.add(review)
-        db.add(AgentOSOperationLog(
-            user_id=user_id,
-            item_id=f"action_proposal:{proposal.id}",
-            action="review",
-            source_type="action_proposal",
-            previous_status=previous,
-            new_status="reviewed",
-            comment=notes,
-        ))
+        db.add(
+            AgentOSOperationLog(
+                user_id=user_id,
+                item_id=f"action_proposal:{proposal.id}",
+                action="review",
+                source_type="action_proposal",
+                previous_status=previous,
+                new_status="reviewed",
+                comment=notes,
+            )
+        )
         await db.flush()
         await db.refresh(proposal)
         await db.refresh(review)
@@ -438,7 +455,9 @@ class ActionCenterService:
                 "proposal_id": review.proposal_id,
                 "outcome": review.outcome,
                 "business_metric": review.business_metric,
-                "metric_delta": ActionCenterService._decimal_to_float(review.metric_delta),
+                "metric_delta": ActionCenterService._decimal_to_float(
+                    review.metric_delta
+                ),
                 "notes": review.notes,
             },
         }

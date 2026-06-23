@@ -3,6 +3,7 @@
 管理 LLM Key、提供商、模型选择等运行时配置。
 配置存储在 system_config 表，环境变量作为启动默认值。
 """
+
 import logging
 from typing import Any
 from sqlalchemy import select
@@ -56,7 +57,6 @@ CONFIG_DEFS = {
 
 
 class ConfigService:
-
     @staticmethod
     async def get_all(db: AsyncSession) -> dict:
         """获取所有配置（脱敏）"""
@@ -138,5 +138,7 @@ class ConfigService:
             "model": default_model,
             "api_key": api_key,
             "base_url": base_url,
-            "agent_overrides": agent_overrides if isinstance(agent_overrides, dict) else {},
+            "agent_overrides": agent_overrides
+            if isinstance(agent_overrides, dict)
+            else {},
         }

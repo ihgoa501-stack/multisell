@@ -49,7 +49,9 @@ def _build_date_filter(stmt, date_from=None, date_to=None):
     return stmt
 
 
-def _build_order_ids_from_filters(db, date_from, date_to, order_no, platform_id, sku_id):
+def _build_order_ids_from_filters(
+    db, date_from, date_to, order_no, platform_id, sku_id
+):
     """Build order_id list from filter conditions."""
     stmt = select(Order.id)
     if date_from:
@@ -66,7 +68,6 @@ def _build_order_ids_from_filters(db, date_from, date_to, order_no, platform_id,
 
 
 class ReportService:
-
     @staticmethod
     async def profit_summary(
         db: AsyncSession,
@@ -79,18 +80,29 @@ class ReportService:
 
         if not order_ids:
             return {
-                "revenue_amount": 0, "product_cost": 0, "shipping_cost": 0,
-                "platform_fee": 0, "payment_fee": 0, "refund": 0,
-                "adjustment": 0, "allocated_cost": 0, "other_fee": 0,
-                "profit_amount": 0, "profit_margin": 0,
+                "revenue_amount": 0,
+                "product_cost": 0,
+                "shipping_cost": 0,
+                "platform_fee": 0,
+                "payment_fee": 0,
+                "refund": 0,
+                "adjustment": 0,
+                "allocated_cost": 0,
+                "other_fee": 0,
+                "profit_amount": 0,
+                "profit_margin": 0,
             }
 
-        stmt = select(
-            FinanceLedgerEntry.entry_type,
-            func.sum(FinanceLedgerEntry.amount).label("total"),
-        ).where(
-            FinanceLedgerEntry.order_id.in_(order_ids),
-        ).group_by(FinanceLedgerEntry.entry_type)
+        stmt = (
+            select(
+                FinanceLedgerEntry.entry_type,
+                func.sum(FinanceLedgerEntry.amount).label("total"),
+            )
+            .where(
+                FinanceLedgerEntry.order_id.in_(order_ids),
+            )
+            .group_by(FinanceLedgerEntry.entry_type)
+        )
 
         result = await db.execute(stmt)
         rows = result.all()
@@ -107,8 +119,20 @@ class ReportService:
         allocated_cost = -_float(totals.get(ENTRY_ALLOCATED_COST, 0))
         other_fee = -_float(totals.get(ENTRY_OTHER_FEE, 0))
 
-        profit_amount = revenue - product_cost - shipping_cost - platform_fee - payment_fee + refund - adjustment - allocated_cost - other_fee
-        profit_margin = _pct(_decimal(profit_amount), _decimal(revenue)) if revenue > 0 else 0
+        profit_amount = (
+            revenue
+            - product_cost
+            - shipping_cost
+            - platform_fee
+            - payment_fee
+            + refund
+            - adjustment
+            - allocated_cost
+            - other_fee
+        )
+        profit_margin = (
+            _pct(_decimal(profit_amount), _decimal(revenue)) if revenue > 0 else 0
+        )
 
         return {
             "revenue_amount": round(revenue, 2),
@@ -140,7 +164,7 @@ class ReportService:
 
         total = len(order_ids)
         # Paginate
-        paginated_ids = order_ids[(page - 1) * page_size: page * page_size]
+        paginated_ids = order_ids[(page - 1) * page_size : page * page_size]
 
         items = []
         for oid in paginated_ids:
@@ -169,7 +193,9 @@ class ReportService:
             OrderShippingSnapshot.order_id.in_(order_ids),
         )
         snap_result = await db.execute(snap_stmt)
-        snapshots = {row.order_id: _float(row.total_shipping_fee) for row in snap_result.all()}
+        snapshots = {
+            row.order_id: _float(row.total_shipping_fee) for row in snap_result.all()
+        }
 
         bill_stmt = select(
             ShippingBillItem.matched_order_id,
@@ -200,26 +226,32 @@ class ReportService:
             bill_info = bills.get(oid)
             if bill_info:
                 variance = bill_info["amount"] - (snap_amt or 0)
-                variance_pct = round((variance / (snap_amt or 1)) * 100, 2) if snap_amt else None
-                results.append({
-                    "order_id": oid,
-                    "order_no": orders[oid],
-                    "snapshot_amount": snap_amt,
-                    "bill_amount": bill_info["amount"],
-                    "variance_amount": round(variance, 2),
-                    "variance_pct": variance_pct,
-                    "status": bill_info["status"],
-                })
+                variance_pct = (
+                    round((variance / (snap_amt or 1)) * 100, 2) if snap_amt else None
+                )
+                results.append(
+                    {
+                        "order_id": oid,
+                        "order_no": orders[oid],
+                        "snapshot_amount": snap_amt,
+                        "bill_amount": bill_info["amount"],
+                        "variance_amount": round(variance, 2),
+                        "variance_pct": variance_pct,
+                        "status": bill_info["status"],
+                    }
+                )
             elif snap_amt is not None:
-                results.append({
-                    "order_id": oid,
-                    "order_no": orders[oid],
-                    "snapshot_amount": snap_amt,
-                    "bill_amount": None,
-                    "variance_amount": None,
-                    "variance_pct": None,
-                    "status": "no_bill",
-                })
+                results.append(
+                    {
+                        "order_id": oid,
+                        "order_no": orders[oid],
+                        "snapshot_amount": snap_amt,
+                        "bill_amount": None,
+                        "variance_amount": None,
+                        "variance_pct": None,
+                        "status": "no_bill",
+                    }
+                )
 
         return results
 
@@ -236,10 +268,15 @@ class ReportService:
             return []
 
         # Get profitable from order model
-        stmt = select(Order).where(
-            Order.id.in_(order_ids),
-            Order.profit_amount < 0,
-        ).order_by(Order.profit_amount.asc()).limit(100)
+        stmt = (
+            select(Order)
+            .where(
+                Order.id.in_(order_ids),
+                Order.profit_amount < 0,
+            )
+            .order_by(Order.profit_amount.asc())
+            .limit(100)
+        )
         result = await db.execute(stmt)
         orders = result.scalars().all()
 
@@ -247,15 +284,23 @@ class ReportService:
         for o in orders:
             profit = await ReportService._get_order_profit(db, o.id)
             if profit:
-                items.append({
-                    "order_id": o.id,
-                    "order_no": o.order_no,
-                    "profit_amount": profit["profit_amount"],
-                    "profit_margin": profit["profit_margin"],
-                    "shipping_cost_layer": profit.get("shipping_cost_layer", "estimated"),
-                    "platform_fee_cost_layer": profit.get("platform_fee_cost_layer", "estimated"),
-                    "profit_cost_layer": profit.get("profit_cost_layer", "estimated"),
-                })
+                items.append(
+                    {
+                        "order_id": o.id,
+                        "order_no": o.order_no,
+                        "profit_amount": profit["profit_amount"],
+                        "profit_margin": profit["profit_margin"],
+                        "shipping_cost_layer": profit.get(
+                            "shipping_cost_layer", "estimated"
+                        ),
+                        "platform_fee_cost_layer": profit.get(
+                            "platform_fee_cost_layer", "estimated"
+                        ),
+                        "profit_cost_layer": profit.get(
+                            "profit_cost_layer", "estimated"
+                        ),
+                    }
+                )
         return items
 
     @staticmethod
@@ -270,24 +315,30 @@ class ReportService:
         if not order_ids:
             return {"layers": []}
 
-        stmt = select(
-            FinanceLedgerEntry.cost_layer,
-            func.count(FinanceLedgerEntry.id).label("entry_count"),
-            func.sum(cast(FinanceLedgerEntry.amount, Float)).label("total_amount"),
-        ).where(
-            FinanceLedgerEntry.order_id.in_(order_ids),
-        ).group_by(FinanceLedgerEntry.cost_layer)
+        stmt = (
+            select(
+                FinanceLedgerEntry.cost_layer,
+                func.count(FinanceLedgerEntry.id).label("entry_count"),
+                func.sum(cast(FinanceLedgerEntry.amount, Float)).label("total_amount"),
+            )
+            .where(
+                FinanceLedgerEntry.order_id.in_(order_ids),
+            )
+            .group_by(FinanceLedgerEntry.cost_layer)
+        )
 
         result = await db.execute(stmt)
         rows = result.all()
 
         layers = []
         for row in rows:
-            layers.append({
-                "cost_layer": row.cost_layer or "unknown",
-                "entry_count": row.entry_count or 0,
-                "total_amount": round(_float(row.total_amount), 2),
-            })
+            layers.append(
+                {
+                    "cost_layer": row.cost_layer or "unknown",
+                    "entry_count": row.entry_count or 0,
+                    "total_amount": round(_float(row.total_amount), 2),
+                }
+            )
 
         return {"layers": layers}
 
@@ -298,12 +349,16 @@ class ReportService:
         if not order:
             return None
 
-        stmt = select(
-            FinanceLedgerEntry.entry_type,
-            func.sum(FinanceLedgerEntry.amount).label("total"),
-        ).where(
-            FinanceLedgerEntry.order_id == order_id,
-        ).group_by(FinanceLedgerEntry.entry_type)
+        stmt = (
+            select(
+                FinanceLedgerEntry.entry_type,
+                func.sum(FinanceLedgerEntry.amount).label("total"),
+            )
+            .where(
+                FinanceLedgerEntry.order_id == order_id,
+            )
+            .group_by(FinanceLedgerEntry.entry_type)
+        )
         result = await db.execute(stmt)
         rows = result.all()
 
@@ -318,17 +373,35 @@ class ReportService:
         allocated_cost = -_float(totals.get(ENTRY_ALLOCATED_COST, 0))
         other_fee = -_float(totals.get(ENTRY_OTHER_FEE, 0))
 
-        profit_amount = revenue - product_cost - shipping_cost - platform_fee - payment_fee + refund - adjustment - allocated_cost - other_fee
-        profit_margin = _pct(_decimal(profit_amount), _decimal(revenue)) if revenue > 0 else 0
+        profit_amount = (
+            revenue
+            - product_cost
+            - shipping_cost
+            - platform_fee
+            - payment_fee
+            + refund
+            - adjustment
+            - allocated_cost
+            - other_fee
+        )
+        profit_margin = (
+            _pct(_decimal(profit_amount), _decimal(revenue)) if revenue > 0 else 0
+        )
 
         # Cost layers
-        layer_stmt = select(
-            FinanceLedgerEntry.entry_type,
-            FinanceLedgerEntry.cost_layer,
-        ).where(
-            FinanceLedgerEntry.order_id == order_id,
-            FinanceLedgerEntry.entry_type.in_([ENTRY_SHIPPING_COST, ENTRY_PLATFORM_FEE]),
-        ).distinct()
+        layer_stmt = (
+            select(
+                FinanceLedgerEntry.entry_type,
+                FinanceLedgerEntry.cost_layer,
+            )
+            .where(
+                FinanceLedgerEntry.order_id == order_id,
+                FinanceLedgerEntry.entry_type.in_(
+                    [ENTRY_SHIPPING_COST, ENTRY_PLATFORM_FEE]
+                ),
+            )
+            .distinct()
+        )
         layer_result = await db.execute(layer_stmt)
         layers = {}
         for row in layer_result.all():
@@ -339,7 +412,10 @@ class ReportService:
 
         # Determine profit cost layer
         from app.finance.cost_layers import resolve_profit_cost_layer
-        profit_cost_layer = resolve_profit_cost_layer(shipping_cost_layer, platform_fee_cost_layer)
+
+        profit_cost_layer = resolve_profit_cost_layer(
+            shipping_cost_layer, platform_fee_cost_layer
+        )
 
         return {
             "order_id": order_id,
@@ -385,5 +461,3 @@ class ReportService:
             stmt = stmt.where(Order.created_at <= dt)
         result = await db.execute(stmt)
         return [row[0] for row in result.all()]
-
-

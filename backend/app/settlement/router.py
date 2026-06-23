@@ -9,7 +9,8 @@ from app.database import get_db
 from app.models import Settlement, SettlementItem, User
 from app.operation_log.service import OperationLogService
 from app.settlement.schemas import (
-    SettlementCreate, SettlementUpdate,
+    SettlementCreate,
+    SettlementUpdate,
     SettlementItemCreate,
     SettlementReconcileRequest,
 )
@@ -43,14 +44,16 @@ async def import_settlement(
         content=f"导入结算单: {settlement.settlement_no}",
         operator=_operator(current_user),
     )
-    return Result.ok({
-        "id": settlement.id,
-        "settlement_no": settlement.settlement_no,
-        "total_revenue": float(settlement.total_revenue),
-        "total_fee": float(settlement.total_fee),
-        "total_net": float(settlement.total_net),
-        "status": settlement.status,
-    })
+    return Result.ok(
+        {
+            "id": settlement.id,
+            "settlement_no": settlement.settlement_no,
+            "total_revenue": float(settlement.total_revenue),
+            "total_fee": float(settlement.total_fee),
+            "total_net": float(settlement.total_net),
+            "status": settlement.status,
+        }
+    )
 
 
 @router.get("/settlements", summary="结算单列表")
@@ -64,8 +67,12 @@ async def list_settlements(
     current_user: User = Depends(require_permission("settlement:view")),
 ):
     rows, total = await SettlementService.list_settlements(
-        db, platform_id=platform_id, status=status, keyword=keyword,
-        page=page, page_size=page_size,
+        db,
+        platform_id=platform_id,
+        status=status,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
     )
     return PageResult.ok(records=rows, total=total, page=page, page_size=page_size)
 
@@ -152,13 +159,15 @@ async def add_settlement_item(
     # 重算汇总
     await SettlementService._recalc_totals(db, settlement_id)
 
-    return Result.ok({
-        "id": item.id,
-        "transaction_type": item.transaction_type,
-        "amount": float(item.amount),
-        "fee": float(item.fee),
-        "net": float(item.net),
-    })
+    return Result.ok(
+        {
+            "id": item.id,
+            "transaction_type": item.transaction_type,
+            "amount": float(item.amount),
+            "fee": float(item.fee),
+            "net": float(item.net),
+        }
+    )
 
 
 @router.get("/settlements/{settlement_id}/items", summary="结算明细列表")
@@ -172,7 +181,12 @@ async def list_settlement_items(
     current_user: User = Depends(require_permission("settlement:view")),
 ):
     rows, total = await SettlementService.list_items(
-        db, settlement_id, reconciliation_status, transaction_type, page, page_size,
+        db,
+        settlement_id,
+        reconciliation_status,
+        transaction_type,
+        page,
+        page_size,
     )
     return PageResult.ok(records=rows, total=total, page=page, page_size=page_size)
 
@@ -189,7 +203,8 @@ async def reconcile_settlement(
 ):
     try:
         result = await SettlementService.reconcile(
-            db, settlement_id,
+            db,
+            settlement_id,
             auto_match=data.auto_match,
             strategy=data.strategy,
         )
@@ -218,7 +233,10 @@ async def update_item_reconciliation(
     status = data.get("status", "matched")
     note = data.get("note")
     result = await SettlementService.update_item_reconciliation(
-        db, item_id, status=status, note=note,
+        db,
+        item_id,
+        status=status,
+        note=note,
         reconciled_by=_operator(current_user),
     )
     if not result:
@@ -254,11 +272,13 @@ async def generate_mock_settlement(
         content=f"生成模拟结算: {settlement.settlement_no}",
         operator=_operator(current_user),
     )
-    return Result.ok({
-        "id": settlement.id,
-        "settlement_no": settlement.settlement_no,
-        "total_revenue": float(settlement.total_revenue),
-        "total_fee": float(settlement.total_fee),
-        "total_net": float(settlement.total_net),
-        "status": settlement.status,
-    })
+    return Result.ok(
+        {
+            "id": settlement.id,
+            "settlement_no": settlement.settlement_no,
+            "total_revenue": float(settlement.total_revenue),
+            "total_fee": float(settlement.total_fee),
+            "total_net": float(settlement.total_net),
+            "status": settlement.status,
+        }
+    )

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SettlementCreate(BaseModel):
     """导入结算单"""
+
     platform_id: int = Field(..., description="平台ID")
     settlement_no: str = Field(..., description="结算单号")
     period_start: Optional[datetime] = None
@@ -21,6 +22,7 @@ class SettlementCreate(BaseModel):
 
 class SettlementUpdate(BaseModel):
     """更新结算单"""
+
     status: Optional[str] = None
     total_revenue: Optional[float] = None
     total_fee: Optional[float] = None
@@ -30,6 +32,7 @@ class SettlementUpdate(BaseModel):
 
 class SettlementItemCreate(BaseModel):
     """添加结算明细"""
+
     transaction_type: str = Field(..., description="交易类型")
     transaction_id: Optional[str] = None
     order_no: Optional[str] = None
@@ -44,6 +47,7 @@ class SettlementItemCreate(BaseModel):
 
 class SettlementItemVO(BaseModel):
     """结算明细视图"""
+
     id: int
     settlement_id: int
     transaction_type: str
@@ -67,6 +71,7 @@ class SettlementItemVO(BaseModel):
 
 class SettlementVO(BaseModel):
     """结算单视图"""
+
     id: int
     platform_id: int
     platform_name: Optional[str] = None
@@ -92,6 +97,7 @@ class SettlementVO(BaseModel):
 
 class SettlementQuery(BaseModel):
     """结算单查询"""
+
     platform_id: Optional[int] = None
     status: Optional[str] = None
     keyword: Optional[str] = None
@@ -99,12 +105,14 @@ class SettlementQuery(BaseModel):
 
 class SettlementReconcileRequest(BaseModel):
     """对账请求"""
+
     auto_match: bool = True
     strategy: str = "by_order_no"  # by_order_no / by_transaction_id
 
 
 class SettlementImportResponse(BaseModel):
     """导入结果"""
+
     settlement_id: int
     settlement_no: str
     items_count: int

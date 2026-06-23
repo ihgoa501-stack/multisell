@@ -7,6 +7,7 @@
 - 折后价低于成本价 × 1.1 时预警
 - 输出阻断/放行原因、折后价、毛利、毛利率
 """
+
 from typing import Any, Optional
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -15,11 +16,14 @@ from app.agent.data_service import AgentDataService
 
 # ── 必填字段（缺少任一即返回 insufficient_data） ──
 REQUIRED_CHECK_FIELDS = [
-    "sku_code", "cost_price", "selling_price",
+    "sku_code",
+    "cost_price",
+    "selling_price",
 ]
 
 REQUIRED_VALIDATE_FIELDS = [
-    "promotion", "selling_price",
+    "promotion",
+    "selling_price",
 ]
 
 
@@ -47,7 +51,9 @@ class G3DiscountRiskAgent(BaseAgent):
         "promotion_validation": EvolutionStage.FULL_AUTONOMOUS,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+    async def decide(
+        self, decision_point: str, context: dict[str, Any], db: Any = None
+    ) -> dict[str, Any]:
         if db is not None and decision_point == "discount_check":
             context = await AgentDataService.fill_sku_context(db, context)
         if decision_point == "discount_check":
@@ -70,9 +76,7 @@ class G3DiscountRiskAgent(BaseAgent):
         cost_price = _safe_float(context["cost_price"])
         active_discounts: list = context.get("active_discounts", [])
         platform = context.get("platform", "unknown")
-        min_margin_threshold = _safe_float(
-            context.get("min_margin_threshold", 10.0)
-        )
+        min_margin_threshold = _safe_float(context.get("min_margin_threshold", 10.0))
 
         # ---- 模拟多折扣叠加 ----
         final_price, discount_details = self._simulate_discounts(
@@ -95,10 +99,12 @@ class G3DiscountRiskAgent(BaseAgent):
             action = "block"
             blocked = True
             reason = f"折后价 ¥{final_price:.2f} ≤ ¥0，售价无效"
-            alerts.append({
-                "level": "critical",
-                "message": reason,
-            })
+            alerts.append(
+                {
+                    "level": "critical",
+                    "message": reason,
+                }
+            )
             confidence = 0.99
         elif final_price < cost_price:
             action = "block"
@@ -107,11 +113,13 @@ class G3DiscountRiskAgent(BaseAgent):
                 f"折后价 ¥{final_price:.2f} < 成本价 ¥{cost_price:.2f}，"
                 f"亏损 ¥{abs(gross_profit):.2f}，已自动阻断"
             )
-            alerts.append({
-                "level": "error",
-                "message": reason,
-                "gross_loss": round(abs(gross_profit), 2),
-            })
+            alerts.append(
+                {
+                    "level": "error",
+                    "message": reason,
+                    "gross_loss": round(abs(gross_profit), 2),
+                }
+            )
             confidence = 0.97
         elif final_price < cost_price * 1.1:
             action = "warn"
@@ -120,11 +128,13 @@ class G3DiscountRiskAgent(BaseAgent):
                 f"{((final_price - cost_price) / cost_price * 100):.1f}%，"
                 f"低于安全阈值 (成本×1.1 = ¥{cost_price * 1.1:.2f})，建议人工复核"
             )
-            alerts.append({
-                "level": "warning",
-                "message": reason,
-                "min_safe_price": round(cost_price * 1.1, 2),
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": reason,
+                    "min_safe_price": round(cost_price * 1.1, 2),
+                }
+            )
             confidence = 0.90
         elif gross_margin < min_margin_threshold:
             action = "warn"
@@ -132,14 +142,18 @@ class G3DiscountRiskAgent(BaseAgent):
                 f"毛利率 {gross_margin}% < 最低阈值 {min_margin_threshold}%，"
                 f"建议优化折扣或提价"
             )
-            alerts.append({
-                "level": "warning",
-                "message": reason,
-                "threshold": min_margin_threshold,
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": reason,
+                    "threshold": min_margin_threshold,
+                }
+            )
             confidence = 0.85
         else:
-            reason = f"折后毛利率 {gross_margin}%，高于阈值 {min_margin_threshold}%，放行"
+            reason = (
+                f"折后毛利率 {gross_margin}%，高于阈值 {min_margin_threshold}%，放行"
+            )
             confidence = 0.85
 
         # ---- 多平台最低价风险提示 ----
@@ -159,7 +173,9 @@ class G3DiscountRiskAgent(BaseAgent):
             "final_price": round(final_price, 2),
             "gross_profit": gross_profit,
             "gross_margin": gross_margin,
-            "discount_details": ", ".join(d.get("description", "") for d in discount_details),
+            "discount_details": ", ".join(
+                d.get("description", "") for d in discount_details
+            ),
             "reason": reason,
         }
         try:
@@ -294,25 +310,29 @@ class G3DiscountRiskAgent(BaseAgent):
                 if 0 < d_value < 100:
                     discount_amount = price * d_value / 100
                     price -= discount_amount
-                    details.append({
-                        "type": d_type,
-                        "value": d_value,
-                        "unit": "%",
-                        "description": f"{d_type} {d_value}% 折扣",
-                        "discount_amount": round(discount_amount, 2),
-                    })
+                    details.append(
+                        {
+                            "type": d_type,
+                            "value": d_value,
+                            "unit": "%",
+                            "description": f"{d_type} {d_value}% 折扣",
+                            "discount_amount": round(discount_amount, 2),
+                        }
+                    )
             elif d_type in ("fixed", "fixed_amount"):
                 # 固定金额折扣
                 if d_value > 0:
                     discount_amount = min(d_value, price)
                     price -= discount_amount
-                    details.append({
-                        "type": "fixed_amount",
-                        "value": d_value,
-                        "unit": "¥",
-                        "description": f"固定减免 ¥{d_value:.2f}",
-                        "discount_amount": round(discount_amount, 2),
-                    })
+                    details.append(
+                        {
+                            "type": "fixed_amount",
+                            "value": d_value,
+                            "unit": "¥",
+                            "description": f"固定减免 ¥{d_value:.2f}",
+                            "discount_amount": round(discount_amount, 2),
+                        }
+                    )
             elif d_type in ("buy_x_get_y", "bogo"):
                 # Buy X Get Y — 折算为折扣率
                 buy_qty = _safe_float(d.get("buy_qty", d.get("buy", 2)))
@@ -321,25 +341,29 @@ class G3DiscountRiskAgent(BaseAgent):
                     effective_rate = free_qty / (buy_qty + free_qty) * 100
                     discount_amount = price * effective_rate / 100
                     price -= discount_amount
-                    details.append({
-                        "type": "buy_x_get_y",
-                        "buy_qty": buy_qty,
-                        "free_qty": free_qty,
-                        "effective_rate": round(effective_rate, 1),
-                        "description": f"买{buy_qty}送{free_qty} (等效 {effective_rate:.1f}% 折扣)",
-                        "discount_amount": round(discount_amount, 2),
-                    })
+                    details.append(
+                        {
+                            "type": "buy_x_get_y",
+                            "buy_qty": buy_qty,
+                            "free_qty": free_qty,
+                            "effective_rate": round(effective_rate, 1),
+                            "description": f"买{buy_qty}送{free_qty} (等效 {effective_rate:.1f}% 折扣)",
+                            "discount_amount": round(discount_amount, 2),
+                        }
+                    )
             elif d_type == "percentage_no_compound":
                 # 不叠加的独立百分比（取最大值而非叠加）
                 # 已存在百分比折扣时，取最大值
                 if 0 < d_value < 100:
-                    details.append({
-                        "type": "percentage_no_compound",
-                        "value": d_value,
-                        "unit": "%",
-                        "description": f"独立折扣 {d_value}%（非叠加）",
-                        "discount_amount": 0,
-                    })
+                    details.append(
+                        {
+                            "type": "percentage_no_compound",
+                            "value": d_value,
+                            "unit": "%",
+                            "description": f"独立折扣 {d_value}%（非叠加）",
+                            "discount_amount": 0,
+                        }
+                    )
 
         # 处理 non-compound 折扣：如果存在，取最大百分比替代叠加结果
         # 简化：non_compound 折扣视为独立，不参与叠加

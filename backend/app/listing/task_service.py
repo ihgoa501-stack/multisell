@@ -5,7 +5,11 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.listing.service import ListingService, PublishFailedError, PublishValidationError
+from app.listing.service import (
+    ListingService,
+    PublishFailedError,
+    PublishValidationError,
+)
 from app.listing.task_schemas import (
     ListingTaskCreateFromDecisionItem,
     ListingTaskCreateFromDecisionResponse,
@@ -36,20 +40,24 @@ class ListingTaskService:
             # 只处理 approve
             if item.decision_result.recommendation != "approve":
                 skipped_count += 1
-                skipped.append({
-                    "item_key": item.item_key,
-                    "reason": "recommendation is not approve",
-                })
+                skipped.append(
+                    {
+                        "item_key": item.item_key,
+                        "reason": "recommendation is not approve",
+                    }
+                )
                 continue
 
             # 通过 sku_id 找 product_id
             sku = await db.get(Sku, item.sku_id)
             if sku is None:
                 skipped_count += 1
-                skipped.append({
-                    "item_key": item.item_key,
-                    "reason": "SKU not found",
-                })
+                skipped.append(
+                    {
+                        "item_key": item.item_key,
+                        "reason": "SKU not found",
+                    }
+                )
                 continue
             product_id = sku.product_id
 
@@ -63,7 +71,9 @@ class ListingTaskService:
                     db, existing, item, operator
                 )
                 reused_count += 1
-                tasks.append(ListingTaskService._task_to_result(existing, item.item_key))
+                tasks.append(
+                    ListingTaskService._task_to_result(existing, item.item_key)
+                )
                 continue
 
             # 创建新任务——先校验发布就绪状态
@@ -71,10 +81,12 @@ class ListingTaskService:
             platform = await db.get(Platform, item.platform_id)
             if product is None or platform is None:
                 skipped_count += 1
-                skipped.append({
-                    "item_key": item.item_key,
-                    "reason": "Product or Platform not found",
-                })
+                skipped.append(
+                    {
+                        "item_key": item.item_key,
+                        "reason": "Product or Platform not found",
+                    }
+                )
                 continue
 
             missing = await ListingTaskService._check_publish_readiness(
@@ -176,9 +188,12 @@ class ListingTaskService:
         platform: Platform,
     ) -> list[str]:
         """调用现有 validate_publish_ready 检查发布就绪状态。"""
-        missing, _skus, _prices, _inventories = await ListingService.validate_publish_ready(
-            db, product, platform
-        )
+        (
+            missing,
+            _skus,
+            _prices,
+            _inventories,
+        ) = await ListingService.validate_publish_ready(db, product, platform)
         return missing
 
     @staticmethod
@@ -222,26 +237,32 @@ class ListingTaskService:
         for task, product_name, platform_name in rows:
             product_name = product_name or ""
             platform_name = platform_name or ""
-            responses.append(ListingTaskResponse(
-                id=task.id,
-                product_id=task.product_id,
-                product_name=product_name,
-                platform_id=task.platform_id,
-                platform_name=platform_name,
-                sku_id=task.sku_id,
-                product_listing_id=task.product_listing_id,
-                source_type=task.source_type,
-                source_item_key=task.source_item_key,
-                status=task.status,
-                missing_requirements=list(task.missing_requirements or []),
-                target_sale_price=float(task.target_sale_price) if task.target_sale_price else None,
-                target_profit_margin=float(task.target_profit_margin) if task.target_profit_margin else None,
-                destination_country=task.destination_country,
-                last_error=task.last_error,
-                created_by=task.created_by,
-                created_at=task.created_at.isoformat() if task.created_at else None,
-                updated_at=task.updated_at.isoformat() if task.updated_at else None,
-            ))
+            responses.append(
+                ListingTaskResponse(
+                    id=task.id,
+                    product_id=task.product_id,
+                    product_name=product_name,
+                    platform_id=task.platform_id,
+                    platform_name=platform_name,
+                    sku_id=task.sku_id,
+                    product_listing_id=task.product_listing_id,
+                    source_type=task.source_type,
+                    source_item_key=task.source_item_key,
+                    status=task.status,
+                    missing_requirements=list(task.missing_requirements or []),
+                    target_sale_price=float(task.target_sale_price)
+                    if task.target_sale_price
+                    else None,
+                    target_profit_margin=float(task.target_profit_margin)
+                    if task.target_profit_margin
+                    else None,
+                    destination_country=task.destination_country,
+                    last_error=task.last_error,
+                    created_by=task.created_by,
+                    created_at=task.created_at.isoformat() if task.created_at else None,
+                    updated_at=task.updated_at.isoformat() if task.updated_at else None,
+                )
+            )
         return responses
 
     # ── Recheck ──────────────────────────────────────────────────────────────
@@ -263,7 +284,9 @@ class ListingTaskService:
         platform = await db.get(Platform, task.platform_id)
         missing = []
         if product and platform:
-            missing = await ListingTaskService._check_publish_readiness(db, product, platform)
+            missing = await ListingTaskService._check_publish_readiness(
+                db, product, platform
+            )
 
         task.status = "blocked" if missing else "ready"
         task.missing_requirements = missing
@@ -389,8 +412,12 @@ class ListingTaskService:
             source_item_key=task.source_item_key,
             status=task.status,
             missing_requirements=list(task.missing_requirements or []),
-            target_sale_price=float(task.target_sale_price) if task.target_sale_price else None,
-            target_profit_margin=float(task.target_profit_margin) if task.target_profit_margin else None,
+            target_sale_price=float(task.target_sale_price)
+            if task.target_sale_price
+            else None,
+            target_profit_margin=float(task.target_profit_margin)
+            if task.target_profit_margin
+            else None,
             destination_country=task.destination_country,
             last_error=task.last_error,
             created_by=task.created_by,

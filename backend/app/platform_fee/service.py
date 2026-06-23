@@ -13,7 +13,6 @@ from app.platform_fee.schemas import (
 
 
 class PlatformFeeService:
-
     TYPE_LABELS = {
         "commission": "佣金",
         "fixed": "固定费用",
@@ -47,11 +46,15 @@ class PlatformFeeService:
         total = await db.scalar(count_stmt) or 0
 
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(
-            PlatformFeeRule.platform_id,
-            PlatformFeeRule.priority,
-            PlatformFeeRule.id,
-        ).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(
+                PlatformFeeRule.platform_id,
+                PlatformFeeRule.priority,
+                PlatformFeeRule.id,
+            )
+            .offset(offset)
+            .limit(page_size)
+        )
 
         result = await db.execute(stmt)
         rules = list(result.scalars().all())
@@ -72,7 +75,9 @@ class PlatformFeeService:
         return rule
 
     @staticmethod
-    async def update_rule(db: AsyncSession, rule: PlatformFeeRule, data: dict) -> PlatformFeeRule:
+    async def update_rule(
+        db: AsyncSession, rule: PlatformFeeRule, data: dict
+    ) -> PlatformFeeRule:
         for key, value in data.items():
             if value is not None:
                 setattr(rule, key, value)
@@ -154,12 +159,14 @@ class PlatformFeeService:
 
         for rule in matched_rules:
             amount = PlatformFeeService._calculate_rule_amount(rule, sale_price_dec)
-            items.append(PlatformFeeCalculateItem(
-                fee_type=rule.fee_type,
-                rule_id=rule.id,
-                description=PlatformFeeService._describe_rule(rule),
-                amount=float(amount),
-            ))
+            items.append(
+                PlatformFeeCalculateItem(
+                    fee_type=rule.fee_type,
+                    rule_id=rule.id,
+                    description=PlatformFeeService._describe_rule(rule),
+                    amount=float(amount),
+                )
+            )
             total_fee += amount
 
         return PlatformFeeCalculateResponse(

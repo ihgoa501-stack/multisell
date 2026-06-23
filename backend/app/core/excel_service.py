@@ -36,23 +36,49 @@ class ExcelService:
     """商品 Excel 导出导入"""
 
     STYLE_HEADER_FONT = Font(bold=True, color="FFFFFF")
-    STYLE_HEADER_FILL = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
+    STYLE_HEADER_FILL = PatternFill(
+        start_color="2C3E50", end_color="2C3E50", fill_type="solid"
+    )
     STYLE_THIN_BORDER = Border(
-        left=Side(style="thin"), right=Side(style="thin"),
-        top=Side(style="thin"), bottom=Side(style="thin"),
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
     )
 
     EXPORT_HEADERS = [
-        "ID", "商品名称", "副标题", "分类", "单位", "状态",
-        "商品长(cm)", "商品宽(cm)", "商品高(cm)", "商品重量(kg)",
-        "包装长(cm)", "包装宽(cm)", "包装高(cm)", "包装重量(kg)",
-        "货品类型", "物流状态", "创建时间",
+        "ID",
+        "商品名称",
+        "副标题",
+        "分类",
+        "单位",
+        "状态",
+        "商品长(cm)",
+        "商品宽(cm)",
+        "商品高(cm)",
+        "商品重量(kg)",
+        "包装长(cm)",
+        "包装宽(cm)",
+        "包装高(cm)",
+        "包装重量(kg)",
+        "货品类型",
+        "物流状态",
+        "创建时间",
     ]
 
     TEMPLATE_HEADERS = [
-        "商品名称", "副标题", "单位", "状态",
-        "商品长(cm)", "商品宽(cm)", "商品高(cm)", "商品重量(kg)",
-        "包装长(cm)", "包装宽(cm)", "包装高(cm)", "包装重量(kg)",
+        "商品名称",
+        "副标题",
+        "单位",
+        "状态",
+        "商品长(cm)",
+        "商品宽(cm)",
+        "商品高(cm)",
+        "商品重量(kg)",
+        "包装长(cm)",
+        "包装宽(cm)",
+        "包装高(cm)",
+        "包装重量(kg)",
         "货品类型",
     ]
 
@@ -82,9 +108,14 @@ class ExcelService:
         page = 1
         while True:
             q = ProductQuery(
-                name=name, category_id=category_id, status=status, brand_id=brand_id,
-                cargo_type=cargo_type, logistics_status=logistics_status,
-                page=page, page_size=100,
+                name=name,
+                category_id=category_id,
+                status=status,
+                brand_id=brand_id,
+                cargo_type=cargo_type,
+                logistics_status=logistics_status,
+                page=page,
+                page_size=100,
             )
             products, total = await ProductService.list_products(db, q)
             all_products.extend(products)
@@ -100,27 +131,57 @@ class ExcelService:
         ExcelService._apply_header_style(ws, headers)
 
         status_map = {0: "草稿", 1: "上架", 2: "下架"}
-        cargo_type_map = {"normal": "普通", "battery": "带电", "liquid": "液体", "sensitive": "敏感"}
+        cargo_type_map = {
+            "normal": "普通",
+            "battery": "带电",
+            "liquid": "液体",
+            "sensitive": "敏感",
+        }
         for row_idx, p in enumerate(all_products, 2):
             category_name = p.category.name if p.category else ""
             logistics_complete = (
-                p.package_length_cm and p.package_width_cm and p.package_height_cm and p.package_weight_kg
-                and float(p.package_length_cm) > 0 and float(p.package_width_cm) > 0
-                and float(p.package_height_cm) > 0 and float(p.package_weight_kg) > 0
+                p.package_length_cm
+                and p.package_width_cm
+                and p.package_height_cm
+                and p.package_weight_kg
+                and float(p.package_length_cm) > 0
+                and float(p.package_width_cm) > 0
+                and float(p.package_height_cm) > 0
+                and float(p.package_weight_kg) > 0
             )
             logistics_label = "物流完整" if logistics_complete else "物流不完整"
 
             vals = [
-                p.id, p.name, p.subtitle or "", category_name, p.unit,
+                p.id,
+                p.name,
+                p.subtitle or "",
+                category_name,
+                p.unit,
                 status_map.get(p.status, "未知"),
-                _to_positive_float(p.product_length_cm, "", 0) if p.product_length_cm else None,
-                _to_positive_float(p.product_width_cm, "", 0) if p.product_width_cm else None,
-                _to_positive_float(p.product_height_cm, "", 0) if p.product_height_cm else None,
-                _to_positive_float(p.product_weight_kg, "", 0) if p.product_weight_kg else None,
-                _to_positive_float(p.package_length_cm, "", 0) if p.package_length_cm else None,
-                _to_positive_float(p.package_width_cm, "", 0) if p.package_width_cm else None,
-                _to_positive_float(p.package_height_cm, "", 0) if p.package_height_cm else None,
-                _to_positive_float(p.package_weight_kg, "", 0) if p.package_weight_kg else None,
+                _to_positive_float(p.product_length_cm, "", 0)
+                if p.product_length_cm
+                else None,
+                _to_positive_float(p.product_width_cm, "", 0)
+                if p.product_width_cm
+                else None,
+                _to_positive_float(p.product_height_cm, "", 0)
+                if p.product_height_cm
+                else None,
+                _to_positive_float(p.product_weight_kg, "", 0)
+                if p.product_weight_kg
+                else None,
+                _to_positive_float(p.package_length_cm, "", 0)
+                if p.package_length_cm
+                else None,
+                _to_positive_float(p.package_width_cm, "", 0)
+                if p.package_width_cm
+                else None,
+                _to_positive_float(p.package_height_cm, "", 0)
+                if p.package_height_cm
+                else None,
+                _to_positive_float(p.package_weight_kg, "", 0)
+                if p.package_weight_kg
+                else None,
                 cargo_type_map.get(p.cargo_type, p.cargo_type or ""),
                 logistics_label,
                 p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "",
@@ -130,10 +191,23 @@ class ExcelService:
                 cell.border = ExcelService.STYLE_THIN_BORDER
 
         col_widths = {
-            "A": 8, "B": 40, "C": 30, "D": 15, "E": 8, "F": 8,
-            "G": 12, "H": 10, "I": 10, "J": 12,
-            "K": 12, "L": 10, "M": 10, "N": 12,
-            "O": 12, "P": 12, "Q": 20,
+            "A": 8,
+            "B": 40,
+            "C": 30,
+            "D": 15,
+            "E": 8,
+            "F": 8,
+            "G": 12,
+            "H": 10,
+            "I": 10,
+            "J": 12,
+            "K": 12,
+            "L": 10,
+            "M": 10,
+            "N": 12,
+            "O": 12,
+            "P": 12,
+            "Q": 20,
         }
         for col_letter, width in col_widths.items():
             ws.column_dimensions[col_letter].width = width
@@ -169,14 +243,19 @@ class ExcelService:
 
         # 数据验证：状态列下拉
         from openpyxl.worksheet.datavalidation import DataValidation
-        dv_status = DataValidation(type="list", formula1='"草稿,上架,下架"', allow_blank=True)
+
+        dv_status = DataValidation(
+            type="list", formula1='"草稿,上架,下架"', allow_blank=True
+        )
         dv_status.error = "请选择: 草稿 / 上架 / 下架"
         dv_status.errorTitle = "状态错误"
         ws.add_data_validation(dv_status)
         dv_status.add("D2:D1048576")
 
         # 数据验证：货品类型下拉
-        dv_cargo = DataValidation(type="list", formula1='"normal,battery,liquid,sensitive"', allow_blank=True)
+        dv_cargo = DataValidation(
+            type="list", formula1='"normal,battery,liquid,sensitive"', allow_blank=True
+        )
         dv_cargo.error = "请选择: normal / battery / liquid / sensitive"
         dv_cargo.errorTitle = "货品类型错误"
         ws.add_data_validation(dv_cargo)
@@ -204,7 +283,9 @@ class ExcelService:
 
         imported = 0
         errors = []
-        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        for row_idx, row in enumerate(
+            ws.iter_rows(min_row=2, values_only=True), start=2
+        ):
             name = _cell_value(row, header_map, "商品名称")
             if not name:
                 continue
@@ -229,32 +310,49 @@ class ExcelService:
                 product_data = ProductCreate(
                     name=str(name).strip(),
                     subtitle=str(_cell_value(row, header_map, "副标题")).strip()
-                    if _cell_value(row, header_map, "副标题") else None,
+                    if _cell_value(row, header_map, "副标题")
+                    else None,
                     unit=unit_val,
                     status=status_val,
                     product_length_cm=_to_positive_float(
-                        _cell_value(row, header_map, "商品长(cm)"), "商品长(cm)", row_idx,
+                        _cell_value(row, header_map, "商品长(cm)"),
+                        "商品长(cm)",
+                        row_idx,
                     ),
                     product_width_cm=_to_positive_float(
-                        _cell_value(row, header_map, "商品宽(cm)"), "商品宽(cm)", row_idx,
+                        _cell_value(row, header_map, "商品宽(cm)"),
+                        "商品宽(cm)",
+                        row_idx,
                     ),
                     product_height_cm=_to_positive_float(
-                        _cell_value(row, header_map, "商品高(cm)"), "商品高(cm)", row_idx,
+                        _cell_value(row, header_map, "商品高(cm)"),
+                        "商品高(cm)",
+                        row_idx,
                     ),
                     product_weight_kg=_to_positive_float(
-                        _cell_value(row, header_map, "商品重量(kg)"), "商品重量(kg)", row_idx,
+                        _cell_value(row, header_map, "商品重量(kg)"),
+                        "商品重量(kg)",
+                        row_idx,
                     ),
                     package_length_cm=_to_positive_float(
-                        _cell_value(row, header_map, "包装长(cm)"), "包装长(cm)", row_idx,
+                        _cell_value(row, header_map, "包装长(cm)"),
+                        "包装长(cm)",
+                        row_idx,
                     ),
                     package_width_cm=_to_positive_float(
-                        _cell_value(row, header_map, "包装宽(cm)"), "包装宽(cm)", row_idx,
+                        _cell_value(row, header_map, "包装宽(cm)"),
+                        "包装宽(cm)",
+                        row_idx,
                     ),
                     package_height_cm=_to_positive_float(
-                        _cell_value(row, header_map, "包装高(cm)"), "包装高(cm)", row_idx,
+                        _cell_value(row, header_map, "包装高(cm)"),
+                        "包装高(cm)",
+                        row_idx,
                     ),
                     package_weight_kg=_to_positive_float(
-                        _cell_value(row, header_map, "包装重量(kg)"), "包装重量(kg)", row_idx,
+                        _cell_value(row, header_map, "包装重量(kg)"),
+                        "包装重量(kg)",
+                        row_idx,
                     ),
                     cargo_type=cargo_val,
                 )

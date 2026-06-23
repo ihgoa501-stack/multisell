@@ -7,8 +7,8 @@ Revision ID: f22e62fe526b
 Revises: 4ad5419fa71c
 Create Date: 2026-06-22 20:50:00.000000
 """
-from typing import Sequence, Union
 
+from typing import Sequence, Union
 
 
 # revision identifiers, used by Alembic.

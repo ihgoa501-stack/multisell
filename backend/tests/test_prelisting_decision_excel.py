@@ -112,7 +112,9 @@ def test_generate_template_creates_valid_workbook():
     assert "目标售价" in headers
 
 
-@pytest.mark.skip(reason="endpoint /api/decisions/prelisting/batch/template, /api/decisions/prelisting/batch/preview, /api/decisions/prelisting/batch/export not implemented yet")
+@pytest.mark.skip(
+    reason="endpoint /api/decisions/prelisting/batch/template, /api/decisions/prelisting/batch/preview, /api/decisions/prelisting/batch/export not implemented yet"
+)
 @pytest.mark.asyncio
 async def test_excel_endpoints_require_permission(async_client: AsyncClient):
     """测试模板、预览、导出端点需要 decision:calculate 权限"""
@@ -131,7 +133,13 @@ async def test_excel_endpoints_require_permission(async_client: AsyncClient):
     content = _workbook_bytes(_valid_rows())
     resp = await async_client.post(
         "/api/decisions/prelisting/batch/preview",
-        files={"file": ("test.xlsx", content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "test.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -203,8 +211,19 @@ async def test_excel_endpoints_require_permission(async_client: AsyncClient):
 def test_parse_preview_handles_chinese_fullwidth_brackets():
     """全角括号表头也应被识别"""
     rows = [
-        ["行标识", "SKU ID", "目的国", "目标售价", "平台ID", "类目ID",
-         "平台费率（%）", "支付费率（%）", "其他费用", "最低利润率（%）", "货品类型"],
+        [
+            "行标识",
+            "SKU ID",
+            "目的国",
+            "目标售价",
+            "平台ID",
+            "类目ID",
+            "平台费率（%）",
+            "支付费率（%）",
+            "其他费用",
+            "最低利润率（%）",
+            "货品类型",
+        ],
         ["r1", 1, "RU", 100, None, None, 15, 5, 2, 30, "normal"],
     ]
     content = _workbook_bytes(rows)

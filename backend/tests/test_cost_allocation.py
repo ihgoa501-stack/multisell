@@ -19,17 +19,27 @@ async def _make_csv(rows: list[list]) -> tuple[str, bytes]:
 async def _create_sku_with_order(async_client) -> tuple[int, int, str]:
     """Create product+SKU+order, return (sku_id, order_id, order_no)."""
     uid = uuid4().hex[:6]
-    resp = await async_client.post("/api/products", json={
-        "name": f"ALLOC_{uid}",
-        "package_length_cm": 30, "package_width_cm": 20,
-        "package_height_cm": 10, "package_weight_kg": 0.5,
-    })
+    resp = await async_client.post(
+        "/api/products",
+        json={
+            "name": f"ALLOC_{uid}",
+            "package_length_cm": 30,
+            "package_width_cm": 20,
+            "package_height_cm": 10,
+            "package_weight_kg": 0.5,
+        },
+    )
     pid = resp.json()["data"]["id"]
-    await async_client.post(f"/api/products/{pid}/specs", json={"specs": [{"name": "颜色", "values": ["标准"]}]})
+    await async_client.post(
+        f"/api/products/{pid}/specs",
+        json={"specs": [{"name": "颜色", "values": ["标准"]}]},
+    )
     sku_resp = await async_client.post(f"/api/products/{pid}/skus/generate")
     sku_id = sku_resp.json()["data"]["skus"][0]["id"]
     await async_client.put(f"/api/skus/{sku_id}", json={"cost_price": 300})
-    await async_client.post("/api/prices", json={"sku_id": sku_id, "price_type": "sale_price", "price": 100})
+    await async_client.post(
+        "/api/prices", json={"sku_id": sku_id, "price_type": "sale_price", "price": 100}
+    )
     await async_client.put(f"/api/inventory/{sku_id}", json={"quantity": 10})
 
     order_resp = await async_client.post(
@@ -47,6 +57,7 @@ async def _create_sku_with_order(async_client) -> tuple[int, int, str]:
 
 class TestAllocationImport:
     """POST /api/allocations/import"""
+
     @pytest.mark.skip(reason="endpoint /api/allocations/import not implemented yet")
     async def test_import_creates_batch_and_items(self, async_client):
         header = ["sku_code", "quantity", "weight", "volume", "item_value"]
@@ -81,6 +92,7 @@ class TestAllocationImport:
         from app.database import async_session_factory
         from app.models import OperationLog
         from sqlalchemy import select
+
         async with async_session_factory() as session:
             stmt = select(OperationLog).where(
                 OperationLog.module == "allocation",
@@ -93,13 +105,17 @@ class TestAllocationImport:
 class TestAllocationCalculate:
     """POST /api/allocations/{batch_id}/calculate"""
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet"
+    )
     async def test_quantity_allocation(self, async_client):
-        fn, content = await _make_csv([
-            ["sku_code", "quantity", "weight", "volume", "item_value"],
-            ["SKU-A", "3", "0.3", "0.01", "100"],
-            ["SKU-B", "2", "0.5", "0.02", "200"],
-        ])
+        fn, content = await _make_csv(
+            [
+                ["sku_code", "quantity", "weight", "volume", "item_value"],
+                ["SKU-A", "3", "0.3", "0.01", "100"],
+                ["SKU-B", "2", "0.5", "0.02", "200"],
+            ]
+        )
         import_resp = await async_client.post(
             "/api/allocations/import?allocation_type=first_leg&allocation_method=quantity&total_amount=100&currency=CNY",
             files={"file": (fn, content, "text/csv")},
@@ -117,13 +133,17 @@ class TestAllocationCalculate:
         assert float(items[0]["allocated_amount"]) == 60.0
         assert float(items[1]["allocated_amount"]) == 40.0
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet"
+    )
     async def test_weight_allocation(self, async_client):
-        fn, content = await _make_csv([
-            ["sku_code", "quantity", "weight", "volume", "item_value"],
-            ["SKU-A", "1", "1.0", "0.01", "100"],
-            ["SKU-B", "1", "3.0", "0.02", "200"],
-        ])
+        fn, content = await _make_csv(
+            [
+                ["sku_code", "quantity", "weight", "volume", "item_value"],
+                ["SKU-A", "1", "1.0", "0.01", "100"],
+                ["SKU-B", "1", "3.0", "0.02", "200"],
+            ]
+        )
         import_resp = await async_client.post(
             "/api/allocations/import?allocation_type=fba&allocation_method=weight&total_amount=80",
             files={"file": (fn, content, "text/csv")},
@@ -138,13 +158,17 @@ class TestAllocationCalculate:
         assert float(items[0]["allocated_amount"]) == 20.0
         assert float(items[1]["allocated_amount"]) == 60.0
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet"
+    )
     async def test_volume_allocation(self, async_client):
-        fn, content = await _make_csv([
-            ["sku_code", "quantity", "weight", "volume", "item_value"],
-            ["SKU-A", "1", "0.5", "0.01", "100"],
-            ["SKU-B", "1", "0.3", "0.03", "200"],
-        ])
+        fn, content = await _make_csv(
+            [
+                ["sku_code", "quantity", "weight", "volume", "item_value"],
+                ["SKU-A", "1", "0.5", "0.01", "100"],
+                ["SKU-B", "1", "0.3", "0.03", "200"],
+            ]
+        )
         import_resp = await async_client.post(
             "/api/allocations/import?allocation_type=first_leg&allocation_method=volume&total_amount=100",
             files={"file": (fn, content, "text/csv")},
@@ -159,13 +183,17 @@ class TestAllocationCalculate:
         assert float(items[0]["allocated_amount"]) == 25.0
         assert float(items[1]["allocated_amount"]) == 75.0
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet"
+    )
     async def test_value_allocation(self, async_client):
-        fn, content = await _make_csv([
-            ["sku_code", "quantity", "weight", "volume", "item_value"],
-            ["SKU-A", "1", "0.5", "0.01", "100"],
-            ["SKU-B", "1", "0.3", "0.03", "300"],
-        ])
+        fn, content = await _make_csv(
+            [
+                ["sku_code", "quantity", "weight", "volume", "item_value"],
+                ["SKU-A", "1", "0.5", "0.01", "100"],
+                ["SKU-B", "1", "0.3", "0.03", "300"],
+            ]
+        )
         import_resp = await async_client.post(
             "/api/allocations/import?allocation_type=other&allocation_method=value&total_amount=200",
             files={"file": (fn, content, "text/csv")},
@@ -180,15 +208,19 @@ class TestAllocationCalculate:
         assert float(items[0]["allocated_amount"]) == 50.0
         assert float(items[1]["allocated_amount"]) == 150.0
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet"
+    )
     async def test_rounding_controls_to_0_01(self, async_client):
         """尾差在 0.01 内，总和不大于 total_amount+0.01"""
-        fn, content = await _make_csv([
-            ["sku_code", "quantity", "weight", "volume", "item_value"],
-            ["SKU-A", "1", "0.3", "0.01", "100"],
-            ["SKU-B", "1", "0.3", "0.01", "100"],
-            ["SKU-C", "1", "0.3", "0.01", "100"],
-        ])
+        fn, content = await _make_csv(
+            [
+                ["sku_code", "quantity", "weight", "volume", "item_value"],
+                ["SKU-A", "1", "0.3", "0.01", "100"],
+                ["SKU-B", "1", "0.3", "0.01", "100"],
+                ["SKU-C", "1", "0.3", "0.01", "100"],
+            ]
+        )
         import_resp = await async_client.post(
             "/api/allocations/import?allocation_type=first_leg&allocation_method=quantity&total_amount=100",
             files={"file": (fn, content, "text/csv")},
@@ -201,7 +233,9 @@ class TestAllocationCalculate:
         total = sum(float(it["allocated_amount"]) for it in items)
         assert abs(total - 100.0) <= 0.01
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/calculate not implemented yet"
+    )
     async def test_cost_layer_is_allocated(self, async_client):
         fn, content = await _make_csv([["sku_code", "quantity"], ["SKU-X", "1"]])
         import_resp = await async_client.post(
@@ -219,14 +253,18 @@ class TestAllocationCalculate:
 class TestAllocationPostToLedger:
     """POST /api/allocations/{batch_id}/post-to-ledger"""
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/post-to-ledger not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/post-to-ledger not implemented yet"
+    )
     async def test_post_creates_ledger_entry(self, async_client):
         sku_id, order_id, order_no = await _create_sku_with_order(async_client)
 
-        fn, content = await _make_csv([
-            ["sku_code", "order_no", "quantity", "weight", "volume", "item_value"],
-            [f"SKU-{uuid4().hex[:4]}", order_no, "1", "0.5", "0.01", "300"],
-        ])
+        fn, content = await _make_csv(
+            [
+                ["sku_code", "order_no", "quantity", "weight", "volume", "item_value"],
+                [f"SKU-{uuid4().hex[:4]}", order_no, "1", "0.5", "0.01", "300"],
+            ]
+        )
         import_resp = await async_client.post(
             "/api/allocations/import?allocation_type=first_leg&allocation_method=value&total_amount=30",
             files={"file": (fn, content, "text/csv")},
@@ -234,7 +272,9 @@ class TestAllocationPostToLedger:
         batch_id = import_resp.json()["data"]["batch_id"]
         await async_client.post(f"/api/allocations/{batch_id}/calculate")
 
-        post_resp = await async_client.post(f"/api/allocations/{batch_id}/post-to-ledger")
+        post_resp = await async_client.post(
+            f"/api/allocations/{batch_id}/post-to-ledger"
+        )
         assert post_resp.status_code == 200
         assert post_resp.json()["data"]["posted_count"] >= 1
 
@@ -245,14 +285,18 @@ class TestAllocationPostToLedger:
         assert len(alloc_entries) >= 1
         assert alloc_entries[0]["cost_layer"] == "allocated"
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/post-to-ledger not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id}/post-to-ledger not implemented yet"
+    )
     async def test_post_is_idempotent(self, async_client):
         sku_id, order_id, order_no = await _create_sku_with_order(async_client)
 
-        fn, content = await _make_csv([
-            ["sku_code", "order_no", "quantity", "weight", "volume", "item_value"],
-            [f"SKU-{uuid4().hex[:4]}", order_no, "1", "0.5", "0.01", "300"],
-        ])
+        fn, content = await _make_csv(
+            [
+                ["sku_code", "order_no", "quantity", "weight", "volume", "item_value"],
+                [f"SKU-{uuid4().hex[:4]}", order_no, "1", "0.5", "0.01", "300"],
+            ]
+        )
         import_resp = await async_client.post(
             "/api/allocations/import?allocation_type=first_leg&allocation_method=value&total_amount=20",
             files={"file": (fn, content, "text/csv")},
@@ -275,7 +319,9 @@ class TestAllocationList:
         resp = await async_client.get("/api/allocations")
         assert resp.status_code == 200
 
-    @pytest.mark.skip(reason="endpoint /api/allocations/import and /api/allocations/{batch_id} not implemented yet")
+    @pytest.mark.skip(
+        reason="endpoint /api/allocations/import and /api/allocations/{batch_id} not implemented yet"
+    )
     async def test_get_batch(self, async_client):
         fn, content = await _make_csv([["sku_code", "quantity"], ["X", "1"]])
         import_resp = await async_client.post(

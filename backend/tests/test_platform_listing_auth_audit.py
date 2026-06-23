@@ -13,6 +13,7 @@ pytestmark = pytest.mark.usefixtures("enable_auth")
 class TestPlatformAuthAudit:
     async def _admin_token(self, async_client) -> tuple[int, str]:
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",
@@ -24,12 +25,16 @@ class TestPlatformAuthAudit:
     # --- platform:view ---
     async def test_list_platforms_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "pl_vw1")
-        resp = await async_client.get("/api/platforms", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/platforms", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_get_platform_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "pl_vw2")
-        resp = await async_client.get("/api/platforms/1", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/platforms/1", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     # --- platform:create ---
@@ -42,12 +47,17 @@ class TestPlatformAuthAudit:
         )
         assert resp.status_code == 403
 
-    async def test_create_platform_with_permission_succeeds_and_logs(self, async_client):
+    async def test_create_platform_with_permission_succeeds_and_logs(
+        self, async_client
+    ):
         uid, token = await self._admin_token(async_client)
         await grant_permission(uid, "platform:create")
         resp = await async_client.post(
             "/api/platforms",
-            json={"name": f"测试平台-{uuid4().hex[:8]}", "code": f"t_{uuid4().hex[:4]}"},
+            json={
+                "name": f"测试平台-{uuid4().hex[:8]}",
+                "code": f"t_{uuid4().hex[:4]}",
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 200
@@ -72,13 +82,16 @@ class TestPlatformAuthAudit:
     # --- platform:delete ---
     async def test_delete_platform_requires_delete(self, async_client):
         _uid, token = await register_and_login(async_client, "pl_dl1")
-        resp = await async_client.delete("/api/platforms/1", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.delete(
+            "/api/platforms/1", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
 
 class TestListingAuthAudit:
     async def _admin_token(self, async_client) -> tuple[int, str]:
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",
@@ -87,7 +100,9 @@ class TestListingAuthAudit:
         data = login_resp.json()["data"]
         return data["user"]["id"], data["access_token"]
 
-    async def _create_sku_and_platform(self, async_client, token: str) -> tuple[int, int]:
+    async def _create_sku_and_platform(
+        self, async_client, token: str
+    ) -> tuple[int, int]:
         """创建商品+SKU 和平台，返回 (product_id, platform_id)"""
         headers = {"Authorization": f"Bearer {token}"}
         # 商品
@@ -131,7 +146,10 @@ class TestListingAuthAudit:
         # 平台
         plat_resp = await async_client.post(
             "/api/platforms",
-            json={"name": f"测试平台-{uuid4().hex[:8]}", "code": f"t_{uuid4().hex[:4]}"},
+            json={
+                "name": f"测试平台-{uuid4().hex[:8]}",
+                "code": f"t_{uuid4().hex[:4]}",
+            },
             headers=headers,
         )
         platform_id = plat_resp.json()["data"]["id"]
@@ -140,12 +158,16 @@ class TestListingAuthAudit:
     # --- listing:view ---
     async def test_get_product_listings_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "li_vw1")
-        resp = await async_client.get("/api/products/1/listings", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/products/1/listings", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     async def test_get_all_listings_requires_view(self, async_client):
         _uid, token = await register_and_login(async_client, "li_vw2")
-        resp = await async_client.get("/api/listings", headers={"Authorization": f"Bearer {token}"})
+        resp = await async_client.get(
+            "/api/listings", headers={"Authorization": f"Bearer {token}"}
+        )
         assert resp.status_code == 403
 
     # --- listing:publish ---

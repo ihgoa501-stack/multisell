@@ -14,14 +14,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # ── Handler 1: profit_review ──────────────────────────────────
 
 
-async def handle_profit_review(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
+async def handle_profit_review(
+    db: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
     """利润复核：调用 PreListingDecisionService.calculate() 试算"""
     from app.decision.schemas import PreListingDecisionRequest
     from app.decision.service import PreListingDecisionService
 
     kwargs = dict(destination_country="RU", cargo_type="normal")
-    for key in ("destination_country", "platform_id", "product_cost", "platform_fee_pct",
-                "payment_fee_pct", "shipping_fee", "other_fee", "minimum_margin_pct", "cargo_type"):
+    for key in (
+        "destination_country",
+        "platform_id",
+        "product_cost",
+        "platform_fee_pct",
+        "payment_fee_pct",
+        "shipping_fee",
+        "other_fee",
+        "minimum_margin_pct",
+        "cargo_type",
+    ):
         if key in payload:
             kwargs[key] = payload[key]
     req = PreListingDecisionRequest(
@@ -36,7 +47,9 @@ async def handle_profit_review(db: AsyncSession, payload: dict[str, Any]) -> dic
 # ── Handler 2: inventory_allocate ─────────────────────────────
 
 
-async def handle_inventory_allocate(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
+async def handle_inventory_allocate(
+    db: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
     """库存分配：手动或按规则自动分配"""
     from app.allocation.service import AllocationService
 
@@ -46,7 +59,10 @@ async def handle_inventory_allocate(db: AsyncSession, payload: dict[str, Any]) -
 
     if warehouse_id is not None and quantity is not None:
         result = await AllocationService.allocate(
-            db, sku_id=sku_id, warehouse_id=warehouse_id, quantity=quantity,
+            db,
+            sku_id=sku_id,
+            warehouse_id=warehouse_id,
+            quantity=quantity,
         )
         return {"mode": "manual", "allocations": [result]}
 
@@ -57,7 +73,9 @@ async def handle_inventory_allocate(db: AsyncSession, payload: dict[str, Any]) -
 # ── Handler 3: listing_draft ──────────────────────────────────
 
 
-async def handle_listing_draft(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
+async def handle_listing_draft(
+    db: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
     """生成 Listing 草稿：调用 A2 优化器生成内容 + 持久化到 ProductListing"""
     from app.agent.agents.listing_optimizer import A2ListingOptimizerAgent
     from app.listing.service import ListingService
@@ -86,7 +104,9 @@ async def handle_listing_draft(db: AsyncSession, payload: dict[str, Any]) -> dic
     platform_id = payload.get("platform_id")
     listing_id = None
     if platform_id:
-        listing = await ListingService._get_or_create_listing(db, product_id, platform_id)
+        listing = await ListingService._get_or_create_listing(
+            db, product_id, platform_id
+        )
         if listing:
             listing.published_data = optimization
             await db.flush()
@@ -102,7 +122,9 @@ async def handle_listing_draft(db: AsyncSession, payload: dict[str, Any]) -> dic
 # ── Handler 4: daily_report ───────────────────────────────────
 
 
-async def handle_daily_report(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
+async def handle_daily_report(
+    db: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
     """生成经营日报：调用 DashboardService 获取经营总览"""
     from app.dashboard.service import DashboardService
 

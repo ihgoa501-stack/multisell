@@ -4,6 +4,7 @@
 - 关键词策略 + 竞品拆解 + 文案生成
 - 输入产品信息和竞品数据，输出优化后的 Listing 全案
 """
+
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -12,8 +13,11 @@ REQUIRED = ["product_name", "marketplace"]
 
 
 def _sf(v: Any, d: float = 0.0) -> float:
-    try: return float(v)
-    except (TypeError, ValueError): return d
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return d
+
 
 def _missing(c: dict, r: list) -> list:
     return [f for f in r if f not in c or c[f] is None]
@@ -32,13 +36,16 @@ class A2ListingOptimizerAgent(BaseAgent):
     }
 
     async def decide(self, point: str, ctx: dict, db: Any = None) -> dict:
-        if point == "listing_optimize": return self._optimize(ctx)
-        if point == "keyword_research": return self._research_keywords(ctx)
+        if point == "listing_optimize":
+            return self._optimize(ctx)
+        if point == "keyword_research":
+            return self._research_keywords(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
     def _optimize(self, ctx: dict) -> dict:
         miss = _missing(ctx, REQUIRED)
-        if miss: return self._insufficient("listing_optimize", miss)
+        if miss:
+            return self._insufficient("listing_optimize", miss)
         name = str(ctx.get("product_name", ""))
         mp = str(ctx.get("marketplace", "US"))
         features = ctx.get("features", [])
@@ -46,11 +53,14 @@ class A2ListingOptimizerAgent(BaseAgent):
         keywords = ctx.get("keywords", [])
 
         # 关键词排序：高频核心词放标题前部
-        sorted_kw = sorted(keywords, key=lambda k: _sf(k.get("volume", 0)), reverse=True)
+        sorted_kw = sorted(
+            keywords, key=lambda k: _sf(k.get("volume", 0)), reverse=True
+        )
         top_kw = [k.get("word", "") for k in sorted_kw[:3]]
 
         title = f"{' '.join(top_kw)} - {name}"
-        if len(title) > 200: title = title[:200]
+        if len(title) > 200:
+            title = title[:200]
 
         bullets = []
         for i, f in enumerate(features[:5]):
@@ -88,4 +98,10 @@ class A2ListingOptimizerAgent(BaseAgent):
         }
 
     def _insufficient(self, p: str, m: list) -> dict:
-        return {"status": "insufficient_data", "decision_point": p, "missing_fields": m, "message": f"缺少: {', '.join(m)}", "confidence": 0.0}
+        return {
+            "status": "insufficient_data",
+            "decision_point": p,
+            "missing_fields": m,
+            "message": f"缺少: {', '.join(m)}",
+            "confidence": 0.0,
+        }

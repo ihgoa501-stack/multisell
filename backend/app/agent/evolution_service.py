@@ -2,6 +2,7 @@
 
 与 PRD P0-2（信任评分计算引擎）和 P0-3（等级控制 + Nudge 机制）对应。
 """
+
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -10,7 +11,9 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.models import (
-    AgentDecision, AgentEvolutionConfig, AgentNudge,
+    AgentDecision,
+    AgentEvolutionConfig,
+    AgentNudge,
     PersonalRule,
 )
 from app.agent.base import EvolutionStage
@@ -47,7 +50,7 @@ SCORE_WEIGHTS = {
 }
 
 NUDGE_COOLDOWN_DAYS = 7  # Nudge 冷却期
-MAX_NUDGE_DISMISS = 3    # 连续忽略 N 次后延长冷却
+MAX_NUDGE_DISMISS = 3  # 连续忽略 N 次后延长冷却
 
 
 class TrustScoreCalculator:
@@ -65,12 +68,16 @@ class TrustScoreCalculator:
         window_start = now - timedelta(days=30)
 
         # ── 获取近期决策 ──
-        stmt = select(AgentDecision).where(
-            AgentDecision.user_id == user_id,
-            AgentDecision.agent_id == agent_id,
-            AgentDecision.decision_point == decision_point,
-            AgentDecision.created_at >= window_start,
-        ).order_by(AgentDecision.created_at.desc())
+        stmt = (
+            select(AgentDecision)
+            .where(
+                AgentDecision.user_id == user_id,
+                AgentDecision.agent_id == agent_id,
+                AgentDecision.decision_point == decision_point,
+                AgentDecision.created_at >= window_start,
+            )
+            .order_by(AgentDecision.created_at.desc())
+        )
         result = await db.execute(stmt)
         decisions = list(result.scalars().all())
 
@@ -96,7 +103,9 @@ class TrustScoreCalculator:
         adoption_rate = accepted / denominator if denominator > 0 else 0.0
 
         # 2. 平均置信度（25%）
-        confidences = [float(d.confidence) for d in decisions if d.confidence is not None]
+        confidences = [
+            float(d.confidence) for d in decisions if d.confidence is not None
+        ]
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
         # 3. 规则覆盖一致性（20%）
@@ -123,8 +132,12 @@ class TrustScoreCalculator:
         spc = SpcController()
         # 检查 acceptance_rate 维度的 SPC
         spc_check = await spc.check_point(
-            db, user_id, agent_id, decision_point,
-            "acceptance_rate", adoption_rate,
+            db,
+            user_id,
+            agent_id,
+            decision_point,
+            "acceptance_rate",
+            adoption_rate,
         )
         stability = 1.0
         if spc_check.get("is_out_of_control"):
@@ -171,7 +184,10 @@ class TrustScoreCalculator:
         key = (current_stage, target_stage)
         thresholds = PROMOTION_THRESHOLDS.get(key)
         if not thresholds:
-            return {"eligible": False, "reason": f"不支持的晋升路径: {current_stage.value} → {target_stage.value}"}
+            return {
+                "eligible": False,
+                "reason": f"不支持的晋升路径: {current_stage.value} → {target_stage.value}",
+            }
 
         issues = []
         if trust_score < thresholds["min_score"]:
@@ -258,19 +274,26 @@ class EvolutionService:
 
         total_decisions_7d = len(recent_decisions)
         accepted_7d = sum(1 for d in recent_decisions if d.user_action == "accepted")
-        adoption_rate_7d = round(accepted_7d / total_decisions_7d, 4) if total_decisions_7d > 0 else 0.0
+        adoption_rate_7d = (
+            round(accepted_7d / total_decisions_7d, 4)
+            if total_decisions_7d > 0
+            else 0.0
+        )
 
         # ── 活跃规则数 ──
         rules_stmt = select(func.count()).select_from(
-            select(PersonalRule).where(
+            select(PersonalRule)
+            .where(
                 PersonalRule.user_id == user_id,
                 PersonalRule.status == "active",
-            ).subquery()
+            )
+            .subquery()
         )
         active_rules = await db.scalar(rules_stmt) or 0
 
         # ── 熵指数（从 EntropyService） ──
         from app.agent.entropy.service import EntropyService
+
         entropy_svc = EntropyService()
         entropy_dashboard = await entropy_svc.get_dashboard(db, user_id)
         entropy_index = entropy_dashboard.get("system_entropy_index", 0.0)
@@ -290,13 +313,19 @@ class EvolutionService:
 
             # 取该 Agent 所有决策点中的最高阶段
             stages = [EvolutionStage(c.current_stage) for c in configs]
-            highest_stage = max(stages, key=lambda s: list(EvolutionStage).index(s)).value if stages else "observation"
+            highest_stage = (
+                max(stages, key=lambda s: list(EvolutionStage).index(s)).value
+                if stages
+                else "observation"
+            )
 
             # 7 天决策数 + 采纳率
             agent_recent = [d for d in recent_decisions if d.agent_id == aid]
             agent_total = len(agent_recent)
             agent_acc = sum(1 for d in agent_recent if d.user_action == "accepted")
-            agent_acceptance = round(agent_acc / agent_total, 4) if agent_total > 0 else 0.0
+            agent_acceptance = (
+                round(agent_acc / agent_total, 4) if agent_total > 0 else 0.0
+            )
 
             # 最近一次信任评分
             latest_score = 0.0
@@ -305,11 +334,15 @@ class EvolutionService:
 
             # Nudge 角标
             has_pending_nudge = False
-            nudge_stmt = select(AgentNudge).where(
-                AgentNudge.user_id == user_id,
-                AgentNudge.agent_id == aid,
-                AgentNudge.status == "pending",
-            ).limit(1)
+            nudge_stmt = (
+                select(AgentNudge)
+                .where(
+                    AgentNudge.user_id == user_id,
+                    AgentNudge.agent_id == aid,
+                    AgentNudge.status == "pending",
+                )
+                .limit(1)
+            )
             nudge_result = await db.execute(nudge_stmt)
             has_pending_nudge = nudge_result.scalar_one_or_none() is not None
 
@@ -368,16 +401,23 @@ class EvolutionService:
         point_configs = []
 
         for dp in decision_points:
-            config = await EvolutionService.get_or_create_config(db, user_id, agent_id, dp)
+            config = await EvolutionService.get_or_create_config(
+                db, user_id, agent_id, dp
+            )
 
             # 为该决策点计算信任评分（如超过 1 小时未计算）
             score_data = None
             needs_recalc = (
                 config.last_calculated_at is None
-                or (datetime.now(timezone.utc) - config.last_calculated_at).total_seconds() > 3600
+                or (
+                    datetime.now(timezone.utc) - config.last_calculated_at
+                ).total_seconds()
+                > 3600
             )
             if needs_recalc:
-                score_data = await TrustScoreCalculator.calculate(db, user_id, agent_id, dp)
+                score_data = await TrustScoreCalculator.calculate(
+                    db, user_id, agent_id, dp
+                )
                 config.trust_score = score_data["trust_score"]
                 config.decision_count = score_data["decision_count"]
                 if score_data["is_calculable"]:
@@ -397,7 +437,8 @@ class EvolutionService:
                         "consistency": float(config.consistency_score or 0),
                         "stability": float(config.stability_score or 0),
                     },
-                    "is_calculable": config.decision_count is not None and config.decision_count > 0,
+                    "is_calculable": config.decision_count is not None
+                    and config.decision_count > 0,
                 }
 
             # 晋升目标检查
@@ -406,7 +447,8 @@ class EvolutionService:
             promotion = None
             if target:
                 promotion_check = TrustScoreCalculator.check_promotion_eligibility(
-                    current_stage, target,
+                    current_stage,
+                    target,
                     score_data["trust_score"],
                     score_data["decision_count"],
                 )
@@ -417,24 +459,33 @@ class EvolutionService:
                     "progress": f"{score_data['decision_count']}/{PROMOTION_THRESHOLDS.get((current_stage, target), {}).get('min_decisions', '?')}",
                 }
 
-            point_configs.append({
-                "decision_point": dp,
-                "current_stage": config.current_stage,
-                "stage_color": EvolutionService._stage_color(config.current_stage),
-                "trust_score": score_data["trust_score"],
-                "decision_count": score_data["decision_count"],
-                "components": score_data["components"],
-                "is_calculable": score_data["is_calculable"],
-                "promotion": promotion,
-                "stage_updated_at": config.stage_updated_at.isoformat() if config.stage_updated_at else None,
-                "stage_updated_by": config.stage_updated_by,
-            })
+            point_configs.append(
+                {
+                    "decision_point": dp,
+                    "current_stage": config.current_stage,
+                    "stage_color": EvolutionService._stage_color(config.current_stage),
+                    "trust_score": score_data["trust_score"],
+                    "decision_count": score_data["decision_count"],
+                    "components": score_data["components"],
+                    "is_calculable": score_data["is_calculable"],
+                    "promotion": promotion,
+                    "stage_updated_at": config.stage_updated_at.isoformat()
+                    if config.stage_updated_at
+                    else None,
+                    "stage_updated_by": config.stage_updated_by,
+                }
+            )
 
         # ── 最近 20 条决策日志 ──
-        decision_stmt = select(AgentDecision).where(
-            AgentDecision.user_id == user_id,
-            AgentDecision.agent_id == agent_id,
-        ).order_by(AgentDecision.created_at.desc()).limit(20)
+        decision_stmt = (
+            select(AgentDecision)
+            .where(
+                AgentDecision.user_id == user_id,
+                AgentDecision.agent_id == agent_id,
+            )
+            .order_by(AgentDecision.created_at.desc())
+            .limit(20)
+        )
         decision_result = await db.execute(decision_stmt)
         recent_decisions = [
             {
@@ -473,15 +524,22 @@ class EvolutionService:
         except ValueError:
             return {"success": False, "message": f"无效的阶段: {target_stage}"}
 
-        config = await EvolutionService.get_or_create_config(db, user_id, agent_id, decision_point)
+        config = await EvolutionService.get_or_create_config(
+            db, user_id, agent_id, decision_point
+        )
         current = EvolutionStage(config.current_stage)
 
         # 如果是升级操作，检查信任评分门槛（手动覆盖时跳过，允许管理员强制变更）
-        is_upgrade = list(EvolutionStage).index(target) > list(EvolutionStage).index(current)
+        is_upgrade = list(EvolutionStage).index(target) > list(EvolutionStage).index(
+            current
+        )
         if is_upgrade and not manual:
-            score_data = await TrustScoreCalculator.calculate(db, user_id, agent_id, decision_point)
+            score_data = await TrustScoreCalculator.calculate(
+                db, user_id, agent_id, decision_point
+            )
             check = TrustScoreCalculator.check_promotion_eligibility(
-                current, target,
+                current,
+                target,
                 score_data["trust_score"],
                 score_data["decision_count"],
             )
@@ -500,18 +558,21 @@ class EvolutionService:
 
         # 记录操作日志
         from app.operation_log.service import OperationLogService
+
         await OperationLogService.log(
             db=db,
             module="agent_evolution",
             action="agent_stage_changed",
             resource_id=f"{agent_id}:{decision_point}",
-            content=str({
-                "agent_id": agent_id,
-                "decision_point": decision_point,
-                "old_stage": old_stage,
-                "new_stage": target.value,
-                "trigger_source": "manual" if is_upgrade else "manual_downgrade",
-            }),
+            content=str(
+                {
+                    "agent_id": agent_id,
+                    "decision_point": decision_point,
+                    "old_stage": old_stage,
+                    "new_stage": target.value,
+                    "trigger_source": "manual" if is_upgrade else "manual_downgrade",
+                }
+            ),
         )
 
         return {
@@ -528,10 +589,15 @@ class EvolutionService:
         user_id: int,
     ) -> list[dict]:
         """获取用户待处理的 Nudge 晋升提示列表"""
-        stmt = select(AgentNudge).where(
-            AgentNudge.user_id == user_id,
-            AgentNudge.status == "pending",
-        ).order_by(AgentNudge.created_at.desc()).limit(20)
+        stmt = (
+            select(AgentNudge)
+            .where(
+                AgentNudge.user_id == user_id,
+                AgentNudge.status == "pending",
+            )
+            .order_by(AgentNudge.created_at.desc())
+            .limit(20)
+        )
         result = await db.execute(stmt)
         nudges = result.scalars().all()
 
@@ -563,13 +629,20 @@ class EvolutionService:
         if nudge.status != "pending":
             return {"success": False, "message": "Nudge 已处理"}
 
-        nudge.status = response if response in ("accepted", "dismissed") else "dismissed"
+        nudge.status = (
+            response if response in ("accepted", "dismissed") else "dismissed"
+        )
         nudge.responded_at = datetime.now(timezone.utc)
 
         if response == "accepted":
             # 执行晋升
             stage_result = await EvolutionService.change_stage(
-                db, user_id, nudge.agent_id, nudge.decision_point, nudge.target_stage, manual=False,
+                db,
+                user_id,
+                nudge.agent_id,
+                nudge.decision_point,
+                nudge.target_stage,
+                manual=False,
             )
             await db.flush()
             return {
@@ -581,7 +654,10 @@ class EvolutionService:
         elif response == "dismissed":
             # 设置冷却期
             config = await EvolutionService.get_or_create_config(
-                db, user_id, nudge.agent_id, nudge.decision_point,
+                db,
+                user_id,
+                nudge.agent_id,
+                nudge.decision_point,
             )
             config.nudge_dismissed_count = (config.nudge_dismissed_count or 0) + 1
             config.nudge_last_shown_at = datetime.now(timezone.utc)
@@ -612,7 +688,9 @@ class EvolutionService:
         for meta in agents_meta:
             aid = meta["agent_id"]
             for dp in meta["decision_points"]:
-                config = await EvolutionService.get_or_create_config(db, user_id, aid, dp)
+                config = await EvolutionService.get_or_create_config(
+                    db, user_id, aid, dp
+                )
 
                 # 检查冷却期
                 now = datetime.now(timezone.utc)
@@ -631,7 +709,8 @@ class EvolutionService:
                 # 计算评分
                 score_data = await TrustScoreCalculator.calculate(db, user_id, aid, dp)
                 check = TrustScoreCalculator.check_promotion_eligibility(
-                    current_stage, target,
+                    current_stage,
+                    target,
                     score_data["trust_score"],
                     score_data["decision_count"],
                 )
@@ -639,12 +718,16 @@ class EvolutionService:
                     continue
 
                 # 检查是否已有待处理的 Nudge
-                existing_stmt = select(AgentNudge).where(
-                    AgentNudge.user_id == user_id,
-                    AgentNudge.agent_id == aid,
-                    AgentNudge.decision_point == dp,
-                    AgentNudge.status == "pending",
-                ).limit(1)
+                existing_stmt = (
+                    select(AgentNudge)
+                    .where(
+                        AgentNudge.user_id == user_id,
+                        AgentNudge.agent_id == aid,
+                        AgentNudge.decision_point == dp,
+                        AgentNudge.status == "pending",
+                    )
+                    .limit(1)
+                )
                 existing = await db.execute(existing_stmt)
                 if existing.scalar_one_or_none():
                     continue
@@ -664,13 +747,15 @@ class EvolutionService:
                 await db.flush()
                 await db.refresh(nudge)
 
-                generated.append({
-                    "id": nudge.id,
-                    "agent_id": aid,
-                    "decision_point": dp,
-                    "target_stage": target.value,
-                    "trust_score": score_data["trust_score"],
-                })
+                generated.append(
+                    {
+                        "id": nudge.id,
+                        "agent_id": aid,
+                        "decision_point": dp,
+                        "target_stage": target.value,
+                        "trust_score": score_data["trust_score"],
+                    }
+                )
 
         if generated:
             await db.flush()

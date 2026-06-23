@@ -38,7 +38,9 @@ def suggest_upgrade(
             "reason": "insufficient_data",
         }
 
-    current_idx = LEVEL_ORDER.index(current_level) if current_level in LEVEL_ORDER else -1
+    current_idx = (
+        LEVEL_ORDER.index(current_level) if current_level in LEVEL_ORDER else -1
+    )
     if current_idx == -1:
         return {
             "suggested": False,
@@ -54,7 +56,9 @@ def suggest_upgrade(
     error_rate = recent_errors / max(total_decisions, 1)
 
     # 降级判断：高风险 + 低成功率
-    if current_idx > 0 and (error_rate > 0.3 or (success_rate < 0.6 and risk_avg > 2.5)):
+    if current_idx > 0 and (
+        error_rate > 0.3 or (success_rate < 0.6 and risk_avg > 2.5)
+    ):
         target_idx = current_idx - 1
         return {
             "suggested": True,

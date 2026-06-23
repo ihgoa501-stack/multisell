@@ -13,15 +13,22 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, timezone
 from app.models import (
-    Product, Sku, Inventory, OperationLog,
-    Brand, Supplier, Platform, ProductListing,
-    Category, Order, Settlement,
+    Product,
+    Sku,
+    Inventory,
+    OperationLog,
+    Brand,
+    Supplier,
+    Platform,
+    ProductListing,
+    Category,
+    Order,
+    Settlement,
     FinanceAccount,
 )
 
 
 class DashboardService:
-
     @staticmethod
     async def get_stats(db: AsyncSession) -> dict:
         """获取统计数据（兼容原接口）"""
@@ -35,54 +42,80 @@ class DashboardService:
         # 1. 核心计数
         # ═══════════════════════════════════════════════════════
         total_products = await db.scalar(select(func.count(Product.id))) or 0
-        on_shelf = await db.scalar(
-            select(func.count(Product.id)).where(Product.status == 1)
-        ) or 0
-        draft = await db.scalar(
-            select(func.count(Product.id)).where(Product.status == 0)
-        ) or 0
+        on_shelf = (
+            await db.scalar(select(func.count(Product.id)).where(Product.status == 1))
+            or 0
+        )
+        draft = (
+            await db.scalar(select(func.count(Product.id)).where(Product.status == 0))
+            or 0
+        )
         total_skus = await db.scalar(select(func.count(Sku.id))) or 0
-        total_brands = await db.scalar(
-            select(func.count(Brand.id)).where(Brand.status == 1)
-        ) or 0
-        total_suppliers = await db.scalar(
-            select(func.count(Supplier.id)).where(Supplier.status == 1)
-        ) or 0
+        total_brands = (
+            await db.scalar(select(func.count(Brand.id)).where(Brand.status == 1)) or 0
+        )
+        total_suppliers = (
+            await db.scalar(select(func.count(Supplier.id)).where(Supplier.status == 1))
+            or 0
+        )
 
         # ═══════════════════════════════════════════════════════
         # 2. 库存健康
         # ═══════════════════════════════════════════════════════
-        low_stock = await db.scalar(
-            select(func.count(Inventory.id)).where(
-                and_(Inventory.quantity <= Inventory.safety_stock, Inventory.safety_stock > 0)
+        low_stock = (
+            await db.scalar(
+                select(func.count(Inventory.id)).where(
+                    and_(
+                        Inventory.quantity <= Inventory.safety_stock,
+                        Inventory.safety_stock > 0,
+                    )
+                )
             )
-        ) or 0
-        out_of_stock = await db.scalar(
-            select(func.count(Inventory.id)).where(Inventory.quantity <= 0)
-        ) or 0
+            or 0
+        )
+        out_of_stock = (
+            await db.scalar(
+                select(func.count(Inventory.id)).where(Inventory.quantity <= 0)
+            )
+            or 0
+        )
         total_inventories = await db.scalar(select(func.count(Inventory.id))) or 0
 
         # ═══════════════════════════════════════════════════════
         # 3. 订单统计
         # ═══════════════════════════════════════════════════════
         total_orders = await db.scalar(select(func.count(Order.id))) or 0
-        paid_orders = await db.scalar(
-            select(func.count(Order.id)).where(Order.status.in_(["paid", "shipped", "delivered", "completed"]))
-        ) or 0
+        paid_orders = (
+            await db.scalar(
+                select(func.count(Order.id)).where(
+                    Order.status.in_(["paid", "shipped", "delivered", "completed"])
+                )
+            )
+            or 0
+        )
 
         # 订单状态分布
-        order_statuses = ["pending", "paid", "shipped", "delivered", "completed", "cancelled"]
+        order_statuses = [
+            "pending",
+            "paid",
+            "shipped",
+            "delivered",
+            "completed",
+            "cancelled",
+        ]
         order_status_dist = {}
         for s in order_statuses:
-            cnt = await db.scalar(
-                select(func.count(Order.id)).where(Order.status == s)
-            ) or 0
+            cnt = (
+                await db.scalar(select(func.count(Order.id)).where(Order.status == s))
+                or 0
+            )
             if cnt > 0:
                 order_status_dist[s] = cnt
 
         # 近30天订单趋势（使用 raw SQL 避免 ORM 列自动注入）
         thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         from sqlalchemy import text as sa_text
+
         trend_sql = sa_text("""
             SELECT date_trunc('day', created_at) AS day,
                    count(id) AS cnt,
@@ -95,31 +128,46 @@ class DashboardService:
         daily_order_counts = await db.execute(trend_sql, {"since": thirty_days_ago})
         order_trend = []
         for day_row in daily_order_counts.all():
-            order_trend.append({
-                "date": day_row[0].strftime("%Y-%m-%d") if day_row[0] else "N/A",
-                "orders": day_row[1],
-                "revenue": float(day_row[2]),
-            })
+            order_trend.append(
+                {
+                    "date": day_row[0].strftime("%Y-%m-%d") if day_row[0] else "N/A",
+                    "orders": day_row[1],
+                    "revenue": float(day_row[2]),
+                }
+            )
 
         # ═══════════════════════════════════════════════════════
         # 4. 收入/利润概览
         # ═══════════════════════════════════════════════════════
-        total_revenue = await db.scalar(
-            select(func.coalesce(func.sum(Order.pay_amount), 0))
-            .where(Order.status.in_(["paid", "shipped", "delivered", "completed"]))
-        ) or 0
-        total_profit = await db.scalar(
-            select(func.coalesce(func.sum(Order.profit_amount), 0))
-            .where(Order.status.in_(["paid", "shipped", "delivered", "completed"]))
-        ) or 0
-        total_product_cost = await db.scalar(
-            select(func.coalesce(func.sum(Order.product_cost), 0))
-            .where(Order.status.in_(["paid", "shipped", "delivered", "completed"]))
-        ) or 0
+        total_revenue = (
+            await db.scalar(
+                select(func.coalesce(func.sum(Order.pay_amount), 0)).where(
+                    Order.status.in_(["paid", "shipped", "delivered", "completed"])
+                )
+            )
+            or 0
+        )
+        total_profit = (
+            await db.scalar(
+                select(func.coalesce(func.sum(Order.profit_amount), 0)).where(
+                    Order.status.in_(["paid", "shipped", "delivered", "completed"])
+                )
+            )
+            or 0
+        )
+        total_product_cost = (
+            await db.scalar(
+                select(func.coalesce(func.sum(Order.product_cost), 0)).where(
+                    Order.status.in_(["paid", "shipped", "delivered", "completed"])
+                )
+            )
+            or 0
+        )
 
         overall_margin = (
             round(float(total_profit) / float(total_revenue) * 100, 2)
-            if float(total_revenue) > 0 else 0
+            if float(total_revenue) > 0
+            else 0
         )
 
         # ═══════════════════════════════════════════════════════
@@ -128,6 +176,7 @@ class DashboardService:
         top_products = []
         try:
             from sqlalchemy import text as _t
+
             top_sql = _t("""
                 SELECT oi.product_id, p.name AS product_name,
                        count(oi.id) AS sold_count,
@@ -140,28 +189,34 @@ class DashboardService:
             """)
             top_result = await db.execute(top_sql)
             for row in top_result.all():
-                top_products.append({
-                    "product_id": row[0],
-                    "product_name": row[1],
-                    "sold_count": row[2],
-                    "revenue": float(row[3]),
-                })
+                top_products.append(
+                    {
+                        "product_id": row[0],
+                        "product_name": row[1],
+                        "sold_count": row[2],
+                        "revenue": float(row[3]),
+                    }
+                )
         except Exception:
             top_products = []
 
         # ═══════════════════════════════════════════════════════
         # 6. 平台发布统计
         # ═══════════════════════════════════════════════════════
-        total_platforms = await db.scalar(
-            select(func.count(Platform.id)).where(Platform.status == 1)
-        ) or 0
+        total_platforms = (
+            await db.scalar(select(func.count(Platform.id)).where(Platform.status == 1))
+            or 0
+        )
 
         platform_stmt = (
             select(Platform.name, Platform.code, func.count(ProductListing.id))
-            .outerjoin(ProductListing, and_(
-                ProductListing.platform_id == Platform.id,
-                ProductListing.status == "synced",
-            ))
+            .outerjoin(
+                ProductListing,
+                and_(
+                    ProductListing.platform_id == Platform.id,
+                    ProductListing.status == "synced",
+                ),
+            )
             .where(Platform.status == 1)
             .group_by(Platform.id, Platform.name, Platform.code)
             .order_by(Platform.sort_order)
@@ -170,40 +225,60 @@ class DashboardService:
         platforms_published = []
         total_published = 0
         for p_name, p_code, p_count in platform_result.all():
-            platforms_published.append({"name": p_name, "code": p_code, "count": p_count})
+            platforms_published.append(
+                {"name": p_name, "code": p_code, "count": p_count}
+            )
             total_published += p_count
 
         # ═══════════════════════════════════════════════════════
         # 7. 结算概览
         # ═══════════════════════════════════════════════════════
         total_settlements = await db.scalar(select(func.count(Settlement.id))) or 0
-        reconciled_settlements = await db.scalar(
-            select(func.count(Settlement.id)).where(Settlement.status == "reconciled")
-        ) or 0
-        pending_settlements = await db.scalar(
-            select(func.count(Settlement.id)).where(Settlement.status == "pending")
-        ) or 0
+        reconciled_settlements = (
+            await db.scalar(
+                select(func.count(Settlement.id)).where(
+                    Settlement.status == "reconciled"
+                )
+            )
+            or 0
+        )
+        pending_settlements = (
+            await db.scalar(
+                select(func.count(Settlement.id)).where(Settlement.status == "pending")
+            )
+            or 0
+        )
 
-        total_settlement_net = await db.scalar(
-            select(func.coalesce(func.sum(Settlement.total_net), 0))
-            .where(Settlement.status.in_(["reconciled", "reconciling"]))
-        ) or 0
+        total_settlement_net = (
+            await db.scalar(
+                select(func.coalesce(func.sum(Settlement.total_net), 0)).where(
+                    Settlement.status.in_(["reconciled", "reconciling"])
+                )
+            )
+            or 0
+        )
 
         # ═══════════════════════════════════════════════════════
         # 8. 财务账户概览
         # ═══════════════════════════════════════════════════════
         total_accounts = await db.scalar(select(func.count(FinanceAccount.id))) or 0
-        total_balance = await db.scalar(
-            select(func.coalesce(func.sum(FinanceAccount.balance), 0))
-        ) or 0
+        total_balance = (
+            await db.scalar(select(func.coalesce(func.sum(FinanceAccount.balance), 0)))
+            or 0
+        )
 
         # ═══════════════════════════════════════════════════════
         # 9. 近期动态
         # ═══════════════════════════════════════════════════════
         seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        recent_logs = await db.scalar(
-            select(func.count(OperationLog.id)).where(OperationLog.created_at >= seven_days_ago)
-        ) or 0
+        recent_logs = (
+            await db.scalar(
+                select(func.count(OperationLog.id)).where(
+                    OperationLog.created_at >= seven_days_ago
+                )
+            )
+            or 0
+        )
 
         stmt = select(OperationLog).order_by(OperationLog.created_at.desc()).limit(10)
         result = await db.execute(stmt)
@@ -228,8 +303,13 @@ class DashboardService:
                 "out_of_stock": out_of_stock,
                 "healthy": max(0, total_inventories - low_stock - out_of_stock),
                 "health_pct": round(
-                    (total_inventories - low_stock - out_of_stock) / total_inventories * 100, 1
-                ) if total_inventories > 0 else 100,
+                    (total_inventories - low_stock - out_of_stock)
+                    / total_inventories
+                    * 100,
+                    1,
+                )
+                if total_inventories > 0
+                else 100,
             },
             # 品牌/供应商
             "brands": {"total": total_brands},
@@ -276,7 +356,9 @@ class DashboardService:
                         "action": log.action,
                         "content": log.content,
                         "operator": log.operator,
-                        "created_at": log.created_at.isoformat() if log.created_at else None,
+                        "created_at": log.created_at.isoformat()
+                        if log.created_at
+                        else None,
                     }
                     for log in logs
                 ],
@@ -287,15 +369,18 @@ class DashboardService:
     async def get_product_stats(db: AsyncSession) -> dict:
         """商品统计（兼容原接口）"""
         total = await db.scalar(select(func.count(Product.id))) or 0
-        on_shelf = await db.scalar(
-            select(func.count(Product.id)).where(Product.status == 1)
-        ) or 0
-        draft = await db.scalar(
-            select(func.count(Product.id)).where(Product.status == 0)
-        ) or 0
-        off_shelf = await db.scalar(
-            select(func.count(Product.id)).where(Product.status == 2)
-        ) or 0
+        on_shelf = (
+            await db.scalar(select(func.count(Product.id)).where(Product.status == 1))
+            or 0
+        )
+        draft = (
+            await db.scalar(select(func.count(Product.id)).where(Product.status == 0))
+            or 0
+        )
+        off_shelf = (
+            await db.scalar(select(func.count(Product.id)).where(Product.status == 2))
+            or 0
+        )
 
         cat_stmt = (
             select(Product.category_id, Category.name, func.count(Product.id))
@@ -306,11 +391,13 @@ class DashboardService:
         cat_result = await db.execute(cat_stmt)
         category_distribution = []
         for cat_id, cat_name, cnt in cat_result.all():
-            category_distribution.append({
-                "category_id": cat_id,
-                "category_name": cat_name or f"分类{cat_id}",
-                "count": cnt,
-            })
+            category_distribution.append(
+                {
+                    "category_id": cat_id,
+                    "category_name": cat_name or f"分类{cat_id}",
+                    "count": cnt,
+                }
+            )
 
         return {
             "total": total,
@@ -333,29 +420,49 @@ class DashboardService:
 
         result = []
         for p_id, p_name, p_code in platforms:
-            published = await db.scalar(
-                select(func.count(ProductListing.id)).where(
-                    and_(ProductListing.platform_id == p_id, ProductListing.status == "synced")
+            published = (
+                await db.scalar(
+                    select(func.count(ProductListing.id)).where(
+                        and_(
+                            ProductListing.platform_id == p_id,
+                            ProductListing.status == "synced",
+                        )
+                    )
                 )
-            ) or 0
-            pending = await db.scalar(
-                select(func.count(ProductListing.id)).where(
-                    and_(ProductListing.platform_id == p_id, ProductListing.status.in_(["draft", "pending"]))
+                or 0
+            )
+            pending = (
+                await db.scalar(
+                    select(func.count(ProductListing.id)).where(
+                        and_(
+                            ProductListing.platform_id == p_id,
+                            ProductListing.status.in_(["draft", "pending"]),
+                        )
+                    )
                 )
-            ) or 0
-            failed = await db.scalar(
-                select(func.count(ProductListing.id)).where(
-                    and_(ProductListing.platform_id == p_id, ProductListing.status == "failed")
+                or 0
+            )
+            failed = (
+                await db.scalar(
+                    select(func.count(ProductListing.id)).where(
+                        and_(
+                            ProductListing.platform_id == p_id,
+                            ProductListing.status == "failed",
+                        )
+                    )
                 )
-            ) or 0
+                or 0
+            )
 
-            result.append({
-                "platform_id": p_id,
-                "platform_name": p_name,
-                "platform_code": p_code,
-                "published": published,
-                "pending": pending,
-                "failed": failed,
-            })
+            result.append(
+                {
+                    "platform_id": p_id,
+                    "platform_name": p_name,
+                    "platform_code": p_code,
+                    "published": published,
+                    "pending": pending,
+                    "failed": failed,
+                }
+            )
 
         return {"items": result}

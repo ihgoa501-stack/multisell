@@ -42,7 +42,6 @@ STYLE_PRESETS = {
 
 
 class ImageGenService:
-
     @staticmethod
     async def generate(
         db: AsyncSession,
@@ -63,7 +62,9 @@ class ImageGenService:
 
         # 2. 组装完整 prompt
         style_info = STYLE_PRESETS.get(style, STYLE_PRESETS["product_white"])
-        full_prompt = f"{prompt}. {style_info['suffix']}" if prompt else style_info['suffix']
+        full_prompt = (
+            f"{prompt}. {style_info['suffix']}" if prompt else style_info["suffix"]
+        )
 
         # 3. 创建生成记录
         record = ProductImageGen(
@@ -184,16 +185,18 @@ class ImageGenService:
 
         items = []
         for r in rows:
-            items.append({
-                "id": r.id,
-                "product_id": r.product_id,
-                "prompt": r.prompt,
-                "style": r.style,
-                "status": r.status,
-                "image_urls": r.image_urls or [],
-                "created_at": r.created_at,
-                "product_name": r.product_name,
-            })
+            items.append(
+                {
+                    "id": r.id,
+                    "product_id": r.product_id,
+                    "prompt": r.prompt,
+                    "style": r.style,
+                    "status": r.status,
+                    "image_urls": r.image_urls or [],
+                    "created_at": r.created_at,
+                    "product_name": r.product_name,
+                }
+            )
 
         return {"items": items, "total": total}
 
@@ -210,6 +213,7 @@ class ImageGenService:
     ) -> dict:
         """批量生成图片 — 逐个商品调用 generate，共享一个 batch_id"""
         import uuid
+
         batch_id = uuid.uuid4().hex[:12]
         results = []
         success = 0
@@ -218,9 +222,15 @@ class ImageGenService:
         for pid in product_ids:
             try:
                 res = await ImageGenService.generate(
-                    db=db, user_id=user_id, product_id=pid,
-                    prompt=prompt, style=style, negative_prompt=negative_prompt,
-                    size=size, count=count, batch_id=batch_id,
+                    db=db,
+                    user_id=user_id,
+                    product_id=pid,
+                    prompt=prompt,
+                    style=style,
+                    negative_prompt=negative_prompt,
+                    size=size,
+                    count=count,
+                    batch_id=batch_id,
                 )
                 # 拿商品名
                 product = await db.get(Product, pid)
@@ -239,10 +249,16 @@ class ImageGenService:
                 else:
                     failed += 1
             except Exception as e:
-                results.append({
-                    "product_id": pid, "product_name": "",
-                    "job_id": 0, "status": "failed", "images": [], "error": str(e),
-                })
+                results.append(
+                    {
+                        "product_id": pid,
+                        "product_name": "",
+                        "job_id": 0,
+                        "status": "failed",
+                        "images": [],
+                        "error": str(e),
+                    }
+                )
                 failed += 1
 
         return {
@@ -295,6 +311,7 @@ class ImageGenService:
     async def _remove_bg_fallback(image_url: str) -> Optional[str]:
         """去背景 fallback：直接复制原图（未配置 API Key 时兜底）"""
         import httpx
+
         try:
             async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
                 resp = await client.get(image_url)
@@ -322,7 +339,8 @@ class ImageGenService:
         ]
         if platform_code:
             conditions.append(
-                (PromptTemplate.platform_code == platform_code) | (PromptTemplate.platform_code.is_(None))
+                (PromptTemplate.platform_code == platform_code)
+                | (PromptTemplate.platform_code.is_(None))
             )
 
         query = (
@@ -339,21 +357,23 @@ class ImageGenService:
 
         items = []
         for t in rows:
-            items.append({
-                "id": t.id,
-                "name": t.name,
-                "description": t.description,
-                "prompt": t.prompt,
-                "negative_prompt": t.negative_prompt or "",
-                "style": t.style or "product_white",
-                "size": t.size or "1024x1024",
-                "platform_code": t.platform_code,
-                "is_shared": bool(t.is_shared),
-                "usage_count": t.usage_count or 0,
-                "created_by": t.created_by,
-                "created_at": t.created_at,
-                "updated_at": t.updated_at,
-            })
+            items.append(
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "description": t.description,
+                    "prompt": t.prompt,
+                    "negative_prompt": t.negative_prompt or "",
+                    "style": t.style or "product_white",
+                    "size": t.size or "1024x1024",
+                    "platform_code": t.platform_code,
+                    "is_shared": bool(t.is_shared),
+                    "usage_count": t.usage_count or 0,
+                    "created_by": t.created_by,
+                    "created_at": t.created_at,
+                    "updated_at": t.updated_at,
+                }
+            )
 
         return {"items": items, "total": total}
 
@@ -374,9 +394,12 @@ class ImageGenService:
         from app.models import PromptTemplate
 
         tpl = PromptTemplate(
-            name=name, description=description,
-            prompt=prompt, negative_prompt=negative_prompt,
-            style=style, size=size,
+            name=name,
+            description=description,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            style=style,
+            size=size,
             platform_code=platform_code,
             is_shared=1 if is_shared else 0,
             created_by=user_id,
@@ -465,7 +488,10 @@ class ImageGenService:
             image_b64 = base64.b64encode(img_resp.content).decode()
 
         url = "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
         body = {
             "input": {
                 "prompt": prompt,
@@ -488,11 +514,15 @@ class ImageGenService:
                 status_data = poll.json()
                 if status_data["status"] == "succeeded":
                     output_urls = status_data["output"]
-                    output_url = output_urls[0] if isinstance(output_urls, list) else output_urls
+                    output_url = (
+                        output_urls[0] if isinstance(output_urls, list) else output_urls
+                    )
                     local_url = await ImageGenService._download_image(output_url)
                     return {"image_url": local_url}
                 elif status_data["status"] == "failed":
-                    raise RuntimeError(f"Inpaint 失败: {status_data.get('error', 'unknown')}")
+                    raise RuntimeError(
+                        f"Inpaint 失败: {status_data.get('error', 'unknown')}"
+                    )
         raise TimeoutError("Inpaint 超时")
 
     @staticmethod
@@ -510,7 +540,10 @@ class ImageGenService:
             raise ValueError("REPLICATE_API_KEY 未配置")
 
         url = "https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
         body = {
             "input": {
                 "prompt": prompt,
@@ -533,11 +566,15 @@ class ImageGenService:
                 status_data = poll.json()
                 if status_data["status"] == "succeeded":
                     output_urls = status_data["output"]
-                    output_url = output_urls[0] if isinstance(output_urls, list) else output_urls
+                    output_url = (
+                        output_urls[0] if isinstance(output_urls, list) else output_urls
+                    )
                     local_url = await ImageGenService._download_image(output_url)
                     return {"image_url": local_url}
                 elif status_data["status"] == "failed":
-                    raise RuntimeError(f"Outpaint 失败: {status_data.get('error', 'unknown')}")
+                    raise RuntimeError(
+                        f"Outpaint 失败: {status_data.get('error', 'unknown')}"
+                    )
         raise TimeoutError("Outpaint 超时")
 
     @staticmethod
@@ -557,7 +594,10 @@ class ImageGenService:
             input_data["input_image"] = image_url
 
         url = "https://api.replicate.com/v1/models/stability-ai/stable-video-diffusion/predictions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
         body = {"input": input_data}
 
         async with httpx.AsyncClient(timeout=30) as client:
@@ -587,7 +627,12 @@ class ImageGenService:
                 video_url = output[0] if isinstance(output, list) else output
                 return {"job_id": job_id, "status": "done", "video_url": video_url}
             elif data["status"] == "failed":
-                return {"job_id": job_id, "status": "failed", "video_url": None, "error": data.get("error")}
+                return {
+                    "job_id": job_id,
+                    "status": "failed",
+                    "video_url": None,
+                    "error": data.get("error"),
+                }
             return {"job_id": job_id, "status": "processing", "video_url": None}
 
     @staticmethod
@@ -602,7 +647,9 @@ class ImageGenService:
         """图片序列合成视频 — FFmpeg"""
         output_filename = f"slideshow_{uuid.uuid4().hex[:12]}.mp4"
         output_path = os.path.join(settings.UPLOAD_DIR, output_filename)
-        temp_dir = os.path.join(settings.UPLOAD_DIR, f"slideshow_{uuid.uuid4().hex[:12]}")
+        temp_dir = os.path.join(
+            settings.UPLOAD_DIR, f"slideshow_{uuid.uuid4().hex[:12]}"
+        )
         os.makedirs(temp_dir, exist_ok=True)
 
         local_paths = []
@@ -622,13 +669,20 @@ class ImageGenService:
                 f.write(f"duration {duration_per_frame}\n")
 
         cmd = [
-            "ffmpeg", "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", input_concat,
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-r", "24",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            input_concat,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            "24",
             output_path,
         ]
         subprocess.run(cmd, capture_output=True, timeout=300)
@@ -640,7 +694,10 @@ class ImageGenService:
         local_url = await save_upload_file(video_bytes, output_filename)
         os.remove(output_path)
 
-        return {"video_url": local_url, "duration": duration_per_frame * len(image_urls)}
+        return {
+            "video_url": local_url,
+            "duration": duration_per_frame * len(image_urls),
+        }
 
     # ========== 内部方法 ==========
 
@@ -655,7 +712,9 @@ class ImageGenService:
         provider = settings.IMAGE_GEN_PROVIDER
 
         if provider == "replicate":
-            return await ImageGenService._call_replicate(prompt, negative_prompt, size, count)
+            return await ImageGenService._call_replicate(
+                prompt, negative_prompt, size, count
+            )
         elif provider == "openai":
             return await ImageGenService._call_openai(prompt, size, count)
         else:
@@ -717,9 +776,15 @@ class ImageGenService:
                 poll.raise_for_status()
                 status_data = poll.json()
                 if status_data["status"] == "succeeded":
-                    return status_data["output"] if isinstance(status_data["output"], list) else [status_data["output"]]
+                    return (
+                        status_data["output"]
+                        if isinstance(status_data["output"], list)
+                        else [status_data["output"]]
+                    )
                 elif status_data["status"] == "failed":
-                    raise RuntimeError(f"Replicate 生成失败: {status_data.get('error', 'unknown')}")
+                    raise RuntimeError(
+                        f"Replicate 生成失败: {status_data.get('error', 'unknown')}"
+                    )
 
             raise TimeoutError("Replicate 生成超时")
 
@@ -745,7 +810,9 @@ class ImageGenService:
             "model": "dall-e-3",
             "prompt": prompt,
             "n": count,
-            "size": size if size in ("1024x1024", "1024x1792", "1792x1024") else "1024x1024",
+            "size": size
+            if size in ("1024x1024", "1024x1792", "1792x1024")
+            else "1024x1024",
             "quality": "standard",
         }
 

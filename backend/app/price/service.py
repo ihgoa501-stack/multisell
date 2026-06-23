@@ -1,4 +1,5 @@
 """价格管理 - 服务层"""
+
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import select
@@ -7,10 +8,15 @@ from app.models import Price, PriceChangeLog
 
 
 class PriceService:
-
     @staticmethod
-    async def set_price(db: AsyncSession, sku_id: int, price_type: str, price_amount: float,
-                        start_time: datetime = None, end_time: datetime = None) -> Price:
+    async def set_price(
+        db: AsyncSession,
+        sku_id: int,
+        price_type: str,
+        price_amount: float,
+        start_time: datetime = None,
+        end_time: datetime = None,
+    ) -> Price:
         """设置价格（已有则更新，没有则创建）"""
         stmt = select(Price).where(
             Price.sku_id == sku_id,
@@ -55,13 +61,20 @@ class PriceService:
         return price_obj
 
     @staticmethod
-    async def batch_set_price(db: AsyncSession, sku_ids: list[int], price_type: str,
-                              price_amount: float, start_time: datetime = None,
-                              end_time: datetime = None) -> int:
+    async def batch_set_price(
+        db: AsyncSession,
+        sku_ids: list[int],
+        price_type: str,
+        price_amount: float,
+        start_time: datetime = None,
+        end_time: datetime = None,
+    ) -> int:
         """批量设置价格，返回影响的SKU数"""
         count = 0
         for sku_id in sku_ids:
-            await PriceService.set_price(db, sku_id, price_type, price_amount, start_time, end_time)
+            await PriceService.set_price(
+                db, sku_id, price_type, price_amount, start_time, end_time
+            )
             count += 1
         return count
 
@@ -75,20 +88,28 @@ class PriceService:
     async def get_current_price(db: AsyncSession, sku_id: int) -> Optional[Price]:
         """获取当前有效销售价（按 start_time <= now < end_time 计算）"""
         now = datetime.now(timezone.utc)
-        stmt = select(Price).where(
-            Price.sku_id == sku_id,
-            Price.price_type == "sale_price",
-            Price.status == 1,
-            (Price.start_time.is_(None) | (Price.start_time <= now)),
-            (Price.end_time.is_(None) | (Price.end_time > now)),
-        ).order_by(Price.created_at.desc()).limit(1)
+        stmt = (
+            select(Price)
+            .where(
+                Price.sku_id == sku_id,
+                Price.price_type == "sale_price",
+                Price.status == 1,
+                (Price.start_time.is_(None) | (Price.start_time <= now)),
+                (Price.end_time.is_(None) | (Price.end_time > now)),
+            )
+            .order_by(Price.created_at.desc())
+            .limit(1)
+        )
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     @staticmethod
     async def get_price_history(db: AsyncSession, sku_id: int) -> list[PriceChangeLog]:
-        stmt = select(PriceChangeLog).where(
-            PriceChangeLog.sku_id == sku_id
-        ).order_by(PriceChangeLog.created_at.desc()).limit(100)
+        stmt = (
+            select(PriceChangeLog)
+            .where(PriceChangeLog.sku_id == sku_id)
+            .order_by(PriceChangeLog.created_at.desc())
+            .limit(100)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())

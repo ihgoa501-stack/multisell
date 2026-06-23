@@ -32,7 +32,9 @@ async def _create_product_with_sku(async_client, **product_overrides):
 
 
 class TestLogisticsAttributes:
-    async def test_create_product_returns_logistics_fields_and_complete_status(self, async_client):
+    async def test_create_product_returns_logistics_fields_and_complete_status(
+        self, async_client
+    ):
         resp = await async_client.post(
             "/api/products",
             json={
@@ -66,7 +68,9 @@ class TestLogisticsAttributes:
         assert product["logistics_status"] == "complete"
         assert product["logistics_status_name"] == "物流完整"
 
-    async def test_update_product_logistics_fields_changes_logistics_status(self, async_client):
+    async def test_update_product_logistics_fields_changes_logistics_status(
+        self, async_client
+    ):
         product = await _create_product(
             async_client,
             product_length_cm=10.0,
@@ -116,7 +120,9 @@ class TestLogisticsAttributes:
             package_weight_kg=1.5,
         )
 
-        resp = await async_client.get("/api/products", params={"page": 1, "page_size": 50})
+        resp = await async_client.get(
+            "/api/products", params={"page": 1, "page_size": 50}
+        )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -127,7 +133,9 @@ class TestLogisticsAttributes:
         assert records[complete["id"]]["logistics_status"] == "complete"
         assert records[complete["id"]]["logistics_status_name"] == "物流完整"
 
-    async def test_sku_returns_package_override_fields_and_keeps_weight_semantics(self, async_client):
+    async def test_sku_returns_package_override_fields_and_keeps_weight_semantics(
+        self, async_client
+    ):
         product, sku = await _create_product_with_sku(
             async_client,
             package_length_cm=25.0,

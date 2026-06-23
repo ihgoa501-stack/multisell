@@ -14,7 +14,6 @@ ALLOWED_TRANSITIONS = AGENT_ACTION_STATUS_FLOW
 
 
 class AgentActionService:
-
     @staticmethod
     async def create(
         db: AsyncSession,
@@ -39,7 +38,9 @@ class AgentActionService:
         await db.refresh(action)
 
         await OperationLogService.log(
-            db, module="agent_action", action="propose",
+            db,
+            module="agent_action",
+            action="propose",
             resource_id=str(action.id),
             content=f"提议动作: {action.action_type} - {action.title}",
             operator=operator or "system",
@@ -89,7 +90,9 @@ class AgentActionService:
         await db.refresh(action)
 
         await OperationLogService.log(
-            db, module="agent_action", action="approve",
+            db,
+            module="agent_action",
+            action="approve",
             resource_id=str(action.id),
             content=f"审批通过: {action.title}",
             operator=operator or "system",
@@ -117,7 +120,9 @@ class AgentActionService:
         await db.refresh(action)
 
         await OperationLogService.log(
-            db, module="agent_action", action="reject",
+            db,
+            module="agent_action",
+            action="reject",
             resource_id=str(action.id),
             content=f"驳回动作: {action.title}",
             operator=operator or "system",
@@ -146,7 +151,9 @@ class AgentActionService:
         await db.refresh(action)
 
         await OperationLogService.log(
-            db, module="agent_action", action="execute",
+            db,
+            module="agent_action",
+            action="execute",
             resource_id=str(action.id),
             content=f"执行动作: {action.title}",
             operator=operator or "system",
@@ -170,11 +177,17 @@ class AgentActionService:
             "status": action.status,
             "proposed_by": action.proposed_by,
             "approved_by": action.approved_by,
-            "approved_at": action.approved_at.isoformat() if action.approved_at else None,
+            "approved_at": action.approved_at.isoformat()
+            if action.approved_at
+            else None,
             "rejected_by": action.rejected_by,
-            "rejected_at": action.rejected_at.isoformat() if action.rejected_at else None,
+            "rejected_at": action.rejected_at.isoformat()
+            if action.rejected_at
+            else None,
             "rejection_reason": action.rejection_reason,
             "executed_by": action.executed_by,
-            "executed_at": action.executed_at.isoformat() if action.executed_at else None,
+            "executed_at": action.executed_at.isoformat()
+            if action.executed_at
+            else None,
             "created_at": action.created_at.isoformat() if action.created_at else None,
         }

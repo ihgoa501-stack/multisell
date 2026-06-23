@@ -10,20 +10,47 @@ from httpx import AsyncClient
 
 TEMPLATE_HEADERS = {
     "product": [
-        "商品名称", "副标题", "单位", "状态",
-        "商品长(cm)", "商品宽(cm)", "商品高(cm)", "商品重量(kg)",
-        "包装长(cm)", "包装宽(cm)", "包装高(cm)", "包装重量(kg)",
+        "商品名称",
+        "副标题",
+        "单位",
+        "状态",
+        "商品长(cm)",
+        "商品宽(cm)",
+        "商品高(cm)",
+        "商品重量(kg)",
+        "包装长(cm)",
+        "包装宽(cm)",
+        "包装高(cm)",
+        "包装重量(kg)",
         "货品类型",
     ],
     "sku": [
-        "SKU编码", "所属商品ID", "条码", "规格描述", "规格值(JSON)",
-        "销售价", "成本价", "市场价", "库存", "状态", "重量(kg)",
+        "SKU编码",
+        "所属商品ID",
+        "条码",
+        "规格描述",
+        "规格值(JSON)",
+        "销售价",
+        "成本价",
+        "市场价",
+        "库存",
+        "状态",
+        "重量(kg)",
     ],
     "price": [
-        "SKU编码", "价格类型", "价格", "生效时间", "失效时间",
+        "SKU编码",
+        "价格类型",
+        "价格",
+        "生效时间",
+        "失效时间",
     ],
     "inventory": [
-        "SKU编码", "仓库", "货位", "数量", "模式", "安全库存",
+        "SKU编码",
+        "仓库",
+        "货位",
+        "数量",
+        "模式",
+        "安全库存",
     ],
 }
 
@@ -53,7 +80,13 @@ async def _preview_excel(
     resp = await async_client.post(
         "/api/import/preview",
         params={"type": import_type},
-        files={"file": (filename, excel_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                filename,
+                excel_bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert resp.status_code == 200, f"Preview failed: {resp.text}"
     return resp.json()["data"]
@@ -128,9 +161,28 @@ async def test_download_template_invalid_type(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_preview_valid_product(async_client: AsyncClient):
     uid = uuid4().hex[:6]
-    data = await _preview_excel(async_client, "product", TEMPLATE_HEADERS["product"], [
-        [f"产品{uid}", "副标题", "件", "上架", 30, 20, 10, 0.5, 35, 25, 15, 0.8, "normal"],
-    ])
+    data = await _preview_excel(
+        async_client,
+        "product",
+        TEMPLATE_HEADERS["product"],
+        [
+            [
+                f"产品{uid}",
+                "副标题",
+                "件",
+                "上架",
+                30,
+                20,
+                10,
+                0.5,
+                35,
+                25,
+                15,
+                0.8,
+                "normal",
+            ],
+        ],
+    )
     assert data["type"] == "product"
     assert data["total_rows"] == 1
     assert data["valid_rows"] == 1
@@ -144,7 +196,13 @@ async def test_preview_empty_file(async_client: AsyncClient):
     resp = await async_client.post(
         "/api/import/preview",
         params={"type": "product"},
-        files={"file": ("empty.xlsx", excel_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "empty.xlsx",
+                excel_bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -154,9 +212,28 @@ async def test_preview_empty_file(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_preview_with_validation_errors(async_client: AsyncClient):
-    data = await _preview_excel(async_client, "product", TEMPLATE_HEADERS["product"], [
-        ["", None, None, None, None, None, None, None, None, None, None, None, None],
-    ])
+    data = await _preview_excel(
+        async_client,
+        "product",
+        TEMPLATE_HEADERS["product"],
+        [
+            [
+                "",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ],
+        ],
+    )
     assert data["total_rows"] == 1
     assert data["valid_rows"] == 0
     assert data["error_rows"] == 1
@@ -165,9 +242,14 @@ async def test_preview_with_validation_errors(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_preview_inventory_invalid_mode(async_client: AsyncClient):
-    data = await _preview_excel(async_client, "inventory", TEMPLATE_HEADERS["inventory"], [
-        ["SKU001", "主仓", "A-1", 100, "bad_mode", 10],
-    ])
+    data = await _preview_excel(
+        async_client,
+        "inventory",
+        TEMPLATE_HEADERS["inventory"],
+        [
+            ["SKU001", "主仓", "A-1", 100, "bad_mode", 10],
+        ],
+    )
     assert data["total_rows"] == 1
     assert data["error_rows"] == 1
     assert any("模式无效" in e["error_message"] for e in data["errors"])
@@ -180,10 +262,43 @@ async def test_preview_inventory_invalid_mode(async_client: AsyncClient):
 async def test_preview_then_commit_product(async_client: AsyncClient):
     uid = uuid4().hex[:6]
 
-    data = await _preview_excel(async_client, "product", TEMPLATE_HEADERS["product"], [
-        [f"产品{uid}", None, "件", "上架", 30, 20, 10, 0.5, None, None, None, None, "normal"],
-        [f"产品{uid}_B", None, "件", "草稿", 10, 10, 10, 0.2, None, None, None, None, "normal"],
-    ])
+    data = await _preview_excel(
+        async_client,
+        "product",
+        TEMPLATE_HEADERS["product"],
+        [
+            [
+                f"产品{uid}",
+                None,
+                "件",
+                "上架",
+                30,
+                20,
+                10,
+                0.5,
+                None,
+                None,
+                None,
+                None,
+                "normal",
+            ],
+            [
+                f"产品{uid}_B",
+                None,
+                "件",
+                "草稿",
+                10,
+                10,
+                10,
+                0.2,
+                None,
+                None,
+                None,
+                None,
+                "normal",
+            ],
+        ],
+    )
     batch_id = data["batch_id"]
 
     commit_resp = await async_client.post(f"/api/import/commit/{batch_id}")
@@ -207,10 +322,15 @@ async def test_preview_then_commit_price(async_client: AsyncClient):
     uid = uuid4().hex[:6]
     pid, sku_code = await _create_product_sku(async_client, uid)
 
-    data = await _preview_excel(async_client, "price", TEMPLATE_HEADERS["price"], [
-        [sku_code, "sale_price", 99.99, None, None],
-        [sku_code, "cost_price", 50.00, None, None],
-    ])
+    data = await _preview_excel(
+        async_client,
+        "price",
+        TEMPLATE_HEADERS["price"],
+        [
+            [sku_code, "sale_price", 99.99, None, None],
+            [sku_code, "cost_price", 50.00, None, None],
+        ],
+    )
     batch_id = data["batch_id"]
 
     commit_resp = await async_client.post(f"/api/import/commit/{batch_id}")
@@ -242,9 +362,28 @@ async def test_commit_without_preview(async_client: AsyncClient):
 async def test_double_commit(async_client: AsyncClient):
     uid = uuid4().hex[:6]
 
-    data = await _preview_excel(async_client, "product", TEMPLATE_HEADERS["product"], [
-        [f"产品{uid}", None, "件", "上架", 30, 20, 10, 0.5, None, None, None, None, "normal"],
-    ])
+    data = await _preview_excel(
+        async_client,
+        "product",
+        TEMPLATE_HEADERS["product"],
+        [
+            [
+                f"产品{uid}",
+                None,
+                "件",
+                "上架",
+                30,
+                20,
+                10,
+                0.5,
+                None,
+                None,
+                None,
+                None,
+                "normal",
+            ],
+        ],
+    )
     batch_id = data["batch_id"]
 
     resp1 = await async_client.post(f"/api/import/commit/{batch_id}")
@@ -261,9 +400,28 @@ async def test_double_commit(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_list_batches(async_client: AsyncClient):
     uid = uuid4().hex[:6]
-    await _preview_excel(async_client, "product", TEMPLATE_HEADERS["product"], [
-        [f"产品{uid}", None, "件", "上架", 30, 20, 10, 0.5, None, None, None, None, "normal"],
-    ])
+    await _preview_excel(
+        async_client,
+        "product",
+        TEMPLATE_HEADERS["product"],
+        [
+            [
+                f"产品{uid}",
+                None,
+                "件",
+                "上架",
+                30,
+                20,
+                10,
+                0.5,
+                None,
+                None,
+                None,
+                None,
+                "normal",
+            ],
+        ],
+    )
 
     resp = await async_client.get("/api/import/batches")
     assert resp.status_code == 200
@@ -278,9 +436,28 @@ async def test_list_batches(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_get_batch_detail(async_client: AsyncClient):
     uid = uuid4().hex[:6]
-    data = await _preview_excel(async_client, "product", TEMPLATE_HEADERS["product"], [
-        [f"产品{uid}", None, "件", "上架", 30, 20, 10, 0.5, None, None, None, None, "normal"],
-    ])
+    data = await _preview_excel(
+        async_client,
+        "product",
+        TEMPLATE_HEADERS["product"],
+        [
+            [
+                f"产品{uid}",
+                None,
+                "件",
+                "上架",
+                30,
+                20,
+                10,
+                0.5,
+                None,
+                None,
+                None,
+                None,
+                "normal",
+            ],
+        ],
+    )
     batch_id = data["batch_id"]
 
     resp = await async_client.get(f"/api/import/batches/{batch_id}")
@@ -294,9 +471,28 @@ async def test_get_batch_detail(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_download_error_report(async_client: AsyncClient):
-    data = await _preview_excel(async_client, "product", TEMPLATE_HEADERS["product"], [
-        ["", None, None, None, None, None, None, None, None, None, None, None, None],
-    ])
+    data = await _preview_excel(
+        async_client,
+        "product",
+        TEMPLATE_HEADERS["product"],
+        [
+            [
+                "",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ],
+        ],
+    )
     batch_id = data["batch_id"]
 
     resp = await async_client.get(f"/api/import/batches/{batch_id}/errors")

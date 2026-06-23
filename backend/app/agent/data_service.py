@@ -3,6 +3,7 @@
 从数据库自动读取业务数据，填充 Agent 决策上下文。
 Agent 只需传入最少标识字段（如 sku_code），剩余字段由本服务补齐。
 """
+
 import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +60,10 @@ class AgentDataService:
             ctx.setdefault("package_width_cm", float(product.package_width_cm or 0))
             ctx.setdefault("package_height_cm", float(product.package_height_cm or 0))
             ctx.setdefault("cargo_type", product.cargo_type or "normal")
-            ctx.setdefault("category", await AgentDataService._get_category_name(db, product.category_id))
+            ctx.setdefault(
+                "category",
+                await AgentDataService._get_category_name(db, product.category_id),
+            )
 
         return ctx
 
@@ -79,7 +83,10 @@ class AgentDataService:
 
         ctx.setdefault("product_name", product.name or "")
         ctx.setdefault("category_id", product.category_id)
-        ctx.setdefault("category", await AgentDataService._get_category_name(db, product.category_id))
+        ctx.setdefault(
+            "category",
+            await AgentDataService._get_category_name(db, product.category_id),
+        )
         ctx.setdefault("cargo_type", product.cargo_type or "normal")
         ctx.setdefault("weight_kg", float(product.package_weight_kg or 0))
 

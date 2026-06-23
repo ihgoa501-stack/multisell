@@ -87,20 +87,26 @@ async def get_product_listings(
     result = await db.execute(stmt)
     listings = []
     for listing, platform_name, platform_code in result.all():
-        listings.append({
-            "id": listing.id,
-            "product_id": listing.product_id,
-            "platform_id": listing.platform_id,
-            "platform_name": platform_name,
-            "platform_code": platform_code,
-            "platform_product_id": listing.platform_product_id,
-            "platform_sku": listing.platform_sku,
-            "status": listing.status,
-            "platform_url": listing.platform_url,
-            "sync_message": listing.sync_message,
-            "last_sync_at": listing.last_sync_at.isoformat() if listing.last_sync_at else None,
-            "created_at": listing.created_at.isoformat() if listing.created_at else None,
-        })
+        listings.append(
+            {
+                "id": listing.id,
+                "product_id": listing.product_id,
+                "platform_id": listing.platform_id,
+                "platform_name": platform_name,
+                "platform_code": platform_code,
+                "platform_product_id": listing.platform_product_id,
+                "platform_sku": listing.platform_sku,
+                "status": listing.status,
+                "platform_url": listing.platform_url,
+                "sync_message": listing.sync_message,
+                "last_sync_at": listing.last_sync_at.isoformat()
+                if listing.last_sync_at
+                else None,
+                "created_at": listing.created_at.isoformat()
+                if listing.created_at
+                else None,
+            }
+        )
     return Result.ok(listings)
 
 
@@ -119,23 +125,28 @@ async def get_all_listings(
     result = await db.execute(stmt)
     items = []
     for listing, product_name, platform_name, platform_code in result.all():
-        items.append({
-            "id": listing.id,
-            "product_id": listing.product_id,
-            "product_name": product_name,
-            "platform_id": listing.platform_id,
-            "platform_name": platform_name,
-            "platform_code": platform_code,
-            "platform_product_id": listing.platform_product_id,
-            "status": listing.status,
-            "platform_url": listing.platform_url,
-            "sync_message": listing.sync_message,
-            "last_sync_at": listing.last_sync_at.isoformat() if listing.last_sync_at else None,
-        })
+        items.append(
+            {
+                "id": listing.id,
+                "product_id": listing.product_id,
+                "product_name": product_name,
+                "platform_id": listing.platform_id,
+                "platform_name": platform_name,
+                "platform_code": platform_code,
+                "platform_product_id": listing.platform_product_id,
+                "status": listing.status,
+                "platform_url": listing.platform_url,
+                "sync_message": listing.sync_message,
+                "last_sync_at": listing.last_sync_at.isoformat()
+                if listing.last_sync_at
+                else None,
+            }
+        )
     return Result.ok(items)
 
 
 # ── Listing Task Endpoints ──────────────────────────────────────────────
+
 
 @router.post("/listing-tasks/from-decisions", summary="从决策结果创建上架任务")
 async def create_listing_tasks_from_decisions(
@@ -144,7 +155,9 @@ async def create_listing_tasks_from_decisions(
     current_user: User = Depends(require_permission("listing:task_manage")),
 ) -> Result[ListingTaskCreateFromDecisionResponse]:
     result = await ListingTaskService.create_from_decisions(
-        db, data.items, operator=current_user.username,
+        db,
+        data.items,
+        operator=current_user.username,
     )
     return Result.ok(result)
 
@@ -156,7 +169,9 @@ async def list_listing_tasks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("listing:view")),
 ):
-    tasks = await ListingTaskService.list_tasks(db, status=status, platform_id=platform_id)
+    tasks = await ListingTaskService.list_tasks(
+        db, status=status, platform_id=platform_id
+    )
     return Result.ok(tasks)
 
 
@@ -166,7 +181,9 @@ async def recheck_listing_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("listing:task_manage")),
 ):
-    task = await ListingTaskService.recheck_task(db, task_id, operator=current_user.username)
+    task = await ListingTaskService.recheck_task(
+        db, task_id, operator=current_user.username
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
     return Result.ok(task)
@@ -178,7 +195,9 @@ async def cancel_listing_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("listing:task_manage")),
 ):
-    task = await ListingTaskService.cancel_task(db, task_id, operator=current_user.username)
+    task = await ListingTaskService.cancel_task(
+        db, task_id, operator=current_user.username
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
     return Result.ok(task)
@@ -190,7 +209,9 @@ async def publish_listing_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("listing:publish")),
 ):
-    task, error = await ListingTaskService.publish_task(db, task_id, operator=current_user.username)
+    task, error = await ListingTaskService.publish_task(
+        db, task_id, operator=current_user.username
+    )
     if task is None:
         detail = error or "发布失败"
         raise HTTPException(status_code=400, detail=detail)

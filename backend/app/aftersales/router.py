@@ -1,4 +1,5 @@
 """售后退货 — router"""
+
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,8 +9,12 @@ from app.common import Result
 from app.database import get_db
 from app.models import User
 from app.aftersales.schemas import (
-    AfterSalesCreate, AfterSalesApprove, AfterSalesReject,
-    AfterSalesReceive, AfterSalesRefund, AfterSalesVO,
+    AfterSalesCreate,
+    AfterSalesApprove,
+    AfterSalesReject,
+    AfterSalesReceive,
+    AfterSalesRefund,
+    AfterSalesVO,
 )
 from app.aftersales.service import AfterSalesService
 
@@ -49,7 +54,9 @@ async def create_rma(
     current_user: User = Depends(require_permission("aftersales:create")),
 ):
     rma = await AfterSalesService.create(
-        db, data.model_dump(), created_by=current_user.username,
+        db,
+        data.model_dump(),
+        created_by=current_user.username,
     )
     return Result.ok(_to_vo(rma))
 
@@ -61,7 +68,9 @@ async def approve_rma(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("aftersales:approve")),
 ):
-    rma = await AfterSalesService.approve(db, rma_id, current_user.username, data.refund_amount)
+    rma = await AfterSalesService.approve(
+        db, rma_id, current_user.username, data.refund_amount
+    )
     if not rma:
         return Result.bad_request("退货单不存在或状态不允许审批")
     return Result.ok(_to_vo(rma))
@@ -74,7 +83,9 @@ async def reject_rma(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("aftersales:approve")),
 ):
-    rma = await AfterSalesService.reject(db, rma_id, current_user.username, data.rejection_reason)
+    rma = await AfterSalesService.reject(
+        db, rma_id, current_user.username, data.rejection_reason
+    )
     if not rma:
         return Result.bad_request("退货单不存在或状态不允许驳回")
     return Result.ok(_to_vo(rma))
@@ -87,7 +98,9 @@ async def receive_rma(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("aftersales:receive")),
 ):
-    rma = await AfterSalesService.receive(db, rma_id, current_user.username, data.inspection_result)
+    rma = await AfterSalesService.receive(
+        db, rma_id, current_user.username, data.inspection_result
+    )
     if not rma:
         return Result.bad_request("退货单不存在或状态不允许入库")
     return Result.ok(_to_vo(rma))

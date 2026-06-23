@@ -92,7 +92,9 @@ def list_adapters() -> list[AdapterCapability]:
     return list(ADAPTERS.values())
 
 
-async def test_connection(adapter_code: str, platform: models.Platform) -> tuple[bool, str]:
+async def test_connection(
+    adapter_code: str, platform: models.Platform
+) -> tuple[bool, str]:
     """调用真实 adapter 的 validate_credentials() 校验凭据。"""
     if adapter_code not in ADAPTERS:
         return False, f"未知适配器: {adapter_code}"

@@ -104,7 +104,9 @@ async def export_products(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("product:export")),
 ):
-    output = await ExcelService.export_products(db, name, category_id, status, brand_id, cargo_type, logistics_status)
+    output = await ExcelService.export_products(
+        db, name, category_id, status, brand_id, cargo_type, logistics_status
+    )
     await _log_product_operation(
         db,
         "export",
@@ -114,7 +116,9 @@ async def export_products(
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=products_{datetime.now(timezone.utc).strftime('%Y%m%d')}.xlsx"},
+        headers={
+            "Content-Disposition": f"attachment; filename=products_{datetime.now(timezone.utc).strftime('%Y%m%d')}.xlsx"
+        },
     )
 
 
@@ -126,7 +130,9 @@ async def export_template(
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=product_import_template.xlsx"},
+        headers={
+            "Content-Disposition": "attachment; filename=product_import_template.xlsx"
+        },
     )
 
 
@@ -136,7 +142,7 @@ async def import_products(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("product:import")),
 ):
-    if not file.filename or not file.filename.endswith(('.xlsx', '.xls')):
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         return Result.bad_request("请上传 .xlsx 或 .xls 文件")
     content = await file.read()
     result = await ExcelService.import_products(db, content)
@@ -209,14 +215,27 @@ async def list_products(
     category_id: int = Query(None, description="分类ID"),
     status: int = Query(None, description="状态"),
     brand_id: int = Query(None, description="品牌ID"),
-    cargo_type: str = Query(None, description="货品类型: normal/battery/liquid/sensitive"),
-    logistics_status: str = Query(None, description="物流完整状态: complete/incomplete"),
+    cargo_type: str = Query(
+        None, description="货品类型: normal/battery/liquid/sensitive"
+    ),
+    logistics_status: str = Query(
+        None, description="物流完整状态: complete/incomplete"
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(require_permission("product:view")),
 ):
-    query = ProductQuery(name=name, category_id=category_id, status=status, brand_id=brand_id, cargo_type=cargo_type, logistics_status=logistics_status, page=page, page_size=page_size)
+    query = ProductQuery(
+        name=name,
+        category_id=category_id,
+        status=status,
+        brand_id=brand_id,
+        cargo_type=cargo_type,
+        logistics_status=logistics_status,
+        page=page,
+        page_size=page_size,
+    )
     products, total = await ProductService.list_products(db, query)
     items = [product_to_vo(p) for p in products]
     return PageResult.ok(items, total, page, page_size)

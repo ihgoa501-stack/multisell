@@ -1,4 +1,5 @@
 """系统配置 API 路由"""
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -17,10 +18,12 @@ async def get_llm_settings(
 ):
     configs = await ConfigService.get_all(db)
     # 附上配置定义（前端表单渲染用）
-    return Result.ok({
-        "configs": configs,
-        "definitions": CONFIG_DEFS,
-    })
+    return Result.ok(
+        {
+            "configs": configs,
+            "definitions": CONFIG_DEFS,
+        }
+    )
 
 
 @router.put("/settings/llm", summary="更新 LLM 配置")

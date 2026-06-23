@@ -96,7 +96,6 @@ def product_to_vo(product) -> ProductVO:
 
 
 class ProductService:
-
     @staticmethod
     async def create(db: AsyncSession, data: ProductCreate) -> Product:
         product = Product(**data.model_dump())
@@ -106,7 +105,9 @@ class ProductService:
         return product
 
     @staticmethod
-    async def update(db: AsyncSession, product_id: int, data: ProductUpdate) -> Optional[Product]:
+    async def update(
+        db: AsyncSession, product_id: int, data: ProductUpdate
+    ) -> Optional[Product]:
         product = await db.get(Product, product_id)
         if not product:
             return None
@@ -140,7 +141,9 @@ class ProductService:
         return True
 
     @staticmethod
-    async def list_products(db: AsyncSession, query: ProductQuery) -> tuple[list[Product], int]:
+    async def list_products(
+        db: AsyncSession, query: ProductQuery
+    ) -> tuple[list[Product], int]:
         """分页查询商品列表"""
         stmt = select(Product)
 
@@ -188,7 +191,11 @@ class ProductService:
 
         # 分页
         offset = (query.page - 1) * query.page_size
-        stmt = stmt.order_by(Product.created_at.desc()).offset(offset).limit(query.page_size)
+        stmt = (
+            stmt.order_by(Product.created_at.desc())
+            .offset(offset)
+            .limit(query.page_size)
+        )
 
         result = await db.execute(stmt)
         products = result.scalars().all()

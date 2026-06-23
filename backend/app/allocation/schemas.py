@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class WarehouseCreate(BaseModel):
     """创建仓库"""
+
     name: str = Field(..., description="仓库名称")
     code: Optional[str] = None
     address: Optional[str] = None
@@ -17,6 +18,7 @@ class WarehouseCreate(BaseModel):
 
 class WarehouseUpdate(BaseModel):
     """更新仓库"""
+
     name: Optional[str] = None
     code: Optional[str] = None
     address: Optional[str] = None
@@ -28,6 +30,7 @@ class WarehouseUpdate(BaseModel):
 
 class WarehouseVO(BaseModel):
     """仓库视图"""
+
     id: int
     name: str
     code: Optional[str] = None
@@ -43,6 +46,7 @@ class WarehouseVO(BaseModel):
 
 class AllocationRuleCreate(BaseModel):
     """创建分配规则"""
+
     name: str = Field(..., description="规则名称")
     priority: int = 0
     rule_type: str = Field(..., description="percentage/fixed/priority")
@@ -53,6 +57,7 @@ class AllocationRuleCreate(BaseModel):
 
 class AllocationRuleVO(BaseModel):
     """分配规则视图"""
+
     id: int
     name: str
     priority: int
@@ -68,6 +73,7 @@ class AllocationRuleVO(BaseModel):
 
 class InventoryWarehouseVO(BaseModel):
     """仓库库存视图"""
+
     id: int
     sku_id: int
     warehouse_id: int
@@ -82,6 +88,7 @@ class InventoryWarehouseVO(BaseModel):
 
 class InventoryAllocateRequest(BaseModel):
     """库存分配请求"""
+
     sku_id: int = Field(..., description="SKU ID")
     warehouse_id: int = Field(..., description="目标仓库ID")
     quantity: int = Field(..., gt=0, description="分配数量")
@@ -89,6 +96,7 @@ class InventoryAllocateRequest(BaseModel):
 
 class AllocationResult(BaseModel):
     """分配结果"""
+
     sku_id: int
     sku_code: Optional[str] = None
     total_available: int

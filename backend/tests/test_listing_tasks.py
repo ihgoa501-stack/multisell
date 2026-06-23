@@ -47,6 +47,7 @@ async def _create_product_and_platform(
 
 # ── Model ────────────────────────────────────────────────────────────────────
 
+
 class TestListingTaskModel:
     async def test_listing_task_model_is_mapped(self, async_client):
         async with async_session_factory() as session:
@@ -71,6 +72,7 @@ class TestListingTaskModel:
 
 # ── API / Integration ────────────────────────────────────────────────────────
 
+
 async def _setup_approve_decision_data(async_client) -> tuple[int, int, int]:
     """创建商品+SKU+平台，返回 (product_id, sku_id, platform_id)"""
     uid = uuid4().hex[:6]
@@ -90,13 +92,19 @@ async def _setup_approve_decision_data(async_client) -> tuple[int, int, int]:
     pid = resp.json()["data"]["id"]
 
     # specs + skus
-    await async_client.post(f"/api/products/{pid}/specs", json={"specs": [{"name": "颜色", "values": ["标准"]}]})
+    await async_client.post(
+        f"/api/products/{pid}/specs",
+        json={"specs": [{"name": "颜色", "values": ["标准"]}]},
+    )
     sku_resp = await async_client.post(f"/api/products/{pid}/skus/generate")
     assert sku_resp.status_code == 200
     sku_id = sku_resp.json()["data"]["skus"][0]["id"]
 
     # price + inventory
-    await async_client.post("/api/prices", json={"sku_id": sku_id, "price_type": "sale_price", "price": 199.9})
+    await async_client.post(
+        "/api/prices",
+        json={"sku_id": sku_id, "price_type": "sale_price", "price": 199.9},
+    )
     await async_client.put(f"/api/inventory/{sku_id}", json={"quantity": 50})
 
     # platform
@@ -226,10 +234,14 @@ class TestFromDecisions:
             },
         }
 
-        resp1 = await async_client.post("/api/listing-tasks/from-decisions", json={"items": [item]})
+        resp1 = await async_client.post(
+            "/api/listing-tasks/from-decisions", json={"items": [item]}
+        )
         assert resp1.status_code == 200
 
-        resp2 = await async_client.post("/api/listing-tasks/from-decisions", json={"items": [item]})
+        resp2 = await async_client.post(
+            "/api/listing-tasks/from-decisions", json={"items": [item]}
+        )
         assert resp2.status_code == 200
         data2 = resp2.json()["data"]
         assert data2["created_count"] == 0
@@ -239,18 +251,28 @@ class TestFromDecisions:
         """商品缺数据时创建 blocked 任务"""
         uid = uuid4().hex[:6]
         # Create product WITHOUT logistics / image
-        resp = await async_client.post("/api/products", json={"name": f"Incomplete_{uid}"})
+        resp = await async_client.post(
+            "/api/products", json={"name": f"Incomplete_{uid}"}
+        )
         assert resp.status_code == 200
         pid = resp.json()["data"]["id"]
 
         # create sku
-        await async_client.post(f"/api/products/{pid}/specs", json={"specs": [{"name": "颜色", "values": ["默认"]}]})
+        await async_client.post(
+            f"/api/products/{pid}/specs",
+            json={"specs": [{"name": "颜色", "values": ["默认"]}]},
+        )
         sku_resp = await async_client.post(f"/api/products/{pid}/skus/generate")
         sku_id = sku_resp.json()["data"]["skus"][0]["id"]
-        await async_client.post("/api/prices", json={"sku_id": sku_id, "price_type": "sale_price", "price": 99})
+        await async_client.post(
+            "/api/prices",
+            json={"sku_id": sku_id, "price_type": "sale_price", "price": 99},
+        )
         await async_client.put(f"/api/inventory/{sku_id}", json={"quantity": 10})
 
-        plat_resp = await async_client.post("/api/platforms", json={"name": f"P_{uid}", "code": f"p_{uid}"})
+        plat_resp = await async_client.post(
+            "/api/platforms", json={"name": f"P_{uid}", "code": f"p_{uid}"}
+        )
         plat_id = plat_resp.json()["data"]["id"]
 
         resp = await async_client.post(
@@ -306,13 +328,22 @@ class TestFromDecisions:
             },
         )
         pid = resp.json()["data"]["id"]
-        await async_client.post(f"/api/products/{pid}/specs", json={"specs": [{"name": "颜色", "values": ["标准"]}]})
+        await async_client.post(
+            f"/api/products/{pid}/specs",
+            json={"specs": [{"name": "颜色", "values": ["标准"]}]},
+        )
         sku_resp = await async_client.post(f"/api/products/{pid}/skus/generate")
         sku_id = sku_resp.json()["data"]["skus"][0]["id"]
-        await async_client.post("/api/prices", json={"sku_id": sku_id, "price_type": "sale_price", "price": 199})
+        await async_client.post(
+            "/api/prices",
+            json={"sku_id": sku_id, "price_type": "sale_price", "price": 199},
+        )
         await async_client.put(f"/api/inventory/{sku_id}", json={"quantity": 10})
 
-        plat_resp = await async_client.post("/api/platforms", json={"name": f"CP_{uid}", "code": f"cp_{uid}", "status": 1})
+        plat_resp = await async_client.post(
+            "/api/platforms",
+            json={"name": f"CP_{uid}", "code": f"cp_{uid}", "status": 1},
+        )
         plat_id = plat_resp.json()["data"]["id"]
 
         resp = await async_client.post(

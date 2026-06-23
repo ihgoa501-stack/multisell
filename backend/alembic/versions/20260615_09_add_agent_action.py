@@ -39,8 +39,12 @@ def upgrade() -> None:
         sa.Column("rejection_reason", sa.Text()),
         sa.Column("executed_by", sa.String(100)),
         sa.Column("executed_at", sa.DateTime(timezone=True)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_agent_action_status", "agent_action", ["status"])
     op.create_index("ix_agent_action_exception", "agent_action", ["exception_id"])

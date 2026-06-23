@@ -1,4 +1,5 @@
 """Agent 调度引擎测试"""
+
 import pytest
 from app.database import async_session_factory
 
@@ -9,6 +10,7 @@ class TestSchedulerConfig:
     @pytest.fixture
     def scheduler(self):
         from app.agent.scheduler import AgentScheduler
+
         return AgentScheduler()
 
     def test_default_schedules_all_agents(self, scheduler):
@@ -63,6 +65,7 @@ class TestSchedulerConfig:
     def test_entropy_config_in_scheduler(self):
         """熵系统配置正确"""
         from app.agent.scheduler import ENTROPY_INTERVAL
+
         assert ENTROPY_INTERVAL > 0
         assert ENTROPY_INTERVAL == 21600  # 6h
 
@@ -73,6 +76,7 @@ class TestSchedulerContextBuilder:
     @pytest.fixture
     def builder(self):
         from app.agent.scheduler import SchedulerContextBuilder
+
         return SchedulerContextBuilder()
 
     async def test_build_generic(self, builder, async_client):

@@ -6,6 +6,7 @@
 - 不自动调价、不自动暂停广告
 - 数据通过请求体传入（手动导入或 mock）
 """
+
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -38,7 +39,9 @@ class A3AdAdviceAgent(BaseAgent):
         "ad_optimization": EvolutionStage.SUGGESTION,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+    async def decide(
+        self, decision_point: str, context: dict[str, Any], db: Any = None
+    ) -> dict[str, Any]:
         if decision_point == "acos_analysis":
             return await self._analyze_acos(context, db=db)
         elif decision_point == "ad_optimization":
@@ -83,52 +86,66 @@ class A3AdAdviceAgent(BaseAgent):
         if acos_abnormal:
             if acos > gross_margin and gross_margin > 0:
                 status = "critical"
-                alerts.append({
-                    "level": "critical",
-                    "message": f"ACoS ({acos}%) 超过毛利率 ({gross_margin}%)，广告亏损",
-                })
+                alerts.append(
+                    {
+                        "level": "critical",
+                        "message": f"ACoS ({acos}%) 超过毛利率 ({gross_margin}%)，广告亏损",
+                    }
+                )
                 suggestions.append("建议暂停或大幅降低广告出价")
                 confidence = 0.95
             else:
                 status = "warning"
-                alerts.append({
-                    "level": "warning",
-                    "message": f"ACoS ({acos}%) 超过目标阈值 ({target_acos}%)",
-                })
+                alerts.append(
+                    {
+                        "level": "warning",
+                        "message": f"ACoS ({acos}%) 超过目标阈值 ({target_acos}%)",
+                    }
+                )
                 suggestions.append("建议降低广告出价或优化否定关键词")
                 confidence = 0.88
 
         # 预算消耗异常
         if budget > 0 and budget_usage > 90:
-            alerts.append({
-                "level": "info",
-                "message": f"预算已使用 {budget_usage}%，接近上限",
-            })
+            alerts.append(
+                {
+                    "level": "info",
+                    "message": f"预算已使用 {budget_usage}%，接近上限",
+                }
+            )
         elif budget > 0 and budget_usage < 10:
-            alerts.append({
-                "level": "info",
-                "message": f"预算使用率仅 {budget_usage}%，建议检查广告是否正常投放",
-            })
+            alerts.append(
+                {
+                    "level": "info",
+                    "message": f"预算使用率仅 {budget_usage}%，建议检查广告是否正常投放",
+                }
+            )
 
         # 库存关联风险
         if inventory_status in ("low", "out_of_stock"):
-            alerts.append({
-                "level": "warning",
-                "message": f"库存状态为 {inventory_status}，建议暂停广告避免浪费",
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": f"库存状态为 {inventory_status}，建议暂停广告避免浪费",
+                }
+            )
             suggestions.append("库存不足时暂停广告")
 
         # 低点击率/转化率
         if impressions > 0 and ctr < 0.5:
-            alerts.append({
-                "level": "info",
-                "message": f"点击率 ({ctr}%) 偏低，建议优化主图或标题",
-            })
+            alerts.append(
+                {
+                    "level": "info",
+                    "message": f"点击率 ({ctr}%) 偏低，建议优化主图或标题",
+                }
+            )
         if clicks > 0 and conversion_rate < 5:
-            alerts.append({
-                "level": "info",
-                "message": f"转化率 ({conversion_rate}%) 偏低，建议检查 Listing 或价格",
-            })
+            alerts.append(
+                {
+                    "level": "info",
+                    "message": f"转化率 ({conversion_rate}%) 偏低，建议检查 Listing 或价格",
+                }
+            )
 
         # ---- 出价建议 ----
         bid_suggestion = None
@@ -142,22 +159,28 @@ class A3AdAdviceAgent(BaseAgent):
                     bid_suggestion = {
                         "current_cpc": current_cpc,
                         "suggested_cpc": suggested_cpc,
-                        "reduction_pct": round((current_cpc - suggested_cpc) / current_cpc * 100, 1),
+                        "reduction_pct": round(
+                            (current_cpc - suggested_cpc) / current_cpc * 100, 1
+                        ),
                         "description": f"建议 CPC 从 ¥{current_cpc} 降至 ¥{suggested_cpc}",
                     }
 
         # ---- LLM 自然语言解释 ----
         try:
-            ai_explanation = await AgentLlmService.explain("A3", {
-                "campaign_id": campaign_id,
-                "spend": spend,
-                "sales": sales,
-                "acos": acos,
-                "target_acos": target_acos,
-                "ctr": ctr,
-                "cvr": conversion_rate,
-                "status": status,
-            }, db=db)
+            ai_explanation = await AgentLlmService.explain(
+                "A3",
+                {
+                    "campaign_id": campaign_id,
+                    "spend": spend,
+                    "sales": sales,
+                    "acos": acos,
+                    "target_acos": target_acos,
+                    "ctr": ctr,
+                    "cvr": conversion_rate,
+                    "status": status,
+                },
+                db=db,
+            )
         except Exception:
             ai_explanation = ""
 
@@ -211,38 +234,48 @@ class A3AdAdviceAgent(BaseAgent):
                 term_spend = _safe_float(term.get("spend", 0))
                 term_sales = _safe_float(term.get("sales", 0))
                 term_clicks = _safe_float(term.get("clicks", 0))
-                term_acos = round(term_spend / term_sales * 100, 2) if term_sales > 0 else 0.0
+                term_acos = (
+                    round(term_spend / term_sales * 100, 2) if term_sales > 0 else 0.0
+                )
                 if term_clicks >= 10 and term_acos > target_acos * 1.5:
-                    negative_keywords.append({
-                        "keyword": term.get("keyword", ""),
-                        "clicks": int(term_clicks),
-                        "acos": term_acos,
-                        "reason": f"ACoS {term_acos}% 远超目标 {target_acos}%，建议添加为否定关键词",
-                    })
+                    negative_keywords.append(
+                        {
+                            "keyword": term.get("keyword", ""),
+                            "clicks": int(term_clicks),
+                            "acos": term_acos,
+                            "reason": f"ACoS {term_acos}% 远超目标 {target_acos}%，建议添加为否定关键词",
+                        }
+                    )
 
         if negative_keywords:
-            optimization_items.append({
-                "type": "negative_keyword",
-                "items": negative_keywords[:10],
-                "description": f"发现 {len(negative_keywords)} 个高 ACOS 搜索词，建议添加否定关键词",
-            })
+            optimization_items.append(
+                {
+                    "type": "negative_keyword",
+                    "items": negative_keywords[:10],
+                    "description": f"发现 {len(negative_keywords)} 个高 ACOS 搜索词，建议添加否定关键词",
+                }
+            )
 
         # 出价优化
         if acos > target_acos:
             reduction = min(round((acos - target_acos) / acos * 100, 1), 50)
-            optimization_items.append({
-                "type": "bid_reduction",
-                "description": f"建议降低出价 {reduction}%（当前 ACoS {acos}%，目标 {target_acos}%）",
-                "suggested_reduction_pct": reduction,
-            })
+            optimization_items.append(
+                {
+                    "type": "bid_reduction",
+                    "description": f"建议降低出价 {reduction}%（当前 ACoS {acos}%，目标 {target_acos}%）",
+                    "suggested_reduction_pct": reduction,
+                }
+            )
 
         # 预算建议
         budget = _safe_float(context.get("budget", 0))
         if budget > 0 and spend > budget * 0.9:
-            optimization_items.append({
-                "type": "budget_increase",
-                "description": f"预算即将耗尽（已用 {(spend/budget*100):.0f}%），如效果良好建议增加预算",
-            })
+            optimization_items.append(
+                {
+                    "type": "budget_increase",
+                    "description": f"预算即将耗尽（已用 {(spend / budget * 100):.0f}%），如效果良好建议增加预算",
+                }
+            )
 
         return {
             "campaign_id": campaign_id,

@@ -182,7 +182,11 @@ async def evaluate_chains(
             agent = target_cls(user_id=user_id)
 
             result = await AgentService.execute_decision(
-                db, agent, rule.target_decision_point, ctx, dry_run=False,
+                db,
+                agent,
+                rule.target_decision_point,
+                ctx,
+                dry_run=False,
             )
             result["chain_source"] = source_agent_id
             result["chain_source_decision_id"] = decision_result.get("decision_id")
@@ -190,8 +194,10 @@ async def evaluate_chains(
 
             logger.info(
                 "协作链触发: %s[%s] → %s[%s] (%s)",
-                source_agent_id, decision_point,
-                rule.target_agent, rule.target_decision_point,
+                source_agent_id,
+                decision_point,
+                rule.target_agent,
+                rule.target_decision_point,
                 rule.description,
             )
 
@@ -201,7 +207,8 @@ async def evaluate_chains(
                     rule.target_agent,
                     rule.target_decision_point,
                     result,
-                    user_id, db,
+                    user_id,
+                    db,
                     max_depth=0,
                 )
                 triggered.extend(nested)
@@ -209,7 +216,9 @@ async def evaluate_chains(
         except Exception as e:
             logger.exception(
                 "协作链失败: %s → %s: %s",
-                source_agent_id, rule.target_agent, e,
+                source_agent_id,
+                rule.target_agent,
+                e,
             )
 
     return triggered

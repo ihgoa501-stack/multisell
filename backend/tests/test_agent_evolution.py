@@ -2,6 +2,7 @@
 
 覆盖 P0-2（信任评分引擎）, P0-3（等级控制 + Nudge）, P0-4（阶段行为差异）
 """
+
 import pytest_asyncio
 
 from app.agent.base import EvolutionStage
@@ -26,46 +27,67 @@ class TestTrustScoreCalculator:
 
     def test_promotion_eligibility_sufficient(self):
         result = TrustScoreCalculator.check_promotion_eligibility(
-            EvolutionStage.OBSERVATION, EvolutionStage.SUGGESTION,
-            trust_score=60.0, decision_count=30,
+            EvolutionStage.OBSERVATION,
+            EvolutionStage.SUGGESTION,
+            trust_score=60.0,
+            decision_count=30,
         )
         assert result["eligible"] is True
 
     def test_promotion_eligibility_score_too_low(self):
         result = TrustScoreCalculator.check_promotion_eligibility(
-            EvolutionStage.OBSERVATION, EvolutionStage.SUGGESTION,
-            trust_score=30.0, decision_count=30,
+            EvolutionStage.OBSERVATION,
+            EvolutionStage.SUGGESTION,
+            trust_score=30.0,
+            decision_count=30,
         )
         assert result["eligible"] is False
         assert "评分不足" in result["reason"]
 
     def test_promotion_eligibility_samples_too_few(self):
         result = TrustScoreCalculator.check_promotion_eligibility(
-            EvolutionStage.OBSERVATION, EvolutionStage.SUGGESTION,
-            trust_score=60.0, decision_count=5,
+            EvolutionStage.OBSERVATION,
+            EvolutionStage.SUGGESTION,
+            trust_score=60.0,
+            decision_count=5,
         )
         assert result["eligible"] is False
         assert "样本不足" in result["reason"]
 
     def test_promotion_eligibility_full_requires_no_regret(self):
         result = TrustScoreCalculator.check_promotion_eligibility(
-            EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS,
-            trust_score=90.0, decision_count=120, has_regret=True,
+            EvolutionStage.SEMI_AUTONOMOUS,
+            EvolutionStage.FULL_AUTONOMOUS,
+            trust_score=90.0,
+            decision_count=120,
+            has_regret=True,
         )
         assert result["eligible"] is False
         assert "Regret" in result["reason"]
 
     def test_promotion_eligibility_full_clean(self):
         result = TrustScoreCalculator.check_promotion_eligibility(
-            EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS,
-            trust_score=90.0, decision_count=120, has_regret=False,
+            EvolutionStage.SEMI_AUTONOMOUS,
+            EvolutionStage.FULL_AUTONOMOUS,
+            trust_score=90.0,
+            decision_count=120,
+            has_regret=False,
         )
         assert result["eligible"] is True
 
     def test_promotion_target(self):
-        assert TrustScoreCalculator.get_promotion_target(EvolutionStage.OBSERVATION) == EvolutionStage.SUGGESTION
-        assert TrustScoreCalculator.get_promotion_target(EvolutionStage.SUGGESTION) == EvolutionStage.SEMI_AUTONOMOUS
-        assert TrustScoreCalculator.get_promotion_target(EvolutionStage.FULL_AUTONOMOUS) is None
+        assert (
+            TrustScoreCalculator.get_promotion_target(EvolutionStage.OBSERVATION)
+            == EvolutionStage.SUGGESTION
+        )
+        assert (
+            TrustScoreCalculator.get_promotion_target(EvolutionStage.SUGGESTION)
+            == EvolutionStage.SEMI_AUTONOMOUS
+        )
+        assert (
+            TrustScoreCalculator.get_promotion_target(EvolutionStage.FULL_AUTONOMOUS)
+            is None
+        )
 
     def test_weights_sum_to_one(self):
         assert abs(sum(SCORE_WEIGHTS.values()) - 1.0) < 0.001
@@ -171,7 +193,11 @@ class TestAgentDecideStages:
             "/api/agents/A5/decide",
             json={
                 "decision_point": "stock_alert",
-                "context": {"sku_code": "SKU-TEST-OBS", "sellable_stock": 3, "safety_stock": 50},
+                "context": {
+                    "sku_code": "SKU-TEST-OBS",
+                    "sellable_stock": 3,
+                    "safety_stock": 50,
+                },
                 "dry_run": False,
             },
         )
@@ -191,7 +217,11 @@ class TestAgentDecideStages:
             "/api/agents/A5/decide",
             json={
                 "decision_point": "stock_alert",
-                "context": {"sku_code": "SKU-TEST-SUG", "sellable_stock": 3, "safety_stock": 50},
+                "context": {
+                    "sku_code": "SKU-TEST-SUG",
+                    "sellable_stock": 3,
+                    "safety_stock": 50,
+                },
                 "dry_run": False,
             },
         )
@@ -209,7 +239,11 @@ class TestAgentDecideStages:
             "/api/agents/A5/decide",
             json={
                 "decision_point": "stock_alert",
-                "context": {"sku_code": "SKU-TEST-SEMI", "sellable_stock": 2, "safety_stock": 50},
+                "context": {
+                    "sku_code": "SKU-TEST-SEMI",
+                    "sellable_stock": 2,
+                    "safety_stock": 50,
+                },
                 "dry_run": False,
             },
         )

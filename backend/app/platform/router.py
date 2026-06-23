@@ -58,7 +58,9 @@ async def update_platform(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("platform:update")),
 ):
-    p = await PlatformService.update(db, platform_id, data.model_dump(exclude_unset=True))
+    p = await PlatformService.update(
+        db, platform_id, data.model_dump(exclude_unset=True)
+    )
     if not p:
         return Result.not_found("平台配置不存在")
     await OperationLogService.log(
@@ -139,9 +141,13 @@ async def backfill_orders(
     await db.flush()
 
     await OperationLogService.log(
-        db, module="order_import", action="backfill",
+        db,
+        module="order_import",
+        action="backfill",
         resource_id=str(platform_id),
         content=f"回填订单: {count} 条, 平台={platform.code}, 天数={days_back}",
         operator=current_user.username,
     )
-    return Result.ok({"platform_id": platform_id, "imported": count, "days_back": days_back})
+    return Result.ok(
+        {"platform_id": platform_id, "imported": count, "days_back": days_back}
+    )

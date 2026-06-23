@@ -12,18 +12,30 @@ from sqlalchemy.orm import selectinload
 import openpyxl
 
 from app.models import (
-    Product, Sku,
-    ShippingProvider, ShippingChannel, ShippingZone, ShippingQuoteRule,
+    Product,
+    Sku,
+    ShippingProvider,
+    ShippingChannel,
+    ShippingZone,
+    ShippingQuoteRule,
 )
 from app.shipping.schemas import (
-    ProviderCreate, ProviderUpdate,
-    ChannelCreate, ChannelUpdate,
-    ZoneCreate, RuleCreate, RuleUpdate,
-    CalculateRequest, CalculateResultItem, PackageInfo, CalculateResponse,
+    ProviderCreate,
+    ProviderUpdate,
+    ChannelCreate,
+    ChannelUpdate,
+    ZoneCreate,
+    RuleCreate,
+    RuleUpdate,
+    CalculateRequest,
+    CalculateResultItem,
+    PackageInfo,
+    CalculateResponse,
 )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
+
 
 def _money(value) -> float:
     return float(value or 0)
@@ -65,8 +77,8 @@ def _split_list(value) -> list[str]:
 
 # ── Provider CRUD ─────────────────────────────────────────────────────────
 
-class ProviderService:
 
+class ProviderService:
     @staticmethod
     async def list(db: AsyncSession) -> list[dict]:
         stmt = select(ShippingProvider).order_by(ShippingProvider.id)
@@ -96,7 +108,9 @@ class ProviderService:
         return _provider_to_dict(provider)
 
     @staticmethod
-    async def update(db: AsyncSession, provider_id: int, data: ProviderUpdate) -> Optional[dict]:
+    async def update(
+        db: AsyncSession, provider_id: int, data: ProviderUpdate
+    ) -> Optional[dict]:
         stmt = select(ShippingProvider).where(ShippingProvider.id == provider_id)
         result = await db.execute(stmt)
         provider = result.scalar_one_or_none()
@@ -138,13 +152,15 @@ def _provider_to_dict(p: ShippingProvider) -> dict:
 
 # ── Channel CRUD ──────────────────────────────────────────────────────────
 
-class ChannelService:
 
+class ChannelService:
     @staticmethod
     async def list(db: AsyncSession, provider_id: Optional[int] = None) -> list[dict]:
-        stmt = select(ShippingChannel).options(
-            selectinload(ShippingChannel.provider)
-        ).order_by(ShippingChannel.sort_order, ShippingChannel.id)
+        stmt = (
+            select(ShippingChannel)
+            .options(selectinload(ShippingChannel.provider))
+            .order_by(ShippingChannel.sort_order, ShippingChannel.id)
+        )
         if provider_id is not None:
             stmt = stmt.where(ShippingChannel.provider_id == provider_id)
         result = await db.execute(stmt)
@@ -153,9 +169,11 @@ class ChannelService:
 
     @staticmethod
     async def get_by_id(db: AsyncSession, channel_id: int) -> Optional[dict]:
-        stmt = select(ShippingChannel).options(
-            selectinload(ShippingChannel.provider)
-        ).where(ShippingChannel.id == channel_id)
+        stmt = (
+            select(ShippingChannel)
+            .options(selectinload(ShippingChannel.provider))
+            .where(ShippingChannel.id == channel_id)
+        )
         result = await db.execute(stmt)
         channel = result.scalar_one_or_none()
         return _channel_to_dict(channel) if channel else None
@@ -180,10 +198,14 @@ class ChannelService:
         return _channel_to_dict(channel)
 
     @staticmethod
-    async def update(db: AsyncSession, channel_id: int, data: ChannelUpdate) -> Optional[dict]:
-        stmt = select(ShippingChannel).options(
-            selectinload(ShippingChannel.provider)
-        ).where(ShippingChannel.id == channel_id)
+    async def update(
+        db: AsyncSession, channel_id: int, data: ChannelUpdate
+    ) -> Optional[dict]:
+        stmt = (
+            select(ShippingChannel)
+            .options(selectinload(ShippingChannel.provider))
+            .where(ShippingChannel.id == channel_id)
+        )
         result = await db.execute(stmt)
         channel = result.scalar_one_or_none()
         if not channel:
@@ -228,13 +250,15 @@ def _channel_to_dict(c: ShippingChannel) -> dict:
 
 # ── Zone CRUD ─────────────────────────────────────────────────────────────
 
-class ZoneService:
 
+class ZoneService:
     @staticmethod
     async def list_by_channel(db: AsyncSession, channel_id: int) -> list[dict]:
-        stmt = select(ShippingZone).where(
-            ShippingZone.channel_id == channel_id
-        ).order_by(ShippingZone.country_code)
+        stmt = (
+            select(ShippingZone)
+            .where(ShippingZone.channel_id == channel_id)
+            .order_by(ShippingZone.country_code)
+        )
         result = await db.execute(stmt)
         zones = result.scalars().all()
         return [_zone_to_dict(z) for z in zones]
@@ -278,8 +302,8 @@ def _zone_to_dict(z: ShippingZone) -> dict:
 
 # ── Rule CRUD ─────────────────────────────────────────────────────────────
 
-class RuleService:
 
+class RuleService:
     @staticmethod
     async def list_by_channel(db: AsyncSession, channel_id: int) -> list[dict]:
         stmt = (
@@ -319,7 +343,9 @@ class RuleService:
         return _rule_to_dict(rule)
 
     @staticmethod
-    async def update(db: AsyncSession, rule_id: int, data: RuleUpdate) -> Optional[dict]:
+    async def update(
+        db: AsyncSession, rule_id: int, data: RuleUpdate
+    ) -> Optional[dict]:
         stmt = select(ShippingQuoteRule).where(ShippingQuoteRule.id == rule_id)
         result = await db.execute(stmt)
         rule = result.scalar_one_or_none()
@@ -375,6 +401,7 @@ def _rule_to_dict(r: ShippingQuoteRule) -> dict:
 
 # ── Import ────────────────────────────────────────────────────────────────
 
+
 class ImportService:
     """物流报价表导入。"""
 
@@ -401,10 +428,16 @@ class ImportService:
         for index, values in enumerate(rows[1:], start=2):
             if not any(value not in (None, "") for value in values):
                 continue
-            parsed.append({
-                "row_number": index,
-                **{headers[i]: values[i] if i < len(values) else None for i in range(len(headers)) if headers[i]},
-            })
+            parsed.append(
+                {
+                    "row_number": index,
+                    **{
+                        headers[i]: values[i] if i < len(values) else None
+                        for i in range(len(headers))
+                        if headers[i]
+                    },
+                }
+            )
         return parsed
 
     @staticmethod
@@ -444,9 +477,16 @@ class ImportService:
             row_number = row.get("row_number")
             try:
                 ImportService._validate_row(row)
-                provider, provider_created = await ImportService._get_or_create_provider(db, row)
-                channel, channel_created = await ImportService._get_or_create_channel(db, provider.id, row)
-                zone, zone_created = await ImportService._get_or_create_zone(db, channel.id, row)
+                (
+                    provider,
+                    provider_created,
+                ) = await ImportService._get_or_create_provider(db, row)
+                channel, channel_created = await ImportService._get_or_create_channel(
+                    db, provider.id, row
+                )
+                zone, zone_created = await ImportService._get_or_create_zone(
+                    db, channel.id, row
+                )
                 await ImportService._create_rule(db, channel.id, zone.id, row)
                 summary["imported_rows"] += 1
                 summary["created_providers"] += 1 if provider_created else 0
@@ -462,12 +502,16 @@ class ImportService:
 
     @staticmethod
     def _validate_row(row: dict) -> None:
-        missing = [col for col in ImportService.REQUIRED_COLUMNS if not _text(row.get(col))]
+        missing = [
+            col for col in ImportService.REQUIRED_COLUMNS if not _text(row.get(col))
+        ]
         if missing:
             raise ValueError(f"缺少必填字段: {', '.join(sorted(missing))}")
 
     @staticmethod
-    async def _get_or_create_provider(db: AsyncSession, row: dict) -> tuple[ShippingProvider, bool]:
+    async def _get_or_create_provider(
+        db: AsyncSession, row: dict
+    ) -> tuple[ShippingProvider, bool]:
         provider_code = _text(row.get("provider_code")) or None
         provider_name = _text(row.get("provider_name"))
         stmt = select(ShippingProvider)
@@ -484,7 +528,9 @@ class ImportService:
         return provider, True
 
     @staticmethod
-    async def _get_or_create_channel(db: AsyncSession, provider_id: int, row: dict) -> tuple[ShippingChannel, bool]:
+    async def _get_or_create_channel(
+        db: AsyncSession, provider_id: int, row: dict
+    ) -> tuple[ShippingChannel, bool]:
         channel_code = _text(row.get("channel_code")) or None
         channel_name = _text(row.get("channel_name"))
         stmt = select(ShippingChannel).where(ShippingChannel.provider_id == provider_id)
@@ -499,7 +545,9 @@ class ImportService:
             provider_id=provider_id,
             name=channel_name,
             code=channel_code,
-            volumetric_divisor=int(_float_or_default(row.get("volumetric_divisor"), 6000)),
+            volumetric_divisor=int(
+                _float_or_default(row.get("volumetric_divisor"), 6000)
+            ),
             cargo_types=_split_list(row.get("cargo_types")),
             estimated_delivery_min=_int_or_none(row.get("estimated_delivery_min")),
             estimated_delivery_max=_int_or_none(row.get("estimated_delivery_max")),
@@ -510,7 +558,9 @@ class ImportService:
         return channel, True
 
     @staticmethod
-    async def _get_or_create_zone(db: AsyncSession, channel_id: int, row: dict) -> tuple[ShippingZone, bool]:
+    async def _get_or_create_zone(
+        db: AsyncSession, channel_id: int, row: dict
+    ) -> tuple[ShippingZone, bool]:
         country_code = _text(row.get("country_code")).upper()
         stmt = select(ShippingZone).where(
             ShippingZone.channel_id == channel_id,
@@ -525,24 +575,38 @@ class ImportService:
         return zone, True
 
     @staticmethod
-    async def _create_rule(db: AsyncSession, channel_id: int, zone_id: int, row: dict) -> ShippingQuoteRule:
+    async def _create_rule(
+        db: AsyncSession, channel_id: int, zone_id: int, row: dict
+    ) -> ShippingQuoteRule:
         rule = ShippingQuoteRule(
             channel_id=channel_id,
             zone_id=zone_id,
             rule_type=_text(row.get("rule_type")),
             priority=int(_float_or_default(row.get("priority"), 0)),
             min_weight_kg=Decimal(str(_float_or_default(row.get("min_weight_kg"), 0))),
-            max_weight_kg=None if row.get("max_weight_kg") in (None, "") else Decimal(str(_float_or_default(row.get("max_weight_kg")))),
+            max_weight_kg=None
+            if row.get("max_weight_kg") in (None, "")
+            else Decimal(str(_float_or_default(row.get("max_weight_kg")))),
             first_kg=Decimal(str(_float_or_default(row.get("first_kg"), 0))),
             first_price=Decimal(str(_float_or_default(row.get("first_price"), 0))),
             additional_kg=Decimal(str(_float_or_default(row.get("additional_kg"), 0))),
-            additional_price=Decimal(str(_float_or_default(row.get("additional_price"), 0))),
+            additional_price=Decimal(
+                str(_float_or_default(row.get("additional_price"), 0))
+            ),
             fixed_fee=Decimal(str(_float_or_default(row.get("fixed_fee"), 0))),
             per_kg_price=Decimal(str(_float_or_default(row.get("per_kg_price"), 0))),
-            minimum_charge=None if row.get("minimum_charge") in (None, "") else Decimal(str(_float_or_default(row.get("minimum_charge")))),
-            surcharge_fixed=Decimal(str(_float_or_default(row.get("surcharge_fixed"), 0))),
-            fuel_surcharge_pct=Decimal(str(_float_or_default(row.get("fuel_surcharge_pct"), 0))),
-            rounding_increment=Decimal(str(_float_or_default(row.get("rounding_increment"), 0.1))),
+            minimum_charge=None
+            if row.get("minimum_charge") in (None, "")
+            else Decimal(str(_float_or_default(row.get("minimum_charge")))),
+            surcharge_fixed=Decimal(
+                str(_float_or_default(row.get("surcharge_fixed"), 0))
+            ),
+            fuel_surcharge_pct=Decimal(
+                str(_float_or_default(row.get("fuel_surcharge_pct"), 0))
+            ),
+            rounding_increment=Decimal(
+                str(_float_or_default(row.get("rounding_increment"), 0.1))
+            ),
         )
         db.add(rule)
         await db.flush()
@@ -551,8 +615,8 @@ class ImportService:
 
 # ── Calculation ───────────────────────────────────────────────────────────
 
-class CalculateService:
 
+class CalculateService:
     @staticmethod
     async def calculate(
         db: AsyncSession,
@@ -565,10 +629,14 @@ class CalculateService:
 
         # Step 2: 实际重量和体积重
         actual_weight = pkg["weight_kg"] * req.quantity
-        base_volume = pkg["length_cm"] * pkg["width_cm"] * pkg["height_cm"] * req.quantity
+        base_volume = (
+            pkg["length_cm"] * pkg["width_cm"] * pkg["height_cm"] * req.quantity
+        )
 
         # Step 3: 查找可用渠道
-        channels = await _find_active_channels(db, req.destination_country, req.cargo_type)
+        channels = await _find_active_channels(
+            db, req.destination_country, req.cargo_type
+        )
 
         results = []
         for channel in channels:
@@ -601,7 +669,9 @@ class CalculateService:
         )
 
 
-async def _resolve_calculation_package(db: AsyncSession, req: CalculateRequest) -> Optional[dict]:
+async def _resolve_calculation_package(
+    db: AsyncSession, req: CalculateRequest
+) -> Optional[dict]:
     if req.mode == "manual":
         if req.package is None:
             return None
@@ -626,10 +696,16 @@ async def _resolve_package(db: AsyncSession, sku_id: int) -> Optional[dict]:
         return None
 
     # 检查 SKU 覆盖字段
-    if (sku.sku_length_cm is not None and sku.sku_width_cm is not None
-            and sku.sku_height_cm is not None and sku.sku_weight_kg is not None
-            and float(sku.sku_length_cm) > 0 and float(sku.sku_width_cm) > 0
-            and float(sku.sku_height_cm) > 0 and float(sku.sku_weight_kg) > 0):
+    if (
+        sku.sku_length_cm is not None
+        and sku.sku_width_cm is not None
+        and sku.sku_height_cm is not None
+        and sku.sku_weight_kg is not None
+        and float(sku.sku_length_cm) > 0
+        and float(sku.sku_width_cm) > 0
+        and float(sku.sku_height_cm) > 0
+        and float(sku.sku_weight_kg) > 0
+    ):
         return {
             "source": "sku",
             "length_cm": float(sku.sku_length_cm),
@@ -645,10 +721,16 @@ async def _resolve_package(db: AsyncSession, sku_id: int) -> Optional[dict]:
     if not product:
         return None
 
-    if (product.package_length_cm is not None and product.package_width_cm is not None
-            and product.package_height_cm is not None and product.package_weight_kg is not None
-            and float(product.package_length_cm) > 0 and float(product.package_width_cm) > 0
-            and float(product.package_height_cm) > 0 and float(product.package_weight_kg) > 0):
+    if (
+        product.package_length_cm is not None
+        and product.package_width_cm is not None
+        and product.package_height_cm is not None
+        and product.package_weight_kg is not None
+        and float(product.package_length_cm) > 0
+        and float(product.package_width_cm) > 0
+        and float(product.package_height_cm) > 0
+        and float(product.package_weight_kg) > 0
+    ):
         return {
             "source": "product",
             "length_cm": float(product.package_length_cm),
@@ -709,10 +791,12 @@ async def _find_active_channels(
         if not matched_rules:
             continue
 
-        matched.append({
-            "channel": ch,
-            "rules": matched_rules,
-        })
+        matched.append(
+            {
+                "channel": ch,
+                "rules": matched_rules,
+            }
+        )
 
     return matched
 
@@ -760,7 +844,9 @@ def _calculate_channel(
     total = base_fee + surcharge + fuel_fee
 
     # 计算明细
-    detail = _build_detail(rule, rounded, base_fee, minimum_applied, surcharge, fuel_fee)
+    detail = _build_detail(
+        rule, rounded, base_fee, minimum_applied, surcharge, fuel_fee
+    )
 
     provider = ch.provider
 
@@ -840,7 +926,9 @@ def _build_detail(
     if rule.rule_type == "fixed_plus_per_kg":
         fixed = float(rule.fixed_fee) if rule.fixed_fee else 0
         per_kg = float(rule.per_kg_price) if rule.per_kg_price else 0
-        parts.append(f"固定费{fixed:.1f} + 计费重{chargeable_weight:.2f}kg × {per_kg:.1f} = {base_fee:.1f}")
+        parts.append(
+            f"固定费{fixed:.1f} + 计费重{chargeable_weight:.2f}kg × {per_kg:.1f} = {base_fee:.1f}"
+        )
     elif rule.rule_type == "first_weight_plus_increment":
         first_kg = float(rule.first_kg) if rule.first_kg else 0
         first_price = float(rule.first_price) if rule.first_price else 0
@@ -851,7 +939,9 @@ def _build_detail(
         else:
             raw = (chargeable_weight - first_kg) / add_kg if add_kg > 0 else 0
             add_units = math.ceil(raw - 1e-10)
-            parts.append(f"首重{first_kg}kg={first_price:.1f} + 续重{add_units}单位×{add_price:.1f} = {base_fee:.1f}")
+            parts.append(
+                f"首重{first_kg}kg={first_price:.1f} + 续重{add_units}单位×{add_price:.1f} = {base_fee:.1f}"
+            )
     elif rule.rule_type == "tiered_weight":
         parts.append(f"阶梯价: 计费重{chargeable_weight:.2f}kg → {base_fee:.1f}")
 

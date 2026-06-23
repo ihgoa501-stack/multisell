@@ -15,8 +15,11 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    Order, OrderItem, OrderStatusLog,
-    Platform, Sku,
+    Order,
+    OrderItem,
+    OrderStatusLog,
+    Platform,
+    Sku,
     OrderImport,
 )
 from app.order_import.schemas import OrderImportRowData
@@ -25,7 +28,6 @@ logger = logging.getLogger(__name__)
 
 
 class OrderImportService:
-
     @staticmethod
     async def import_orders(
         db: AsyncSession,
@@ -66,7 +68,13 @@ class OrderImportService:
                 )
                 if dup.scalar_one_or_none():
                     error_count += 1
-                    errors.append({"row": idx, "order_no": row.platform_order_no, "error": "订单号已存在"})
+                    errors.append(
+                        {
+                            "row": idx,
+                            "order_no": row.platform_order_no,
+                            "error": "订单号已存在",
+                        }
+                    )
                     continue
 
                 # 解析商品明细
@@ -86,16 +94,20 @@ class OrderImportService:
                     subtotal = unit_price * quantity
                     total_amount += subtotal
 
-                    items_data.append({
-                        "sku_id": sku.id if sku else None,
-                        "product_id": sku.product_id if sku else None,
-                        "product_name": item_data.get("product_name", ""),
-                        "sku_code": sku_code,
-                        "spec_desc": sku.spec_desc if sku else item_data.get("spec_desc", ""),
-                        "unit_price": float(unit_price),
-                        "quantity": quantity,
-                        "subtotal": float(subtotal),
-                    })
+                    items_data.append(
+                        {
+                            "sku_id": sku.id if sku else None,
+                            "product_id": sku.product_id if sku else None,
+                            "product_name": item_data.get("product_name", ""),
+                            "sku_code": sku_code,
+                            "spec_desc": sku.spec_desc
+                            if sku
+                            else item_data.get("spec_desc", ""),
+                            "unit_price": float(unit_price),
+                            "quantity": quantity,
+                            "subtotal": float(subtotal),
+                        }
+                    )
 
                 # 创建订单
                 order_data = {
@@ -135,17 +147,21 @@ class OrderImportService:
                 )
                 db.add(status_log)
 
-                created_orders.append({
-                    "id": order.id,
-                    "order_no": order.order_no,
-                    "items_count": len(items_data),
-                    "total_amount": float(total_amount),
-                })
+                created_orders.append(
+                    {
+                        "id": order.id,
+                        "order_no": order.order_no,
+                        "items_count": len(items_data),
+                        "total_amount": float(total_amount),
+                    }
+                )
                 success_count += 1
 
             except Exception as e:
                 error_count += 1
-                errors.append({"row": idx, "order_no": row.platform_order_no, "error": str(e)})
+                errors.append(
+                    {"row": idx, "order_no": row.platform_order_no, "error": str(e)}
+                )
 
         # 更新导入记录
         import_record.success_count = success_count
@@ -182,7 +198,9 @@ class OrderImportService:
 
         total = (await db.execute(count_stmt)).scalar() or 0
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(OrderImport.created_at.desc()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(OrderImport.created_at.desc()).offset(offset).limit(page_size)
+        )
         result = await db.execute(stmt)
         records = result.scalars().all()
 
@@ -194,19 +212,21 @@ class OrderImportService:
                 if p:
                     platform_name = p.name
 
-            rows.append({
-                "id": r.id,
-                "platform_id": r.platform_id,
-                "platform_name": platform_name,
-                "source_type": r.source_type,
-                "file_name": r.file_name,
-                "total_rows": r.total_rows,
-                "success_count": r.success_count,
-                "error_count": r.error_count,
-                "status": r.status,
-                "created_by": r.created_by,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            })
+            rows.append(
+                {
+                    "id": r.id,
+                    "platform_id": r.platform_id,
+                    "platform_name": platform_name,
+                    "source_type": r.source_type,
+                    "file_name": r.file_name,
+                    "total_rows": r.total_rows,
+                    "success_count": r.success_count,
+                    "error_count": r.error_count,
+                    "status": r.status,
+                    "created_by": r.created_by,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+            )
 
         return rows, total
 
@@ -224,13 +244,13 @@ class OrderImportService:
 
         for row in reader:
             platform_order_no = (
-                row.get("Номер заказа") or  # Ozon (Russian)
-                row.get("Order ID") or       # Shopee
-                row.get("Номер") or          # WB (Russian)
-                row.get("订单号") or          # 中文
-                row.get("platform_order_no") or
-                row.get("order_no") or
-                ""
+                row.get("Номер заказа")  # Ozon (Russian)
+                or row.get("Order ID")  # Shopee
+                or row.get("Номер")  # WB (Russian)
+                or row.get("订单号")  # 中文
+                or row.get("platform_order_no")
+                or row.get("order_no")
+                or ""
             )
             if not platform_order_no:
                 continue
@@ -238,29 +258,70 @@ class OrderImportService:
             if platform_order_no not in orders_map:
                 orders_map[platform_order_no] = OrderImportRowData(
                     platform_order_no=platform_order_no,
-                    order_date=row.get("Дата") or row.get("Date") or row.get("日期") or row.get("paid_at"),
+                    order_date=row.get("Дата")
+                    or row.get("Date")
+                    or row.get("日期")
+                    or row.get("paid_at"),
                     status="paid",
-                    recipient_name=row.get("Получатель") or row.get("Recipient") or row.get("收件人") or row.get("recipient_name"),
-                    recipient_phone=row.get("Телефон") or row.get("Phone") or row.get("电话") or row.get("recipient_phone"),
-                    shipping_address=row.get("Адрес") or row.get("Address") or row.get("地址") or row.get("shipping_address"),
-                    country=row.get("Страна") or row.get("Country") or row.get("国家") or row.get("country_code"),
-                    total_amount=float(row.get("Сумма") or row.get("Amount") or row.get("金额") or 0),
-                    shipping_fee=float(row.get("Доставка") or row.get("Shipping") or row.get("运费") or row.get("shipping_fee") or 0),
-                    platform_fee=float(row.get("Комиссия") or row.get("Fee") or row.get("平台费") or 0),
+                    recipient_name=row.get("Получатель")
+                    or row.get("Recipient")
+                    or row.get("收件人")
+                    or row.get("recipient_name"),
+                    recipient_phone=row.get("Телефон")
+                    or row.get("Phone")
+                    or row.get("电话")
+                    or row.get("recipient_phone"),
+                    shipping_address=row.get("Адрес")
+                    or row.get("Address")
+                    or row.get("地址")
+                    or row.get("shipping_address"),
+                    country=row.get("Страна")
+                    or row.get("Country")
+                    or row.get("国家")
+                    or row.get("country_code"),
+                    total_amount=float(
+                        row.get("Сумма") or row.get("Amount") or row.get("金额") or 0
+                    ),
+                    shipping_fee=float(
+                        row.get("Доставка")
+                        or row.get("Shipping")
+                        or row.get("运费")
+                        or row.get("shipping_fee")
+                        or 0
+                    ),
+                    platform_fee=float(
+                        row.get("Комиссия") or row.get("Fee") or row.get("平台费") or 0
+                    ),
                 )
 
             # 商品明细
             sku_code = row.get("SKU") or row.get("Артикул") or row.get("sku_code") or ""
-            product_name = row.get("Товар") or row.get("Product Name") or row.get("商品名称") or ""
-            quantity = int(row.get("Количество") or row.get("Quantity") or row.get("数量") or row.get("quantity") or 1)
-            unit_price = float(row.get("Цена") or row.get("Price") or row.get("单价") or row.get("unit_price") or 0)
+            product_name = (
+                row.get("Товар") or row.get("Product Name") or row.get("商品名称") or ""
+            )
+            quantity = int(
+                row.get("Количество")
+                or row.get("Quantity")
+                or row.get("数量")
+                or row.get("quantity")
+                or 1
+            )
+            unit_price = float(
+                row.get("Цена")
+                or row.get("Price")
+                or row.get("单价")
+                or row.get("unit_price")
+                or 0
+            )
 
-            orders_map[platform_order_no].items.append({
-                "sku_code": sku_code,
-                "product_name": product_name,
-                "quantity": quantity,
-                "unit_price": unit_price,
-            })
+            orders_map[platform_order_no].items.append(
+                {
+                    "sku_code": sku_code,
+                    "product_name": product_name,
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                }
+            )
 
         return list(orders_map.values())
 
@@ -284,21 +345,25 @@ class OrderImportService:
             sku = random.choice(skus)
             qty = random.randint(1, 3)
             unit_price = float(sku.price or 99)
-            rows.append(OrderImportRowData(
-                platform_order_no=f"SIM-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{i+1:04d}",
-                recipient_name=f"测试用户{i+1}",
-                recipient_phone=f"1380000{i+1:04d}",
-                shipping_address=f"测试地址第{i+1}号",
-                country="RU",
-                total_amount=unit_price * qty,
-                shipping_fee=random.choice([0, 15, 30]),
-                platform_fee=round(unit_price * qty * 0.08, 2),
-                items=[{
-                    "sku_code": sku.code or f"sku-{sku.id}",
-                    "product_name": f"模拟商品-{sku.id}",
-                    "quantity": qty,
-                    "unit_price": unit_price,
-                }],
-            ))
+            rows.append(
+                OrderImportRowData(
+                    platform_order_no=f"SIM-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{i + 1:04d}",
+                    recipient_name=f"测试用户{i + 1}",
+                    recipient_phone=f"1380000{i + 1:04d}",
+                    shipping_address=f"测试地址第{i + 1}号",
+                    country="RU",
+                    total_amount=unit_price * qty,
+                    shipping_fee=random.choice([0, 15, 30]),
+                    platform_fee=round(unit_price * qty * 0.08, 2),
+                    items=[
+                        {
+                            "sku_code": sku.code or f"sku-{sku.id}",
+                            "product_name": f"模拟商品-{sku.id}",
+                            "quantity": qty,
+                            "unit_price": unit_price,
+                        }
+                    ],
+                )
+            )
 
         return rows

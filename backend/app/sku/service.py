@@ -1,4 +1,5 @@
 """规格与SKU管理 - 服务层"""
+
 import itertools
 from typing import Optional
 from sqlalchemy import select
@@ -8,9 +9,10 @@ from app.models import Inventory, Price, SpecName, SpecValue, Sku
 
 
 class SpecService:
-
     @staticmethod
-    async def define_specs(db: AsyncSession, product_id: int, specs: list[dict]) -> list[SpecName]:
+    async def define_specs(
+        db: AsyncSession, product_id: int, specs: list[dict]
+    ) -> list[SpecName]:
         """定义商品规格模板（先清空旧规格再新建）"""
         # 删除旧规格
         old_specs = await db.execute(
@@ -22,7 +24,9 @@ class SpecService:
         # 创建新规格
         created = []
         for sort_idx, spec in enumerate(specs):
-            spec_name = SpecName(product_id=product_id, name=spec["name"], sort_order=sort_idx)
+            spec_name = SpecName(
+                product_id=product_id, name=spec["name"], sort_order=sort_idx
+            )
             db.add(spec_name)
             await db.flush()
             await db.refresh(spec_name)
@@ -64,7 +68,10 @@ class SpecService:
         spec_names = []
         for spec in specs:
             spec_names.append(spec.name)
-            values = [{"spec_name_id": spec.id, "name": spec.name, "value": sv.value} for sv in spec.values]
+            values = [
+                {"spec_name_id": spec.id, "name": spec.name, "value": sv.value}
+                for sv in spec.values
+            ]
             spec_groups.append(values)
 
         # 笛卡尔积生成所有组合
@@ -75,8 +82,7 @@ class SpecService:
         )
         existing_skus = list(existing_result.scalars().all())
         existing_by_spec = {
-            tuple(sorted((sku.spec_values or {}).items())): sku
-            for sku in existing_skus
+            tuple(sorted((sku.spec_values or {}).items())): sku for sku in existing_skus
         }
 
         desired_keys = set()

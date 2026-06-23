@@ -3,6 +3,7 @@
 每个 Agent 决策可以产生可执行操作（action），
 用户确认后系统自动执行对应业务操作。
 """
+
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # ── 各 Agent 的动作提取器 ──────────────────────────────────────
 
+
 def extract_actions(agent_id: str, decision_id: int, decision: dict) -> list[dict]:
     """从 Agent 决策输出中提取可执行操作"""
     actions = []
@@ -22,129 +24,145 @@ def extract_actions(agent_id: str, decision_id: int, decision: dict) -> list[dic
     if agent_id == "A5":
         stock_status = decision.get("stock_status", "")
         if stock_status == "red":
-            actions.append({
-                "action_type": "replenish",
-                "summary": (
-                    f"紧急补货：SKU {decision.get('sku_code', '')} "
-                    f"可售仅 {decision.get('sellable_days', '?')} 天，"
-                    f"建议补货 {decision.get('suggested_replenish_qty', '?')} 件"
-                ),
-                "action_payload": {
-                    "sku_code": decision.get("sku_code", ""),
-                    "suggested_qty": decision.get("suggested_replenish_qty", 0),
-                    "urgency": "urgent",
-                    "suggested_logistics": decision.get("suggested_logistics", ""),
-                },
-            })
+            actions.append(
+                {
+                    "action_type": "replenish",
+                    "summary": (
+                        f"紧急补货：SKU {decision.get('sku_code', '')} "
+                        f"可售仅 {decision.get('sellable_days', '?')} 天，"
+                        f"建议补货 {decision.get('suggested_replenish_qty', '?')} 件"
+                    ),
+                    "action_payload": {
+                        "sku_code": decision.get("sku_code", ""),
+                        "suggested_qty": decision.get("suggested_replenish_qty", 0),
+                        "urgency": "urgent",
+                        "suggested_logistics": decision.get("suggested_logistics", ""),
+                    },
+                }
+            )
         elif stock_status == "yellow":
-            actions.append({
-                "action_type": "replenish",
-                "summary": (
-                    f"补货建议：SKU {decision.get('sku_code', '')} "
-                    f"可售 {decision.get('sellable_days', '?')} 天，"
-                    f"建议补货 {decision.get('suggested_replenish_qty', '?')} 件"
-                ),
-                "action_payload": {
-                    "sku_code": decision.get("sku_code", ""),
-                    "suggested_qty": decision.get("suggested_replenish_qty", 0),
-                    "urgency": "normal",
-                },
-            })
+            actions.append(
+                {
+                    "action_type": "replenish",
+                    "summary": (
+                        f"补货建议：SKU {decision.get('sku_code', '')} "
+                        f"可售 {decision.get('sellable_days', '?')} 天，"
+                        f"建议补货 {decision.get('suggested_replenish_qty', '?')} 件"
+                    ),
+                    "action_payload": {
+                        "sku_code": decision.get("sku_code", ""),
+                        "suggested_qty": decision.get("suggested_replenish_qty", 0),
+                        "urgency": "normal",
+                    },
+                }
+            )
 
     elif agent_id == "G3":
         action = decision.get("action", "")
         if action == "block":
-            actions.append({
-                "action_type": "discount_review",
-                "summary": (
-                    f"折扣已阻断：SKU {decision.get('sku_code', '')} "
-                    f"折后价 ¥{decision.get('final_price', '?')} < 成本 ¥{decision.get('cost_price', '?')}，"
-                    f"请确认是否仍需执行该促销"
-                ),
-                "action_payload": {
-                    "sku_code": decision.get("sku_code", ""),
-                    "final_price": decision.get("final_price"),
-                    "cost_price": decision.get("cost_price"),
-                    "gross_profit": decision.get("gross_profit"),
-                },
-            })
+            actions.append(
+                {
+                    "action_type": "discount_review",
+                    "summary": (
+                        f"折扣已阻断：SKU {decision.get('sku_code', '')} "
+                        f"折后价 ¥{decision.get('final_price', '?')} < 成本 ¥{decision.get('cost_price', '?')}，"
+                        f"请确认是否仍需执行该促销"
+                    ),
+                    "action_payload": {
+                        "sku_code": decision.get("sku_code", ""),
+                        "final_price": decision.get("final_price"),
+                        "cost_price": decision.get("cost_price"),
+                        "gross_profit": decision.get("gross_profit"),
+                    },
+                }
+            )
         elif action == "warn":
-            actions.append({
-                "action_type": "discount_review",
-                "summary": (
-                    f"折扣需审核：SKU {decision.get('sku_code', '')} "
-                    f"折后毛利率 {decision.get('gross_margin', '?')}%，低于安全线"
-                ),
-                "action_payload": {
-                    "sku_code": decision.get("sku_code", ""),
-                    "gross_margin": decision.get("gross_margin"),
-                    "reason": decision.get("reason", ""),
-                },
-            })
+            actions.append(
+                {
+                    "action_type": "discount_review",
+                    "summary": (
+                        f"折扣需审核：SKU {decision.get('sku_code', '')} "
+                        f"折后毛利率 {decision.get('gross_margin', '?')}%，低于安全线"
+                    ),
+                    "action_payload": {
+                        "sku_code": decision.get("sku_code", ""),
+                        "gross_margin": decision.get("gross_margin"),
+                        "reason": decision.get("reason", ""),
+                    },
+                }
+            )
 
     elif agent_id == "A6":
         is_loss = decision.get("is_loss", False)
         if is_loss:
-            actions.append({
-                "action_type": "price_review",
-                "summary": (
-                    f"亏损 SKU 待处理：{decision.get('sku_code', '')} "
-                    f"单件亏损 ¥{abs(decision.get('profit_per_unit', 0)):.2f}，"
-                    f"建议提价或优化成本"
-                ),
-                "action_payload": {
-                    "sku_code": decision.get("sku_code", ""),
-                    "profit_per_unit": decision.get("profit_per_unit"),
-                    "cost_price": decision.get("cost_price"),
-                    "selling_price": decision.get("selling_price"),
-                    "suggestions": decision.get("optimization_suggestions", []),
-                },
-            })
+            actions.append(
+                {
+                    "action_type": "price_review",
+                    "summary": (
+                        f"亏损 SKU 待处理：{decision.get('sku_code', '')} "
+                        f"单件亏损 ¥{abs(decision.get('profit_per_unit', 0)):.2f}，"
+                        f"建议提价或优化成本"
+                    ),
+                    "action_payload": {
+                        "sku_code": decision.get("sku_code", ""),
+                        "profit_per_unit": decision.get("profit_per_unit"),
+                        "cost_price": decision.get("cost_price"),
+                        "selling_price": decision.get("selling_price"),
+                        "suggestions": decision.get("optimization_suggestions", []),
+                    },
+                }
+            )
         elif decision.get("below_threshold", False):
-            actions.append({
-                "action_type": "price_review",
-                "summary": (
-                    f"低毛利 SKU 待处理：{decision.get('sku_code', '')} "
-                    f"毛利率 {decision.get('gross_margin', '?')}%，低于阈值"
-                ),
-                "action_payload": {
-                    "sku_code": decision.get("sku_code", ""),
-                    "gross_margin": decision.get("gross_margin"),
-                    "threshold": decision.get("min_margin_threshold"),
-                },
-            })
+            actions.append(
+                {
+                    "action_type": "price_review",
+                    "summary": (
+                        f"低毛利 SKU 待处理：{decision.get('sku_code', '')} "
+                        f"毛利率 {decision.get('gross_margin', '?')}%，低于阈值"
+                    ),
+                    "action_payload": {
+                        "sku_code": decision.get("sku_code", ""),
+                        "gross_margin": decision.get("gross_margin"),
+                        "threshold": decision.get("min_margin_threshold"),
+                    },
+                }
+            )
 
     elif agent_id == "A3":
         status = decision.get("status", "")
         if status == "critical":
-            actions.append({
-                "action_type": "ad_action",
-                "summary": (
-                    f"广告严重亏损：活动 {decision.get('campaign_id', '')} "
-                    f"ACoS {decision.get('metrics', {}).get('acos', '?')}%，"
-                    f"已超过毛利率，建议暂停"
-                ),
-                "action_payload": {
-                    "campaign_id": decision.get("campaign_id", ""),
-                    "acos": decision.get("metrics", {}).get("acos"),
-                    "suggestions": decision.get("suggestions", []),
-                },
-            })
+            actions.append(
+                {
+                    "action_type": "ad_action",
+                    "summary": (
+                        f"广告严重亏损：活动 {decision.get('campaign_id', '')} "
+                        f"ACoS {decision.get('metrics', {}).get('acos', '?')}%，"
+                        f"已超过毛利率，建议暂停"
+                    ),
+                    "action_payload": {
+                        "campaign_id": decision.get("campaign_id", ""),
+                        "acos": decision.get("metrics", {}).get("acos"),
+                        "suggestions": decision.get("suggestions", []),
+                    },
+                }
+            )
         elif status == "warning":
-            actions.append({
-                "action_type": "ad_action",
-                "summary": (
-                    f"广告需优化：活动 {decision.get('campaign_id', '')} "
-                    f"ACoS {decision.get('metrics', {}).get('acos', '?')}% 偏高，"
-                    f"建议调整出价"
-                ),
-                "action_payload": {
-                    "campaign_id": decision.get("campaign_id", ""),
-                    "acos": decision.get("metrics", {}).get("acos"),
-                    "bid_suggestion": decision.get("bid_suggestion"),
-                    "suggestions": decision.get("suggestions", []),
-                },
-            })
+            actions.append(
+                {
+                    "action_type": "ad_action",
+                    "summary": (
+                        f"广告需优化：活动 {decision.get('campaign_id', '')} "
+                        f"ACoS {decision.get('metrics', {}).get('acos', '?')}% 偏高，"
+                        f"建议调整出价"
+                    ),
+                    "action_payload": {
+                        "campaign_id": decision.get("campaign_id", ""),
+                        "acos": decision.get("metrics", {}).get("acos"),
+                        "bid_suggestion": decision.get("bid_suggestion"),
+                        "suggestions": decision.get("suggestions", []),
+                    },
+                }
+            )
 
     return actions
 
@@ -201,7 +219,9 @@ class AgentActionService:
         total = await db.scalar(count_stmt) or 0
 
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(AgentAction.created_at.desc()).offset(offset).limit(page_size)
+        stmt = (
+            stmt.order_by(AgentAction.created_at.desc()).offset(offset).limit(page_size)
+        )
         result = await db.execute(stmt)
         actions = list(result.scalars().all())
         return actions, total

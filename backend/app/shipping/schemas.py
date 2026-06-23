@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ── Provider ──────────────────────────────────────────────────────────────
 
+
 class ProviderCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200, description="供应商名称")
     code: Optional[str] = Field(None, max_length=50, description="编码")
@@ -40,14 +41,19 @@ class ProviderVO(BaseModel):
 
 # ── Channel ───────────────────────────────────────────────────────────────
 
+
 class ChannelCreate(BaseModel):
     provider_id: int = Field(..., description="物流供应商ID")
     name: str = Field(..., min_length=1, max_length=200, description="渠道名称")
     code: Optional[str] = Field(None, max_length=50, description="渠道编码")
     volumetric_divisor: int = Field(6000, ge=1, description="抛重系数")
     cargo_types: list[str] = Field(default=["normal"], description="支持货品类型")
-    estimated_delivery_min: Optional[int] = Field(None, ge=0, description="最短时效(天)")
-    estimated_delivery_max: Optional[int] = Field(None, ge=0, description="最长时效(天)")
+    estimated_delivery_min: Optional[int] = Field(
+        None, ge=0, description="最短时效(天)"
+    )
+    estimated_delivery_max: Optional[int] = Field(
+        None, ge=0, description="最长时效(天)"
+    )
     currency: str = Field("CNY", max_length=10, description="报价币种")
     sort_order: int = Field(0, description="排序")
 
@@ -85,10 +91,17 @@ class ChannelVO(BaseModel):
 
 # ── Zone ──────────────────────────────────────────────────────────────────
 
+
 class ZoneCreate(BaseModel):
-    country_code: str = Field(..., min_length=2, max_length=10, description="国家代码(ISO 3166-1 alpha-2)")
-    postal_code_from: Optional[str] = Field(None, max_length=20, description="邮编范围起始")
-    postal_code_to: Optional[str] = Field(None, max_length=20, description="邮编范围截止")
+    country_code: str = Field(
+        ..., min_length=2, max_length=10, description="国家代码(ISO 3166-1 alpha-2)"
+    )
+    postal_code_from: Optional[str] = Field(
+        None, max_length=20, description="邮编范围起始"
+    )
+    postal_code_to: Optional[str] = Field(
+        None, max_length=20, description="邮编范围截止"
+    )
 
 
 class ZoneVO(BaseModel):
@@ -105,6 +118,7 @@ class ZoneVO(BaseModel):
 
 
 # ── Quote Rule ────────────────────────────────────────────────────────────
+
 
 class RuleCreate(BaseModel):
     zone_id: Optional[int] = Field(None, description="物流区域ID；为空表示渠道全局规则")
@@ -177,6 +191,7 @@ class RuleVO(BaseModel):
 
 # ── Calculate ─────────────────────────────────────────────────────────────
 
+
 class ManualPackageInput(BaseModel):
     length_cm: float = Field(..., gt=0, description="包装长(cm)")
     width_cm: float = Field(..., gt=0, description="包装宽(cm)")
@@ -188,7 +203,9 @@ class CalculateRequest(BaseModel):
     mode: Literal["sku", "manual"] = Field("sku", description="计算模式")
     sku_id: Optional[int] = Field(None, description="SKU ID")
     quantity: int = Field(1, ge=1, description="数量")
-    destination_country: str = Field(..., min_length=2, max_length=10, description="目的地国家代码")
+    destination_country: str = Field(
+        ..., min_length=2, max_length=10, description="目的地国家代码"
+    )
     postal_code: Optional[str] = Field(None, max_length=20, description="邮编")
     cargo_type: str = Field("normal", description="货品类型")
     package: Optional[ManualPackageInput] = Field(None, description="手动包裹信息")

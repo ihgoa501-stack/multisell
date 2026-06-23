@@ -4,6 +4,7 @@
 - 仓储物流 + 海关三单匹配建议
 - 输入货品信息和目的地，输出清关建议、仓储策略
 """
+
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -26,8 +27,11 @@ HS_CODE_DB = {
 
 
 def _sf(v: Any, d: float = 0.0) -> float:
-    try: return float(v)
-    except (TypeError, ValueError): return d
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return d
+
 
 def _missing(c: dict, r: list) -> list:
     return [f for f in r if f not in c or c[f] is None]
@@ -46,13 +50,16 @@ class G2WarehouseCustomsAgent(BaseAgent):
     }
 
     async def decide(self, point: str, ctx: dict, db: Any = None) -> dict:
-        if point == "customs_clearance": return self._clearance(ctx)
-        if point == "warehouse_advice": return self._warehouse(ctx)
+        if point == "customs_clearance":
+            return self._clearance(ctx)
+        if point == "warehouse_advice":
+            return self._warehouse(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
     def _clearance(self, ctx: dict) -> dict:
         miss = _missing(ctx, REQUIRED)
-        if miss: return self._insufficient("customs_clearance", miss)
+        if miss:
+            return self._insufficient("customs_clearance", miss)
         name = str(ctx.get("product_name", ""))
         country = str(ctx.get("destination_country", "")).upper().strip()
         cargo = str(ctx.get("cargo_type", "")).lower().strip()
@@ -72,12 +79,15 @@ class G2WarehouseCustomsAgent(BaseAgent):
             docs.append("Customs Bond / Formal Entry")
 
         return {
-            "product": name, "destination": country,
+            "product": name,
+            "destination": country,
             "hs_code": hs_code,
             "required_documents": docs,
             "estimated_duty": estimated_duty,
             "duty_free": duty_free,
-            "value_threshold_note": "> $2500 需正式报关" if value > 2500 else "≤ $2500 可简易报关",
+            "value_threshold_note": "> $2500 需正式报关"
+            if value > 2500
+            else "≤ $2500 可简易报关",
             "confidence": 0.85 if hs_code != "需要人工归类" else 0.60,
         }
 
@@ -104,11 +114,18 @@ class G2WarehouseCustomsAgent(BaseAgent):
             note = "非主流市场建议国内直发，根据订单增长再考虑海外仓"
 
         return {
-            "strategy": strategy, "note": note,
+            "strategy": strategy,
+            "note": note,
             "destination": country,
             "estimated_monthly_volume": int(sales_volume),
             "confidence": 0.85,
         }
 
     def _insufficient(self, p: str, m: list) -> dict:
-        return {"status": "insufficient_data", "decision_point": p, "missing_fields": m, "message": f"缺少: {', '.join(m)}", "confidence": 0.0}
+        return {
+            "status": "insufficient_data",
+            "decision_point": p,
+            "missing_fields": m,
+            "message": f"缺少: {', '.join(m)}",
+            "confidence": 0.0,
+        }

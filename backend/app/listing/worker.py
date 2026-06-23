@@ -17,7 +17,12 @@ logger = logging.getLogger(__name__)
 class ListingWorker:
     """Polls and executes pending listing task items."""
 
-    def __init__(self, poll_interval: float = 10.0, max_retries: int = 3, retry_delay_seconds: float = 60.0):
+    def __init__(
+        self,
+        poll_interval: float = 10.0,
+        max_retries: int = 3,
+        retry_delay_seconds: float = 60.0,
+    ):
         self._poll_interval = poll_interval
         self._max_retries = max_retries
         self._retry_delay = retry_delay_seconds
@@ -81,23 +86,33 @@ class ListingWorker:
                 await db.flush()
                 return
 
-            skus = (await db.execute(
-                select(Sku).where(Sku.product_id == product.id)
-            )).scalars().all()
+            skus = (
+                (await db.execute(select(Sku).where(Sku.product_id == product.id)))
+                .scalars()
+                .all()
+            )
             sku_ids = [s.id for s in skus]
 
             prices = {}
             if sku_ids:
-                price_rows = (await db.execute(
-                    select(Price).where(Price.sku_id.in_(sku_ids))
-                )).scalars().all()
+                price_rows = (
+                    (await db.execute(select(Price).where(Price.sku_id.in_(sku_ids))))
+                    .scalars()
+                    .all()
+                )
                 prices = {p.sku_id: p for p in price_rows}
 
             inventories = {}
             if sku_ids:
-                inv_rows = (await db.execute(
-                    select(Inventory).where(Inventory.sku_id.in_(sku_ids))
-                )).scalars().all()
+                inv_rows = (
+                    (
+                        await db.execute(
+                            select(Inventory).where(Inventory.sku_id.in_(sku_ids))
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
                 inventories = {i.sku_id: i for i in inv_rows}
 
             adapter = get_listing_adapter(platform.code)
@@ -125,5 +140,11 @@ class ListingWorker:
                 item.status = "pending"
                 item.error_message = str(exc)[:500]
             item.executed_at = datetime.now(timezone.utc)
-            logger.warning("Listing item %s failed (retry %s/%s): %s", item.id, item.retry_count, self._max_retries, exc)
+            logger.warning(
+                "Listing item %s failed (retry %s/%s): %s",
+                item.id,
+                item.retry_count,
+                self._max_retries,
+                exc,
+            )
         await db.flush()

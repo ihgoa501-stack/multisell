@@ -37,7 +37,9 @@ async def list_operation_logs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("operation_log:view")),
 ):
-    logs, total = await OperationLogService.list_logs(db, module, action, operator, page, page_size)
+    logs, total = await OperationLogService.list_logs(
+        db, module, action, operator, page, page_size
+    )
     items = [log_to_vo(rec) for rec in logs]
     return PageResult.ok(items, total, page, page_size)
 

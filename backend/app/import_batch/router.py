@@ -34,13 +34,17 @@ async def download_template(
     current_user: User = Depends(require_permission("import:view")),
 ):
     if import_type not in IMPORT_TYPES:
-        return Result.bad_request(f"不支持的导入类型: {import_type}，可选: {', '.join(sorted(IMPORT_TYPES))}")
+        return Result.bad_request(
+            f"不支持的导入类型: {import_type}，可选: {', '.join(sorted(IMPORT_TYPES))}"
+        )
 
     output = ImportBatchService.generate_template(import_type)
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={import_type}_template.xlsx"},
+        headers={
+            "Content-Disposition": f"attachment; filename={import_type}_template.xlsx"
+        },
     )
 
 
@@ -52,13 +56,17 @@ async def preview_import(
     current_user: User = Depends(require_permission("import:execute")),
 ):
     if type not in IMPORT_TYPES:
-        return Result.bad_request(f"不支持的导入类型: {type}，可选: {', '.join(sorted(IMPORT_TYPES))}")
+        return Result.bad_request(
+            f"不支持的导入类型: {type}，可选: {', '.join(sorted(IMPORT_TYPES))}"
+        )
 
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         return Result.bad_request("仅支持 .xlsx 或 .xls 文件")
 
     file_bytes = await file.read()
-    result = await ImportBatchService.preview(db, type, file_bytes, file.filename, current_user.username)
+    result = await ImportBatchService.preview(
+        db, type, file_bytes, file.filename, current_user.username
+    )
 
     await OperationLogService.log(
         db,
@@ -133,5 +141,7 @@ async def download_errors(
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=import_batch_{batch_id}_errors.xlsx"},
+        headers={
+            "Content-Disposition": f"attachment; filename=import_batch_{batch_id}_errors.xlsx"
+        },
     )

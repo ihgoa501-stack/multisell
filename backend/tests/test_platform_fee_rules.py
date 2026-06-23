@@ -53,6 +53,7 @@ class TestPlatformFeeModel:
     async def test_platform_fee_rule_model_is_mapped(self, async_client):
         async with async_session_factory() as session:
             from app.models import Platform
+
             # Create a valid platform for the FK
             platform = Platform(
                 name="model-test-platform",
@@ -87,54 +88,66 @@ class TestPlatformFeeModel:
 class TestPlatformFeeService:
     """Test PlatformFeeService.calculate_fee() — matching logic with new model."""
 
-    async def test_calculate_prefers_category_rule_over_country_and_global(self, async_client):
+    async def test_calculate_prefers_category_rule_over_country_and_global(
+        self, async_client
+    ):
         from app.platform_fee.schemas import PlatformFeeCalculateRequest
         from app.platform_fee.service import PlatformFeeService
 
         platform_id = await _create_platform(async_client, "pf_calc_cat")
         async with async_session_factory() as session:
             from app.models import Category
+
             cat = Category(name="test-calc-cat", status=1)
             session.add(cat)
             await session.flush()
             category_id = cat.id
 
             # global commission rule
-            await PlatformFeeService.create_rule(session, {
-                "platform_id": platform_id,
-                "country_code": None,
-                "category_id": None,
-                "fee_type": "commission",
-                "fee_rate_pct": 5,
-                "fixed_amount": 0,
-                "priority": 0,
-                "status": "active",
-                "remark": "global",
-            })
+            await PlatformFeeService.create_rule(
+                session,
+                {
+                    "platform_id": platform_id,
+                    "country_code": None,
+                    "category_id": None,
+                    "fee_type": "commission",
+                    "fee_rate_pct": 5,
+                    "fixed_amount": 0,
+                    "priority": 0,
+                    "status": "active",
+                    "remark": "global",
+                },
+            )
             # country commission rule
-            await PlatformFeeService.create_rule(session, {
-                "platform_id": platform_id,
-                "country_code": "RU",
-                "category_id": None,
-                "fee_type": "commission",
-                "fee_rate_pct": 10,
-                "fixed_amount": 0,
-                "priority": 0,
-                "status": "active",
-                "remark": "country",
-            })
+            await PlatformFeeService.create_rule(
+                session,
+                {
+                    "platform_id": platform_id,
+                    "country_code": "RU",
+                    "category_id": None,
+                    "fee_type": "commission",
+                    "fee_rate_pct": 10,
+                    "fixed_amount": 0,
+                    "priority": 0,
+                    "status": "active",
+                    "remark": "country",
+                },
+            )
             # category commission rule
-            await PlatformFeeService.create_rule(session, {
-                "platform_id": platform_id,
-                "country_code": "RU",
-                "category_id": category_id,
-                "fee_type": "commission",
-                "fee_rate_pct": 15,
-                "fixed_amount": 0,
-                "priority": 0,
-                "status": "active",
-                "remark": "category",
-            })
+            await PlatformFeeService.create_rule(
+                session,
+                {
+                    "platform_id": platform_id,
+                    "country_code": "RU",
+                    "category_id": category_id,
+                    "fee_type": "commission",
+                    "fee_rate_pct": 15,
+                    "fixed_amount": 0,
+                    "priority": 0,
+                    "status": "active",
+                    "remark": "category",
+                },
+            )
             await session.commit()
 
         async with async_session_factory() as session:
@@ -158,28 +171,34 @@ class TestPlatformFeeService:
 
         platform_id = await _create_platform(async_client, "pf_calc_cc")
         async with async_session_factory() as session:
-            await PlatformFeeService.create_rule(session, {
-                "platform_id": platform_id,
-                "country_code": None,
-                "category_id": None,
-                "fee_type": "commission",
-                "fee_rate_pct": 5,
-                "fixed_amount": 0,
-                "priority": 0,
-                "status": "active",
-                "remark": "global",
-            })
-            await PlatformFeeService.create_rule(session, {
-                "platform_id": platform_id,
-                "country_code": "RU",
-                "category_id": None,
-                "fee_type": "commission",
-                "fee_rate_pct": 10,
-                "fixed_amount": 0,
-                "priority": 0,
-                "status": "active",
-                "remark": "country",
-            })
+            await PlatformFeeService.create_rule(
+                session,
+                {
+                    "platform_id": platform_id,
+                    "country_code": None,
+                    "category_id": None,
+                    "fee_type": "commission",
+                    "fee_rate_pct": 5,
+                    "fixed_amount": 0,
+                    "priority": 0,
+                    "status": "active",
+                    "remark": "global",
+                },
+            )
+            await PlatformFeeService.create_rule(
+                session,
+                {
+                    "platform_id": platform_id,
+                    "country_code": "RU",
+                    "category_id": None,
+                    "fee_type": "commission",
+                    "fee_rate_pct": 10,
+                    "fixed_amount": 0,
+                    "priority": 0,
+                    "status": "active",
+                    "remark": "country",
+                },
+            )
             await session.commit()
 
         async with async_session_factory() as session:
@@ -201,17 +220,20 @@ class TestPlatformFeeService:
 
         platform_id = await _create_platform(async_client, "pf_calc_global")
         async with async_session_factory() as session:
-            await PlatformFeeService.create_rule(session, {
-                "platform_id": platform_id,
-                "country_code": None,
-                "category_id": None,
-                "fee_type": "commission",
-                "fee_rate_pct": 5,
-                "fixed_amount": 0,
-                "priority": 0,
-                "status": "active",
-                "remark": "global",
-            })
+            await PlatformFeeService.create_rule(
+                session,
+                {
+                    "platform_id": platform_id,
+                    "country_code": None,
+                    "category_id": None,
+                    "fee_type": "commission",
+                    "fee_rate_pct": 5,
+                    "fixed_amount": 0,
+                    "priority": 0,
+                    "status": "active",
+                    "remark": "global",
+                },
+            )
             await session.commit()
 
         async with async_session_factory() as session:
@@ -232,17 +254,20 @@ class TestPlatformFeeService:
 
         platform_id = await _create_platform(async_client, "pf_calc_none")
         async with async_session_factory() as session:
-            await PlatformFeeService.create_rule(session, {
-                "platform_id": platform_id,
-                "country_code": "US",
-                "category_id": None,
-                "fee_type": "commission",
-                "fee_rate_pct": 5,
-                "fixed_amount": 0,
-                "priority": 0,
-                "status": "active",
-                "remark": "us",
-            })
+            await PlatformFeeService.create_rule(
+                session,
+                {
+                    "platform_id": platform_id,
+                    "country_code": "US",
+                    "category_id": None,
+                    "fee_type": "commission",
+                    "fee_rate_pct": 5,
+                    "fixed_amount": 0,
+                    "priority": 0,
+                    "status": "active",
+                    "remark": "us",
+                },
+            )
             await session.commit()
 
         async with async_session_factory() as session:
@@ -263,17 +288,20 @@ class TestPlatformFeeService:
 
         platform_id = await _create_platform(async_client, "pf_calc_inactive")
         async with async_session_factory() as session:
-            await PlatformFeeService.create_rule(session, {
-                "platform_id": platform_id,
-                "country_code": "RU",
-                "category_id": None,
-                "fee_type": "commission",
-                "fee_rate_pct": 10,
-                "fixed_amount": 0,
-                "priority": 0,
-                "status": "inactive",
-                "remark": "disabled",
-            })
+            await PlatformFeeService.create_rule(
+                session,
+                {
+                    "platform_id": platform_id,
+                    "country_code": "RU",
+                    "category_id": None,
+                    "fee_type": "commission",
+                    "fee_rate_pct": 10,
+                    "fixed_amount": 0,
+                    "priority": 0,
+                    "status": "inactive",
+                    "remark": "disabled",
+                },
+            )
             await session.commit()
 
         async with async_session_factory() as session:
@@ -294,16 +322,20 @@ class TestPlatformFeeCRUD:
         headers = await _auth(async_client, "crud_create", "platform_fee:manage")
         platform_id = await _create_platform(async_client, "crud_pf")
 
-        resp = await async_client.post("/api/platform-fee/rules", json={
-            "platform_id": platform_id,
-            "country_code": "RU",
-            "fee_type": "commission",
-            "fee_rate_pct": 12,
-            "fixed_amount": 5,
-            "priority": 0,
-            "status": "active",
-            "remark": "test rule",
-        }, headers=headers)
+        resp = await async_client.post(
+            "/api/platform-fee/rules",
+            json={
+                "platform_id": platform_id,
+                "country_code": "RU",
+                "fee_type": "commission",
+                "fee_rate_pct": 12,
+                "fixed_amount": 5,
+                "priority": 0,
+                "status": "active",
+                "remark": "test rule",
+            },
+            headers=headers,
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["platform_id"] == platform_id
@@ -314,15 +346,19 @@ class TestPlatformFeeCRUD:
         headers = await _auth(async_client, "crud_no_perm")
         platform_id = await _create_platform(async_client, "crud_np")
 
-        resp = await async_client.post("/api/platform-fee/rules", json={
-            "platform_id": platform_id,
-            "country_code": "RU",
-            "fee_type": "commission",
-            "fee_rate_pct": 12,
-            "fixed_amount": 5,
-            "priority": 0,
-            "status": "active",
-        }, headers=headers)
+        resp = await async_client.post(
+            "/api/platform-fee/rules",
+            json={
+                "platform_id": platform_id,
+                "country_code": "RU",
+                "fee_type": "commission",
+                "fee_rate_pct": 12,
+                "fixed_amount": 5,
+                "priority": 0,
+                "status": "active",
+            },
+            headers=headers,
+        )
         assert resp.status_code == 403
 
     async def test_list_rules_with_permission(self, async_client):
@@ -333,28 +369,38 @@ class TestPlatformFeeCRUD:
         # PageResult returns records (not data)
         assert isinstance(body["records"], list)
 
-    @pytest.mark.skip(reason="endpoint removed in new PlatformFeeRule API (no GET detail)")
+    @pytest.mark.skip(
+        reason="endpoint removed in new PlatformFeeRule API (no GET detail)"
+    )
     async def test_get_rule_detail(self, async_client):
         pass
 
     async def test_update_rule_with_audit_log(self, async_client):
         headers = await _auth(async_client, "crud_upd", "platform_fee:manage")
         platform_id = await _create_platform(async_client, "crud_upd_pf")
-        create_resp = await async_client.post("/api/platform-fee/rules", json={
-            "platform_id": platform_id,
-            "country_code": "RU",
-            "fee_type": "commission",
-            "fee_rate_pct": 10,
-            "fixed_amount": 3,
-            "priority": 0,
-            "status": "active",
-        }, headers=headers)
+        create_resp = await async_client.post(
+            "/api/platform-fee/rules",
+            json={
+                "platform_id": platform_id,
+                "country_code": "RU",
+                "fee_type": "commission",
+                "fee_rate_pct": 10,
+                "fixed_amount": 3,
+                "priority": 0,
+                "status": "active",
+            },
+            headers=headers,
+        )
         rule_id = create_resp.json()["data"]["id"]
 
-        resp = await async_client.put(f"/api/platform-fee/rules/{rule_id}", json={
-            "fee_rate_pct": 15,
-            "remark": "updated",
-        }, headers=headers)
+        resp = await async_client.put(
+            f"/api/platform-fee/rules/{rule_id}",
+            json={
+                "fee_rate_pct": 15,
+                "remark": "updated",
+            },
+            headers=headers,
+        )
         assert resp.status_code == 200
         assert resp.json()["data"]["fee_rate_pct"] == 15
 
@@ -373,18 +419,24 @@ class TestPlatformFeeCRUD:
     async def test_delete_rule_with_audit_log(self, async_client):
         headers = await _auth(async_client, "crud_del", "platform_fee:manage")
         platform_id = await _create_platform(async_client, "crud_del_pf")
-        create_resp = await async_client.post("/api/platform-fee/rules", json={
-            "platform_id": platform_id,
-            "country_code": "RU",
-            "fee_type": "commission",
-            "fee_rate_pct": 10,
-            "fixed_amount": 3,
-            "priority": 0,
-            "status": "active",
-        }, headers=headers)
+        create_resp = await async_client.post(
+            "/api/platform-fee/rules",
+            json={
+                "platform_id": platform_id,
+                "country_code": "RU",
+                "fee_type": "commission",
+                "fee_rate_pct": 10,
+                "fixed_amount": 3,
+                "priority": 0,
+                "status": "active",
+            },
+            headers=headers,
+        )
         rule_id = create_resp.json()["data"]["id"]
 
-        resp = await async_client.delete(f"/api/platform-fee/rules/{rule_id}", headers=headers)
+        resp = await async_client.delete(
+            f"/api/platform-fee/rules/{rule_id}", headers=headers
+        )
         assert resp.status_code == 200
 
         # Verify audit log via direct session
@@ -399,11 +451,15 @@ class TestPlatformFeeCRUD:
             logs = result.scalars().all()
         assert len(logs) >= 1
 
-    @pytest.mark.skip(reason="match endpoint removed in new PlatformFeeRule API; use POST /api/platform-fee/calculate")
+    @pytest.mark.skip(
+        reason="match endpoint removed in new PlatformFeeRule API; use POST /api/platform-fee/calculate"
+    )
     async def test_match_endpoint_returns_correct_rule(self, async_client):
         pass
 
-    @pytest.mark.skip(reason="match endpoint removed in new PlatformFeeRule API; use POST /api/platform-fee/calculate")
+    @pytest.mark.skip(
+        reason="match endpoint removed in new PlatformFeeRule API; use POST /api/platform-fee/calculate"
+    )
     async def test_match_endpoint_returns_404_when_no_match(self, async_client):
         pass
 
@@ -411,33 +467,45 @@ class TestPlatformFeeCRUD:
         headers = await _auth(async_client, "calc_ep", "platform_fee:view")
         platform_id = await _create_platform(async_client, "calc_ep_pf")
         manage_headers = await _auth(async_client, "calc_ep_mgr", "platform_fee:manage")
-        await async_client.post("/api/platform-fee/rules", json={
-            "platform_id": platform_id,
-            "country_code": "RU",
-            "fee_type": "commission",
-            "fee_rate_pct": 10,
-            "fixed_amount": 0,
-            "priority": 0,
-            "status": "active",
-            "remark": "commission rule",
-        }, headers=manage_headers)
-        await async_client.post("/api/platform-fee/rules", json={
-            "platform_id": platform_id,
-            "country_code": "RU",
-            "fee_type": "fixed",
-            "fee_rate_pct": 0,
-            "fixed_amount": 5,
-            "priority": 0,
-            "status": "active",
-            "remark": "fixed fee",
-        }, headers=manage_headers)
+        await async_client.post(
+            "/api/platform-fee/rules",
+            json={
+                "platform_id": platform_id,
+                "country_code": "RU",
+                "fee_type": "commission",
+                "fee_rate_pct": 10,
+                "fixed_amount": 0,
+                "priority": 0,
+                "status": "active",
+                "remark": "commission rule",
+            },
+            headers=manage_headers,
+        )
+        await async_client.post(
+            "/api/platform-fee/rules",
+            json={
+                "platform_id": platform_id,
+                "country_code": "RU",
+                "fee_type": "fixed",
+                "fee_rate_pct": 0,
+                "fixed_amount": 5,
+                "priority": 0,
+                "status": "active",
+                "remark": "fixed fee",
+            },
+            headers=manage_headers,
+        )
 
-        resp = await async_client.post("/api/platform-fee/calculate", json={
-            "platform_id": platform_id,
-            "country_code": "RU",
-            "sale_price": 200,
-            "currency": "CNY",
-        }, headers=headers)
+        resp = await async_client.post(
+            "/api/platform-fee/calculate",
+            json={
+                "platform_id": platform_id,
+                "country_code": "RU",
+                "sale_price": 200,
+                "currency": "CNY",
+            },
+            headers=headers,
+        )
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["platform_id"] == platform_id
@@ -555,7 +623,9 @@ async def _create_auth_test_data(async_client, headers) -> int:
         json={"specs": [{"name": "颜色", "values": ["标准"]}]},
         headers=headers,
     )
-    resp = await async_client.post(f"/api/products/{pid}/skus/generate", headers=headers)
+    resp = await async_client.post(
+        f"/api/products/{pid}/skus/generate", headers=headers
+    )
     assert resp.status_code == 200, f"生成 SKU 失败: {resp.text}"
     sku_id = resp.json()["data"]["skus"][0]["id"]
 
@@ -613,7 +683,9 @@ async def _create_auth_test_data(async_client, headers) -> int:
 
 
 @pytest.mark.asyncio
-async def test_prelisting_decision_falls_back_to_manual_fee_when_no_rule_matches(async_client):
+async def test_prelisting_decision_falls_back_to_manual_fee_when_no_rule_matches(
+    async_client,
+):
     from tests.auth_helpers import grant_permission, register_and_login
     from uuid import uuid4
 

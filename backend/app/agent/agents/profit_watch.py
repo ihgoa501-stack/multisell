@@ -5,6 +5,7 @@
 - 输出单件利润、毛利率、费用拆分、亏损风险、调价建议
 - 数据不足时返回 insufficient_data
 """
+
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
@@ -13,9 +14,19 @@ from app.agent.data_service import AgentDataService
 
 REQUIRED_FIELDS = ["sku_code", "selling_price", "cost_price"]
 OPTIONAL_FIELDS = [
-    "platform", "country", "weight_kg", "length", "width", "height",
-    "shipping_fee", "platform_fee", "platform_fee_rate", "fixed_fee",
-    "discounts", "ad_cost_per_unit", "refund_rate",
+    "platform",
+    "country",
+    "weight_kg",
+    "length",
+    "width",
+    "height",
+    "shipping_fee",
+    "platform_fee",
+    "platform_fee_rate",
+    "fixed_fee",
+    "discounts",
+    "ad_cost_per_unit",
+    "refund_rate",
 ]
 
 
@@ -43,7 +54,9 @@ class A6ProfitWatchAgent(BaseAgent):
         "cost_optimization": EvolutionStage.SUGGESTION,
     }
 
-    async def decide(self, decision_point: str, context: dict[str, Any], db: Any = None) -> dict[str, Any]:
+    async def decide(
+        self, decision_point: str, context: dict[str, Any], db: Any = None
+    ) -> dict[str, Any]:
         if db is not None and decision_point == "profit_check":
             context = await AgentDataService.fill_sku_context(db, context)
         if decision_point == "profit_check":
@@ -96,7 +109,9 @@ class A6ProfitWatchAgent(BaseAgent):
                 if d_type in ("percentage", "coupon", "promotion", "member_discount"):
                     discount_rate += d_val
                 elif d_type in ("fixed", "fixed_amount"):
-                    discount_rate += d_val / selling_price * 100 if selling_price > 0 else 0
+                    discount_rate += (
+                        d_val / selling_price * 100 if selling_price > 0 else 0
+                    )
             discount_rate = min(discount_rate, 100.0)
         elif "discount_rate" in context:
             discount_rate = _safe_float(context["discount_rate"], 0)
@@ -120,7 +135,9 @@ class A6ProfitWatchAgent(BaseAgent):
         effective_revenue = selling_price - discount_amount
         profit_per_unit = round(effective_revenue - cost_price - total_fees, 2)
         gross_margin = round(
-            (profit_per_unit / effective_revenue * 100) if effective_revenue > 0 else 0.0,
+            (profit_per_unit / effective_revenue * 100)
+            if effective_revenue > 0
+            else 0.0,
             2,
         )
 
@@ -164,14 +181,18 @@ class A6ProfitWatchAgent(BaseAgent):
         fee_warnings = []
         cost_ratio_threshold = 0.5
         if total_fees > effective_revenue * cost_ratio_threshold:
-            fee_warnings.append(f"总费用占比过高({total_fees/effective_revenue*100:.0f}%)")
+            fee_warnings.append(
+                f"总费用占比过高({total_fees / effective_revenue * 100:.0f}%)"
+            )
         if platform_fee > effective_revenue * 0.2:
             fee_warnings.append(f"平台佣金({platform_fee})占比较高")
         if shipping_fee > effective_revenue * 0.25:
             fee_warnings.append(f"物流费用({shipping_fee})占比较高")
 
         result = {
-            "profit_check_status": "block" if is_loss else ("warn" if below_threshold else "allow"),
+            "profit_check_status": "block"
+            if is_loss
+            else ("warn" if below_threshold else "allow"),
             "sku_code": sku_code,
             "platform": platform,
             "country": country,
@@ -193,16 +214,20 @@ class A6ProfitWatchAgent(BaseAgent):
 
         # ---- LLM 自然语言解释 ----
         try:
-            result["ai_explanation"] = await AgentLlmService.explain("A6", {
-                "sku": sku_code,
-                "selling_price": selling_price,
-                "cost_price": cost_price,
-                "fee_breakdown": str(fees),
-                "profit": profit_per_unit,
-                "margin": gross_margin,
-                "is_loss": is_loss,
-                "anomaly_reason": anomaly_reason,
-            }, db=db)
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "A6",
+                {
+                    "sku": sku_code,
+                    "selling_price": selling_price,
+                    "cost_price": cost_price,
+                    "fee_breakdown": str(fees),
+                    "profit": profit_per_unit,
+                    "margin": gross_margin,
+                    "is_loss": is_loss,
+                    "anomaly_reason": anomaly_reason,
+                },
+                db=db,
+            )
         except Exception:
             result["ai_explanation"] = ""
 
@@ -220,7 +245,10 @@ class A6ProfitWatchAgent(BaseAgent):
         selling_price = _safe_float(context["selling_price"])
         cost_price = _safe_float(context["cost_price"])
         current_margin = round(
-            (selling_price - cost_price) / selling_price * 100 if selling_price > 0 else 0, 2
+            (selling_price - cost_price) / selling_price * 100
+            if selling_price > 0
+            else 0,
+            2,
         )
         target_margin = _safe_float(context.get("target_margin", 20.0))
 
@@ -231,24 +259,32 @@ class A6ProfitWatchAgent(BaseAgent):
             needed_revenue = cost_price / (1 - target_margin / 100)
             price_suggest = round(needed_revenue, 2)
             if price_suggest > selling_price:
-                suggestions.append({
-                    "type": "price_increase",
-                    "current_price": selling_price,
-                    "suggested_price": price_suggest,
-                    "increase_pct": round((price_suggest - selling_price) / selling_price * 100, 1),
-                    "description": f"提价至 ¥{price_suggest:.2f} 可达到 {target_margin}% 毛利率",
-                })
+                suggestions.append(
+                    {
+                        "type": "price_increase",
+                        "current_price": selling_price,
+                        "suggested_price": price_suggest,
+                        "increase_pct": round(
+                            (price_suggest - selling_price) / selling_price * 100, 1
+                        ),
+                        "description": f"提价至 ¥{price_suggest:.2f} 可达到 {target_margin}% 毛利率",
+                    }
+                )
 
             # 降本建议
             needed_cost = selling_price * (1 - target_margin / 100)
             if needed_cost < cost_price:
-                suggestions.append({
-                    "type": "cost_reduction",
-                    "current_cost": cost_price,
-                    "target_cost": round(needed_cost, 2),
-                    "reduction_pct": round((cost_price - needed_cost) / cost_price * 100, 1),
-                    "description": f"采购成本需降至 ¥{needed_cost:.2f} 以下",
-                })
+                suggestions.append(
+                    {
+                        "type": "cost_reduction",
+                        "current_cost": cost_price,
+                        "target_cost": round(needed_cost, 2),
+                        "reduction_pct": round(
+                            (cost_price - needed_cost) / cost_price * 100, 1
+                        ),
+                        "description": f"采购成本需降至 ¥{needed_cost:.2f} 以下",
+                    }
+                )
 
         return {
             "sku_code": sku_code,

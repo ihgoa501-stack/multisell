@@ -44,7 +44,9 @@ async def _get_or_create_mockfail_platform(session) -> Platform:
     return p
 
 
-async def _create_listing_task(session, product_id: int, platform_id: int) -> ListingTask:
+async def _create_listing_task(
+    session, product_id: int, platform_id: int
+) -> ListingTask:
     lt = ListingTask(
         product_id=product_id,
         platform_id=platform_id,
@@ -56,7 +58,9 @@ async def _create_listing_task(session, product_id: int, platform_id: int) -> Li
     return lt
 
 
-async def _create_pending_item(session, task_id: int, product_id: int, platform_id: int) -> ListingTaskItem:
+async def _create_pending_item(
+    session, task_id: int, product_id: int, platform_id: int
+) -> ListingTaskItem:
     item = ListingTaskItem(
         task_id=task_id,
         product_id=product_id,
@@ -182,7 +186,12 @@ async def test_worker_marks_item_failed_platform_not_found(async_client):
                 VALUES (:task_id, :product_id, :platform_id, :status)
                 RETURNING id
             """),
-            {"task_id": task.id, "product_id": product.id, "platform_id": 99999, "status": "pending"},
+            {
+                "task_id": task.id,
+                "product_id": product.id,
+                "platform_id": 99999,
+                "status": "pending",
+            },
         )
         await session.execute(text("SET session_replication_role = origin;"))
         item_id = result.scalar()

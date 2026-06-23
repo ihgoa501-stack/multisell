@@ -1,4 +1,5 @@
 """品牌管理 - 服务层"""
+
 from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +7,6 @@ from app.models import Brand
 
 
 class BrandService:
-
     @staticmethod
     async def create(db: AsyncSession, data: dict) -> Brand:
         brand = Brand(**data)
@@ -32,8 +32,9 @@ class BrandService:
         return await db.get(Brand, brand_id)
 
     @staticmethod
-    async def list_brands(db: AsyncSession, name: str = None,
-                           page: int = 1, page_size: int = 20) -> tuple[list[Brand], int]:
+    async def list_brands(
+        db: AsyncSession, name: str = None, page: int = 1, page_size: int = 20
+    ) -> tuple[list[Brand], int]:
         stmt = select(Brand)
         if name:
             stmt = stmt.where(Brand.name.like(f"%{name}%"))
@@ -49,7 +50,9 @@ class BrandService:
     @staticmethod
     async def get_all(db: AsyncSession) -> list[Brand]:
         """获取所有启用品牌（供下拉选择）"""
-        stmt = select(Brand).where(Brand.status == 1).order_by(Brand.sort_order, Brand.id)
+        stmt = (
+            select(Brand).where(Brand.status == 1).order_by(Brand.sort_order, Brand.id)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
@@ -60,7 +63,12 @@ class BrandService:
             return False
         # 检查是否有商品使用该品牌
         from app.models import Product
-        stmt = select(func.count()).select_from(Product).where(Product.brand_id == brand_id)
+
+        stmt = (
+            select(func.count())
+            .select_from(Product)
+            .where(Product.brand_id == brand_id)
+        )
         used_count = await db.scalar(stmt) or 0
         if used_count > 0:
             raise ValueError(f"有 {used_count} 个商品使用了该品牌，无法删除")

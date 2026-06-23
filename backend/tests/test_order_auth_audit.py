@@ -26,6 +26,7 @@ class TestOrderAuthAudit:
     async def _create_sku(self, async_client) -> int:
         """创建测试用的 SKU（使用 admin 绕过权限）"""
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",
@@ -37,7 +38,11 @@ class TestOrderAuthAudit:
 
         resp = await async_client.post(
             "/api/products",
-            json={"name": f"订单权限测试商品-{uuid4().hex[:8]}", "unit": "件", "status": 1},
+            json={
+                "name": f"订单权限测试商品-{uuid4().hex[:8]}",
+                "unit": "件",
+                "status": 1,
+            },
             headers=headers,
         )
         assert resp.status_code == 200
@@ -199,7 +204,12 @@ class TestOrderAuthAudit:
 
         resp = await async_client.post(
             f"/api/orders/{order_id}/shipping-quote",
-            json={"sku_id": sku_id, "quantity": 1, "destination_country": "US", "cargo_type": "normal"},
+            json={
+                "sku_id": sku_id,
+                "quantity": 1,
+                "destination_country": "US",
+                "cargo_type": "normal",
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 403
@@ -248,10 +258,13 @@ class TestOrderAuthAudit:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert logs_resp.status_code == 200
-        assert any(log["resource_id"] == str(order_id) for log in logs_resp.json()["records"])
+        assert any(
+            log["resource_id"] == str(order_id) for log in logs_resp.json()["records"]
+        )
 
     async def test_admin_bypasses_order_permission(self, async_client):
         from tests.auth_helpers import set_admin_role
+
         await set_admin_role()
         login_resp = await async_client.post(
             "/api/auth/login",

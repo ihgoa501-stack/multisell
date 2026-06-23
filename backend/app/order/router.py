@@ -8,7 +8,12 @@ from app.common import PageResult, Result
 from app.config import settings
 from app.database import get_db
 from app.models import Permission, Role, RolePermission, User, UserRole
-from app.order.schemas import OrderCreate, OrderProfitInputsUpdate, OrderShippingQuoteBind, OrderStatusUpdate
+from app.order.schemas import (
+    OrderCreate,
+    OrderProfitInputsUpdate,
+    OrderShippingQuoteBind,
+    OrderStatusUpdate,
+)
 from app.order.service import OrderService
 from app.operation_log.service import OperationLogService
 
@@ -143,7 +148,14 @@ async def update_order_status(
     current_user: User = Depends(_require_order_status_or_cancel),
 ):
     try:
-        order = await OrderService.update_status(db, order_id, data.status, data.remark, data.tracking_number, _operator(current_user))
+        order = await OrderService.update_status(
+            db,
+            order_id,
+            data.status,
+            data.remark,
+            data.tracking_number,
+            _operator(current_user),
+        )
     except ValueError as e:
         return Result.bad_request(str(e))
     if not order:

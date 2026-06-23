@@ -73,9 +73,7 @@ def _validate_required_columns(
     """检查必填列和互斥列。"""
     missing_base = base_required - headers
     if missing_base:
-        raise ValueError(
-            f"缺少必填列: {', '.join(sorted(missing_base))}。"
-        )
+        raise ValueError(f"缺少必填列: {', '.join(sorted(missing_base))}。")
     # tracking_number 和 order_no 至少一个
     if not headers & tracking_or_order:
         raise ValueError(
@@ -84,11 +82,21 @@ def _validate_required_columns(
         )
 
 
-def _detect_and_get_column_map(headers: set[str]) -> tuple[dict[str, str], set[str], set[str]]:
+def _detect_and_get_column_map(
+    headers: set[str],
+) -> tuple[dict[str, str], set[str], set[str]]:
     """检测 CSV 使用的是英文还是中文列名，返回 (column_map, base_required, tracking_or_order)。"""
     if "tracking_number" in headers or "actual_shipping_fee" in headers:
-        return COLUMN_MAP_EN_TO_MODEL, REQUIRED_EN_COLUMNS_BASE, REQUIRED_EN_TRACKING_OR_ORDER
-    return COLUMN_MAP_CN_TO_MODEL, REQUIRED_CN_COLUMNS_BASE, REQUIRED_CN_TRACKING_OR_ORDER
+        return (
+            COLUMN_MAP_EN_TO_MODEL,
+            REQUIRED_EN_COLUMNS_BASE,
+            REQUIRED_EN_TRACKING_OR_ORDER,
+        )
+    return (
+        COLUMN_MAP_CN_TO_MODEL,
+        REQUIRED_CN_COLUMNS_BASE,
+        REQUIRED_CN_TRACKING_OR_ORDER,
+    )
 
 
 class ShippingBillService:
@@ -106,7 +114,14 @@ class ShippingBillService:
         col_map, base_required, tracking_or_order = _detect_and_get_column_map(headers)
 
         # 检查必填列
-        _validate_required_columns(headers, base_required, tracking_or_order, "英文" if "tracking_number" in headers or "actual_shipping_fee" in headers else "中文")
+        _validate_required_columns(
+            headers,
+            base_required,
+            tracking_or_order,
+            "英文"
+            if "tracking_number" in headers or "actual_shipping_fee" in headers
+            else "中文",
+        )
 
         rows: list[dict] = []
         errors: list[str] = []
@@ -151,7 +166,9 @@ class ShippingBillService:
                     row["surcharge_fee"] = 0.0
 
                 # 计算 total_actual_fee
-                row["total_actual_fee"] = row["actual_shipping_fee"] + row["surcharge_fee"]
+                row["total_actual_fee"] = (
+                    row["actual_shipping_fee"] + row["surcharge_fee"]
+                )
 
                 # 数值转换：billed_weight_kg（可选）
                 if row.get("billed_weight_kg"):
@@ -270,10 +287,7 @@ class ShippingBillService:
         if not batch:
             return None
 
-        stmt = (
-            select(ShippingBillItem)
-            .where(ShippingBillItem.batch_id == batch_id)
-        )
+        stmt = select(ShippingBillItem).where(ShippingBillItem.batch_id == batch_id)
         result = await db.execute(stmt)
         items = result.scalars().all()
 
@@ -339,9 +353,7 @@ class ShippingBillService:
 
         # 策略1: 按 tracking_number 匹配 Order
         if item.tracking_number:
-            stmt = select(Order).where(
-                Order.tracking_number == item.tracking_number
-            )
+            stmt = select(Order).where(Order.tracking_number == item.tracking_number)
             result = await db.execute(stmt)
             order = result.scalar_one_or_none()
 
@@ -416,9 +428,7 @@ class ShippingBillService:
     ) -> dict:
         """获取所有批次的对账汇总。"""
         # 统计各状态
-        total_batches = await db.scalar(
-            select(func.count(ShippingBillBatch.id))
-        )
+        total_batches = await db.scalar(select(func.count(ShippingBillBatch.id)))
         reconciled_batches = await db.scalar(
             select(func.count(ShippingBillBatch.id)).where(
                 ShippingBillBatch.status == "reconciled"
@@ -426,18 +436,26 @@ class ShippingBillService:
         )
 
         # 统计所有行
-        total_items = await db.scalar(
-            select(func.count(ShippingBillItem.id))
-        ) or 0
+        total_items = await db.scalar(select(func.count(ShippingBillItem.id))) or 0
 
         # 各状态计数
         status_counts = {}
-        for status_val in ["matched", "unmatched_bill", "missing_snapshot", "amount_mismatch", "currency_mismatch", "manual_resolved"]:
-            cnt = await db.scalar(
-                select(func.count(ShippingBillItem.id)).where(
-                    ShippingBillItem.reconciliation_status == status_val
+        for status_val in [
+            "matched",
+            "unmatched_bill",
+            "missing_snapshot",
+            "amount_mismatch",
+            "currency_mismatch",
+            "manual_resolved",
+        ]:
+            cnt = (
+                await db.scalar(
+                    select(func.count(ShippingBillItem.id)).where(
+                        ShippingBillItem.reconciliation_status == status_val
+                    )
                 )
-            ) or 0
+                or 0
+            )
             if cnt > 0:
                 status_counts[status_val] = cnt
 
@@ -456,9 +474,7 @@ class ShippingBillService:
         status: Optional[str] = None,
     ) -> list[dict]:
         """查询账单批次列表。"""
-        stmt = select(ShippingBillBatch).order_by(
-            ShippingBillBatch.created_at.desc()
-        )
+        stmt = select(ShippingBillBatch).order_by(ShippingBillBatch.created_at.desc())
         if status:
             stmt = stmt.where(ShippingBillBatch.status == status)
 
@@ -528,16 +544,26 @@ class ShippingBillService:
                 "provider_name": it.provider_name,
                 "channel_name": it.channel_name,
                 "destination_country": it.destination_country,
-                "billed_weight_kg": float(it.billed_weight_kg) if it.billed_weight_kg else None,
+                "billed_weight_kg": float(it.billed_weight_kg)
+                if it.billed_weight_kg
+                else None,
                 "currency": it.currency or "CNY",
-                "actual_shipping_fee": float(it.actual_shipping_fee) if it.actual_shipping_fee else None,
+                "actual_shipping_fee": float(it.actual_shipping_fee)
+                if it.actual_shipping_fee
+                else None,
                 "surcharge_fee": float(it.surcharge_fee) if it.surcharge_fee else None,
-                "total_actual_fee": float(it.total_actual_fee) if it.total_actual_fee else None,
+                "total_actual_fee": float(it.total_actual_fee)
+                if it.total_actual_fee
+                else None,
                 "billed_at": it.billed_at.isoformat() if it.billed_at else None,
                 "matched_order_id": it.matched_order_id,
                 "matched_snapshot_id": it.matched_snapshot_id,
-                "snapshot_shipping_fee": float(it.snapshot_shipping_fee) if it.snapshot_shipping_fee else None,
-                "variance_amount": float(it.variance_amount) if it.variance_amount else None,
+                "snapshot_shipping_fee": float(it.snapshot_shipping_fee)
+                if it.snapshot_shipping_fee
+                else None,
+                "variance_amount": float(it.variance_amount)
+                if it.variance_amount
+                else None,
                 "note": it.note,
                 "resolved_by": it.resolved_by,
                 "resolved_at": it.resolved_at.isoformat() if it.resolved_at else None,
@@ -584,5 +610,7 @@ class ShippingBillService:
             "note": item.note,
             "resolved_by": item.resolved_by,
             "resolved_at": item.resolved_at.isoformat() if item.resolved_at else None,
-            "variance_amount": float(item.variance_amount) if item.variance_amount else None,
+            "variance_amount": float(item.variance_amount)
+            if item.variance_amount
+            else None,
         }

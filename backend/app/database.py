@@ -9,7 +9,9 @@ engine = create_async_engine(
     max_overflow=20,
     pool_pre_ping=True,
 )
-async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async_session_factory = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
 
 
 class Base(DeclarativeBase):
@@ -32,6 +34,7 @@ async def get_db() -> AsyncSession:
 async def init_db():
     """创建所有表（仅开发/测试环境用 — 推荐使用 alembic upgrade head）"""
     import warnings
+
     warnings.warn(
         "init_db() 已弃用，请使用 alembic upgrade head 管理数据库迁移",
         DeprecationWarning,

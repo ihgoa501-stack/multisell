@@ -1,4 +1,5 @@
 """售后退货 — schemas"""
+
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -7,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class AfterSalesCreate(BaseModel):
     """创建退货申请"""
+
     order_id: int
     item_id: Optional[int] = None
     sku_id: int
@@ -16,24 +18,28 @@ class AfterSalesCreate(BaseModel):
 
 class AfterSalesApprove(BaseModel):
     """审批通过"""
+
     approved_by: str
     refund_amount: Decimal = Field(..., gt=0)
 
 
 class AfterSalesReject(BaseModel):
     """驳回"""
+
     rejected_by: str
     rejection_reason: str = Field(..., max_length=500)
 
 
 class AfterSalesReceive(BaseModel):
     """入库验收"""
+
     received_by: str
     inspection_result: Optional[str] = None
 
 
 class AfterSalesRefund(BaseModel):
     """退款"""
+
     refunded_by: str
 
 

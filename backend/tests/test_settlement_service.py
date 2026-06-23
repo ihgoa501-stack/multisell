@@ -14,51 +14,78 @@ async def _ensure_order(async_client):
     """确保有创建的订单可生成结算"""
     # 创建平台（使用唯一 code 避免跨测试冲突）
     code = f"st{uuid.uuid4().hex[:8]}"
-    r = await async_client.post("/api/platforms", json={
-        "name": f"Settle-{code}", "code": code, "api_key": "k",
-    })
+    r = await async_client.post(
+        "/api/platforms",
+        json={
+            "name": f"Settle-{code}",
+            "code": code,
+            "api_key": "k",
+        },
+    )
     pid = _ok(r)["id"]
 
     # 创建商品
-    r = await async_client.post("/api/products", json={
-        "name": "SettleProd", "unit": "件", "status": 1,
-        "package_length_cm": 10, "package_width_cm": 10, "package_height_cm": 10,
-        "package_weight_kg": 0.5, "cargo_type": "normal",
-        "main_image": "https://ex.com/i.jpg",
-    })
+    r = await async_client.post(
+        "/api/products",
+        json={
+            "name": "SettleProd",
+            "unit": "件",
+            "status": 1,
+            "package_length_cm": 10,
+            "package_width_cm": 10,
+            "package_height_cm": 10,
+            "package_weight_kg": 0.5,
+            "cargo_type": "normal",
+            "main_image": "https://ex.com/i.jpg",
+        },
+    )
     prod = _ok(r)
 
     # SKU
-    r = await async_client.post(f"/api/products/{prod['id']}/specs", json={
-        "specs": [{"name": "C", "values": ["A"]}],
-    })
+    r = await async_client.post(
+        f"/api/products/{prod['id']}/specs",
+        json={
+            "specs": [{"name": "C", "values": ["A"]}],
+        },
+    )
     _ok(r)
     r = await async_client.post(f"/api/products/{prod['id']}/skus/generate")
     sku = _ok(r)["skus"][0]
 
-    r = await async_client.post("/api/prices", json={
-        "sku_id": sku["id"], "price_type": "sale_price", "price": 100,
-    })
+    r = await async_client.post(
+        "/api/prices",
+        json={
+            "sku_id": sku["id"],
+            "price_type": "sale_price",
+            "price": 100,
+        },
+    )
     _ok(r)
     r = await async_client.put(f"/api/inventory/{sku['id']}", json={"quantity": 50})
     _ok(r)
 
     # 订单
-    r = await async_client.post("/api/orders", json={
-        "recipient_name": "T", "recipient_phone": "13800000000",
-        "shipping_address": "Addr", "payment_method": "card",
-        "shipping_fee": 10,
-        "items": [{"sku_id": sku["id"], "quantity": 1}],
-    })
+    r = await async_client.post(
+        "/api/orders",
+        json={
+            "recipient_name": "T",
+            "recipient_phone": "13800000000",
+            "shipping_address": "Addr",
+            "payment_method": "card",
+            "shipping_fee": 10,
+            "items": [{"sku_id": sku["id"], "quantity": 1}],
+        },
+    )
     order = _ok(r)
-    r = await async_client.put(f"/api/orders/{order['id']}/status", json={"status": "paid"})
+    r = await async_client.put(
+        f"/api/orders/{order['id']}/status", json={"status": "paid"}
+    )
     _ok(r)
 
     return pid
 
 
 class TestSettlementAPI:
-
     async def test_generate_and_list_settlement(self, async_client):
         pid = await _ensure_order(async_client)
         r = await async_client.post(f"/api/settlements/mock?platform_id={pid}&count=2")

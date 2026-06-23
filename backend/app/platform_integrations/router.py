@@ -33,18 +33,20 @@ async def get_adapters(
     current_user: User = Depends(require_permission("platform_integration:view")),
 ):
     adapters = list_adapters()
-    return Result.ok([
-        AdapterCapabilityResponse(
-            adapter_code=a.adapter_code,
-            display_name=a.display_name,
-            supports_listing_publish=a.supports_listing_publish,
-            supports_order_import=a.supports_order_import,
-            supports_settlement_import=a.supports_settlement_import,
-            supports_tracking_sync=a.supports_tracking_sync,
-            auth_type=a.auth_type,
-        )
-        for a in adapters
-    ])
+    return Result.ok(
+        [
+            AdapterCapabilityResponse(
+                adapter_code=a.adapter_code,
+                display_name=a.display_name,
+                supports_listing_publish=a.supports_listing_publish,
+                supports_order_import=a.supports_order_import,
+                supports_settlement_import=a.supports_settlement_import,
+                supports_tracking_sync=a.supports_tracking_sync,
+                auth_type=a.auth_type,
+            )
+            for a in adapters
+        ]
+    )
 
 
 # ── 平台账号 ───────────────────────────────────────────────────────────
@@ -61,7 +63,9 @@ async def create_account(
         return Result.not_found("平台不存在")
 
     account = await PlatformIntegrationService.create_account(
-        db, data.model_dump(), operator=current_user.username,
+        db,
+        data.model_dump(),
+        operator=current_user.username,
     )
     platform_name = platform.name if platform else None
 
@@ -74,19 +78,21 @@ async def create_account(
         operator=current_user.username,
     )
 
-    return Result.ok(PlatformIntegrationAccountResponse(
-        id=account.id,
-        platform_id=account.platform_id,
-        platform_name=platform_name,
-        adapter_code=account.adapter_code,
-        account_name=account.account_name,
-        status=account.status,
-        credential_metadata=account.credential_metadata,
-        created_by=account.created_by,
-        updated_by=account.updated_by,
-        created_at=account.created_at,
-        updated_at=account.updated_at,
-    ))
+    return Result.ok(
+        PlatformIntegrationAccountResponse(
+            id=account.id,
+            platform_id=account.platform_id,
+            platform_name=platform_name,
+            adapter_code=account.adapter_code,
+            account_name=account.account_name,
+            status=account.status,
+            credential_metadata=account.credential_metadata,
+            created_by=account.created_by,
+            updated_by=account.updated_by,
+            created_at=account.created_at,
+            updated_at=account.updated_at,
+        )
+    )
 
 
 @router.get("/platform-integrations/accounts", summary="列出平台集成账号")
@@ -97,28 +103,34 @@ async def list_accounts(
     current_user: User = Depends(require_permission("platform_integration:view")),
 ):
     accounts = await PlatformIntegrationService.list_accounts(
-        db, adapter_code=adapter_code, status=status,
+        db,
+        adapter_code=adapter_code,
+        status=status,
     )
     items = []
     for acc in accounts:
         platform = await db.get(Platform, acc.platform_id)
-        items.append(PlatformIntegrationAccountResponse(
-            id=acc.id,
-            platform_id=acc.platform_id,
-            platform_name=platform.name if platform else None,
-            adapter_code=acc.adapter_code,
-            account_name=acc.account_name,
-            status=acc.status,
-            credential_metadata=acc.credential_metadata,
-            created_by=acc.created_by,
-            updated_by=acc.updated_by,
-            created_at=acc.created_at,
-            updated_at=acc.updated_at,
-        ))
+        items.append(
+            PlatformIntegrationAccountResponse(
+                id=acc.id,
+                platform_id=acc.platform_id,
+                platform_name=platform.name if platform else None,
+                adapter_code=acc.adapter_code,
+                account_name=acc.account_name,
+                status=acc.status,
+                credential_metadata=acc.credential_metadata,
+                created_by=acc.created_by,
+                updated_by=acc.updated_by,
+                created_at=acc.created_at,
+                updated_at=acc.updated_at,
+            )
+        )
     return Result.ok(items)
 
 
-@router.get("/platform-integrations/accounts/{account_id}", summary="查询平台集成账号详情")
+@router.get(
+    "/platform-integrations/accounts/{account_id}", summary="查询平台集成账号详情"
+)
 async def get_account(
     account_id: int,
     db: AsyncSession = Depends(get_db),
@@ -128,19 +140,21 @@ async def get_account(
     if not account:
         return Result.not_found("账号不存在")
     platform = await db.get(Platform, account.platform_id)
-    return Result.ok(PlatformIntegrationAccountResponse(
-        id=account.id,
-        platform_id=account.platform_id,
-        platform_name=platform.name if platform else None,
-        adapter_code=account.adapter_code,
-        account_name=account.account_name,
-        status=account.status,
-        credential_metadata=account.credential_metadata,
-        created_by=account.created_by,
-        updated_by=account.updated_by,
-        created_at=account.created_at,
-        updated_at=account.updated_at,
-    ))
+    return Result.ok(
+        PlatformIntegrationAccountResponse(
+            id=account.id,
+            platform_id=account.platform_id,
+            platform_name=platform.name if platform else None,
+            adapter_code=account.adapter_code,
+            account_name=account.account_name,
+            status=account.status,
+            credential_metadata=account.credential_metadata,
+            created_by=account.created_by,
+            updated_by=account.updated_by,
+            created_at=account.created_at,
+            updated_at=account.updated_at,
+        )
+    )
 
 
 @router.put("/platform-integrations/accounts/{account_id}", summary="更新平台集成账号")
@@ -151,7 +165,10 @@ async def update_account(
     current_user: User = Depends(require_permission("platform_integration:manage")),
 ):
     account = await PlatformIntegrationService.update_account(
-        db, account_id, data.model_dump(exclude_unset=True), operator=current_user.username,
+        db,
+        account_id,
+        data.model_dump(exclude_unset=True),
+        operator=current_user.username,
     )
     if not account:
         return Result.not_found("账号不存在")
@@ -166,22 +183,26 @@ async def update_account(
     )
 
     platform = await db.get(Platform, account.platform_id)
-    return Result.ok(PlatformIntegrationAccountResponse(
-        id=account.id,
-        platform_id=account.platform_id,
-        platform_name=platform.name if platform else None,
-        adapter_code=account.adapter_code,
-        account_name=account.account_name,
-        status=account.status,
-        credential_metadata=account.credential_metadata,
-        created_by=account.created_by,
-        updated_by=account.updated_by,
-        created_at=account.created_at,
-        updated_at=account.updated_at,
-    ))
+    return Result.ok(
+        PlatformIntegrationAccountResponse(
+            id=account.id,
+            platform_id=account.platform_id,
+            platform_name=platform.name if platform else None,
+            adapter_code=account.adapter_code,
+            account_name=account.account_name,
+            status=account.status,
+            credential_metadata=account.credential_metadata,
+            created_by=account.created_by,
+            updated_by=account.updated_by,
+            created_at=account.created_at,
+            updated_at=account.updated_at,
+        )
+    )
 
 
-@router.post("/platform-integrations/accounts/{account_id}/test", summary="测试平台连接")
+@router.post(
+    "/platform-integrations/accounts/{account_id}/test", summary="测试平台连接"
+)
 async def test_account(
     account_id: int,
     db: AsyncSession = Depends(get_db),
@@ -191,7 +212,9 @@ async def test_account(
     if not account:
         return Result.not_found("账号不存在")
 
-    success, message = await PlatformIntegrationService.test_account_connection(db, account)
+    success, message = await PlatformIntegrationService.test_account_connection(
+        db, account
+    )
 
     await OperationLogService.log(
         db,
@@ -222,7 +245,9 @@ async def create_category_mapping(
         return Result.not_found("本地类目不存在")
 
     mapping = await PlatformIntegrationService.create_category_mapping(
-        db, data.model_dump(), operator=current_user.username,
+        db,
+        data.model_dump(),
+        operator=current_user.username,
     )
 
     await OperationLogService.log(
@@ -234,19 +259,21 @@ async def create_category_mapping(
         operator=current_user.username,
     )
 
-    return Result.ok(PlatformCategoryMappingResponse(
-        id=mapping.id,
-        platform_id=mapping.platform_id,
-        platform_name=platform.name,
-        adapter_code=mapping.adapter_code,
-        local_category_id=mapping.local_category_id,
-        local_category_name=category.name,
-        platform_category_id=mapping.platform_category_id,
-        platform_category_name=mapping.platform_category_name,
-        platform_category_path=mapping.platform_category_path,
-        created_by=mapping.created_by,
-        created_at=mapping.created_at,
-    ))
+    return Result.ok(
+        PlatformCategoryMappingResponse(
+            id=mapping.id,
+            platform_id=mapping.platform_id,
+            platform_name=platform.name,
+            adapter_code=mapping.adapter_code,
+            local_category_id=mapping.local_category_id,
+            local_category_name=category.name,
+            platform_category_id=mapping.platform_category_id,
+            platform_category_name=mapping.platform_category_name,
+            platform_category_path=mapping.platform_category_path,
+            created_by=mapping.created_by,
+            created_at=mapping.created_at,
+        )
+    )
 
 
 @router.get("/platform-integrations/category-mappings", summary="列出平台类目映射")
@@ -257,25 +284,29 @@ async def list_category_mappings(
     current_user: User = Depends(require_permission("platform_integration:view")),
 ):
     mappings = await PlatformIntegrationService.list_category_mappings(
-        db, platform_id=platform_id, adapter_code=adapter_code,
+        db,
+        platform_id=platform_id,
+        adapter_code=adapter_code,
     )
     items = []
     for m in mappings:
         platform = await db.get(Platform, m.platform_id)
         category = await db.get(Category, m.local_category_id)
-        items.append(PlatformCategoryMappingResponse(
-            id=m.id,
-            platform_id=m.platform_id,
-            platform_name=platform.name if platform else None,
-            adapter_code=m.adapter_code,
-            local_category_id=m.local_category_id,
-            local_category_name=category.name if category else None,
-            platform_category_id=m.platform_category_id,
-            platform_category_name=m.platform_category_name,
-            platform_category_path=m.platform_category_path,
-            created_by=m.created_by,
-            created_at=m.created_at,
-        ))
+        items.append(
+            PlatformCategoryMappingResponse(
+                id=m.id,
+                platform_id=m.platform_id,
+                platform_name=platform.name if platform else None,
+                adapter_code=m.adapter_code,
+                local_category_id=m.local_category_id,
+                local_category_name=category.name if category else None,
+                platform_category_id=m.platform_category_id,
+                platform_category_name=m.platform_category_name,
+                platform_category_path=m.platform_category_path,
+                created_by=m.created_by,
+                created_at=m.created_at,
+            )
+        )
     return Result.ok(items)
 
 
@@ -293,7 +324,9 @@ async def create_attribute_mapping(
         return Result.not_found("平台不存在")
 
     mapping = await PlatformIntegrationService.create_attribute_mapping(
-        db, data.model_dump(), operator=current_user.username,
+        db,
+        data.model_dump(),
+        operator=current_user.username,
     )
 
     await OperationLogService.log(
@@ -305,17 +338,19 @@ async def create_attribute_mapping(
         operator=current_user.username,
     )
 
-    return Result.ok(PlatformAttributeMappingResponse(
-        id=mapping.id,
-        platform_id=mapping.platform_id,
-        platform_name=platform.name,
-        adapter_code=mapping.adapter_code,
-        local_attribute=mapping.local_attribute,
-        platform_attribute=mapping.platform_attribute,
-        default_value=mapping.default_value,
-        created_by=mapping.created_by,
-        created_at=mapping.created_at,
-    ))
+    return Result.ok(
+        PlatformAttributeMappingResponse(
+            id=mapping.id,
+            platform_id=mapping.platform_id,
+            platform_name=platform.name,
+            adapter_code=mapping.adapter_code,
+            local_attribute=mapping.local_attribute,
+            platform_attribute=mapping.platform_attribute,
+            default_value=mapping.default_value,
+            created_by=mapping.created_by,
+            created_at=mapping.created_at,
+        )
+    )
 
 
 @router.get("/platform-integrations/attribute-mappings", summary="列出平台属性映射")
@@ -326,20 +361,24 @@ async def list_attribute_mappings(
     current_user: User = Depends(require_permission("platform_integration:view")),
 ):
     mappings = await PlatformIntegrationService.list_attribute_mappings(
-        db, platform_id=platform_id, adapter_code=adapter_code,
+        db,
+        platform_id=platform_id,
+        adapter_code=adapter_code,
     )
     items = []
     for m in mappings:
         platform = await db.get(Platform, m.platform_id)
-        items.append(PlatformAttributeMappingResponse(
-            id=m.id,
-            platform_id=m.platform_id,
-            platform_name=platform.name if platform else None,
-            adapter_code=m.adapter_code,
-            local_attribute=m.local_attribute,
-            platform_attribute=m.platform_attribute,
-            default_value=m.default_value,
-            created_by=m.created_by,
-            created_at=m.created_at,
-        ))
+        items.append(
+            PlatformAttributeMappingResponse(
+                id=m.id,
+                platform_id=m.platform_id,
+                platform_name=platform.name if platform else None,
+                adapter_code=m.adapter_code,
+                local_attribute=m.local_attribute,
+                platform_attribute=m.platform_attribute,
+                default_value=m.default_value,
+                created_by=m.created_by,
+                created_at=m.created_at,
+            )
+        )
     return Result.ok(items)

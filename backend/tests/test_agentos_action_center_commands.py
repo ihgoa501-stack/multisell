@@ -39,12 +39,24 @@ def test_notify_is_registered():
 
 
 def test_all_adapters_are_integrated():
-    for name in ["daily_report", "listing_draft", "profit_review", "inventory_allocate", "notify"]:
+    for name in [
+        "daily_report",
+        "listing_draft",
+        "profit_review",
+        "inventory_allocate",
+        "notify",
+    ]:
         adapter = resolve_command_adapter(name)
         assert adapter["execution_mode"] == "integrated"
 
 
 def test_handler_map_has_all_adapters():
-    for name in ["daily_report", "listing_draft", "profit_review", "inventory_allocate", "notify"]:
+    for name in [
+        "daily_report",
+        "listing_draft",
+        "profit_review",
+        "inventory_allocate",
+        "notify",
+    ]:
         assert name in HANDLER_MAP, f"Missing handler for {name}"
         assert callable(HANDLER_MAP[name]), f"Handler for {name} is not callable"

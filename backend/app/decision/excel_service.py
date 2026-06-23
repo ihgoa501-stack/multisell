@@ -39,7 +39,9 @@ def _required_int(value: Any, field_name: str, errors: list[str]) -> int | None:
     return parsed
 
 
-def _float_or_default(value: Any, field_name: str, default: float, errors: list[str]) -> float:
+def _float_or_default(
+    value: Any, field_name: str, default: float, errors: list[str]
+) -> float:
     if value in (None, ""):
         return default
     try:
@@ -107,7 +109,9 @@ class PreListingDecisionExcelService:
         "警告",
         "错误",
     ]
-    HEADER_FILL = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
+    HEADER_FILL = PatternFill(
+        start_color="2C3E50", end_color="2C3E50", fill_type="solid"
+    )
     HEADER_FONT = Font(bold=True, color="FFFFFF")
     THIN_BORDER = Border(
         left=Side(style="thin"),
@@ -140,8 +144,12 @@ class PreListingDecisionExcelService:
         ws = wb.active
         ws.title = PreListingDecisionExcelService.SHEET_NAME
 
-        PreListingDecisionExcelService._style_header(ws, PreListingDecisionExcelService.HEADERS)
-        PreListingDecisionExcelService._set_col_widths(ws, [12, 10, 10, 12, 10, 10, 12, 12, 10, 14, 12])
+        PreListingDecisionExcelService._style_header(
+            ws, PreListingDecisionExcelService.HEADERS
+        )
+        PreListingDecisionExcelService._set_col_widths(
+            ws, [12, 10, 10, 12, 10, 10, 12, 12, 10, 14, 12]
+        )
 
         output = io.BytesIO()
         wb.save(output)
@@ -184,10 +192,14 @@ class PreListingDecisionExcelService:
 
             non_empty_count += 1
             if non_empty_count > PreListingDecisionExcelService.MAX_ROWS:
-                raise ValueError(f"最多支持{PreListingDecisionExcelService.MAX_ROWS}行数据")
+                raise ValueError(
+                    f"最多支持{PreListingDecisionExcelService.MAX_ROWS}行数据"
+                )
 
             errors: list[str] = []
-            parsed = PreListingDecisionExcelService._parse_row(row_values, header_map, errors)
+            parsed = PreListingDecisionExcelService._parse_row(
+                row_values, header_map, errors
+            )
 
             if errors:
                 items.append(
@@ -252,9 +264,12 @@ class PreListingDecisionExcelService:
             return None
 
         # 可选字段
-        item_key = _text(
-            PreListingDecisionExcelService._cell(row_values, header_map, "行标识")
-        ) or None
+        item_key = (
+            _text(
+                PreListingDecisionExcelService._cell(row_values, header_map, "行标识")
+            )
+            or None
+        )
 
         platform_id = _int_or_none(
             PreListingDecisionExcelService._cell(row_values, header_map, "平台ID"),
@@ -286,7 +301,9 @@ class PreListingDecisionExcelService:
             errors,
         )
         minimum_margin_pct = _float_or_default(
-            PreListingDecisionExcelService._cell(row_values, header_map, "最低利润率(%)"),
+            PreListingDecisionExcelService._cell(
+                row_values, header_map, "最低利润率(%)"
+            ),
             "最低利润率(%)",
             20,
             errors,
@@ -320,8 +337,34 @@ class PreListingDecisionExcelService:
         ws = wb.active
         ws.title = PreListingDecisionExcelService.RESULT_SHEET_NAME
 
-        PreListingDecisionExcelService._style_header(ws, PreListingDecisionExcelService.RESULT_HEADERS)
-        PreListingDecisionExcelService._set_col_widths(ws, [8, 14, 10, 8, 12, 10, 12, 12, 10, 10, 10, 12, 12, 10, 12, 12, 16, 20, 30, 30])
+        PreListingDecisionExcelService._style_header(
+            ws, PreListingDecisionExcelService.RESULT_HEADERS
+        )
+        PreListingDecisionExcelService._set_col_widths(
+            ws,
+            [
+                8,
+                14,
+                10,
+                8,
+                12,
+                10,
+                12,
+                12,
+                10,
+                10,
+                10,
+                12,
+                12,
+                10,
+                12,
+                12,
+                16,
+                20,
+                30,
+                30,
+            ],
+        )
 
         for row_idx, item in enumerate(data.items, start=2):
             status_label = "成功" if item.status == "success" else "错误"
@@ -338,8 +381,16 @@ class PreListingDecisionExcelService:
             profit = item.result.profit_amount if item.result else ""
             margin = item.result.profit_margin if item.result else ""
             fee_source = item.result.platform_fee_source if item.result else ""
-            reasons = "；".join(item.result.blocking_reasons) if item.result and item.result.blocking_reasons else ""
-            warnings = "；".join(item.result.warnings) if item.result and item.result.warnings else ""
+            reasons = (
+                "；".join(item.result.blocking_reasons)
+                if item.result and item.result.blocking_reasons
+                else ""
+            )
+            warnings = (
+                "；".join(item.result.warnings)
+                if item.result and item.result.warnings
+                else ""
+            )
             err_msg = item.error_message or ""
 
             vals = [

@@ -8,6 +8,7 @@ T = TypeVar("T")
 
 class Result(BaseModel, Generic[T]):
     """统一响应"""
+
     code: int = 200
     message: str = "ok"
     data: Optional[T] = None
@@ -35,6 +36,7 @@ class Result(BaseModel, Generic[T]):
 
 class PageResult(BaseModel, Generic[T]):
     """分页响应"""
+
     code: int = 200
     message: str = "ok"
     records: List[T] = []
@@ -49,12 +51,14 @@ class PageResult(BaseModel, Generic[T]):
 
 class PageParam(BaseModel):
     """分页参数"""
+
     page: int = 1
     page_size: int = 20
 
 
 class ProductStatus:
     """商品状态"""
+
     DRAFT = 0
     ON_SHELF = 1
     OFF_SHELF = 2

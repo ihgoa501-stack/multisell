@@ -43,12 +43,14 @@ async def create_task(
         operator=current_user.username,
     )
 
-    return Result.ok({
-        "id": task.id,
-        "name": task.name,
-        "status": task.status,
-        "total_count": task.total_count,
-    })
+    return Result.ok(
+        {
+            "id": task.id,
+            "name": task.name,
+            "status": task.status,
+            "total_count": task.total_count,
+        }
+    )
 
 
 @router.get("", summary="上架任务列表")
@@ -57,20 +59,24 @@ async def list_tasks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("listing:view")),
 ):
-    tasks, total = await ListingTaskService.list_tasks(db, page=params.page, page_size=params.page_size)
+    tasks, total = await ListingTaskService.list_tasks(
+        db, page=params.page, page_size=params.page_size
+    )
     records = []
     for t in tasks:
-        records.append({
-            "id": t.id,
-            "name": t.name,
-            "status": t.status,
-            "total_count": t.total_count,
-            "success_count": t.success_count,
-            "failed_count": t.failed_count,
-            "created_by": t.created_by,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-        })
+        records.append(
+            {
+                "id": t.id,
+                "name": t.name,
+                "status": t.status,
+                "total_count": t.total_count,
+                "success_count": t.success_count,
+                "failed_count": t.failed_count,
+                "created_by": t.created_by,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            }
+        )
     return PageResult.ok(records, total, params.page, params.page_size)
 
 
@@ -91,19 +97,21 @@ async def get_task(
         db, task_id, status_filter=status, page=page, page_size=page_size
     )
 
-    return Result.ok({
-        "id": task.id,
-        "name": task.name,
-        "status": task.status,
-        "total_count": task.total_count,
-        "success_count": task.success_count,
-        "failed_count": task.failed_count,
-        "created_by": task.created_by,
-        "created_at": task.created_at.isoformat() if task.created_at else None,
-        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
-        "items": items,
-        "items_total": items_total,
-    })
+    return Result.ok(
+        {
+            "id": task.id,
+            "name": task.name,
+            "status": task.status,
+            "total_count": task.total_count,
+            "success_count": task.success_count,
+            "failed_count": task.failed_count,
+            "created_by": task.created_by,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "items": items,
+            "items_total": items_total,
+        }
+    )
 
 
 @router.delete("/{task_id}", summary="删除任务")
@@ -158,13 +166,15 @@ async def execute_task(
         operator=current_user.username,
     )
 
-    return Result.ok({
-        "id": task.id,
-        "status": task.status,
-        "success_count": task.success_count,
-        "failed_count": task.failed_count,
-        "total_count": task.total_count,
-    })
+    return Result.ok(
+        {
+            "id": task.id,
+            "status": task.status,
+            "success_count": task.success_count,
+            "failed_count": task.failed_count,
+            "total_count": task.total_count,
+        }
+    )
 
 
 @router.post("/{task_id}/retry-failed", summary="重试任务下所有失败项")
@@ -216,8 +226,10 @@ async def retry_item(
         operator=current_user.username,
     )
 
-    return Result.ok({
-        "id": item.id,
-        "status": item.status,
-        "error_message": item.error_message,
-    })
+    return Result.ok(
+        {
+            "id": item.id,
+            "status": item.status,
+            "error_message": item.error_message,
+        }
+    )

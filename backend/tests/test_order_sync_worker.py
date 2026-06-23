@@ -42,7 +42,9 @@ def test_map_platform_order_status_mapping():
         ("", "pending"),
     ]
     for platform_status, expected in cases:
-        local = map_platform_order({"order_sn": "T1", "status": platform_status, "items": []}, platform_id=1)
+        local = map_platform_order(
+            {"order_sn": "T1", "status": platform_status, "items": []}, platform_id=1
+        )
         assert local["status"] == expected, f"{platform_status} -> {expected}"
 
 

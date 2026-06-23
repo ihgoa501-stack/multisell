@@ -67,7 +67,9 @@ async def delete_notification(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("notification:delete")),
 ):
-    ok = await NotificationService.delete_notification(db, notification_id, current_user.id)
+    ok = await NotificationService.delete_notification(
+        db, notification_id, current_user.id
+    )
     return Result.ok(message="已删除") if ok else Result.not_found("通知不存在")
 
 
@@ -90,10 +92,12 @@ async def initialize_alert_rules(
     current_user: User = Depends(require_permission("notification:manage")),
 ):
     rules = await NotificationService.initialize_rules(db)
-    return Result.ok({
-        "created": len(rules),
-        "message": f"已创建 {len(rules)} 条默认规则",
-    })
+    return Result.ok(
+        {
+            "created": len(rules),
+            "message": f"已创建 {len(rules)} 条默认规则",
+        }
+    )
 
 
 @router.get("/alert-rules", summary="预警规则列表")
@@ -102,17 +106,19 @@ async def list_alert_rules(
     current_user: User = Depends(require_permission("notification:view")),
 ):
     rules = await NotificationService.list_rules(db)
-    return Result.ok([
-        {
-            "id": r.id,
-            "name": r.name,
-            "alert_type": r.alert_type,
-            "enabled": bool(r.enabled),
-            "config": r.config or {},
-            "description": r.description,
-        }
-        for r in rules
-    ])
+    return Result.ok(
+        [
+            {
+                "id": r.id,
+                "name": r.name,
+                "alert_type": r.alert_type,
+                "enabled": bool(r.enabled),
+                "config": r.config or {},
+                "description": r.description,
+            }
+            for r in rules
+        ]
+    )
 
 
 @router.put("/alert-rules/{rule_id}", summary="更新预警规则")
@@ -127,8 +133,10 @@ async def update_alert_rule(
     )
     if not rule:
         return Result.not_found("规则不存在")
-    return Result.ok({
-        "id": rule.id,
-        "name": rule.name,
-        "enabled": bool(rule.enabled),
-    })
+    return Result.ok(
+        {
+            "id": rule.id,
+            "name": rule.name,
+            "enabled": bool(rule.enabled),
+        }
+    )

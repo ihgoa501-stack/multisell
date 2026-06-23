@@ -31,8 +31,12 @@ def upgrade() -> None:
         sa.Column("resolved_at", sa.DateTime(timezone=True)),
         sa.Column("resolved_by", sa.String(100)),
         sa.Column("note", sa.Text()),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_exception_source_module", "exception_item", ["source_module"])
     op.create_index("ix_exception_status", "exception_item", ["status"])
