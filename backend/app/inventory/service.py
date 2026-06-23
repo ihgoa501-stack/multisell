@@ -1,23 +1,52 @@
 """库存管理 - 服务层"""
+
+import asyncio
+import logging
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import Inventory, InventoryLog
+from app.database import async_session_factory
+from app.inventory.sync_service import sync_inventory_to_platforms
+from app.models import Inventory, InventoryLog, Sku
+
+logger = logging.getLogger(__name__)
+
+
+def _enqueue_inventory_sync(sku_id: int, quantity: int) -> None:
+    """Fire-and-forget: sync new quantity to all platforms in a background task."""
+
+    async def _task():
+        async with async_session_factory() as db:
+            sku = await db.get(Sku, sku_id)
+            sku_code = sku.code if sku else str(sku_id)
+            await sync_inventory_to_platforms(db, sku_id, sku_code, quantity)
+
+    try:
+        asyncio.create_task(_task())
+    except Exception:
+        logger.exception("Failed to enqueue inventory sync for SKU %s", sku_id)
 
 
 class InventoryService:
-
     @staticmethod
-    async def _get_inventory_for_update(db: AsyncSession, sku_id: int) -> Optional[Inventory]:
+    async def _get_inventory_for_update(
+        db: AsyncSession, sku_id: int
+    ) -> Optional[Inventory]:
         stmt = select(Inventory).where(Inventory.sku_id == sku_id).with_for_update()
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def update_inventory(db: AsyncSession, sku_id: int, quantity: int,
-                                warehouse: str = "默认仓库", location: str = None,
-                                safety_stock: int = None, remark: str = None,
-                                operator: str = "system") -> Inventory:
+    async def update_inventory(
+        db: AsyncSession,
+        sku_id: int,
+        quantity: int,
+        warehouse: str = "默认仓库",
+        location: str = None,
+        safety_stock: int = None,
+        remark: str = None,
+        operator: str = "system",
+    ) -> Inventory:
         """更新库存（设置最终值）"""
         stmt = select(Inventory).where(Inventory.sku_id == sku_id)
         result = await db.execute(stmt)
@@ -61,6 +90,9 @@ class InventoryService:
         db.add(log)
         await db.flush()
 
+        # Fire-and-forget: sync new quantity to all platforms
+        _enqueue_inventory_sync(sku_id, quantity)
+
         return inv
 
     @staticmethod
@@ -70,7 +102,9 @@ class InventoryService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def check_stock(db: AsyncSession, sku_id: int, quantity: int) -> tuple[bool, str]:
+    async def check_stock(
+        db: AsyncSession, sku_id: int, quantity: int
+    ) -> tuple[bool, str]:
         """检查库存是否充足（考虑锁定库存）"""
         inv = await InventoryService.get_inventory(db, sku_id)
         if not inv:
@@ -91,15 +125,17 @@ class InventoryService:
         remark: str,
         operator: str,
     ) -> None:
-        db.add(InventoryLog(
-            sku_id=sku_id,
-            change_type=change_type,
-            change_qty=change_qty,
-            before_qty=before_qty,
-            after_qty=after_qty,
-            remark=remark,
-            operator=operator,
-        ))
+        db.add(
+            InventoryLog(
+                sku_id=sku_id,
+                change_type=change_type,
+                change_qty=change_qty,
+                before_qty=before_qty,
+                after_qty=after_qty,
+                remark=remark,
+                operator=operator,
+            )
+        )
         await db.flush()
 
     @staticmethod
@@ -120,8 +156,14 @@ class InventoryService:
         inv.locked_quantity = before_locked + quantity
         await db.flush()
         await InventoryService._add_log(
-            db, sku_id, "lock", quantity, before_locked, inv.locked_quantity,
-            f"订单锁定库存: {order_no}", operator,
+            db,
+            sku_id,
+            "lock",
+            quantity,
+            before_locked,
+            inv.locked_quantity,
+            f"订单锁定库存: {order_no}",
+            operator,
         )
         return inv
 
@@ -138,13 +180,25 @@ class InventoryService:
             raise ValueError("库存记录不存在")
         before_locked = inv.locked_quantity or 0
         if before_locked < quantity:
-            raise ValueError(f"锁定库存不足，当前锁定: {before_locked}，需要释放: {quantity}")
+            raise ValueError(
+                f"锁定库存不足，当前锁定: {before_locked}，需要释放: {quantity}"
+            )
         inv.locked_quantity = before_locked - quantity
         await db.flush()
         await InventoryService._add_log(
-            db, sku_id, "release", -quantity, before_locked, inv.locked_quantity,
-            f"订单释放锁定库存: {order_no}", operator,
+            db,
+            sku_id,
+            "release",
+            -quantity,
+            before_locked,
+            inv.locked_quantity,
+            f"订单释放锁定库存: {order_no}",
+            operator,
         )
+
+        # Fire-and-forget: sync (available stock increased)
+        _enqueue_inventory_sync(sku_id, inv.quantity)
+
         return inv
 
     @staticmethod
@@ -161,22 +215,39 @@ class InventoryService:
         before_qty = inv.quantity or 0
         before_locked = inv.locked_quantity or 0
         if before_locked < quantity:
-            raise ValueError(f"锁定库存不足，当前锁定: {before_locked}，需要扣减: {quantity}")
+            raise ValueError(
+                f"锁定库存不足，当前锁定: {before_locked}，需要扣减: {quantity}"
+            )
         if before_qty < quantity:
             raise ValueError(f"库存不足，当前库存: {before_qty}，需要扣减: {quantity}")
         inv.quantity = before_qty - quantity
         inv.locked_quantity = before_locked - quantity
         await db.flush()
         await InventoryService._add_log(
-            db, sku_id, "deduct", -quantity, before_qty, inv.quantity,
-            f"订单支付扣减库存: {order_no}", operator,
+            db,
+            sku_id,
+            "deduct",
+            -quantity,
+            before_qty,
+            inv.quantity,
+            f"订单支付扣减库存: {order_no}",
+            operator,
         )
+
+        # Fire-and-forget: sync (stock was actually deducted)
+        _enqueue_inventory_sync(sku_id, inv.quantity)
+
         return inv
 
     @staticmethod
-    async def get_inventory_logs(db: AsyncSession, sku_id: int, limit: int = 50) -> list[InventoryLog]:
-        stmt = select(InventoryLog).where(
-            InventoryLog.sku_id == sku_id
-        ).order_by(InventoryLog.created_at.desc()).limit(limit)
+    async def get_inventory_logs(
+        db: AsyncSession, sku_id: int, limit: int = 50
+    ) -> list[InventoryLog]:
+        stmt = (
+            select(InventoryLog)
+            .where(InventoryLog.sku_id == sku_id)
+            .order_by(InventoryLog.created_at.desc())
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
