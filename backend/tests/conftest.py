@@ -1,11 +1,22 @@
 """pytest fixtures — ASGI transport + 测试数据库隔离"""
 
 import os
+import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
 # 测试环境使用独立数据库 — 强制关闭权限校验（覆盖已存在的环境变量）
 os.environ["AUTH_ENABLED"] = "False"
+
+
+@pytest.fixture
+def enable_auth():
+    """让测试在开启鉴权的环境下运行。用作: pytest.mark.usefixtures('enable_auth')"""
+    os.environ["AUTH_ENABLED"] = "True"
+    yield
+    os.environ["AUTH_ENABLED"] = "False"
+
+
 os.environ.setdefault(
     "DATABASE_URL",
     os.environ.get(
