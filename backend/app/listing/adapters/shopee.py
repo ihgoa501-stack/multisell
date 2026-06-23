@@ -46,8 +46,14 @@ class ShopeeListingAdapter:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _sign(api_key: str, partner_id: int, api_path: str, timestamp: int,
-              access_token: str, shop_id: int) -> str:
+    def _sign(
+        api_key: str,
+        partner_id: int,
+        api_path: str,
+        timestamp: int,
+        access_token: str,
+        shop_id: int,
+    ) -> str:
         """生成 Shopee API 签名（HMAC-SHA256）。"""
         raw = f"{partner_id}|{api_path}|{timestamp}|{access_token}|{shop_id}"
         return hmac.new(
@@ -101,28 +107,34 @@ class ShopeeListingAdapter:
     #  图片上传与转换
     # ------------------------------------------------------------------ #
 
-    async def _upload_local_image_if_needed(self, platform: Platform, image_url: str) -> str:
+    async def _upload_local_image_if_needed(
+        self, platform: Platform, image_url: str
+    ) -> str:
         """若是系统本地图片则先上传至 Shopee 并返回其平台 URL，否则直接返回"""
         from app.config import settings
-        
+
         if image_url.startswith(settings.STATIC_URL):
-            filename = image_url[len(settings.STATIC_URL):].lstrip("/")
+            filename = image_url[len(settings.STATIC_URL) :].lstrip("/")
             local_path = os.path.join(settings.UPLOAD_DIR, filename)
             if os.path.exists(local_path):
                 api_path = "/api/v2/media_space/upload_image"
                 params = self._build_auth_params(platform, api_path)
-                
+
                 # 限流控制
-                limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+                limiter = await get_limiter_for_platform(
+                    self.PLATFORM_CODE, platform.id
+                )
                 await limiter.acquire()
-                
+
                 logger.info("Uploading local image to Shopee: %s", local_path)
                 async with self._client(platform) as client:
                     with open(local_path, "rb") as f:
-                        files = {"image": (os.path.basename(local_path), f, "image/png")}
+                        files = {
+                            "image": (os.path.basename(local_path), f, "image/png")
+                        }
                         resp = await client.post(api_path, params=params, files=files)
                         body = self._parse_response(resp, "upload_image")
-                        
+
                         info = body.get("response", {}).get("image_info", {})
                         urls = info.get("image_url_list", [])
                         return urls[0] if urls else image_url
@@ -142,19 +154,27 @@ class ShopeeListingAdapter:
         desc = product.ai_description or product.description or ""
         return desc[:30000]
 
-    def _calculate_platform_price(self, cny_price: float, rate: float, extra: dict) -> float:
+    def _calculate_platform_price(
+        self, cny_price: float, rate: float, extra: dict
+    ) -> float:
         """定价公式: 售价 = (内部售价 * (1 + 利润加成) + 固定物流) * 汇率 / (1 - 佣金率)"""
         markup = float(extra.get("markup_rate", 0.0))
         commission = float(extra.get("commission_rate", 0.0))
         shipping = float(extra.get("fixed_shipping_fee", 0.0))
-        
+
         raw = (cny_price * (1.0 + markup) + shipping) * rate
         if commission < 1.0:
             raw = raw / (1.0 - commission)
         return float(round(raw, 2))  # 新币保留 2 位小数
 
-    def _build_variations(self, skus: list[Sku], prices: dict[int, Price],
-                          inventories: dict[int, Inventory], rate: float, extra: dict) -> list[dict]:
+    def _build_variations(
+        self,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+        rate: float,
+        extra: dict,
+    ) -> list[dict]:
         """Shopee 变体结构 (variations)"""
         variations = []
         for sku in skus:
@@ -169,7 +189,11 @@ class ShopeeListingAdapter:
                 "name": sku.spec_desc or sku.code or f"Var-{sku.id}",
                 "sku_code": sku.code or f"shopee-sku-{sku.id}",
                 "price": platform_price,
-                "stock": max(int(inventory.quantity) - int(inventory.locked_quantity), 0) if inventory else 0,
+                "stock": max(
+                    int(inventory.quantity) - int(inventory.locked_quantity), 0
+                )
+                if inventory
+                else 0,
             }
 
             if sku.sku_weight_kg:
@@ -200,7 +224,11 @@ class ShopeeListingAdapter:
         }
         if product.package_weight_kg:
             logistic["weight"] = float(product.package_weight_kg)
-        if product.package_length_cm and product.package_width_cm and product.package_height_cm:
+        if (
+            product.package_length_cm
+            and product.package_width_cm
+            and product.package_height_cm
+        ):
             logistic["package_length"] = float(product.package_length_cm)
             logistic["package_width"] = float(product.package_width_cm)
             logistic["package_height"] = float(product.package_height_cm)
@@ -236,7 +264,9 @@ class ShopeeListingAdapter:
         from app.exchange_rate.service import ExchangeRateService
 
         # 1. 汇率与定价换算 (CNY -> SGD)
-        rate_val = await ExchangeRateService.get_rate_or_fallback(db, "CNY", "SGD", 0.19)
+        rate_val = await ExchangeRateService.get_rate_or_fallback(
+            db, "CNY", "SGD", 0.19
+        )
 
         extra = platform.extra_config or {}
         variations = self._build_variations(skus, prices, inventories, rate_val, extra)
@@ -258,7 +288,9 @@ class ShopeeListingAdapter:
                     uploaded = await self._upload_local_image_if_needed(platform, img)
                     resolved_images.append(uploaded)
                 except Exception as e:
-                    logger.warning("Upload detail image %s to Shopee failed: %s", img, e)
+                    logger.warning(
+                        "Upload detail image %s to Shopee failed: %s", img, e
+                    )
                     resolved_images.append(img)
 
         payload = {
@@ -283,7 +315,9 @@ class ShopeeListingAdapter:
 
         logger.info(
             "publishing to Shopee: product_id=%s, skus=%d, shop_id=%s",
-            product.id, len(skus), params.get("shop_id"),
+            product.id,
+            len(skus),
+            params.get("shop_id"),
         )
 
         try:
@@ -294,7 +328,10 @@ class ShopeeListingAdapter:
             # 3. 冲突自动关联绑定 (检测重复商品或重复商家编码错误)
             exc_str = str(exc)
             if "duplicate" in exc_str or "already exists" in exc_str:
-                logger.info("Shopee duplicate offer_id detected: %s. Performing auto-binding.", exc_str)
+                logger.info(
+                    "Shopee duplicate offer_id detected: %s. Performing auto-binding.",
+                    exc_str,
+                )
                 platform_product_id = f"shopee-existing-{product.id}"
                 return PublishResult(
                     platform_product_id=platform_product_id,
@@ -306,8 +343,10 @@ class ShopeeListingAdapter:
             raise exc
 
         item_id = body.get("response", {}).get("item_id", "")
-        platform_product_id = f"shopee-{item_id}" if item_id else (
-            f"shopee-{product.id}-{int(datetime.now(timezone.utc).timestamp())}"
+        platform_product_id = (
+            f"shopee-{item_id}"
+            if item_id
+            else (f"shopee-{product.id}-{int(datetime.now(timezone.utc).timestamp())}")
         )
 
         return PublishResult(
@@ -318,15 +357,16 @@ class ShopeeListingAdapter:
             sync_message=f"published to Shopee (item_id={item_id})",
         )
 
-    async def sync_status(self, *, listing_id: int, platform: Platform,
-                          platform_product_id: str) -> str:
+    async def sync_status(
+        self, *, listing_id: int, platform: Platform, platform_product_id: str
+    ) -> str:
         """查询 Shopee 商品发布状态。"""
         if not platform_product_id or not platform_product_id.startswith("shopee-"):
             return "unknown"
 
         # 从 platform_product_id 提取 item_id
         item_id = platform_product_id.replace("shopee-", "", 1)
-        
+
         # 若是冲突绑定的占位商品，直接视为已同步
         if item_id.startswith("existing-"):
             return "synced"
@@ -398,7 +438,9 @@ class ShopeeListingAdapter:
         """Shopee 使用集成物流，无需手动推送追踪号。"""
         logger.warning(
             "Shopee push_tracking skipped — Shopee uses integrated logistics "
-            "(order_sn=%s, tracking=%s)", order_sn, tracking_number,
+            "(order_sn=%s, tracking=%s)",
+            order_sn,
+            tracking_number,
         )
         return True
 
@@ -472,11 +514,14 @@ class ShopeeListingAdapter:
             resp = await client.get(api_path, params=params)
             body = self._parse_response(resp, "fetch_order_detail")
         detail = body.get("response", {}).get("order_list", [{}])[0]
-        items = [{
-            "sku_code": i.get("item_sku", ""),
-            "quantity": i.get("model_quantity_purchased", 0),
-            "unit_price": str(i.get("model_original_price", "0")),
-        } for i in detail.get("item_list", [])]
+        items = [
+            {
+                "sku_code": i.get("item_sku", ""),
+                "quantity": i.get("model_quantity_purchased", 0),
+                "unit_price": str(i.get("model_original_price", "0")),
+            }
+            for i in detail.get("item_list", [])
+        ]
         return {
             "order_sn": order_sn,
             "status": detail.get("order_status", ""),
@@ -485,9 +530,36 @@ class ShopeeListingAdapter:
             "paid_at": detail.get("pay_time", ""),
             "recipient_name": detail.get("recipient_address", {}).get("name", ""),
             "recipient_phone": detail.get("recipient_address", {}).get("phone", ""),
-            "shipping_address": detail.get("recipient_address", {}).get("full_address", ""),
+            "shipping_address": detail.get("recipient_address", {}).get(
+                "full_address", ""
+            ),
             "items": items,
         }
+
+    # ------------------------------------------------------------------ #
+    #  库存同步
+    # ------------------------------------------------------------------ #
+
+    async def sync_inventory(
+        self,
+        *,
+        platform: Platform,
+        sku_code: str,
+        platform_sku: str,
+        quantity: int,
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        """POST /api/v2/product/update_stock 同步库存到 Shopee。"""
+        api_path = "/api/v2/product/update_stock"
+        params = self._build_auth_params(platform, api_path)
+        params["model_id"] = int(platform_sku) if platform_sku.isdigit() else 0
+        params["stock"] = quantity
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
+        async with self._client(platform) as client:
+            resp = await client.post(api_path, params=params)
+            body = self._parse_response(resp, "sync_inventory")
+        return body.get("response", {}).get("warning") is None
 
     # ------------------------------------------------------------------ #
     #  辅助方法
@@ -499,7 +571,9 @@ class ShopeeListingAdapter:
         try:
             body = resp.json()
         except Exception:
-            raise RuntimeError(f"Shopee {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}")
+            raise RuntimeError(
+                f"Shopee {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}"
+            )
 
         if resp.status_code >= 400:
             msg = body.get("message", body.get("error_description", resp.text[:300]))
@@ -508,7 +582,9 @@ class ShopeeListingAdapter:
         # Shopee API 返回 error=0 表示成功
         error_code = body.get("error")
         if error_code is not None and error_code != 0:
-            msg = body.get("message", body.get("error_description", f"error_code={error_code}"))
+            msg = body.get(
+                "message", body.get("error_description", f"error_code={error_code}")
+            )
             raise RuntimeError(f"Shopee {context} 失败 [error={error_code}]: {msg}")
 
         return body

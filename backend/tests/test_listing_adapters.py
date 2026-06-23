@@ -20,6 +20,7 @@ from app.models import Inventory, Platform, Price, Product, Sku
 #  Fixtures
 # =================================================================== #
 
+
 @pytest.fixture
 def platform() -> Platform:
     """共享 Ozon 测试平台（内存对象，不写 DB）"""
@@ -100,8 +101,12 @@ def skus() -> list[Sku]:
 @pytest.fixture
 def prices(skus: list[Sku]) -> dict[int, Price]:
     return {
-        skus[0].id: Price(id=1, sku_id=skus[0].id, price_type="sale_price", price=199.00),
-        skus[1].id: Price(id=2, sku_id=skus[1].id, price_type="sale_price", price=149.00),
+        skus[0].id: Price(
+            id=1, sku_id=skus[0].id, price_type="sale_price", price=199.00
+        ),
+        skus[1].id: Price(
+            id=2, sku_id=skus[1].id, price_type="sale_price", price=149.00
+        ),
     }
 
 
@@ -117,6 +122,7 @@ def inventories(skus: list[Sku]) -> dict[int, Inventory]:
 #  Ozon Adapter Tests
 # =================================================================== #
 
+
 class TestOzonListingAdapter:
     """Ozon 真实 API 适配器测试"""
 
@@ -124,20 +130,29 @@ class TestOzonListingAdapter:
     def adapter(self) -> OzonListingAdapter:
         return OzonListingAdapter()
 
-    async def test_publish_success(self, adapter: OzonListingAdapter, platform: Platform,
-                                    product: Product, skus: list[Sku],
-                                    prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_success(
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """publish() 应返回正确的 PublishResult"""
+
         # 构造 mock response
         def mock_handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/v4/product/import")
             body = json.loads(request.read())
             assert body["items"][0]["name"] == "测试商品 AI 标题"
             assert body["items"][0]["sku_data"][0]["offer_id"] == "SKU-001"
-            return httpx.Response(200, json={
-                "result": {"task_id": "ozon-task-12345"},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "result": {"task_id": "ozon-task-12345"},
+                },
+            )
 
         # 注入 mock transport
         with patch.object(adapter, "_client") as mock_client_factory:
@@ -158,118 +173,184 @@ class TestOzonListingAdapter:
         assert result.platform_sku == "SKU-001"
         assert "ozon.ru" in result.platform_url
         assert "task_id" in result.sync_message
-        assert result.published_data["api_response"]["result"]["task_id"] == "ozon-task-12345"
+        assert (
+            result.published_data["api_response"]["result"]["task_id"]
+            == "ozon-task-12345"
+        )
         assert "request_payload" in result.published_data
 
-    async def test_publish_no_skus(self, adapter: OzonListingAdapter, platform: Platform,
-                                    product: Product, prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_no_skus(
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
+        product: Product,
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """无 SKU 时应抛出 RuntimeError"""
         with pytest.raises(RuntimeError, match="至少需要一个 SKU"):
             await adapter.publish(
-                product=product, platform=platform, skus=[],
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=platform,
+                skus=[],
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_publish_no_package_data(self, adapter: OzonListingAdapter,
-                                            platform: Platform, product: Product,
-                                            skus: list[Sku], prices: dict[int, Price],
-                                            inventories: dict[int, Inventory]):
+    async def test_publish_no_package_data(
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """缺少包装数据时应抛出 RuntimeError"""
         product.package_length_cm = None
         product.package_weight_kg = None
         with pytest.raises(RuntimeError, match="缺少包装尺寸或重量"):
             await adapter.publish(
-                product=product, platform=platform, skus=skus,
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=platform,
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_publish_api_error(self, adapter: OzonListingAdapter, platform: Platform,
-                                      product: Product, skus: list[Sku],
-                                      prices: dict[int, Price],
-                                      inventories: dict[int, Inventory]):
+    async def test_publish_api_error(
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """API 返回错误时应抛出 RuntimeError"""
+
         def error_handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(400, json={
-                "error": {"code": "INVALID_CATEGORY", "message": "无效类目 ID"},
-            })
+            return httpx.Response(
+                400,
+                json={
+                    "error": {"code": "INVALID_CATEGORY", "message": "无效类目 ID"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(error_handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(error_handler),
+                base_url="https://api.example.com",
+            )
 
             with pytest.raises(RuntimeError, match="无效类目"):
                 await adapter.publish(
-                    product=product, platform=platform, skus=skus,
-                    prices=prices, inventories=inventories,
+                    product=product,
+                    platform=platform,
+                    skus=skus,
+                    prices=prices,
+                    inventories=inventories,
                 )
 
-    async def test_sync_status_synced(self, adapter: OzonListingAdapter, platform: Platform):
+    async def test_sync_status_synced(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """sync_status 应返回 synced"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "result": {"items": [{"state": "imported"}]},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "result": {"items": [{"state": "imported"}]},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             status = await adapter.sync_status(
-                listing_id=1001, platform=platform,
+                listing_id=1001,
+                platform=platform,
                 platform_product_id="ozon-1001-1718000000",
             )
 
         assert status == "synced"
 
-    async def test_sync_status_in_progress(self, adapter: OzonListingAdapter, platform: Platform):
+    async def test_sync_status_in_progress(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """sync_status 应返回 in_progress"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "result": {"items": [{"state": "processing"}]},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "result": {"items": [{"state": "processing"}]},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             status = await adapter.sync_status(
-                listing_id=1001, platform=platform,
+                listing_id=1001,
+                platform=platform,
                 platform_product_id="ozon-1001-1718000000",
             )
 
         assert status == "in_progress"
 
-    async def test_sync_status_no_items(self, adapter: OzonListingAdapter, platform: Platform):
+    async def test_sync_status_no_items(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """无 items 时应返回 unknown"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "result": {"items": []},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "result": {"items": []},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             status = await adapter.sync_status(
-                listing_id=1001, platform=platform,
+                listing_id=1001,
+                platform=platform,
                 platform_product_id="ozon-1001-1718000000",
             )
 
         assert status == "unknown"
 
-    async def test_validate_credentials_success(self, adapter: OzonListingAdapter,
-                                                 platform: Platform):
+    async def test_validate_credentials_success(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """凭证有效时应返回 True"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/v1/ping")
             return httpx.Response(200)
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             result = await adapter.validate_credentials(platform=platform)
 
         assert result is True
 
-    async def test_validate_credentials_failure(self, adapter: OzonListingAdapter,
-                                                 platform: Platform):
+    async def test_validate_credentials_failure(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """凭证无效时应返回 False"""
         platform.client_id = ""
         platform.api_key = ""
@@ -277,14 +358,18 @@ class TestOzonListingAdapter:
         result = await adapter.validate_credentials(platform=platform)
         assert result is False
 
-    async def test_validate_credentials_api_error(self, adapter: OzonListingAdapter,
-                                                   platform: Platform):
+    async def test_validate_credentials_api_error(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """API 返回非 200 时应返回 False"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(401, json={"error": {"code": "UNAUTHORIZED"}})
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             result = await adapter.validate_credentials(platform=platform)
 
@@ -304,23 +389,32 @@ class TestOzonListingAdapter:
             assert body["dir"] == "ASC"
             assert body["limit"] == 100
             if call_count == 1:
-                return httpx.Response(200, json={
-                    "result": {
-                        "postings": [{
-                            "posting_number": "12345",
-                            "status": "delivered",
-                            "analytics_data": {"delivery_price": "5.00"},
-                            "financial_data": {"products": [{
-                                "sku": "SKU001", "quantity": 2, "price": "19.99",
-                            }]},
-                            "in_process_at": "2026-06-20T10:00:00Z",
-                        }],
-                        "count": 1,
-                    }
-                })
-            return httpx.Response(200, json={
-                "result": {"postings": [], "count": 0}
-            })
+                return httpx.Response(
+                    200,
+                    json={
+                        "result": {
+                            "postings": [
+                                {
+                                    "posting_number": "12345",
+                                    "status": "delivered",
+                                    "analytics_data": {"delivery_price": "5.00"},
+                                    "financial_data": {
+                                        "products": [
+                                            {
+                                                "sku": "SKU001",
+                                                "quantity": 2,
+                                                "price": "19.99",
+                                            }
+                                        ]
+                                    },
+                                    "in_process_at": "2026-06-20T10:00:00Z",
+                                }
+                            ],
+                            "count": 1,
+                        }
+                    },
+                )
+            return httpx.Response(200, json={"result": {"postings": [], "count": 0}})
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.side_effect = lambda p=None: AsyncClient(
@@ -345,8 +439,11 @@ class TestOzonListingAdapter:
         assert result[0]["total_amount"] == "39.98"
         assert call_count == 2  # one with data + one empty to break loop
 
-    async def test_push_tracking_success(self, adapter: OzonListingAdapter, platform: Platform):
+    async def test_push_tracking_success(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """push_tracking() 应成功推送追踪号并返回 True"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/v3/posting/fbs/ship")
             body = json.loads(request.read())
@@ -368,8 +465,11 @@ class TestOzonListingAdapter:
 
         assert result is True
 
-    async def test_push_tracking_with_carrier(self, adapter: OzonListingAdapter, platform: Platform):
+    async def test_push_tracking_with_carrier(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """push_tracking() 应包含可选 carrier_code"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.read())
             assert body["carrier_code"] == "RU_CDEK"
@@ -390,12 +490,18 @@ class TestOzonListingAdapter:
 
         assert result is True
 
-    async def test_push_tracking_api_error(self, adapter: OzonListingAdapter, platform: Platform):
+    async def test_push_tracking_api_error(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """API 返回错误时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(400, json={
-                "error": {"code": "INVALID_POSTING", "message": "无效发货单"},
-            })
+            return httpx.Response(
+                400,
+                json={
+                    "error": {"code": "INVALID_POSTING", "message": "无效发货单"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -410,7 +516,9 @@ class TestOzonListingAdapter:
                     tracking_number="TRACK123",
                 )
 
-    async def test_fetch_orders_pagination(self, adapter: OzonListingAdapter, platform: Platform):
+    async def test_fetch_orders_pagination(
+        self, adapter: OzonListingAdapter, platform: Platform
+    ):
         """fetch_orders() 应循环翻页直到无数据"""
         call_count = 0
 
@@ -420,29 +528,61 @@ class TestOzonListingAdapter:
             body = json.loads(request.read())
             page = body.get("page", 1)
             if page == 1:
-                return httpx.Response(200, json={
-                    "result": {"postings": [{
-                        "posting_number": f"PAGE1-{page}",
-                        "status": "delivered",
-                        "analytics_data": {"delivery_price": "3.00"},
-                        "financial_data": {"products": [{"sku": "A", "quantity": 1, "price": "10.00"}]},
-                        "in_process_at": "2026-06-20T10:00:00Z",
-                    }], "count": 1}
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "result": {
+                            "postings": [
+                                {
+                                    "posting_number": f"PAGE1-{page}",
+                                    "status": "delivered",
+                                    "analytics_data": {"delivery_price": "3.00"},
+                                    "financial_data": {
+                                        "products": [
+                                            {
+                                                "sku": "A",
+                                                "quantity": 1,
+                                                "price": "10.00",
+                                            }
+                                        ]
+                                    },
+                                    "in_process_at": "2026-06-20T10:00:00Z",
+                                }
+                            ],
+                            "count": 1,
+                        }
+                    },
+                )
             elif page == 2:
-                return httpx.Response(200, json={
-                    "result": {"postings": [{
-                        "posting_number": f"PAGE2-{page}",
-                        "status": "delivered",
-                        "analytics_data": {"delivery_price": "4.00"},
-                        "financial_data": {"products": [{"sku": "B", "quantity": 3, "price": "15.00"}]},
-                        "in_process_at": "2026-06-21T10:00:00Z",
-                    }], "count": 1}
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "result": {
+                            "postings": [
+                                {
+                                    "posting_number": f"PAGE2-{page}",
+                                    "status": "delivered",
+                                    "analytics_data": {"delivery_price": "4.00"},
+                                    "financial_data": {
+                                        "products": [
+                                            {
+                                                "sku": "B",
+                                                "quantity": 3,
+                                                "price": "15.00",
+                                            }
+                                        ]
+                                    },
+                                    "in_process_at": "2026-06-21T10:00:00Z",
+                                }
+                            ],
+                            "count": 1,
+                        }
+                    },
+                )
             else:
-                return httpx.Response(200, json={
-                    "result": {"postings": [], "count": 0}
-                })
+                return httpx.Response(
+                    200, json={"result": {"postings": [], "count": 0}}
+                )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.side_effect = lambda p=None: AsyncClient(
@@ -465,48 +605,54 @@ class TestOzonListingAdapter:
     # ------------------------------------------------------------------ #
 
     async def test_fetch_settlements_success(
-        self, adapter: OzonListingAdapter, platform: Platform,
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
     ):
         """fetch_settlements() 应返回映射后的结算记录"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/v3/finance/transaction/list")
             body = json.loads(request.read())
             assert "filter" in body
             assert "date" in body["filter"]
             assert "from" in body["filter"]["date"]
-            return httpx.Response(200, json={
-                "result": {
-                    "operations": [
-                        {
-                            "operation_id": 100001,
-                            "operation_type": "sale",
-                            "operation_date": "2026-06-20T10:00:00Z",
-                            "amount": "1500.00",
-                            "currency_code": "RUB",
-                            "description": "Order payment",
-                            "posting": {"posting_number": "12345"},
-                        },
-                        {
-                            "operation_id": 100002,
-                            "operation_type": "commission",
-                            "operation_date": "2026-06-20T10:05:00Z",
-                            "amount": "-75.00",
-                            "currency_code": "RUB",
-                            "description": "Platform commission",
-                            "posting": {"posting_number": "12345"},
-                        },
-                        {
-                            "operation_id": 100003,
-                            "operation_type": "refund",
-                            "operation_date": "2026-06-21T12:00:00Z",
-                            "amount": "-500.00",
-                            "currency_code": "RUB",
-                            "description": "Customer refund",
-                            "posting": {"posting_number": "67890"},
-                        },
-                    ],
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "operations": [
+                            {
+                                "operation_id": 100001,
+                                "operation_type": "sale",
+                                "operation_date": "2026-06-20T10:00:00Z",
+                                "amount": "1500.00",
+                                "currency_code": "RUB",
+                                "description": "Order payment",
+                                "posting": {"posting_number": "12345"},
+                            },
+                            {
+                                "operation_id": 100002,
+                                "operation_type": "commission",
+                                "operation_date": "2026-06-20T10:05:00Z",
+                                "amount": "-75.00",
+                                "currency_code": "RUB",
+                                "description": "Platform commission",
+                                "posting": {"posting_number": "12345"},
+                            },
+                            {
+                                "operation_id": 100003,
+                                "operation_type": "refund",
+                                "operation_date": "2026-06-21T12:00:00Z",
+                                "amount": "-500.00",
+                                "currency_code": "RUB",
+                                "description": "Customer refund",
+                                "posting": {"posting_number": "67890"},
+                            },
+                        ],
+                    },
                 },
-            })
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -538,13 +684,19 @@ class TestOzonListingAdapter:
         assert result[2]["order_sn"] == "67890"
 
     async def test_fetch_settlements_empty(
-        self, adapter: OzonListingAdapter, platform: Platform,
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
     ):
         """fetch_settlements() 应正确处理空列表响应"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "result": {"operations": []},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "result": {"operations": []},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -560,13 +712,19 @@ class TestOzonListingAdapter:
         assert len(result) == 0
 
     async def test_fetch_settlements_api_error(
-        self, adapter: OzonListingAdapter, platform: Platform,
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
     ):
         """fetch_settlements API 返回错误时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(400, json={
-                "error": {"code": "INVALID_DATE", "message": "无效日期范围"},
-            })
+            return httpx.Response(
+                400,
+                json={
+                    "error": {"code": "INVALID_DATE", "message": "无效日期范围"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -580,47 +738,52 @@ class TestOzonListingAdapter:
                     since=datetime(2026, 6, 19),
                 )
 
-
     # ------------------------------------------------------------------ #
     #  fetch_returns tests
     # ------------------------------------------------------------------ #
 
     async def test_fetch_returns_success(
-        self, adapter: OzonListingAdapter, platform: Platform,
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
     ):
         """fetch_returns() 应返回映射后的退货数据"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/v3/returns/list")
             body = json.loads(request.read())
             assert "filter" in body
             assert "last_change_from" in body["filter"]
             assert body["limit"] == 100
-            return httpx.Response(200, json={
-                "result": {
-                    "returns": [
-                        {
-                            "return_id": 5001,
-                            "posting_number": "POST-001",
-                            "sku": "SKU-001",
-                            "quantity": 2,
-                            "reason": "商品破损",
-                            "status": "waiting_for_seller",
-                            "created_at": "2026-06-20T10:00:00Z",
-                            "refund_amount": "199.00",
-                        },
-                        {
-                            "return_id": 5002,
-                            "posting_number": "POST-002",
-                            "sku": "SKU-002",
-                            "quantity": 1,
-                            "reason": "买家取消",
-                            "status": "returned",
-                            "created_at": "2026-06-21T12:00:00Z",
-                            "refund_amount": "149.00",
-                        },
-                    ],
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "returns": [
+                            {
+                                "return_id": 5001,
+                                "posting_number": "POST-001",
+                                "sku": "SKU-001",
+                                "quantity": 2,
+                                "reason": "商品破损",
+                                "status": "waiting_for_seller",
+                                "created_at": "2026-06-20T10:00:00Z",
+                                "refund_amount": "199.00",
+                            },
+                            {
+                                "return_id": 5002,
+                                "posting_number": "POST-002",
+                                "sku": "SKU-002",
+                                "quantity": 1,
+                                "reason": "买家取消",
+                                "status": "returned",
+                                "created_at": "2026-06-21T12:00:00Z",
+                                "refund_amount": "149.00",
+                            },
+                        ],
+                    },
                 },
-            })
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -654,13 +817,19 @@ class TestOzonListingAdapter:
         assert result[1]["refund_amount"] == "149.00"
 
     async def test_fetch_returns_empty(
-        self, adapter: OzonListingAdapter, platform: Platform,
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
     ):
         """fetch_returns() 应正确处理空列表响应"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "result": {"returns": []},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "result": {"returns": []},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -676,13 +845,19 @@ class TestOzonListingAdapter:
         assert len(result) == 0
 
     async def test_fetch_returns_api_error(
-        self, adapter: OzonListingAdapter, platform: Platform,
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
     ):
         """fetch_returns API 返回错误时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(400, json={
-                "error": {"code": "INVALID_DATE", "message": "无效日期范围"},
-            })
+            return httpx.Response(
+                400,
+                json={
+                    "error": {"code": "INVALID_DATE", "message": "无效日期范围"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -696,10 +871,73 @@ class TestOzonListingAdapter:
                     since=datetime(2026, 6, 19),
                 )
 
+    # ------------------------------------------------------------------ #
+    #  sync_inventory tests
+    # ------------------------------------------------------------------ #
+
+    async def test_sync_inventory_success(
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
+    ):
+        """sync_inventory() 应成功同步库存并返回 True"""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/v4/product/import/stocks")
+            body = json.loads(request.read())
+            assert body["stocks"][0]["sku"] == "SKU-001"
+            assert body["stocks"][0]["stock"] == 50
+            return httpx.Response(200, json={"result": True})
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            result = await adapter.sync_inventory(
+                platform=platform,
+                sku_code="SKU-001",
+                platform_sku="SKU-001",
+                quantity=50,
+            )
+
+        assert result is True
+
+    async def test_sync_inventory_api_error(
+        self,
+        adapter: OzonListingAdapter,
+        platform: Platform,
+    ):
+        """sync_inventory API 返回错误时应抛出 RuntimeError"""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                400,
+                json={
+                    "error": {"code": "INVALID_STOCK", "message": "无效库存参数"},
+                },
+            )
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://api-seller.ozon.ru",
+            )
+
+            with pytest.raises(RuntimeError, match="无效库存参数"):
+                await adapter.sync_inventory(
+                    platform=platform,
+                    sku_code="SKU-001",
+                    platform_sku="SKU-001",
+                    quantity=50,
+                )
+
 
 # =================================================================== #
 #  Shopee Adapter Tests
 # =================================================================== #
+
 
 class TestShopeeListingAdapter:
     """Shopee 真实 API 适配器测试"""
@@ -708,11 +946,17 @@ class TestShopeeListingAdapter:
     def adapter(self) -> ShopeeListingAdapter:
         return ShopeeListingAdapter()
 
-    async def test_publish_success(self, adapter: ShopeeListingAdapter,
-                                    shopee_platform: Platform, product: Product,
-                                    skus: list[Sku], prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_success(
+        self,
+        adapter: ShopeeListingAdapter,
+        shopee_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """publish() 应返回正确的 PublishResult"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/api/v2/product/add")
             # 验证认证参数
@@ -722,11 +966,14 @@ class TestShopeeListingAdapter:
             assert body["name"] == "测试商品 AI 标题"
             assert len(body["variations"]) == 2
             assert body["variations"][0]["sku_code"] == "SKU-001"
-            return httpx.Response(200, json={
-                "error": 0,
-                "request_id": "req-001",
-                "response": {"item_id": 987654321},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "error": 0,
+                    "request_id": "req-001",
+                    "response": {"item_id": 987654321},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -735,174 +982,262 @@ class TestShopeeListingAdapter:
             )
 
             result = await adapter.publish(
-                product=product, platform=shopee_platform,
-                skus=skus, prices=prices, inventories=inventories,
+                product=product,
+                platform=shopee_platform,
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
             )
 
         assert result.platform_product_id.startswith("shopee-")
         assert "shopee.ph" in result.platform_url
         assert "item_id" in result.sync_message
 
-    async def test_publish_no_skus(self, adapter: ShopeeListingAdapter,
-                                    shopee_platform: Platform, product: Product,
-                                    prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_no_skus(
+        self,
+        adapter: ShopeeListingAdapter,
+        shopee_platform: Platform,
+        product: Product,
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """无 SKU 时应抛出 RuntimeError"""
         with pytest.raises(RuntimeError, match="至少需要一个 SKU"):
             await adapter.publish(
-                product=product, platform=shopee_platform, skus=[],
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=shopee_platform,
+                skus=[],
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_publish_no_weight(self, adapter: ShopeeListingAdapter,
-                                      shopee_platform: Platform, product: Product,
-                                      skus: list[Sku], prices: dict[int, Price],
-                                      inventories: dict[int, Inventory]):
+    async def test_publish_no_weight(
+        self,
+        adapter: ShopeeListingAdapter,
+        shopee_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """缺少包装重量时应抛出 RuntimeError"""
         product.package_weight_kg = None
         with pytest.raises(RuntimeError, match="缺少包装重量"):
             await adapter.publish(
-                product=product, platform=shopee_platform, skus=skus,
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=shopee_platform,
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_publish_api_error(self, adapter: ShopeeListingAdapter,
-                                      shopee_platform: Platform, product: Product,
-                                      skus: list[Sku], prices: dict[int, Price],
-                                      inventories: dict[int, Inventory]):
+    async def test_publish_api_error(
+        self,
+        adapter: ShopeeListingAdapter,
+        shopee_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """API 返回 error != 0 时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "error": 1003,
-                "message": "Invalid access token",
-                "request_id": "req-001",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "error": 1003,
+                    "message": "Invalid access token",
+                    "request_id": "req-001",
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             with pytest.raises(RuntimeError, match="Invalid access token"):
                 await adapter.publish(
-                    product=product, platform=shopee_platform, skus=skus,
-                    prices=prices, inventories=inventories,
+                    product=product,
+                    platform=shopee_platform,
+                    skus=skus,
+                    prices=prices,
+                    inventories=inventories,
                 )
 
-    async def test_publish_http_error(self, adapter: ShopeeListingAdapter,
-                                       shopee_platform: Platform, product: Product,
-                                       skus: list[Sku], prices: dict[int, Price],
-                                       inventories: dict[int, Inventory]):
+    async def test_publish_http_error(
+        self,
+        adapter: ShopeeListingAdapter,
+        shopee_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """HTTP 400 时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(400, json={
-                "message": "Bad request: invalid category",
-            })
+            return httpx.Response(
+                400,
+                json={
+                    "message": "Bad request: invalid category",
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             with pytest.raises(RuntimeError, match="Bad request"):
                 await adapter.publish(
-                    product=product, platform=shopee_platform, skus=skus,
-                    prices=prices, inventories=inventories,
+                    product=product,
+                    platform=shopee_platform,
+                    skus=skus,
+                    prices=prices,
+                    inventories=inventories,
                 )
 
-    async def test_sync_status_synced(self, adapter: ShopeeListingAdapter,
-                                       shopee_platform: Platform):
+    async def test_sync_status_synced(
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """sync_status 应返回 synced"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/api/v2/product/get_item_base_info")
-            return httpx.Response(200, json={
-                "error": 0,
-                "response": {"item_status": "NORMAL"},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "error": 0,
+                    "response": {"item_status": "NORMAL"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             status = await adapter.sync_status(
-                listing_id=1001, platform=shopee_platform,
+                listing_id=1001,
+                platform=shopee_platform,
                 platform_product_id="shopee-987654321",
             )
 
         assert status == "synced"
 
-    async def test_sync_status_unlisted(self, adapter: ShopeeListingAdapter,
-                                         shopee_platform: Platform):
+    async def test_sync_status_unlisted(
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """sync_status 应返回 unlisted"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "error": 0,
-                "response": {"item_status": "UNLIST"},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "error": 0,
+                    "response": {"item_status": "UNLIST"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             status = await adapter.sync_status(
-                listing_id=1001, platform=shopee_platform,
+                listing_id=1001,
+                platform=shopee_platform,
                 platform_product_id="shopee-987654321",
             )
 
         assert status == "unlisted"
 
     async def test_sync_status_unknown_item_id(
-            self, adapter: ShopeeListingAdapter, shopee_platform: Platform):
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """无效的 platform_product_id 应返回 unknown"""
         status = await adapter.sync_status(
-            listing_id=1001, platform=shopee_platform,
+            listing_id=1001,
+            platform=shopee_platform,
             platform_product_id="invalid-id",
         )
 
         assert status == "unknown"
 
-    async def test_validate_credentials_success(self, adapter: ShopeeListingAdapter,
-                                                 shopee_platform: Platform):
+    async def test_validate_credentials_success(
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """凭证有效时应返回 True"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/api/v2/shop/get_shop_info")
-            return httpx.Response(200, json={
-                "error": 0,
-                "response": {"shop_id": 654321, "shop_name": "Test Shop"},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "error": 0,
+                    "response": {"shop_id": 654321, "shop_name": "Test Shop"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             result = await adapter.validate_credentials(platform=shopee_platform)
 
         assert result is True
 
     async def test_validate_credentials_missing_fields(
-            self, adapter: ShopeeListingAdapter):
+        self, adapter: ShopeeListingAdapter
+    ):
         """缺少字段时应返回 False"""
         platform = Platform(
-            id=3, code="shopee", client_id="", api_key="",
-            extra_config={}, status=1,
+            id=3,
+            code="shopee",
+            client_id="",
+            api_key="",
+            extra_config={},
+            status=1,
         )
         result = await adapter.validate_credentials(platform=platform)
         assert result is False
 
     async def test_validate_credentials_missing_access_token(
-            self, adapter: ShopeeListingAdapter):
+        self, adapter: ShopeeListingAdapter
+    ):
         """缺少 access_token 时应返回 False"""
         platform = Platform(
-            id=3, code="shopee", client_id="123", api_key="key123",
-            extra_config={"shop_id": 1}, status=1,
+            id=3,
+            code="shopee",
+            client_id="123",
+            api_key="key123",
+            extra_config={"shop_id": 1},
+            status=1,
         )
         result = await adapter.validate_credentials(platform=platform)
         assert result is False
 
     async def test_validate_credentials_api_error(
-            self, adapter: ShopeeListingAdapter, shopee_platform: Platform):
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """API 返回 error != 0 时应返回 False"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "error": 1001,
-                "message": "Unauthorized",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "error": 1001,
+                    "message": "Unauthorized",
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
-            mock_client.return_value = AsyncClient(transport=MockTransport(handler), base_url="https://api.example.com")
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler), base_url="https://api.example.com"
+            )
 
             result = await adapter.validate_credentials(platform=shopee_platform)
 
@@ -933,8 +1268,9 @@ class TestShopeeListingAdapter:
         )
         assert sign == sign2
 
-    async def test_build_auth_params(self, adapter: ShopeeListingAdapter,
-                                      shopee_platform: Platform):
+    async def test_build_auth_params(
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """_build_auth_params 应包含所有必需字段"""
         params = adapter._build_auth_params(shopee_platform, "/api/v2/product/add")
 
@@ -945,8 +1281,9 @@ class TestShopeeListingAdapter:
         assert params["timestamp"] > 0
         assert len(params["sign"]) == 64
 
-    async def test_fetch_orders(self, adapter: ShopeeListingAdapter,
-                                shopee_platform: Platform):
+    async def test_fetch_orders(
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """fetch_orders() 应返回映射后的订单数据"""
         call_count = 0
 
@@ -960,34 +1297,44 @@ class TestShopeeListingAdapter:
                 assert "page_size=100" in str(request.url)
                 assert "create_time_from" in str(request.url)
                 assert "create_time_to" in str(request.url)
-                return httpx.Response(200, json={
-                    "error": 0,
-                    "response": {"order_list": ["12345"]},
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "error": 0,
+                        "response": {"order_list": ["12345"]},
+                    },
+                )
             # get_order_detail
             assert request.url.path.endswith("/api/v2/order/get_order_detail")
             assert "order_sn_list=12345" in str(request.url)
-            return httpx.Response(200, json={
-                "error": 0,
-                "response": {
-                    "order_list": [{
-                        "order_sn": "12345",
-                        "order_status": "READY_TO_SHIP",
-                        "total_amount": {"value": 29.99},
-                        "pay_time": "2026-06-20T10:00:00Z",
-                        "recipient_address": {
-                            "name": "John Doe",
-                            "phone": "1234567890",
-                            "full_address": "123 Main St, City, Country",
-                        },
-                        "item_list": [{
-                            "item_sku": "SKU001",
-                            "model_quantity_purchased": 2,
-                            "model_original_price": 19.99,
-                        }],
-                    }],
+            return httpx.Response(
+                200,
+                json={
+                    "error": 0,
+                    "response": {
+                        "order_list": [
+                            {
+                                "order_sn": "12345",
+                                "order_status": "READY_TO_SHIP",
+                                "total_amount": {"value": 29.99},
+                                "pay_time": "2026-06-20T10:00:00Z",
+                                "recipient_address": {
+                                    "name": "John Doe",
+                                    "phone": "1234567890",
+                                    "full_address": "123 Main St, City, Country",
+                                },
+                                "item_list": [
+                                    {
+                                        "item_sku": "SKU001",
+                                        "model_quantity_purchased": 2,
+                                        "model_original_price": 19.99,
+                                    }
+                                ],
+                            }
+                        ],
+                    },
                 },
-            })
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.side_effect = lambda p=None: AsyncClient(
@@ -1015,14 +1362,19 @@ class TestShopeeListingAdapter:
         assert result[0]["items"][0]["unit_price"] == "19.99"
         assert call_count == 2  # one list + one detail
 
-    async def test_fetch_orders_empty(self, adapter: ShopeeListingAdapter,
-                                      shopee_platform: Platform):
+    async def test_fetch_orders_empty(
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """fetch_orders() 应正确处理空列表"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "error": 0,
-                "response": {"order_list": []},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "error": 0,
+                    "response": {"order_list": []},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.side_effect = lambda p=None: AsyncClient(
@@ -1037,14 +1389,19 @@ class TestShopeeListingAdapter:
 
         assert len(result) == 0
 
-    async def test_fetch_orders_api_error(self, adapter: ShopeeListingAdapter,
-                                          shopee_platform: Platform):
+    async def test_fetch_orders_api_error(
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """fetch_orders API 错误时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "error": 1003,
-                "message": "Invalid access token",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "error": 1003,
+                    "message": "Invalid access token",
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.side_effect = lambda p=None: AsyncClient(
@@ -1058,8 +1415,9 @@ class TestShopeeListingAdapter:
                     since=datetime(2026, 6, 19),
                 )
 
-    async def test_push_tracking_returns_true(self, adapter: ShopeeListingAdapter,
-                                                shopee_platform: Platform):
+    async def test_push_tracking_returns_true(
+        self, adapter: ShopeeListingAdapter, shopee_platform: Platform
+    ):
         """push_tracking() 应返回 True（Shopee 使用集成物流无需推送）"""
         result = await adapter.push_tracking(
             platform=shopee_platform,
@@ -1069,10 +1427,81 @@ class TestShopeeListingAdapter:
         )
         assert result is True
 
+    # ------------------------------------------------------------------ #
+    #  sync_inventory tests
+    # ------------------------------------------------------------------ #
+
+    async def test_sync_inventory_success(
+        self,
+        adapter: ShopeeListingAdapter,
+        shopee_platform: Platform,
+    ):
+        """sync_inventory() 应成功同步库存并返回 True"""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/api/v2/product/update_stock")
+            assert "model_id" in str(request.url)
+            assert "stock" in str(request.url)
+            assert "partner_id" in str(request.url)
+            assert "sign" in str(request.url)
+            return httpx.Response(
+                200,
+                json={
+                    "error": 0,
+                    "response": {"warning": None},
+                },
+            )
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://partner.shopeemobile.com",
+            )
+
+            result = await adapter.sync_inventory(
+                platform=shopee_platform,
+                sku_code="SKU-001",
+                platform_sku="12345",
+                quantity=100,
+            )
+
+        assert result is True
+
+    async def test_sync_inventory_api_error(
+        self,
+        adapter: ShopeeListingAdapter,
+        shopee_platform: Platform,
+    ):
+        """sync_inventory API 返回错误时应抛出 RuntimeError"""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "error": 1003,
+                    "message": "Invalid access token",
+                },
+            )
+
+        with patch.object(adapter, "_client") as mock_client:
+            mock_client.return_value = AsyncClient(
+                transport=MockTransport(handler),
+                base_url="https://partner.shopeemobile.com",
+            )
+
+            with pytest.raises(RuntimeError, match="Invalid access token"):
+                await adapter.sync_inventory(
+                    platform=shopee_platform,
+                    sku_code="SKU-001",
+                    platform_sku="12345",
+                    quantity=100,
+                )
+
 
 # =================================================================== #
 #  Wildberries Adapter Tests
 # =================================================================== #
+
 
 class TestWildberriesListingAdapter:
     """Wildberries 真实 API 适配器测试"""
@@ -1084,16 +1513,27 @@ class TestWildberriesListingAdapter:
     @pytest.fixture
     def wb_platform(self) -> Platform:
         return Platform(
-            id=3, code="wb", name="Wildberries",
+            id=3,
+            code="wb",
+            name="Wildberries",
             api_base_url="https://content-api.wildberries.ru",
-            api_key="test-wb-token", client_id="", extra_config={}, status=1,
+            api_key="test-wb-token",
+            client_id="",
+            extra_config={},
+            status=1,
         )
 
-    async def test_publish_success(self, adapter: WildberriesListingAdapter,
-                                    wb_platform: Platform, product: Product,
-                                    skus: list[Sku], prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_success(
+        self,
+        adapter: WildberriesListingAdapter,
+        wb_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """publish() 应返回正确的 PublishResult"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/api/v3/cards/upload")
             assert "Authorization" in request.headers
@@ -1101,9 +1541,12 @@ class TestWildberriesListingAdapter:
             body = json.loads(request.read())
             assert body[0]["vendorCode"] == "SKU-001"
             assert "sizes" in body[0]
-            return httpx.Response(200, json={
-                "data": [{"nmID": 12345678, "vendorCode": "SKU-001", "imtID": 999}],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "data": [{"nmID": 12345678, "vendorCode": "SKU-001", "imtID": 999}],
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1116,42 +1559,66 @@ class TestWildberriesListingAdapter:
             )
 
             result = await adapter.publish(
-                product=product, platform=wb_platform,
-                skus=skus, prices=prices, inventories=inventories,
+                product=product,
+                platform=wb_platform,
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
             )
 
         assert result.platform_product_id.startswith("wb-")
         assert "wildberries.ru" in result.platform_url
         assert "nmID" in result.sync_message
 
-    async def test_publish_no_skus(self, adapter: WildberriesListingAdapter,
-                                    wb_platform: Platform, product: Product,
-                                    prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_no_skus(
+        self,
+        adapter: WildberriesListingAdapter,
+        wb_platform: Platform,
+        product: Product,
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """无 SKU 时应抛出 RuntimeError"""
         with pytest.raises(RuntimeError, match="至少需要一个 SKU"):
             await adapter.publish(
-                product=product, platform=wb_platform, skus=[],
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=wb_platform,
+                skus=[],
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_publish_no_image(self, adapter: WildberriesListingAdapter,
-                                     wb_platform: Platform, product: Product,
-                                     skus: list[Sku], prices: dict[int, Price],
-                                     inventories: dict[int, Inventory]):
+    async def test_publish_no_image(
+        self,
+        adapter: WildberriesListingAdapter,
+        wb_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """缺少主图时应抛出 RuntimeError"""
         product.main_image = None
         with pytest.raises(RuntimeError, match="缺少主图"):
             await adapter.publish(
-                product=product, platform=wb_platform, skus=skus,
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=wb_platform,
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_publish_api_error(self, adapter: WildberriesListingAdapter,
-                                      wb_platform: Platform, product: Product,
-                                      skus: list[Sku], prices: dict[int, Price],
-                                      inventories: dict[int, Inventory]):
+    async def test_publish_api_error(
+        self,
+        adapter: WildberriesListingAdapter,
+        wb_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """API 返回错误时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(400, json={"error": "Invalid token"})
 
@@ -1162,17 +1629,25 @@ class TestWildberriesListingAdapter:
             )
             with pytest.raises(RuntimeError, match="Invalid token"):
                 await adapter.publish(
-                    product=product, platform=wb_platform, skus=skus,
-                    prices=prices, inventories=inventories,
+                    product=product,
+                    platform=wb_platform,
+                    skus=skus,
+                    prices=prices,
+                    inventories=inventories,
                 )
 
-    async def test_sync_status_synced(self, adapter: WildberriesListingAdapter,
-                                       wb_platform: Platform):
+    async def test_sync_status_synced(
+        self, adapter: WildberriesListingAdapter, wb_platform: Platform
+    ):
         """sync_status 应返回 synced"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "data": [{"status": {"state": "LOADED"}}],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "data": [{"status": {"state": "LOADED"}}],
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1180,19 +1655,25 @@ class TestWildberriesListingAdapter:
                 base_url="https://content-api.wildberries.ru",
             )
             status = await adapter.sync_status(
-                listing_id=1001, platform=wb_platform,
+                listing_id=1001,
+                platform=wb_platform,
                 platform_product_id="wb-12345678",
             )
 
         assert status == "synced"
 
-    async def test_sync_status_in_progress(self, adapter: WildberriesListingAdapter,
-                                            wb_platform: Platform):
+    async def test_sync_status_in_progress(
+        self, adapter: WildberriesListingAdapter, wb_platform: Platform
+    ):
         """sync_status 应返回 in_progress"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "data": [{"status": {"state": "IN_PROCESS"}}],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "data": [{"status": {"state": "IN_PROCESS"}}],
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1200,14 +1681,17 @@ class TestWildberriesListingAdapter:
                 base_url="https://content-api.wildberries.ru",
             )
             status = await adapter.sync_status(
-                listing_id=1001, platform=wb_platform,
+                listing_id=1001,
+                platform=wb_platform,
                 platform_product_id="wb-12345678",
             )
         assert status == "in_progress"
 
-    async def test_sync_status_no_data(self, adapter: WildberriesListingAdapter,
-                                        wb_platform: Platform):
+    async def test_sync_status_no_data(
+        self, adapter: WildberriesListingAdapter, wb_platform: Platform
+    ):
         """无 data 时应返回 unknown"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"data": []})
 
@@ -1217,14 +1701,17 @@ class TestWildberriesListingAdapter:
                 base_url="https://content-api.wildberries.ru",
             )
             status = await adapter.sync_status(
-                listing_id=1001, platform=wb_platform,
+                listing_id=1001,
+                platform=wb_platform,
                 platform_product_id="wb-12345678",
             )
         assert status == "unknown"
 
-    async def test_validate_credentials_success(self, adapter: WildberriesListingAdapter,
-                                                 wb_platform: Platform):
+    async def test_validate_credentials_success(
+        self, adapter: WildberriesListingAdapter, wb_platform: Platform
+    ):
         """凭证有效时应返回 True"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"data": []})
 
@@ -1236,15 +1723,19 @@ class TestWildberriesListingAdapter:
             result = await adapter.validate_credentials(platform=wb_platform)
         assert result is True
 
-    async def test_validate_credentials_missing_key(self, adapter: WildberriesListingAdapter):
+    async def test_validate_credentials_missing_key(
+        self, adapter: WildberriesListingAdapter
+    ):
         """缺少 api_key 时应返回 False"""
         platform = Platform(id=3, code="wb", name="WB", api_key="", status=1)
         result = await adapter.validate_credentials(platform=platform)
         assert result is False
 
-    async def test_validate_credentials_api_error(self, adapter: WildberriesListingAdapter,
-                                                   wb_platform: Platform):
+    async def test_validate_credentials_api_error(
+        self, adapter: WildberriesListingAdapter, wb_platform: Platform
+    ):
         """API 返回非 200 时应返回 False"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(401, json={"error": "Unauthorized"})
 
@@ -1261,6 +1752,7 @@ class TestWildberriesListingAdapter:
 #  Amazon Adapter Tests
 # =================================================================== #
 
+
 class TestAmazonListingAdapter:
     """Amazon SP-API 适配器测试"""
 
@@ -1271,7 +1763,9 @@ class TestAmazonListingAdapter:
     @pytest.fixture
     def amz_platform(self) -> Platform:
         return Platform(
-            id=4, code="amazon", name="Amazon",
+            id=4,
+            code="amazon",
+            name="Amazon",
             api_base_url="https://sellingpartnerapi-eu.amazon.com",
             client_id="test-client-id",
             api_key="test-client-secret",
@@ -1285,10 +1779,15 @@ class TestAmazonListingAdapter:
             status=1,
         )
 
-    async def test_publish_success(self, adapter: AmazonListingAdapter,
-                                    amz_platform: Platform, product: Product,
-                                    skus: list[Sku], prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_success(
+        self,
+        adapter: AmazonListingAdapter,
+        amz_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """publish() 应返回正确的 PublishResult"""
         call_count = 0
 
@@ -1297,14 +1796,18 @@ class TestAmazonListingAdapter:
             call_count += 1
             if call_count == 1:
                 # LWA token
-                return httpx.Response(200, json={"access_token": "test-access-token", "expires_in": 3600})
+                return httpx.Response(
+                    200, json={"access_token": "test-access-token", "expires_in": 3600}
+                )
             # SP-API request
             assert "x-amz-access-token" in request.headers
             assert "Authorization" in request.headers
             return httpx.Response(200, json={"sellingPartnerId": "AMZPROD001"})
 
         async def lwa_handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={"access_token": "test-access-token", "expires_in": 3600})
+            return httpx.Response(
+                200, json={"access_token": "test-access-token", "expires_in": 3600}
+            )
 
         # Patch LWA token fetch
         original_get_token = adapter._get_access_token
@@ -1324,41 +1827,63 @@ class TestAmazonListingAdapter:
 
         try:
             result = await adapter.publish(
-                product=product, platform=amz_platform,
-                skus=skus, prices=prices, inventories=inventories,
+                product=product,
+                platform=amz_platform,
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
             )
         finally:
             adapter._get_access_token = original_get_token
             adapter._signed_request = original_signed
 
         assert result.platform_product_id.startswith("amz-")
-        assert "AMZPROD001" in result.sync_message or "AMZPROD001" in result.platform_product_id
+        assert (
+            "AMZPROD001" in result.sync_message
+            or "AMZPROD001" in result.platform_product_id
+        )
 
-    async def test_publish_no_skus(self, adapter: AmazonListingAdapter,
-                                    amz_platform: Platform, product: Product,
-                                    prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_no_skus(
+        self,
+        adapter: AmazonListingAdapter,
+        amz_platform: Platform,
+        product: Product,
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """无 SKU 时应抛出 RuntimeError"""
         with pytest.raises(RuntimeError, match="至少需要一个 SKU"):
             await adapter.publish(
-                product=product, platform=amz_platform, skus=[],
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=amz_platform,
+                skus=[],
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_publish_no_seller_id(self, adapter: AmazonListingAdapter,
-                                         amz_platform: Platform, product: Product,
-                                         skus: list[Sku], prices: dict[int, Price],
-                                         inventories: dict[int, Inventory]):
+    async def test_publish_no_seller_id(
+        self,
+        adapter: AmazonListingAdapter,
+        amz_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """缺少 seller_id 时应抛出 RuntimeError"""
         amz_platform.extra_config = {}
         with pytest.raises(RuntimeError, match="缺少 seller_id"):
             await adapter.publish(
-                product=product, platform=amz_platform, skus=skus,
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=amz_platform,
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_sync_status_synced(self, adapter: AmazonListingAdapter,
-                                       amz_platform: Platform):
+    async def test_sync_status_synced(
+        self, adapter: AmazonListingAdapter, amz_platform: Platform
+    ):
         """sync_status 应返回 synced"""
         original_token = adapter._get_access_token
         original_signed = adapter._signed_request
@@ -1367,17 +1892,21 @@ class TestAmazonListingAdapter:
             return "test-token"
 
         async def mock_signed(method, path, platform, token, payload=None):
-            return httpx.Response(200, json={
-                "status": ["BUYABLE"],
-                "sellingPartnerId": "AMZPROD001",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "status": ["BUYABLE"],
+                    "sellingPartnerId": "AMZPROD001",
+                },
+            )
 
         adapter._get_access_token = mock_token
         adapter._signed_request = mock_signed
 
         try:
             status = await adapter.sync_status(
-                listing_id=1001, platform=amz_platform,
+                listing_id=1001,
+                platform=amz_platform,
                 platform_product_id="amz-AMZPROD001",
             )
         finally:
@@ -1386,8 +1915,9 @@ class TestAmazonListingAdapter:
 
         assert status == "synced"
 
-    async def test_sync_status_in_progress(self, adapter: AmazonListingAdapter,
-                                            amz_platform: Platform):
+    async def test_sync_status_in_progress(
+        self, adapter: AmazonListingAdapter, amz_platform: Platform
+    ):
         """sync_status 应返回 in_progress"""
         original_token = adapter._get_access_token
         original_signed = adapter._signed_request
@@ -1396,17 +1926,21 @@ class TestAmazonListingAdapter:
             return "test-token"
 
         async def mock_signed(method, path, platform, token, payload=None):
-            return httpx.Response(200, json={
-                "status": ["INACTIVE"],
-                "sellingPartnerId": "AMZPROD001",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "status": ["INACTIVE"],
+                    "sellingPartnerId": "AMZPROD001",
+                },
+            )
 
         adapter._get_access_token = mock_token
         adapter._signed_request = mock_signed
 
         try:
             status = await adapter.sync_status(
-                listing_id=1001, platform=amz_platform,
+                listing_id=1001,
+                platform=amz_platform,
                 platform_product_id="amz-AMZPROD001",
             )
         finally:
@@ -1415,8 +1949,9 @@ class TestAmazonListingAdapter:
 
         assert status == "in_progress"
 
-    async def test_validate_credentials_success(self, adapter: AmazonListingAdapter,
-                                                 amz_platform: Platform):
+    async def test_validate_credentials_success(
+        self, adapter: AmazonListingAdapter, amz_platform: Platform
+    ):
         """凭证有效时应返回 True"""
         original_token = adapter._get_access_token
         original_signed = adapter._signed_request
@@ -1425,7 +1960,9 @@ class TestAmazonListingAdapter:
             return "test-token"
 
         async def mock_signed(method, path, platform, token, payload=None):
-            return httpx.Response(200, json={"payload": [{"marketplaceId": "A1PA6795UKMFR9"}]})
+            return httpx.Response(
+                200, json={"payload": [{"marketplaceId": "A1PA6795UKMFR9"}]}
+            )
 
         adapter._get_access_token = mock_token
         adapter._signed_request = mock_signed
@@ -1438,11 +1975,18 @@ class TestAmazonListingAdapter:
 
         assert result is True
 
-    async def test_validate_credentials_missing_fields(self, adapter: AmazonListingAdapter):
+    async def test_validate_credentials_missing_fields(
+        self, adapter: AmazonListingAdapter
+    ):
         """缺少必填字段时应返回 False"""
         platform = Platform(
-            id=4, code="amazon", name="Amazon",
-            extra_config={}, client_id="", api_key="", status=1,
+            id=4,
+            code="amazon",
+            name="Amazon",
+            extra_config={},
+            client_id="",
+            api_key="",
+            status=1,
         )
         result = await adapter.validate_credentials(platform=platform)
         assert result is False
@@ -1451,6 +1995,7 @@ class TestAmazonListingAdapter:
 # =================================================================== #
 #  TikTok Shop Adapter Tests
 # =================================================================== #
+
 
 class TestTikTokShopListingAdapter:
     """TikTok Shop 真实 API 适配器测试"""
@@ -1462,7 +2007,9 @@ class TestTikTokShopListingAdapter:
     @pytest.fixture
     def tt_platform(self) -> Platform:
         return Platform(
-            id=5, code="tiktok", name="TikTok Shop",
+            id=5,
+            code="tiktok",
+            name="TikTok Shop",
             api_base_url="https://open-api.tiktokglobalshop.com",
             client_id="test-app-key",
             api_key="test-app-secret",
@@ -1473,11 +2020,17 @@ class TestTikTokShopListingAdapter:
             status=1,
         )
 
-    async def test_publish_success(self, adapter: TikTokShopListingAdapter,
-                                    tt_platform: Platform, product: Product,
-                                    skus: list[Sku], prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_success(
+        self,
+        adapter: TikTokShopListingAdapter,
+        tt_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """publish() 应返回正确的 PublishResult"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/product/202309/products")
             assert "x-tts-access-token" in request.headers
@@ -1485,11 +2038,14 @@ class TestTikTokShopListingAdapter:
             assert "common" in body
             assert "product" in body
             assert body["product"]["product_name"] == "测试商品 AI 标题"
-            return httpx.Response(200, json={
-                "code": 0,
-                "data": {"product_id": "tt-prod-001"},
-                "message": "success",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {"product_id": "tt-prod-001"},
+                    "message": "success",
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1502,34 +2058,53 @@ class TestTikTokShopListingAdapter:
             )
 
             result = await adapter.publish(
-                product=product, platform=tt_platform,
-                skus=skus, prices=prices, inventories=inventories,
+                product=product,
+                platform=tt_platform,
+                skus=skus,
+                prices=prices,
+                inventories=inventories,
             )
 
         assert result.platform_product_id.startswith("tt-")
         assert "tt-prod-001" in result.sync_message
 
-    async def test_publish_no_skus(self, adapter: TikTokShopListingAdapter,
-                                    tt_platform: Platform, product: Product,
-                                    prices: dict[int, Price],
-                                    inventories: dict[int, Inventory]):
+    async def test_publish_no_skus(
+        self,
+        adapter: TikTokShopListingAdapter,
+        tt_platform: Platform,
+        product: Product,
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """无 SKU 时应抛出 RuntimeError"""
         with pytest.raises(RuntimeError, match="至少需要一个 SKU"):
             await adapter.publish(
-                product=product, platform=tt_platform, skus=[],
-                prices=prices, inventories=inventories,
+                product=product,
+                platform=tt_platform,
+                skus=[],
+                prices=prices,
+                inventories=inventories,
             )
 
-    async def test_publish_api_error(self, adapter: TikTokShopListingAdapter,
-                                      tt_platform: Platform, product: Product,
-                                      skus: list[Sku], prices: dict[int, Price],
-                                      inventories: dict[int, Inventory]):
+    async def test_publish_api_error(
+        self,
+        adapter: TikTokShopListingAdapter,
+        tt_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """API 返回 code != 0 时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "code": 10001,
-                "message": "Invalid access token",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "code": 10001,
+                    "message": "Invalid access token",
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1539,15 +2114,24 @@ class TestTikTokShopListingAdapter:
 
             with pytest.raises(RuntimeError, match="Invalid access token"):
                 await adapter.publish(
-                    product=product, platform=tt_platform, skus=skus,
-                    prices=prices, inventories=inventories,
+                    product=product,
+                    platform=tt_platform,
+                    skus=skus,
+                    prices=prices,
+                    inventories=inventories,
                 )
 
-    async def test_publish_http_error(self, adapter: TikTokShopListingAdapter,
-                                       tt_platform: Platform, product: Product,
-                                       skus: list[Sku], prices: dict[int, Price],
-                                       inventories: dict[int, Inventory]):
+    async def test_publish_http_error(
+        self,
+        adapter: TikTokShopListingAdapter,
+        tt_platform: Platform,
+        product: Product,
+        skus: list[Sku],
+        prices: dict[int, Price],
+        inventories: dict[int, Inventory],
+    ):
         """HTTP 400 时应抛出 RuntimeError"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(400, json={"message": "Bad request"})
 
@@ -1559,18 +2143,26 @@ class TestTikTokShopListingAdapter:
 
             with pytest.raises(RuntimeError, match="Bad request"):
                 await adapter.publish(
-                    product=product, platform=tt_platform, skus=skus,
-                    prices=prices, inventories=inventories,
+                    product=product,
+                    platform=tt_platform,
+                    skus=skus,
+                    prices=prices,
+                    inventories=inventories,
                 )
 
-    async def test_sync_status_synced(self, adapter: TikTokShopListingAdapter,
-                                       tt_platform: Platform):
+    async def test_sync_status_synced(
+        self, adapter: TikTokShopListingAdapter, tt_platform: Platform
+    ):
         """sync_status 应返回 synced"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "code": 0,
-                "data": {"status": "PUBLISHED"},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {"status": "PUBLISHED"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1579,20 +2171,26 @@ class TestTikTokShopListingAdapter:
             )
 
             status = await adapter.sync_status(
-                listing_id=1001, platform=tt_platform,
+                listing_id=1001,
+                platform=tt_platform,
                 platform_product_id="tt-tt-prod-001",
             )
 
         assert status == "synced"
 
-    async def test_sync_status_in_progress(self, adapter: TikTokShopListingAdapter,
-                                            tt_platform: Platform):
+    async def test_sync_status_in_progress(
+        self, adapter: TikTokShopListingAdapter, tt_platform: Platform
+    ):
         """sync_status 应返回 in_progress"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "code": 0,
-                "data": {"status": "UNDER_REVIEW"},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {"status": "UNDER_REVIEW"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1601,20 +2199,26 @@ class TestTikTokShopListingAdapter:
             )
 
             status = await adapter.sync_status(
-                listing_id=1001, platform=tt_platform,
+                listing_id=1001,
+                platform=tt_platform,
                 platform_product_id="tt-tt-prod-001",
             )
 
         assert status == "in_progress"
 
-    async def test_sync_status_rejected(self, adapter: TikTokShopListingAdapter,
-                                         tt_platform: Platform):
+    async def test_sync_status_rejected(
+        self, adapter: TikTokShopListingAdapter, tt_platform: Platform
+    ):
         """sync_status 应返回 failed"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "code": 0,
-                "data": {"status": "REJECTED"},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {"status": "REJECTED"},
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1623,31 +2227,39 @@ class TestTikTokShopListingAdapter:
             )
 
             status = await adapter.sync_status(
-                listing_id=1001, platform=tt_platform,
+                listing_id=1001,
+                platform=tt_platform,
                 platform_product_id="tt-tt-prod-001",
             )
 
         assert status == "failed"
 
-    async def test_sync_status_unknown_id(self, adapter: TikTokShopListingAdapter,
-                                           tt_platform: Platform):
+    async def test_sync_status_unknown_id(
+        self, adapter: TikTokShopListingAdapter, tt_platform: Platform
+    ):
         """无效的 platform_product_id 应返回 unknown"""
         status = await adapter.sync_status(
-            listing_id=1001, platform=tt_platform,
+            listing_id=1001,
+            platform=tt_platform,
             platform_product_id="invalid-id",
         )
         assert status == "unknown"
 
-    async def test_validate_credentials_success(self, adapter: TikTokShopListingAdapter,
-                                                 tt_platform: Platform):
+    async def test_validate_credentials_success(
+        self, adapter: TikTokShopListingAdapter, tt_platform: Platform
+    ):
         """凭证有效时应返回 True"""
+
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url.path.endswith("/product/202309/shop")
-            return httpx.Response(200, json={
-                "code": 0,
-                "data": {"shop_name": "Test Shop"},
-                "message": "success",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {"shop_name": "Test Shop"},
+                    "message": "success",
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1659,23 +2271,35 @@ class TestTikTokShopListingAdapter:
 
         assert result is True
 
-    async def test_validate_credentials_missing_fields(self, adapter: TikTokShopListingAdapter):
+    async def test_validate_credentials_missing_fields(
+        self, adapter: TikTokShopListingAdapter
+    ):
         """缺少字段时应返回 False"""
         platform = Platform(
-            id=5, code="tiktok", name="TikTok",
-            extra_config={}, client_id="", api_key="", status=1,
+            id=5,
+            code="tiktok",
+            name="TikTok",
+            extra_config={},
+            client_id="",
+            api_key="",
+            status=1,
         )
         result = await adapter.validate_credentials(platform=platform)
         assert result is False
 
-    async def test_validate_credentials_api_error(self, adapter: TikTokShopListingAdapter,
-                                                   tt_platform: Platform):
+    async def test_validate_credentials_api_error(
+        self, adapter: TikTokShopListingAdapter, tt_platform: Platform
+    ):
         """API 返回 code != 0 时应返回 False"""
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "code": 10001,
-                "message": "Unauthorized",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "code": 10001,
+                    "message": "Unauthorized",
+                },
+            )
 
         with patch.object(adapter, "_client") as mock_client:
             mock_client.return_value = AsyncClient(
@@ -1687,8 +2311,9 @@ class TestTikTokShopListingAdapter:
 
         assert result is False
 
-    async def test_build_common_params(self, adapter: TikTokShopListingAdapter,
-                                        tt_platform: Platform):
+    async def test_build_common_params(
+        self, adapter: TikTokShopListingAdapter, tt_platform: Platform
+    ):
         """_build_common_params 应包含 sign"""
         params = adapter._build_common_params(tt_platform)
         assert params["app_key"] == "test-app-key"

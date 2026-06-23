@@ -59,23 +59,29 @@ class OzonListingAdapter:
     #  图片上传与转换
     # ------------------------------------------------------------------ #
 
-    async def _upload_local_image_if_needed(self, platform: Platform, image_url: str) -> str:
+    async def _upload_local_image_if_needed(
+        self, platform: Platform, image_url: str
+    ) -> str:
         """若是系统本地图片则先上传至 Ozon 并返回其平台 URL，否则直接返回"""
         from app.config import settings
-        
+
         if image_url.startswith(settings.STATIC_URL):
-            filename = image_url[len(settings.STATIC_URL):].lstrip("/")
+            filename = image_url[len(settings.STATIC_URL) :].lstrip("/")
             local_path = os.path.join(settings.UPLOAD_DIR, filename)
             if os.path.exists(local_path):
                 # 限流控制
-                limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+                limiter = await get_limiter_for_platform(
+                    self.PLATFORM_CODE, platform.id
+                )
                 await limiter.acquire()
-                
+
                 logger.info("Uploading local image to Ozon: %s", local_path)
                 async with self._client(platform) as client:
                     with open(local_path, "rb") as f:
                         files = {"file": (os.path.basename(local_path), f, "image/png")}
-                        resp = await client.post("/v1/product/pictures/upload", files=files)
+                        resp = await client.post(
+                            "/v1/product/pictures/upload", files=files
+                        )
                         body = self._parse_response(resp, "upload_image")
                         return body.get("result", {}).get("url", image_url)
         return image_url
@@ -101,25 +107,33 @@ class OzonListingAdapter:
             attrs.append({"attribute_id": 22231, "value": "1"})
         return attrs
 
-    def _calculate_platform_price(self, cny_price: float, rate: float, extra: dict) -> float:
+    def _calculate_platform_price(
+        self, cny_price: float, rate: float, extra: dict
+    ) -> float:
         """定价公式: 售价 = (内部售价 * (1 + 利润加成) + 固定物流) * 汇率 / (1 - 佣金率)"""
         markup = float(extra.get("markup_rate", 0.0))
         commission = float(extra.get("commission_rate", 0.0))
         shipping = float(extra.get("fixed_shipping_fee", 0.0))
-        
+
         raw = (cny_price * (1.0 + markup) + shipping) * rate
         if commission < 1.0:
             raw = raw / (1.0 - commission)
         return float(round(raw))  # 卢布取整
 
-    def _build_sku_data(self, sku: Sku, platform_price: float, inventory: Optional[Inventory]) -> dict:
+    def _build_sku_data(
+        self, sku: Sku, platform_price: float, inventory: Optional[Inventory]
+    ) -> dict:
         return {
             "offer_id": sku.code or f"sku-{sku.id}",
             "price": f"{platform_price:.2f}",
             "old_price": f"{platform_price * 1.2:.2f}",
             "currency_code": "RUB",
             "stock": {
-                "present": max(int(inventory.quantity) - int(inventory.locked_quantity), 0) if inventory else 0,
+                "present": max(
+                    int(inventory.quantity) - int(inventory.locked_quantity), 0
+                )
+                if inventory
+                else 0,
                 "reserved": int(inventory.locked_quantity) if inventory else 0,
             },
             "barcode": sku.barcode or "",
@@ -162,7 +176,10 @@ class OzonListingAdapter:
                 pass
 
             if exist_status in ("synced", "pending", "in_progress"):
-                logger.info("Ozon duplicate offer_id detected: %s. Performing auto-binding.", offer_id)
+                logger.info(
+                    "Ozon duplicate offer_id detected: %s. Performing auto-binding.",
+                    offer_id,
+                )
                 return PublishResult(
                     platform_product_id=f"ozon-{offer_id}",
                     platform_sku=offer_id,
@@ -174,7 +191,9 @@ class OzonListingAdapter:
         from app.exchange_rate.service import ExchangeRateService
 
         # 2. 汇率换算准备 (CNY -> RUB)
-        rate_val = await ExchangeRateService.get_rate_or_fallback(db, "CNY", "RUB", 12.5)
+        rate_val = await ExchangeRateService.get_rate_or_fallback(
+            db, "CNY", "RUB", 12.5
+        )
 
         extra = platform.extra_config or {}
 
@@ -203,25 +222,31 @@ class OzonListingAdapter:
         for sku in skus:
             price_cny = float(prices[sku.id].price) if prices.get(sku.id) else 0.0
             platform_price = self._calculate_platform_price(price_cny, rate_val, extra)
-            sku_data_list.append(self._build_sku_data(
-                sku, platform_price, inventories.get(sku.id),
-            ))
+            sku_data_list.append(
+                self._build_sku_data(
+                    sku,
+                    platform_price,
+                    inventories.get(sku.id),
+                )
+            )
 
         payload = {
-            "items": [{
-                "name": self._build_name(product),
-                "description": self._build_description(product),
-                "category_id": product.category_id or 0,
-                "attributes": self._build_attributes(product),
-                "images": resolved_images,
-                "offer_id": offer_id,
-                "currency_code": "RUB",
-                "height": str(float(product.package_height_cm or 0)),
-                "width": str(float(product.package_width_cm or 0)),
-                "depth": str(float(product.package_length_cm or 0)),
-                "weight": str(float(product.package_weight_kg or 0)),
-                "sku_data": sku_data_list,
-            }]
+            "items": [
+                {
+                    "name": self._build_name(product),
+                    "description": self._build_description(product),
+                    "category_id": product.category_id or 0,
+                    "attributes": self._build_attributes(product),
+                    "images": resolved_images,
+                    "offer_id": offer_id,
+                    "currency_code": "RUB",
+                    "height": str(float(product.package_height_cm or 0)),
+                    "width": str(float(product.package_width_cm or 0)),
+                    "depth": str(float(product.package_length_cm or 0)),
+                    "weight": str(float(product.package_weight_kg or 0)),
+                    "sku_data": sku_data_list,
+                }
+            ]
         }
 
         # 限流控制
@@ -254,7 +279,7 @@ class OzonListingAdapter:
         """查询 Ozon 商品发布状态"""
         offer_id = platform_product_id
         if platform_product_id and platform_product_id.startswith("ozon-"):
-            offer_id = platform_product_id[len("ozon-"):]
+            offer_id = platform_product_id[len("ozon-") :]
 
         payload = {"offer_id": offer_id, "sku": None}
 
@@ -271,7 +296,7 @@ class OzonListingAdapter:
             return "unknown"
 
         state = items[0].get("state", "")
-        
+
         # Ozon 状态映射
         state_map = {
             "imported": "synced",
@@ -287,7 +312,7 @@ class OzonListingAdapter:
         """用 Ozon Ping API 校验凭证"""
         if not platform.client_id or not platform.api_key:
             return False
-        
+
         # 限流控制
         limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
         await limiter.acquire()
@@ -359,26 +384,30 @@ class OzonListingAdapter:
             for p in postings:
                 items = []
                 for prod in p.get("financial_data", {}).get("products", []):
-                    items.append({
-                        "sku_code": prod.get("sku", ""),
-                        "quantity": prod.get("quantity", 0),
-                        "unit_price": str(prod.get("price", "0")),
-                    })
-                orders.append({
-                    "order_sn": p.get("posting_number", ""),
-                    "status": p.get("status", ""),
-                    "total_amount": str(sum(
-                        float(i["unit_price"]) * i["quantity"] for i in items
-                    )),
-                    "shipping_fee": str(
-                        p.get("analytics_data", {}).get("delivery_price", "0")
-                    ),
-                    "paid_at": p.get("in_process_at", ""),
-                    "recipient_name": "",
-                    "recipient_phone": "",
-                    "shipping_address": "",
-                    "items": items,
-                })
+                    items.append(
+                        {
+                            "sku_code": prod.get("sku", ""),
+                            "quantity": prod.get("quantity", 0),
+                            "unit_price": str(prod.get("price", "0")),
+                        }
+                    )
+                orders.append(
+                    {
+                        "order_sn": p.get("posting_number", ""),
+                        "status": p.get("status", ""),
+                        "total_amount": str(
+                            sum(float(i["unit_price"]) * i["quantity"] for i in items)
+                        ),
+                        "shipping_fee": str(
+                            p.get("analytics_data", {}).get("delivery_price", "0")
+                        ),
+                        "paid_at": p.get("in_process_at", ""),
+                        "recipient_name": "",
+                        "recipient_phone": "",
+                        "shipping_address": "",
+                        "items": items,
+                    }
+                )
 
             page += 1
 
@@ -417,16 +446,20 @@ class OzonListingAdapter:
         }
         items = []
         for tx in body.get("result", {}).get("operations", []):
-            items.append({
-                "transaction_id": str(tx.get("operation_id", "")),
-                "transaction_type": TYPE_MAP.get(tx.get("operation_type", ""), "other"),
-                "order_sn": tx.get("posting", {}).get("posting_number", ""),
-                "amount": str(abs(float(tx.get("amount", "0")))),
-                "fee": "0",
-                "currency": tx.get("currency_code", "RUB"),
-                "occurred_at": tx.get("operation_date", ""),
-                "description": tx.get("description", ""),
-            })
+            items.append(
+                {
+                    "transaction_id": str(tx.get("operation_id", "")),
+                    "transaction_type": TYPE_MAP.get(
+                        tx.get("operation_type", ""), "other"
+                    ),
+                    "order_sn": tx.get("posting", {}).get("posting_number", ""),
+                    "amount": str(abs(float(tx.get("amount", "0")))),
+                    "fee": "0",
+                    "currency": tx.get("currency_code", "RUB"),
+                    "occurred_at": tx.get("operation_date", ""),
+                    "description": tx.get("description", ""),
+                }
+            )
         return items
 
     # ------------------------------------------------------------------ #
@@ -454,17 +487,41 @@ class OzonListingAdapter:
 
         items = []
         for r in body.get("result", {}).get("returns", []):
-            items.append({
-                "return_id": str(r.get("return_id", "")),
-                "order_sn": r.get("posting_number", ""),
-                "sku_code": r.get("sku", ""),
-                "quantity": r.get("quantity", 1),
-                "reason": r.get("reason", "平台发起退货"),
-                "status": r.get("status", "pending"),
-                "created_at": r.get("created_at", ""),
-                "refund_amount": str(r.get("refund_amount", "0")),
-            })
+            items.append(
+                {
+                    "return_id": str(r.get("return_id", "")),
+                    "order_sn": r.get("posting_number", ""),
+                    "sku_code": r.get("sku", ""),
+                    "quantity": r.get("quantity", 1),
+                    "reason": r.get("reason", "平台发起退货"),
+                    "status": r.get("status", "pending"),
+                    "created_at": r.get("created_at", ""),
+                    "refund_amount": str(r.get("refund_amount", "0")),
+                }
+            )
         return items
+
+    # ------------------------------------------------------------------ #
+    #  库存同步
+    # ------------------------------------------------------------------ #
+
+    async def sync_inventory(
+        self,
+        *,
+        platform: Platform,
+        sku_code: str,
+        platform_sku: str,
+        quantity: int,
+        db: Optional[AsyncSession] = None,
+    ) -> bool:
+        """POST /v4/product/import/stocks 同步库存到 Ozon。"""
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
+        payload = {"stocks": [{"sku": platform_sku or sku_code, "stock": quantity}]}
+        async with self._client(platform) as client:
+            resp = await client.post("/v4/product/import/stocks", json=payload)
+            body = self._parse_response(resp, "sync_inventory")
+        return body.get("result", False)
 
     # ------------------------------------------------------------------ #
     #  辅助方法
@@ -476,7 +533,9 @@ class OzonListingAdapter:
         try:
             body = resp.json()
         except Exception:
-            raise RuntimeError(f"Ozon {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}")
+            raise RuntimeError(
+                f"Ozon {context} 响应非 JSON: {resp.status_code} {resp.text[:500]}"
+            )
 
         if resp.status_code >= 400:
             error = body.get("error", {}) or {}
