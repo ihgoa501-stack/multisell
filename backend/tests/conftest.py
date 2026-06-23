@@ -12,9 +12,13 @@ os.environ["AUTH_ENABLED"] = "False"
 @pytest.fixture
 def enable_auth():
     """让测试在开启鉴权的环境下运行。用作: pytest.mark.usefixtures('enable_auth')"""
+    from app.config import settings
+
     os.environ["AUTH_ENABLED"] = "True"
+    settings.AUTH_ENABLED = True
     yield
     os.environ["AUTH_ENABLED"] = "False"
+    settings.AUTH_ENABLED = False
 
 
 os.environ.setdefault(
