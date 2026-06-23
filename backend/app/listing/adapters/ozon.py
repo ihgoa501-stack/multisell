@@ -431,6 +431,43 @@ class OzonListingAdapter:
         return items
 
     # ------------------------------------------------------------------ #
+    #  退货/售后申请拉取
+    # ------------------------------------------------------------------ #
+
+    async def fetch_returns(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """从 Ozon 拉取退货/售后申请 (POST /v3/returns/list)。"""
+        limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
+        await limiter.acquire()
+
+        payload = {
+            "filter": {"last_change_from": since.strftime("%Y-%m-%dT%H:%M:%S.000Z")},
+            "limit": 100,
+        }
+        async with self._client(platform) as client:
+            resp = await client.post("/v3/returns/list", json=payload)
+            body = self._parse_response(resp, "fetch_returns")
+
+        items = []
+        for r in body.get("result", {}).get("returns", []):
+            items.append({
+                "return_id": str(r.get("return_id", "")),
+                "order_sn": r.get("posting_number", ""),
+                "sku_code": r.get("sku", ""),
+                "quantity": r.get("quantity", 1),
+                "reason": r.get("reason", "平台发起退货"),
+                "status": r.get("status", "pending"),
+                "created_at": r.get("created_at", ""),
+                "refund_amount": str(r.get("refund_amount", "0")),
+            })
+        return items
+
+    # ------------------------------------------------------------------ #
     #  辅助方法
     # ------------------------------------------------------------------ #
 

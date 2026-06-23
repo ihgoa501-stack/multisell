@@ -422,6 +422,21 @@ class ShopeeListingAdapter:
     #  订单拉取
     # ------------------------------------------------------------------ #
 
+    # ------------------------------------------------------------------ #
+    #  退货/售后申请拉取
+    # ------------------------------------------------------------------ #
+
+    async def fetch_returns(
+        self,
+        *,
+        platform: Platform,
+        since: datetime,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict]:
+        """Shopee 退货导入尚未实现 — Phase 1 返回空列表。"""
+        logger.warning("Shopee returns import not yet implemented")
+        return []
+
     async def fetch_orders(
         self,
         *,
