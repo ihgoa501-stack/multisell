@@ -279,7 +279,7 @@ func TestRegistry_DefaultAgents(t *testing.T) {
 	}
 func TestOrchestrator_Run_StubProvider(t *testing.T) {
 	db := newTestDB(t)
-	orch := NewOrchestrator(db, testLogger())
+	orch := NewOrchestrator(db, testLogger()).WithSyncTrustScore()
 	// Default provider is stub — no API key needed.
 
 	result, err := orch.Run(&RunAgentRequest{
@@ -328,7 +328,7 @@ func TestOrchestrator_Run_StubProvider(t *testing.T) {
 
 func TestOrchestrator_Run_UnknownAgent(t *testing.T) {
 	db := newTestDB(t)
-	orch := NewOrchestrator(db, testLogger())
+	orch := NewOrchestrator(db, testLogger()).WithSyncTrustScore()
 	_, err := orch.Run(&RunAgentRequest{AgentID: "Z9", DecisionPoint: "noop"})
 	if err == nil {
 		t.Fatal("expected error for unknown agent")
@@ -337,7 +337,7 @@ func TestOrchestrator_Run_UnknownAgent(t *testing.T) {
 
 func TestOrchestrator_Run_InvalidDecisionPoint(t *testing.T) {
 	db := newTestDB(t)
-	orch := NewOrchestrator(db, testLogger())
+	orch := NewOrchestrator(db, testLogger()).WithSyncTrustScore()
 	_, err := orch.Run(&RunAgentRequest{AgentID: "A5", DecisionPoint: "unknown_point"})
 	if err == nil {
 		t.Fatal("expected error for invalid decision point")
@@ -346,7 +346,7 @@ func TestOrchestrator_Run_InvalidDecisionPoint(t *testing.T) {
 
 func TestOrchestrator_Chat_Routing(t *testing.T) {
 	db := newTestDB(t)
-	orch := NewOrchestrator(db, testLogger())
+	orch := NewOrchestrator(db, testLogger()).WithSyncTrustScore()
 
 	cases := []struct {
 		msg       string

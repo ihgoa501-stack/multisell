@@ -25,6 +25,11 @@ type Orchestrator struct {
 	traces     *TraceWriter
 	provider   LLMProvider
 	agentImpls map[string]impl.Agent
+
+	// trustScoreSync forces synchronous trust score recalculation after each Run().
+	// In production this runs in a goroutine; tests with SQLite can set this to
+	// true to avoid table-lock races during cleanup.
+	trustScoreSync bool
 }
 
 // NewOrchestrator creates a new AI orchestrator.
@@ -42,6 +47,14 @@ func NewOrchestrator(db *gorm.DB, logger *zap.Logger) *Orchestrator {
 // WithProvider overrides the LLM provider (useful for tests).
 func (o *Orchestrator) WithProvider(p LLMProvider) *Orchestrator {
 	o.provider = p
+	return o
+}
+
+// WithSyncTrustScore forces synchronous trust score recalculation after Run().
+// In production the recalculation runs in a goroutine; tests using shared SQLite
+// should set this to true to avoid table-lock races during cleanup.
+func (o *Orchestrator) WithSyncTrustScore() *Orchestrator {
+	o.trustScoreSync = true
 	return o
 }
 
@@ -262,10 +275,15 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 	})
 
 	// Trigger trust score recalculation for conditional autonomy upgrades.
-	tsSvc := trustscore.NewService(o.db, o.logger)
-	if err := tsSvc.Recalculate(); err != nil {
-		o.logger.Warn("trust score recalculation failed", zap.Error(err))
-	} else {
+	// In production (async) this runs in a goroutine to avoid blocking the
+	// agent response on 40+ database queries. Tests with SQLite set
+	// trustScoreSync=true to avoid table-lock races during cleanup.
+	recalcTrustScores := func() {
+		tsSvc := trustscore.NewService(o.db, o.logger)
+		if err := tsSvc.Recalculate(); err != nil {
+			o.logger.Warn("trust score recalculation failed", zap.Error(err))
+			return
+		}
 		ug := trustscore.NewUpgrader(o.db, o.logger)
 		if upgraded, err := ug.UpgradeEligible(); err != nil {
 			o.logger.Warn("autonomy upgrade failed", zap.Error(err))
@@ -278,6 +296,11 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 				)
 			}
 		}
+	}
+	if o.trustScoreSync {
+		recalcTrustScores()
+	} else {
+		go recalcTrustScores()
 	}
 
 	return &RunAgentResult{
