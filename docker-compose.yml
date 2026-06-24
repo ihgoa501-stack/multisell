@@ -73,8 +73,37 @@ services:
       sh -c "npm install &&
              npm run dev -- --hostname 0.0.0.0 --port 3000"
 
+  # =============================================================================
+  # 数据库备份（按需运行）
+  # docker compose run --rm backup
+  # 生产环境通过宿主机 cron 定时执行：
+  #   0 3 * * * cd /opt/multisell && docker compose run --rm backup
+  # =============================================================================
+  backup:
+    image: postgres:15-alpine
+    profiles:
+      - manual
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: multisell
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: "7"
+      BACKUP_S3_BUCKET: "${BACKUP_S3_BUCKET:-}"
+    volumes:
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+      - db_backups:/backups
+      - ${HOME}/.aws:/root/.aws:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "/usr/local/bin/backup.sh"]
+
 volumes:
   postgres_go_data:
   go_pkg_cache:
   go_build_cache:
   frontend_next_node_modules:
+  db_backups:

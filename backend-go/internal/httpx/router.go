@@ -71,15 +71,15 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		// Health check
 		r.GET("/api/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
+				"status":  "ok",
+				"version": "0.1.0",
+			})
+		})
 
 		// Prometheus metrics endpoint
 		if cfg.Metrics.Enabled {
 			r.GET("/metrics", middleware.MetricsHandler())
 		}
-			"version": "0.1.0",
-		})
-	})
 
 	// ==========================================================
 	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
