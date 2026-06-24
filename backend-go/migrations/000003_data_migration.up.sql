@@ -17,7 +17,13 @@
 -- Validation happens in a separate step (see validate.sql).
 -- ============================================================
 
-BEGIN;
+DO $data_migration$
+BEGIN
+  -- Skip on fresh databases that have no legacy tables
+  IF NOT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'legacy_category') THEN
+    RAISE NOTICE '000003: no legacy data found — skipping migration (fresh database)';
+    RETURN;
+  END IF;
 
 -- Reference / root tables (no FK dependencies)
 INSERT INTO category (id, name, parent_id, level, sort_order, status, created_at, updated_at)
@@ -288,5 +294,5 @@ INSERT INTO product_image_gen (id, product_id, prompt, style, negative_prompt, s
 SELECT id, product_id, prompt, style, negative_prompt, size, requested_count, status, image_urls, error_message, created_by, batch_id, created_at, updated_at
 FROM legacy_product_image_gen
 ON CONFLICT (id) DO NOTHING;
-
-COMMIT;
+END;
+$data_migration$;
