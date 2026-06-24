@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Form, Input, Button, Card, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -22,7 +21,7 @@ export default function LoginPage() {
   const [form] = Form.useForm();
 
   const loginMutation = useMutation({
-    mutationFn: async (values: any) => {
+    mutationFn: async (values: { username: string; password: string }) => {
       // The backend expects username and password
       const res = await apiClient.post<LoginResponse>('/v1/auth/login', {
         username: values.username,
@@ -41,7 +40,7 @@ export default function LoginPage() {
         message.error('登录返回数据为空');
       }
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       message.error(err.message || '登录失败，请检查用户名和密码');
     },
   });
@@ -50,8 +49,8 @@ export default function LoginPage() {
     try {
       const values = await form.validateFields();
       loginMutation.mutate(values);
-    } catch (e) {
-      // Validation error
+    } catch {
+      // Validation error — form rules already show messages
     }
   };
 

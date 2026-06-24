@@ -25,7 +25,7 @@ describe('PageHeader', () => {
   });
 
   it('hides breadcrumbs when showBreadcrumb=false', () => {
-    const { container } = render(<PageHeader title="测试" showBreadcrumb={false} />);
+    render(<PageHeader title="测试" showBreadcrumb={false} />);
     // Breadcrumbs would render "Home" — it shouldn't be visible
     expect(screen.queryByText('Home')).not.toBeInTheDocument();
   });

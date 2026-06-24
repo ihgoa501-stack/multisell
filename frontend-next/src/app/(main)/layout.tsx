@@ -11,7 +11,7 @@ import { useAppStore } from '@/stores/app-store';
 const { Content } = Layout;
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
-  const { sidebarCollapsed, copilotOpen } = useAppStore();
+  const { copilotOpen } = useAppStore();
 
   return (
     <AuthGuard>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Card, Table, Tag, Typography, Space, Progress, Modal, Descriptions, message } from 'antd';
+import { Button, Table, Tag, Typography, Space, Progress, Modal, Descriptions, message } from 'antd';
 import { ReloadOutlined, ArrowUpOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';

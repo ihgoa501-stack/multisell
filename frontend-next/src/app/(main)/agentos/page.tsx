@@ -206,7 +206,7 @@ export default function AgentOSPage() {
       title: '标题',
       dataIndex: 'title',
       ellipsis: true,
-      render: (v: string, record: WorkItem) => (
+      render: (v: string) => (
         <Space size={4}>
           <Text strong>{v}</Text>
         </Space>

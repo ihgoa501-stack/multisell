@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Card, Descriptions, Table, Spin, Result, Button, Space, Tag, Modal, Form, Input, Select, message } from 'antd';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftOutlined, EditOutlined, AuditOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, AuditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
 import PageContainer from '@/components/ui/PageContainer';
@@ -72,7 +72,12 @@ export default function SettlementDetailPage() {
   const items = data?.items || [];
 
   const reconcileMutation = useMutation({
-    mutationFn: async (values: any) => {
+    mutationFn: async (values: {
+      item_id?: number;
+      reconciliation_status: string;
+      reconciliation_note: string;
+      reconciled_by: string;
+    }) => {
       return apiClient.post(`/v1/settlement/${id}/reconcile`, values);
     },
     onSuccess: () => {
@@ -81,7 +86,7 @@ export default function SettlementDetailPage() {
       reconcileForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['settlement', id] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       message.error(`操作失败: ${err.message}`);
     },
   });
@@ -145,7 +150,7 @@ export default function SettlementDetailPage() {
     {
       title: '操作',
       key: 'action',
-      render: (_: any, record: SettlementItem) => (
+      render: (_: unknown, record: SettlementItem) => (
         <Button
           type="link"
           icon={<AuditOutlined />}

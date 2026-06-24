@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Card, Descriptions, Table, Spin, Result, Button, Space, Tag, message } from 'antd';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,8 +17,8 @@ interface ListingTask {
   source_type: string;
   source_item_key: string;
   status: string;
-  missing_requirements?: any;
-  decision_snapshot?: any;
+  missing_requirements?: unknown;
+  decision_snapshot?: unknown;
   target_sale_price?: number;
   target_profit_margin?: number;
   destination_country: string;
@@ -36,7 +35,7 @@ interface ListingTaskItem {
   product_id: number;
   platform_id: number;
   status: string;
-  result?: any;
+  result?: unknown;
   error_message: string;
   retry_count: number;
   executed_at?: string;
@@ -74,7 +73,7 @@ export default function ListingTaskDetailPage() {
       message.success('执行任务已启动');
       queryClient.invalidateQueries({ queryKey: ['listing-task', id] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       message.error(`执行失败: ${err.message}`);
     },
   });
@@ -88,7 +87,7 @@ export default function ListingTaskDetailPage() {
       message.success('重试已触发');
       queryClient.invalidateQueries({ queryKey: ['listing-task', id] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       message.error(`重试失败: ${err.message}`);
     },
   });

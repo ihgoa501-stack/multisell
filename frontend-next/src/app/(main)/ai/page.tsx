@@ -29,7 +29,6 @@ import { useRouter } from 'next/navigation';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
 import { getCurrentOperator } from '@/lib/user';
-import type { PageResult, Result } from '@/types/api';
 
 const { Text, Paragraph } = Typography;
 
