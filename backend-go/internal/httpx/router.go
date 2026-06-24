@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -118,7 +119,19 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	exchangerate.RegisterRoutes(api, db, logger)
 
 	// Feedback routes
-	feedback.RegisterRoutes(api, cfg, db, logger)
+		// Feedback routes with optional AI classification
+	feedback.RegisterRoutes(api, cfg, db, logger, func(ctx context.Context, system, user string) (string, error) {
+		resp, err := aiOrch.Provider().Chat(ctx, &ai.LLMRequest{
+			System:      system,
+			Messages:    []ai.LLMMessage{{Role: "user", Content: user}},
+			Temperature: 0.1,
+			MaxTokens:   300,
+		})
+		if err != nil {
+			return "", err
+		}
+		return resp.Answer, nil
+	})
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)

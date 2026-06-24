@@ -1,6 +1,7 @@
 package feedback
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -10,8 +11,14 @@ import (
 
 // Service provides feedback business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db        *gorm.DB
+	logger    *zap.Logger
+	classifier Classifier
+}
+
+// SetClassifier sets the AI classifier for automatic feedback classification.
+func (s *Service) SetClassifier(c Classifier) {
+	s.classifier = c
 }
 
 // NewService creates a new feedback Service.
@@ -377,6 +384,28 @@ func (s *Service) CreateSubmission(req *CreateSubmissionRequest, userID *int64) 
 		sub.Attachments = "[]"
 	}
 	sub.Priority = s.calculatePriority(sub)
+
+	// AI-assisted classification (best-effort, non-blocking)
+	if s.classifier != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if result, err := s.classifier.ClassifySubmission(ctx, sub.Title, sub.Description); err == nil && result != nil {
+			if result.FeedbackType != "" {
+				sub.FeedbackType = result.FeedbackType
+			}
+			if result.Severity != "" {
+				sub.Severity = result.Severity
+			}
+			sub.Priority = s.calculatePriority(sub)
+			if result.Confidence > 0.7 {
+				sub.Priority = min(sub.Priority+10, 100)
+			}
+			s.logger.Info("AI classified submission",
+				zap.String("title", sub.Title),
+				zap.String("type", result.FeedbackType),
+				zap.Float64("confidence", result.Confidence))
+		}
+	}
 
 	if err := s.db.Create(sub).Error; err != nil {
 		return nil, err
