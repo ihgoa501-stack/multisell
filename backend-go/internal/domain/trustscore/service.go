@@ -41,17 +41,141 @@ func (s *Service) GetByAgent(agentID string) (*TrustScore, error) {
 	return &score, nil
 }
 
+// actionRow holds batched action statistics per agent.
+type actionRow struct {
+	AgentID  string
+	Total    int
+	Adopted  int
+	Rejected int
+	Failed   int
+	Auto     int
+}
+
 // Recalculate recomputes trust scores for all registered agents.
+// Uses batched GROUP BY queries instead of N+1 per-agent lookups.
 func (s *Service) Recalculate() error {
-	for _, agent := range defaultAgentList() {
-		if err := s.RecalculateForAgent(agent.ID, agent.Name, agent.Squad); err != nil {
+	agents := defaultAgentList()
+	if len(agents) == 0 {
+		return nil
+	}
+
+	ids := make([]string, 0, len(agents))
+	for _, a := range agents {
+		ids = append(ids, a.ID)
+	}
+
+	// Batch 1: action stats per agent.
+	var actionStats []actionRow
+	s.db.Raw(`
+		SELECT
+			agent_id,
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE status IN ('approved','executing','executed','reviewed')) AS adopted,
+			COUNT(*) FILTER (WHERE status = 'rejected' AND rejected_by != 'policy') AS rejected,
+			COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+			COUNT(*) FILTER (WHERE status IN ('approved','executing','executed') AND approved_by = 'policy') AS auto
+		FROM unified_action WHERE agent_id IN ?
+		GROUP BY agent_id
+	`, ids).Scan(&actionStats)
+	asMap := make(map[string]actionRow, len(actionStats))
+	for _, v := range actionStats {
+		asMap[v.AgentID] = v
+	}
+
+	// Batch 2: avg confidence per agent.
+	type confRow struct {
+		AgentID string
+		AvgConf float64
+	}
+	var confStats []confRow
+	s.db.Raw(`
+		SELECT agent_id, COALESCE(AVG(confidence),0) AS avg_conf
+		FROM ai_trace WHERE agent_id IN ? AND confidence IS NOT NULL
+		GROUP BY agent_id
+	`, ids).Scan(&confStats)
+	confMap := make(map[string]float64, len(confStats))
+	for _, v := range confStats {
+		confMap[v.AgentID] = v.AvgConf
+	}
+
+	// Batch 3: last action time per agent.
+	type lastActionRow struct {
+		AgentID string
+		MaxTime *time.Time
+	}
+	var lastActions []lastActionRow
+	s.db.Raw(`
+		SELECT agent_id, MAX(proposed_at) AS max_time
+		FROM unified_action WHERE agent_id IN ?
+		GROUP BY agent_id
+	`, ids).Scan(&lastActions)
+	laMap := make(map[string]*time.Time, len(lastActions))
+	for _, v := range lastActions {
+		laMap[v.AgentID] = v.MaxTime
+	}
+
+	// Per-agent computation — in-memory only, no per-agent DB queries.
+	for _, agent := range agents {
+		if err := s.recalculateOne(agent, asMap[agent.ID], confMap[agent.ID], laMap[agent.ID]); err != nil {
 			s.logger.Warn("recalculate failed", zap.String("agent", agent.ID), zap.Error(err))
 		}
 	}
 	return nil
 }
 
-// RecalculateForAgent recomputes trust score for one agent.
+// recalculateOne computes and persists one agent's trust score using
+// pre-fetched batch data — does NOT make its own queries.
+func (s *Service) recalculateOne(agent agentInfo, as actionRow, avgConf float64, lastActionAt *time.Time) error {
+	score, err := s.GetByAgent(agent.ID)
+	if err != nil {
+		return err
+	}
+	if score == nil {
+		score = NewTrustScore(agent.ID, agent.Name, agent.Squad)
+	}
+
+	total := float64(maxInt(as.Total, 1))
+	adoptionRate := float64(as.Adopted) / total
+	execSuccess := 1.0
+	if as.Failed > 0 {
+		execSuccess = 1.0 - (float64(as.Failed) / total)
+	}
+	avgConf = clamp01(avgConf)
+
+	trustScore := adoptionRate*0.40 + execSuccess*0.30 + avgConf*0.30
+	trustScore = clamp01(trustScore)
+
+	currentLevel := score.AutonomyLevel
+	targetLevel := determineTargetLevel(trustScore, currentLevel)
+
+	updates := map[string]interface{}{
+		"agent_name":        agent.Name,
+		"squad_id":          agent.Squad,
+		"total_actions":     as.Total,
+		"adopted_actions":   as.Adopted,
+		"rejected_actions":  as.Rejected,
+		"failed_actions":    as.Failed,
+		"auto_approved":     as.Auto,
+		"adoption_rate":     math.Round(adoptionRate*10000) / 10000,
+		"execution_success": math.Round(execSuccess*10000) / 10000,
+		"avg_confidence":    math.Round(avgConf*10000) / 10000,
+		"trust_score":       math.Round(trustScore*10000) / 10000,
+		"autonomy_level":    currentLevel,
+		"target_level":      targetLevel,
+		"last_action_at":    lastActionAt,
+	}
+
+	if score.ID == 0 {
+		score.AgentID = agent.ID
+		score.AgentName = agent.Name
+		score.SquadID = agent.Squad
+		return s.db.Create(score).Error
+	}
+
+	return s.db.Model(score).Updates(updates).Error
+}
+
+// RecalculateForAgent recomputes trust score for one agent (uses its own queries).
 func (s *Service) RecalculateForAgent(agentID, agentName, squadID string) error {
 	// Get existing score or create new
 	score, err := s.GetByAgent(agentID)
