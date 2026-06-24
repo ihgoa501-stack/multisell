@@ -17,7 +17,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
-		"github.com/lingmirror/backend-go/internal/domain/entropy"
 	"github.com/lingmirror/backend-go/internal/domain/exceptions"
 	"github.com/lingmirror/backend-go/internal/domain/finance"
 	"github.com/lingmirror/backend-go/internal/domain/imagegen"
@@ -41,6 +40,9 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
+	"github.com/lingmirror/backend-go/internal/domain/agentrule"
+	"github.com/lingmirror/backend-go/internal/domain/entropy"
+	"github.com/lingmirror/backend-go/internal/domain/evolution"
 	"time"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
@@ -295,7 +297,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Interval: time.Hour * 1, Description: "信任分重算",
 	})
 	sched.Register(scheduler.Task{
-		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defense_cycle",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
 
@@ -350,7 +351,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	settlement.RegisterRoutes(protected, db, logger)
 	finance.RegisterRoutes(protected, db, logger)
 	decision.RegisterRoutes(protected, db, logger)
-	entropy.RegisterRoutes(protected, db, logger)
 	allocation.RegisterRoutes(protected, db, logger)
 	exceptions.RegisterRoutes(protected, db, logger)
 	notification.RegisterRoutes(protected, db, logger)
@@ -366,6 +366,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	trustscore.RegisterRoutes(protected, db, logger)
 	report.RegisterRoutes(protected, db, logger)
 	exchangerate.RegisterRoutes(protected, db, logger)
+	agentrule.RegisterRoutes(protected, db, logger)
+	evolution.RegisterRoutes(protected, db, logger)
+	entropy.RegisterRoutes(protected, db, logger)
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)

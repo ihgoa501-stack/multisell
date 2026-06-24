@@ -293,6 +293,7 @@ func TestRegistry_DefaultAgents(t *testing.T) {
 		if len(bySquad["governance"]) != 1 {
 			t.Fatalf("governance squad = %d", len(bySquad["governance"]))
 		}
+	}
 
 func TestOrchestrator_Run_StubProvider(t *testing.T) {
 	db := newTestDB(t)

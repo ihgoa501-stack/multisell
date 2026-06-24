@@ -350,32 +350,47 @@ func (o *Orchestrator) Chat(message string, userID *int64) (*RunAgentResult, err
 	})
 }
 
-// routeChat does naive keyword routing from a chat message to an agent.
+// routeEntry associates keywords with a target agent + decision point.
+type routeEntry struct {
+	Keywords      []string
+	AgentID       string
+	DecisionPoint string
+}
+
+// routeTable is the ordered routing table. Earlier entries win on ties.
+var routeTable = []routeEntry{
+	{Keywords: []string{"库存", "缺货", "补货", "stock", "inventory", "replenishment", "backorder", "存货"}, AgentID: "A5", DecisionPoint: "stock_alert"},
+	{Keywords: []string{"利润", "成本", "亏损", "profit", "cost", "margin"}, AgentID: "A6", DecisionPoint: "profit_check"},
+	{Keywords: []string{"listing", "标题", "描述", "优化", "关键词", "keyword"}, AgentID: "A2", DecisionPoint: "listing_optimize"},
+	{Keywords: []string{"广告", "acos", "投放", "ad", "ads", "spend"}, AgentID: "A3", DecisionPoint: "acos_analysis"},
+	{Keywords: []string{"选品", "新品", "市场", "scout", "product"}, AgentID: "A1", DecisionPoint: "product_scout"},
+	{Keywords: []string{"客服", "回复", "意图", "customer", "service", "退款", "退货"}, AgentID: "A4", DecisionPoint: "auto_reply"},
+	{Keywords: []string{"合规", "认证", "禁售", "compliance", "regulation", "cert"}, AgentID: "A7", DecisionPoint: "compliance_check"},
+	{Keywords: []string{"折扣", "促销", "价格底线", "discount", "promotion", "coupon"}, AgentID: "G3", DecisionPoint: "discount_check"},
+	{Keywords: []string{"仓库", "报关", "warehouse", "customs", "仓储"}, AgentID: "G2", DecisionPoint: "warehouse_routing"},
+	{Keywords: []string{"dashboard", "概览", "总览", "overview", "驾驶舱"}, AgentID: "G1", DecisionPoint: "dashboard_overview"},
+}
+
+// routeChat scores keywords against each route entry and returns the best match.
 func routeChat(msg string) (string, string) {
 	m := strings.ToLower(msg)
-	switch {
-	case strings.Contains(m, "库存") || strings.Contains(m, "缺货") || strings.Contains(m, "补货"):
-		return "A5", "stock_alert"
-	case strings.Contains(m, "利润") || strings.Contains(m, "成本") || strings.Contains(m, "亏损"):
-		return "A6", "profit_check"
-	case strings.Contains(m, "listing") || strings.Contains(m, "标题") || strings.Contains(m, "描述"):
-		return "A2", "listing_optimize"
-	case strings.Contains(m, "广告") || strings.Contains(m, "acos") || strings.Contains(m, "投放"):
-		return "A3", "acos_analysis"
-	case strings.Contains(m, "选品") || strings.Contains(m, "新品") || strings.Contains(m, "市场"):
-		return "A1", "product_scout"
-	case strings.Contains(m, "客服") || strings.Contains(m, "回复") || strings.Contains(m, "意图"):
-		return "A4", "auto_reply"
-	case strings.Contains(m, "合规") || strings.Contains(m, "认证") || strings.Contains(m, "禁售"):
-		return "A7", "compliance_check"
-	case strings.Contains(m, "折扣") || strings.Contains(m, "促销") || strings.Contains(m, "价格底线"):
-		return "G3", "discount_check"
-	case strings.Contains(m, "仓库") || strings.Contains(m, "报关"):
-		return "G2", "warehouse_routing"
-	case strings.Contains(m, "dashboard") || strings.Contains(m, "概览") || strings.Contains(m, "总览"):
-		return "G1", "dashboard_overview"
+	bestScore := 0
+	bestAgent := ""
+	bestPoint := ""
+	for _, entry := range routeTable {
+		score := 0
+		for _, kw := range entry.Keywords {
+			if strings.Contains(m, kw) {
+				score++
+			}
+		}
+		if score > 0 && score > bestScore {
+			bestScore = score
+			bestAgent = entry.AgentID
+			bestPoint = entry.DecisionPoint
+		}
 	}
-	return "", ""
+	return bestAgent, bestPoint
 }
 
 // ---- stub helpers ----
