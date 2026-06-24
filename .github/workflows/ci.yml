@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, infra-q3-buildout]
   pull_request:
-    branches: [main]
+    branches: [main, infra-q3-buildout]
 
 jobs:
   go-lint:
@@ -79,3 +79,23 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Test
+        run: npm run test --if-present
+
+  # ==========================================
+  # CD: 自动部署到生产（仅合并到 main 时触发）
+  # ==========================================
+  deploy:
+    if: github.ref == 'refs/heads/infra-q3-buildout' && github.event_name == 'push'
+    needs: [go-lint, go-test, next-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd /opt/multisell
+            ./scripts/deploy.sh
