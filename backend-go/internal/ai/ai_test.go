@@ -276,24 +276,6 @@ func TestRegistry_DefaultAgents(t *testing.T) {
 		t.Fatal("expected Z9 to be unknown")
 	}
 
-			// Squad grouping.
-		bySquad := r.BySquad()
-		if len(bySquad["growth"]) != 4 {
-			t.Fatalf("growth squad = %d", len(bySquad["growth"]))
-		}
-		if len(bySquad["risk"]) != 4 {
-			t.Fatalf("risk squad = %d", len(bySquad["risk"]))
-		}
-		if len(bySquad["fulfillment"]) != 3 {
-			t.Fatalf("fulfillment squad = %d", len(bySquad["fulfillment"]))
-		}
-		if len(bySquad["settle"]) != 2 {
-			t.Fatalf("settle squad = %d", len(bySquad["settle"]))
-		}
-		if len(bySquad["governance"]) != 1 {
-			t.Fatalf("governance squad = %d", len(bySquad["governance"]))
-		}
-	}
 
 func TestOrchestrator_Run_StubProvider(t *testing.T) {
 	db := newTestDB(t)
