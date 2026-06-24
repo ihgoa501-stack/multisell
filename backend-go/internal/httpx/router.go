@@ -118,21 +118,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	report.RegisterRoutes(api, db, logger)
 	exchangerate.RegisterRoutes(api, db, logger)
 
-	// Feedback routes
-		// Feedback routes with optional AI classification
-	feedback.RegisterRoutes(api, cfg, db, logger, func(ctx context.Context, system, user string) (string, error) {
-		resp, err := aiOrch.Provider().Chat(ctx, &ai.LLMRequest{
-			System:      system,
-			Messages:    []ai.LLMMessage{{Role: "user", Content: user}},
-			Temperature: 0.1,
-			MaxTokens:   300,
-		})
-		if err != nil {
-			return "", err
-		}
-		return resp.Answer, nil
-	})
-
 	// WebSocket route
 	hub := realtime.NewHub(logger)
 	go hub.Run()
@@ -142,5 +127,42 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI routes need the hub for realtime broadcasts.
 	ai.RegisterRoutes(api, db, logger, hub)
 
+	// Feedback routes with full AgentOS integration
+	feedback.RegisterRoutes(api, cfg, db, logger,
+		// AI classification function
+		func(ctx context.Context, system, user string) (string, error) {
+			resp, err := aiOrch.Provider().Chat(ctx, &ai.LLMRequest{
+				System:      system,
+				Messages:    []ai.LLMMessage{{Role: "user", Content: user}},
+				Temperature: 0.1,
+				MaxTokens:   300,
+			})
+			if err != nil {
+				return "", err
+			}
+			return resp.Answer, nil
+		},
+		// WebSocket hub for real-time notifications
+		hub,
+		// UnifiedAction creator for AgentOS integration
+		func(table, sourceID, title, payload string) error {
+			aiSvc := ai.NewService(db, logger)
+			_, err := aiSvc.CreateAction(&ai.CreateActionInput{
+				SourceTable:  table,
+				SourceID:     sourceID,
+				SourceType:   "feedback",
+				ActionType:   "feedback_triage",
+				Title:        title,
+				Description:  payload,
+				AgentID:      "A8",
+				SquadID:      "governance",
+				RiskLevel:    "medium",
+				RequiresApproval: boolPtr(true),
+			})
+			return err
+		},
+	)
 	return r
 }
+
+func boolPtr(b bool) *bool { return &b }

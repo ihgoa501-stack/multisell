@@ -2,23 +2,25 @@ package feedback
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
+	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers feedback routes on the given router group.
-// classifyFn is an optional LLM chat function for AI-assisted classification.
-//   ctx: request context with timeout
-//   systemPrompt: system message for the LLM
-//   userMessage: the feedback text to classify
-//   returns: the LLM response text, or error
-// If nil, classification falls back to keyword matching.
+//   classifyFn: optional LLM chat function for AI classification
+//   hub: optional WebSocket hub for real-time notifications
+//   actionCreator: optional function to create AgentOS UnifiedActions
 func RegisterRoutes(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, logger *zap.Logger,
-	classifyFn func(ctx context.Context, systemPrompt, userMessage string) (string, error)) {
+	classifyFn func(ctx context.Context, systemPrompt, userMessage string) (string, error),
+	hub *realtime.Hub,
+	actionCreator func(table, sourceID, title, payload string) error) {
 
 	svc := NewService(db, logger)
 	sugar := logger.Sugar()
@@ -28,6 +30,37 @@ func RegisterRoutes(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, logger
 		classifier := NewAIClassifier(classifyFn, sugar)
 		svc.SetClassifier(classifier)
 		logger.Info("AI classifier enabled for feedback submissions")
+	}
+
+	// Wire up AgentOS triage handler
+	if actionCreator != nil && hub != nil {
+		svc.SetTriageHandler(func(data *TriageActionData) error {
+			// Create notification payload
+			payload := fmt.Sprintf(`{"submission_id":%d,"title":"%s","type":"%s","priority":%d}`,
+				data.SubmissionID, data.Title, data.FeedbackType, data.Priority)
+
+			// Create UnifiedAction in AgentOS
+			if err := actionCreator("feedback_submission",
+				fmt.Sprintf("%d", data.SubmissionID),
+				fmt.Sprintf("审阅反馈: %s", data.Title),
+				payload); err != nil {
+				logger.Warn("Failed to create triage action", zap.Error(err))
+			}
+
+			// Broadcast WebSocket notification
+			wsMsg, _ := json.Marshal(map[string]interface{}{
+				"type": "feedback_new",
+				"data": map[string]interface{}{
+					"id":            data.SubmissionID,
+					"title":         data.Title,
+					"feedback_type": data.FeedbackType,
+					"priority":      data.Priority,
+				},
+			})
+			hub.Broadcast(wsMsg)
+			return nil
+		})
+		logger.Info("AgentOS triage handler wired for feedback submissions")
 	}
 
 	h := NewHandler(svc)
@@ -67,5 +100,9 @@ func RegisterRoutes(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, logger
 		fb.DELETE("/submissions/:id/tags/:tagId", h.RemoveTag)
 		fb.GET("/projects/:id/stats", h.GetDashboardStats)
 		fb.POST("/migrate", h.Migrate)
+
+		// Agent-facing endpoints
+		fb.GET("/pending-for-agent", h.ListSubmissionsForAgent)
+		fb.GET("/assigned-to-me", h.ListSubmissionsForAgent)
 	}
 }

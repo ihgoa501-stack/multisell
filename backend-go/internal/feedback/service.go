@@ -14,11 +14,17 @@ type Service struct {
 	db        *gorm.DB
 	logger    *zap.Logger
 	classifier Classifier
+	triageFn   TriageHandler
 }
 
 // SetClassifier sets the AI classifier for automatic feedback classification.
 func (s *Service) SetClassifier(c Classifier) {
 	s.classifier = c
+}
+
+// SetTriageHandler sets the AgentOS triage handler for creating UnifiedActions.
+func (s *Service) SetTriageHandler(fn TriageHandler) {
+	s.triageFn = fn
 }
 
 // NewService creates a new feedback Service.
@@ -386,6 +392,7 @@ func (s *Service) CreateSubmission(req *CreateSubmissionRequest, userID *int64) 
 	sub.Priority = s.calculatePriority(sub)
 
 	// AI-assisted classification (best-effort, non-blocking)
+	aiConfidence := 0.0
 	if s.classifier != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -397,6 +404,7 @@ func (s *Service) CreateSubmission(req *CreateSubmissionRequest, userID *int64) 
 				sub.Severity = result.Severity
 			}
 			sub.Priority = s.calculatePriority(sub)
+			aiConfidence = result.Confidence
 			if result.Confidence > 0.7 {
 				sub.Priority = min(sub.Priority+10, 100)
 			}
@@ -407,9 +415,41 @@ func (s *Service) CreateSubmission(req *CreateSubmissionRequest, userID *int64) 
 		}
 	}
 
+	// Create AgentOS UnifiedAction for triage (if handler is wired)
+	if s.triageFn != nil {
+		s.triageFn(&TriageActionData{
+			SubmissionID: sub.ID,
+			Title:        sub.Title,
+			FeedbackType: sub.FeedbackType,
+			Priority:     sub.Priority,
+			Status:       sub.Status,
+			Severity:     sub.Severity,
+			Confidence:   aiConfidence,
+		})
+	}
+
 	if err := s.db.Create(sub).Error; err != nil {
 		return nil, err
 	}
+
+	// Create AgentOS UnifiedAction for triage (if handler is wired)
+	// Must happen after db.Create so sub.ID is populated
+	if s.triageFn != nil {
+		decision := AutoTriage(sub.FeedbackType, sub.Severity, sub.Priority, aiConfidence)
+		s.logger.Info("Feedback triage decision",
+			zap.Int64("submission_id", sub.ID),
+			zap.String("decision", decision.Action))
+		s.triageFn(&TriageActionData{
+			SubmissionID: sub.ID,
+			Title:        sub.Title,
+			FeedbackType: sub.FeedbackType,
+			Priority:     sub.Priority,
+			Status:       sub.Status,
+			Severity:     sub.Severity,
+			Confidence:   aiConfidence,
+		})
+	}
+
 	s.logStatusChange(sub.ID, "", StatusPending, userID, "Initial submission")
 	return sub, nil
 }

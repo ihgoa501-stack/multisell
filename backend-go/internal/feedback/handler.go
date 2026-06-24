@@ -462,6 +462,34 @@ func (h *Handler) GetDashboardStats(c *gin.Context) {
 	response.Success(c, stats)
 }
 
+// ListSubmissionsForAgent returns pending feedback for AI agent consumption.
+// GET /api/v1/feedback/pending-for-agent?status=pending&page=1&size=10
+func (h *Handler) ListSubmissionsForAgent(c *gin.Context) {
+	status := c.DefaultQuery("status", "pending")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	// Try to get the first project
+	projects, err := h.service.ListProjects()
+	if err != nil || len(projects) == 0 {
+		response.Paginated(c, []SubmissionResponse{}, 0, page, size)
+		return
+	}
+
+	subs, total, err := h.service.ListSubmissions(projects[0].ID, status, "", "", page, size)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, subs, total, page, size)
+}
+
 func (h *Handler) Migrate(c *gin.Context) {
 	if err := AutoMigrate(h.service.db); err != nil {
 		response.Error(c, http.StatusInternalServerError, "迁移失败: "+err.Error())
