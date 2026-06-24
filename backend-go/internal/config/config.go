@@ -14,6 +14,8 @@ type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
+	CORS     CORSConfig     `mapstructure:"cors"`
+	Metrics  MetricsConfig  `mapstructure:"metrics"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Log      LogConfig      `mapstructure:"log"`
 	Sentry   SentryConfig   `mapstructure:"sentry"`
@@ -57,6 +59,16 @@ type LogConfig struct {
 	Format string `mapstructure:"format"`
 }
 
+// CORSConfig holds Cross-Origin Resource Sharing settings.
+type CORSConfig struct {
+	AllowedOrigins string `mapstructure:"allowed_origins"` // 逗号分隔，空值或"*"表示允许所有来源
+}
+
+// MetricsConfig holds Prometheus metrics settings.
+type MetricsConfig struct {
+	Enabled bool `mapstructure:"enabled"` // 是否开启 metrics 端点
+}
+
 // SentryConfig holds Sentry error tracking settings.
 type SentryConfig struct {
 	DSN string `mapstructure:"dsn"`
@@ -95,6 +107,8 @@ func Load() (*Config, error) {
 	v.BindEnv("jwt.secret", "JWT_SECRET")
 	v.BindEnv("server.port", "SERVER_PORT")
 	v.BindEnv("sentry.dsn", "SENTRY_DSN")
+	v.BindEnv("cors.allowed_origins", "CORS_ALLOWED_ORIGINS")
+	v.BindEnv("metrics.enabled", "METRICS_ENABLED")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

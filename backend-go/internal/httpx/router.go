@@ -62,18 +62,28 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	r := gin.New()
 
 	// Global middleware
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(cfg))
 	r.Use(middleware.RequestID())
-	r.Use(middleware.RecoveryWithSentry(cfg, logger))
-	r.Use(middleware.Audit(db, logger))
 
-	// Health check
-	r.GET("/api/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"version": "0.1.0",
+		// Prometheus metrics (before recovery to capture all requests)
+		if cfg.Metrics.Enabled {
+			r.Use(middleware.Metrics())
+		}
+		r.Use(middleware.RecoveryWithSentry(cfg, logger))
+		r.Use(middleware.Audit(db, logger))
+
+		// Health check
+		r.GET("/api/health", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"version": "0.1.0",
+			})
 		})
-	})
+
+		// Prometheus metrics endpoint
+		if cfg.Metrics.Enabled {
+			r.GET("/metrics", middleware.MetricsHandler())
+		}
 
 	// ==========================================================
 	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
@@ -312,7 +322,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// API v1 Health check (public)
 	api.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
+			c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
 			"version": "0.1.0",
 		})

@@ -17,6 +17,12 @@ redis:
   password: ""
   db: 0
 
+cors:
+  allowed_origins: "*"  # 开发环境允许所有来源；生产环境通过 CORS_ALLOWED_ORIGINS 覆盖
+
+metrics:
+  enabled: true  # 开启 /metrics 端点供 Prometheus 抓取
+
 jwt:
   secret: dev-secret-change-in-production
   expiry_hours: 24
