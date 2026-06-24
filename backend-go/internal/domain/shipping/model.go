@@ -129,6 +129,39 @@ type ShippingBillItem struct {
 
 func (ShippingBillItem) TableName() string { return "shipping_bill_item" }
 
+// SalesOrderShippingSnapshot maps to "sales_order_shipping_snapshot".
+type SalesOrderShippingSnapshot struct {
+	ID                  int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OrderID             int64     `gorm:"column:order_id;not null;uniqueIndex" json:"order_id"`
+	SkuID               int64     `gorm:"column:sku_id;not null;index" json:"sku_id"`
+	Quantity            int       `gorm:"column:quantity;not null" json:"quantity"`
+	DestinationCountry  string    `gorm:"column:destination_country;not null" json:"destination_country"`
+	PostalCode          string    `gorm:"column:postal_code" json:"postal_code"`
+	CargoType           string    `gorm:"column:cargo_type;default:normal" json:"cargo_type"`
+	PackageSource       string    `gorm:"column:package_source" json:"package_source"`
+	PackageLengthCm     float64   `gorm:"column:package_length_cm;not null" json:"package_length_cm"`
+	PackageWidthCm      float64   `gorm:"column:package_width_cm;not null" json:"package_width_cm"`
+	PackageHeightCm     float64   `gorm:"column:package_height_cm;not null" json:"package_height_cm"`
+	PackageWeightKg     float64   `gorm:"column:package_weight_kg;not null" json:"package_weight_kg"`
+	ProviderID          int64     `gorm:"column:provider_id;not null;index" json:"provider_id"`
+	ProviderName        string    `gorm:"column:provider_name;not null" json:"provider_name"`
+	ChannelID           int64     `gorm:"column:channel_id;not null;index" json:"channel_id"`
+	ChannelName         string    `gorm:"column:channel_name;not null" json:"channel_name"`
+	Currency            string    `gorm:"column:currency;default:CNY" json:"currency"`
+	ActualWeightKg      float64   `gorm:"column:actual_weight_kg;not null" json:"actual_weight_kg"`
+	VolumetricWeightKg  float64   `gorm:"column:volumetric_weight_kg;not null" json:"volumetric_weight_kg"`
+	ChargeableWeightKg  float64   `gorm:"column:chargeable_weight_kg;not null" json:"chargeable_weight_kg"`
+	BaseShippingFee     float64   `gorm:"column:base_shipping_fee;not null" json:"base_shipping_fee"`
+	SurchargeFee        float64   `gorm:"column:surcharge_fee;default:0" json:"surcharge_fee"`
+	FuelSurchargeFee    float64   `gorm:"column:fuel_surcharge_fee;default:0" json:"fuel_surcharge_fee"`
+	TotalShippingFee    float64   `gorm:"column:total_shipping_fee;not null" json:"total_shipping_fee"`
+	CalculationDetail   string    `gorm:"column:calculation_detail" json:"calculation_detail"`
+	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt           time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+func (SalesOrderShippingSnapshot) TableName() string { return "sales_order_shipping_snapshot" }
+
 // ---------- Input / DTO structs ----------
 
 type CreateProviderInput struct {

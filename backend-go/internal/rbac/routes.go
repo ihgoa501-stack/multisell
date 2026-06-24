@@ -29,6 +29,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		rbac.PUT("/permissions/:id", h.UpdatePermission)
 		rbac.DELETE("/permissions/:id", h.DeletePermission)
 
+		// Current user permissions
+		rbac.GET("/current/permissions", h.GetCurrentUserPermissions)
+
 		// User-Role assignment (placeholder auth to keep routes functional)
 		rbac.GET("/users/:id/roles", h.GetUserRoles)
 		rbac.POST("/users/:id/roles", h.AssignUserRoles)

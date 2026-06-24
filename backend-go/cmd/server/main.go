@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/database"
 	"github.com/lingmirror/backend-go/internal/httpx"
@@ -32,6 +33,20 @@ func main() {
 
 	sugar := logger.Sugar()
 	sugar.Info("starting LingMirror backend server")
+
+	// Initialize Sentry (only if DSN is configured)
+	if cfg.Sentry.DSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              cfg.Sentry.DSN,
+			Environment:      cfg.Server.Mode,
+			AttachStacktrace: true,
+		}); err != nil {
+			sugar.Errorf("failed to init Sentry: %v", err)
+		} else {
+			sugar.Info("Sentry initialized")
+		}
+	}
+	defer sentry.Flush(2 * time.Second)
 
 	// Connect to database
 	db, err := database.Connect(cfg, logger)

@@ -7,25 +7,32 @@ on:
     branches: [main]
 
 jobs:
-  lint:
+  go-lint:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-go
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
-      - name: Lint backend
-        run: |
-          pip install ruff
-          ruff check backend/
+          go-version: "1.25"
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
 
-  backend:
+  go-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-go
     services:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_DB: product_management_test
+          POSTGRES_DB: multisell_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
@@ -37,32 +44,38 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
-      - name: Install dependencies
-        run: pip install -r backend/requirements.txt
-      - name: Run tests with coverage
-        run: |
-          cd backend
-          TEST_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test" \
-            python -m pytest -q --tb=short --cov=app --cov-report=term-missing --cov-fail-under=0
+          go-version: "1.25"
+          cache: true
+      - name: Install migrate CLI
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+      - name: Run migrations
+        run: migrate -path migrations -database "postgresql://postgres:postgres@localhost:5432/multisell_test?sslmode=disable" up
+      - name: Run tests
+        run: go test ./... -v -count=1
         env:
-          AUTH_ENABLED: "false"
+          DB_DRIVER: postgres
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: multisell_test
+          DB_SSLMODE: disable
 
-  frontend:
+  next-build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-next
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-next/package-lock.json
       - name: Install dependencies
         run: npm ci
-        working-directory: frontend
       - name: Build
         run: npm run build
-        working-directory: frontend

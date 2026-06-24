@@ -292,7 +292,14 @@ func TestOrchestrator_Run_StubProvider(t *testing.T) {
 	result, err := orch.Run(&RunAgentRequest{
 		AgentID:       "A5",
 		DecisionPoint: "stock_alert",
-		Context:       map[string]interface{}{"sku_id": 1, "message": "缺货"},
+		Context: map[string]interface{}{
+				"sku_code":          "TEST-SKU-001",
+				"sellable_stock":    float64(100),
+				"sales_7d":          float64(35),
+				"lead_time_days":    float64(30),
+				"safety_stock_days": float64(14),
+				"message":           "缺货",
+			},
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -303,8 +310,8 @@ func TestOrchestrator_Run_StubProvider(t *testing.T) {
 	if result.AgentID != "A5" {
 		t.Fatalf("agentID = %s", result.AgentID)
 	}
-	if result.Output["recommendation"] == nil {
-		t.Fatal("missing recommendation")
+	if result.Output["risk_reason"] == nil {
+		t.Fatal("missing risk_reason")
 	}
 	if result.Action == nil {
 		t.Fatal("A5 is supervised — should create an action")

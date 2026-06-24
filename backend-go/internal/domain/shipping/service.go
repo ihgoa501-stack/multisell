@@ -32,7 +32,7 @@ func (s *Service) ListProviders(c *common.Pagination, search string) ([]Shipping
 	q := s.db.Model(&ShippingProvider{})
 	if search != "" {
 		like := "%" + search + "%"
-		q = q.Where("name ILIKE ? OR code ILIKE ?", like, like)
+		q = q.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?)", like, like)
 	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -122,7 +122,7 @@ func (s *Service) ListChannels(c *common.Pagination, providerID *int64, search s
 	}
 	if search != "" {
 		like := "%" + search + "%"
-		q = q.Where("name ILIKE ? OR code ILIKE ?", like, like)
+		q = q.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?)", like, like)
 	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err

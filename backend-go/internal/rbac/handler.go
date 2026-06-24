@@ -237,7 +237,44 @@ func (h *Handler) GetUserRoles(c *gin.Context) {
 	response.Success(c, gin.H{"user_id": userID, "roles": roles})
 }
 
+
+// ===================== Current User Permissions =====================
+
+// GetCurrentUserPermissions returns the permission codes for the currently
+// authenticated user. Reads user_id from gin context set by the auth middleware.
+func (h *Handler) GetCurrentUserPermissions(c *gin.Context) {
+	uid, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	var userID int64
+	switch v := uid.(type) {
+	case float64:
+		userID = int64(v)
+	case int64:
+		userID = v
+	case int:
+		userID = int64(v)
+	default:
+		response.Error(c, http.StatusUnauthorized, "invalid user identity")
+		return
+	}
+
+	codes, err := h.service.GetUserPermissions(userID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if codes == nil {
+		codes = []string{}
+	}
+	response.Success(c, gin.H{"permissions": codes})
+}
+
 // ===================== Role-Permission =====================
+
 
 type assignPermissionsRequest struct {
 	PermissionIDs []int64 `json:"permission_ids"`

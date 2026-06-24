@@ -27,7 +27,7 @@ func (s *Service) List(p *common.Pagination, f *SettlementListFilter) ([]Settlem
 	if f != nil {
 		if f.Search != "" {
 			like := "%" + f.Search + "%"
-			q = q.Where("settlement_no ILIKE ?", like)
+			q = q.Where("LOWER(settlement_no) LIKE LOWER(?)", like)
 		}
 		if f.Status != "" {
 			q = q.Where("status = ?", f.Status)
@@ -62,6 +62,9 @@ func (s *Service) Get(id int64) (*SettlementDetail, error) {
 
 // Create inserts a settlement with its items in a transaction.
 func (s *Service) Create(in *CreateSettlementInput) (*Settlement, error) {
+	if in.PlatformID == nil {
+		return nil, errors.New("platform_id is required")
+	}
 	if strings.TrimSpace(in.SettlementNo) == "" {
 		return nil, errors.New("settlement_no is required")
 	}
@@ -74,7 +77,7 @@ func (s *Service) Create(in *CreateSettlementInput) (*Settlement, error) {
 		currency = "CNY"
 	}
 	st := Settlement{
-		PlatformID:   in.PlatformID,
+		PlatformID:   *in.PlatformID,
 		SettlementNo: in.SettlementNo,
 		PeriodStart:  in.PeriodStart,
 		PeriodEnd:    in.PeriodEnd,

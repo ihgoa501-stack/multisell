@@ -16,6 +16,7 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Log      LogConfig      `mapstructure:"log"`
+	Sentry   SentryConfig   `mapstructure:"sentry"`
 }
 
 // ServerConfig holds server-specific settings.
@@ -56,6 +57,11 @@ type LogConfig struct {
 	Format string `mapstructure:"format"`
 }
 
+// SentryConfig holds Sentry error tracking settings.
+type SentryConfig struct {
+	DSN string `mapstructure:"dsn"`
+}
+
 // DSN returns the PostgreSQL connection string.
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf(
@@ -88,6 +94,7 @@ func Load() (*Config, error) {
 	v.BindEnv("redis.password", "REDIS_PASSWORD")
 	v.BindEnv("jwt.secret", "JWT_SECRET")
 	v.BindEnv("server.port", "SERVER_PORT")
+	v.BindEnv("sentry.dsn", "SENTRY_DSN")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

@@ -1,3 +1,6 @@
+# 凌镜 LingMirror — 开发环境
+# docker compose up -d
+
 services:
   db:
     image: postgres:15-alpine
@@ -16,17 +19,17 @@ services:
       retries: 10
 
   migrate:
-    image: postgres:15-alpine
+    image: migrate/migrate:v4.18.1
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      PGPASSWORD: postgres
     volumes:
-      - ./backend-go/migrations:/migrations:ro
-    command: >
-      sh -c "psql -h db -U postgres -d multisell -f /migrations/000001_init_schema.up.sql &&
-             psql -h db -U postgres -d multisell -f /migrations/000002_ai_tables.up.sql"
+      - ./backend-go/migrations:/migrations
+    command:
+      -path /migrations
+      -database "postgresql://postgres:postgres@db:5432/multisell?sslmode=disable"
+      up
+    restart: "no"
 
   backend:
     image: golang:1.25

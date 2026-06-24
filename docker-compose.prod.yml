@@ -1,9 +1,22 @@
-# LingMirror production overlay for the active Go + Next stack.
-# Use only after cutover gates are green:
-# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# 凌镜 LingMirror — 生产部署覆写
+# 使用: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 services:
+  migrate:
+    image: migrate/migrate:v4.18.1
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend-go/migrations:/migrations
+    command:
+      -path /migrations
+      -database "postgresql://postgres:postgres@db:5432/multisell?sslmode=disable"
+      up
+    restart: "no"
+
   backend:
+    build: ./backend-go
     environment:
       GIN_MODE: release
       DB_HOST: db
@@ -16,9 +29,11 @@ services:
       # JWT_SECRET: "<strong-secret>"
       # LLM_PROVIDER: "openai"
       # LLM_API_KEY: "<provider-key>"
-    command: >
-      sh -c "go build -o /tmp/lingmirror-server cmd/server/main.go &&
-             /tmp/lingmirror-server"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health >/dev/null"]
@@ -35,10 +50,35 @@ services:
       retries: 5
 
   frontend:
+    build:
+      context: ./frontend-next
+      args:
+        NEXT_PUBLIC_API_URL: /api
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080/api
-    command: >
-      sh -c "npm ci &&
-             npm run build &&
-             npm run start -- --hostname 0.0.0.0 --port 3000"
+      NEXT_PUBLIC_API_URL: /api
+    depends_on:
+      - backend
     restart: unless-stopped
+
+  # ── BEGIN: Caddy reverse proxy (unified entry point with auto TLS) ──
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - ACME_EMAIL=${ACME_EMAIL:-admin@lingmirror.com}
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+  # ── END: Caddy reverse proxy ──
+
+volumes:
+  caddy_data:
+  caddy_config:

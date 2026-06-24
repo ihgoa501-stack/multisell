@@ -6,7 +6,7 @@ import { UserOutlined, LockOutlined, ThunderboltOutlined } from '@ant-design/ico
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { setToken, setStoredUser } from '@/lib/auth';
+import { setToken, setRefreshToken, setStoredUser } from '@/lib/auth';
 import type { User } from '@/types/api';
 
 const { Title, Text } = Typography;
@@ -33,6 +33,7 @@ export default function LoginPage() {
     onSuccess: (res) => {
       if (res.data) {
         setToken(res.data.access_token);
+        setRefreshToken(res.data.refresh_token);
         setStoredUser(res.data.user);
         message.success('登录成功');
         router.push('/dashboard');

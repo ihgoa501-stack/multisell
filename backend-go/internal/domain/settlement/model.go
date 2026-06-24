@@ -8,7 +8,7 @@ import (
 // Settlement maps to "settlement".
 type Settlement struct {
 	ID           int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	PlatformID   *int64          `gorm:"column:platform_id" json:"platform_id,omitempty"`
+	PlatformID   int64           `gorm:"column:platform_id;not null" json:"platform_id"`
 	SettlementNo string          `gorm:"column:settlement_no;uniqueIndex" json:"settlement_no"`
 	PeriodStart  *time.Time      `gorm:"column:period_start" json:"period_start,omitempty"`
 	PeriodEnd    *time.Time      `gorm:"column:period_end" json:"period_end,omitempty"`
@@ -48,6 +48,45 @@ type SettlementItem struct {
 }
 
 func (SettlementItem) TableName() string { return "settlement_item" }
+
+// PlatformSettlementBatch maps to "platform_settlement_batch".
+type PlatformSettlementBatch struct {
+	ID            int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	PlatformName  string    `gorm:"column:platform_name" json:"platform_name"`
+	Filename      string    `gorm:"column:filename;not null" json:"filename"`
+	RowCount      int       `gorm:"column:row_count;default:0" json:"row_count"`
+	MatchedCount  int       `gorm:"column:matched_count;default:0" json:"matched_count"`
+	UnmatchedCount int      `gorm:"column:unmatched_count;default:0" json:"unmatched_count"`
+	ImportStatus  string    `gorm:"column:import_status;default:imported" json:"import_status"`
+	Status        string    `gorm:"column:status;default:imported" json:"status"`
+	CreatedBy     string    `gorm:"column:created_by" json:"created_by"`
+	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+func (PlatformSettlementBatch) TableName() string { return "platform_settlement_batch" }
+
+// PlatformSettlementItem maps to "platform_settlement_item".
+type PlatformSettlementItem struct {
+	ID              int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	BatchID         int64           `gorm:"column:batch_id;not null;index" json:"batch_id"`
+	RowNumber       int             `gorm:"column:row_number;not null" json:"row_number"`
+	Platform        string          `gorm:"column:platform" json:"platform"`
+	StoreName       string          `gorm:"column:store_name" json:"store_name"`
+	PlatformOrderNo string          `gorm:"column:platform_order_no" json:"platform_order_no"`
+	OrderNo         string          `gorm:"column:order_no" json:"order_no"`
+	TransactionType string          `gorm:"column:transaction_type;not null" json:"transaction_type"`
+	Currency        string          `gorm:"column:currency;default:CNY" json:"currency"`
+	Amount          float64         `gorm:"column:amount;default:0" json:"amount"`
+	SettledAt       *time.Time      `gorm:"column:settled_at" json:"settled_at,omitempty"`
+	Description     string          `gorm:"column:description" json:"description"`
+	MatchStatus     string          `gorm:"column:match_status;default:unmatched" json:"match_status"`
+	MatchedOrderID  *int64          `gorm:"column:matched_order_id" json:"matched_order_id,omitempty"`
+	RawPayload      json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload,omitempty"`
+	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+}
+
+func (PlatformSettlementItem) TableName() string { return "platform_settlement_item" }
 
 // SettlementDetail is the composite detail payload.
 type SettlementDetail struct {

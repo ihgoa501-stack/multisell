@@ -9,27 +9,32 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/agent/impl"
+	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
+	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Orchestrator coordinates AI agent workflows.
 type Orchestrator struct {
-	db       *gorm.DB
-	logger   *zap.Logger
-	registry *AgentRegistry
-	traces   *TraceWriter
-	provider LLMProvider
+	db         *gorm.DB
+	logger     *zap.Logger
+	registry   *AgentRegistry
+	traces     *TraceWriter
+	provider   LLMProvider
+	agentImpls map[string]impl.Agent
 }
 
 // NewOrchestrator creates a new AI orchestrator.
 func NewOrchestrator(db *gorm.DB, logger *zap.Logger) *Orchestrator {
 	return &Orchestrator{
-		db:       db,
-		logger:   logger,
-		registry: DefaultRegistry(),
-		traces:   NewTraceWriter(db, logger),
-		provider: NewLLMProvider(logger),
+		db:         db,
+		logger:     logger,
+		registry:   DefaultRegistry(),
+		traces:     NewTraceWriter(db, logger),
+		provider:   NewLLMProvider(logger),
+		agentImpls: impl.All(db, logger),
 	}
 }
 
@@ -161,6 +166,44 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 		requires := agent.Autonomy == "supervised" || agent.Autonomy == "guided"
 		actionInput.RequiresApproval = &requires
 		action, _ = o.persistAction(actionInput)
+		// Evaluate against approval policy for auto-approve/block decisions.
+		if action != nil {
+			policySvc := actionpolicy.NewService(o.db, o.logger)
+			amount, quantity := actionpolicy.UnmarshalPayload(action.Payload)
+			polCtx := &actionpolicy.ActionContext{
+				AgentID:            action.AgentID,
+				SquadID:            action.SquadID,
+				ActionType:         action.ActionType,
+				RiskLevel:          action.RiskLevel,
+				BusinessObjectType: action.BusinessObjectType,
+				BusinessObjectID:   action.BusinessObjectID,
+				Amount:             amount,
+				Quantity:           quantity,
+				Confidence:         action.Confidence,
+			}
+			result, policyErr := policySvc.Evaluate(polCtx)
+			if policyErr != nil {
+				o.logger.Warn("policy evaluation failed", zap.Int64("action_id", action.ID), zap.Error(policyErr))
+			} else if result.FinalOutcome == "auto_approve" {
+				aiSvc := NewService(o.db, o.logger)
+				if _, err := aiSvc.ApproveAction(action.ID, "policy", "auto-approved: "+result.Verdicts[0].Reason); err != nil {
+					o.logger.Warn("auto-approve failed", zap.Error(err))
+				} else if _, err := aiSvc.ExecuteAction(action.ID, "policy", "auto-executed"); err != nil {
+					o.logger.Warn("auto-execute failed", zap.Error(err))
+				} else {
+					o.logger.Info("policy auto-approved and executed action", zap.Int64("action_id", action.ID))
+					action, _ = aiSvc.GetAction(action.ID)
+				}
+			} else if result.FinalOutcome == "block" {
+				o.logger.Warn("policy blocked action", zap.Int64("action_id", action.ID))
+				aiSvc := NewService(o.db, o.logger)
+				if _, err := aiSvc.RejectAction(action.ID, "policy", "blocked: "+result.Verdicts[0].Reason); err != nil {
+					o.logger.Warn("reject failed", zap.Error(err))
+				} else {
+					action, _ = aiSvc.GetAction(action.ID)
+				}
+			}
+		}
 	}
 
 	// Complete trace.
@@ -172,6 +215,27 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 		TokenCount:  380 + len(toolCalls)*120,
 		Status:      "completed",
 	})
+
+	// Trigger trust score recalculation for conditional autonomy upgrades.
+	go func() {
+		tsSvc := trustscore.NewService(o.db, o.logger)
+		if err := tsSvc.Recalculate(); err != nil {
+			o.logger.Warn("trust score recalculation failed", zap.Error(err))
+		} else {
+			ug := trustscore.NewUpgrader(o.db, o.logger)
+			if upgraded, err := ug.UpgradeEligible(); err != nil {
+				o.logger.Warn("autonomy upgrade failed", zap.Error(err))
+			} else if len(upgraded) > 0 {
+				for _, u := range upgraded {
+					o.logger.Info("agent autonomy upgraded via trust score",
+						zap.String("agent", u.AgentID),
+						zap.String("from", u.FromLevel),
+						zap.String("to", u.ToLevel),
+					)
+				}
+			}
+		}
+	}()
 
 	return &RunAgentResult{
 		TraceID:       traceID,
@@ -190,10 +254,19 @@ func (o *Orchestrator) persistAction(in *CreateActionInput) (*UnifiedAction, err
 	return svc.CreateAction(in)
 }
 
-// synthesizeOutput produces the agent's final output. It calls the configured
-// LLM provider when one is available (non-stub), and falls back to a
-// deterministic stub when LLM_PROVIDER is unset or the call fails.
+// synthesizeOutput produces the agent's final output. It checks for a concrete
+// agent implementation first, and falls back to the LLM provider or deterministic
+// stub when no implementation is registered.
 func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[string]interface{}) (map[string]interface{}, float64, string, error) {
+	// Check if there is a concrete implementation for this agent.
+	if implAgent, ok := o.agentImpls[agent.ID]; ok {
+		o.logger.Debug("using concrete agent implementation",
+			zap.String("agent_id", agent.ID),
+			zap.String("decision_point", dp),
+		)
+		return implAgent.Decide(dp, ctx)
+	}
+
 	// Build the prompt.
 	system := fmt.Sprintf("You are %s (%s), a LingMirror agent in the %s squad. Decision point: %s. Description: %s. Respond in Chinese, be concise (<=120 chars).",
 		agent.ID, agent.Name, agent.Squad, dp, agent.Description)

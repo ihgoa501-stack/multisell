@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Layout, Menu } from 'antd';
 import {
   DashboardOutlined,
@@ -14,7 +15,8 @@ import {
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
-import { menuGroups } from '@/config/menu';
+import { usePermissionStore } from '@/stores/permission-store';
+import { menuGroups, type MenuItem } from '@/config/menu';
 
 const { Sider } = Layout;
 
@@ -30,22 +32,41 @@ const iconMap: Record<string, React.ReactNode> = {
   SettingOutlined: <SettingOutlined />,
 };
 
-function buildMenuItems() {
-  return menuGroups.map((group) => ({
-    type: 'group' as const,
-    label: group.label,
-    children: group.items.map((item) => ({
-      key: item.key,
-      icon: item.icon ? iconMap[item.icon] : undefined,
-      label: item.label,
-    })),
-  }));
-}
-
 export default function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { permissions, fetched, fetchPermissions, hasPermission } = usePermissionStore();
+
+  // Fetch permissions on mount — this runs once because the store prevents
+  // redundant fetches via the `fetched` flag.
+  useEffect(() => {
+    fetchPermissions();
+  }, [fetchPermissions]);
+
+  function isItemVisible(item: MenuItem): boolean {
+    if (!item.permission) return true;
+    return hasPermission(item.permission);
+  }
+
+  function buildMenuItems() {
+    return menuGroups
+      .map((group) => {
+        const visibleItems = group.items.filter(isItemVisible);
+        // Hide the group label if all items are filtered out
+        if (visibleItems.length === 0) return null;
+        return {
+          type: 'group' as const,
+          label: group.label,
+          children: visibleItems.map((item) => ({
+            key: item.key,
+            icon: item.icon ? iconMap[item.icon] : undefined,
+            label: item.label,
+          })),
+        };
+      })
+      .filter(Boolean);
+  }
 
   return (
     <Sider

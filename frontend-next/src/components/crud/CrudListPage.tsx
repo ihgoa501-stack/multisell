@@ -105,7 +105,7 @@ export default function CrudListPage({
   const [deleteTarget, setDeleteTarget] = useState<Record<string, unknown> | null>(null);
 
   // ---------- Row selection ----------
-  const [selectedRowKeys, setSelectedRowKeys] = useState<(string | number)[]>([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   // ---------- Query ----------
   const filterKey = JSON.stringify({ ...filterValues, ...extraFilters });
