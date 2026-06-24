@@ -1,12 +1,24 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Table, message } from 'antd';
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
+import {
+  PlusOutlined,
+  ReloadOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+} from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
-import type { PageResult } from '@/types/api';
+import FilterBar from '@/components/ui/FilterBar';
+import BatchActionBar from '@/components/ui/BatchActionBar';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import type { FilterOption } from '@/components/ui/FilterBar';
+import type { BatchActionItem } from '@/components/ui/BatchActionBar';
+
+// ---------- Re-exported types ----------
 
 export interface CrudColumn {
   title: string;
@@ -32,8 +44,10 @@ export interface CrudListPageProps {
   singular: string;
   columns: CrudColumn[];
   fields: CrudField[];
-  /** Optional search placeholder; disable search with empty string. */
+  /** Optional search placeholder; disable search with empty string or null. */
   searchPlaceholder?: string;
+  /** Multi-dimension filter configs for FilterBar integration. */
+  filters?: FilterOption[];
   /** Extra filter query params appended to list requests. */
   extraFilters?: Record<string, string>;
   /** Whether to expose create/edit/delete. Default true. */
@@ -42,6 +56,14 @@ export interface CrudListPageProps {
   renderRowActions?: (record: Record<string, unknown>) => React.ReactNode;
   /** Custom page size, default 10. */
   pageSize?: number;
+  /** Whether to show export button. */
+  showExport?: boolean;
+  /** Export callback. */
+  onExport?: () => void;
+  /** Row selection + batch operations. */
+  batchActions?: BatchActionItem[];
+  /** Custom row key field. Default 'id'. */
+  rowKey?: string;
 }
 
 interface ListResponse {
@@ -51,6 +73,8 @@ interface ListResponse {
   size: number;
 }
 
+// ---------- Component ----------
+
 export default function CrudListPage({
   resource,
   title,
@@ -58,20 +82,34 @@ export default function CrudListPage({
   columns,
   fields,
   searchPlaceholder = '搜索...',
+  filters,
   extraFilters,
   editable = true,
   renderRowActions,
   pageSize = 10,
+  showExport,
+  onExport,
+  batchActions,
+  rowKey = 'id',
 }: CrudListPageProps) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(pageSize);
   const [search, setSearch] = useState('');
+  const [filterValues, setFilterValues] = useState<Record<string, string | number | null | undefined>>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [form] = Form.useForm();
 
-  const listKey = ['crud', resource, page, size, search, JSON.stringify(extraFilters ?? {})];
+  // ---------- Deletion confirmation ----------
+  const [deleteTarget, setDeleteTarget] = useState<Record<string, unknown> | null>(null);
+
+  // ---------- Row selection ----------
+  const [selectedRowKeys, setSelectedRowKeys] = useState<(string | number)[]>([]);
+
+  // ---------- Query ----------
+  const filterKey = JSON.stringify({ ...filterValues, ...extraFilters });
+  const listKey = ['crud', resource, page, size, search, filterKey];
   const { data, isLoading, refetch } = useQuery({
     queryKey: listKey,
     queryFn: async () => {
@@ -80,12 +118,19 @@ export default function CrudListPage({
         size: String(size),
       };
       if (search) params.search = search;
+      // Apply multi-dimension filters
+      Object.entries(filterValues).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') {
+          params[k] = String(v);
+        }
+      });
       if (extraFilters) Object.assign(params, extraFilters);
       const res = await apiClient.getPage<Record<string, unknown>>(`/v1${resource}`, params);
       return res as unknown as ListResponse;
     },
   });
 
+  // ---------- Mutations ----------
   const createMutation = useMutation({
     mutationFn: async (values: Record<string, unknown>) =>
       apiClient.post(`/v1${resource}`, values),
@@ -100,7 +145,7 @@ export default function CrudListPage({
 
   const updateMutation = useMutation({
     mutationFn: async (values: Record<string, unknown>) => {
-      const id = editing?.id;
+      const id = editing?.[rowKey];
       return apiClient.put(`/v1${resource}/${id}`, values);
     },
     onSuccess: () => {
@@ -117,14 +162,14 @@ export default function CrudListPage({
     mutationFn: async (id: unknown) => apiClient.delete(`/v1${resource}/${id}`),
     onSuccess: () => {
       message.success('已删除');
+      setDeleteTarget(null);
       qc.invalidateQueries({ queryKey: ['crud', resource] });
     },
     onError: (e: Error) => message.error(`删除失败: ${e.message}`),
   });
 
+  // ---------- Table columns ----------
   const tableColumns = useMemo(() => {
-    // Use any[] to avoid Antd 6 strict ColumnType inference friction across
-    // mixed render shapes; this is a generic CRUD wrapper, not a typed model.
     const cols: Record<string, unknown>[] = columns.map((c) => ({
       title: c.title,
       dataIndex: c.dataIndex,
@@ -135,8 +180,8 @@ export default function CrudListPage({
       cols.push({
         title: '操作',
         key: '__actions__',
-        width: 180,
-        fixed: 'right',
+        width: batchActions ? 160 : 140,
+        fixed: 'right' as const,
         render: (_: unknown, record: Record<string, unknown>) => (
           <Space size="small">
             {editable && (
@@ -155,22 +200,24 @@ export default function CrudListPage({
             )}
             {renderRowActions?.(record)}
             {editable && (
-              <Popconfirm
-                title={`确认删除此${singular}？`}
-                onConfirm={() => deleteMutation.mutate(record.id)}
+              <Button
+                size="small"
+                type="link"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => setDeleteTarget(record)}
               >
-                <Button size="small" type="link" danger icon={<DeleteOutlined />}>
-                  删除
-                </Button>
-              </Popconfirm>
+                删除
+              </Button>
             )}
           </Space>
         ),
       });
     }
     return cols as never;
-  }, [columns, editable, renderRowActions, singular, deleteMutation, form, editing]);
+  }, [columns, editable, renderRowActions, batchActions, form]);
 
+  // ---------- Handlers ----------
   const handleSubmit = async () => {
     const values = await form.validateFields();
     if (editing) {
@@ -180,11 +227,45 @@ export default function CrudListPage({
     }
   };
 
+  const handleFilterChange = (key: string, value: string | number | null) => {
+    setFilterValues((prev) => ({ ...prev, [key]: value }));
+    setPage(1);
+    setSelectedRowKeys([]);
+  };
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setFilterValues({});
+    setPage(1);
+    setSelectedRowKeys([]);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedRowKeys([]);
+  };
+
+  const hasActiveFilters =
+    search.length > 0 || Object.values(filterValues).some((v) => v !== undefined && v !== null && v !== '');
+
+  // ---------- Render ----------
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+        }}
+      >
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
         <Space>
+          {showExport && (
+            <Button icon={<DownloadOutlined />} onClick={onExport}>
+              导出
+            </Button>
+          )}
           <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
             刷新
           </Button>
@@ -204,27 +285,47 @@ export default function CrudListPage({
         </Space>
       </div>
 
-      {searchPlaceholder && (
-        <div style={{ marginBottom: 16 }}>
-          <Input.Search
-            placeholder={searchPlaceholder}
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            style={{ maxWidth: 400 }}
-            allowClear
-          />
-        </div>
+      {/* Search + Filters */}
+      {(searchPlaceholder || filters) && (
+        <FilterBar
+          search={search}
+          onSearch={(v) => {
+            setSearch(v);
+            setPage(1);
+            setSelectedRowKeys([]);
+          }}
+          searchPlaceholder={searchPlaceholder ?? undefined}
+          filters={filters}
+          filterValues={filterValues}
+          onFilterChange={handleFilterChange}
+          onReset={hasActiveFilters ? handleResetFilters : undefined}
+        />
       )}
 
+      {/* Batch actions */}
+      {batchActions && batchActions.length > 0 && (
+        <BatchActionBar
+          selectedCount={selectedRowKeys.length}
+          actions={batchActions}
+          onClearSelection={handleClearSelection}
+        />
+      )}
+
+      {/* Table */}
       <Table
-        rowKey="id"
+        rowKey={rowKey}
         loading={isLoading}
         dataSource={data?.data}
         columns={tableColumns}
         scroll={{ x: 'max-content' }}
+        rowSelection={
+          batchActions && batchActions.length > 0
+            ? {
+                selectedRowKeys,
+                onChange: (keys) => setSelectedRowKeys(keys),
+              }
+            : undefined
+        }
         pagination={{
           current: data?.page ?? page,
           pageSize: data?.size ?? size,
@@ -238,6 +339,7 @@ export default function CrudListPage({
         }}
       />
 
+      {/* Create / Edit modal */}
       <Modal
         title={editing ? `编辑${singular}` : `新建${singular}`}
         open={modalOpen}
@@ -272,11 +374,26 @@ export default function CrudListPage({
           ))}
         </Form>
       </Modal>
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={`删除${singular}`}
+        content={`确定要删除此${singular}吗？此操作不可撤销。`}
+        okType="danger"
+        okText="确认删除"
+        confirmLoading={deleteMutation.isPending}
+        risk="high"
+        onOk={() => deleteTarget && deleteMutation.mutate(deleteTarget[rowKey])}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
 
-/** Helper: format an ISO timestamp for table display. */
+// ---------- Helpers ----------
+
+/** Format an ISO timestamp for table display. */
 export function fmtDate(v: unknown): string {
   if (!v) return '-';
   const s = String(v);
@@ -284,7 +401,7 @@ export function fmtDate(v: unknown): string {
   return d.isValid() ? d.format('YYYY-MM-DD HH:mm') : s;
 }
 
-/** Helper: format currency in CNY. */
+/** Format currency in CNY. */
 export function fmtMoney(v: unknown): string {
   if (v === null || v === undefined || v === '') return '-';
   const n = Number(v);
