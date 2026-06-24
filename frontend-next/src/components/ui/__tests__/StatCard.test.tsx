@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import StatCard from '@/components/ui/StatCard';
 
@@ -15,7 +15,7 @@ describe('StatCard', () => {
   });
 
   it('renders icon with background color', () => {
-    const { container } = render(
+    render(
       <StatCard title="测试" value={100} icon={<span>💰</span>} iconBgColor="#fffbe6" />
     );
     expect(screen.getByText('💰')).toBeInTheDocument();

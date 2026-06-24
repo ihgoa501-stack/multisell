@@ -46,8 +46,8 @@ async function ensureTestUser(): Promise<string | null> {
       const body = JSON.parse(text);
       return body?.data?.token || body?.data?.access_token || null;
     }
-  } catch (e: any) {
-    console.log("E2E ensureTestUser: login failed with error:", e.message);
+  } catch (e: unknown) {
+    console.log("E2E ensureTestUser: login failed with error:", e instanceof Error ? e.message : String(e));
   }
   try {
     const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
@@ -70,8 +70,8 @@ async function ensureTestUser(): Promise<string | null> {
         return body?.data?.token || body?.data?.access_token || null;
       }
     }
-  } catch (e: any) {
-    console.log("E2E ensureTestUser: register failed with error:", e.message);
+  } catch (e: unknown) {
+    console.log("E2E ensureTestUser: register failed with error:", e instanceof Error ? e.message : String(e));
   }
   return null;
 }

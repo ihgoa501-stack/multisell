@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Space, Typography } from 'antd';
+import { Typography } from 'antd';
 import Breadcrumbs from '@/components/layout/Breadcrumbs';
 
 const { Text } = Typography;

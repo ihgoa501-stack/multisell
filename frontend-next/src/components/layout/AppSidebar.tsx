@@ -36,7 +36,7 @@ export default function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
-  const { permissions, fetched, fetchPermissions, hasPermission } = usePermissionStore();
+  const { fetchPermissions, hasPermission } = usePermissionStore();
 
   // Fetch permissions on mount — this runs once because the store prevents
   // redundant fetches via the `fetched` flag.

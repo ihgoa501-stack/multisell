@@ -23,7 +23,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import type { PageResult, Result } from '@/types/api';
+import type { PageResult } from '@/types/api';
 
 const { Text, Title } = Typography;
 
@@ -116,7 +116,7 @@ export default function ActionsPage() {
     onError: () => message.error('执行失败'),
   });
 
-  const openModal = (action: UnifiedAction, mode: 'approve' | 'reject') => {
+  const openModal = (action: UnifiedAction) => {
     setSelectedAction(action);
     setDecisionReason('');
     setModalOpen(true);
@@ -138,7 +138,7 @@ export default function ActionsPage() {
       key: 'title',
       ellipsis: true,
       render: (t: string, r: UnifiedAction) => (
-        <Text strong style={{ cursor: 'pointer' }} onClick={() => openModal(r, 'approve')}>{t}</Text>
+        <Text strong style={{ cursor: 'pointer' }} onClick={() => openModal(r)}>{t}</Text>
       ),
     },
     {
@@ -211,7 +211,7 @@ export default function ActionsPage() {
                 type="primary"
                 size="small"
                 icon={<CheckCircleOutlined />}
-                onClick={() => openModal(record, 'approve')}
+                onClick={() => openModal(record)}
               >
                 批准
               </Button>
@@ -219,7 +219,7 @@ export default function ActionsPage() {
                 danger
                 size="small"
                 icon={<CloseCircleOutlined />}
-                onClick={() => openModal(record, 'reject')}
+                onClick={() => openModal(record)}
               >
                 拒绝
               </Button>

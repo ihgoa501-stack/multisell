@@ -8,7 +8,7 @@ import { useMutation } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import PageContainer from '@/components/ui/PageContainer';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Paragraph } = Typography;
 
 interface SimulationResult {
   platformId: number;
@@ -127,7 +127,7 @@ export default function PrelistingWorkbench() {
 
       setResults(simulated);
       message.success('预估决策试算完成');
-    } catch (e) {
+    } catch {
       // Validate failed
     }
   };
@@ -136,7 +136,7 @@ export default function PrelistingWorkbench() {
   const submitDecisionMutation = useMutation({
     mutationFn: async ({ result, action }: { result: SimulationResult; action: 'approved' | 'rejected' }) => {
       // 1. Create the decision via POST /v1/decision
-      const res = await apiClient.post<any>('/v1/decision', {
+      const res = await apiClient.post<{ id: number }>('/v1/decision', {
         sku_id: result.skuId,
         platform_id: result.platformId,
         country_code: result.countryCode,
@@ -177,7 +177,7 @@ export default function PrelistingWorkbench() {
     onSuccess: (data) => {
       message.success(`${data.platformName} 决策已提交并标记为 [${data.action.toUpperCase()}]`);
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       message.error(`提交决策失败: ${err.message}`);
     },
   });
@@ -237,7 +237,7 @@ export default function PrelistingWorkbench() {
     {
       title: '决策操作',
       key: 'action',
-      render: (_: any, record: SimulationResult) => (
+      render: (_: unknown, record: SimulationResult) => (
         <Space>
           <Button
             type="primary"
