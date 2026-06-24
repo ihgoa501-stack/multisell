@@ -14,7 +14,7 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 凌镜 LingMirror (technical name: MultiSell) is a cross-border e-commerce AI AgentOS.
 
-Active stack:
+Active stack (full-site migration complete):
 
 - Backend: Go / Gin / GORM / PostgreSQL 15 under `backend-go/`
 - Frontend: Next.js / React / TypeScript / Ant Design under `frontend-next/`
@@ -69,7 +69,7 @@ Key modules:
 | `auth` `rbac` | JWT auth and permission checks |
 | `operationlog` | Mutation audit logs |
 | `dashboard` `search` | Overview stats and global search |
-| `shipping` `platform_fee` `finance` `order` `settlement` | Order-to-settlement, fees, ledger, profit |
+| `shipping` `platformfee` `finance` `order` `settlement` | Order-to-settlement, fees, ledger, profit |
 | `decision` `allocation` | Pre-listing profitability and inventory allocation |
 | `importbatch` `orderimport` | Batch imports and order ingestion |
 | `imagegen` | Product image generation |

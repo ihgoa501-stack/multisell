@@ -1,63 +1,59 @@
 # Demo Data — 模拟经营数据
 
-本目录包含三组演示 CSV 文件，与 `load_demo_data.py` 脚本配合使用，
-可在无真实业务数据的情况下演示凌镜 LingMirror 的核心业务闭环。
+> 最后更新：2026-06-24
+> 状态：历史 CSV 样例，待适配 Go 新栈 demo seed
 
-## 文件清单
+本目录包含三组历史演示 CSV 文件：
 
-| 文件 | 用途 | 对应的导入接口 |
-|---|---|---|
-| `order_import_demo.csv` | 模拟 CSV 订单导入 | `POST /api/order-imports/csv` |
-| `shipping_bill_demo.csv` | 模拟物流商运费账单 | `POST /api/shipping/bills/import` |
-| `platform_settlement_demo.csv` | 模拟平台结算单 | `POST /api/settlements/import` |
+| 文件 | 历史用途 |
+|---|---|
+| `order_import_demo.csv` | 模拟 CSV 订单导入 |
+| `shipping_bill_demo.csv` | 模拟物流商运费账单 |
+| `platform_settlement_demo.csv` | 模拟平台结算单 |
 
-## 场景设计
+这些文件最初配合旧 Python/FastAPI demo seed 使用。当前活跃后端已迁移到 `backend-go/`，API 前缀为 `/api/v1`，因此这些 CSV 只能作为新 demo seed 的字段样例，不能直接代表当前可执行验收流程。
 
-### order_import_demo.csv — 7 行 6 个独立逻辑行
+## 新栈适配要求
 
-- **OZ-10001**: 含 2 个 SKU 的同一订单（蓝牙耳机黑+白），有 tracking_number，正利润
-- **OZ-10002**: 单 SKU 智能手表，有 tracking_number，正利润（结算含 refund 行）
-- **SP-20001**: 单 SKU 夹克，无 tracking_number，正利润
-- **SP-20002**: 单 SKU 精华液 50ml × 2，低利润（高 price 拉低利润率）
-- **WB-30001**: 单 SKU 坚果 1kg × 3，高 shipping_fee → **负利润**（触发异常工作台）
-- **WB-30002**: 单 SKU 瑜伽垫，无运费快照 → 触发 missing_snapshot
+在重新启用前，需要确认：
 
-### shipping_bill_demo.csv — 5 行
+1. CSV 字段与 `backend-go/internal/domain/*` models 对齐。
+2. 导入 API 路径迁移到 `/api/v1/*`。
+3. demo seed 改为 Go 实现或明确支持 Go 后端。
+4. 订单、物流账单、结算行能和 Go 后端当前订单/财务/异常链路闭环。
 
-- **RUS-TRK-001**: 匹配订单 OZ-10001（蓝牙耳机），金额差异：快照 35 → 账单 38 → amount_mismatch
-- **RUS-TRK-002**: 匹配订单 OZ-10002（智能手表），金额差异：快照 42 → 账单 45+2=47 → amount_mismatch
-- **SP-20002**: 按 order_no 匹配精华液订单，金额匹配 → matched
-- **RUS-TRK-003**: 匹配订单 WB-30001（坚果），金额差异 → amount_mismatch
-- **UNMATCHED-BILL-001**: 无匹配订单 → unmatched_bill（异常工作台可见）
+## 建议保留场景
 
-### platform_settlement_demo.csv — 18 行
+### `order_import_demo.csv`
 
-- **OZ-10001**: sale + platform_fee + payment_fee — 可匹配
-- **OZ-10002**: sale + platform_fee + payment_fee + refund — 可匹配
-- **SP-20001**: sale + platform_fee — 可匹配
-- **SP-20002**: sale + platform_fee + adjustment — 可匹配
-- **WB-30001**: sale + platform_fee + payment_fee — 可匹配
-- **WB-30002**: sale + platform_fee — 可匹配
-- **UNMATCHED-SETTLEMENT-001**: unmatched 行 — 无匹配订单（异常工作台可见）
+建议继续覆盖：
 
-## 业务闭环覆盖
+- 同平台订单多 SKU 合并
+- 缺失 SKU 行失败
+- 有 tracking number 的订单
+- 高运费/低利润订单
 
-- 商品 → SKU（demo seed 创建 5 个商品、14 个 SKU）
-- 库存（每个 SKU 均有库存记录）
-- 物流报价规则（2 家供应商、3 个渠道、3 条报价规则）
-- 平台费用规则（3 条规则覆盖 Ozon、Shopee、Wildberries）
-- 上架前利润测算（决策模块配置就绪）
-- 上架任务（listing 权限码就绪）
-- CSV 订单导入 → 订单创建 → 运费快照 → 利润账本
-- 运费账单导入 → 对账
-- 平台结算导入 → 匹配
-- 异常工作台（负利润、unmatched bill、unmatched settlement）
-- 利润看板
+### `shipping_bill_demo.csv`
 
-## 前提条件
+建议继续覆盖：
 
-1. PostgreSQL 数据库已运行
-2. 测试数据库 `product_management_test` 已创建
-3. Python 虚拟环境已激活（`backend/.venv`）
+- matched
+- amount mismatch
+- unmatched bill
 
-详细步骤见 `docs/DEMO_SCENARIO.md`。
+### `platform_settlement_demo.csv`
+
+建议继续覆盖：
+
+- sale
+- platform fee
+- payment fee
+- refund
+- adjustment
+- unmatched settlement
+
+## 当前参考文档
+
+- `docs/DEMO_SCENARIO.md`
+- `docs/DEMO_ACCEPTANCE_REPORT.md`
+- `docs/ORDER_IMPORT_SMOKE_CHECKLIST.md`

@@ -1,7 +1,10 @@
 # MultiSell 物流与运费技术规格
 
 > 技术设计文档 · 2026-06-15
-> 状态：第五阶段已实现（物流字段、运费计算、订单运费快照与利润一期、商品列表物流数据工作台、运费计算器手动试算）
+> 新栈复核：2026-06-24
+> 当前实现入口：`backend-go/internal/domain/shipping/`
+> 当前 API 前缀：`/api/v1/shipping`
+> 说明：本文保留历史设计上下文；涉及 `backend/app/*`、`frontend/src/*`、FastAPI/Vue 或旧 `/api/*` 的内容应按旧栈参考处理。
 
 ---
 
@@ -21,17 +24,17 @@
 
 ### 1.2 项目模块约定
 
-后端模块结构（未实现物流模块）：
+当前 Go 后端模块结构：
 
 ```
-backend/app/<module>/
-  __init__.py    # 暴露 router
-  router.py     # HTTP 路由 + 依赖注入
-  service.py    # 业务逻辑
-  schemas.py    # Pydantic 请求/响应模型
+backend-go/internal/domain/shipping/
+  routes.go
+  handler.go
+  service.go
+  model.go
 ```
 
-新物流模块将遵循此结构，文件夹名为 `shipping`。
+前端当前入口位于 `frontend-next/src/app/(main)/shipping`。
 
 ---
 
@@ -151,8 +154,8 @@ sku_weight_kg        DECIMAL(10,2)  DEFAULT NULL,
 
 实际绑定接口：
 
-- `POST /api/orders/{id}/shipping-quote`
-- `PUT /api/orders/{id}/profit-inputs`
+- 历史旧栈接口：`POST /api/orders/{id}/shipping-quote`、`PUT /api/orders/{id}/profit-inputs`
+- 当前 Go 新栈订单路由以 `backend-go/internal/domain/order/routes.go` 为准，订单运费快照能力需要在新栈中复核/补齐。
 
 `sales_order.shipping_fee` 保留为兼容字段，并始终等于当前订单选用快照的 `total_shipping_fee`。
 
@@ -367,26 +370,36 @@ function calculate_shipping(product_id, sku_id, quantity, destination_country, c
 
 ## 8. API 草案
 
-所有接口挂 `/api/shipping` 前缀。
+当前 Go 新栈接口挂 `/api/v1/shipping` 前缀。下表按 `backend-go/internal/domain/shipping/routes.go` 复核。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET` | `/api/shipping/providers` | 物流供应商列表 |
-| `POST` | `/api/shipping/providers` | 创建物流供应商 |
-| `PUT` | `/api/shipping/providers/{id}` | 更新物流供应商 |
-| `DELETE` | `/api/shipping/providers/{id}` | 删除物流供应商 |
-| `GET` | `/api/shipping/channels` | 物流渠道列表（可筛选 provider_id） |
-| `POST` | `/api/shipping/channels` | 创建物流渠道 |
-| `PUT` | `/api/shipping/channels/{id}` | 更新物流渠道 |
-| `DELETE` | `/api/shipping/channels/{id}` | 删除物流渠道 |
-| `POST` | `/api/shipping/import-rules` | 导入 `.xlsx` / `.csv` 物流报价表 |
-| `POST` | `/api/shipping/calculate` | 运费计算（单次查询，返回多渠道对比） |
-| `POST` | `/api/orders/{id}/shipping-quote` | 订单绑定运费快照 |
-| `PUT` | `/api/orders/{id}/profit-inputs` | 更新订单利润输入 |
+| `POST` | `/api/v1/shipping/quote` | 运费报价 |
+| `GET` | `/api/v1/shipping/providers` | 物流供应商列表 |
+| `GET` | `/api/v1/shipping/providers/{id}` | 物流供应商详情 |
+| `POST` | `/api/v1/shipping/providers` | 创建物流供应商 |
+| `PUT` | `/api/v1/shipping/providers/{id}` | 更新物流供应商 |
+| `DELETE` | `/api/v1/shipping/providers/{id}` | 删除物流供应商 |
+| `GET` | `/api/v1/shipping/channels` | 物流渠道列表 |
+| `GET` | `/api/v1/shipping/channels/{id}` | 物流渠道详情 |
+| `POST` | `/api/v1/shipping/channels` | 创建物流渠道 |
+| `PUT` | `/api/v1/shipping/channels/{id}` | 更新物流渠道 |
+| `DELETE` | `/api/v1/shipping/channels/{id}` | 删除物流渠道 |
+| `GET` | `/api/v1/shipping/zones` | 区域列表 |
+| `POST` | `/api/v1/shipping/zones` | 创建区域 |
+| `DELETE` | `/api/v1/shipping/zones/{id}` | 删除区域 |
+| `GET` | `/api/v1/shipping/rules` | 报价规则列表 |
+| `POST` | `/api/v1/shipping/rules` | 创建报价规则 |
+| `DELETE` | `/api/v1/shipping/rules/{id}` | 删除报价规则 |
+| `GET` | `/api/v1/shipping/bill-batches` | 运费账单批次列表 |
+| `GET` | `/api/v1/shipping/bill-batches/{id}` | 运费账单批次详情 |
+| `POST` | `/api/v1/shipping/bill-batches` | 创建运费账单批次 |
+| `DELETE` | `/api/v1/shipping/bill-batches/{id}` | 删除运费账单批次 |
+| `GET` | `/api/v1/shipping/bill-batches/{id}/items` | 运费账单明细 |
 
 ### 报价表导入
 
-`POST /api/shipping/import-rules` 使用 `multipart/form-data` 上传字段 `file`。
+报价表导入是历史设计能力，当前 Go route 中未暴露 `import-rules` 路由。重新启用前应先在 `backend-go/internal/domain/shipping/` 补 Go 实现和测试。
 
 必填列：
 
@@ -424,7 +437,7 @@ function calculate_shipping(product_id, sku_id, quantity, destination_country, c
 - 每行创建一条绑定 `zone_id` 的 `ShippingQuoteRule`。
 - 计算运费时优先使用匹配目的地区域的规则；没有区域级规则时回退 `zone_id = NULL` 的渠道全局规则。
 
-`POST /api/shipping/calculate` 支持两种模式：
+历史 `POST /api/shipping/calculate` 已由当前 `POST /api/v1/shipping/quote` 替代。请求结构以 Go handler/model 为准。
 
 - `mode=sku`：根据 `sku_id` 解析 SKU 包装字段，缺失时回退商品包装字段。
 - `mode=manual`：直接使用请求中的 `package.length_cm`、`package.width_cm`、`package.height_cm`、`package.weight_kg` 计算运费，不写入商品或订单数据。
@@ -434,7 +447,7 @@ function calculate_shipping(product_id, sku_id, quantity, destination_country, c
 SKU 模式：
 
 ```json
-POST /api/shipping/calculate
+POST /api/v1/shipping/quote
 {
   "mode": "sku",
   "sku_id": 42,
@@ -448,7 +461,7 @@ POST /api/shipping/calculate
 手动模式：
 
 ```json
-POST /api/shipping/calculate
+POST /api/v1/shipping/quote
 {
   "mode": "manual",
   "quantity": 2,
@@ -513,7 +526,7 @@ POST /api/shipping/calculate
 
 ### 9.1 商品编辑页 — 物流信息区块
 
-在现有 `ProductForm.vue` 中新增"物流信息"区块，包含：
+当前新栈页面位于 `frontend-next/src/app/(main)/products`。商品表单/详情中的物流信息区块应使用 React + Ant Design 实现，包含：
 
 - 商品尺寸（非必填）：长度、宽度、高度、重量
 - 包装尺寸（必填）：长度、宽度、高度、重量
@@ -521,14 +534,14 @@ POST /api/shipping/calculate
 
 ### 9.2 SKU 管理页 — 物流覆盖区块
 
-在 `SkuManage.vue` 中新增"物流覆盖"区块：
+当前新栈 SKU 页面位于 `frontend-next/src/app/(main)/sku`。SKU 物流覆盖区块应包含：
 
 - SKU 包装长度 / 宽度 / 高度 / 重量（可选）
 - 显示"未覆盖，使用商品默认"状态
 
 ### 9.3 物流供应商与渠道管理页
 
-新页面 `frontend/src/views/shipping/`，包含：
+当前新栈页面位于 `frontend-next/src/app/(main)/shipping`，包含：
 
 - 供应商列表：名称、编码、渠道数、状态
 - 渠道列表：名称、抛重系数、支持货品、时效、币种
@@ -547,7 +560,7 @@ POST /api/shipping/calculate
 
 ### 9.5 订单详情运费展示
 
-在 `OrderDetail.vue` 中新增运费快照区块：
+当前新栈订单详情页位于 `frontend-next/src/app/(main)/orders/[id]/page.tsx`。运费快照区块应展示：
 
 - 选用的物流供应商 / 渠道
 - 计费重、体积重、实际重量
@@ -578,8 +591,7 @@ POST /api/shipping/calculate
 ### 10.2 测试文件结构
 
 ```text
-backend/tests/
-  test_shipping_calculation.py    # 运费计算核心逻辑
-  test_shipping_provider.py       # 供应商/渠道 CRUD
-  test_shipping_fallback.py       # SKU→商品回退测试
+backend-go/internal/domain/shipping/
+  shipping_test.go                # 当前 Go 运费/物流测试入口
+  *_test.go                       # 后续按能力拆分 focused tests
 ```

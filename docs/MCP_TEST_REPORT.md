@@ -1,8 +1,10 @@
 # MCP 服务器测试报告
 
-**测试日期:** 2026-06-22  
-**项目:** 凌镜 LingMirror (MultiSell)  
+**测试日期:** 2026-06-22
+**项目:** 凌镜 LingMirror (MultiSell)
 **测试环境:** macOS Darwin, OpenCode Agent
+
+> 归档说明：本文是 2026-06-22 的工具可用性测试记录，其中 FastAPI/Vue 相关探索结果属于旧栈历史上下文。当前工程事实以 `backend-go/`、`frontend-next/` 和 `/api/v1/*` 为准。
 
 ---
 
@@ -239,5 +241,5 @@ chrome-devtools_take_screenshot
 
 ---
 
-*报告生成时间: 2026-06-22*  
+*报告生成时间: 2026-06-22*
 *测试工具: OpenCode Agent + MCP Servers*

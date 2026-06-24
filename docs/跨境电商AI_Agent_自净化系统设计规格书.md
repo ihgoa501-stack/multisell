@@ -5,7 +5,7 @@
 >
 > **前置文档**: 本文档整合 final-integrated-solution.md（7+3 Agent 综合方案）、hermes-self-evolving-agent-design.md（Hermes 架构）、hermes-entropy-management-system.md（熵管理扩展）三份设计文档。
 >
-> **实现状态声明**: 本文档中标记为 [已实现] 的内容已在代码中完成；[部分实现] 为框架骨架已就位但需扩展；[规划中] 尚未开始。
+> **新栈复核（2026-06-24）**: 本文档是 AI Agent 自净化系统的产品/架构规格。文中 `backend/app/*`、`frontend/src/*`、FastAPI/Vue 路径和 [已实现] 状态来自旧栈阶段，不能直接作为当前 Go + Next 实现事实。当前实现应以 `backend-go/`、`frontend-next/`、`docs/AGENTOS_DEVELOPMENT_GUIDE.md` 和 `/api/v1/*` 为准。
 
 ---
 
@@ -254,7 +254,7 @@ Layer 1: 通用Agent核心                      [已实现]
 **补货数量公式**:
 
 ```
-补货建议量 = 
+补货建议量 =
     安全库存覆盖天数 × 日均销量预测
   - 当前可售库存
   - 在途库存
@@ -896,8 +896,8 @@ G3 折扣风控 ████████████       A6 利润归集 ░�
 | Layer 2 SPC 控制图 | [已完成] | `backend/app/agent/entropy/spc_control.py` |
 | Mark Change 审计日志 | [已完成] | `backend/app/agent/entropy/service.py` |
 | Entropy 驾驶舱 API (5 端点) | [已完成] | `backend/app/agent/entropy/router.py` |
-| 前端 4 个 Vue 组件 | [已完成] | `frontend/src/views/agent/*.vue` |
-| 前端 API 模块 + 路由 | [已完成] | `frontend/src/api/modules/agent.ts` |
+| 前端 4 个 Vue 组件 | [旧栈已完成 / 新栈需复核] | `frontend/src/views/agent/*.vue` |
+| 前端 API 模块 + 路由 | [旧栈已完成 / 新栈需复核] | `frontend/src/api/modules/agent.ts` |
 
 #### M2: A3 广告调价 + A4 多语言客服 + 规则系统完善 [进行中]
 
@@ -1031,9 +1031,9 @@ G3 折扣风控 ████████████       A6 利润归集 ░�
 | `backend/app/agent/` | §2 | 已实现，覆盖框架底座 |
 | `backend/app/agent/entropy/` | §6 | 已实现，覆盖 5 道防线 + Layer 1-2 |
 | `backend/app/models.py (Agent 模型)` | §8 | 已实现，7 个模型 |
-| `frontend/src/views/agent/` | §9.3 | 已实现，4 个页面 |
-| `frontend/src/api/modules/agent.ts` | §9.1-9.2 | 已实现 |
-| `frontend/src/router/modules/agent.ts` | §9.3 | 已实现 |
+| `frontend/src/views/agent/` | §9.3 | 旧栈已实现，新栈以 `frontend-next/src/app/(main)/agents/` 为准 |
+| `frontend/src/api/modules/agent.ts` | §9.1-9.2 | 旧栈已实现，新栈以 `frontend-next/src/lib/api-client.ts` 与页面调用为准 |
+| `frontend/src/router/modules/agent.ts` | §9.3 | 旧栈已实现，新栈以 Next App Router 为准 |
 
 ---
 

@@ -1,10 +1,11 @@
 # LingMirror Active Stack Policy
 
 > Effective date: 2026-06-23
+> Last reviewed: 2026-06-24
 
 ## Decision
 
-LingMirror development is now focused on the new stack:
+LingMirror has completed the full-site migration to the new stack. Active development, verification, and documentation should use:
 
 - Backend: `backend-go/` (Go / Gin / GORM / PostgreSQL)
 - Frontend: `frontend-next/` (Next.js / React / TypeScript / Ant Design)
@@ -24,7 +25,7 @@ The old stack is paused:
 4. If old behavior is needed, read legacy code as a reference and port the behavior into the new stack.
 5. New API contracts should use `/api/v1/*`.
 6. The old `/api/*` FastAPI contract is reference-only unless explicitly needed for compatibility.
-7. Production cutover still requires green migration, E2E, parity, and rollback rehearsal gates.
+7. Migration is complete from an active-development perspective. Production rollout and release readiness still require green build/test/lint gates, E2E coverage, parity checks where needed, and rollback rehearsal.
 
 ## Allowed Legacy Changes
 

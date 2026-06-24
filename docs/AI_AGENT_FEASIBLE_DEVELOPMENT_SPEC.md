@@ -1,9 +1,12 @@
 # 凌镜 LingMirror AI Agent 可信可行开发文档
 
-版本：v1.0  
-日期：2026-06-17  
-适用项目：MultiSell / 凌镜 LingMirror  
+版本：v1.0
+日期：2026-06-17
+新栈复核：2026-06-24
+适用项目：MultiSell / 凌镜 LingMirror
 文档定位：将 `docs/aiagent/` 下的跨境电商 Agent 方案、Hermes 自进化方案和熵管理方案，收敛为一份近期可开发、可验收、可迭代的工程方案。
+
+> 当前工程状态：全站已迁移到 Go + Next 新技术栈。本方案中的产品原则仍可参考；涉及旧 `backend/app/*`、`frontend/src/*`、FastAPI/Vue 或 `/api/*` 的工程路径/API 表述已过期。当前实现应以 `backend-go/`、`frontend-next/` 和 `/api/v1/*` 为准。
 
 ---
 
@@ -204,10 +207,10 @@ LLM 近期不用于：
 
 需要先修正现有不一致点：
 
-- 后端 API 前缀实际为 `/api`，文档中不要写 `/api/v1`。
+- 当前 Go 后端 API 前缀为 `/api/v1`；旧 `/api` 仅作为 legacy FastAPI 参考。
 - 熵系统前端请求路径应与后端路由一致。
 - 前端 Agent 路由应统一为 `/agents`、`/agents/:agentId`、`/agents/rules`、`/agents/entropy`。
-- Alembic 迁移目录应写为 `backend/alembic/versions`。
+- 当前 Go 新栈迁移目录应写为 `backend-go/migrations/`；旧 Alembic 目录仅适用于 legacy `backend/`。
 - 文档引用应统一指向 `docs/aiagent/...`。
 
 #### 7.1.2 A5 库存预警增强
@@ -530,33 +533,32 @@ healthy / warning / unhealthy
 
 ### 12.1 后端 API
 
-当前后端自动注册到 `/api` 前缀。
+当前 Go 后端注册到 `/api/v1` 前缀。
 
 Agent API：
 
 ```text
-GET    /api/agents
-GET    /api/agents/{agent_id}
-POST   /api/agents/{agent_id}/decide
-GET    /api/agents/decisions
-POST   /api/agents/decisions/{id}/feedback
-GET    /api/agents/rules
-POST   /api/agents/rules
-PUT    /api/agents/rules/{rule_id}
-DELETE /api/agents/rules/{rule_id}
-GET    /api/agents/profile
-PUT    /api/agents/profile
-GET    /api/agents/episodes
+GET    /api/v1/agents
+GET    /api/v1/agents/{agent_id}
+POST   /api/v1/agents/{agent_id}/actions
+GET    /api/v1/ai/traces
+GET    /api/v1/ai/actions
+GET    /api/v1/agent-rules
+POST   /api/v1/agent-rules
+PUT    /api/v1/agent-rules/{rule_id}
+DELETE /api/v1/agent-rules/{rule_id}
+GET    /api/v1/agentos
+GET    /api/v1/agentos/work-items
 ```
 
 熵系统 API：
 
 ```text
-GET  /api/entropy/dashboard
-POST /api/entropy/defend
-GET  /api/entropy/health
-GET  /api/entropy/spc
-GET  /api/entropy/changes
+GET  /api/v1/entropy/dashboard
+POST /api/v1/entropy/defend
+GET  /api/v1/entropy/health
+GET  /api/v1/entropy/spc
+GET  /api/v1/entropy/changes
 ```
 
 ### 12.2 前端路由
