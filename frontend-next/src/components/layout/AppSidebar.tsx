@@ -11,6 +11,7 @@ import {
   ThunderboltOutlined,
   WarningOutlined,
   SettingOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
@@ -27,6 +28,7 @@ const iconMap: Record<string, React.ReactNode> = {
   ThunderboltOutlined: <ThunderboltOutlined />,
   WarningOutlined: <WarningOutlined />,
   SettingOutlined: <SettingOutlined />,
+  MessageOutlined: <MessageOutlined />,
 };
 
 interface MenuItemConfig {

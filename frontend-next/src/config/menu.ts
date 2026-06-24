@@ -70,7 +70,7 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '运营',
     items: [
-      { key: '/exceptions', icon: 'WarningOutlined', label: '异常' },
+      { key: '/feedback', icon: 'MessageOutlined', label: '用户反馈' },
       { key: '/notifications', label: '通知' },
       { key: '/image-gen', label: '图片生成' },
       { key: '/import-batches', label: '批量导入' },

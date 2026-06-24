@@ -38,6 +38,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
+	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
@@ -115,6 +116,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	sourcing1688.RegisterRoutes(api, db, logger)
 	report.RegisterRoutes(api, db, logger)
 	exchangerate.RegisterRoutes(api, db, logger)
+
+	// Feedback routes
+	feedback.RegisterRoutes(api, db, logger)
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
