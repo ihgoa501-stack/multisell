@@ -18,6 +18,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, cfg *config.Config, logger
 		auth.POST("/login", h.Login)
 		auth.POST("/register", h.Register)
 		auth.POST("/refresh", h.Refresh)
-		auth.GET("/me", middleware.Auth(cfg), h.CurrentUser)
+		auth.GET("/me", middleware.Auth(cfg, db), h.CurrentUser)
 	}
 }

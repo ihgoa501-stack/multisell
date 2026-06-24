@@ -334,7 +334,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger, busCtx conte
 
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")
-	protected.Use(middleware.Auth(cfg))
+	protected.Use(middleware.Auth(cfg, db))
 
 	// RBAC routes
 	rbac.RegisterRoutes(protected, db, logger)
