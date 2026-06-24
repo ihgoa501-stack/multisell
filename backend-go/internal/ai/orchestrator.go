@@ -245,24 +245,28 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 		Status:      "completed",
 	})
 
-	// Trigger trust score recalculation for conditional autonomy upgrades.
-	tsSvc := trustscore.NewService(o.db, o.logger)
-	if err := tsSvc.Recalculate(); err != nil {
-		o.logger.Warn("trust score recalculation failed", zap.Error(err))
-	} else {
-		ug := trustscore.NewUpgrader(o.db, o.logger)
+	// Trigger trust score recalculation asynchronously — must not block the
+	// agent run response. Recalculation iterates all agents and can be expensive
+	// when the trace or action tables are large.
+	go func(db *gorm.DB, logger *zap.Logger) {
+		tsSvc := trustscore.NewService(db, logger)
+		if err := tsSvc.Recalculate(); err != nil {
+			logger.Warn("trust score recalculation failed", zap.Error(err))
+			return
+		}
+		ug := trustscore.NewUpgrader(db, logger)
 		if upgraded, err := ug.UpgradeEligible(); err != nil {
-			o.logger.Warn("autonomy upgrade failed", zap.Error(err))
+			logger.Warn("autonomy upgrade failed", zap.Error(err))
 		} else if len(upgraded) > 0 {
 			for _, u := range upgraded {
-				o.logger.Info("agent autonomy upgraded via trust score",
+				logger.Info("agent autonomy upgraded via trust score",
 					zap.String("agent", u.AgentID),
 					zap.String("from", u.FromLevel),
 					zap.String("to", u.ToLevel),
 				)
 			}
 		}
-	}
+	}(o.db, o.logger)
 
 	return &RunAgentResult{
 		TraceID:       traceID,

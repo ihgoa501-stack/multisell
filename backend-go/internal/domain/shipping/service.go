@@ -94,9 +94,7 @@ func (s *Service) UpdateProvider(id int64, in *UpdateProviderInput) (*ShippingPr
 	if err := s.db.Model(&p).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.First(&p, id).Error; err != nil {
-		return nil, err
-	}
+	// After Model(&p).Updates, GORM refreshes p in-place so a second First() is unnecessary.
 	return &p, nil
 }
 
@@ -212,9 +210,7 @@ func (s *Service) UpdateChannel(id int64, in *UpdateChannelInput) (*ShippingChan
 	if err := s.db.Model(&ch).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.First(&ch, id).Error; err != nil {
-		return nil, err
-	}
+	// After Model(&ch).Updates, GORM refreshes ch in-place so a second First() is unnecessary.
 	return &ch, nil
 }
 

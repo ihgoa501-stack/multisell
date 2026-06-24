@@ -19,6 +19,8 @@ class ApiClient {
   private baseUrl: string;
   private refreshing = false;
   private refreshQueue: QueueItem[] = [];
+  /** In-flight GET request deduplication map. Keys are full URL strings. */
+  private inflightRequests: Map<string, Promise<unknown>> = new Map();
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
@@ -108,6 +110,7 @@ class ApiClient {
 
   /**
    * Perform a fetch request with automatic 401 handling and token refresh.
+   * For GET requests, concurrent identical calls are deduplicated.
    */
   private async request<T>(
     method: string,
@@ -128,6 +131,34 @@ class ApiClient {
       body: body ? JSON.stringify(body) : undefined,
     };
 
+    // GET deduplication: if the same URL is already in-flight, reuse the promise.
+    if (method === 'GET') {
+      const urlStr = url.toString();
+      const existing = this.inflightRequests.get(urlStr);
+      if (existing) return existing as Promise<T>;
+
+      const promise = this.executeWithRefresh<T>(url, options);
+      this.inflightRequests.set(urlStr, promise);
+      promise.finally(() => {
+        // Only remove if ours is still the active promise (avoid clearing a
+        // newer identical request's promise).
+        if (this.inflightRequests.get(urlStr) === promise) {
+          this.inflightRequests.delete(urlStr);
+        }
+      });
+      return promise;
+    }
+
+    return this.executeWithRefresh<T>(url, options);
+  }
+
+  /**
+   * Execute the fetch and handle 401 → token refresh → retry.
+   */
+  private async executeWithRefresh<T>(
+    url: URL,
+    options: RequestInit,
+  ): Promise<T> {
     const response = await fetch(url.toString(), options);
 
     // If not a 401 or if we're server-side, just handle the response
@@ -155,9 +186,9 @@ class ApiClient {
 
     // Retry the original request with the new token
     const retryOptions: RequestInit = {
-      method,
+      method: options.method || 'GET',
       headers: this.getHeaders(newToken),
-      body: body ? JSON.stringify(body) : undefined,
+      body: options.body,
     };
 
     const retryResponse = await fetch(url.toString(), retryOptions);
