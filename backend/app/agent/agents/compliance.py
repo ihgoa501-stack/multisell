@@ -1,6 +1,12 @@
-"""A7 合规检测 Agent
+"""A7 合规检测 Agent (Phase 2 — LLM 增强版)
 
 设计依据: docs/aiagent/跨境电商AI_Agent深度调研报告.md §Agent7
+
+Phase 2 改进：LLM 参与合规风险分析，规则表降级为安全网。
+- 优先调用 LLM 从产品描述分析合规风险
+- LLM 失败时自动降级为规则表兜底
+
+Phase 1 原始设计：
 - 产品合规检查：认证要求、禁限售、标签要求、税务合规
 - 输入产品信息和目标市场，输出合规风险和所需认证清单
 """
@@ -9,6 +15,7 @@ from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
 from app.agent.data_service import AgentDataService
+from app.agent.llm_service import AgentLlmService
 
 REQUIRED = ["product_name", "category", "target_country", "target_platform"]
 
@@ -104,15 +111,91 @@ class A7ComplianceGuardAgent(BaseAgent):
         if db is not None and point == "compliance_check":
             ctx = await AgentDataService.fill_product_context(db, ctx)
         if point == "compliance_check":
-            return self._check(ctx)
+            return await self._check_with_llm(ctx, db=db)
         if point == "certification_lookup":
             return self._lookup(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
-    def _check(self, ctx: dict) -> dict:
+    # ──────────────────────────────
+    #  1. 合规检查（LLM 增强版）
+    # ──────────────────────────────
+    async def _check_with_llm(self, ctx: dict, db: Any = None) -> dict:
+        """合规检查主入口"""
         miss = _missing(ctx, REQUIRED)
         if miss:
             return self._insufficient("compliance_check", miss)
+
+        # ① 公式兜底
+        formula_result = self._formula_check(ctx)
+
+        # ② LLM 分析
+        llm_decision = None
+        stage = self.get_stage("compliance_check")
+        if stage in (EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS):
+            llm_ctx = {
+                "product_name": ctx.get("product_name", ""),
+                "category": ctx.get("category", ""),
+                "target_country": ctx.get("target_country", ""),
+                "target_platform": ctx.get("target_platform", ""),
+                "description": ctx.get("description", ctx.get("product_name", "")),
+                "formula_risk": formula_result.get("risk_level", "unknown"),
+                "formula_certs": ", ".join(
+                    formula_result.get("required_certifications", [])
+                ),
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "A7", "compliance_check", llm_ctx, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass
+
+        # ③ 仲裁
+        if llm_decision:
+            result = {
+                **formula_result,
+                "risk_reason": llm_decision.get("risk_reason", ""),
+                "concerns": llm_decision.get("concerns", ""),
+                "additional_notes": llm_decision.get("additional_notes", ""),
+                "llm_source": True,
+            }
+        else:
+            result = {
+                **formula_result,
+                "risk_reason": "",
+                "concerns": "",
+                "additional_notes": "",
+                "llm_source": False,
+            }
+
+        # ④ 解释
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "A7",
+                {
+                    "product": result.get("product", ""),
+                    "category": result.get("category", ""),
+                    "country": result.get("country", ""),
+                    "risk_level": result.get("risk_level", ""),
+                    "certifications": ", ".join(
+                        result.get("required_certifications", [])
+                    ),
+                    "restrictions": ", ".join(result.get("restrictions", [])),
+                },
+                db=db,
+            )
+        except Exception:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ──────────────────────────────
+    #  1a. 公式兜底
+    # ──────────────────────────────
+    def _formula_check(self, ctx: dict) -> dict:
+        """纯规则表合规检查，作为 LLM 失败时的兜底"""
         name = str(ctx.get("product_name", ""))
         cat = str(ctx.get("category", "")).lower().strip()
         country = str(ctx.get("target_country", "")).upper().strip()
@@ -150,6 +233,21 @@ class A7ComplianceGuardAgent(BaseAgent):
             "blocked_platforms": blocked_platforms,
             "confidence": 0.90 if risk != "unknown" else 0.60,
         }
+
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 输出的合理性"""
+        risk = result.get("risk_level")
+        if risk is not None and risk not in ("low", "medium", "high"):
+            return False
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
 
     def _lookup(self, ctx: dict) -> dict:
         cert = ctx.get("certification", "")

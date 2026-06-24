@@ -1,6 +1,12 @@
-"""A2 Listing 优化 Agent
+"""A2 Listing 优化 Agent (Phase 2 — LLM 增强版)
 
 设计依据: docs/aiagent/跨境电商AI_Agent深度调研报告.md §Agent2
+
+Phase 2 改进：LLM 参与 Listing 优化核心决策，机械公式降级为安全网。
+- 优先调用 LLM 生成高质量、有说服力的标题和描述
+- LLM 失败时自动降级为机械关键词组合兜底
+
+Phase 1 原始设计：
 - 关键词策略 + 竞品拆解 + 文案生成
 - 输入产品信息和竞品数据，输出优化后的 Listing 全案
 """
@@ -8,6 +14,7 @@
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
+from app.agent.llm_service import AgentLlmService
 
 REQUIRED = ["product_name", "marketplace"]
 
@@ -37,22 +44,94 @@ class A2ListingOptimizerAgent(BaseAgent):
 
     async def decide(self, point: str, ctx: dict, db: Any = None) -> dict:
         if point == "listing_optimize":
-            return self._optimize(ctx)
+            return await self._optimize_with_llm(ctx, db=db)
         if point == "keyword_research":
             return self._research_keywords(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
-    def _optimize(self, ctx: dict) -> dict:
+    # ──────────────────────────────
+    #  1. Listing 优化（LLM 增强版）
+    # ──────────────────────────────
+    async def _optimize_with_llm(self, ctx: dict, db: Any = None) -> dict:
+        """Listing 优化主入口"""
         miss = _missing(ctx, REQUIRED)
         if miss:
             return self._insufficient("listing_optimize", miss)
+
+        # ① 公式兜底
+        formula_result = self._formula_optimize(ctx)
+
+        # ② LLM 分析
+        llm_decision = None
+        stage = self.get_stage("listing_optimize")
+        if stage in (EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS):
+            llm_ctx = {
+                "product_name": ctx.get("product_name", ""),
+                "marketplace": ctx.get("marketplace", "US"),
+                "features": str(ctx.get("features", [])),
+                "current_bullets": str(ctx.get("current_bullets", [])),
+                "keywords": str(ctx.get("keywords", [])),
+                "formula_title": formula_result.get("title", ""),
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "A2", "listing_optimize", llm_ctx, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass
+
+        # ③ 仲裁
+        if llm_decision:
+            result = {
+                **formula_result,
+                "title_strategy": llm_decision.get("title_suggestion", ""),
+                "bullet_strategy": llm_decision.get("bullet_points", ""),
+                "keyword_strategy": llm_decision.get("keyword_strategy", ""),
+                "additional_notes": llm_decision.get("additional_notes", ""),
+                "llm_source": True,
+            }
+        else:
+            result = {
+                **formula_result,
+                "title_strategy": "",
+                "bullet_strategy": "",
+                "keyword_strategy": "",
+                "additional_notes": "",
+                "llm_source": False,
+            }
+
+        # ④ 解释
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "A2",
+                {
+                    "product_name": ctx.get("product_name", ""),
+                    "marketplace": ctx.get("marketplace", "US"),
+                    "original_title": "",
+                    "optimized_title": result.get("title", ""),
+                    "keyword_count": result.get("keyword_count", 0),
+                    "suggestions": str(result.get("suggestions", [])),
+                },
+                db=db,
+            )
+        except Exception:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ──────────────────────────────
+    #  1a. 公式兜底
+    # ──────────────────────────────
+    def _formula_optimize(self, ctx: dict) -> dict:
+        """纯公式 Listing 优化，作为 LLM 失败时的兜底"""
         name = str(ctx.get("product_name", ""))
         mp = str(ctx.get("marketplace", "US"))
         features = ctx.get("features", [])
         bullets_input = ctx.get("current_bullets", [])
         keywords = ctx.get("keywords", [])
 
-        # 关键词排序：高频核心词放标题前部
         sorted_kw = sorted(
             keywords, key=lambda k: _sf(k.get("volume", 0)), reverse=True
         )
@@ -85,6 +164,20 @@ class A2ListingOptimizerAgent(BaseAgent):
             "suggestions": suggestions,
             "confidence": 0.85,
         }
+
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 输出的合理性"""
+        if not result.get("title_suggestion"):
+            return False
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
 
     def _research_keywords(self, ctx: dict) -> dict:
         seed = ctx.get("seed_keywords", [])

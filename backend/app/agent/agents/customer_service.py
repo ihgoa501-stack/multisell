@@ -1,6 +1,12 @@
-"""A4 多语言客服 Agent
+"""A4 多语言客服 Agent (Phase 2 — LLM 增强版)
 
 设计依据: docs/aiagent/final-integrated-solution.md §6.2
+
+Phase 2 改进：LLM 参与意图分类和回复建议，关键词匹配降级为安全网。
+- 优先调用 LLM 理解消息含义、识别意图、分析情绪
+- LLM 失败时自动降级为关键词匹配兜底
+
+Phase 1 原始设计：
 - L1 自动回复 60%+ FAQ，L2 辅助人工处理复杂投诉
 - 意图分类 + 置信度路由
 - 不接真实消息接口，数据通过请求体传入
@@ -9,6 +15,7 @@
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
+from app.agent.llm_service import AgentLlmService
 
 REQUIRED = ["message", "language"]
 
@@ -47,14 +54,87 @@ class A4CustomerServiceAgent(BaseAgent):
 
     async def decide(self, point: str, ctx: dict, db: Any = None) -> dict:
         if point == "auto_reply":
-            return self._auto_reply(ctx)
+            return await self._auto_reply_with_llm(ctx, db=db)
         if point == "intent_classify":
-            return self._classify(ctx)
+            return self._formula_classify(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
-    def _classify(self, ctx: dict) -> dict:
+    # ──────────────────────────────
+    #  1. 自动回复（LLM 增强版）
+    # ──────────────────────────────
+    async def _auto_reply_with_llm(self, ctx: dict, db: Any = None) -> dict:
+        """自动回复主入口"""
+        miss = _missing(ctx, REQUIRED)
+        if miss:
+            return self._insufficient("auto_reply", miss)
+
+        # ① 公式兜底
+        formula_result = self._formula_auto_reply(ctx)
+
+        # ② LLM 分析
+        llm_decision = None
+        stage = self.get_stage("auto_reply")
+        if stage in (EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS):
+            llm_ctx = {
+                "message": ctx.get("message", "")[:500],
+                "language": ctx.get("language", "en"),
+                "order_context": str(ctx.get("order_context", {})),
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "A4", "auto_reply", llm_ctx, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass
+
+        # ③ 仲裁
+        if llm_decision:
+            suggests_human = llm_decision.get("requires_human", False)
+            result = {
+                "auto_reply": None
+                if suggests_human
+                else llm_decision.get("reply_suggestion", ""),
+                "action": "escalate" if suggests_human else "auto_reply",
+                "intent": llm_decision.get("intent", "unknown"),
+                "confidence": llm_decision.get("confidence", 0.5),
+                "sentiment": llm_decision.get("sentiment", "neutral"),
+                "reason": "LLM 判断需人工处理" if suggests_human else "LLM 自动回复",
+                "suggested_reply": llm_decision.get("reply_suggestion")
+                if suggests_human
+                else None,
+                "llm_source": True,
+            }
+        else:
+            result = {**formula_result, "llm_source": False}
+
+        # ④ 解释
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "A4",
+                {
+                    "message": ctx.get("message", "")[:100],
+                    "intent": result.get("intent", ""),
+                    "reply_suggestion": str(
+                        result.get("auto_reply", "")
+                        or result.get("suggested_reply", "")
+                    ),
+                    "confidence": result.get("confidence", 0),
+                },
+                db=db,
+            )
+        except Exception:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ──────────────────────────────
+    #  1a. 公式兜底
+    # ──────────────────────────────
+    def _formula_classify(self, ctx: dict) -> dict:
+        """纯关键词意图分类，作为 LLM 失败时的兜底"""
         msg = str(ctx.get("message", "")).lower()
-        str(ctx.get("language", "en"))
         high_risk = [
             "trademark",
             "lawsuit",
@@ -95,16 +175,13 @@ class A4CustomerServiceAgent(BaseAgent):
                 return {"intent": intent, "confidence": 0.90, "action": "auto_reply"}
         return {"intent": "unknown", "confidence": 0.50, "action": "escalate_human"}
 
-    def _auto_reply(self, ctx: dict) -> dict:
-        miss = _missing(ctx, REQUIRED)
-        if miss:
-            return self._insufficient("auto_reply", miss)
-        str(ctx.get("message", ""))
+    def _formula_auto_reply(self, ctx: dict) -> dict:
+        """纯公式自动回复，作为 LLM 失败时的兜底"""
         lang = str(ctx.get("language", "en"))
         order_ctx = ctx.get("order_context", {})
         eta = order_ctx.get("estimated_delivery_days", "5-7")
 
-        classification = self._classify(ctx)
+        classification = self._formula_classify(ctx)
         intent = classification.get("intent", "default")
         confidence = classification.get("confidence", 0.0)
 
@@ -114,6 +191,7 @@ class A4CustomerServiceAgent(BaseAgent):
                 "action": "escalate",
                 "intent": intent,
                 "confidence": confidence,
+                "sentiment": "neutral",
                 "reason": "高风险或低置信度，需人工处理",
                 "suggested_reply": None,
             }
@@ -125,8 +203,34 @@ class A4CustomerServiceAgent(BaseAgent):
             "action": "auto_reply",
             "intent": intent,
             "confidence": confidence,
+            "sentiment": "neutral",
             "language": lang,
         }
+
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 输出的合理性"""
+        if not result.get("intent"):
+            return False
+        sentiment = result.get("sentiment")
+        if sentiment is not None and sentiment not in (
+            "positive",
+            "neutral",
+            "negative",
+        ):
+            return False
+        if "requires_human" in result and not isinstance(
+            result.get("requires_human"), bool
+        ):
+            return False
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
 
     def _insufficient(self, p: str, m: list) -> dict:
         return {
