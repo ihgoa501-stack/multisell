@@ -1,19 +1,27 @@
-# 凌镜 LingMirror — 生产部署覆写
-# 使用: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# LingMirror production overlay for the active Go + Next stack.
+# Use only after cutover gates are green:
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 services:
   backend:
     environment:
-      DEBUG: "false"
-      AUTH_ENABLED: "true"
-      # 生产环境必须设置以下密钥（通过 .env 或宿主环境变量传入）
-      # ENCRYPTION_KEY: "<your-32-char-hex-key>"
+      GIN_MODE: release
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: multisell
+      SERVER_PORT: "8080"
+      # Set through .env or host environment before production use.
+      # JWT_SECRET: "<strong-secret>"
+      # LLM_PROVIDER: "openai"
+      # LLM_API_KEY: "<provider-key>"
     command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+      sh -c "go build -o /tmp/lingmirror-server cmd/server/main.go &&
+             /tmp/lingmirror-server"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -27,4 +35,10 @@ services:
       retries: 5
 
   frontend:
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080/api
+    command: >
+      sh -c "npm ci &&
+             npm run build &&
+             npm run start -- --hostname 0.0.0.0 --port 3000"
     restart: unless-stopped

@@ -2,47 +2,76 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: product_management
+      POSTGRES_DB: multisell
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backend/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - postgres_go_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d multisell"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/product_management
-      DATABASE_URL_SYNC: postgresql+psycopg2://postgres:postgres@db:5432/product_management
-      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/product_management_test
-      DEBUG: "true"
-      AUTH_ENABLED: "true"
+  migrate:
+    image: postgres:15-alpine
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
     volumes:
-      - uploads:/app/uploads
+      - ./backend-go/migrations:/migrations:ro
     command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
-    # 首次部署需手动 seed: docker compose run --rm backend python seed.py
+      sh -c "psql -h db -U postgres -d multisell -f /migrations/000001_init_schema.up.sql &&
+             psql -h db -U postgres -d multisell -f /migrations/000002_ai_tables.up.sql"
+
+  backend:
+    image: golang:1.25
+    working_dir: /app
+    volumes:
+      - ./backend-go:/app
+      - go_pkg_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: multisell
+      JWT_SECRET: dev-secret-change-in-production
+      SERVER_PORT: "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: >
+      sh -c "go mod download &&
+             go run cmd/server/main.go"
 
   frontend:
-    build: ./frontend
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend-next:/app
+      - frontend_next_node_modules:/app/node_modules
     ports:
-      - "3000:80"
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080/api
     depends_on:
       - backend
+    command: >
+      sh -c "npm install &&
+             npm run dev -- --hostname 0.0.0.0 --port 3000"
 
 volumes:
-  postgres_data:
-  uploads:
+  postgres_go_data:
+  go_pkg_cache:
+  go_build_cache:
+  frontend_next_node_modules:

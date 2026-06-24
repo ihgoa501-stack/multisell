@@ -32,3 +32,11 @@ src/main/
 .playwright-mcp/
 test-screenshot-*.png
 frontend/.sdd_finale_base
+
+# Active stack exclusions
+backend-go/server
+bin/
+backend-go/loadtest/results/
+frontend-next/e2e/playwright-report/
+frontend-next/e2e/test-results/
+frontend-next/e2e/node_modules/

@@ -1,8 +1,14 @@
-# 🪞 凌镜 LingMirror — 跨境电商 AgentOS
+# LingMirror — Cross-border E-commerce AgentOS
 
 > 技术项目名暂保留 `MultiSell`；对外产品品牌为 `凌镜 LingMirror`。
 
-基于 **Python FastAPI + Vue 3 + PostgreSQL** 的 AI Agent 协作跨境电商运营平台。
+凌镜现在以新技术栈为唯一活跃开发目标：
+
+- Backend: `backend-go/` — Go / Gin / GORM / PostgreSQL
+- Frontend: `frontend-next/` — Next.js / React / TypeScript / Ant Design
+- Legacy paused: `backend/` and `frontend/`
+
+旧 Python/FastAPI + Vue 版本已暂停维护，仅用于行为对照、数据迁移和紧急回滚。具体规则见 [Active Stack Policy](docs/ACTIVE_STACK_POLICY.md)。
 
 ## 核心定位
 
@@ -26,9 +32,9 @@
 | 仪表盘 | 数据总览、平台发布统计、近期动态 |
 | 操作日志 | 系统操作审计记录 |
 
-## 快速启动
+## 快速启动新版本
 
-### Docker一键启动
+### Docker 一键启动
 
 ```bash
 docker compose up -d
@@ -36,7 +42,7 @@ docker compose up -d
 
 访问前端：http://localhost:3000
 
-访问后端 API：http://localhost:8000/docs
+访问后端健康检查：http://localhost:8080/api/health
 
 ### 本地开发
 
@@ -48,34 +54,45 @@ docker compose up -d db
 
 **后端：**
 ```bash
-cd backend
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/alembic upgrade head
-.venv/bin/python seed.py
-.venv/bin/uvicorn app.main:app --reload --port 8001
+cd backend-go
+go run cmd/server/main.go
 ```
 
-API文档：http://localhost:8001/docs
+API base：http://localhost:8080/api/v1
 
 **前端：**
 ```bash
-cd frontend
+cd frontend-next
 npm install
-npm run dev
+npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
-访问 http://localhost:3001
+访问 http://localhost:3000
+
+### 启动旧版本（仅回滚/对照）
+
+```bash
+docker compose -f docker-compose.legacy.yml up -d
+```
+
+旧版本不再承接新功能。
 
 ## 测试
 
-后端测试使用独立数据库 `product_management_test`。Docker 首次初始化 PostgreSQL 时会自动创建该测试库。
+新后端：
 
 ```bash
-docker compose up -d db
-cd backend
-TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
-  python3 -m pytest -q
+cd backend-go
+go test ./...
+go vet ./...
+```
+
+新前端：
+
+```bash
+cd frontend-next
+npm run build
+npm run lint
 ```
 
 ## 项目文档
@@ -89,33 +106,24 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_
 | [权限与审计](docs/PERMISSIONS_AND_AUDIT.md) | 鉴权规则、权限码、审计日志接入方式 |
 | [路线图](docs/ROADMAP.md) | 后续阶段优先级和每阶段待办 |
 | [剩余开发总文档](docs/DEVELOPMENT_BACKLOG_AND_SPEC.md) | 还需要开发的全部事项、优先级、模块规格和验收标准 |
-| [实施计划](docs/superpowers/plans/2026-06-13-multisell-stabilization-roadmap.md) | 分阶段工程实施计划 |
+| [Active Stack Policy](docs/ACTIVE_STACK_POLICY.md) | 新旧版本边界、旧栈冻结规则、默认开发入口 |
+| [新技术栈重构计划](docs/superpowers/plans/2026-06-23-lingmirror-new-tech-refactor.md) | Go + Next + AI 页面完整重构计划 |
+| [生产切流 Runbook](docs/superpowers/plans/2026-06-23-cutover-runbook.md) | 切流、验证和回滚步骤 |
 
-## 数据初始化
+## 数据迁移
 
-首次部署或需要演示数据时，运行数据初始化脚本：
+从旧版本迁移到新版本时，按新后端迁移 runbook 执行：
 
-```bash
-cd backend
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python seed.py
-```
-
-该脚本会独立创建以下演示数据（不依赖 FastAPI 启动流程）：
-- 管理员账号：`admin` / `admin123`
-- 16 个商品分类（含父子层级）
-- 5 个跨境电商平台（Ozon、Shopee、Wildberries、速卖通、Temu）
-- 6 个品牌
-- 7 个演示商品及多规格 SKU、默认库存记录
-
-> 如需重置数据库（删除所有表并重新填充），可使用运维工具：
-> ```bash
-> cd backend
-> .venv/bin/python scripts/db_reset.py
-> ```
+1. 在 staging 中导入旧库数据并重命名为 `legacy_*` 表。
+2. 执行 `backend-go/migrations/000003_data_migration.up.sql`。
+3. 执行 `backend-go/migrations/validate.sql`，确认行数、checksum、FK 完整性。
 
 ## 技术栈
 
-- 后端：Python 3.11+ / FastAPI / SQLAlchemy 2.0 / PostgreSQL
-- 前端：Vue 3 / TypeScript / Naive UI / Pinia
+- 后端：Go / Gin / GORM / PostgreSQL
+- 前端：Next.js / React / TypeScript / Ant Design
 - 部署：Docker / Docker Compose / Nginx
+
+## Legacy Status
+
+`backend/` and `frontend/` are paused. Do not add new product features there.

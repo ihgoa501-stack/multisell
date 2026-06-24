@@ -14,11 +14,20 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 凌镜 LingMirror (technical name: MultiSell) is a cross-border e-commerce AI AgentOS.
 
-- Backend: Python 3.11+ / FastAPI / SQLAlchemy 2.0 async / PostgreSQL 15
-- Frontend: Vue 3 / TypeScript / Naive UI / Pinia / Vite
-- Backend entry: `backend/app/main.py` auto-discovers routers under `/api`
-- Frontend entry: `frontend/src/main.ts`
-- Python environment: `backend/.venv/` (Python 3.12, dependencies managed with `uv`/venv)
+Active stack:
+
+- Backend: Go / Gin / GORM / PostgreSQL 15 under `backend-go/`
+- Frontend: Next.js / React / TypeScript / Ant Design under `frontend-next/`
+- Backend entry: `backend-go/cmd/server/main.go`
+- Frontend entry: `frontend-next/src/app/`
+- API prefix: `/api/v1`
+
+Legacy stack is paused:
+
+- `backend/` (Python / FastAPI) and `frontend/` (Vue 3) are reference-only.
+- Do not add new product features to legacy directories.
+- Legacy code may be touched only for migration, parity analysis, security rollback fixes, or documentation.
+- See `docs/ACTIVE_STACK_POLICY.md`.
 
 ## Commands
 
@@ -26,89 +35,80 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 |---|---|
 | Docker full stack | `docker compose up -d` |
 | Docker DB only | `docker compose up -d db` |
-| Backend dev | `cd backend && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001` |
-| Backend test all | `cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest -q` |
-| Backend test file | `cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_foo.py -q` |
-| Backend test single | `cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_foo.py::test_bar -q` |
-| Alembic migrate | `cd backend && .venv/bin/alembic upgrade heads` |
-| Alembic current | `cd backend && .venv/bin/alembic current --verbose` |
-| Alembic new migration | `cd backend && .venv/bin/alembic revision --autogenerate -m "desc"` |
-| Seed demo data | `cd backend && PYTHONPATH="$PWD" .venv/bin/python seed.py` |
-| Seed agent demo | `cd backend && PYTHONPATH="$PWD" .venv/bin/python seed_agent_demo.py` |
-| Reset DB | `cd backend && .venv/bin/python scripts/db_reset.py --force` |
-| Frontend dev | `cd frontend && npm run dev -- --host 127.0.0.1 --port 3001` |
-| Frontend build | `cd frontend && npm run build` |
-| Frontend preview | `cd frontend && npm run preview` |
+| Backend dev | `cd backend-go && go run cmd/server/main.go` |
+| Backend test all | `cd backend-go && go test ./...` |
+| Backend vet | `cd backend-go && go vet ./...` |
+| Backend build | `cd backend-go && go build -o bin/server cmd/server/main.go` |
+| Frontend dev | `cd frontend-next && npm run dev -- --hostname 127.0.0.1 --port 3000` |
+| Frontend build | `cd frontend-next && npm run build` |
+| Frontend lint | `cd frontend-next && npm run lint` |
+| Legacy full stack | `docker compose -f docker-compose.legacy.yml up -d` |
 
-Test database: `product_management_test`. Set `TEST_DATABASE_URL` when needed. Tests disable auth by default via `AUTH_ENABLED=False` in `backend/tests/conftest.py`.
+New dev database: `multisell`.
 
 ## Backend
 
-Module pattern: every module under `backend/app/<module>/` should use:
+Active backend modules live under `backend-go/internal/`.
 
-- `__init__.py` exporting `router`
-- `router.py` for FastAPI endpoints
-- `service.py` for business logic, usually static async service methods
-- `schemas.py` for Pydantic models
+General pattern:
 
-`backend/app/main.py` auto-discovers subpackages with a `router` attribute and mounts them under `/api`.
+- `routes.go` registers Gin routes.
+- `handler.go` handles HTTP request/response.
+- `service.go` owns business logic.
+- `model.go` owns GORM models and input/output structs.
+
+`backend-go/internal/httpx/router.go` registers API routes under `/api/v1`.
 
 Key modules:
 
 | Module | Role |
 |---|---|
-| `core` `category` `brand` `sku` `price` `inventory` `supplier` | Product catalog, categories, SKU generation, pricing, stock, suppliers |
-| `platform` `listing` `listing_task` | Platform config, adapter-based publishing, multi-platform task queue |
-| `agent` `agent_actions` | Hermes AI agents, evolution stages, action audit lifecycle |
-| `agentos` | AgentOS 运营总控台 — 聚合层、WorkItem 归一化、Squad/Agent 视图 |
+| `category` `brand` `sku` `price` `inventory` `supplier` | Product catalog, categories, SKU generation, pricing, stock, suppliers |
+| `platform` `listing` `listingtask` | Platform config, adapter-based publishing, multi-platform task queue |
+| `ai` `agent` `agentos` | AI command center, trace/evidence/action lifecycle, AgentOS cockpit |
 | `auth` `rbac` | JWT auth and permission checks |
-| `operation_log` | Mutation audit logs |
+| `operationlog` | Mutation audit logs |
 | `dashboard` `search` | Overview stats and global search |
 | `shipping` `platform_fee` `finance` `order` `settlement` | Order-to-settlement, fees, ledger, profit |
 | `decision` `allocation` | Pre-listing profitability and inventory allocation |
-| `import_batch` `order_import` | Batch imports and order ingestion |
-| `image_gen` | Product image generation |
+| `importbatch` `orderimport` | Batch imports and order ingestion |
+| `imagegen` | Product image generation |
 | `notification` | Notifications and alert rules |
 | `exceptions` | Exception workbench |
-| `platform_integrations` | Platform connection management |
+| `integrations` | Platform connection management |
 
-All primary SQLAlchemy models live in `backend/app/models.py`; agent-specific models also exist under `backend/app/agent/models.py` and import-related models under `backend/app/order_import/models.py`.
+Legacy Python models under `backend/` are reference-only. Active GORM models live in each `backend-go/internal/**/model.go` file.
 
 ## Frontend
 
-- API modules: `frontend/src/api/modules/*.ts`, auto-merged by `frontend/src/api/index.ts`.
-- Routes: `frontend/src/router/modules/*.ts`, auto-merged as layout children.
-- Views: `frontend/src/views/`.
-- Components: `frontend/src/components/`.
-- Alias: `@` points to `frontend/src`.
+- App Router pages: `frontend-next/src/app/`.
+- Shared components: `frontend-next/src/components/`.
+- API client: `frontend-next/src/lib/api-client.ts`.
+- Alias: `@` points to `frontend-next/src`.
 - TypeScript strict mode is enabled.
 
-Prefer existing Naive UI patterns and existing module API style. If a component imports named functions from an API module, export named functions from that module as well as any object-style API used elsewhere.
+Prefer existing Ant Design and React Query patterns in `frontend-next/`.
 
 ## Conventions
 
-- Responses: use `Result.ok()`, `Result.error()`, `Result.bad_request()`, `Result.not_found()`, or `PageResult.ok()` from `app.common.schemas`; do not return raw dicts from routers.
-- DB session: use `Depends(get_db)`. The dependency commits on success and rolls back on exceptions.
-- Auth: every endpoint should use `require_permission("module:action")` unless it is intentionally public. Admin bypasses checks. `AUTH_ENABLED=False` returns a mock admin.
-- Audit log: mutation endpoints should call `OperationLogService.log(...)` after the data change.
-- Async backend: use async SQLAlchemy and asyncpg. Do not introduce sync DB calls in request paths.
-- Migrations: this repo currently has multiple Alembic heads. Use `alembic upgrade heads`, not `upgrade head`.
-- Tests: pytest with `asyncio_mode = auto`; use focused tests for touched behavior.
-- Agent tests: phase files `test_agent_phase1.py` through `test_agent_phase6.py`.
+- Auth/RBAC should be enforced on non-public endpoints.
+- Mutation routes should be auditable through the Go audit middleware or explicit operation log writes.
+- Migrations live in `backend-go/migrations/`.
+- Tests use Go `testing`; add focused tests for touched behavior.
+- Frontend changes should keep `npm run build` and `npm run lint` green.
 - Do not touch `.kilo/worktrees/`; it is managed by external tooling.
 
 ## Architecture Notes
 
-- Listing adapters live in `backend/app/listing/adapters/`; `_ADAPTER_REGISTRY` maps platform codes to adapter classes (`ozon`, `shopee`, `wildberries`, fallback `mock`).
-- Agent system (`backend/app/agent/`) has 4 stages: `OBSERVATION` -> `SUGGESTION` -> `SEMI_AUTONOMOUS` -> `FULL_AUTONOMOUS`.
-- Agents are registered with `@register_agent`; 10 agents cover governors G1-G3, analysts A5-A7, and specialists A1-A4.
-- Entropy defenses live in `backend/app/agent/entropy/`; `EntropyService.run_defenses()` runs TTL, budget, decay, merge detection, regret, SPC, and health scoring.
+- AI runtime lives in `backend-go/internal/ai/`, `backend-go/internal/agent/`, and `backend-go/internal/agentos/`.
+- Realtime WebSocket route is `/ws`.
 - Decision pipeline: SKU lookup -> shipping fee -> platform fee -> payment/other fees -> profit margin -> recommendation.
-- Config uses `backend/app/config.py` and pydantic-settings. Important env vars: `DATABASE_URL`, `DATABASE_URL_SYNC`, `AUTH_ENABLED`, `DEBUG`, `ENCRYPTION_KEY`, `LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`.
+- Config uses `backend-go/configs/config.yaml` plus env overrides. Important env vars: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `JWT_SECRET`, `SERVER_PORT`, `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`.
 
 ## Documentation
 
 - `docs/INDEX.md` — documentation index
 - `docs/TIMELINE.md` — timeline and task board
+- `docs/ACTIVE_STACK_POLICY.md` — active stack and legacy freeze policy
 - `docs/features/` — feature specs; use `docs/features/TEMPLATE.md` for new feature docs
 - `CLAUDE.md` — Claude Code-specific guidance; keep it consistent with this file
