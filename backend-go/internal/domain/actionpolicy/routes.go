@@ -7,7 +7,8 @@ import (
 )
 
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger); h := NewHandler(svc)
+	svc := NewService(db, logger)
+	h := NewHandler(svc)
 	p := rg.Group("/policy")
 	{
 		p.GET("/rules", h.ListRules)

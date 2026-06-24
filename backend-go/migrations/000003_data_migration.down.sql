@@ -1,7 +1,15 @@
 -- Reverse of 000003_data_migration.up.sql
--- This does NOT drop the new tables (those are owned by 000001 + 000002).
--- It only removes the migrated rows so the migration can be re-run cleanly.
--- Use with extreme caution — only during pre-cutover rehearsals.
+-- ⚠️ DANGER: TRUNCATE CASCADE destroys ALL migrated data in 37 tables.
+-- Only safe during pre-cutover rehearsals when no production data exists.
+-- Guard: refuse if the migrate tool's schema_migrations table shows
+-- any migration > 000003 has been applied (means app is running).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM schema_migrations WHERE version > '000003') THEN
+        RAISE EXCEPTION 'Refusing to roll back 000003: later migrations have been applied (version > 000003). This TRUNCATE would destroy production data.';
+    END IF;
+END;
+$$;
 
 BEGIN;
 

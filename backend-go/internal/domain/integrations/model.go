@@ -1,9 +1,20 @@
 package integrations
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"time"
+
+	"gorm.io/gorm"
 )
+
+// ── AES-GCM token encryption ──
+// Tokens are transparently encrypted at rest using AES-256-GCM before
+// persisting to the database, and decrypted on read. Configure the
+// encryption key via the PLATFORM_TOKEN_ENCRYPTION_KEY env var
+// (32-byte key, base64-encoded). In development, a static fallback key
+// is used (NOT production-safe — always set PLATFORM_TOKEN_ENCRYPTION_KEY
+// in production).
 
 // PlatformIntegrationAccount maps to "platform_integration_account".
 type PlatformIntegrationAccount struct {
@@ -24,6 +35,69 @@ type PlatformIntegrationAccount struct {
 }
 
 func (PlatformIntegrationAccount) TableName() string { return "platform_integration_account" }
+
+// ── GORM hooks for transparent token encryption ──
+
+// BeforeCreate encrypts tokens before insert.
+func (a *PlatformIntegrationAccount) BeforeCreate(tx *gorm.DB) error {
+	return a.encryptTokens()
+}
+
+// BeforeUpdate encrypts tokens before update (if they changed).
+func (a *PlatformIntegrationAccount) BeforeUpdate(tx *gorm.DB) error {
+	return a.encryptTokens()
+}
+
+// AfterFind decrypts tokens after read.
+func (a *PlatformIntegrationAccount) AfterFind(tx *gorm.DB) error {
+	return a.decryptTokens()
+}
+
+func (a *PlatformIntegrationAccount) encryptTokens() error {
+	if a.AccessToken != "" && !isEncrypted(a.AccessToken) {
+		enc, err := encrypt(a.AccessToken)
+		if err != nil {
+			return err
+		}
+		a.AccessToken = enc
+	}
+	if a.RefreshToken != "" && !isEncrypted(a.RefreshToken) {
+		enc, err := encrypt(a.RefreshToken)
+		if err != nil {
+			return err
+		}
+		a.RefreshToken = enc
+	}
+	return nil
+}
+
+func (a *PlatformIntegrationAccount) decryptTokens() error {
+	if a.AccessToken != "" && isEncrypted(a.AccessToken) {
+		dec, err := decrypt(a.AccessToken)
+		if err != nil {
+			return err
+		}
+		a.AccessToken = dec
+	}
+	if a.RefreshToken != "" && isEncrypted(a.RefreshToken) {
+		dec, err := decrypt(a.RefreshToken)
+		if err != nil {
+			return err
+		}
+		a.RefreshToken = dec
+	}
+	return nil
+}
+
+// isEncrypted checks if a token value is base64-encoded ciphertext
+// by verifying it's valid base64 and at least the minimum ciphertext length.
+func isEncrypted(s string) bool {
+	if len(s) < 48 { // nonce(12) + min ciphertext + tag(16) in base64
+		return false
+	}
+	_, err := base64.StdEncoding.DecodeString(s)
+	return err == nil
+}
 
 // PlatformCategoryMapping maps to "platform_category_mapping".
 type PlatformCategoryMapping struct {

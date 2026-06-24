@@ -12,6 +12,7 @@ package impl
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -183,16 +184,12 @@ func buildTopReasons(rows []reasonRow, totalReturns int64) []map[string]interfac
 			"percentage": pct,
 		})
 	}
-	// Sort by count descending (simple bubble for small n).
-	for i := 0; i < len(top); i++ {
-		for j := i + 1; j < len(top); j++ {
-			ci := int64(safeFloat(top[i]["count"]))
-			cj := int64(safeFloat(top[j]["count"]))
-			if cj > ci {
-				top[i], top[j] = top[j], top[i]
-			}
-		}
-	}
+	// Sort by count descending.
+	sort.Slice(top, func(i, j int) bool {
+		ci := int64(safeFloat(top[i]["count"]))
+		cj := int64(safeFloat(top[j]["count"]))
+		return cj > ci
+	})
 	return top
 }
 

@@ -47,8 +47,22 @@ func atoi64(s string) int64 {
 // List GET /api/v1/notification
 func (h *Handler) List(c *gin.Context) {
 	p := common.ParsePagination(c)
+	uid, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, http.StatusUnauthorized, "未认证")
+		return
+	}
+	var userID int64
+	switch v := uid.(type) {
+	case float64:
+		userID = int64(v)
+	case int64:
+		userID = v
+	case int:
+		userID = int64(v)
+	}
 	f := ListFilter{
-		UserID:    atoi64(c.Query("user_id")),
+		UserID:    userID,
 		AlertType: c.Query("alert_type"),
 		Severity:  c.Query("severity"),
 		IsRead:    atoiPtr(c.Query("is_read")),

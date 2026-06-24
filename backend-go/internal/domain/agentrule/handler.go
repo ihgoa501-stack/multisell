@@ -23,9 +23,21 @@ func NewHandler(service *Service) *Handler {
 // ListRules godoc
 // GET /api/v1/agent-rules?agent_id=A5&decision_point=stock_alert&rule_type=veto
 func (h *Handler) ListRules(c *gin.Context) {
-	userID, _ := strconv.ParseInt(c.Query("user_id"), 10, 64)
-	if userID == 0 {
-		response.Error(c, http.StatusBadRequest, "缺少 user_id 参数")
+	uid, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, http.StatusUnauthorized, "未认证")
+		return
+	}
+	var userID int64
+	switch v := uid.(type) {
+	case float64:
+		userID = int64(v)
+	case int64:
+		userID = v
+	case int:
+		userID = int64(v)
+	default:
+		response.Error(c, http.StatusUnauthorized, "无效的用户身份")
 		return
 	}
 	agentID := c.Query("agent_id")
@@ -68,6 +80,18 @@ func (h *Handler) CreateRule(c *gin.Context) {
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
+	}
+
+	// Enforce user_id from JWT, ignore request body
+	if uid, exists := c.Get("user_id"); exists {
+		switch v := uid.(type) {
+		case float64:
+			input.UserID = int64(v)
+		case int64:
+			input.UserID = v
+		case int:
+			input.UserID = int64(v)
+		}
 	}
 
 	rule, err := h.service.Create(&input)
@@ -161,6 +185,18 @@ func (h *Handler) EvaluateRules(c *gin.Context) {
 	if err := c.ShouldBindJSON(&body); err != nil {
 		response.Error(c, http.StatusBadRequest, "请求参数错误: "+err.Error())
 		return
+	}
+
+	// Enforce user_id from JWT, ignore request body
+	if uid, exists := c.Get("user_id"); exists {
+		switch v := uid.(type) {
+		case float64:
+			body.UserID = int64(v)
+		case int64:
+			body.UserID = v
+		case int:
+			body.UserID = int64(v)
+		}
 	}
 
 	result, err := h.service.Evaluate(body.UserID, body.AgentID, body.DecisionPoint, body.Output)

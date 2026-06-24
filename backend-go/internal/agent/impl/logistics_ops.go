@@ -17,12 +17,25 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sort"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// Package-level constants for business logic thresholds.
+const (
+	carrierOnTimeWeight    = 40.0 // on-time performance weight (%)
+	carrierDamageWeight    = 30.0 // damage rate weight (%)
+	carrierCostWeight      = 30.0 // cost weight (%)
+	overchargeThresholdPct = 5.0  // overcharge percentage threshold
+	billAuditLookbackDays  = 90   // days to look back for bill audit
+	costComparisonRatio    = 1.3  // max acceptable cost ratio vs best
+	onTimeComparisonRatio  = 0.9  // min acceptable on-time ratio vs best
+)
+
 
 // ---------- Required context fields ----------
 
@@ -202,14 +215,9 @@ func (a *LogisticsOpsAgent) carrierCompare(ctx map[string]interface{}) (output m
 	}
 
 	// Sort by total cost ascending.
-	for i := 0; i < len(options); i++ {
-		for j := i + 1; j < len(options); j++ {
-			if options[j].TotalCost < options[i].TotalCost {
-				options[i], options[j] = options[j], options[i]
-			}
-		}
-	}
-
+	sort.Slice(options, func(i, j int) bool {
+		return options[i].TotalCost < options[j].TotalCost
+	})
 	// Build carrier list with suitability.
 	minCost := options[0].TotalCost
 	var carriers []map[string]interface{}
@@ -470,7 +478,7 @@ func (a *LogisticsOpsAgent) shippingBillAudit(ctx map[string]interface{}) (outpu
 
 	// Determine which bills to audit.
 	var items []shipping.ShippingBillItem
-	lookupInterval := 90 // days
+	lookupInterval := billAuditLookbackDays // days
 
 	if billID, ok := ctx["bill_id"]; ok {
 		if id := safeFloat(billID); id > 0 {
@@ -554,7 +562,7 @@ func (a *LogisticsOpsAgent) shippingBillAudit(ctx map[string]interface{}) (outpu
 		overcharge := billedAmount - expectedAmount
 		overchargePct := (overcharge / expectedAmount) * 100
 
-		if overchargePct > 5.0 {
+		if overchargePct > overchargeThresholdPct {
 			discrepancy := map[string]interface{}{
 				"item_id":           item.ID,
 				"tracking_number":   item.TrackingNumber,
@@ -823,11 +831,11 @@ func (a *LogisticsOpsAgent) carrierPerformance(ctx map[string]interface{}) (outp
 		// On-time score (40%): normalized against best on-time rate.
 		onTimeScore := 0.0
 		if maxOnTime > 0 {
-			onTimeScore = (s.OnTimeRate / maxOnTime) * 40
+			onTimeScore = (s.OnTimeRate / maxOnTime) * carrierOnTimeWeight
 		}
 
 		// Damage score (30%): lower damage rate is better; max score = 30.
-		damageScore := 30.0 * (1.0 - s.DamageRate)
+		damageScore := carrierDamageWeight * (1.0 - s.DamageRate)
 		if damageScore < 0 {
 			damageScore = 0
 		}
@@ -835,11 +843,11 @@ func (a *LogisticsOpsAgent) carrierPerformance(ctx map[string]interface{}) (outp
 		// Cost score (30%): inversely proportional to cost; lowest cost = 30.
 		costScore := 0.0
 		if minCost > 0 && s.AvgCost > 0 {
-			costScore = 30.0 * (minCost / s.AvgCost)
+			costScore = carrierCostWeight * (minCost / s.AvgCost)
 		} else if s.AvgCost <= 0 {
-			costScore = 30.0
+			costScore = carrierCostWeight
 		}
-		if costScore > 30 {
+		if costScore > carrierCostWeight {
 			costScore = 30
 		}
 
@@ -857,14 +865,9 @@ func (a *LogisticsOpsAgent) carrierPerformance(ctx map[string]interface{}) (outp
 	}
 
 	// Sort by score descending.
-	for i := 0; i < len(scored); i++ {
-		for j := i + 1; j < len(scored); j++ {
-			if scored[j].Score > scored[i].Score {
-				scored[i], scored[j] = scored[j], scored[i]
-			}
-		}
-	}
-
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[j].Score < scored[i].Score
+	})
 	// Generate recommendations.
 	recommendedChanges := []string{}
 	if len(scored) >= 2 {
@@ -877,7 +880,7 @@ func (a *LogisticsOpsAgent) carrierPerformance(ctx map[string]interface{}) (outp
 		}
 		if best.AvgCost > 0 {
 			for _, s := range scored[1:] {
-				if s.AvgCost > best.AvgCost*1.3 && s.OnTimeRate < best.OnTimeRate*0.9 {
+				if s.AvgCost > best.AvgCost*costComparisonRatio && s.OnTimeRate < best.OnTimeRate*onTimeComparisonRatio {
 					recommendedChanges = append(recommendedChanges,
 						fmt.Sprintf("%s 成本偏高(¥%.2f)且时效较慢，建议减少份额",
 							s.ProviderName, s.AvgCost))
