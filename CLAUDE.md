@@ -55,6 +55,14 @@ docker compose -f docker-compose.legacy.yml up -d
 
 New dev database: `multisell`.
 
+## Agent Mode
+
+根据改动的模块选择节奏：
+
+- **AI Platform** (`internal/ai/`, `internal/agent/`, `internal/agentos/`, `domain/agentrule/`, `domain/entropy/`, `domain/evolution/`, `domain/trustscore/`, `domain/actionpolicy/`, `domain/decision/`) + **Commerce** (`domain/order/`, `domain/shipping/`, `domain/settlement/`, `domain/finance/`, `domain/platformfee/`, `domain/exchangerate/`) — 先用 /plan → 写测试 → 小心实现。这是核心 + 钱走的地方。
+- **所有其他模块** (CRUD 为主的 product catalog, integration, UI 等) — 直接按现有 pattern 快速实现，不需要过度设计。
+
+
 ## Backend Architecture
 
 Active backend modules live under `backend-go/internal/`.
