@@ -11,6 +11,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/agent/impl"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
+	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -133,6 +134,34 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 	output, confidence, riskLevel, err := o.synthesizeOutput(agent, req.DecisionPoint, req.Context)
 	if err != nil {
 		return nil, err
+	}
+
+	// Apply personal rules to modify/block the output.
+	if req.UserID != nil {
+		ruleSvc := agentrule.NewService(o.db, o.logger)
+		ruleResult, ruleErr := ruleSvc.Evaluate(*req.UserID, agent.ID, req.DecisionPoint, output)
+		if ruleErr != nil {
+			o.logger.Warn("personal rules evaluation failed", zap.String("agent_id", agent.ID), zap.Error(ruleErr))
+		} else if ruleResult.Blocked {
+			o.logger.Info("action blocked by personal rule", zap.String("agent_id", agent.ID), zap.String("reason", ruleResult.BlockReason))
+			finalBytes, _ := json.Marshal(ruleResult.Output)
+			_, _ = o.traces.Complete(traceID, &CompleteTraceInput{
+				FinalOutput: finalBytes,
+				Confidence:  &confidence,
+				RiskLevel:   riskLevel,
+				TokenCount:  380 + len(toolCalls)*120,
+				Status:      "blocked",
+			})
+			return &RunAgentResult{
+				TraceID:       traceID,
+				AgentID:       agent.ID,
+				DecisionPoint: req.DecisionPoint,
+				Output:        ruleResult.Output,
+				Confidence:    confidence,
+				RiskLevel:     riskLevel,
+			}, nil
+		}
+		output = ruleResult.Output
 	}
 
 	// Emit reasoning event.
