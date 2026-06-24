@@ -15,6 +15,7 @@ type Service struct {
 	logger    *zap.Logger
 	classifier Classifier
 	triageFn   TriageHandler
+	pushDispatcher *PushDispatcher
 }
 
 // SetClassifier sets the AI classifier for automatic feedback classification.
@@ -25,6 +26,11 @@ func (s *Service) SetClassifier(c Classifier) {
 // SetTriageHandler sets the AgentOS triage handler for creating UnifiedActions.
 func (s *Service) SetTriageHandler(fn TriageHandler) {
 	s.triageFn = fn
+}
+
+// SetPushDispatcher sets the push dispatcher for GitHub/webhook integration.
+func (s *Service) SetPushDispatcher(pd *PushDispatcher) {
+	s.pushDispatcher = pd
 }
 
 // NewService creates a new feedback Service.
@@ -488,6 +494,15 @@ func (s *Service) UpdateSubmissionStatus(id int64, req *UpdateSubmissionStatusRe
 		note = req.RejectReason
 	}
 	s.logStatusChange(sub.ID, oldStatus, req.Status, &changedBy, note)
+
+	// Push to external systems when accepted
+	if req.Status == StatusAccepted && s.pushDispatcher != nil {
+		project, _ := s.GetProject(sub.ProjectID)
+		if project != nil {
+			s.pushDispatcher.DispatchPush(sub, project.Settings)
+		}
+	}
+
 	return sub, nil
 }
 
@@ -559,6 +574,10 @@ func (s *Service) Vote(submissionID, userID int64, voteType string) (int64, erro
 
 	var count int64
 	s.db.Model(&Vote{}).Where("submission_id = ? AND vote_type = 'upvote'", submissionID).Count(&count)
+
+	// Recalculate priority based on new vote count
+	s.RecalcPriority(submissionID)
+
 	return count, nil
 }
 
@@ -574,6 +593,8 @@ func (s *Service) AddComment(submissionID, userID int64, req *CreateCommentReque
 	if err := s.db.Create(c).Error; err != nil {
 		return nil, err
 	}
+	// Recalculate priority for the submission
+	s.RecalcPriority(submissionID)
 	return c, nil
 }
 
@@ -591,6 +612,59 @@ func (s *Service) ListComments(submissionID int64, includeInternal bool) ([]Comm
 
 func (s *Service) DeleteComment(id int64) error {
 	return s.db.Delete(&Comment{}, id).Error
+}
+
+// ===================== Analytics =====================
+
+// GetAnalytics returns aggregated analytics data for a project.
+func (s *Service) GetAnalytics(projectID int64) (*AnalyticsResponse, error) {
+	resp := &AnalyticsResponse{
+		ByType:   make(map[string]int64),
+		ByStatus: make(map[string]int64),
+		ByAgent:  make(map[string]int64),
+	}
+
+	// By type
+	type kv struct{ Key string; Count int64 }
+	var rows []kv
+	s.db.Model(&Submission{}).Select("feedback_type as key, count(*) as count").
+		Where("project_id = ?", projectID).Group("feedback_type").Find(&rows)
+	for _, r := range rows {
+		resp.ByType[r.Key] = r.Count
+	}
+
+	// By status
+	rows = nil
+	s.db.Model(&Submission{}).Select("status as key, count(*) as count").
+		Where("project_id = ?", projectID).Group("status").Find(&rows)
+	for _, r := range rows {
+		resp.ByStatus[r.Key] = r.Count
+	}
+
+	// Weekly trend (last 12 weeks)
+	type trendRow struct{ Date string; Count int64 }
+	var trend []trendRow
+	s.db.Raw(`SELECT to_char(date_trunc('week', created_at), 'YYYY-MM-DD') as date, count(*) as count
+		FROM feedback_submission WHERE project_id = ? AND created_at > now() - interval '12 weeks'
+		GROUP BY date_trunc('week', created_at) ORDER BY date`, projectID).Find(&trend)
+	for _, t := range trend {
+		resp.Trend = append(resp.Trend, TrendPoint{Date: t.Date, Count: t.Count})
+	}
+
+	// Average processing time (from created to reviewed)
+	s.db.Raw(`SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (reviewed_at - created_at)))/3600, 0) as hours
+		FROM feedback_submission WHERE project_id = ? AND reviewed_at IS NOT NULL`, projectID).
+		Scan(&resp.AvgProcessHours)
+
+	// By agent (assigned_to counts)
+	var byAgent []kv
+	s.db.Model(&Submission{}).Select("CAST(assigned_to AS text) as key, count(*) as count").
+		Where("project_id = ? AND assigned_to IS NOT NULL", projectID).Group("assigned_to").Find(&byAgent)
+	for _, a := range byAgent {
+		resp.ByAgent[a.Key] = a.Count
+	}
+
+	return resp, nil
 }
 
 // ===================== Push Log =====================
@@ -661,6 +735,29 @@ func (s *Service) GetDashboardStats(projectID int64) (*DashboardStatsResponse, e
 	stats.AvgPriority = ar.Avg
 
 	return stats, nil
+}
+
+// ===================== Priority =====================
+
+// RecalcPriority recalculates and saves the priority score for a submission.
+func (s *Service) RecalcPriority(id int64) error {
+	var sub Submission
+	if err := s.db.First(&sub, id).Error; err != nil {
+		return err
+	}
+
+	var voteCount, commentCount int64
+	s.db.Model(&Vote{}).Where("submission_id = ? AND vote_type = 'upvote'", id).Count(&voteCount)
+	s.db.Model(&Comment{}).Where("submission_id = ?", id).Count(&commentCount)
+
+	ageHours := time.Since(sub.CreatedAt).Hours()
+	baseScore := BaseScore(sub.Severity, sub.FeedbackType)
+
+	calc := &PriorityCalculator{}
+	newPriority := calc.Calculate(baseScore, int(voteCount), int(commentCount), ageHours, 0)
+
+	sub.Priority = newPriority
+	return s.db.Save(&sub).Error
 }
 
 // ===================== Helpers =====================
@@ -735,31 +832,16 @@ func (s *Service) logStatusChange(submissionID int64, from, to string, changedBy
 }
 
 func (s *Service) calculatePriority(sub *Submission) int {
-	score := 0
-	switch sub.Severity {
-	case "critical":
-		score += 40
-	case "major":
-		score += 25
-	case "minor":
-		score += 10
-	case "trivial":
-		score += 5
-	default:
-		score += 15
-	}
-	switch sub.FeedbackType {
-	case TypeBug:
-		score += 25
-	case TypeFeature:
-		score += 20
-	case TypeImprovement:
-		score += 15
-	}
-	if score > 100 {
-		score = 100
-	}
-	return score
+	baseScore := BaseScore(sub.Severity, sub.FeedbackType)
+
+	var voteCount, commentCount int64
+	s.db.Model(&Vote{}).Where("submission_id = ? AND vote_type = 'upvote'", sub.ID).Count(&voteCount)
+	s.db.Model(&Comment{}).Where("submission_id = ?", sub.ID).Count(&commentCount)
+
+	ageHours := time.Since(sub.CreatedAt).Hours()
+
+	calc := &PriorityCalculator{}
+	return calc.Calculate(baseScore, int(voteCount), int(commentCount), ageHours, 0)
 }
 
 // AutoMigrate runs GORM auto-migration for all feedback tables.

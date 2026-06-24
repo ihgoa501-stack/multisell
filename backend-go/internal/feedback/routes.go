@@ -99,6 +99,7 @@ func RegisterRoutes(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, logger
 		fb.POST("/submissions/:id/tags/:tagId", h.AddTag)
 		fb.DELETE("/submissions/:id/tags/:tagId", h.RemoveTag)
 		fb.GET("/projects/:id/stats", h.GetDashboardStats)
+		fb.GET("/projects/:id/analytics", h.GetAnalytics)
 		fb.POST("/migrate", h.Migrate)
 
 		// Agent-facing endpoints

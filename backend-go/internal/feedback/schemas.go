@@ -158,6 +158,21 @@ type TagResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
+// AnalyticsResponse holds feedback analytics data.
+type AnalyticsResponse struct {
+	Trend         []TrendPoint       `json:"trend"`
+	ByType        map[string]int64  `json:"by_type"`
+	ByStatus      map[string]int64  `json:"by_status"`
+	AvgProcessHours float64         `json:"avg_process_hours"`
+	ByAgent       map[string]int64  `json:"by_agent"`
+}
+
+// TrendPoint is one data point in the submission trend.
+type TrendPoint struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
 type DashboardStatsResponse struct {
 	TotalSubmissions int64            `json:"total_submissions"`
 	PendingReview    int64            `json:"pending_review"`

@@ -490,6 +490,20 @@ func (h *Handler) ListSubmissionsForAgent(c *gin.Context) {
 	response.Paginated(c, subs, total, page, size)
 }
 
+// GetAnalytics GET /api/v1/feedback/projects/:id/analytics
+func (h *Handler) GetAnalytics(c *gin.Context) {
+	projectID, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	data, err := h.service.GetAnalytics(projectID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, data)
+}
+
 func (h *Handler) Migrate(c *gin.Context) {
 	if err := AutoMigrate(h.service.db); err != nil {
 		response.Error(c, http.StatusInternalServerError, "迁移失败: "+err.Error())

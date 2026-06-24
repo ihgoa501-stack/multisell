@@ -48,6 +48,7 @@ const labelMap: Record<string, string> = {
   admin: '反馈管理',
   projects: '项目',
   tags: '标签',
+  analytics: '分析',
   aftersales: '售后',
   sourcing1688: '1688采购',
   settings: '系统设置',
