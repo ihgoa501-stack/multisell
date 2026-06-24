@@ -276,6 +276,7 @@ func TestRegistry_DefaultAgents(t *testing.T) {
 		t.Fatal("expected Z9 to be unknown")
 	}
 
+	}
 func TestOrchestrator_Run_StubProvider(t *testing.T) {
 	db := newTestDB(t)
 	orch := NewOrchestrator(db, testLogger())
