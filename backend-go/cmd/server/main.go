@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/database"
@@ -43,8 +46,13 @@ func main() {
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	sugar.Infof("server listening on %s", addr)
 
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router.Handler(),
+	}
+
 	go func() {
-		if err := router.Run(addr); err != nil {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			sugar.Fatalf("server error: %v", err)
 		}
 	}()
@@ -55,4 +63,13 @@ func main() {
 	<-quit
 
 	sugar.Info("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		sugar.Fatalf("server forced to shutdown: %v", err)
+	}
+
+	sugar.Info("server exited gracefully")
 }

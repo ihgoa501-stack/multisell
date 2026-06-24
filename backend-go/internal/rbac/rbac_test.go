@@ -84,7 +84,7 @@ func TestRBAC_ListRoles_StatusFilter(t *testing.T) {
 	}
 
 	// status=-1 means no filter.
-	all, total, err := svc.ListRoles(-1)
+	all, total, err := svc.ListRoles(-1, 1, 20)
 	if err != nil {
 		t.Fatalf("ListRoles all: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestRBAC_ListRoles_StatusFilter(t *testing.T) {
 	}
 
 	// status=1 means active only.
-	active, total, err := svc.ListRoles(1)
+	active, total, err := svc.ListRoles(1, 1, 20)
 	if err != nil {
 		t.Fatalf("ListRoles active: %v", err)
 	}

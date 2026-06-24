@@ -20,8 +20,8 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 
 // ===================== Roles =====================
 
-// ListRoles returns all roles with optional status filter.
-func (s *Service) ListRoles(status int) ([]Role, int64, error) {
+// ListRoles returns roles with optional status filter and pagination.
+func (s *Service) ListRoles(status int, page, size int) ([]Role, int64, error) {
 	var roles []Role
 	q := s.db.Model(&Role{})
 	if status >= 0 {
@@ -29,7 +29,9 @@ func (s *Service) ListRoles(status int) ([]Role, int64, error) {
 	}
 	var total int64
 	q.Count(&total)
-	if err := q.Order("id desc").Find(&roles).Error; err != nil {
+
+	offset := (page - 1) * size
+	if err := q.Order("id desc").Offset(offset).Limit(size).Find(&roles).Error; err != nil {
 		return nil, 0, err
 	}
 	return roles, total, nil
@@ -69,8 +71,8 @@ func (s *Service) DeleteRole(id int64) error {
 
 // ===================== Permissions =====================
 
-// ListPermissions returns all permissions, optionally filtered by module.
-func (s *Service) ListPermissions(module string) ([]Permission, int64, error) {
+// ListPermissions returns permissions, optionally filtered by module, with pagination.
+func (s *Service) ListPermissions(module string, page, size int) ([]Permission, int64, error) {
 	var perms []Permission
 	q := s.db.Model(&Permission{})
 	if module != "" {
@@ -78,7 +80,9 @@ func (s *Service) ListPermissions(module string) ([]Permission, int64, error) {
 	}
 	var total int64
 	q.Count(&total)
-	if err := q.Order("id desc").Find(&perms).Error; err != nil {
+
+	offset := (page - 1) * size
+	if err := q.Order("id desc").Offset(offset).Limit(size).Find(&perms).Error; err != nil {
 		return nil, 0, err
 	}
 	return perms, total, nil

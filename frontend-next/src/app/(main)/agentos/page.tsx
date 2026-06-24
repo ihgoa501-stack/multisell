@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import { getCurrentOperator } from '@/lib/user';
 
 const { Text } = Typography;
 
@@ -157,7 +158,7 @@ export default function AgentOSPage() {
   const approveMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
       }),
     onSuccess: () => {
       message.success('已批准');
@@ -170,7 +171,7 @@ export default function AgentOSPage() {
   const rejectMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/reject`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
         reason: 'manual reject',
       }),
     onSuccess: () => {
@@ -184,7 +185,7 @@ export default function AgentOSPage() {
   const executeMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
       }),
     onSuccess: () => {
       message.success('已执行');

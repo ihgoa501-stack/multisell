@@ -92,12 +92,16 @@ func NewLLMProvider(logger *zap.Logger) LLMProvider {
 			logger.Fatal("LLM_PROVIDER must be set to a real provider in production (not empty/stub). " +
 				"Supported: openai, anthropic, qwen, deepseek, azure")
 		}
-		fallthrough
+		logger.Warn("LLM_PROVIDER not set, using stub provider for development. " +
+			"Set LLM_PROVIDER=openai, anthropic, or qwen for real AI calls.")
+		return &StubProvider{logger: logger}
 	default:
 		if isProd {
 			logger.Fatal("unsupported LLM_PROVIDER in production; use: openai, anthropic, qwen, deepseek, azure",
 				zap.String("provider", name))
 		}
+		logger.Warn("unsupported LLM_PROVIDER, falling back to stub provider for development",
+			zap.String("provider", name))
 		return &StubProvider{logger: logger}
 	}
 }

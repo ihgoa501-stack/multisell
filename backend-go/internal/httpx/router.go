@@ -70,51 +70,63 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// API v1 routes
 	api := r.Group("/api/v1")
 
-	// Auth routes (public + protected)
+	// API v1 Health check (public)
+	api.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"version": "0.1.0",
+		})
+	})
+
+	// Auth routes (public — login, register, refresh)
 	auth.RegisterRoutes(api, db, cfg, logger)
 
+	// Protected routes (require JWT authentication)
+	protected := api.Group("")
+	protected.Use(middleware.Auth(cfg))
+
 	// RBAC routes
-	rbac.RegisterRoutes(api, db, logger)
+	rbac.RegisterRoutes(protected, db, logger)
 
 	// AI orchestrator is shared by /ai and /agents routes.
 	aiOrch := ai.NewOrchestrator(db, logger)
 
 	// Agent routes (wired through the AI orchestrator)
-	agent.RegisterRoutes(api, db, logger, aiOrch)
+	agent.RegisterRoutes(protected, db, logger, aiOrch)
 
 	// AgentOS routes
-	agentos.RegisterRoutes(api, db, logger)
+	agentos.RegisterRoutes(protected, db, logger)
 
-	// Domain routes
-	category.RegisterRoutes(api, db, logger)
-	brand.RegisterRoutes(api, db, logger)
-	sku.RegisterRoutes(api, db, logger)
-	price.RegisterRoutes(api, db, logger)
-	inventory.RegisterRoutes(api, db, logger)
-	supplier.RegisterRoutes(api, db, logger)
-	platform.RegisterRoutes(api, db, logger)
-	listing.RegisterRoutes(api, db, logger)
-	listingtask.RegisterRoutes(api, db, logger)
-	shipping.RegisterRoutes(api, db, logger)
-	platformfee.RegisterRoutes(api, db, logger)
-	order.RegisterRoutes(api, db, logger)
-	orderimport.RegisterRoutes(api, db, logger)
-	settlement.RegisterRoutes(api, db, logger)
-	finance.RegisterRoutes(api, db, logger)
-	decision.RegisterRoutes(api, db, logger)
-	allocation.RegisterRoutes(api, db, logger)
-	exceptions.RegisterRoutes(api, db, logger)
-	notification.RegisterRoutes(api, db, logger)
-	dashboard.RegisterRoutes(api, db, logger)
-	search.RegisterRoutes(api, db, logger)
-	imagegen.RegisterRoutes(api, db, logger)
-	importbatch.RegisterRoutes(api, db, logger)
-	operationlog.RegisterRoutes(api, db, logger)
-	integrations.RegisterRoutes(api, db, logger)
-	aftersales.RegisterRoutes(api, db, logger)
-	sourcing1688.RegisterRoutes(api, db, logger)
-	report.RegisterRoutes(api, db, logger)
-	exchangerate.RegisterRoutes(api, db, logger)
+	// Domain routes (all require authentication)
+	category.RegisterRoutes(protected, db, logger)
+	brand.RegisterRoutes(protected, db, logger)
+	sku.RegisterRoutes(protected, db, logger)
+	price.RegisterRoutes(protected, db, logger)
+	inventory.RegisterRoutes(protected, db, logger)
+	supplier.RegisterRoutes(protected, db, logger)
+	platform.RegisterRoutes(protected, db, logger)
+	listing.RegisterRoutes(protected, db, logger)
+	listingtask.RegisterRoutes(protected, db, logger)
+	shipping.RegisterRoutes(protected, db, logger)
+	platformfee.RegisterRoutes(protected, db, logger)
+	order.RegisterRoutes(protected, db, logger)
+	orderimport.RegisterRoutes(protected, db, logger)
+	settlement.RegisterRoutes(protected, db, logger)
+	finance.RegisterRoutes(protected, db, logger)
+	decision.RegisterRoutes(protected, db, logger)
+	allocation.RegisterRoutes(protected, db, logger)
+	exceptions.RegisterRoutes(protected, db, logger)
+	notification.RegisterRoutes(protected, db, logger)
+	dashboard.RegisterRoutes(protected, db, logger)
+	search.RegisterRoutes(protected, db, logger)
+	imagegen.RegisterRoutes(protected, db, logger)
+	importbatch.RegisterRoutes(protected, db, logger)
+	operationlog.RegisterRoutes(protected, db, logger)
+	integrations.RegisterRoutes(protected, db, logger)
+	aftersales.RegisterRoutes(protected, db, logger)
+	sourcing1688.RegisterRoutes(protected, db, logger)
+	report.RegisterRoutes(protected, db, logger)
+	exchangerate.RegisterRoutes(protected, db, logger)
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
@@ -123,7 +135,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	r.GET("/ws", wsHandler.ServeWS)
 
 	// AI routes need the hub for realtime broadcasts.
-	ai.RegisterRoutes(api, db, logger, hub)
+	ai.RegisterRoutes(protected, db, logger, hub)
 
 	return r
 }

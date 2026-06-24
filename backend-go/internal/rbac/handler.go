@@ -40,12 +40,12 @@ func (h *Handler) ListRoles(c *gin.Context) {
 			status = v
 		}
 	}
-	roles, total, err := h.service.ListRoles(status)
+	p := common.ParsePagination(c)
+	roles, total, err := h.service.ListRoles(status, p.Page, p.Size)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	p := common.ParsePagination(c)
 	response.Paginated(c, roles, total, p.Page, p.Size)
 }
 
@@ -122,12 +122,12 @@ func (h *Handler) DeleteRole(c *gin.Context) {
 // ListPermissions GET /api/v1/rbac/permissions
 func (h *Handler) ListPermissions(c *gin.Context) {
 	module := c.Query("module")
-	perms, total, err := h.service.ListPermissions(module)
+	p := common.ParsePagination(c)
+	perms, total, err := h.service.ListPermissions(module, p.Page, p.Size)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	p := common.ParsePagination(c)
 	response.Paginated(c, perms, total, p.Page, p.Size)
 }
 

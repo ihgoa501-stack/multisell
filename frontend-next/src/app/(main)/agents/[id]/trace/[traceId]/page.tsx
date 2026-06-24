@@ -27,6 +27,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
+import { getCurrentOperator } from '@/lib/user';
 
 const { Text, Paragraph } = Typography;
 
@@ -127,7 +128,7 @@ export default function AgentTracePage() {
   const approveMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
       }),
     onSuccess: () => {
       message.success('已批准');
@@ -139,7 +140,7 @@ export default function AgentTracePage() {
   const rejectMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/reject`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
         reason: 'manual reject',
       }),
     onSuccess: () => {
@@ -152,7 +153,7 @@ export default function AgentTracePage() {
   const executeMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
       }),
     onSuccess: () => {
       message.success('已执行');

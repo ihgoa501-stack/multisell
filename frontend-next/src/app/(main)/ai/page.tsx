@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
+import { getCurrentOperator } from '@/lib/user';
 import type { PageResult, Result } from '@/types/api';
 
 const { Text, Paragraph } = Typography;
@@ -220,7 +221,7 @@ export default function AICommandPage() {
   const approveMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
       }),
     onSuccess: () => {
       message.success('已批准');
@@ -232,7 +233,7 @@ export default function AICommandPage() {
   const rejectMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/reject`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
         reason: 'manual reject',
       }),
     onSuccess: () => {
@@ -245,7 +246,7 @@ export default function AICommandPage() {
   const executeMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, {
-        operator: 'operator',
+        operator: getCurrentOperator(),
       }),
     onSuccess: () => {
       message.success('已执行');
