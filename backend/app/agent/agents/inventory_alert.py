@@ -1,6 +1,13 @@
-"""A5 库存预警 Agent (Phase 1 增强版)
+"""A5 库存预警 Agent (Phase 2 — LLM 增强版)
 
 设计依据: docs/AI_AGENT_FEASIBLE_DEVELOPMENT_SPEC.md §7.1.2
+
+Phase 2 改进：LLM 参与核心决策，公式降级为安全网。
+- 优先调用 LLM 做情景分析（考虑季节、趋势、供应商因素）
+- LLM 失败/不合理时自动降级为公式兜底
+- 永远不因 LLM 异常中断执行
+
+Phase 1 原始设计：
 - 输入覆盖 SKU、可售库存、锁定库存、在途库存、近 7/14/30 天销量、采购提前期、MOQ、安全库存天数
 - 输出库存状态、可售天数、建议补货量、建议物流方式、风险原因、建议操作
 - 数据不足时返回 insufficient_data，不允许编造数据
@@ -28,6 +35,10 @@ REQUIRED_REPLENISH_FIELDS = [
     "lead_time_days",
     "moq",
 ]
+
+# ── LLM 输出合理性校验常量 ──
+VALID_RISK_LEVELS = ("low", "medium", "high")
+VALID_LOGISTICS = ("sea_freight", "express_sea", "air_freight", "air_express")
 
 
 def _safe_int(v: Any, default: int = 0) -> int:
@@ -77,9 +88,16 @@ class A5InventoryAlertAgent(BaseAgent):
         return {"action": "unknown", "confidence": 0.0}
 
     # ──────────────────────────────
-    #  1. 库存预警（核心入口）
+    #  1. 库存预警（核心入口，LLM 增强）
     # ──────────────────────────────
     async def _check_stock_alert(self, context: dict, db: Any = None) -> dict:
+        """库存预警主入口
+
+        执行流程：
+        ① 公式计算（安全网，永远可用）
+        ② LLM 分析（仅 SEMI_AUTONOMOUS 及以上阶段尝试）
+        ③ 结果仲裁：LLM 成功且合理→用 LLM，否则用公式
+        """
         # ---- 向后兼容旧字段名 ----
         context = self._backfill_legacy_fields(context)
 
@@ -87,13 +105,92 @@ class A5InventoryAlertAgent(BaseAgent):
         if missing:
             return self._insufficient("stock_alert", missing)
 
+        # ---- ① 公式计算（安全网） ----
+        formula_result = self._formula_check(context)
+
+        # ---- ② LLM 分析（仅 SEMI_AUTONOMOUS+ 阶段尝试） ----
+        stage = self.get_stage("stock_alert")
+        llm_decision = None
+        if stage in (
+            EvolutionStage.SEMI_AUTONOMOUS,
+            EvolutionStage.FULL_AUTONOMOUS,
+        ):
+            # 构造 LLM 上下文（展开关键指标）
+            llm_context = {
+                "sku_code": context.get("sku_code", ""),
+                "sellable_stock": context.get("sellable_stock", 0),
+                "locked_stock": context.get("locked_stock", 0),
+                "in_transit_stock": context.get("in_transit_stock", 0),
+                "sales_7d": context.get("sales_7d", 0),
+                "sales_14d": context.get("sales_14d", "N/A"),
+                "sales_30d": context.get("sales_30d", "N/A"),
+                "lead_time_days": context.get("lead_time_days", 0),
+                "safety_stock_days": context.get("safety_stock_days", 0),
+                "moq": context.get("moq", 0),
+                "sellable_days": formula_result.get("sellable_days", "N/A"),
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "A5", "stock_alert", llm_context, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass  # LLM 失败不中断，用公式兜底
+
+        # ---- ③ 结果仲裁 ----
+        if llm_decision:
+            # LLM 优先：数值用公式保证精确，语义用 LLM 保证丰富
+            result = {
+                **formula_result,
+                "risk_reason": llm_decision.get(
+                    "risk_reason", formula_result["risk_reason"]
+                ),
+                "additional_notes": llm_decision.get("additional_notes", ""),
+                "llm_source": True,
+            }
+        else:
+            # 公式兜底
+            result = {**formula_result, "additional_notes": "", "llm_source": False}
+
+        # ---- ④ LLM 自然语言解释（后处理，不影响决策） ----
+        if formula_result.get("confidence", 0) > 0:
+            llm_summary = {
+                "status": result.get("stock_status", ""),
+                "sku": result.get("sku_code", ""),
+                "sellable": result.get("sellable_stock", 0),
+                "transit": result.get("in_transit_stock", 0),
+                "daily_sales": result.get("daily_sales_used", 0),
+                "sellable_days": result.get("sellable_days", 0),
+                "lead_time": result.get("lead_time_days", 0),
+                "safety_days": result.get("safety_stock_days", 0),
+                "risk_reason": result.get("risk_reason", ""),
+            }
+            try:
+                result["ai_explanation"] = await AgentLlmService.explain(
+                    "A5", llm_summary, db=db
+                )
+            except Exception:
+                result["ai_explanation"] = ""
+        else:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ──────────────────────────────
+    #  1a. 公式计算（安全网）
+    # ──────────────────────────────
+    def _formula_check(self, context: dict) -> dict:
+        """纯公式库存检查，结果与旧版 _check_stock_alert 一致
+
+        作为 LLM 失败时的兜底安全网，永不抛异常。
+        """
         sku_code = str(context["sku_code"])
         sellable = _safe_int(context["sellable_stock"])
         locked = _safe_int(context.get("locked_stock", 0))
         in_transit = _safe_int(context.get("in_transit_stock", 0))
-        valid_stock = sellable + in_transit  # 锁定库存不计入可售
+        valid_stock = sellable + in_transit
 
-        # 从多周期销量推算日均销量
         sales_7d = _safe_float(context.get("sales_7d", 0))
         sales_14d = _safe_float(context.get("sales_14d", 0))
         sales_30d = _safe_float(context.get("sales_30d", 0))
@@ -106,14 +203,13 @@ class A5InventoryAlertAgent(BaseAgent):
         safety_days = _safe_int(context["safety_stock_days"], 14)
         moq = _safe_int(context.get("moq", 0))
 
-        # 可售天数计算
         sellable_days = (
             round(valid_stock / daily_sales, 1) if daily_sales > 0 else 999.0
         )
 
-        # ---- 三级预警判定 ----
-        red_threshold = lead_time * 0.5  # 小于半个提前期 → 红色
-        yellow_threshold = lead_time + safety_days  # 提前期 + 安全天数 → 黄色
+        # 三级预警
+        red_threshold = lead_time * 0.5
+        yellow_threshold = lead_time + safety_days
 
         if sellable_days <= red_threshold:
             stock_status = "red"
@@ -146,7 +242,6 @@ class A5InventoryAlertAgent(BaseAgent):
             risk_reason = "库存充足，暂无风险"
             suggested_actions = ["常规监控"]
 
-        # ---- 建议补货量 ----
         suggested_replenish_qty = self._calc_replenish_qty(
             daily_sales=daily_sales,
             sellable_days=sellable_days,
@@ -156,27 +251,9 @@ class A5InventoryAlertAgent(BaseAgent):
             moq=moq,
         )
 
-        # ---- 建议物流方式 ----
         suggested_logistics = self._pick_logistics(
             stock_status, sellable_days, lead_time
         )
-
-        # ---- LLM 自然语言解释 ----
-        llm_summary = {
-            "status": stock_status,
-            "sku": sku_code,
-            "sellable": sellable,
-            "transit": in_transit,
-            "daily_sales": round(daily_sales, 1),
-            "sellable_days": sellable_days,
-            "lead_time": lead_time,
-            "safety_days": safety_days,
-            "risk_reason": risk_reason,
-        }
-        try:
-            ai_explanation = await AgentLlmService.explain("A5", llm_summary, db=db)
-        except Exception:
-            ai_explanation = ""
 
         return {
             "stock_status": stock_status,
@@ -193,9 +270,40 @@ class A5InventoryAlertAgent(BaseAgent):
             "suggested_logistics": suggested_logistics,
             "risk_reason": risk_reason,
             "suggested_actions": suggested_actions,
-            "ai_explanation": ai_explanation,
             "confidence": confidence,
+            "sku_code": sku_code,
         }
+
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 返回的结构化结果是否合理"""
+        # risk_level 必须为合法值
+        if result.get("risk_level") not in VALID_RISK_LEVELS:
+            return False
+        # suggested_logistics 必须为合法值
+        logistics = result.get("suggested_logistics")
+        if logistics is not None and logistics not in VALID_LOGISTICS:
+            return False
+        # suggested_replenish_qty 必须为非负整数
+        qty = result.get("suggested_replenish_qty")
+        if qty is not None:
+            try:
+                if int(qty) < 0:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        # confidence 必须在 0-1 之间
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        # risk_reason 不能为空
+        if not result.get("risk_reason"):
+            return False
+        return True
 
     # ──────────────────────────────
     #  2. 补货计算

@@ -1,6 +1,12 @@
-"""G2 仓储海关 Agent
+"""G2 仓储海关 Agent (Phase 2 — LLM 增强版)
 
 设计依据: docs/aiagent/final-integrated-solution.md §5.2
+
+Phase 2 改进：LLM 参与通关分析，HS 编码表降级为安全网。
+- 优先调用 LLM 根据产品描述推荐 HS 编码和清关建议
+- LLM 失败时自动降级为编码表兜底
+
+Phase 1 原始设计：
 - 仓储物流 + 海关三单匹配建议
 - 输入货品信息和目的地，输出清关建议、仓储策略
 """
@@ -8,6 +14,7 @@
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
+from app.agent.llm_service import AgentLlmService
 
 REQUIRED = ["product_name", "destination_country", "cargo_type"]
 HS_CODE_DB = {
@@ -51,20 +58,90 @@ class G2WarehouseCustomsAgent(BaseAgent):
 
     async def decide(self, point: str, ctx: dict, db: Any = None) -> dict:
         if point == "customs_clearance":
-            return self._clearance(ctx)
+            return await self._clearance_with_llm(ctx, db=db)
         if point == "warehouse_advice":
             return self._warehouse(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
-    def _clearance(self, ctx: dict) -> dict:
+    # ──────────────────────────────
+    #  1. 通关建议（LLM 增强版）
+    # ──────────────────────────────
+    async def _clearance_with_llm(self, ctx: dict, db: Any = None) -> dict:
+        """通关建议主入口"""
         miss = _missing(ctx, REQUIRED)
         if miss:
             return self._insufficient("customs_clearance", miss)
+
+        # ① 公式兜底
+        formula_result = self._formula_clearance(ctx)
+
+        # ② LLM 分析
+        llm_decision = None
+        stage = self.get_stage("customs_clearance")
+        if stage in (EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS):
+            llm_ctx = {
+                "product_name": ctx.get("product_name", ""),
+                "destination_country": ctx.get("destination_country", ""),
+                "cargo_type": ctx.get("cargo_type", ""),
+                "declared_value": ctx.get("declared_value", 0),
+                "weight_kg": ctx.get("weight_kg", 0),
+                "formula_hs_code": formula_result.get("hs_code", ""),
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "G2", "customs_clearance", llm_ctx, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass
+
+        # ③ 仲裁
+        if llm_decision:
+            result = {
+                **formula_result,
+                "hs_code": llm_decision.get(
+                    "hs_code_suggestion", formula_result["hs_code"]
+                ),
+                "risk_reason": llm_decision.get("risk_reason", ""),
+                "additional_notes": llm_decision.get("additional_notes", ""),
+                "llm_source": True,
+            }
+        else:
+            result = {
+                **formula_result,
+                "risk_reason": "",
+                "additional_notes": "",
+                "llm_source": False,
+            }
+
+        # ④ 解释
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "G2",
+                {
+                    "product": result.get("product", ""),
+                    "destination": result.get("destination", ""),
+                    "hs_code": result.get("hs_code", ""),
+                    "documents": ", ".join(result.get("required_documents", [])),
+                    "strategy": result.get("strategy", ""),
+                },
+                db=db,
+            )
+        except Exception:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ──────────────────────────────
+    #  1a. 公式兜底
+    # ──────────────────────────────
+    def _formula_clearance(self, ctx: dict) -> dict:
+        """纯公式通关检查，作为 LLM 失败时的兜底"""
         name = str(ctx.get("product_name", ""))
         country = str(ctx.get("destination_country", "")).upper().strip()
         cargo = str(ctx.get("cargo_type", "")).lower().strip()
         value = _sf(ctx.get("declared_value", 0))
-        _sf(ctx.get("weight_kg", 0))
 
         hs_code = HS_CODE_DB.get((cargo, country), "需要人工归类")
         duty_free = value < 800 and country == "US"
@@ -90,6 +167,21 @@ class G2WarehouseCustomsAgent(BaseAgent):
             else "≤ $2500 可简易报关",
             "confidence": 0.85 if hs_code != "需要人工归类" else 0.60,
         }
+
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 输出的合理性"""
+        risk = result.get("risk_level")
+        if risk is not None and risk not in ("low", "medium", "high"):
+            return False
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
 
     def _warehouse(self, ctx: dict) -> dict:
         country = str(ctx.get("destination_country", "")).upper().strip()

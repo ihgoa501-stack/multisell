@@ -1,6 +1,10 @@
-"""A3 广告建议 Agent (Phase 4 MVP)
+"""A3 广告建议 Agent (Phase 4 — LLM 增强版)
 
 设计依据: docs/AI_AGENT_FEASIBLE_DEVELOPMENT_SPEC.md §7.1.6
+
+Phase 2 改进：LLM 参与 ACoS 决策分析，公式降级为安全网。
+
+Phase 1 原始设计：
 - 分析广告投放效果，输出建议
 - 不接真实 Amazon Ads API
 - 不自动调价、不自动暂停广告
@@ -49,13 +53,96 @@ class A3AdAdviceAgent(BaseAgent):
         return {"action": "unknown", "confidence": 0.0}
 
     # ──────────────────────────────
-    #  1. ACoS 分析
+    #  1. ACoS 分析（LLM 增强版）
     # ──────────────────────────────
     async def _analyze_acos(self, context: dict, db: Any = None) -> dict:
+        """ACoS 分析主入口
+
+        执行流程：
+        ① 公式计算（安全网）
+        ② LLM 分析（SEMI_AUTONOMOUS+ 阶段尝试）
+        ③ 结果仲裁
+        """
         missing = _missing_fields(context, REQUIRED_FIELDS)
         if missing:
             return self._insufficient("acos_analysis", missing)
 
+        # ---- ① 公式计算（安全网） ----
+        formula_result = self._formula_acos_check(context)
+
+        # ---- ② LLM 分析 ----
+        llm_decision = None
+        stage = self.get_stage("acos_analysis")
+        if stage in (EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS):
+            metrics = formula_result.get("metrics", {})
+            llm_context = {
+                "campaign_id": formula_result.get("campaign_id", ""),
+                "spend": metrics.get("spend", 0),
+                "sales": metrics.get("sales", 0),
+                "acos": metrics.get("acos", 0),
+                "target_acos": metrics.get("target_acos", 0),
+                "ctr": metrics.get("ctr", 0),
+                "cvr": metrics.get("conversion_rate", 0),
+                "cpc": metrics.get("cpc", 0),
+                "budget_usage": metrics.get("budget_usage", 0),
+                "status": formula_result.get("status", "normal"),
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "A3", "acos_analysis", llm_context, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass
+
+        # ---- ③ 结果仲裁 ----
+        if llm_decision:
+            result = {
+                **formula_result,
+                "root_cause": llm_decision.get("root_cause", ""),
+                "bid_suggestion_llm": llm_decision.get("bid_suggestion", ""),
+                "keyword_suggestion": llm_decision.get("keyword_suggestion", ""),
+                "additional_notes": llm_decision.get("additional_notes", ""),
+                "llm_source": True,
+            }
+        else:
+            result = {
+                **formula_result,
+                "root_cause": "",
+                "bid_suggestion_llm": "",
+                "keyword_suggestion": "",
+                "additional_notes": "",
+                "llm_source": False,
+            }
+
+        # ---- ④ LLM 自然语言解释 ----
+        metrics = result.get("metrics", {})
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "A3",
+                {
+                    "campaign_id": result.get("campaign_id", ""),
+                    "spend": metrics.get("spend", 0),
+                    "sales": metrics.get("sales", 0),
+                    "acos": metrics.get("acos", 0),
+                    "target_acos": metrics.get("target_acos", 0),
+                    "ctr": metrics.get("ctr", 0),
+                    "cvr": metrics.get("conversion_rate", 0),
+                    "status": result.get("status", ""),
+                },
+                db=db,
+            )
+        except Exception:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ──────────────────────────────
+    #  1a. 公式计算（安全网）
+    # ──────────────────────────────
+    def _formula_acos_check(self, context: dict) -> dict:
+        """纯公式 ACoS 检查，作为 LLM 失败时的兜底"""
         campaign_id = str(context.get("campaign_id", ""))
         sku_code = str(context.get("sku_code", context.get("asin", "")))
         spend = _safe_float(context["spend"])
@@ -68,20 +155,17 @@ class A3AdAdviceAgent(BaseAgent):
         gross_margin = _safe_float(context.get("gross_margin", 0))
         target_acos = _safe_float(context.get("target_acos", 30.0))
 
-        # ---- 计算指标 ----
         acos = round(spend / sales * 100, 2) if sales > 0 else 0.0
         ctr = round(clicks / impressions * 100, 2) if impressions > 0 else 0.0
         conversion_rate = round(conversions / clicks * 100, 2) if clicks > 0 else 0.0
         cpc = round(spend / clicks, 2) if clicks > 0 else 0.0
         budget_usage = round(spend / budget * 100, 2) if budget > 0 else 0.0
 
-        # ---- 风险评估 ----
         alerts = []
         suggestions = []
         confidence = 0.85
         status = "normal"
 
-        # ACoS 异常检测
         acos_abnormal = acos > target_acos
         if acos_abnormal:
             if acos > gross_margin and gross_margin > 0:
@@ -105,13 +189,9 @@ class A3AdAdviceAgent(BaseAgent):
                 suggestions.append("建议降低广告出价或优化否定关键词")
                 confidence = 0.88
 
-        # 预算消耗异常
         if budget > 0 and budget_usage > 90:
             alerts.append(
-                {
-                    "level": "info",
-                    "message": f"预算已使用 {budget_usage}%，接近上限",
-                }
+                {"level": "info", "message": f"预算已使用 {budget_usage}%，接近上限"}
             )
         elif budget > 0 and budget_usage < 10:
             alerts.append(
@@ -121,7 +201,6 @@ class A3AdAdviceAgent(BaseAgent):
                 }
             )
 
-        # 库存关联风险
         if inventory_status in ("low", "out_of_stock"):
             alerts.append(
                 {
@@ -131,7 +210,6 @@ class A3AdAdviceAgent(BaseAgent):
             )
             suggestions.append("库存不足时暂停广告")
 
-        # 低点击率/转化率
         if impressions > 0 and ctr < 0.5:
             alerts.append(
                 {
@@ -147,10 +225,9 @@ class A3AdAdviceAgent(BaseAgent):
                 }
             )
 
-        # ---- 出价建议 ----
         bid_suggestion = None
         if acos > target_acos and sales > 0:
-            ideal_acos = target_acos * 0.8  # 预留安全空间
+            ideal_acos = target_acos * 0.8
             suggested_spend = sales * ideal_acos / 100
             if clicks > 0:
                 suggested_cpc = round(suggested_spend / clicks, 2)
@@ -165,30 +242,10 @@ class A3AdAdviceAgent(BaseAgent):
                         "description": f"建议 CPC 从 ¥{current_cpc} 降至 ¥{suggested_cpc}",
                     }
 
-        # ---- LLM 自然语言解释 ----
-        try:
-            ai_explanation = await AgentLlmService.explain(
-                "A3",
-                {
-                    "campaign_id": campaign_id,
-                    "spend": spend,
-                    "sales": sales,
-                    "acos": acos,
-                    "target_acos": target_acos,
-                    "ctr": ctr,
-                    "cvr": conversion_rate,
-                    "status": status,
-                },
-                db=db,
-            )
-        except Exception:
-            ai_explanation = ""
-
         return {
             "status": status,
             "campaign_id": campaign_id,
             "sku_code": sku_code,
-            "ai_explanation": ai_explanation,
             "metrics": {
                 "acos": acos,
                 "target_acos": target_acos,
@@ -208,6 +265,23 @@ class A3AdAdviceAgent(BaseAgent):
             "bid_suggestion": bid_suggestion,
             "confidence": confidence,
         }
+
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 返回的结构化结果是否合理"""
+        status = result.get("status")
+        if status is not None and status not in ("normal", "warning", "critical"):
+            return False
+        if not result.get("root_cause"):
+            return False
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
 
     # ──────────────────────────────
     #  2. 广告优化建议
