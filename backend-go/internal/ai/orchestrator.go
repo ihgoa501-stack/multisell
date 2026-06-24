@@ -108,6 +108,21 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 		return nil, err
 	}
 
+	// On any early return, mark the trace as failed so it does not
+	// remain in 'running' status forever.
+	var runErr error
+	defer func() {
+		if runErr != nil {
+			finalBytes, _ := json.Marshal(map[string]string{"error": runErr.Error()})
+			_, _ = o.traces.Complete(traceID, &CompleteTraceInput{
+				FinalOutput: finalBytes,
+				Confidence:  nil,
+				RiskLevel:   "high",
+				Status:      "failed",
+			})
+		}
+	}()
+
 	// Emit prompt_start.
 	_, _ = o.traces.AppendEvent(traceID, &AppendEventInput{
 		EventType: "prompt_start",
@@ -133,6 +148,7 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 	// otherwise fall back to the deterministic stub.
 	output, confidence, riskLevel, err := o.synthesizeOutput(agent, req.DecisionPoint, req.Context)
 	if err != nil {
+		runErr = err
 		return nil, err
 	}
 
