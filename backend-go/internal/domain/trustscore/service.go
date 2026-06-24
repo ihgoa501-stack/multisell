@@ -222,7 +222,8 @@ func defaultAgentList() []agentInfo {
 		{ID: "G2", Name: "Warehouse Customs", Squad: "governance"},
 		{ID: "G3", Name: "Discount Risk", Squad: "governance"},
 		{ID: "G0", Name: "Coordinator", Squad: "governance"},
-		{ID: "A8", Name: "Settlement Recon", Squad: "settle"},
+				{ID: "A9", Name: "Batch Ops", Squad: "ops"},
+{ID: "A8", Name: "Settlement Recon", Squad: "settle"},
 		{ID: "A10", Name: "Logistics Ops", Squad: "fulfillment"},
 		{ID: "A11", Name: "Aftersales Mgmt", Squad: "settle"},
 	}

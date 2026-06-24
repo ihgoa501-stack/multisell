@@ -5,7 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/ai"
+	"github.com/lingmirror/backend-go/internal/domain/entropy"
 	"github.com/lingmirror/backend-go/internal/response"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -13,12 +15,14 @@ import (
 type Handler struct {
 	service      *Service
 	orchestrator *ai.Orchestrator
+	db           *gorm.DB
+	logger       *zap.Logger
 }
 
 // NewHandler creates a new agent handler. The orchestrator is optional and
 // wires agent run endpoints through the AI runtime; pass nil to disable.
 func NewHandler(service *Service, orchestrator *ai.Orchestrator) *Handler {
-	return &Handler{service: service, orchestrator: orchestrator}
+	return &Handler{service: service, orchestrator: orchestrator, db: service.db, logger: service.logger}
 }
 
 // ListAgents GET /agents
@@ -87,15 +91,37 @@ func (h *Handler) Evolution(c *gin.Context) {
 	})
 }
 
-// Entropy GET /agents/entropy — returns rule entropy placeholder.
+// Entropy GET /agents/entropy — returns entropy summary from the entropy service.
 func (h *Handler) Entropy(c *gin.Context) {
-	response.Success(c, gin.H{
-		"rule_count":       42,
-		"conflict_count":   1,
-		"entropy_score":    0.12,
-		"health":           "ok",
-		"warnings":         []string{},
-	})
+	uid, ok := userIDFromEntropyCtx(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	svc := entropy.NewService(h.db, h.logger)
+	summary, err := svc.GetEntropySummary(uid)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, summary)
+}
+
+// userIDFromEntropyCtx extracts user_id from JWT context (for entropy endpoint).
+func userIDFromEntropyCtx(c *gin.Context) (int64, bool) {
+	v, exists := c.Get("user_id")
+	if !exists {
+		return 0, false
+	}
+	switch x := v.(type) {
+	case float64:
+		return int64(x), true
+	case int64:
+		return x, true
+	case int:
+		return int64(x), true
+	}
+	return 0, false
 }
 
 // Ensure *gorm.DB import is retained even if future edits drop a direct use.

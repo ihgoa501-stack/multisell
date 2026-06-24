@@ -1,9 +1,12 @@
 package aftersales
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/inventory"
+	"github.com/lingmirror/backend-go/internal/domain/order"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -26,7 +29,7 @@ func (s *Service) List(p *common.Pagination, f *ListFilter) ([]AfterSalesOrder, 
 		if f.Search != "" {
 			like := "%" + f.Search + "%"
 			q = q.Where(
-				"reason ILIKE ? OR order_id IN (SELECT id FROM sales_order WHERE order_no ILIKE ?)",
+				"LOWER(reason) LIKE LOWER(?) OR order_id IN (SELECT id FROM sales_order WHERE LOWER(order_no) LIKE LOWER(?))",
 				like, like,
 			)
 		}
@@ -177,19 +180,56 @@ func (s *Service) Reject(id int64, in *RejectInput) (*AfterSalesOrder, error) {
 	return &o, nil
 }
 
-// Receive marks an aftersales order as received (goods returned received).
+// Receive marks an aftersales order as received (goods returned received)
+// and restocks the returned items back into inventory.
 func (s *Service) Receive(id int64, in *ReceiveInput) (*AfterSalesOrder, error) {
 	var o AfterSalesOrder
 	if err := s.db.First(&o, id).Error; err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	updates := map[string]interface{}{
-		"status":      "received",
-		"received_by": in.ReceivedBy,
-		"received_at": &now,
+	if o.Status != "approved" {
+		return nil, fmt.Errorf("cannot receive aftersales order in status %s", o.Status)
 	}
-	if err := s.db.Model(&o).Updates(updates).Error; err != nil {
+	now := time.Now()
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"status":      "received",
+			"received_by": in.ReceivedBy,
+			"received_at": &now,
+		}
+		if err := tx.Model(&AfterSalesOrder{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+		// Restock inventory if SKU is specified
+		if o.SkuID != nil && o.ReturnQuantity > 0 {
+			var inv inventory.Inventory
+			if err := tx.Where("sku_id = ?", *o.SkuID).First(&inv).Error; err != nil {
+				return fmt.Errorf("inventory not found for sku_id %d: %w", *o.SkuID, err)
+			}
+			beforeQty := inv.Quantity
+			inv.Quantity += o.ReturnQuantity
+			inv.LockedQuantity -= o.ReturnQuantity
+			if inv.LockedQuantity < 0 {
+				inv.LockedQuantity = 0
+			}
+			if err := tx.Save(&inv).Error; err != nil {
+				return err
+			}
+			// Log the restock
+			return tx.Create(&inventory.InventoryLog{
+				SkuID:      *o.SkuID,
+				ChangeType: "in",
+				ChangeQty:  o.ReturnQuantity,
+				BeforeQty:  beforeQty,
+				AfterQty:   inv.Quantity,
+				Remark:     fmt.Sprintf("aftersales return, aftersales_id=%d", id),
+				Operator:   in.ReceivedBy,
+				CreatedAt:  time.Now(),
+			}).Error
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := s.db.First(&o, id).Error; err != nil {
@@ -199,19 +239,39 @@ func (s *Service) Receive(id int64, in *ReceiveInput) (*AfterSalesOrder, error) 
 }
 
 // Refund marks an aftersales order as refunded and records the refund amount.
+// It also transitions the original order to "cancelled" status.
 func (s *Service) Refund(id int64, in *RefundInput) (*AfterSalesOrder, error) {
 	var o AfterSalesOrder
 	if err := s.db.First(&o, id).Error; err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	updates := map[string]interface{}{
-		"status":        "refunded",
-		"refunded_by":   in.RefundedBy,
-		"refunded_at":   &now,
-		"refund_amount": in.RefundAmount,
+	if o.Status != "received" && o.Status != "approved" {
+		return nil, fmt.Errorf("cannot refund aftersales order in status %s", o.Status)
 	}
-	if err := s.db.Model(&o).Updates(updates).Error; err != nil {
+	now := time.Now()
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"status":        "refunded",
+			"refunded_by":   in.RefundedBy,
+			"refunded_at":   &now,
+			"refund_amount": in.RefundAmount,
+		}
+		if err := tx.Model(&AfterSalesOrder{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+		// Cancel the original order
+		if err := tx.Model(&order.Order{}).Where("id = ?", o.OrderID).Update("status", "cancelled").Error; err != nil {
+			return err
+		}
+		return tx.Create(&order.OrderStatusLog{
+			OrderID:    o.OrderID,
+			FromStatus: "",
+			ToStatus:   "cancelled",
+			Operator:   in.RefundedBy,
+			Remark:     fmt.Sprintf("aftersales refund, aftersales_id=%d", id),
+		}).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := s.db.First(&o, id).Error; err != nil {

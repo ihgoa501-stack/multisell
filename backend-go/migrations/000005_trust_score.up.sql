@@ -33,4 +33,9 @@ INSERT INTO agent_trust_score (agent_id, agent_name, squad_id, autonomy_level, t
 ('G1', 'Dashboard', 'governance', 'advisory', 0.00, 'guided'),
 ('G2', 'Warehouse Customs', 'governance', 'supervised', 0.50, 'autonomous'),
 ('G3', 'Discount Risk', 'governance', 'supervised', 0.65, 'autonomous')
+('G0', 'Coordinator', 'governance', 'supervised', 0.50, 'autonomous'),
+('A9', 'Batch Ops', 'ops', 'advisory', 0.00, 'guided'),
+('A8', 'Settlement Recon', 'settle', 'advisory', 0.00, 'guided'),
+('A10', 'Logistics Ops', 'fulfillment', 'advisory', 0.00, 'guided'),
+('A11', 'Aftersales Mgmt', 'settle', 'advisory', 0.00, 'guided')
 ON CONFLICT (agent_id) DO NOTHING;

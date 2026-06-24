@@ -67,6 +67,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/agents/evolution', label: '进化', permission: 'agentos:view' },
       { key: '/agents/entropy', label: '熵监控', permission: 'agentos:view' },
       { key: '/agentos/work-items', label: '工作队列', permission: 'agentos:view' },
+      { key: '/agents/trust', label: '信任与自主度', permission: 'agentos:view' },
     ],
   },
   {
@@ -89,6 +90,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/settings', icon: 'SettingOutlined', label: '系统设置', permission: 'settings:view' },
       { key: '/settings/llm', label: 'LLM 配置', permission: 'settings:view' },
       { key: '/settings/rbac', label: '权限管理', permission: 'rbac:view' },
+      { key: '/settings/policy', label: '审批策略', permission: 'settings:view' },
     ],
   },
 ];

@@ -217,25 +217,23 @@ func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 	})
 
 	// Trigger trust score recalculation for conditional autonomy upgrades.
-	go func() {
-		tsSvc := trustscore.NewService(o.db, o.logger)
-		if err := tsSvc.Recalculate(); err != nil {
-			o.logger.Warn("trust score recalculation failed", zap.Error(err))
-		} else {
-			ug := trustscore.NewUpgrader(o.db, o.logger)
-			if upgraded, err := ug.UpgradeEligible(); err != nil {
-				o.logger.Warn("autonomy upgrade failed", zap.Error(err))
-			} else if len(upgraded) > 0 {
-				for _, u := range upgraded {
-					o.logger.Info("agent autonomy upgraded via trust score",
-						zap.String("agent", u.AgentID),
-						zap.String("from", u.FromLevel),
-						zap.String("to", u.ToLevel),
-					)
-				}
+	tsSvc := trustscore.NewService(o.db, o.logger)
+	if err := tsSvc.Recalculate(); err != nil {
+		o.logger.Warn("trust score recalculation failed", zap.Error(err))
+	} else {
+		ug := trustscore.NewUpgrader(o.db, o.logger)
+		if upgraded, err := ug.UpgradeEligible(); err != nil {
+			o.logger.Warn("autonomy upgrade failed", zap.Error(err))
+		} else if len(upgraded) > 0 {
+			for _, u := range upgraded {
+				o.logger.Info("agent autonomy upgraded via trust score",
+					zap.String("agent", u.AgentID),
+					zap.String("from", u.FromLevel),
+					zap.String("to", u.ToLevel),
+				)
 			}
 		}
-	}()
+	}
 
 	return &RunAgentResult{
 		TraceID:       traceID,

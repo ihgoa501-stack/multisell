@@ -13,6 +13,8 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"github.com/lingmirror/backend-go/internal/domain/trustscore"
+	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 )
 
 // testDBCounter ensures each test gets a unique in-memory SQLite DB so
@@ -32,7 +34,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&AITrace{}, &AITraceEvent{}, &AIEvidenceRef{}, &UnifiedAction{}); err != nil {
+	if err := db.AutoMigrate(&AITrace{}, &AITraceEvent{}, &AIEvidenceRef{}, &UnifiedAction{}, &trustscore.TrustScore{}, &actionpolicy.PolicyRule{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -251,11 +253,11 @@ func TestService_ListTraces_Filtering(t *testing.T) {
 
 func TestRegistry_DefaultAgents(t *testing.T) {
 	r := DefaultRegistry()
-	if len(r.Agents) != 10 {
-		t.Fatalf("expected 10 agents, got %d", len(r.Agents))
+	if len(r.Agents) != 14 {
+		t.Fatalf("expected 14 agents, got %d", len(r.Agents))
 	}
 	ids := r.IDs()
-	want := []string{"A1", "A2", "A3", "A4", "A5", "A6", "A7", "G1", "G2", "G3"}
+	want := []string{"A1", "A2", "A3", "A4", "A5", "A6", "A7", "G1", "G2", "G3", "G0", "A8", "A10", "A11"}
 	for i, w := range want {
 		if ids[i] != w {
 			t.Fatalf("ids[%d] = %s, want %s", i, ids[i], w)
@@ -274,15 +276,23 @@ func TestRegistry_DefaultAgents(t *testing.T) {
 		t.Fatal("expected Z9 to be unknown")
 	}
 
-	// Squad grouping.
-	bySquad := r.BySquad()
-	if len(bySquad["autonomous"]) != 7 {
-		t.Fatalf("autonomous squad = %d", len(bySquad["autonomous"]))
-	}
-	if len(bySquad["governance"]) != 3 {
-		t.Fatalf("governance squad = %d", len(bySquad["governance"]))
-	}
-}
+			// Squad grouping.
+		bySquad := r.BySquad()
+		if len(bySquad["growth"]) != 4 {
+			t.Fatalf("growth squad = %d", len(bySquad["growth"]))
+		}
+		if len(bySquad["risk"]) != 4 {
+			t.Fatalf("risk squad = %d", len(bySquad["risk"]))
+		}
+		if len(bySquad["fulfillment"]) != 3 {
+			t.Fatalf("fulfillment squad = %d", len(bySquad["fulfillment"]))
+		}
+		if len(bySquad["settle"]) != 2 {
+			t.Fatalf("settle squad = %d", len(bySquad["settle"]))
+		}
+		if len(bySquad["governance"]) != 1 {
+			t.Fatalf("governance squad = %d", len(bySquad["governance"]))
+		}
 
 func TestOrchestrator_Run_StubProvider(t *testing.T) {
 	db := newTestDB(t)

@@ -447,8 +447,8 @@ func TestQuote_Manual_WithVolumetricWeight(t *testing.T) {
 	if r.VolumetricWeightKg < 10.6 || r.VolumetricWeightKg > 10.7 {
 		t.Errorf("expected volumetric weight ~10.67, got %.4f", r.VolumetricWeightKg)
 	}
-	if r.ChargeableWeightKg != 10.7 {
-		t.Errorf("expected chargeable weight ~10.67, got %.4f", r.ChargeableWeightKg)
+		if r.ChargeableWeightKg != 10.7 {
+			t.Errorf("expected chargeable weight 10.7, got %.4f", r.ChargeableWeightKg)
 	}
 		// base = 10 + 10.7*5 = 63.5 (rounded to 0.1kg increments)
 		if r.BaseShippingFee != 63.5 {
