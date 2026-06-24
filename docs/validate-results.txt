@@ -1,0 +1,87 @@
+============================================================
+LingMirror data migration validation
+============================================================
+
+CREATE TABLE
+DO
+--- Row count parity ---
+          table_name           | legacy_count | new_count | status
+-------------------------------+--------------+-----------+--------
+ after_sales_order             |            0 |         0 | OK
+ alert_rule                    |            0 |         0 | OK
+ allocation_rule               |            0 |         0 | OK
+ brand                         |            1 |         1 | OK
+ category                      |            1 |         1 | OK
+ cost_allocation_batch         |            0 |         0 | OK
+ exception_item                |            0 |         0 | OK
+ finance_account               |            0 |         0 | OK
+ finance_ledger_entry          |            0 |         0 | OK
+ finance_transaction           |            0 |         0 | OK
+ import_batch                  |            0 |         0 | OK
+ inventory                     |            0 |         0 | OK
+ listing_task                  |            0 |         0 | OK
+ notification                  |            0 |         0 | OK
+ operation_log                 |            0 |         0 | OK
+ order_import                  |            0 |         0 | OK
+ platform                      |            1 |         1 | OK
+ platform_fee_rule             |            0 |         0 | OK
+ platform_integration_account  |            0 |         0 | OK
+ price                         |            0 |         0 | OK
+ product                       |            0 |         0 | OK
+ product_image_gen             |            0 |         0 | OK
+ product_listing               |            0 |         0 | OK
+ sales_order                   |            0 |         0 | OK
+ sales_order_item              |            0 |         0 | OK
+ sales_order_shipping_snapshot |            0 |         0 | OK
+ sales_order_status_log        |            0 |         0 | OK
+ settlement                    |            0 |         0 | OK
+ settlement_item               |            0 |         0 | OK
+ shipping_channel              |            0 |         0 | OK
+ shipping_provider             |            0 |         0 | OK
+ shipping_quote_rule           |            0 |         0 | OK
+ shipping_zone                 |            0 |         0 | OK
+ sku                           |            0 |         0 | OK
+ sourcing_1688_product         |            0 |         0 | OK
+ spec_name                     |            0 |         0 | OK
+ spec_value                    |            0 |         0 | OK
+ supplier                      |            0 |         0 | OK
+ user                          |            1 |         1 | OK
+ warehouse                     |            1 |         1 | OK
+(40 rows)
+
+
+--- Mismatches (if any) ---
+ table_name | legacy_count | new_count
+------------+--------------+-----------
+(0 rows)
+
+
+--- Sample checksum (top 100 IDs per critical table) ---
+
+DO
+
+--- FK integrity check (orphans) ---
+          check           | orphan_count
+--------------------------+--------------
+ sales_order_item orphans |            0
+(1 row)
+
+          check          | orphan_count
+-------------------------+--------------
+ settlement_item orphans |            0
+(1 row)
+
+            check            | orphan_count
+-----------------------------+--------------
+ finance_transaction orphans |            0
+(1 row)
+
+    check    | orphan_count
+-------------+--------------
+ sku orphans |            0
+(1 row)
+
+
+============================================================
+Validation complete. Review MISMATCH rows above.
+============================================================
