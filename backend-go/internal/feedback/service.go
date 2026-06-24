@@ -200,9 +200,42 @@ func (s *Service) ListSubmissions(projectID int64, status, feedbackType, severit
 		return nil, 0, err
 	}
 
+	// Batch load vote and comment counts to avoid N+1
+	ids := make([]int64, len(submissions))
+	for i, sub := range submissions {
+		ids[i] = sub.ID
+	}
+
+	voteMap := make(map[int64]int64, len(submissions))
+	commentMap := make(map[int64]int64, len(submissions))
+
+	type countRow struct {
+		SubmissionID int64
+		Count int64
+	}
+
+	var voteRows []countRow
+	s.db.Model(&Vote{}).Select("submission_id, count(*) as count").
+		Where("submission_id IN ? AND vote_type = 'upvote'", ids).
+		Group("submission_id").Find(&voteRows)
+	for _, row := range voteRows {
+		voteMap[row.SubmissionID] = row.Count
+	}
+
+	var commentRows []countRow
+	s.db.Model(&Comment{}).Select("submission_id, count(*) as count").
+		Where("submission_id IN ?", ids).
+		Group("submission_id").Find(&commentRows)
+	for _, row := range commentRows {
+		commentMap[row.SubmissionID] = row.Count
+	}
+
 	responses := make([]SubmissionResponse, 0, len(submissions))
 	for _, sub := range submissions {
-		responses = append(responses, s.toResponse(&sub))
+		resp := s.toResponse(&sub)
+		resp.VoteCount = voteMap[sub.ID]
+		resp.CommentCount = commentMap[sub.ID]
+		responses = append(responses, resp)
 	}
 	return responses, total, nil
 }
@@ -222,9 +255,42 @@ func (s *Service) ListSubmissionsByUser(userID, projectID int64, page, size int)
 		return nil, 0, err
 	}
 
+	// Batch load counts to avoid N+1
+	ids := make([]int64, len(submissions))
+	for i, sub := range submissions {
+		ids[i] = sub.ID
+	}
+
+	voteMap := make(map[int64]int64, len(submissions))
+	commentMap := make(map[int64]int64, len(submissions))
+
+	type countRow struct {
+		SubmissionID int64
+		Count int64
+	}
+
+	var voteRows []countRow
+	s.db.Model(&Vote{}).Select("submission_id, count(*) as count").
+		Where("submission_id IN ? AND vote_type = 'upvote'", ids).
+		Group("submission_id").Find(&voteRows)
+	for _, row := range voteRows {
+		voteMap[row.SubmissionID] = row.Count
+	}
+
+	var commentRows []countRow
+	s.db.Model(&Comment{}).Select("submission_id, count(*) as count").
+		Where("submission_id IN ?", ids).
+		Group("submission_id").Find(&commentRows)
+	for _, row := range commentRows {
+		commentMap[row.SubmissionID] = row.Count
+	}
+
 	responses := make([]SubmissionResponse, 0, len(submissions))
 	for _, sub := range submissions {
-		responses = append(responses, s.toResponse(&sub))
+		resp := s.toResponse(&sub)
+		resp.VoteCount = voteMap[sub.ID]
+		resp.CommentCount = commentMap[sub.ID]
+		responses = append(responses, resp)
 	}
 	return responses, total, nil
 }
@@ -328,7 +394,9 @@ func (s *Service) UpdateSubmissionStatus(id int64, req *UpdateSubmissionStatusRe
 	oldStatus := sub.Status
 	sub.Status = req.Status
 	sub.ReviewerNotes = req.ReviewerNotes
-	sub.AssignedTo = req.AssignedTo
+	if req.AssignedTo != nil {
+		sub.AssignedTo = req.AssignedTo
+	}
 
 	if req.Status == StatusRejected || req.Status == StatusDeclined {
 		sub.RejectReason = req.RejectReason
@@ -548,6 +616,8 @@ func (s *Service) toResponse(sub *Submission) SubmissionResponse {
 		RejectReason:  sub.RejectReason,
 		CreatedAt:     sub.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     sub.UpdatedAt.Format(time.RFC3339),
+		VoteCount:     0,
+		CommentCount:  0,
 	}
 	if sub.ReviewedAt != nil {
 		resp.ReviewedAt = sub.ReviewedAt.Format(time.RFC3339)

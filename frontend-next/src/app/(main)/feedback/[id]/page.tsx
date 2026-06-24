@@ -89,7 +89,7 @@ export default function FeedbackDetailPage() {
     return <Result status="404" title="反馈不存在" extra={<Button onClick={() => router.push('/feedback')}>返回</Button>} />;
   }
 
-  const d = data;
+  const submission = data;
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
@@ -101,18 +101,18 @@ export default function FeedbackDetailPage() {
         <Col xs={24} lg={16}>
           <Card>
             <Space style={{ marginBottom: 12 }}>
-              <StatusBadge status={d.status} />
-              <TypeBadge type={d.feedback_type} />
-              {d.severity && <SeverityBadge severity={d.severity} />}
+              <StatusBadge status={submission.status} />
+              <TypeBadge type={submission.feedback_type} />
+              {submission.severity && <SeverityBadge severity={submission.severity} />}
             </Space>
-            <Title level={4}>{d.title}</Title>
-            <Paragraph style={{ fontSize: 15, whiteSpace: 'pre-wrap' }}>{d.description}</Paragraph>
+            <Title level={4}>{submission.title}</Title>
+            <Paragraph style={{ fontSize: 15, whiteSpace: 'pre-wrap' }}>{submission.description}</Paragraph>
 
-            {d.attachments && d.attachments !== '[]' && (
+            {submission.attachments && submission.attachments !== '[]' && (
               <div style={{ marginTop: 16 }}>
                 <Text strong>附件：</Text>
                 <Space>
-                  {(JSON.parse(d.attachments) || []).map((att: any, i: number) => (
+                  {(JSON.parse(submission.attachments) || []).map((att: any, i: number) => (
                     <Tag key={i}>{att.name || `附件 ${i + 1}`}</Tag>
                   ))}
                 </Space>
@@ -120,9 +120,9 @@ export default function FeedbackDetailPage() {
             )}
 
             <Divider />
-            <Title level={5}>评论 ({d.comments?.length || 0})</Title>
+            <Title level={5}>评论 ({submission.comments?.length || 0})</Title>
             <List
-              dataSource={d.comments || []}
+              dataSource={submission.comments || []}
               locale={{ emptyText: '暂无评论' }}
               renderItem={(c: any) => (
                 <List.Item>
@@ -156,15 +156,15 @@ export default function FeedbackDetailPage() {
                   icon={<LikeOutlined />}
                   onClick={() => handleVote('upvote')}
                   loading={voting}
-                  type={d.user_vote === 'upvote' ? 'primary' : 'default'}
+                  type={submission.user_vote === 'upvote' ? 'primary' : 'default'}
                 >
-                  {d.vote_count || 0}
+                  {submission.vote_count || 0}
                 </Button>
                 <Button
                   icon={<DislikeOutlined />}
                   onClick={() => handleVote('downvote')}
                   loading={voting}
-                  type={d.user_vote === 'downvote' ? 'primary' : 'default'}
+                  type={submission.user_vote === 'downvote' ? 'primary' : 'default'}
                 />
               </Space>
             </div>
@@ -172,25 +172,25 @@ export default function FeedbackDetailPage() {
 
           <Card size="small" title="详细信息" style={{ marginBottom: 16 }}>
             <Descriptions column={1} size="small">
-              <Descriptions.Item label="反馈类型"><TypeBadge type={d.feedback_type} /></Descriptions.Item>
-              {d.severity && <Descriptions.Item label="严重程度"><SeverityBadge severity={d.severity} /></Descriptions.Item>}
+              <Descriptions.Item label="反馈类型"><TypeBadge type={submission.feedback_type} /></Descriptions.Item>
+              {submission.severity && <Descriptions.Item label="严重程度"><SeverityBadge severity={submission.severity} /></Descriptions.Item>}
               <Descriptions.Item label="优先级">
-                <Progress percent={d.priority} size="small" format={(p) => `${p}`} />
+                <Progress percent={submission.priority} size="small" format={(p) => `${p}`} />
               </Descriptions.Item>
-              <Descriptions.Item label="提交时间">{dayjs(d.created_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
-              {d.reviewed_at && (
-                <Descriptions.Item label="审核时间">{dayjs(d.reviewed_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              <Descriptions.Item label="提交时间">{dayjs(submission.created_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              {submission.reviewed_at && (
+                <Descriptions.Item label="审核时间">{dayjs(submission.reviewed_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
               )}
-              {d.shipped_at && (
-                <Descriptions.Item label="上线时间">{dayjs(d.shipped_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              {submission.shipped_at && (
+                <Descriptions.Item label="上线时间">{dayjs(submission.shipped_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
               )}
             </Descriptions>
           </Card>
 
-          {d.status_logs && d.status_logs.length > 0 && (
+          {submission.status_logs && submission.status_logs.length > 0 && (
             <Card size="small" title="状态历程">
               <Timeline
-                items={d.status_logs.map((sl: any) => ({
+                items={submission.status_logs.map((sl: any) => ({
                   children: (
                     <>
                       <Text strong>{sl.to_status === 'pending' ? '已提交' : sl.to_status}</Text>

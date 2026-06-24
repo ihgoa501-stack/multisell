@@ -34,11 +34,15 @@ func getCurrentUserID(c *gin.Context) *int64 {
 	if !exists {
 		return nil
 	}
-	id, ok := uid.(int64)
-	if !ok {
+	switch v := uid.(type) {
+	case int64:
+		return &v
+	case float64:
+		id := int64(v)
+		return &id
+	default:
 		return nil
 	}
-	return &id
 }
 
 func getCurrentUserIDRequired(c *gin.Context) (int64, bool) {

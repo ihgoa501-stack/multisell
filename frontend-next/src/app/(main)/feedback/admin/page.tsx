@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   Typography, Card, Row, Col, Statistic, Table, Tag, Space, Button,
-  Spin, Select, Modal, Form, Input, message, Tabs,
+  Spin, Select, Modal, Form, Input, InputNumber, message, Tabs,
 } from 'antd';
 import {
   CheckCircleOutlined, ClockCircleOutlined, SendOutlined, RiseOutlined,
@@ -209,12 +209,7 @@ export default function FeedbackAdminPage() {
             <TextArea rows={2} placeholder="如果拒绝，请说明原因" />
           </Form.Item>
           <Form.Item name="assigned_to" label="分配给">
-            <Select
-              allowClear
-              mode="tags"
-              maxCount={1}
-              placeholder="输入用户ID分配（可选）"
-            />
+            <Input placeholder="输入用户 ID（可选）" />
           </Form.Item>
         </Form>
       </Modal>

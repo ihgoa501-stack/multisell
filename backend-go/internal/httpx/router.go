@@ -118,7 +118,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	exchangerate.RegisterRoutes(api, db, logger)
 
 	// Feedback routes
-	feedback.RegisterRoutes(api, db, logger)
+	feedback.RegisterRoutes(api, cfg, db, logger)
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)

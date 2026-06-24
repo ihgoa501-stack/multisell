@@ -1,6 +1,5 @@
 package feedback
 
-import "time"
 
 // ===================== Requests =====================
 
@@ -168,6 +167,3 @@ type DashboardStatsResponse struct {
 	ByStatus         map[string]int64 `json:"by_status"`
 	AvgPriority      float64          `json:"avg_priority"`
 }
-
-// timeNow is overridable for testing.
-var timeNow = time.Now
