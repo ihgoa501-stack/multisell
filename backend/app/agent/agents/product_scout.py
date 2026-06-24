@@ -1,6 +1,12 @@
-"""A1 选品扫描 Agent
+"""A1 选品扫描 Agent (Phase 2 — LLM 增强版)
 
 设计依据: docs/aiagent/跨境电商AI_Agent深度调研报告.md §Agent1
+
+Phase 2 改进：LLM 参与选品评分和市场分析，固定权重降级为安全网。
+- 优先调用 LLM 分析产品候选数据的市场机会
+- LLM 失败时自动降级为固定权重评分兜底
+
+Phase 1 原始设计：
 - 多维度选品评分（需求/竞争/利润/壁垒/趋势）
 - 输入市场数据，输出候选产品列表
 - 数据不足时返回 insufficient_data
@@ -9,6 +15,7 @@
 from typing import Any
 from app.agent.base import BaseAgent, EvolutionStage
 from app.agent.registry import register_agent
+from app.agent.llm_service import AgentLlmService
 
 REQUIRED = ["category", "marketplace"]
 
@@ -38,15 +45,90 @@ class A1ProductScoutAgent(BaseAgent):
 
     async def decide(self, point: str, ctx: dict, db: Any = None) -> dict:
         if point == "product_scout":
-            return self._scout(ctx)
+            return await self._scout_with_llm(ctx, db=db)
         if point == "market_analysis":
             return self._analyze_market(ctx)
         return {"action": "unknown", "confidence": 0.0}
 
-    def _scout(self, ctx: dict) -> dict:
+    # ──────────────────────────────
+    #  1. 选品扫描（LLM 增强版）
+    # ──────────────────────────────
+    async def _scout_with_llm(self, ctx: dict, db: Any = None) -> dict:
+        """选品扫描主入口"""
         miss = _missing(ctx, REQUIRED)
         if miss:
             return self._insufficient("product_scout", miss)
+
+        # ① 公式兜底
+        formula_result = self._formula_scout(ctx)
+
+        # ② LLM 分析
+        llm_decision = None
+        stage = self.get_stage("product_scout")
+        if stage in (EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS):
+            llm_ctx = {
+                "category": ctx.get("category", ""),
+                "marketplace": ctx.get("marketplace", "US"),
+                "candidates": str(ctx.get("candidates", [])),
+                "formula_top": formula_result.get("candidates", [{}])[0].get("name", "")
+                if formula_result.get("candidates")
+                else "",
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "A1", "product_scout", llm_ctx, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass
+
+        # ③ 仲裁
+        if llm_decision:
+            result = {
+                **formula_result,
+                "top_product": llm_decision.get("top_product", ""),
+                "market_insight": llm_decision.get("market_insight", ""),
+                "risk_flags": llm_decision.get("risk_flags", ""),
+                "scoring_approach": llm_decision.get("scoring_approach", ""),
+                "additional_notes": llm_decision.get("additional_notes", ""),
+                "llm_source": True,
+            }
+        else:
+            result = {
+                **formula_result,
+                "top_product": "",
+                "market_insight": "",
+                "risk_flags": "",
+                "scoring_approach": "",
+                "additional_notes": "",
+                "llm_source": False,
+            }
+
+        # ④ 解释
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "A1",
+                {
+                    "category": ctx.get("category", ""),
+                    "marketplace": ctx.get("marketplace", "US"),
+                    "candidate_count": result.get("total_scanned", 0),
+                    "top_score": result.get("candidates", [{}])[0].get("score", "?")
+                    if result.get("candidates")
+                    else "?",
+                },
+                db=db,
+            )
+        except Exception:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ──────────────────────────────
+    #  1a. 公式兜底
+    # ──────────────────────────────
+    def _formula_scout(self, ctx: dict) -> dict:
+        """纯公式选品评分，作为 LLM 失败时的兜底"""
         category = str(ctx.get("category", ""))
         marketplace = str(ctx.get("marketplace", "US"))
         candidates_input = ctx.get("candidates", [])
@@ -87,6 +169,20 @@ class A1ProductScoutAgent(BaseAgent):
             "total_scanned": len(scored),
             "confidence": 0.85,
         }
+
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 输出的合理性"""
+        if not result.get("top_product"):
+            return False
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
 
     def _analyze_market(self, ctx: dict) -> dict:
         return {

@@ -1,6 +1,13 @@
-"""G3 折扣风控 Agent (Phase 1 增强版)
+"""G3 折扣风控 Agent (Phase 2 — LLM 增强版)
 
 设计依据: docs/AI_AGENT_FEASIBLE_DEVELOPMENT_SPEC.md §7.1.3
+
+Phase 2 改进：LLM 参与核心决策，公式降级为安全网。
+- 优先调用 LLM 做情景分析（考虑平台政策、叠加幅度、大促策略）
+- LLM 失败/不合理时自动降级为公式兜底
+- 永远不因 LLM 异常中断执行
+
+Phase 1 原始设计：
 - 输入覆盖 SKU/ASIN、成本价、当前售价、生效折扣列表、平台、最低毛利率阈值
 - 必须模拟多折扣叠加后的最终价格
 - 折后价低于成本时阻断
@@ -25,6 +32,10 @@ REQUIRED_VALIDATE_FIELDS = [
     "promotion",
     "selling_price",
 ]
+
+# ── LLM 输出校验常量 ──
+VALID_ACTIONS = ("allow", "warn", "block")
+VALID_RISK_LEVELS = ("low", "medium", "high")
 
 
 def _safe_float(v: Any, default: float = 0.0) -> float:
@@ -63,22 +74,95 @@ class G3DiscountRiskAgent(BaseAgent):
         return {"action": "unknown", "confidence": 0.0}
 
     # ────────────────────────────────────
-    #  1. 折扣叠加风控（核心入口）
+    #  1. 折扣叠加风控（核心入口，LLM 增强）
     # ────────────────────────────────────
     async def _check_discount_risk(self, context: dict, db: Any = None) -> dict:
+        """折扣风控主入口
+
+        执行流程：
+        ① 公式计算（安全网）
+        ② LLM 分析（SEMI_AUTONOMOUS+ 阶段尝试）
+        ③ 结果仲裁：LLM 成功且合理→用 LLM，否则用公式
+        """
         missing = _missing_fields(context, REQUIRED_CHECK_FIELDS)
         if missing:
             return self._insufficient("discount_check", missing)
 
+        # ---- ① 公式计算（安全网） ----
+        formula_result = self._formula_check(context)
+
+        # ---- ② LLM 分析 ----
+        llm_decision = None
+        stage = self.get_stage("discount_check")
+        if stage in (EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS):
+            llm_context = {
+                "sku_code": context.get("sku_code", ""),
+                "selling_price": context.get("selling_price", 0),
+                "cost_price": context.get("cost_price", 0),
+                "platform": context.get("platform", "unknown"),
+                "discount_count": formula_result.get("discount_count", 0),
+                "final_price": formula_result.get("final_price", 0),
+                "gross_margin": formula_result.get("gross_margin", 0),
+                "action": formula_result.get("action", "allow"),
+                "discount_details": str(formula_result.get("discount_details", [])),
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "G3", "discount_check", llm_context, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass
+
+        # ---- ③ 结果仲裁 ----
+        if llm_decision:
+            result = {
+                **formula_result,
+                "risk_reason": llm_decision.get(
+                    "risk_reason", formula_result["reason"]
+                ),
+                "additional_notes": llm_decision.get("additional_notes", ""),
+                "llm_source": True,
+            }
+        else:
+            result = {**formula_result, "additional_notes": "", "llm_source": False}
+
+        # ---- ④ LLM 自然语言解释 ----
+        llm_summary = {
+            "action": result.get("action", ""),
+            "sku": result.get("sku_code", ""),
+            "original_price": result.get("original_price", 0),
+            "cost_price": result.get("cost_price", 0),
+            "final_price": result.get("final_price", 0),
+            "gross_profit": result.get("gross_profit", 0),
+            "gross_margin": result.get("gross_margin", 0),
+            "discount_details": ", ".join(
+                d.get("description", "") for d in result.get("discount_details", [])
+            ),
+            "reason": result.get("reason", ""),
+        }
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "G3", llm_summary, db=db
+            )
+        except Exception:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ────────────────────────────────────
+    #  1a. 公式计算（安全网）
+    # ────────────────────────────────────
+    def _formula_check(self, context: dict) -> dict:
+        """纯公式折扣检查，作为 LLM 失败时的兜底"""
         sku_code = str(context.get("sku_code", ""))
-        asin = context.get("asin", "")
         selling_price = _safe_float(context["selling_price"])
         cost_price = _safe_float(context["cost_price"])
         active_discounts: list = context.get("active_discounts", [])
         platform = context.get("platform", "unknown")
         min_margin_threshold = _safe_float(context.get("min_margin_threshold", 10.0))
 
-        # ---- 模拟多折扣叠加 ----
         final_price, discount_details = self._simulate_discounts(
             selling_price, active_discounts
         )
@@ -88,7 +172,6 @@ class G3DiscountRiskAgent(BaseAgent):
             (gross_profit / final_price * 100) if final_price > 0 else 0.0, 2
         )
 
-        # ---- 决策逻辑 ----
         blocked = False
         action = "allow"
         reason = ""
@@ -99,12 +182,7 @@ class G3DiscountRiskAgent(BaseAgent):
             action = "block"
             blocked = True
             reason = f"折后价 ¥{final_price:.2f} ≤ ¥0，售价无效"
-            alerts.append(
-                {
-                    "level": "critical",
-                    "message": reason,
-                }
-            )
+            alerts.append({"level": "critical", "message": reason})
             confidence = 0.99
         elif final_price < cost_price:
             action = "block"
@@ -138,10 +216,7 @@ class G3DiscountRiskAgent(BaseAgent):
             confidence = 0.90
         elif gross_margin < min_margin_threshold:
             action = "warn"
-            reason = (
-                f"毛利率 {gross_margin}% < 最低阈值 {min_margin_threshold}%，"
-                f"建议优化折扣或提价"
-            )
+            reason = f"毛利率 {gross_margin}% < 最低阈值 {min_margin_threshold}%，建议优化折扣或提价"
             alerts.append(
                 {
                     "level": "warning",
@@ -156,7 +231,6 @@ class G3DiscountRiskAgent(BaseAgent):
             )
             confidence = 0.85
 
-        # ---- 多平台最低价风险提示 ----
         platform_risk = self._check_platform_price_risk(
             platform, final_price, selling_price
         )
@@ -164,30 +238,10 @@ class G3DiscountRiskAgent(BaseAgent):
             alerts.append(platform_risk)
             confidence = max(0.80, confidence - 0.05)
 
-        # ---- LLM 自然语言解释 ----
-        llm_summary = {
-            "action": action,
-            "sku": sku_code,
-            "original_price": selling_price,
-            "cost_price": cost_price,
-            "final_price": round(final_price, 2),
-            "gross_profit": gross_profit,
-            "gross_margin": gross_margin,
-            "discount_details": ", ".join(
-                d.get("description", "") for d in discount_details
-            ),
-            "reason": reason,
-        }
-        try:
-            ai_explanation = await AgentLlmService.explain("G3", llm_summary, db=db)
-        except Exception:
-            ai_explanation = ""
-
         return {
             "action": action,
             "blocked": blocked,
             "reason": reason,
-            "ai_explanation": ai_explanation,
             "final_price": round(final_price, 2),
             "original_price": selling_price,
             "cost_price": cost_price,
@@ -199,12 +253,31 @@ class G3DiscountRiskAgent(BaseAgent):
             "discount_count": len(active_discounts),
             "discount_details": discount_details,
             "sku_code": sku_code,
-            "asin": asin,
             "platform": platform,
             "min_margin_threshold": min_margin_threshold,
             "alerts": alerts,
             "confidence": confidence,
         }
+
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 返回的结构化结果是否合理"""
+        action = result.get("action")
+        if action is not None and action not in VALID_ACTIONS:
+            return False
+        risk = result.get("risk_level")
+        if risk is not None and risk not in VALID_RISK_LEVELS:
+            return False
+        if not result.get("risk_reason"):
+            return False
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
 
     # ────────────────────────────────────
     #  2. 单个促销校验

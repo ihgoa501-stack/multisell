@@ -1,6 +1,12 @@
-"""A6 利润监控 Agent (Phase 2 MVP)
+"""A6 利润监控 Agent (Phase 2 — LLM 增强版)
 
 设计依据: docs/AI_AGENT_FEASIBLE_DEVELOPMENT_SPEC.md §7.1.4
+
+Phase 2 改进：LLM 参与核心决策，公式降级为安全网。
+- 优先调用 LLM 做情景利润分析（考虑费用结构、行业基准、平台差异）
+- LLM 失败/不合理时自动降级为公式兜底
+
+Phase 1 原始设计：
 - 输入 SKU、平台、国家、售价、采购成本、包装信息、物流费用、平台佣金、折扣、广告成本、退款成本
 - 输出单件利润、毛利率、费用拆分、亏损风险、调价建议
 - 数据不足时返回 insufficient_data
@@ -66,43 +72,116 @@ class A6ProfitWatchAgent(BaseAgent):
         return {"action": "unknown", "confidence": 0.0}
 
     # ──────────────────────────────
-    #  1. 利润检查（核心入口）
+    #  1. 利润检查（LLM 增强版）
     # ──────────────────────────────
     async def _check_profit(self, context: dict, db: Any = None) -> dict:
+        """利润检查主入口
+
+        执行流程：
+        ① 公式计算（安全网）
+        ② LLM 分析（SEMI_AUTONOMOUS+ 阶段尝试）
+        ③ 结果仲裁
+        """
         missing = _missing_fields(context, REQUIRED_FIELDS)
         if missing:
             return self._insufficient("profit_check", missing)
 
+        # ---- ① 公式计算（安全网） ----
+        formula_result = self._formula_check(context)
+
+        # ---- ② LLM 分析 ----
+        llm_decision = None
+        stage = self.get_stage("profit_check")
+        if stage in (EvolutionStage.SEMI_AUTONOMOUS, EvolutionStage.FULL_AUTONOMOUS):
+            llm_context = {
+                "sku_code": formula_result.get("sku_code", ""),
+                "selling_price": formula_result.get("selling_price", 0),
+                "cost_price": formula_result.get("cost_price", 0),
+                "effective_revenue": formula_result.get("effective_revenue", 0),
+                "profit_per_unit": formula_result.get("profit_per_unit", 0),
+                "gross_margin": formula_result.get("gross_margin", 0),
+                "is_loss": formula_result.get("is_loss", False),
+                "fee_breakdown": str(formula_result.get("fee_breakdown", {})),
+                "platform": formula_result.get("platform", "unknown"),
+            }
+            try:
+                llm_raw = await AgentLlmService.analyze(
+                    "A6", "profit_check", llm_context, db=db
+                )
+                if llm_raw and self._validate_llm_output(llm_raw):
+                    llm_decision = llm_raw
+            except Exception:
+                pass
+
+        # ---- ③ 结果仲裁 ----
+        if llm_decision:
+            result = {
+                **formula_result,
+                "risk_reason": llm_decision.get(
+                    "risk_reason", formula_result["anomaly_reason"]
+                ),
+                "cost_suggestion": llm_decision.get("cost_suggestion", ""),
+                "additional_notes": llm_decision.get("additional_notes", ""),
+                "llm_source": True,
+            }
+        else:
+            result = {
+                **formula_result,
+                "risk_reason": formula_result["anomaly_reason"],
+                "cost_suggestion": "",
+                "additional_notes": "",
+                "llm_source": False,
+            }
+
+        # ---- ④ LLM 自然语言解释 ----
+        try:
+            result["ai_explanation"] = await AgentLlmService.explain(
+                "A6",
+                {
+                    "sku": result.get("sku_code", ""),
+                    "selling_price": result.get("selling_price", 0),
+                    "cost_price": result.get("cost_price", 0),
+                    "fee_breakdown": str(result.get("fee_breakdown", {})),
+                    "profit": result.get("profit_per_unit", 0),
+                    "margin": result.get("gross_margin", 0),
+                    "is_loss": result.get("is_loss", False),
+                    "anomaly_reason": result.get("anomaly_reason", ""),
+                },
+                db=db,
+            )
+        except Exception:
+            result["ai_explanation"] = ""
+
+        return result
+
+    # ──────────────────────────────
+    #  1a. 公式计算（安全网）
+    # ──────────────────────────────
+    def _formula_check(self, context: dict) -> dict:
+        """纯公式利润检查，作为 LLM 失败时的兜底"""
         sku_code = str(context.get("sku_code", ""))
         selling_price = _safe_float(context["selling_price"])
         cost_price = _safe_float(context["cost_price"])
         platform = str(context.get("platform", "unknown"))
-        country = str(context.get("country", "unknown"))
         min_margin_threshold = _safe_float(context.get("min_margin_threshold", 15.0))
 
-        # ---- 费用计算 ----
         fees = {}
 
-        # 平台佣金
         platform_fee_rate = _safe_float(context.get("platform_fee_rate", 0))
         platform_fee = _safe_float(context.get("platform_fee", 0))
         if platform_fee == 0 and platform_fee_rate > 0:
             platform_fee = selling_price * platform_fee_rate / 100
         fees["platform_fee"] = round(platform_fee, 2)
 
-        # 固定费用
         fixed_fee = _safe_float(context.get("fixed_fee", 0))
         fees["fixed_fee"] = round(fixed_fee, 2)
 
-        # 物流费用
         shipping_fee = _safe_float(context.get("shipping_fee", 0))
         fees["shipping_fee"] = round(shipping_fee, 2)
 
-        # 折扣摊销
         discounts = context.get("discounts", [])
         discount_rate = 0.0
         if isinstance(discounts, list) and len(discounts) > 0:
-            # 简单求和折扣率
             for d in discounts:
                 d_val = _safe_float(d.get("value", 0))
                 d_type = str(d.get("type", "")).lower()
@@ -118,20 +197,16 @@ class A6ProfitWatchAgent(BaseAgent):
         discount_amount = selling_price * discount_rate / 100
         fees["discount"] = round(discount_amount, 2)
 
-        # 广告成本
         ad_cost = _safe_float(context.get("ad_cost_per_unit", 0))
         fees["ad_cost"] = round(ad_cost, 2)
 
-        # 退款成本（按比例估算）
         refund_rate = _safe_float(context.get("refund_rate", 0))
         refund_cost = selling_price * refund_rate / 100
         fees["refund_cost"] = round(refund_cost, 2)
 
-        # 总费用
         total_fees = sum(fees.values())
         fees["total"] = round(total_fees, 2)
 
-        # ---- 利润计算 ----
         effective_revenue = selling_price - discount_amount
         profit_per_unit = round(effective_revenue - cost_price - total_fees, 2)
         gross_margin = round(
@@ -141,7 +216,6 @@ class A6ProfitWatchAgent(BaseAgent):
             2,
         )
 
-        # ---- 风险评估 ----
         is_loss = profit_per_unit < 0
         below_threshold = gross_margin < min_margin_threshold
 
@@ -162,10 +236,7 @@ class A6ProfitWatchAgent(BaseAgent):
             ]
             confidence = 0.95
         elif below_threshold:
-            anomaly_reason = (
-                f"毛利率 {gross_margin}% 低于阈值 {min_margin_threshold}%，"
-                f"建议优化成本结构"
-            )
+            anomaly_reason = f"毛利率 {gross_margin}% 低于阈值 {min_margin_threshold}%，建议优化成本结构"
             optimization_suggestions = [
                 "适当提高售价",
                 "检查平台佣金是否有优化空间",
@@ -177,7 +248,6 @@ class A6ProfitWatchAgent(BaseAgent):
             optimization_suggestions = ["维持当前策略，定期监控"]
             confidence = 0.85
 
-        # ---- 检测费用异常 ----
         fee_warnings = []
         cost_ratio_threshold = 0.5
         if total_fees > effective_revenue * cost_ratio_threshold:
@@ -189,13 +259,12 @@ class A6ProfitWatchAgent(BaseAgent):
         if shipping_fee > effective_revenue * 0.25:
             fee_warnings.append(f"物流费用({shipping_fee})占比较高")
 
-        result = {
+        return {
             "profit_check_status": "block"
             if is_loss
             else ("warn" if below_threshold else "allow"),
             "sku_code": sku_code,
             "platform": platform,
-            "country": country,
             "selling_price": selling_price,
             "cost_price": cost_price,
             "effective_revenue": round(effective_revenue, 2),
@@ -212,26 +281,24 @@ class A6ProfitWatchAgent(BaseAgent):
             "confidence": confidence,
         }
 
-        # ---- LLM 自然语言解释 ----
-        try:
-            result["ai_explanation"] = await AgentLlmService.explain(
-                "A6",
-                {
-                    "sku": sku_code,
-                    "selling_price": selling_price,
-                    "cost_price": cost_price,
-                    "fee_breakdown": str(fees),
-                    "profit": profit_per_unit,
-                    "margin": gross_margin,
-                    "is_loss": is_loss,
-                    "anomaly_reason": anomaly_reason,
-                },
-                db=db,
-            )
-        except Exception:
-            result["ai_explanation"] = ""
-
-        return result
+    @staticmethod
+    def _validate_llm_output(result: dict) -> bool:
+        """校验 LLM 返回的结构化结果是否合理"""
+        if "is_loss" in result and not isinstance(result.get("is_loss"), bool):
+            return False
+        risk = result.get("risk_level")
+        if risk is not None and risk not in ("low", "medium", "high"):
+            return False
+        if not result.get("risk_reason"):
+            return False
+        conf = result.get("confidence")
+        if conf is not None:
+            try:
+                if not 0 <= float(conf) <= 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
 
     # ──────────────────────────────
     #  2. 成本优化建议
