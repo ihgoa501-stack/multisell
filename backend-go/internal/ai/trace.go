@@ -97,6 +97,7 @@ func (w *TraceWriter) AddEvidence(traceID string, in *AddEvidenceInput) (*AIEvid
 }
 
 // Complete finalizes a trace with output and metrics.
+// Uses Model(&t).Updates which populates t on success, avoiding a redundant second read.
 func (w *TraceWriter) Complete(traceID string, in *CompleteTraceInput) (*AITrace, error) {
 	var t AITrace
 	if err := w.db.Where("trace_id = ?", traceID).First(&t).Error; err != nil {
@@ -127,9 +128,8 @@ func (w *TraceWriter) Complete(traceID string, in *CompleteTraceInput) (*AITrace
 	if err := w.db.Model(&t).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	if err := w.db.Where("trace_id = ?", traceID).First(&t).Error; err != nil {
-		return nil, err
-	}
+	// After Model(&t).Updates, GORM refreshes t from the DB row so a second
+	// First() call is unnecessary. Return t directly.
 	return &t, nil
 }
 

@@ -108,8 +108,10 @@ export default function CrudListPage({
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   // ---------- Query ----------
-  const filterKey = JSON.stringify({ ...filterValues, ...extraFilters });
-  const listKey = ['crud', resource, page, size, search, filterKey];
+  const listKey = useMemo(
+    () => ['crud', resource, page, size, search, JSON.stringify({ ...filterValues, ...extraFilters })],
+    [filterValues, extraFilters, resource, page, size, search],
+  );
   const { data, isLoading, refetch } = useQuery({
     queryKey: listKey,
     queryFn: async () => {
