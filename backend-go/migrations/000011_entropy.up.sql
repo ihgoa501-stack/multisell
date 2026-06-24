@@ -1,16 +1,10 @@
-CREATE TABLE IF NOT EXISTS rule_conflict (
-    id BIGSERIAL PRIMARY KEY,
-    rule_a_id BIGINT NOT NULL,
-    rule_b_id BIGINT NOT NULL,
-    agent_id VARCHAR(20),
-    conflict_type VARCHAR(20) NOT NULL,
-    similarity NUMERIC(5,4),
-    status VARCHAR(20) NOT NULL DEFAULT 'open',
-    resolution TEXT,
-    payload JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    resolved_at TIMESTAMPTZ
-);
+-- rule_conflict is already created in 000001_init_schema;
+-- add columns that 000011 depends on (idempotent)
+ALTER TABLE rule_conflict ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'open';
+ALTER TABLE rule_conflict ADD COLUMN IF NOT EXISTS resolution TEXT;
+ALTER TABLE rule_conflict ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE rule_conflict ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE rule_conflict ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS spc_control_limit (
     id BIGSERIAL PRIMARY KEY,
