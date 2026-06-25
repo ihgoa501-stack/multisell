@@ -8,6 +8,9 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 const (
@@ -15,20 +18,71 @@ const (
 	OzonDefaultTimeout = 30 * time.Second
 )
 
+// OzonAdapter implements PlatformAdapter for the Ozon seller API.
 type OzonAdapter struct {
 	httpClient *http.Client
+	db         *gorm.DB
+	logger     *zap.Logger
 }
 
-func NewOzonAdapter() *OzonAdapter {
+// NewOzonAdapter creates an Ozon adapter with a DB handle for credential lookup.
+func NewOzonAdapter(db *gorm.DB, logger *zap.Logger) *OzonAdapter {
 	return &OzonAdapter{
 		httpClient: &http.Client{Timeout: OzonDefaultTimeout},
+		db:         db,
+		logger:     logger,
 	}
 }
 
+// ozonAuth stores Ozon API authentication details.
 type ozonAuth struct {
 	ClientID string
 	APIKey   string
 	BaseURL  string
+}
+
+// getAuth looks up the first active platform integration account for the given
+// platform ID and returns Ozon credentials. access_token = API key,
+// config.client_id = Ozon Client-Id.
+func (a *OzonAdapter) getAuth(ctx context.Context, platformID int64) (*ozonAuth, error) {
+	var accts []PlatformIntegrationAccount
+	if err := a.db.WithContext(ctx).
+		Where("platform_id = ? AND status = ?", platformID, "active").
+		Limit(1).
+		Find(&accts).Error; err != nil {
+		return nil, fmt.Errorf("ozon getAuth: %w", err)
+	}
+	if len(accts) == 0 {
+		return nil, fmt.Errorf("ozon getAuth: no active account for platform_id=%d", platformID)
+	}
+	acct := accts[0]
+
+	var cfg struct {
+		ClientID string `json:"client_id"`
+	}
+	if len(acct.Config) > 0 {
+		json.Unmarshal(acct.Config, &cfg)
+	}
+	if acct.AccessToken == "" {
+		return nil, fmt.Errorf("ozon getAuth: account %d has empty access_token", acct.ID)
+	}
+	if cfg.ClientID == "" {
+		return nil, fmt.Errorf("ozon getAuth: account %d missing client_id in config", acct.ID)
+	}
+	return &ozonAuth{
+		ClientID: cfg.ClientID,
+		APIKey:   acct.AccessToken,
+		BaseURL:  OzonAPIBase,
+	}, nil
+}
+
+// getAuthByAccountID resolves a platform integration account ID to Ozon creds.
+func (a *OzonAdapter) getAuthByAccountID(ctx context.Context, accountID int64) (*ozonAuth, error) {
+	var acct PlatformIntegrationAccount
+	if err := a.db.WithContext(ctx).First(&acct, accountID).Error; err != nil {
+		return nil, fmt.Errorf("ozon getAuthByAccountID: %w", err)
+	}
+	return a.getAuth(ctx, acct.PlatformID)
 }
 
 func (a *OzonAdapter) do(ctx context.Context, method, path string, auth *ozonAuth, payload interface{}) ([]byte, error) {
@@ -83,9 +137,12 @@ func (a *OzonAdapter) do(ctx context.Context, method, path string, auth *ozonAut
 }
 
 func (a *OzonAdapter) Publish(ctx context.Context, input *PublishInput) (*PublishResult, error) {
-	auth := &ozonAuth{BaseURL: OzonAPIBase, ClientID: "?", APIKey: "?"}
 	if len(input.SKUs) == 0 {
 		return nil, fmt.Errorf("ozon publish: no SKUs")
+	}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
 	}
 	prices := make(map[int64]float64)
 	for k, v := range input.Prices {
@@ -128,7 +185,10 @@ func (a *OzonAdapter) Publish(ctx context.Context, input *PublishInput) (*Publis
 }
 
 func (a *OzonAdapter) SyncStatus(ctx context.Context, input *SyncStatusInput) (string, error) {
-	auth := &ozonAuth{BaseURL: OzonAPIBase, ClientID: "?", APIKey: "?"}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return "unknown", err
+	}
 	offerID := input.PlatformProductID
 	if len(offerID) > 4 && offerID[:4] == "ozon-" {
 		offerID = offerID[5:]
@@ -156,33 +216,58 @@ func (a *OzonAdapter) SyncStatus(ctx context.Context, input *SyncStatusInput) (s
 }
 
 func (a *OzonAdapter) ValidateCredentials(ctx context.Context, accountID int64) (bool, error) {
-	// Requires auth resolution from DB. Return stub until full auth wiring.
-	return false, fmt.Errorf("ozon ValidateCredentials not implemented without auth resolution")
+	auth, err := a.getAuthByAccountID(ctx, accountID)
+	if err != nil {
+		return false, fmt.Errorf("ozon ValidateCredentials: %w", err)
+	}
+	// Hit the Ozon /v1/product/list endpoint (lightweight) to verify creds.
+	body, err := a.do(ctx, http.MethodPost, "/v1/product/list", auth, map[string]interface{}{"page": 1, "page_size": 1})
+	if err != nil {
+		return false, fmt.Errorf("ozon ValidateCredentials: %w", err)
+	}
+	var r struct {
+		Result struct {
+			Total int64 `json:"total"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return false, fmt.Errorf("ozon ValidateCredentials: parse error: %w", err)
+	}
+	return true, nil
 }
 
 func (a *OzonAdapter) SyncInventory(ctx context.Context, input *SyncInventoryInput) (bool, error) {
-	auth := &ozonAuth{BaseURL: OzonAPIBase, ClientID: "?", APIKey: "?"}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return false, err
+	}
 	sku := input.PlatformSKU
 	if sku == "" {
 		sku = input.SkuCode
 	}
 	payload := map[string]interface{}{"stocks": []map[string]interface{}{{"sku": sku, "stock": input.Quantity}}}
-	_, err := a.do(ctx, http.MethodPost, "/v4/product/import/stocks", auth, payload)
+	_, err = a.do(ctx, http.MethodPost, "/v4/product/import/stocks", auth, payload)
 	return err == nil, err
 }
 
 func (a *OzonAdapter) PushTracking(ctx context.Context, input *PushTrackingInput) (bool, error) {
-	auth := &ozonAuth{BaseURL: OzonAPIBase, ClientID: "?", APIKey: "?"}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return false, err
+	}
 	p := map[string]interface{}{"posting_number": input.OrderSN, "tracking_number": input.TrackingNumber}
 	if input.CarrierCode != "" {
 		p["carrier_code"] = input.CarrierCode
 	}
-	_, err := a.do(ctx, http.MethodPost, "/v3/posting/fbs/ship", auth, p)
+	_, err = a.do(ctx, http.MethodPost, "/v3/posting/fbs/ship", auth, p)
 	return err == nil, err
 }
 
 func (a *OzonAdapter) FetchOrders(ctx context.Context, input *FetchOrdersInput) ([]*PlatformOrder, error) {
-	auth := &ozonAuth{BaseURL: OzonAPIBase, ClientID: "?", APIKey: "?"}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
+	}
 	var orders []*PlatformOrder
 	page := 1
 	for {
@@ -241,7 +326,10 @@ func (a *OzonAdapter) FetchOrders(ctx context.Context, input *FetchOrdersInput) 
 }
 
 func (a *OzonAdapter) FetchSettlements(ctx context.Context, input *FetchSettlementsInput) ([]*PlatformSettlement, error) {
-	auth := &ozonAuth{BaseURL: OzonAPIBase, ClientID: "?", APIKey: "?"}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]interface{}{
 		"filter":   map[string]interface{}{"date": map[string]string{"from": input.Since.Format("2006-01-02T15:04:05.000Z")}},
 		"page":     1,
@@ -285,7 +373,10 @@ func (a *OzonAdapter) FetchSettlements(ctx context.Context, input *FetchSettleme
 }
 
 func (a *OzonAdapter) FetchReturns(ctx context.Context, input *FetchReturnsInput) ([]*PlatformReturn, error) {
-	auth := &ozonAuth{BaseURL: OzonAPIBase, ClientID: "?", APIKey: "?"}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]interface{}{
 		"filter": map[string]string{"last_change_from": input.Since.Format("2006-01-02T15:04:05.000Z")},
 		"limit":  100,

@@ -96,6 +96,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	defer busCancel()
 	bus.Start(busCtx)
 
+	// Initialize platform adapters (Ozon, Shopee, etc.).
+	integrations.InitAdapters(db, logger)
+
 	// Create command dispatcher and register Phase 1 handlers.
 	cmd := command.NewDispatcher(logger)
 	cmd.Register("stock_alert", command.StockAlertHandler(db, logger))

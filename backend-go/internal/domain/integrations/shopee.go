@@ -12,6 +12,9 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // ShopeeOpenAPI base URLs for different regions.
@@ -24,11 +27,15 @@ const (
 // ShopeeAdapter implements PlatformAdapter for Shopee Open API v2.
 type ShopeeAdapter struct {
 	httpClient *http.Client
+	db         *gorm.DB
+	logger     *zap.Logger
 }
 
-func NewShopeeAdapter() *ShopeeAdapter {
+func NewShopeeAdapter(db *gorm.DB, logger *zap.Logger) *ShopeeAdapter {
 	return &ShopeeAdapter{
 		httpClient: &http.Client{Timeout: 30 * time.Second},
+		db:         db,
+		logger:     logger,
 	}
 }
 
