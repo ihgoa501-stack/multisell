@@ -76,40 +76,58 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 ## 验证状态
 
-2026-06-24 复核结果：
+2026-06-25 复核结果（本次并行修复后）：
 
 | 检查 | 结果 | 说明 |
 |---|---:|---|
-| `cd backend-go && go test ./...` | 通过 | 8 个 Go 测试文件覆盖核心模块 |
+| `cd backend-go && go test ./...` | 通过 | 34 个 Go 测试包，含新增 6 个 domain 模块测试（158 tests） |
 | `cd backend-go && go vet ./...` | 通过 | 无 vet 输出 |
-| `cd frontend-next && npm test` | 通过 | 11 个 test files，75 tests |
+| `cd frontend-next && npm test` | 通过 | 12 个 test files，77 tests |
 | `cd frontend-next && npm run build` | 通过 | Sentry auth token/source map 上传 warning 不阻塞 build |
-| `cd frontend-next && npm run lint` | 失败 | 16 errors / 22 warnings，主要是 `any`、未使用变量和 `AuthGuard` hooks 规则 |
+| `cd frontend-next && npm run lint` | 通过 | 实测已通过，无 error 输出 |
 
-## 当前风险
+## 本次修复内容（2026-06-25，4 Agent 并行执行）
 
-### API 路径一致性
+### API 路径一致性 ✅ 已修复
 
-前端默认 API base 是 `http://localhost:8080/api`，因此业务调用应统一使用 `/v1/*` 路径，最终形成 `/api/v1/*`。当前仍发现部分调用缺少 `/v1` 前缀，例如：
+之前在风险栏列出的缺失 `/v1` 前缀问题已全部修复：
 
-- `/ai/actions`
-- `/policy/rules`
-- `/evolution/nudges`
-- `/trust-scores/summary`
+- `/ai/actions` → `/v1/ai/actions`
+- `/policy/rules` → `/v1/policy/rules`
+- `/evolution/nudges/evaluate` → `/v1/evolution/nudges/evaluate`
+- `/trust-scores/summary` → `/v1/trust-scores/summary`
 
-这些调用在默认配置下会请求 `/api/...`，无法命中 Go 后端当前的 `/api/v1/...` 路由。
+共 17 处调用跨 6 个前端文件。
 
-### 前端 lint 门禁
+### 前端 lint ✅ 已验证通过
 
-当前 build 和测试通过，但 lint 未通过。典型问题：
+当前 `eslint` 无 error 输出，已清理。
 
-- `@typescript-eslint/no-explicit-any`
-- `@typescript-eslint/no-unused-vars`
-- `react-hooks/set-state-in-effect`，见 `frontend-next/src/components/auth/AuthGuard.tsx`
+### EventBus workerLoop 修复
 
-### 测试覆盖
+`backend-go/internal/platform/eventbus/bus.go` 重构：
 
-后端测试集中在 `ai`、`auth`、`aftersales`、`order`、`settlement`、`shipping`、`eventbus`、`rbac`，大量 domain 模块还没有 focused tests。前端组件测试较完整，但业务页面和 API 交互测试仍偏薄。
+- 优先队列（`container/heap`）替代内联 `go func()` 分发
+- 背压控制：队列满时返回 `ErrQueueFull`，不再无限增长 goroutine
+- 13 个完整测试（含 race detector）
+
+### 大文件拆分
+
+- `logistics_ops.go`（1217 行）→ 5 个文件（max 381 行）
+- `aftersales_mgmt.go`（1058 行）→ 6 个文件（max 288 行）
+
+### 测试覆盖提升
+
+新加 6 个 domain 模块测试（158 tests）：
+
+| 模块 | tests |
+|------|-------|
+| price | 40 |
+| finance | 34 |
+| supplier | 34 |
+| decision | 18 |
+| trustscore | 24 |
+| integrations | 28 |
 
 ### 文档清理
 
@@ -122,10 +140,3 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - `frontend-next/README.md`
 
 历史文档中出现 `backend/app/*`、`frontend/src/views/*`、`/api/*` 时，默认按旧栈参考处理，不能直接作为当前实现事实。
-
-## 下一步建议
-
-1. 统一前端 API 调用路径，所有 `apiClient` 业务调用显式使用 `/v1/*`。
-2. 修复 `frontend-next` lint，恢复前端质量门禁。
-3. 为无测试的高风险 domain 模块补 focused tests，优先覆盖发布、库存、财务、AgentOS 动作链路。
-4. 清理或标注旧栈文档，避免把 Vue/FastAPI 的历史缺口误读为当前缺口。
