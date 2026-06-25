@@ -106,6 +106,85 @@ func (s *Service) Overview() (*DashboardOverview, error) {
 	o.MonthRevenue = fin.Revenue
 	o.MonthCost = fin.Cost
 
+	// Platform connections
+	type pRow struct {
+		PlatformID   int64
+		PlatformCode string
+		PlatformName string
+		StoreName    string
+		Status       string
+		SyncStatus   string
+		LastSyncAt   *time.Time
+		LastError    string
+	}
+	var prs []pRow
+	s.db.Table("platform_integration_account AS a").
+		Joins("JOIN platform AS p ON p.id = a.platform_id").
+		Select("a.platform_id, p.code AS platform_code, p.name AS platform_name, a.store_name, a.status, a.sync_status, a.last_sync_at, a.last_error").
+		Scan(&prs)
+	for _, pr := range prs {
+		var lastSync *string
+		if pr.LastSyncAt != nil {
+			s := pr.LastSyncAt.Format("2006-01-02T15:04:05Z")
+			lastSync = &s
+		}
+		o.PlatformConnections = append(o.PlatformConnections, PlatformConnectionStatus{
+			PlatformID:   pr.PlatformID,
+			PlatformCode: pr.PlatformCode,
+			PlatformName: pr.PlatformName,
+			StoreName:    pr.StoreName,
+			Status:       pr.Status,
+			SyncStatus:   pr.SyncStatus,
+			LastSyncAt:   lastSync,
+			LastError:    pr.LastError,
+		})
+	}
+	if o.PlatformConnections == nil {
+		o.PlatformConnections = []PlatformConnectionStatus{}
+	}
+
+	// Agent statuses (read from unified action / decision tables)
+	type aRow struct {
+		AgentID string
+		Cnt     int64
+		LastAct *time.Time
+	}
+	var ars []aRow
+	s.db.Table("unified_action").
+		Select("agent_id, COUNT(*) AS cnt, MAX(created_at) AS last_act").
+		Where("created_at >= ?", time.Now().Add(-24*time.Hour)).
+		Group("agent_id").
+		Scan(&ars)
+	agentNames := map[string]string{
+		"A4": "客服助手", "A5": "库存预警", "A6": "利润监控",
+		"A8": "结算对账", "A10": "物流运营", "A9": "批量运营",
+		"G0": "协调仲裁", "G1": "驾驶舱", "G3": "折扣风控",
+	}
+	for _, ar := range ars {
+		var lastAct *string
+		if ar.LastAct != nil {
+			s := ar.LastAct.Format("2006-01-02T15:04:05Z")
+			lastAct = &s
+		}
+		name := agentNames[ar.AgentID]
+		if name == "" {
+			name = ar.AgentID
+		}
+		status := "active"
+		if ar.Cnt == 0 {
+			status = "idle"
+		}
+		o.AgentStatuses = append(o.AgentStatuses, AgentStatusEntry{
+			AgentID:      ar.AgentID,
+			Name:         name,
+			Status:       status,
+			LastActivity: lastAct,
+		})
+	}
+	if o.AgentStatuses == nil {
+		o.AgentStatuses = []AgentStatusEntry{}
+	}
+
 	return o, nil
 }
 
