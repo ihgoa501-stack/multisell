@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 
 const tools = [
@@ -114,18 +116,30 @@ function statusBadge(status: string) {
 
 /* ─── Filter bar btn ─── */
 
-function FilterBtn({ label, count, active }: { label: string; count?: number; active?: boolean }) {
+function FilterBtn({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count?: number;
+  active?: boolean;
+  onClick?: () => void;
+}) {
   return (
     <button
+      onClick={onClick}
       style={{
         ...btnBase,
-        background: active ? 'var(--i4)' : 'var(--bg)',
-        color: active ? '#fff' : 'var(--t3)',
-        border: active ? 'none' : '1px solid var(--bd)',
+        background: active ? 'rgba(99,102,241,0.08)' : 'transparent',
+        color: active ? 'var(--i4)' : 'var(--t3)',
+        border: active ? '1px solid var(--i4)' : '1px solid var(--bd)',
         fontWeight: active ? 600 : 400,
       }}
     >
-      {label}{count != null ? ` (${count})` : ''}
+      {label}
+      {count != null ? ` (${count})` : ''}
     </button>
   );
 }
@@ -133,6 +147,39 @@ function FilterBtn({ label, count, active }: { label: string; count?: number; ac
 /* ─── Tool sections ─── */
 
 function ProductsContent() {
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([
+    'BH-1001',
+    'PB-2002',
+    'FB-3003',
+  ]);
+
+  const filteredProducts = products.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  const toggleProduct = (sku: string) => {
+    setSelectedProducts((prev) =>
+      prev.includes(sku) ? prev.filter((s) => s !== sku) : [...prev, sku],
+    );
+  };
+
+  const toggleAllProducts = () => {
+    if (selectedProducts.length === filteredProducts.length) {
+      setSelectedProducts([]);
+    } else {
+      setSelectedProducts(filteredProducts.map((p) => p.sku));
+    }
+  };
+
+  const estimatedTotal = selectedProducts
+    .reduce((sum, sku) => {
+      const p = products.find((pr) => pr.sku === sku);
+      return sum + (p ? p.suggested : 0);
+    }, 0)
+    .toFixed(2);
+
   const gridCols = '20px 1fr 60px 44px 56px 56px 52px';
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -152,6 +199,25 @@ function ProductsContent() {
         {'✦'} AI 助理已筛选 2,847 件商品，展示 Top 5
       </div>
 
+      {/* Search input */}
+      <input
+        type="text"
+        placeholder="搜索商品名称..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        style={{
+          marginBottom: 8,
+          padding: '4px 8px',
+          border: '1px solid var(--bd)',
+          borderRadius: 4,
+          background: 'var(--bg)',
+          color: 'var(--t1)',
+          fontFamily: 'var(--body)',
+          fontSize: '0.7rem',
+          outline: 'none',
+        }}
+      />
+
       {/* Header row */}
       <div
         style={{
@@ -165,8 +231,21 @@ function ProductsContent() {
           fontFamily: 'var(--body)',
         }}
       >
-        <input type="checkbox" style={{ accentColor: 'var(--i4)' }} />
-        <span style={cell}>名称</span>
+        <input
+          type="checkbox"
+          checked={
+            filteredProducts.length > 0 &&
+            selectedProducts.length === filteredProducts.length
+          }
+          onChange={toggleAllProducts}
+          style={{ accentColor: 'var(--i4)' }}
+        />
+        <span
+          style={{ ...cell, cursor: 'pointer', color: 'var(--i4)' }}
+          onClick={() => router.push('/products')}
+        >
+          商品管理
+        </span>
         <span style={cell}>SKU</span>
         <span style={cell}>库存</span>
         <span style={cell}>当前价</span>
@@ -175,7 +254,7 @@ function ProductsContent() {
       </div>
 
       {/* Rows */}
-      {products.map((p, i) => (
+      {filteredProducts.map((p, i) => (
         <div
           key={p.sku}
           style={{
@@ -183,19 +262,33 @@ function ProductsContent() {
             gridTemplateColumns: gridCols,
             gap: 2,
             padding: '5px 0',
-            borderBottom: i < products.length - 1 ? '1px solid var(--bd2)' : 'none',
+            borderBottom:
+              i < filteredProducts.length - 1
+                ? '1px solid var(--bd2)'
+                : 'none',
             fontSize: '0.7rem',
             fontFamily: 'var(--body)',
             color: 'var(--t2)',
             alignItems: 'center',
           }}
         >
-          <input type="checkbox" defaultChecked={i < 3} style={{ accentColor: 'var(--i4)' }} />
+          <input
+            type="checkbox"
+            checked={selectedProducts.includes(p.sku)}
+            onChange={() => toggleProduct(p.sku)}
+            style={{ accentColor: 'var(--i4)' }}
+          />
           <span style={cell}>{p.name}</span>
           <span style={{ ...cell, color: 'var(--t3)' }}>{p.sku}</span>
-          <span style={{ ...cell, color: stockColor(p.stock), fontWeight: 600 }}>{p.stock}</span>
+          <span
+            style={{ ...cell, color: stockColor(p.stock), fontWeight: 600 }}
+          >
+            {p.stock}
+          </span>
           <span style={cell}>${p.price.toFixed(2)}</span>
-          <span style={{ ...cell, color: 'var(--c4)', fontWeight: 600 }}>${p.suggested.toFixed(2)}</span>
+          <span style={{ ...cell, color: 'var(--c4)', fontWeight: 600 }}>
+            ${p.suggested.toFixed(2)}
+          </span>
           <span style={cell}>{statusBadge(p.status)}</span>
         </div>
       ))}
@@ -214,8 +307,11 @@ function ProductsContent() {
           color: 'var(--t2)',
         }}
       >
-        <span>已选 3 件 · 预估 $100.48</span>
+        <span>
+          已选 {selectedProducts.length} 件 · 预估 ${estimatedTotal}
+        </span>
         <button
+          onClick={() => alert('AI 确认发布已触发')}
           style={{
             ...btnBase,
             background: 'linear-gradient(135deg, var(--i5), var(--c4))',
@@ -232,14 +328,50 @@ function ProductsContent() {
 }
 
 function PublishContent() {
+  const router = useRouter();
+  const [selectedPublish, setSelectedPublish] = useState<string[]>([
+    '蓝牙耳机 — Shopee',
+    '蓝牙耳机 — Lazada',
+  ]);
+  const [activePublishFilter, setActivePublishFilter] = useState('待发布');
+
+  const togglePublishItem = (name: string) => {
+    setSelectedPublish((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
+    );
+  };
+
+  const toggleAllPublish = () => {
+    if (selectedPublish.length === publishItems.length) {
+      setSelectedPublish([]);
+    } else {
+      setSelectedPublish(publishItems.map((item) => item.name));
+    }
+  };
+
   const gridCols = '20px 1fr 56px 60px 44px';
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       {/* Filter buttons */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-        <FilterBtn label="待发布" count={8} active />
-        <FilterBtn label="已发布" count={24} />
-        <FilterBtn label="失败" count={2} />
+        <FilterBtn
+          label="待发布"
+          count={8}
+          active={activePublishFilter === '待发布'}
+          onClick={() => setActivePublishFilter('待发布')}
+        />
+        <FilterBtn
+          label="已发布"
+          count={24}
+          active={activePublishFilter === '已发布'}
+          onClick={() => setActivePublishFilter('已发布')}
+        />
+        <FilterBtn
+          label="失败"
+          count={2}
+          active={activePublishFilter === '失败'}
+          onClick={() => setActivePublishFilter('失败')}
+        />
       </div>
 
       {/* Header */}
@@ -255,7 +387,12 @@ function PublishContent() {
           fontFamily: 'var(--body)',
         }}
       >
-        <input type="checkbox" style={{ accentColor: 'var(--i4)' }} />
+        <input
+          type="checkbox"
+          checked={selectedPublish.length === publishItems.length}
+          onChange={toggleAllPublish}
+          style={{ accentColor: 'var(--i4)' }}
+        />
         <span style={cell}>名称</span>
         <span style={cell}>平台</span>
         <span style={cell}>状态</span>
@@ -266,28 +403,52 @@ function PublishContent() {
       {publishItems.map((item, i) => (
         <div
           key={i}
+          onClick={() => router.push('/products')}
           style={{
             display: 'grid',
             gridTemplateColumns: gridCols,
             gap: 2,
             padding: '5px 0',
-            borderBottom: i < publishItems.length - 1 ? '1px solid var(--bd2)' : 'none',
+            borderBottom:
+              i < publishItems.length - 1
+                ? '1px solid var(--bd2)'
+                : 'none',
             fontSize: '0.7rem',
             fontFamily: 'var(--body)',
             color: 'var(--t2)',
             alignItems: 'center',
+            cursor: 'pointer',
           }}
         >
-          <input type="checkbox" defaultChecked={item.status === '待发布'} style={{ accentColor: 'var(--i4)' }} />
+          <input
+            type="checkbox"
+            checked={selectedPublish.includes(item.name)}
+            onChange={() => togglePublishItem(item.name)}
+            onClick={(e) => e.stopPropagation()}
+            style={{ accentColor: 'var(--i4)' }}
+          />
           <span style={cell}>{item.name}</span>
-          <span style={{ ...cell, color: 'var(--t3)' }}>{item.platform}</span>
+          <span style={{ ...cell, color: 'var(--t3)' }}>
+            {item.platform}
+          </span>
           <span style={cell}>{statusBadge(item.status)}</span>
           <span style={cell}>
             {item.status === '待发布' && (
-              <button style={{ ...btnBase, background: 'var(--i4)', color: '#fff' }}>发布</button>
+              <button
+                style={{ ...btnBase, background: 'var(--i4)', color: '#fff' }}
+              >
+                发布
+              </button>
             )}
             {item.status === '失败' && (
-              <button style={{ ...btnBase, background: 'var(--bg)', color: 'var(--t3)', border: '1px solid var(--bd)' }}>
+              <button
+                style={{
+                  ...btnBase,
+                  background: 'var(--bg)',
+                  color: 'var(--t3)',
+                  border: '1px solid var(--bd)',
+                }}
+              >
                 重试
               </button>
             )}
@@ -297,15 +458,52 @@ function PublishContent() {
           </span>
         </div>
       ))}
+
+      {/* Bottom bar */}
+      <div
+        style={{
+          marginTop: 'auto',
+          borderTop: '1px solid var(--bd)',
+          padding: '8px 0 0',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          fontSize: '0.7rem',
+          fontFamily: 'var(--body)',
+          color: 'var(--t2)',
+        }}
+      >
+        <button
+          onClick={() => alert('AI 批量发布已确认')}
+          style={{
+            ...btnBase,
+            background: 'linear-gradient(135deg, var(--i5), var(--c4))',
+            color: '#fff',
+            fontWeight: 500,
+            padding: '3px 10px',
+          }}
+        >
+          {'✦'} AI 批量发布
+        </button>
+      </div>
     </div>
   );
 }
 
 function AnalyticsContent() {
+  const [activeDateFilter, setActiveDateFilter] = useState('近7天');
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       {/* KPI cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
+          marginBottom: 10,
+        }}
+      >
         {analyticsKpis.map((kpi) => (
           <div
             key={kpi.label}
@@ -353,9 +551,21 @@ function AnalyticsContent() {
 
       {/* Date filters */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        <FilterBtn label="近7天" active />
-        <FilterBtn label="近30天" />
-        <FilterBtn label="自定义" />
+        <FilterBtn
+          label="近7天"
+          active={activeDateFilter === '近7天'}
+          onClick={() => setActiveDateFilter('近7天')}
+        />
+        <FilterBtn
+          label="近30天"
+          active={activeDateFilter === '近30天'}
+          onClick={() => setActiveDateFilter('近30天')}
+        />
+        <FilterBtn
+          label="自定义"
+          active={activeDateFilter === '自定义'}
+          onClick={() => setActiveDateFilter('自定义')}
+        />
       </div>
 
       {/* Table header */}
@@ -386,7 +596,10 @@ function AnalyticsContent() {
             gridTemplateColumns: '50px 1fr 44px 56px',
             gap: 2,
             padding: '5px 0',
-            borderBottom: i < analyticsRows.length - 1 ? '1px solid var(--bd2)' : 'none',
+            borderBottom:
+              i < analyticsRows.length - 1
+                ? '1px solid var(--bd2)'
+                : 'none',
             fontSize: '0.7rem',
             fontFamily: 'var(--body)',
             color: 'var(--t2)',
@@ -396,7 +609,9 @@ function AnalyticsContent() {
           <span style={{ ...cell, color: 'var(--t3)' }}>{row.date}</span>
           <span style={{ ...cell, fontWeight: 500 }}>{row.sales}</span>
           <span style={cell}>{row.orders}</span>
-          <span style={{ ...cell, color: 'var(--t3)' }}>{row.platform}</span>
+          <span style={{ ...cell, color: 'var(--t3)' }}>
+            {row.platform}
+          </span>
         </div>
       ))}
     </div>
@@ -404,9 +619,30 @@ function AnalyticsContent() {
 }
 
 function PricingContent() {
+  const [activePricingFilter, setActivePricingFilter] = useState('全部');
+
   const gridCols = '1fr 56px 56px 56px 48px';
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      {/* Filter buttons */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+        <FilterBtn
+          label="全部"
+          active={activePricingFilter === '全部'}
+          onClick={() => setActivePricingFilter('全部')}
+        />
+        <FilterBtn
+          label="低于均价"
+          active={activePricingFilter === '低于均价'}
+          onClick={() => setActivePricingFilter('低于均价')}
+        />
+        <FilterBtn
+          label="需调价"
+          active={activePricingFilter === '需调价'}
+          onClick={() => setActivePricingFilter('需调价')}
+        />
+      </div>
+
       {/* Header */}
       <div
         style={{
@@ -438,7 +674,10 @@ function PricingContent() {
               gridTemplateColumns: gridCols,
               gap: 2,
               padding: '5px 0',
-              borderBottom: i < priceComparisons.length - 1 ? '1px solid var(--bd2)' : 'none',
+              borderBottom:
+                i < priceComparisons.length - 1
+                  ? '1px solid var(--bd2)'
+                  : 'none',
               fontSize: '0.7rem',
               fontFamily: 'var(--body)',
               color: 'var(--t2)',
@@ -447,8 +686,12 @@ function PricingContent() {
           >
             <span style={cell}>{p.name}</span>
             <span style={cell}>${p.current.toFixed(2)}</span>
-            <span style={{ ...cell, color: 'var(--t3)' }}>${p.avg.toFixed(2)}</span>
-            <span style={{ ...cell, color: 'var(--c4)', fontWeight: 600 }}>${p.suggested.toFixed(2)}</span>
+            <span style={{ ...cell, color: 'var(--t3)' }}>
+              ${p.avg.toFixed(2)}
+            </span>
+            <span style={{ ...cell, color: 'var(--c4)', fontWeight: 600 }}>
+              ${p.suggested.toFixed(2)}
+            </span>
             <span style={{ ...cell, color: diffColor, fontWeight: 600 }}>
               {p.diff > 0 ? '+' : ''}${Math.abs(p.diff).toFixed(2)}
             </span>
@@ -470,7 +713,15 @@ function PricingContent() {
           alignItems: 'center',
         }}
       >
-        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'var(--r4)' }} />
+        <span
+          style={{
+            display: 'inline-block',
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: 'var(--r4)',
+          }}
+        />
         低于行业均价 $3.01
       </div>
     </div>
@@ -574,6 +825,7 @@ function AICopyContent() {
       >
         <span>生成中: 8/15 件</span>
         <button
+          onClick={() => alert('AI 文案已全部应用')}
           style={{
             ...btnBase,
             background: 'linear-gradient(135deg, var(--i5), var(--c4))',
@@ -623,7 +875,8 @@ export default function ToolPanel() {
         display: 'flex',
         flexDirection: 'column',
         flexShrink: 0,
-        transition: 'width 0.4s cubic-bezier(0.22, 1, 0.36, 1), border 0.4s ease',
+        transition:
+          'width 0.4s cubic-bezier(0.22, 1, 0.36, 1), border 0.4s ease',
       }}
     >
       {toolPanelOpen && (
