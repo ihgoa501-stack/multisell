@@ -27,13 +27,18 @@ var testDBCounter atomic.Int64
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	n := testDBCounter.Add(1)
-	dsn := fmt.Sprintf("file:lingmirror_test_%d?mode=memory&cache=shared", n)
+	dsn := fmt.Sprintf("file:lingmirror_test_%d?mode=memory&cache=shared&_busy_timeout=5000", n)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&AITrace{}, &AITraceEvent{}, &AIEvidenceRef{}, &UnifiedAction{}, &trustscore.TrustScore{}, &actionpolicy.PolicyRule{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
