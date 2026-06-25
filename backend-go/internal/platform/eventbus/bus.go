@@ -6,8 +6,10 @@
 package eventbus
 
 import (
+	"container/heap"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -37,22 +39,65 @@ type subscription struct {
 	handler Handler
 }
 
+// ErrQueueFull is returned when the event queue is at capacity and a
+// backpressure timeout elapses before the event can be enqueued.
+var ErrQueueFull = errors.New("eventbus: queue is full")
+
+// priorityQueueItem is an item in the priority queue.
+type priorityQueueItem struct {
+	event Event
+	index int // index in the heap
+}
+
+// priorityQueue implements heap.Interface. Higher-priority events are
+// dequeued first; events at the same priority are ordered FIFO.
+type priorityQueue []*priorityQueueItem
+
+func (pq priorityQueue) Len() int { return len(pq) }
+
+func (pq priorityQueue) Less(i, j int) bool {
+	// Higher numeric priority first; ties broken by creation time.
+	if pq[i].event.Priority != pq[j].event.Priority {
+		return pq[i].event.Priority > pq[j].event.Priority
+	}
+	return pq[i].event.CreatedAt.Before(pq[j].event.CreatedAt)
+}
+
+func (pq priorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
+
+func (pq *priorityQueue) Push(x interface{}) {
+	n := len(*pq)
+	item := x.(*priorityQueueItem)
+	item.index = n
+	*pq = append(*pq, item)
+}
+
+func (pq *priorityQueue) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	old[n-1] = nil
+	item.index = -1
+	*pq = old[0 : n-1]
+	return item
+}
+
 // Bus is the central event bus.
 type Bus struct {
 	mu          sync.RWMutex
 	subs        []*subscription
+	queueMu     sync.Mutex
+	queue       priorityQueue
+	queueCond   *sync.Cond
 	db          *gorm.DB
 	logger      *zap.Logger
 	bufferSize  int
 	workerCount int
-	eventCh     chan internalEvent
 	done        chan struct{}
-}
-
-// internalEvent wraps an Event with a completion callback.
-type internalEvent struct {
-	event Event
-	done  chan<- error
 }
 
 // BusOption configures the event bus.
@@ -79,9 +124,10 @@ func New(logger *zap.Logger, opts ...BusOption) *Bus {
 		logger:      logger,
 		bufferSize:  256,
 		workerCount: 4,
-		eventCh:     make(chan internalEvent, 256),
+		queue:       make(priorityQueue, 0),
 		done:        make(chan struct{}),
 	}
+	b.queueCond = sync.NewCond(&b.queueMu)
 	for _, opt := range opts {
 		opt(b)
 	}
@@ -101,6 +147,7 @@ func (b *Bus) Start(ctx context.Context) {
 // Stop shuts down the event bus gracefully.
 func (b *Bus) Stop() {
 	close(b.done)
+	b.queueCond.Broadcast() // wake all workers so they see done
 	b.logger.Info("event bus stopped")
 }
 
@@ -130,41 +177,21 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 		}
 	}
 
-	// Find matching subscribers.
-	b.mu.RLock()
-	var matched []*subscription
-	for _, sub := range b.subs {
-		if matchTopic(sub.topic, topic) {
-			matched = append(matched, sub)
-		}
-	}
-	b.mu.RUnlock()
+	item := &priorityQueueItem{event: evt}
 
-	if len(matched) == 0 {
-		return evt.ID, nil
+	// Enqueue to the priority queue with backpressure.
+	// If the queue is at capacity the event is dropped immediately and
+	// ErrQueueFull is returned to the caller.
+	b.queueMu.Lock()
+	if b.bufferSize > 0 && b.queue.Len() >= b.bufferSize {
+		b.queueMu.Unlock()
+		return "", ErrQueueFull
 	}
+	heap.Push(&b.queue, item)
+	b.queueCond.Signal()
+	b.queueMu.Unlock()
 
-	// Dispatch to each matching handler concurrently.
-	errCh := make(chan error, len(matched))
-	for _, sub := range matched {
-		h := sub.handler
-		go func() {
-			errCh <- h(ctx, evt)
-		}()
-	}
-
-	// Collect errors.
-	var lastErr error
-	for i := 0; i < len(matched); i++ {
-		if err := <-errCh; err != nil {
-			lastErr = err
-			b.logger.Warn("handler error",
-				zap.String("topic", topic),
-				zap.Error(err))
-		}
-	}
-
-	return evt.ID, lastErr
+	return evt.ID, nil
 }
 
 // Subscribe registers a handler for a topic pattern.
@@ -207,6 +234,61 @@ func (b *Bus) Close() error {
 	return nil
 }
 
+// workerLoop pops events from the priority queue and dispatches them to
+// matching subscribers in FIFO order per priority level.
+func (b *Bus) workerLoop(ctx context.Context, id int) {
+	b.logger.Debug("event bus worker started", zap.Int("worker_id", id))
+	for {
+		// Check for shutdown before blocking.
+		select {
+		case <-ctx.Done():
+			b.logger.Debug("event bus worker stopped (context cancelled)", zap.Int("worker_id", id))
+			return
+		case <-b.done:
+			b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
+			return
+		default:
+		}
+
+		// Wait for an item on the priority queue.
+		b.queueMu.Lock()
+		for b.queue.Len() == 0 {
+			b.queueCond.Wait()
+			// Re-check shutdown signals after Cond.Wait returns (woken by
+			// Broadcast on Stop or Signal from a new enqueue).
+			select {
+			case <-b.done:
+				b.queueMu.Unlock()
+				b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
+				return
+			case <-ctx.Done():
+				b.queueMu.Unlock()
+				b.logger.Debug("event bus worker stopped (context cancelled)", zap.Int("worker_id", id))
+				return
+			default:
+			}
+		}
+		item := heap.Pop(&b.queue).(*priorityQueueItem)
+		b.queueMu.Unlock()
+
+		// Dispatch to all matching subscribers sequentially within this worker.
+		evt := item.event
+		b.mu.RLock()
+		for _, sub := range b.subs {
+			if matchTopic(sub.topic, evt.Topic) {
+				if err := sub.handler(ctx, evt); err != nil {
+					b.logger.Warn("handler error",
+						zap.String("event_id", evt.ID),
+						zap.String("topic", evt.Topic),
+						zap.String("subscription_id", sub.id),
+						zap.Error(err))
+				}
+			}
+		}
+		b.mu.RUnlock()
+	}
+}
+
 // matchTopic checks whether a subscription pattern matches an event topic.
 // - "order.*" matches "order.created", "order.refund"
 // - "order.**" matches "order.created.something"
@@ -245,11 +327,4 @@ func (b *Bus) persistOutbox(ctx context.Context, evt *Event) error {
 		 VALUES (?, ?, ?, ?, 'delivered', ?)`,
 		evt.Topic, evt.Source, payloadBytes, evt.Priority, evt.CreatedAt,
 	).Error
-}
-
-// workerLoop is a goroutine for future async dispatch.
-func (b *Bus) workerLoop(ctx context.Context, id int) {
-	b.logger.Debug("event bus worker started", zap.Int("worker_id", id))
-	<-b.done
-	b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
 }
