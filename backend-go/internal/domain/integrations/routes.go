@@ -16,6 +16,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		// collection-level (static)
 		group.GET("", h.List)
 		group.POST("", h.Create)
+		group.POST("/publish-to-ozon", h.PublishToOzon)
 
 		// member-level (with :id)
 		group.GET("/:id", h.Get)

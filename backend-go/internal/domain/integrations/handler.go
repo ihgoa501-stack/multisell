@@ -179,6 +179,21 @@ func (h *Handler) ListOzonProducts(c *gin.Context) {
 	}
 	response.Success(c, products)
 }
+
+// PublishToOzon POST /platform-integrations/publish-to-ozon
+func (h *Handler) PublishToOzon(c *gin.Context) {
+	var in PublishToOzonInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := h.service.PublishToOzon(c.Request.Context(), &in)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
 func (h *Handler) ListCategories(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {

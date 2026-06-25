@@ -3,10 +3,12 @@ package integrations
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -240,4 +242,81 @@ func (s *Service) CreateAttributeMapping(accountID int64, in *CreateAttributeMap
 		return nil, err
 	}
 	return &m, nil
+}
+
+// PublishToOzonInput is the request payload for publishing a product to Ozon.
+type PublishToOzonInput struct {
+	ProductID    int64   `json:"product_id" binding:"required"`
+	AccountID    int64   `json:"account_id" binding:"required"`
+	Price        float64 `json:"price" binding:"required"`
+	CurrencyCode string  `json:"currency_code"`
+	ImageURL     string  `json:"image_url,omitempty"`
+}
+
+// PublishToOzon publishes a local product to the Ozon platform.
+func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*PublishResult, error) {
+	// Resolve product
+	var prod sku.Product
+	if err := s.db.WithContext(ctx).First(&prod, in.ProductID).Error; err != nil {
+		return nil, fmt.Errorf("publish to ozon: product %d not found", in.ProductID)
+	}
+	// Resolve SKUs for product
+	type skuRow struct {
+		ID   int64
+		Code string
+	}
+	var skus []skuRow
+	if err := s.db.Table("sku").Where("product_id = ?", in.ProductID).Find(&skus).Error; err != nil {
+		return nil, fmt.Errorf("publish to ozon: list skus: %w", err)
+	}
+	if len(skus) == 0 {
+		return nil, fmt.Errorf("publish to ozon: product %d has no SKUs", in.ProductID)
+	}
+	// Resolve integration account
+	var acct PlatformIntegrationAccount
+	if err := s.db.WithContext(ctx).First(&acct, in.AccountID).Error; err != nil {
+		return nil, fmt.Errorf("publish to ozon: account %d not found", in.AccountID)
+	}
+	// Resolve platform code
+	var plat struct{ Code string }
+	if err := s.db.Table("platform").Select("code").Where("id = ?", acct.PlatformID).Scan(&plat).Error; err != nil {
+		return nil, fmt.Errorf("publish to ozon: platform lookup: %w", err)
+	}
+	// Get adapter
+	adapter, ok := GetAdapter(plat.Code)
+	if !ok {
+		return nil, fmt.Errorf("publish to ozon: no adapter for platform %s", plat.Code)
+	}
+	// Map to PublishInput
+	prices := make(map[int64]string)
+	inventories := make(map[int64]int)
+	publishSKUs := make([]PublishSKU, 0, len(skus))
+	for _, sk := range skus {
+		publishSKUs = append(publishSKUs, PublishSKU{SkuID: sk.ID, SkuCode: sk.Code})
+		prices[sk.ID] = fmt.Sprintf("%.2f", in.Price)
+		var stock int64
+		s.db.Table("sku").Select("stock").Where("id = ?", sk.ID).Scan(&stock)
+		inventories[sk.ID] = int(stock)
+	}
+	pkgH, _ := prod.PackageHeightCm.Float64()
+	pkgW, _ := prod.PackageWidthCm.Float64()
+	pkgL, _ := prod.PackageLengthCm.Float64()
+	pkgWt, _ := prod.PackageWeightKg.Float64()
+
+	return adapter.Publish(ctx, &PublishInput{
+		ProductID:      prod.ID,
+		PlatformID:     acct.PlatformID,
+		AccountID:      in.AccountID,
+		ProductName:    prod.Name,
+		Description:    prod.Description,
+		CategoryID:     prod.CategoryID,
+		SKUs:           publishSKUs,
+		Prices:         prices,
+		Inventories:    inventories,
+		PackageHeight:  pkgH,
+		PackageWidth:   pkgW,
+		PackageLength:  pkgL,
+		PackageWeight:  pkgWt,
+		MainImage:      in.ImageURL,
+	})
 }
