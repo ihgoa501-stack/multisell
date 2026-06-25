@@ -251,24 +251,32 @@ export default function CrudListPage({
 
   // ---------- Render ----------
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
       {/* Header */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 16,
+          marginBottom: 12,
         }}
       >
-        <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
+        <h1 style={{
+          fontFamily: 'var(--ds)',
+          fontWeight: 600,
+          fontSize: '1rem',
+          color: 'var(--t1)',
+          margin: 0,
+        }}>{title}</h1>
         <Space>
           {showExport && (
-            <Button icon={<DownloadOutlined />} onClick={onExport}>
+            <Button icon={<DownloadOutlined />} onClick={onExport}
+              style={{ fontFamily: 'var(--body)', fontSize: '0.8rem' }}>
               导出
             </Button>
           )}
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()}
+            style={{ fontFamily: 'var(--body)', fontSize: '0.8rem' }}>
             刷新
           </Button>
           {editable && (
@@ -280,6 +288,7 @@ export default function CrudListPage({
                 form.resetFields();
                 setModalOpen(true);
               }}
+              style={{ fontFamily: 'var(--body)', fontSize: '0.8rem' }}
             >
               新建{singular}
             </Button>

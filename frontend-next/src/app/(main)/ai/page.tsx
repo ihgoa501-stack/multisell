@@ -1,36 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import {
-  Badge,
-  Button,
-  Card,
-  Col,
-  Empty,
-  Input,
-  message,
-  Row,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-} from 'antd';
-import {
-  PlayCircleOutlined,
-  ReloadOutlined,
-  SendOutlined,
-  CheckOutlined,
-  CloseOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons';
+import { useState } from 'react';
+import { message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
 import { getCurrentOperator } from '@/lib/user';
-
-const { Text, Paragraph } = Typography;
+import { useAppStore } from '@/stores/app-store';
 
 // ---------- Types ----------
 interface AiAgent {
@@ -88,42 +65,48 @@ interface RunResponse {
   action?: UnifiedAction;
 }
 
-// ---------- Color helpers ----------
-const squadColor = (squad: string): string => {
-  if (squad === 'autonomous') return 'blue';
-  if (squad === 'governance') return 'purple';
-  if (squad === 'ops') return 'gold';
-  return 'default';
+// ---------- CSS variable color helpers ----------
+const squadVar = (squad: string): string => {
+  if (squad === 'autonomous') return 'var(--i4)';
+  if (squad === 'governance') return 'var(--c4)';
+  if (squad === 'ops') return 'var(--y4)';
+  return 'var(--t3)';
 };
 
-const autonomyColor = (level: string): string => {
-  if (level === 'advisory') return 'green';
-  if (level === 'guided') return 'blue';
-  if (level === 'autonomous') return 'cyan';
-  if (level === 'supervised') return 'orange';
-  return 'default';
+const riskVar = (level: string): string => {
+  if (level === 'high' || level === 'critical') return 'var(--r4)';
+  if (level === 'medium') return 'var(--y4)';
+  if (level === 'low') return 'var(--g4)';
+  return 'var(--i4)';
 };
 
-const riskColor = (level: string): string => {
-  if (level === 'high' || level === 'critical') return 'red';
-  if (level === 'medium') return 'orange';
-  if (level === 'low') return 'green';
-  return 'blue';
+const statusVar = (status: string): string => {
+  if (status === 'suggested') return 'var(--i4)';
+  if (status === 'approved' || status === 'executed') return 'var(--g4)';
+  if (status === 'executing') return 'var(--c4)';
+  if (status === 'rejected' || status === 'failed') return 'var(--r4)';
+  if (status === 'reviewed') return 'var(--t3)';
+  return 'var(--i4)';
 };
 
-const statusColor = (status: string): string => {
-  if (status === 'suggested') return 'blue';
-  if (status === 'approved' || status === 'executed') return 'green';
-  if (status === 'executing') return 'cyan';
-  if (status === 'rejected' || status === 'failed') return 'red';
-  if (status === 'reviewed') return 'default';
-  return 'blue';
+const autonomyTextColor = (level: string): string => {
+  if (level === 'advisory') return 'var(--g4)';
+  if (level === 'guided') return 'var(--i4)';
+  if (level === 'autonomous') return 'var(--c4)';
+  if (level === 'supervised') return 'var(--y4)';
+  return 'var(--t3)';
 };
 
-const confidenceColor = (c: number): string => {
-  if (c >= 0.8) return 'green';
-  if (c >= 0.5) return 'orange';
-  return 'red';
+const confidenceLabel = (c: number): string => (c * 100).toFixed(0) + '%';
+
+// ---------- Reusable style blocks ----------
+const sectionHeader: React.CSSProperties = {
+  fontSize: '0.62rem',
+  fontWeight: 600,
+  letterSpacing: '0.07em',
+  textTransform: 'uppercase',
+  color: 'var(--t4)',
+  marginBottom: 6,
 };
 
 // ---------- Page ----------
@@ -131,10 +114,14 @@ export default function AICommandPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [command, setCommand] = useState('');
+  const [sentMessage, setSentMessage] = useState('');
   const [chatResult, setChatResult] = useState<ChatResponse | null>(null);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
 
-  // Agents
+  // Keep a reference to the app store
+  useAppStore();
+
+  // ---------- Queries ----------
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
     queryKey: ['ai-agents'],
     queryFn: async () => {
@@ -143,7 +130,6 @@ export default function AICommandPage() {
     },
   });
 
-  // Pending actions (suggested)
   const { data: actionsData, isLoading: actionsLoading } = useQuery({
     queryKey: ['ai-actions-suggested'],
     queryFn: async () => {
@@ -155,7 +141,6 @@ export default function AICommandPage() {
     },
   });
 
-  // Recent traces
   const { data: tracesData, isLoading: tracesLoading } = useQuery({
     queryKey: ['ai-traces-recent'],
     queryFn: async () => {
@@ -166,18 +151,7 @@ export default function AICommandPage() {
     },
   });
 
-  // Group agents by squad
-  const agentsBySquad = useMemo(() => {
-    const map = new Map<string, AiAgent[]>();
-    (agentsData ?? []).forEach((a) => {
-      const list = map.get(a.squad) ?? [];
-      list.push(a);
-      map.set(a.squad, list);
-    });
-    return Array.from(map.entries());
-  }, [agentsData]);
-
-  // Chat mutation
+  // ---------- Mutations ----------
   const chatMutation = useMutation({
     mutationFn: async (msg: string) => {
       const res = await apiClient.post<ChatResponse>('/v1/ai/chat', {
@@ -195,7 +169,6 @@ export default function AICommandPage() {
     onError: (e: Error) => message.error(`命令失败: ${e.message}`),
   });
 
-  // Run agent mutation
   const runMutation = useMutation({
     mutationFn: async (agentId: string) => {
       const res = await apiClient.post<RunResponse>('/v1/ai/run', {
@@ -216,7 +189,6 @@ export default function AICommandPage() {
     onError: (e: Error) => message.error(`Agent 执行失败: ${e.message}`),
   });
 
-  // Action operations
   const approveMutation = useMutation({
     mutationFn: async (id: string) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, {
@@ -254,351 +226,765 @@ export default function AICommandPage() {
     onError: (e: Error) => message.error(`执行失败: ${e.message}`),
   });
 
+  // ---------- Handlers ----------
   const handleSend = () => {
     if (!command.trim()) {
       message.warning('请输入命令');
       return;
     }
-    chatMutation.mutate(command.trim());
+    const msg = command.trim();
+    setSentMessage(msg);
+    setCommand('');
+    chatMutation.mutate(msg);
   };
 
-  const traceColumns = [
-    {
-      title: 'Trace ID',
-      dataIndex: 'trace_id',
-      width: 180,
-      render: (v: string) => <Text code>{v}</Text>,
-    },
-    { title: 'Agent', dataIndex: 'agent_id', width: 140 },
-    { title: '决策点', dataIndex: 'decision_point', width: 140 },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      width: 100,
-      render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag>,
-    },
-    {
-      title: '风险',
-      dataIndex: 'risk_level',
-      width: 90,
-      render: (v: string) => (v ? <Tag color={riskColor(v)}>{v}</Tag> : '-'),
-    },
-    {
-      title: '置信度',
-      dataIndex: 'confidence',
-      width: 90,
-      render: (v?: number) =>
-        v !== undefined && v !== null ? (
-          <Tag color={confidenceColor(v)}>{(v * 100).toFixed(0)}%</Tag>
-        ) : (
-          '-'
-        ),
-    },
-    {
-      title: '开始时间',
-      dataIndex: 'started_at',
-      width: 160,
-      render: (v?: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-'),
-    },
-  ];
-
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
-        AI 指挥中心
-      </h1>
-
-      {/* 顶部命令栏 */}
-      <Card style={{ marginBottom: 16 }}>
-        <Input.Search
-          placeholder="输入自然语言命令，例如：检查库存异常并建议补货方案"
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
-          onSearch={handleSend}
-          enterButton={
-            <Button
-              type="primary"
-              icon={<SendOutlined />}
-              loading={chatMutation.isPending}
-            >
-              发送
-            </Button>
-          }
-          size="large"
-          allowClear
-        />
-      </Card>
-
-      {/* AI 回复展示 */}
-      {(chatResult || runResult) && (
-        <Card style={{ marginBottom: 16 }}>
-          {chatResult && (
-            <>
-              <Space style={{ marginBottom: 8 }}>
-                <Tag color="blue">AI 回复</Tag>
-                <Tag color={confidenceColor(chatResult.confidence)}>
-                  置信度 {(chatResult.confidence * 100).toFixed(0)}%
-                </Tag>
-                <Tag color={riskColor(chatResult.risk_level)}>
-                  风险 {chatResult.risk_level}
-                </Tag>
-                <Text type="secondary">trace: {chatResult.trace_id}</Text>
-              </Space>
-              <Paragraph style={{ margin: 0 }}>{chatResult.answer}</Paragraph>
-            </>
-          )}
-          {runResult && (
-            <>
-              <Space style={{ marginBottom: 8 }}>
-                <Tag color="cyan">Agent 执行</Tag>
-                <Tag color={confidenceColor(runResult.confidence)}>
-                  置信度 {(runResult.confidence * 100).toFixed(0)}%
-                </Tag>
-                <Tag color={riskColor(runResult.risk_level)}>
-                  风险 {runResult.risk_level}
-                </Tag>
-                <Text type="secondary">trace: {runResult.trace_id}</Text>
-              </Space>
-              <Paragraph style={{ margin: 0 }}>{runResult.output}</Paragraph>
-            </>
-          )}
-        </Card>
-      )}
-
-      <Row gutter={16}>
-        {/* 左侧：Agent 名册 */}
-        <Col xs={24} lg={16}>
-          <Card
-            title="Agent 名册"
-            extra={
-              <Button
-                icon={<ReloadOutlined />}
-                size="small"
-                onClick={() => qc.invalidateQueries({ queryKey: ['ai-agents'] })}
-              >
-                刷新
-              </Button>
-            }
-            style={{ marginBottom: 16 }}
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '16px 20px',
+        overflow: 'auto',
+        background: 'var(--bg)',
+        gap: 12,
+      }}
+    >
+      {/* ===== Greeting bar ===== */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingBottom: 8,
+          borderBottom: '1px solid var(--bd)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span
+            style={{
+              fontFamily: 'var(--ds)',
+              fontWeight: 700,
+              fontSize: '0.95rem',
+              color: 'var(--t1)',
+            }}
           >
-            <Spin spinning={agentsLoading}>
-              {agentsBySquad.length === 0 && !agentsLoading ? (
-                <Empty description="暂无 Agent" />
-              ) : (
-                <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                  {agentsBySquad.map(([squad, agents]) => (
-                    <div key={squad}>
-                      <div style={{ marginBottom: 8 }}>
-                        <Tag color={squadColor(squad)}>{squad}</Tag>
-                        <Text type="secondary" style={{ marginLeft: 8 }}>
-                          {agents.length} 个 agent
-                        </Text>
-                      </div>
-                      <Row gutter={[12, 12]}>
-                        {agents.map((agent) => (
-                          <Col xs={24} sm={12} key={agent.agent_id}>
-                            <Card
-                              size="small"
-                              hoverable
-                              onClick={() => runMutation.mutate(agent.agent_id)}
-                              style={{ height: '100%' }}
-                            >
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'flex-start',
-                                }}
-                              >
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <Space size={4} wrap>
-                                    <Text strong>{agent.name}</Text>
-                                    <Tag color={autonomyColor(agent.autonomy_level)}>
-                                      {agent.autonomy_level}
-                                    </Tag>
-                                  </Space>
-                                  <div style={{ marginTop: 4 }}>
-                                    <Text
-                                      type="secondary"
-                                      style={{ fontSize: 12 }}
-                                      ellipsis
-                                    >
-                                      {agent.decision_point}
-                                    </Text>
-                                  </div>
-                                  <div style={{ marginTop: 6 }}>
-                                    <Space size={8}>
-                                      <Badge
-                                        count={`待办 ${agent.pending_count}`}
-                                        style={{
-                                          backgroundColor:
-                                            agent.pending_count > 0
-                                              ? '#fa8c16'
-                                              : '#52c41a',
-                                        }}
-                                      />
-                                      <Tag color={confidenceColor(agent.avg_confidence)}>
-                                        置信 {(agent.avg_confidence * 100).toFixed(0)}%
-                                      </Tag>
-                                    </Space>
-                                  </div>
-                                </div>
-                                <Button
-                                  type="link"
-                                  icon={<PlayCircleOutlined />}
-                                  loading={
-                                    runMutation.isPending &&
-                                    runMutation.variables === agent.agent_id
-                                  }
-                                  size="small"
-                                />
-                              </div>
-                            </Card>
-                          </Col>
-                        ))}
-                      </Row>
-                    </div>
-                  ))}
-                </Space>
-              )}
-            </Spin>
-          </Card>
-        </Col>
+            AI 指挥中心
+          </span>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            fontSize: '0.68rem',
+            color: 'var(--t3)',
+            fontWeight: 500,
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--c4)',
+              display: 'inline-block',
+            }}
+          />
+          <span>就绪</span>
+        </div>
+      </div>
 
-        {/* 右侧：实时决策流 */}
-        <Col xs={24} lg={8}>
-          <Card
-            title="实时决策流"
-            extra={
-              <Button
-                icon={<ReloadOutlined />}
-                size="small"
-                onClick={() =>
-                  qc.invalidateQueries({ queryKey: ['ai-actions-suggested'] })
-                }
-              >
-                刷新
-              </Button>
-            }
+      {/* ===== Agent greeting message ===== */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            flexShrink: 0,
+            background: 'linear-gradient(135deg, var(--i5), var(--c5))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.75rem',
+            color: 'white',
+            marginTop: 2,
+          }}
+        >
+          ✦
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              color: 'var(--t2)',
+              marginBottom: 2,
+            }}
           >
-            <Spin spinning={actionsLoading}>
-              {(actionsData ?? []).length === 0 && !actionsLoading ? (
-                <Empty description="暂无待审批动作" />
-              ) : (
-                <Space direction="vertical" style={{ width: '100%' }} size="small">
-                  {(actionsData ?? []).map((action) => (
-                    <Card
-                      key={action.id}
-                      size="small"
+            凌镜 Agent
+          </div>
+          <div
+            style={{
+              fontSize: '0.88rem',
+              lineHeight: 1.6,
+              color: 'var(--t1)',
+              background: 'var(--s1)',
+              padding: '10px 14px',
+              borderRadius: 8,
+              border: '1px solid var(--bd)',
+            }}
+          >
+            ☀️ 早上好！需要我做什么？
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Agent 名册 ===== */}
+      {agentsLoading ? (
+        <div
+          style={{
+            fontSize: '0.72rem',
+            color: 'var(--t3)',
+            padding: '4px 0',
+          }}
+        >
+          loading agents...
+        </div>
+      ) : (agentsData ?? []).length === 0 ? (
+        <div
+          style={{
+            fontSize: '0.72rem',
+            color: 'var(--t3)',
+            padding: '4px 0',
+          }}
+        >
+          暂无 Agent
+        </div>
+      ) : (
+        <>
+          <div style={sectionHeader}>Agent 名册</div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+              gap: 6,
+            }}
+          >
+            {(agentsData ?? []).map((agent) => (
+              <button
+                key={agent.agent_id}
+                onClick={() => runMutation.mutate(agent.agent_id)}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  background: 'var(--s1)',
+                  border: '1px solid var(--bd)',
+                  color: 'var(--t1)',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--body)',
+                  fontSize: '0.75rem',
+                  textAlign: 'left',
+                  transition: 'background 80ms',
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    'var(--s2)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    'var(--s1)';
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span style={{ fontWeight: 500, fontSize: '0.75rem' }}>
+                    {agent.name}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.6rem',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                      background: squadVar(agent.squad),
+                      color: 'white',
+                      lineHeight: '1.2',
+                    }}
+                  >
+                    {agent.squad}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: '0.65rem',
+                    color: 'var(--t3)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {agent.decision_point}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    marginTop: 2,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '0.6rem',
+                      padding: '1px 4px',
+                      borderRadius: 3,
+                      border:
+                        '1px solid ' + autonomyTextColor(agent.autonomy_level),
+                      color: autonomyTextColor(agent.autonomy_level),
+                      lineHeight: '1.2',
+                    }}
+                  >
+                    {agent.autonomy_level}
+                  </span>
+                  {agent.pending_count > 0 && (
+                    <span style={{ fontSize: '0.6rem', color: 'var(--y4)' }}>
+                      · {agent.pending_count} 待办
+                    </span>
+                  )}
+                </div>
+                {runMutation.isPending &&
+                  runMutation.variables === agent.agent_id && (
+                    <div
                       style={{
-                        borderLeft: `4px solid ${
-                          action.risk_level === 'high' ||
-                          action.risk_level === 'critical'
-                            ? '#f5222d'
-                            : action.risk_level === 'medium'
-                              ? '#fa8c16'
-                              : '#52c41a'
-                        }`,
+                        fontSize: '0.6rem',
+                        color: 'var(--i4)',
+                        marginTop: 2,
                       }}
                     >
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          marginBottom: 4,
-                        }}
-                      >
-                        <Text strong style={{ flex: 1 }}>
-                          {action.title}
-                        </Text>
-                        <Tag color={riskColor(action.risk_level)}>
-                          {action.risk_level}
-                        </Tag>
-                      </div>
-                      <Space size={4} style={{ marginBottom: 8 }}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {action.agent_id}
-                        </Text>
-                        <Tag color={confidenceColor(action.confidence)}>
-                          {(action.confidence * 100).toFixed(0)}%
-                        </Tag>
-                      </Space>
-                      <Space size="small">
-                        <Button
-                          size="small"
-                          type="primary"
-                          icon={<CheckOutlined />}
-                          loading={
-                            approveMutation.isPending &&
-                            approveMutation.variables === action.id
-                          }
-                          onClick={() => approveMutation.mutate(action.id)}
-                        >
-                          批准
-                        </Button>
-                        <Button
-                          size="small"
-                          danger
-                          icon={<CloseOutlined />}
-                          loading={
-                            rejectMutation.isPending &&
-                            rejectMutation.variables === action.id
-                          }
-                          onClick={() => rejectMutation.mutate(action.id)}
-                        >
-                          拒绝
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<ThunderboltOutlined />}
-                          loading={
-                            executeMutation.isPending &&
-                            executeMutation.variables === action.id
-                          }
-                          onClick={() => executeMutation.mutate(action.id)}
-                        >
-                          执行
-                        </Button>
-                      </Space>
-                    </Card>
-                  ))}
-                </Space>
-              )}
-            </Spin>
-          </Card>
-        </Col>
-      </Row>
+                      executing...
+                    </div>
+                  )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
-      {/* 底部：最近 trace 列表 */}
-      <Card
-        title="最近 Trace"
-        style={{ marginTop: 16 }}
-        extra={
-          <Button
-            icon={<ReloadOutlined />}
-            size="small"
-            onClick={() => qc.invalidateQueries({ queryKey: ['ai-traces-recent'] })}
-          >
-            刷新
-          </Button>
-        }
+      {/* ===== Pending actions ===== */}
+      {actionsLoading ? (
+        <div
+          style={{ fontSize: '0.72rem', color: 'var(--t3)', padding: '4px 0' }}
+        >
+          loading actions...
+        </div>
+      ) : (actionsData ?? []).length === 0 ? (
+        <div
+          style={{ fontSize: '0.72rem', color: 'var(--t3)', padding: '4px 0' }}
+        >
+          暂无待审批动作
+        </div>
+      ) : (
+        <>
+          <div style={sectionHeader}>待审批动作</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {(actionsData ?? []).map((action) => (
+              <div
+                key={action.id}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  background: 'var(--s1)',
+                  border: '1px solid var(--bd)',
+                  borderLeft: '3px solid ' + riskVar(action.risk_level),
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      flex: 1,
+                      fontSize: '0.82rem',
+                      fontWeight: 500,
+                      color: 'var(--t1)',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {action.title}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.6rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.03em',
+                      padding: '2px 6px',
+                      borderRadius: 3,
+                      background: riskVar(action.risk_level) + '22',
+                      color: riskVar(action.risk_level),
+                      flexShrink: 0,
+                    }}
+                  >
+                    {action.risk_level}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: '0.65rem',
+                    color: 'var(--t3)',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: 'var(--mono)',
+                      fontSize: '0.62rem',
+                    }}
+                  >
+                    {action.agent_id}
+                  </span>
+                  <span
+                    style={{
+                      color:
+                        action.confidence >= 0.8
+                          ? 'var(--g4)'
+                          : action.confidence >= 0.5
+                            ? 'var(--y4)'
+                            : 'var(--r4)',
+                    }}
+                  >
+                    {confidenceLabel(action.confidence)}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button
+                    onClick={() => approveMutation.mutate(action.id)}
+                    disabled={
+                      approveMutation.isPending &&
+                      approveMutation.variables === action.id
+                    }
+                    style={{
+                      fontSize: '0.65rem',
+                      padding: '3px 8px',
+                      borderRadius: 4,
+                      border: '1px solid var(--g4)',
+                      background: 'transparent',
+                      color: 'var(--g4)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--body)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {approveMutation.isPending &&
+                    approveMutation.variables === action.id
+                      ? '...'
+                      : '批准'}
+                  </button>
+                  <button
+                    onClick={() => rejectMutation.mutate(action.id)}
+                    disabled={
+                      rejectMutation.isPending &&
+                      rejectMutation.variables === action.id
+                    }
+                    style={{
+                      fontSize: '0.65rem',
+                      padding: '3px 8px',
+                      borderRadius: 4,
+                      border: '1px solid var(--r4)',
+                      background: 'transparent',
+                      color: 'var(--r4)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--body)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {rejectMutation.isPending &&
+                    rejectMutation.variables === action.id
+                      ? '...'
+                      : '拒绝'}
+                  </button>
+                  <button
+                    onClick={() => executeMutation.mutate(action.id)}
+                    disabled={
+                      executeMutation.isPending &&
+                      executeMutation.variables === action.id
+                    }
+                    style={{
+                      fontSize: '0.65rem',
+                      padding: '3px 8px',
+                      borderRadius: 4,
+                      border: '1px solid var(--i4)',
+                      background: 'transparent',
+                      color: 'var(--i4)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--body)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {executeMutation.isPending &&
+                    executeMutation.variables === action.id
+                      ? '...'
+                      : '执行'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ===== Recent traces ===== */}
+      {tracesLoading ? (
+        <div
+          style={{ fontSize: '0.72rem', color: 'var(--t3)', padding: '4px 0' }}
+        >
+          loading traces...
+        </div>
+      ) : (tracesData ?? []).length === 0 ? (
+        <div
+          style={{ fontSize: '0.72rem', color: 'var(--t3)', padding: '4px 0' }}
+        >
+          暂无最近 Trace
+        </div>
+      ) : (
+        <>
+          <div style={sectionHeader}>最近 Trace</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {(tracesData ?? []).map((trace) => (
+              <div
+                key={trace.trace_id}
+                onClick={() =>
+                  router.push(
+                    `/agents/${trace.agent_id}/trace/${trace.trace_id}`,
+                  )
+                }
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '5px 8px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontSize: '0.68rem',
+                  color: 'var(--t2)',
+                  background: 'transparent',
+                  transition: 'background 80ms',
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background =
+                    'var(--s1)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background =
+                    'transparent';
+                }}
+              >
+                <code
+                  style={{
+                    fontFamily: 'var(--mono)',
+                    fontSize: '0.62rem',
+                    color: 'var(--t3)',
+                    minWidth: 100,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {trace.trace_id.slice(0, 12)}...
+                </code>
+                <span
+                  style={{
+                    minWidth: 50,
+                    color: 'var(--t1)',
+                    fontWeight: 500,
+                  }}
+                >
+                  {trace.agent_id}
+                </span>
+                <span
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    minWidth: 60,
+                    color: statusVar(trace.status),
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 4,
+                      height: 4,
+                      borderRadius: '50%',
+                      background: statusVar(trace.status),
+                      display: 'inline-block',
+                    }}
+                  />
+                  {trace.status}
+                </span>
+                {trace.confidence !== undefined &&
+                  trace.confidence !== null && (
+                    <span
+                      style={{
+                        minWidth: 36,
+                        fontSize: '0.62rem',
+                        color:
+                          trace.confidence >= 0.8
+                            ? 'var(--g4)'
+                            : trace.confidence >= 0.5
+                              ? 'var(--y4)'
+                              : 'var(--r4)',
+                      }}
+                    >
+                      {confidenceLabel(trace.confidence)}
+                    </span>
+                  )}
+                {trace.risk_level && (
+                  <span
+                    style={{
+                      fontSize: '0.6rem',
+                      padding: '1px 4px',
+                      borderRadius: 3,
+                      background: riskVar(trace.risk_level) + '22',
+                      color: riskVar(trace.risk_level),
+                    }}
+                  >
+                    {trace.risk_level}
+                  </span>
+                )}
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    fontSize: '0.62rem',
+                    color: 'var(--t3)',
+                  }}
+                >
+                  {trace.started_at
+                    ? dayjs(trace.started_at).format('HH:mm:ss')
+                    : '-'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ===== Spacer ===== */}
+      <div style={{ flex: 1 }} />
+
+      {/* ===== Chat / Run result bubble ===== */}
+      {(chatResult || runResult) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* User message */}
+          {sentMessage && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div
+                style={{
+                  maxWidth: '80%',
+                  fontSize: '0.82rem',
+                  lineHeight: 1.5,
+                  color: 'white',
+                  background: 'var(--i5)',
+                  padding: '8px 12px',
+                  borderRadius: '8px 8px 2px 8px',
+                }}
+              >
+                {sentMessage}
+              </div>
+            </div>
+          )}
+          {/* AI response */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 8,
+                flexShrink: 0,
+                background: 'linear-gradient(135deg, var(--i5), var(--c5))',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                color: 'white',
+                marginTop: 2,
+              }}
+            >
+              ✦
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  color: 'var(--t2)',
+                  marginBottom: 2,
+                }}
+              >
+                凌镜 Agent
+              </div>
+              <div
+                style={{
+                  fontSize: '0.88rem',
+                  lineHeight: 1.6,
+                  color: 'var(--t1)',
+                  background: 'var(--s1)',
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  border: '1px solid var(--bd)',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {chatResult
+                  ? chatResult.answer
+                  : runResult
+                    ? runResult.output
+                    : ''}
+              </div>
+              {/* Result metadata */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 4,
+                  fontSize: '0.62rem',
+                  color: 'var(--t3)',
+                }}
+              >
+                {chatResult && (
+                  <>
+                    <span
+                      style={{
+                        color:
+                          chatResult.confidence >= 0.8
+                            ? 'var(--g4)'
+                            : chatResult.confidence >= 0.5
+                              ? 'var(--y4)'
+                              : 'var(--r4)',
+                      }}
+                    >
+                      {confidenceLabel(chatResult.confidence)}
+                    </span>
+                    <span
+                      style={{
+                        color: riskVar(chatResult.risk_level),
+                      }}
+                    >
+                      {chatResult.risk_level}
+                    </span>
+                    <code
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '0.6rem',
+                        color: 'var(--t3)',
+                      }}
+                    >
+                      {chatResult.trace_id.slice(0, 12)}...
+                    </code>
+                  </>
+                )}
+                {runResult && (
+                  <>
+                    <span
+                      style={{
+                        color:
+                          runResult.confidence >= 0.8
+                            ? 'var(--g4)'
+                            : runResult.confidence >= 0.5
+                              ? 'var(--y4)'
+                              : 'var(--r4)',
+                      }}
+                    >
+                      {confidenceLabel(runResult.confidence)}
+                    </span>
+                    <span style={{ color: riskVar(runResult.risk_level) }}>
+                      {runResult.risk_level}
+                    </span>
+                    <code
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        fontSize: '0.6rem',
+                        color: 'var(--t3)',
+                      }}
+                    >
+                      {runResult.trace_id.slice(0, 12)}...
+                    </code>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Input bar ===== */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          alignItems: 'center',
+          padding: '6px 0 0',
+          marginTop: 4,
+        }}
       >
-        <Table
-          rowKey="trace_id"
-          loading={tracesLoading}
-          dataSource={tracesData ?? []}
-          columns={traceColumns}
-          size="small"
-          pagination={false}
-          scroll={{ x: 'max-content' }}
-          onRow={(record) => ({
-            onClick: () =>
-              router.push(`/agents/${record.agent_id}/trace/${record.trace_id}`),
-            style: { cursor: 'pointer' },
-          })}
+        <input
+          type="text"
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          placeholder="输入自然语言命令，例如：检查库存异常并建议补货方案"
+          style={{
+            flex: 1,
+            padding: '8px 14px',
+            borderRadius: 10,
+            background: 'var(--s2)',
+            border: '1px solid var(--bd2)',
+            fontFamily: 'var(--body)',
+            fontSize: '0.82rem',
+            color: 'var(--t1)',
+            outline: 'none',
+          }}
         />
-      </Card>
+        <button
+          onClick={handleSend}
+          disabled={chatMutation.isPending}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 6,
+            background: chatMutation.isPending ? 'var(--s3)' : 'var(--i5)',
+            border: 'none',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: chatMutation.isPending ? 'not-allowed' : 'pointer',
+            fontSize: '0.85rem',
+            flexShrink: 0,
+            transition: 'background 80ms',
+          }}
+        >
+          {chatMutation.isPending ? '...' : '↵'}
+        </button>
+      </div>
     </div>
   );
 }

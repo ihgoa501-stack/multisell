@@ -1,0 +1,70 @@
+/* === 凌镜 LingMirror — Design System Tokens === */
+/* Source: DESIGN.md — Do not edit without updating DESIGN.md */
+
+/* ===== Color Tokens ===== */
+:root {
+  /* Brand */
+  --i5: #6366F1; --i4: #818CF8; --i6: #4F46E5;
+  --c4: #22D3EE; --c5: #06B6D4;
+  --g4: #34D399; --y4: #FBBF24; --r4: #F87171;
+
+  /* Dark mode surfaces (default) */
+  --bg: #0B0B0E; --s1: #121216; --s2: #1A1A20; --s3: #22222A;
+  --bd: #282830; --bd2: #32323C;
+  --t1: #E8E8ED; --t2: #A0A0AB; --t3: #6B6B78; --t4: #4A4A55;
+}
+
+[data-theme="light"] {
+  --bg: #F0EFEA; --s1: #FAFAF7; --s2: #F0EFEA; --s3: #E6E5DF;
+  --bd: #D8D7D0; --bd2: #CAC9C2;
+  --t1: #1A1A18; --t2: #555450; --t3: #8B8A84; --t4: #B0AFAA;
+}
+
+@media (prefers-color-scheme: light) {
+  /* Auto-detect light mode when no data-theme is set */
+  :root:not([data-theme]) {
+    --bg: #F0EFEA; --s1: #FAFAF7; --s2: #F0EFEA; --s3: #E6E5DF;
+    --bd: #D8D7D0; --bd2: #CAC9C2;
+    --t1: #1A1A18; --t2: #555450; --t3: #8B8A84; --t4: #B0AFAA;
+  }
+}
+
+/* ===== Typography ===== */
+:root {
+  --ds: 'Cabinet Grotesk', sans-serif;
+  --body: 'DM Sans', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+/* ===== Border Radius ===== */
+:root {
+  --r1: 4px; --r2: 6px; --r3: 8px; --r4: 12px; --r5: 16px;
+}
+
+/* ===== Duration & Easing ===== */
+:root {
+  --dur-micro: 80ms; --dur-short: 200ms; --dur-med: 350ms;
+  --cubic-panel: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ===== Spacing (8px base) ===== */
+:root {
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+}
+
+/* ===== Typography Scale ===== */
+:root {
+  --text-hero: clamp(2rem, 5vw, 3.8rem);
+  --text-h1: clamp(1.5rem, 3.5vw, 2.5rem);
+  --text-h2: 1.2rem;
+  --text-body: 0.82rem;
+  --text-small: 0.72rem;
+  --text-label: 0.68rem;
+}

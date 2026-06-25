@@ -52,8 +52,8 @@ export default function ReportsPage() {
   const rows = data?.rows ?? [];
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>报表</h1>
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>报表</h1>
 
       <Tabs
         activeKey={activeTab}
@@ -61,7 +61,7 @@ export default function ReportsPage() {
         items={TABS.map((t) => ({ key: t.key, label: t.label }))}
       />
 
-      <Card style={{ marginBottom: 16 }}>
+      <Card style={{ marginBottom: 16, background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           {current.hasRange && (
             <RangePicker
@@ -87,14 +87,14 @@ export default function ReportsPage() {
       </Card>
 
       {isLoading ? (
-        <Card>
+        <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
           <div style={{ textAlign: 'center', padding: 48 }}>
             <Spin tip="报表加载中..." />
           </div>
         </Card>
       ) : (
         <>
-          <Card title="汇总" style={{ marginBottom: 16 }}>
+          <Card title="汇总" style={{ marginBottom: 16, background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
             {summaryEntries.length === 0 ? (
               <Empty description="暂无汇总数据" />
             ) : (
@@ -108,7 +108,7 @@ export default function ReportsPage() {
             )}
           </Card>
 
-          <Card title="明细">
+          <Card title="明细" style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
             {rows.length === 0 ? (
               <Empty description="暂无明细数据" />
             ) : (

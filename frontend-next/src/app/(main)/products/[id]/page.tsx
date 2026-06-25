@@ -55,17 +55,17 @@ export default function ProductDetailPage() {
       </Button>
 
       {isLoading ? (
-        <Card>
+        <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
           <div style={{ textAlign: 'center', padding: 48 }}>
             <Spin tip="加载中..." />
           </div>
         </Card>
       ) : isError || !data ? (
-        <Card>
+        <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
           <Result status="info" title="商品详情" subTitle="暂无详情数据或商品不存在" />
         </Card>
       ) : (
-        <Card>
+        <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
           {data.main_image && (
             <div style={{ marginBottom: 16 }}>
               <Image src={data.main_image} alt={data.name} width={200} />

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   Button, Card, Col, Form, Input, InputNumber, message,
-  Modal, Row, Select, Space, Switch, Table, Tag, Typography,
+  Modal, Row, Select, Space, Switch, Table, Tag,
 } from 'antd';
 import {
   DeleteOutlined, EditOutlined, PlusOutlined,
@@ -11,8 +11,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import type { Result } from '@/types/api';
-
-const { Title } = Typography;
 
 interface PolicyRule {
   id: number;
@@ -265,14 +263,14 @@ export default function PolicySettingsPage() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <Title level={3} style={{ margin: 0 }}>审批策略</Title>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: 0 }}>审批策略</h1>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
           新建策略
         </Button>
       </div>
-      <p style={{ color: '#666', marginBottom: 16 }}>
+      <p style={{ fontFamily: 'var(--body)', color: 'var(--t3)', marginBottom: 16 }}>
         审批策略决定 AI Agent 的动作是否需要人工审批、自动批准或阻止执行。
         策略按优先级顺序评估，最严格的结果生效。
       </p>
@@ -300,46 +298,46 @@ export default function PolicySettingsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               <tr>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap', width: 100 }}>名称</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }} colSpan={3}>{detailModal.name}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap', width: 100 }}>名称</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }} colSpan={3}>{detailModal.name}</td>
               </tr>
               <tr>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>描述</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }} colSpan={3}>{detailModal.description || '-'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>描述</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }} colSpan={3}>{detailModal.description || '-'}</td>
               </tr>
               <tr>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>风险等级</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.risk_level || '全部'}</td>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>动作类型</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.action_type || '全部'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>风险等级</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.risk_level || '全部'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>动作类型</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.action_type || '全部'}</td>
               </tr>
               <tr>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>Agent</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.agent_id || '全部'}</td>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>业务对象</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.business_object_type || '全部'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>Agent</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.agent_id || '全部'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>业务对象</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.business_object_type || '全部'}</td>
               </tr>
               <tr>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>最大金额</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.max_amount ? '¥' + detailModal.max_amount : '无限制'}</td>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>最大数量</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.max_quantity ? detailModal.max_quantity + '件' : '无限制'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>最大金额</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.max_amount ? '¥' + detailModal.max_amount : '无限制'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>最大数量</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.max_quantity ? detailModal.max_quantity + '件' : '无限制'}</td>
               </tr>
               <tr>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>最低置信度</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.min_confidence ? (detailModal.min_confidence * 100).toFixed(0) + '%' : '无限制'}</td>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>结果</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>最低置信度</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.min_confidence ? (detailModal.min_confidence * 100).toFixed(0) + '%' : '无限制'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>结果</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>
                   <Tag color={OUTCOME_COLORS[detailModal.outcome]}>
                     {detailModal.outcome === 'auto_approve' ? '自动批准' : detailModal.outcome === 'escalate' ? '人工审批' : '阻止'}
                   </Tag>
                 </td>
               </tr>
               <tr>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>优先级</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.priority}</td>
-                <th style={{ padding: '8px 12px', background: '#fafafa', fontWeight: 500, border: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>是否启用</th>
-                <td style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}>{detailModal.enabled ? '是' : '否'}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>优先级</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.priority}</td>
+                <th style={{ padding: '8px 12px', background: 'var(--s1)', fontWeight: 500, border: '1px solid var(--bd)', whiteSpace: 'nowrap' }}>是否启用</th>
+                <td style={{ padding: '8px 12px', border: '1px solid var(--bd)' }}>{detailModal.enabled ? '是' : '否'}</td>
               </tr>
             </tbody>
           </table>
