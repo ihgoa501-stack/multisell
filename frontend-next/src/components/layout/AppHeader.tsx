@@ -1,8 +1,9 @@
 'use client';
 
 import { Button, Space, Avatar } from 'antd';
-import { SearchOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons';
+import { SearchOutlined, MoonOutlined, SunOutlined, BellOutlined } from '@ant-design/icons';
 import { useAppStore } from '@/stores/app-store';
+import ActivityFeed from '@/components/layout/ActivityFeed';
 
 function toggleTheme() {
   const html = document.documentElement;
@@ -12,7 +13,7 @@ function toggleTheme() {
 }
 
 export default function AppHeader() {
-  const { setCommandPaletteOpen } = useAppStore();
+  const { setCommandPaletteOpen, toggleActivityFeed, unseenCount, activityFeedOpen } = useAppStore();
 
   return (
     <>
@@ -84,6 +85,30 @@ export default function AppHeader() {
           size="small"
           style={{ color: 'var(--t2)' }}
         />
+        <div style={{ position: 'relative' }}>
+          <Button
+            type="text"
+            icon={<BellOutlined />}
+            onClick={toggleActivityFeed}
+            size="small"
+            style={{ color: 'var(--t2)', position: 'relative' }}
+          />
+          {unseenCount > 0 && !activityFeedOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 2,
+                right: 2,
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: 'var(--r4)',
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+          <ActivityFeed />
+        </div>
         <Avatar
           size={24}
           style={{

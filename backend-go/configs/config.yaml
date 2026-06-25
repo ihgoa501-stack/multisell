@@ -11,6 +11,13 @@ database:
   sslmode: disable
   max_idle_conns: 10
   max_open_conns: 100
+  schemas:
+    - order_module
+    - finance_module
+    - inventory_module
+    - sku_module
+    - settlement_module
+  search_path: public,order_module,finance_module,inventory_module,sku_module,settlement_module
 
 redis:
   addr: localhost:6379

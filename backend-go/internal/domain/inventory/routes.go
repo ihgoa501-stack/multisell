@@ -30,5 +30,11 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 
 		// Per-SKU warehouse inventory
 		group.GET("/sku/:sku_id/warehouses", h.ListInventoryBySku)
+
+		// Bin locations
+		group.GET("/locations", h.ListLocations)
+
+		// Inventory transfers
+		group.GET("/transfers", h.ListTransfers)
 	}
 }

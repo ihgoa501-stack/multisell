@@ -1,6 +1,6 @@
-'use client';
+ 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import { usePermissionStore } from '@/stores/permission-store';
@@ -12,15 +12,32 @@ type SessionItem = {
   group: string;
 };
 
+function elapsedStr(startedAt: Date): string {
+  const diff = Date.now() - startedAt.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '<1m';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return `${hours}h ${rem}m`;
+}
+
 export default function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { toggleToolPanel, setActiveTool } = useAppStore();
   const { fetchPermissions, hasPermission } = usePermissionStore();
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     fetchPermissions();
   }, [fetchPermissions]);
+
+  // Tick every 30s to update elapsed times
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   function isItemVisible(item: MenuItem): boolean {
     if (!item.permission) return true;
@@ -43,9 +60,9 @@ export default function AppSidebar() {
     sessions.find((s) => pathname.startsWith(s.key))?.key ?? '';
 
   const runningTasks = [
-    { label: '补货 Shopee', status: '3/3', color: 'var(--i4)' },
-    { label: '标题优化', status: '5/12', color: 'var(--y4)' },
-    { label: 'Ozon 价格对比', status: '✓', color: 'var(--g4)' },
+    { label: '补货 Shopee', status: '3/3', color: 'var(--i4)', startedAt: new Date(Date.now() - 3 * 60 * 1000) },
+    { label: '标题优化', status: '5/12', color: 'var(--y4)', startedAt: new Date(Date.now() - 15 * 60 * 1000) },
+    { label: 'Ozon 价格对比', status: '✓', color: 'var(--g4)', startedAt: new Date(Date.now() - 30 * 60 * 1000) },
   ];
 
   const toolButtons = [
@@ -166,6 +183,7 @@ export default function AppSidebar() {
       >
         {/* Running tasks section */}
         <div style={{ padding: '6px 10px 2px' }}>
+          <style>{`@keyframes pulse-dot { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
           <div
             style={{
               fontSize: '0.58rem',
@@ -179,50 +197,119 @@ export default function AppSidebar() {
             ▸ 正在运行
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {runningTasks.map((task) => (
+            {runningTasks.map((task) => {
+              const isDone = task.status === '✓';
+              return (
+                <div
+                  key={task.label}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '2px 4px',
+                    fontSize: '0.7rem',
+                    borderRadius: 3,
+                    cursor: 'default',
+                    color: 'var(--t2)',
+                    opacity: isDone ? 0.5 : 1,
+                    transition: 'opacity var(--dur-micro)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 4,
+                      height: 4,
+                      borderRadius: '50%',
+                      background: task.color,
+                      flexShrink: 0,
+                      animation: isDone ? 'none' : 'pulse-dot 1.5s ease-in-out infinite',
+                    }}
+                  />
+                  <span
+                    style={{
+                      flex: 1,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {task.label}
+                  </span>
+                  <span
+                    style={{
+                      color: isDone ? 'var(--g4)' : 'var(--t3)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isDone ? task.status : `${task.status} · ${elapsedStr(task.startedAt)}`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Trust score section */}
+        <div style={{ padding: '6px 10px 8px' }}>
+          <div
+            style={{
+              fontSize: '0.58rem',
+              letterSpacing: '0.07em',
+              textTransform: 'uppercase',
+              color: 'var(--t4)',
+              marginBottom: 6,
+              fontWeight: 600,
+            }}
+          >
+            ▸ 信任指数
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <div style={{ flex: 1 }}>
               <div
-                key={task.label}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 4px',
-                  fontSize: '0.7rem',
+                  height: 6,
                   borderRadius: 3,
-                  cursor: 'default',
-                  color: 'var(--t2)',
+                  background: 'var(--s2)',
+                  overflow: 'hidden',
                 }}
               >
                 <div
                   style={{
-                    width: 4,
-                    height: 4,
-                    borderRadius: '50%',
-                    background: task.color,
-                    flexShrink: 0,
+                    width: '85%',
+                    height: '100%',
+                    borderRadius: 3,
+                    background: 'linear-gradient(90deg, var(--i4), var(--c4))',
+                    transition: 'width 0.5s ease',
                   }}
                 />
-                <span
-                  style={{
-                    flex: 1,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {task.label}
-                </span>
-                <span
-                  style={{
-                    color:
-                      task.status === '✓' ? 'var(--g4)' : 'var(--t3)',
-                    flexShrink: 0,
-                  }}
-                >
-                  {task.status}
-                </span>
               </div>
-            ))}
+            </div>
+            <span
+              style={{
+                fontSize: '1.1rem',
+                fontWeight: 700,
+                fontFamily: 'var(--mono)',
+                color: 'var(--t1)',
+                lineHeight: 1,
+              }}
+            >
+              85
+            </span>
+          </div>
+          <div
+            style={{
+              fontSize: '0.6rem',
+              color: 'var(--t3)',
+              marginTop: 2,
+            }}
+          >
+            基于 127 次决策 · 良好
           </div>
         </div>
 

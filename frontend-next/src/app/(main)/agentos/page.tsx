@@ -24,6 +24,9 @@ import {
   ClockCircleOutlined,
   TeamOutlined,
   SafetyCertificateOutlined,
+  ApiOutlined,
+  ToolOutlined,
+  HeartOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -153,6 +156,23 @@ export default function AgentOSPage() {
     },
   });
 
+  // AIOS system health
+  interface AIOSHealth {
+    status: string;
+    runtime: string;
+    tools: number;
+    guardrails: string;
+    agents: number;
+    observability: boolean;
+  }
+  const { data: aiosHealth, isLoading: healthLoading } = useQuery({
+    queryKey: ['aios-health'],
+    queryFn: async () => {
+      const res = await apiClient.get<AIOSHealth>('/v1/aios/health');
+      return res.data;
+    },
+  });
+
   // Action operations
   const approveMutation = useMutation({
     mutationFn: async (id: string) =>
@@ -198,6 +218,7 @@ export default function AgentOSPage() {
     qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
     qc.invalidateQueries({ queryKey: ['agentos-autonomy'] });
+    qc.invalidateQueries({ queryKey: ['aios-health'] });
   };
 
   const workColumns = [
@@ -347,6 +368,41 @@ export default function AgentOSPage() {
               }
               prefix={<SafetyCertificateOutlined style={{ color: 'var(--g4)' }} />}
               valueStyle={{ color: 'var(--g4)' }}
+            />
+          </div>
+        </Col>
+      </Row>
+
+      {/* AIOS 系统指标 */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={8}>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
+            <Statistic
+              title="已注册 Agent"
+              value={aiosHealth?.agents ?? 0}
+              prefix={<ApiOutlined style={{ color: 'var(--i4)' }} />}
+              loading={healthLoading}
+            />
+          </div>
+        </Col>
+        <Col xs={12} sm={8}>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
+            <Statistic
+              title="已注册 Tool"
+              value={aiosHealth?.tools ?? 0}
+              prefix={<ToolOutlined style={{ color: 'var(--g4)' }} />}
+              loading={healthLoading}
+            />
+          </div>
+        </Col>
+        <Col xs={12} sm={8}>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
+            <Statistic
+              title="系统健康"
+              value={aiosHealth?.status === 'ok' ? '正常' : aiosHealth?.status ?? '-'}
+              prefix={<HeartOutlined style={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }} />}
+              valueStyle={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }}
+              loading={healthLoading}
             />
           </div>
         </Col>

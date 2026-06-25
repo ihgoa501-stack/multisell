@@ -88,16 +88,17 @@ func (pq *priorityQueue) Pop() interface{} {
 
 // Bus is the central event bus.
 type Bus struct {
-	mu          sync.RWMutex
-	subs        []*subscription
-	queueMu     sync.Mutex
-	queue       priorityQueue
-	queueCond   *sync.Cond
-	db          *gorm.DB
-	logger      *zap.Logger
-	bufferSize  int
-	workerCount int
-	done        chan struct{}
+	mu             sync.RWMutex
+	subs           []*subscription
+	queueMu        sync.Mutex
+	queue          priorityQueue
+	queueCond      *sync.Cond
+	db             *gorm.DB
+	logger         *zap.Logger
+	bufferSize     int
+	workerCount    int
+	done           chan struct{}
+	schemaRegistry *SchemaRegistry
 }
 
 // BusOption configures the event bus.
@@ -166,6 +167,15 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 		Payload:   payload,
 		Priority:  priority,
 		CreatedAt: time.Now(),
+	}
+
+	// Validate against schema registry if configured.
+	if b.schemaRegistry != nil {
+		if schema, ok := b.schemaRegistry.Schema(topic); ok {
+			if err := schema.Validate(payload); err != nil {
+				return "", err
+			}
+		}
 	}
 
 	// Persist to outbox if DB is configured.
