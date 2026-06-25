@@ -80,13 +80,13 @@ export default function ActionsPage() {
       if (riskFilter) params.risk_level = riskFilter;
       if (agentFilter) params.agent_id = agentFilter;
       if (search) params.search = search;
-      return apiClient.getPage<UnifiedAction>('/ai/actions', params);
+      return apiClient.getPage<UnifiedAction>('/v1/ai/actions', params);
     },
   });
 
   const approveMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient.post('/ai/actions/' + id + '/approve', { operator: 'user', reason: decisionReason }),
+      apiClient.post('/v1/ai/actions/' + id + '/approve', { operator: 'user', reason: decisionReason }),
     onSuccess: () => {
       message.success('已批准');
       setModalOpen(false);
@@ -97,7 +97,7 @@ export default function ActionsPage() {
 
   const rejectMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient.post('/ai/actions/' + id + '/reject', { operator: 'user', reason: decisionReason }),
+      apiClient.post('/v1/ai/actions/' + id + '/reject', { operator: 'user', reason: decisionReason }),
     onSuccess: () => {
       message.success('已拒绝');
       setModalOpen(false);
@@ -108,7 +108,7 @@ export default function ActionsPage() {
 
   const executeMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient.post('/ai/actions/' + id + '/execute', { operator: 'user' }),
+      apiClient.post('/v1/ai/actions/' + id + '/execute', { operator: 'user' }),
     onSuccess: () => {
       message.success('已执行');
       queryClient.invalidateQueries({ queryKey: ['actions'] });
@@ -232,10 +232,10 @@ export default function ActionsPage() {
   ];
 
   return (
-    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
-      <Title level={3} style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>Action Center</Title>
+    <div style={{ padding: 24 }}>
+      <Title level={3}>Action Center</Title>
 
-      <Card style={{ marginBottom: 16, background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+      <Card style={{ marginBottom: 16 }}>
         <Row gutter={16} align="middle">
           <Col>
             <Select
@@ -358,7 +358,7 @@ export default function ActionsPage() {
             {selectedAction.rejection_reason && (
               <p><Text strong>拒绝原因：</Text><Text type="danger">{selectedAction.rejection_reason}</Text></p>
             )}
-            <pre style={{ background: 'var(--s2)', padding: 12, borderRadius: 'var(--r2)', maxHeight: 300, overflow: 'auto', fontSize: 12 }}>
+            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, maxHeight: 300, overflow: 'auto', fontSize: 12 }}>
               {JSON.stringify(selectedAction.payload, null, 2)}
             </pre>
           </div>
