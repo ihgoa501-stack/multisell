@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Table, Tag, Result, Spin, Button, Descriptions } from 'antd';
+import { Card, Table, Tag, Result, Spin, Button } from 'antd';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftOutlined } from '@ant-design/icons';

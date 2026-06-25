@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import React from 'react';
 
 // Mock next/navigation
@@ -11,6 +11,12 @@ vi.mock('next/navigation', () => ({
 // Mock permission store
 const mockFetchPermissions = vi.fn();
 
+type PermissionStoreState = {
+  fetched: boolean;
+  fetchPermissions: typeof mockFetchPermissions;
+  permissions: string[];
+};
+
 describe('AuthGuard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -19,7 +25,7 @@ describe('AuthGuard', () => {
 
   it('redirects to login when no token', async () => {
     vi.doMock('@/stores/permission-store', () => ({
-      usePermissionStore: (selector: any) => {
+      usePermissionStore: <T,>(selector: (state: PermissionStoreState) => T) => {
         const state = { fetched: false, fetchPermissions: mockFetchPermissions, permissions: [] };
         return selector(state);
       },
@@ -34,7 +40,7 @@ describe('AuthGuard', () => {
     localStorage.setItem('token', 'test-token');
 
     vi.doMock('@/stores/permission-store', () => ({
-      usePermissionStore: (selector: any) => {
+      usePermissionStore: <T,>(selector: (state: PermissionStoreState) => T) => {
         const state = { fetched: true, fetchPermissions: mockFetchPermissions, permissions: ['admin'] };
         return selector(state);
       },

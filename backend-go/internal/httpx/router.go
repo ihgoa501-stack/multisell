@@ -12,12 +12,16 @@ import (
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/aftersales"
+	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
+	"github.com/lingmirror/backend-go/internal/domain/entropy"
+	"github.com/lingmirror/backend-go/internal/domain/evolution"
 	"github.com/lingmirror/backend-go/internal/domain/exceptions"
+	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
 	"github.com/lingmirror/backend-go/internal/domain/finance"
 	"github.com/lingmirror/backend-go/internal/domain/imagegen"
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
@@ -32,6 +36,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
+	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
 	"github.com/lingmirror/backend-go/internal/domain/settlement"
@@ -39,11 +44,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
-	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
-	"github.com/lingmirror/backend-go/internal/domain/agentrule"
-	"github.com/lingmirror/backend-go/internal/domain/entropy"
-	"github.com/lingmirror/backend-go/internal/domain/evolution"
-	"time"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
@@ -53,6 +53,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"time"
 )
 
 // NewRouter creates and configures the Gin engine with all routes.
@@ -65,25 +66,25 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	r.Use(middleware.CORS(cfg))
 	r.Use(middleware.RequestID())
 
-		// Prometheus metrics (before recovery to capture all requests)
-		if cfg.Metrics.Enabled {
-			r.Use(middleware.Metrics())
-		}
-		r.Use(middleware.RecoveryWithSentry(cfg, logger))
-		r.Use(middleware.Audit(db, logger))
+	// Prometheus metrics (before recovery to capture all requests)
+	if cfg.Metrics.Enabled {
+		r.Use(middleware.Metrics())
+	}
+	r.Use(middleware.RecoveryWithSentry(cfg, logger))
+	r.Use(middleware.Audit(db, logger))
 
-		// Health check
-		r.GET("/api/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "ok",
-				"version": "0.1.0",
-			})
+	// Health check
+	r.GET("/api/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"version": "0.1.0",
 		})
+	})
 
-		// Prometheus metrics endpoint
-		if cfg.Metrics.Enabled {
-			r.GET("/metrics", middleware.MetricsHandler())
-		}
+	// Prometheus metrics endpoint
+	if cfg.Metrics.Enabled {
+		r.GET("/metrics", middleware.MetricsHandler())
+	}
 
 	// ==========================================================
 	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
@@ -190,12 +191,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		svc := trustscore.NewService(db, logger)
 		return svc.Recalculate()
 	})
-		// scheduler.tick.entropy → run entropy defenses
-		bus.Subscribe("scheduler.tick.entropy", func(ctx context.Context, evt eventbus.Event) error {
-			svc := entropy.NewService(db, logger)
-			_, err := svc.RunDefenses(0)
-			return err
-		})
+	// scheduler.tick.entropy → run entropy defenses
+	bus.Subscribe("scheduler.tick.entropy", func(ctx context.Context, evt eventbus.Event) error {
+		svc := entropy.NewService(db, logger)
+		_, err := svc.RunDefenses(0)
+		return err
+	})
 
 	// -------------------------------------------------------
 	// Pipeline chain rules (via event bus)
@@ -339,7 +340,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// API v1 Health check (public)
 	api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
 			"version": "0.1.0",
 		})
@@ -390,6 +391,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger)
 	sourcing1688.RegisterRoutes(protected, db, logger)
+	productanalysis.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
 	report.RegisterRoutes(protected, db, logger)
 	exchangerate.RegisterRoutes(protected, db, logger)
