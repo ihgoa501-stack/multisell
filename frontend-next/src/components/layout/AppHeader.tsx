@@ -1,11 +1,19 @@
 'use client';
 
-import { Layout, Button, Space, Avatar } from 'antd';
-import { SearchOutlined, RobotOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
+import { Layout, Button, Space, Avatar, theme as antdTheme } from 'antd';
+import { SearchOutlined, RobotOutlined, MenuFoldOutlined, MenuUnfoldOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons';
 import Breadcrumbs from '@/components/layout/Breadcrumbs';
 import { useAppStore } from '@/stores/app-store';
 
 const { Header } = Layout;
+
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  // Dispatch custom event for AntdProvider to react
+  window.dispatchEvent(new CustomEvent('themechange', { detail: next }));
+}
 
 export default function AppHeader() {
   const { sidebarCollapsed, toggleSidebar, setCommandPaletteOpen, setCopilotOpen } = useAppStore();
@@ -13,13 +21,14 @@ export default function AppHeader() {
   return (
     <Header
       style={{
-        background: '#fff',
-        padding: '0 24px',
+        background: 'var(--s1)',
+        padding: '0 16px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        borderBottom: '1px solid #f0f0f0',
-        height: 56,
+        borderBottom: '1px solid var(--bd)',
+        height: 48,
+        lineHeight: '48px',
       }}
     >
       <Space>
@@ -27,6 +36,7 @@ export default function AppHeader() {
           type="text"
           icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           onClick={toggleSidebar}
+          style={{ color: 'var(--t2)' }}
         />
         <Breadcrumbs />
       </Space>
@@ -35,6 +45,7 @@ export default function AppHeader() {
           icon={<SearchOutlined />}
           onClick={() => setCommandPaletteOpen(true)}
           type="text"
+          style={{ color: 'var(--t2)' }}
         >
           Cmd+K
         </Button>
@@ -42,9 +53,16 @@ export default function AppHeader() {
           icon={<RobotOutlined />}
           onClick={() => setCopilotOpen(true)}
           type="text"
+          style={{ color: 'var(--t2)' }}
         />
-        <Avatar size="small" style={{ backgroundColor: '#1677ff' }}>
-          U
+        <Button
+          type="text"
+          icon={<SunOutlined />}
+          onClick={toggleTheme}
+          style={{ color: 'var(--t2)' }}
+        />
+        <Avatar size="small" style={{ backgroundColor: 'var(--i5)', verticalAlign: 'middle', fontFamily: 'var(--ds)' }}>
+          L
         </Avatar>
       </Space>
     </Header>

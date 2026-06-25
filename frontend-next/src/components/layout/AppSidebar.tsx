@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Layout, Menu } from 'antd';
 import {
+  AppstoreOutlined,
   DashboardOutlined,
   RobotOutlined,
   ShoppingOutlined,
@@ -30,6 +31,7 @@ const iconMap: Record<string, React.ReactNode> = {
   ThunderboltOutlined: <ThunderboltOutlined />,
   WarningOutlined: <WarningOutlined />,
   SettingOutlined: <SettingOutlined />,
+  AppstoreOutlined: <AppstoreOutlined />,
 };
 
 export default function AppSidebar() {
@@ -38,8 +40,6 @@ export default function AppSidebar() {
   const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const { fetchPermissions, hasPermission } = usePermissionStore();
 
-  // Fetch permissions on mount — this runs once because the store prevents
-  // redundant fetches via the `fetched` flag.
   useEffect(() => {
     fetchPermissions();
   }, [fetchPermissions]);
@@ -53,7 +53,6 @@ export default function AppSidebar() {
     return menuGroups
       .map((group) => {
         const visibleItems = group.items.filter(isItemVisible);
-        // Hide the group label if all items are filtered out
         if (visibleItems.length === 0) return null;
         return {
           type: 'group' as const,
@@ -68,6 +67,19 @@ export default function AppSidebar() {
       .filter(Boolean);
   }
 
+  const logoSx: React.CSSProperties = {
+    height: 48,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottom: '1px solid var(--bd)',
+    fontWeight: 700,
+    fontSize: sidebarCollapsed ? 14 : 18,
+    color: 'var(--i4)',
+    fontFamily: "var(--ds)",
+    letterSpacing: '-0.02em',
+  };
+
   return (
     <Sider
       collapsible
@@ -81,28 +93,19 @@ export default function AppSidebar() {
         position: 'sticky',
         top: 0,
         left: 0,
+        background: 'var(--s1)',
+        borderRight: '1px solid var(--bd)',
       }}
     >
-      <div
-        style={{
-          height: 48,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderBottom: '1px solid #f0f0f0',
-          fontWeight: 700,
-          fontSize: sidebarCollapsed ? 14 : 18,
-          color: '#1677ff',
-        }}
-      >
-        {sidebarCollapsed ? 'LM' : 'LingMirror'}
+      <div style={logoSx}>
+        {sidebarCollapsed ? '✦' : '凌镜'}
       </div>
       <Menu
         mode="inline"
         selectedKeys={[pathname]}
         items={buildMenuItems()}
         onClick={({ key }) => router.push(key)}
-        style={{ borderRight: 0 }}
+        style={{ borderRight: 0, background: 'transparent' }}
       />
     </Sider>
   );

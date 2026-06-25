@@ -15,15 +15,19 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <AuthGuard>
-      <Layout style={{ minHeight: '100vh' }}>
+      {/* ponytail: inline styles on Layout — Ant Design requires it */}
+      <Layout style={{
+        minHeight: '100vh',
+        background: 'var(--bg)',
+      }}>
         <AppSidebar />
-        <Layout>
+        <Layout style={{ background: 'var(--s1)' }}>
           <AppHeader />
           <Content
             style={{
               margin: 0,
               padding: 0,
-              background: '#f5f5f5',
+              background: 'var(--bg)',
               minHeight: 280,
             }}
           >
