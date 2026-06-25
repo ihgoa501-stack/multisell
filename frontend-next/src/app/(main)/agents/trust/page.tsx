@@ -23,17 +23,17 @@ export default function TrustScoresPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery<Result<TrustScoreItem[]>>({
     queryKey: ['trust-summary'],
-    queryFn: () => apiClient.get<TrustScoreItem[]>('/trust-scores/summary'),
+    queryFn: () => apiClient.get<TrustScoreItem[]>('/v1/trust-scores/summary'),
   });
   const [detail, setDetail] = useState<TrustScoreItem | null>(null);
 
   const recalcMut = useMutation({
-    mutationFn: () => apiClient.post('/trust-scores/recalculate'),
+    mutationFn: () => apiClient.post('/v1/trust-scores/recalculate'),
     onSuccess: () => { message.success('已重算'); qc.invalidateQueries({ queryKey: ['trust-summary'] }); },
   });
 
   const upgradeMut = useMutation({
-    mutationFn: () => apiClient.post('/trust-scores/auto-upgrade'),
+    mutationFn: () => apiClient.post('/v1/trust-scores/auto-upgrade'),
     onSuccess: () => {
       message.success('升级请求已提交');
       qc.invalidateQueries({ queryKey: ['trust-summary'] });
