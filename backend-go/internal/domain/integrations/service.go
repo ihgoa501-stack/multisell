@@ -255,12 +255,10 @@ type PublishToOzonInput struct {
 
 // PublishToOzon publishes a local product to the Ozon platform.
 func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*PublishResult, error) {
-	// Resolve product
 	var prod sku.Product
 	if err := s.db.WithContext(ctx).First(&prod, in.ProductID).Error; err != nil {
 		return nil, fmt.Errorf("publish to ozon: product %d not found", in.ProductID)
 	}
-	// Resolve SKUs for product
 	type skuRow struct {
 		ID   int64
 		Code string
@@ -272,22 +270,18 @@ func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*P
 	if len(skus) == 0 {
 		return nil, fmt.Errorf("publish to ozon: product %d has no SKUs", in.ProductID)
 	}
-	// Resolve integration account
 	var acct PlatformIntegrationAccount
 	if err := s.db.WithContext(ctx).First(&acct, in.AccountID).Error; err != nil {
 		return nil, fmt.Errorf("publish to ozon: account %d not found", in.AccountID)
 	}
-	// Resolve platform code
 	var plat struct{ Code string }
 	if err := s.db.Table("platform").Select("code").Where("id = ?", acct.PlatformID).Scan(&plat).Error; err != nil {
 		return nil, fmt.Errorf("publish to ozon: platform lookup: %w", err)
 	}
-	// Get adapter
 	adapter, ok := GetAdapter(plat.Code)
 	if !ok {
 		return nil, fmt.Errorf("publish to ozon: no adapter for platform %s", plat.Code)
 	}
-	// Map to PublishInput
 	prices := make(map[int64]string)
 	inventories := make(map[int64]int)
 	publishSKUs := make([]PublishSKU, 0, len(skus))
@@ -319,4 +313,46 @@ func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*P
 		PackageWeight:  pkgWt,
 		MainImage:      in.ImageURL,
 	})
+}
+
+// SyncOzonOrders fetches new orders from all active Ozon accounts via the adapter.
+// Called by the scheduler on a 15-minute interval.
+func (s *Service) SyncOzonOrders(ctx context.Context) error {
+	type accountRow struct {
+		ID         int64
+		PlatformID int64
+	}
+	var accounts []accountRow
+	if err := s.db.Table("platform_integration_account AS a").
+		Select("a.id, a.platform_id").
+		Joins("JOIN platform p ON p.id = a.platform_id").
+		Where("p.code = ? AND a.status = ?", "ozon", "active").
+		Find(&accounts).Error; err != nil {
+		return fmt.Errorf("sync ozon: %w", err)
+	}
+	if len(accounts) == 0 {
+		return nil
+	}
+	adapter, ok := GetAdapter("ozon")
+	if !ok {
+		return fmt.Errorf("sync ozon: no adapter")
+	}
+	ozon, ok := adapter.(*OzonAdapter)
+	if !ok {
+		return fmt.Errorf("sync ozon: type error")
+	}
+	since := time.Now().Add(-72 * time.Hour)
+	for _, acct := range accounts {
+		orders, err := ozon.FetchOrders(ctx, &FetchOrdersInput{PlatformID: acct.PlatformID, Since: since})
+		if err != nil {
+			s.db.Table("platform_integration_account").Where("id = ?", acct.ID).Updates(
+				map[string]interface{}{"last_error": err.Error(), "last_sync_at": time.Now(), "sync_status": "error"})
+			s.logger.Warn("ozon sync error", zap.Int64("account", acct.ID), zap.Error(err))
+			continue
+		}
+		s.logger.Info("ozon sync done", zap.Int64("account", acct.ID), zap.Int("orders", len(orders)))
+		s.db.Table("platform_integration_account").Where("id = ?", acct.ID).Updates(
+			map[string]interface{}{"last_sync_at": time.Now(), "last_error": "", "sync_status": "idle"})
+	}
+	return nil
 }

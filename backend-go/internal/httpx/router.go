@@ -330,6 +330,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
+	sched.Register(scheduler.Task{
+		ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
+		Interval: time.Minute * 15, Description: "Ozon 订单同步",
+	})
+
+	// Ozon sync handler
+	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
+		integrations.InitAdapters(db, logger)
+		svc := integrations.NewService(db, logger)
+		return svc.SyncOzonOrders(ctx)
+	})
 
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
