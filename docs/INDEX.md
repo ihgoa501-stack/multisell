@@ -16,6 +16,7 @@
 | [路线图](ROADMAP.md) | Phase 0–8 详细阶段规划 |
 | [项目治理与 Agent 协作规范](PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | 协作规则、验收标准 |
 | [Active Stack Policy](ACTIVE_STACK_POLICY.md) | Go + Next 活跃技术栈和旧栈边界 |
+| [AIOS 基础设施架构](aios-architecture.md) | AIOS 内核层 11 个基础设施模块的接口契约与实现路径 |
 
 ## 🧠 知识库 (Knowledge Base)
 

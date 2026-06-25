@@ -151,7 +151,62 @@ func (s *Service) Delete(id int64) error {
 	return nil
 }
 
-// ---------- ListingTaskItem ----------
+// GetStats returns aggregate counts grouped by status across all listing tasks.
+func (s *Service) GetStats() (map[string]int64, error) {
+	type StatusCount struct {
+		Status string `gorm:"column:status"`
+		Count  int64  `gorm:"column:cnt"`
+	}
+	var rows []StatusCount
+	if err := s.db.Model(&ListingTask{}).
+		Select("status, COUNT(*) as cnt").
+		Group("status").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	stats := map[string]int64{
+		"total":      0,
+		"pending":    0,
+		"processing": 0,
+		"completed":  0,
+		"failed":     0,
+	}
+	for _, r := range rows {
+		switch r.Status {
+		case "executing":
+			stats["processing"] += r.Count
+		default:
+			stats[r.Status] = r.Count
+		}
+		stats["total"] += r.Count
+	}
+	return stats, nil
+}
+
+// RetryAllTasks finds all failed tasks and resets them to pending.
+func (s *Service) RetryAllTasks() (int64, error) {
+	res := s.db.Model(&ListingTask{}).
+		Where("status = ?", "failed").
+		Updates(map[string]interface{}{
+			"status":     "pending",
+			"last_error": "",
+		})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	if res.RowsAffected > 0 {
+		if err := s.db.Model(&ListingTaskItem{}).
+			Where("status = ?", "failed").
+			Updates(map[string]interface{}{
+				"status":        "pending",
+				"error_message": "",
+				"retry_count":   gorm.Expr("retry_count + 1"),
+			}).Error; err != nil {
+			return res.RowsAffected, err
+		}
+	}
+	return res.RowsAffected, nil
+}
 
 // ListItems returns paginated items for a task.
 func (s *Service) ListItems(c *common.Pagination, taskID int64) ([]ListingTaskItem, int64, error) {

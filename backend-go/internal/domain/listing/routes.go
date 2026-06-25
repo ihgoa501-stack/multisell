@@ -8,7 +8,7 @@ import (
 
 // RegisterRoutes registers listing routes on the given router group.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger)
+	svc := NewService(db, logger, NewSKUProvider(db), NewDecisionReader(db))
 	h := NewHandler(svc)
 
 	group := rg.Group("/listings")
@@ -25,6 +25,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	// Listing publish chain — uses /listing (singular) prefix.
 	chain := rg.Group("/listing")
 	{
+		// POST /v1/listing — alias for POST /v1/listings (frontend compatibility)
+		chain.POST("", h.Create)
+
 		chain.POST("/products/:product_id/publish/:platform_id", h.PublishProduct)
 		chain.GET("/products/:product_id/listings", h.ListByProduct)
 

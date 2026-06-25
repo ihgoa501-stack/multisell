@@ -1,0 +1,49 @@
+# A5 — Inventory Alert
+# Squad: fulfillment
+# Monitors stock levels and triggers replenishment or logistics re-routing.
+agent_id: A5
+name: Inventory Alert
+squad: fulfillment
+version: "2.0.0"
+description: "库存预警：缺货/补货/物流切换"
+
+decision_points:
+  - name: stock_alert
+    description: "检查所有SKU库存水位，触发预警"
+  - name: replenishment_plan
+    description: "基于库存水位和销售预测生成补货方案"
+  - name: logistics_choice
+    description: "根据紧急程度和成本推荐最优物流方案"
+
+tools:
+  - inventory.read
+  - inventory.alert.list
+  - inventory.alert.create
+  - inventory.transfer.list
+  - purchase_order.suggest
+  - purchase_order.list
+
+triggers:
+  - type: schedule
+    interval: "15m"
+    decision_point: stock_alert
+  - type: event
+    topic: "inventory.*"
+    decision_point: stock_alert
+
+model_hint: "gpt-4o"
+autonomy: supervised
+risk_floor: medium
+
+resource_limits:
+  max_tokens_per_minute: 20000
+  max_tokens_per_hour: 200000
+  max_api_calls_per_min: 30
+  max_api_calls_per_hour: 300
+  max_tool_chain_depth: 3
+  max_decision_duration: "30s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "720h"

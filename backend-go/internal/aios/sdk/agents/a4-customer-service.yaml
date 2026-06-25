@@ -1,0 +1,42 @@
+# A4 — Customer Service
+# Squad: growth
+# Automates customer service: intent classification and auto-reply.
+agent_id: A4
+name: Customer Service
+squad: growth
+version: "2.0.0"
+description: "客服自动化：意图分类、自动回复"
+
+decision_points:
+  - name: auto_reply
+    description: "检查待处理客服消息，自动生成回复"
+  - name: intent_classify
+    description: "对客户消息进行意图分类（退货/咨询/投诉等）"
+
+tools:
+  - order.read
+  - aftersales.order.read
+  - aftersales.refund.decide
+  - aftersales.dispute.query
+
+triggers:
+  - type: schedule
+    interval: "5m"
+    decision_point: auto_reply
+
+model_hint: "gpt-4o-mini"
+autonomy: autonomous
+risk_floor: low
+
+resource_limits:
+  max_tokens_per_minute: 10000
+  max_tokens_per_hour: 100000
+  max_api_calls_per_min: 60
+  max_api_calls_per_hour: 400
+  max_tool_chain_depth: 3
+  max_decision_duration: "15s"
+
+memory:
+  short_term_ttl: "30m"
+  long_term_enabled: true
+  long_term_ttl: "168h"

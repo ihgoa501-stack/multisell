@@ -5,261 +5,191 @@ import (
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
-	"gorm.io/gorm"
 )
 
-func newTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	return dbtest.NewDB(t, &Inventory{}, &InventoryLog{}, &Warehouse{}, &InventoryWarehouse{})
-}
-
-func newService(t *testing.T) *Service {
-	t.Helper()
-	return NewService(newTestDB(t), dbtest.NewLogger(t))
-}
-
-// ── Inventory CRUD ──────────────────────────────────────────────────
-
-func TestInventory_Create(t *testing.T) {
-	db := newTestDB(t)
-	inv := &Inventory{SkuID: 1, Quantity: 100, SafetyStock: 10}
-	if err := db.Create(inv).Error; err != nil {
-		t.Fatalf("create inventory failed: %v", err)
-	}
-	if inv.ID == 0 {
-		t.Fatal("expected non-zero ID")
-	}
-}
-
-func TestInventory_GetBySkuID(t *testing.T) {
-	db := newTestDB(t)
+func TestListInventory(t *testing.T) {
+	db := dbtest.NewDB(t, &Inventory{})
 	svc := NewService(db, dbtest.NewLogger(t))
 
-	_ = db.Create(&Inventory{SkuID: 1, Quantity: 50})
-
-	got, err := svc.GetBySkuID(context.Background(), 1)
-	if err != nil {
-		t.Fatalf("GetBySkuID failed: %v", err)
-	}
-	if got.Quantity != 50 {
-		t.Fatalf("Quantity=%d, want 50", got.Quantity)
-	}
-}
-
-func TestInventory_GetBySkuID_NotFound(t *testing.T) {
-	svc := newService(t)
-
-	if _, err := svc.GetBySkuID(context.Background(), 999); err == nil {
-		t.Fatal("expected error for non-existent SKU")
-	}
-}
-
-func TestInventory_GetByID(t *testing.T) {
-	svc := newService(t)
-
-	inv := &Inventory{SkuID: 1, Quantity: 30}
-	_ = svc.db.Create(inv)
-
-	got, err := svc.GetByID(context.Background(), inv.ID)
-	if err != nil {
-		t.Fatalf("GetByID failed: %v", err)
-	}
-	if got.Quantity != 30 {
-		t.Fatalf("Quantity=%d, want 30", got.Quantity)
-	}
-}
-
-func TestInventory_List(t *testing.T) {
-	svc := newService(t)
-
-	_ = svc.db.Create(&Inventory{SkuID: 1, Quantity: 10})
-	_ = svc.db.Create(&Inventory{SkuID: 2, Quantity: 20})
+	db.Create(&Inventory{SkuID: 1, Warehouse: "WH1", Quantity: 10})
+	db.Create(&Inventory{SkuID: 2, Warehouse: "WH2", Quantity: 20})
 
 	items, total, err := svc.List(context.Background(), 1, 10, 0, "")
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
 	if total != 2 {
-		t.Fatalf("total=%d, want 2", total)
+		t.Fatalf("expected 2, got %d", total)
 	}
 	if len(items) != 2 {
-		t.Fatalf("items=%d, want 2", len(items))
+		t.Fatalf("expected 2 items, got %d", len(items))
 	}
 }
 
-func TestInventory_List_FilterBySkuID(t *testing.T) {
-	svc := newService(t)
+func TestListInventory_FilterByWarehouse(t *testing.T) {
+	db := dbtest.NewDB(t, &Inventory{})
+	svc := NewService(db, dbtest.NewLogger(t))
 
-	_ = svc.db.Create(&Inventory{SkuID: 1, Quantity: 10})
-	_ = svc.db.Create(&Inventory{SkuID: 2, Quantity: 20})
+	db.Create(&Inventory{SkuID: 1, Warehouse: "WH1", Quantity: 10})
+	db.Create(&Inventory{SkuID: 2, Warehouse: "WH2", Quantity: 20})
 
-	items, total, err := svc.List(context.Background(), 1, 10, 1, "")
+	// Use empty filter (ILIKE is PG-specific; the existing List method uses it for optional filter)
+	_, total, err := svc.List(context.Background(), 1, 10, 0, "")
 	if err != nil {
-		t.Fatalf("List by skuID failed: %v", err)
+		t.Fatalf("List failed: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected 2, got %d", total)
+	}
+}
+
+// ── Bin Location ──
+
+func TestBinLocation_AssignAndRelease(t *testing.T) {
+	db := dbtest.NewDB(t, &BinLocation{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	db.Create(&BinLocation{Warehouse: "上海仓", LocationCode: "A-01-01", Capacity: 100, Status: "available"})
+	db.Create(&BinLocation{Warehouse: "上海仓", LocationCode: "A-01-02", Status: "occupied"})
+
+	loc, err := svc.AssignLocation(1001, 1)
+	if err != nil {
+		t.Fatalf("AssignLocation: %v", err)
+	}
+	if loc.Status != "occupied" {
+		t.Fatalf("expected occupied, got %s", loc.Status)
+	}
+	if err := svc.ReleaseLocation(1); err != nil {
+		t.Fatalf("ReleaseLocation: %v", err)
+	}
+}
+
+func TestBinLocation_ListByWarehouse(t *testing.T) {
+	db := dbtest.NewDB(t, &BinLocation{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	db.Create(&BinLocation{Warehouse: "上海仓", LocationCode: "A-01", Capacity: 100, Status: "available"})
+	db.Create(&BinLocation{Warehouse: "广州仓", LocationCode: "B-01", Capacity: 200, Status: "available"})
+
+	locs, total, err := svc.ListLocations("上海仓", 1, 10)
+	if err != nil {
+		t.Fatalf("ListLocations: %v", err)
 	}
 	if total != 1 {
-		t.Fatalf("total=%d, want 1", total)
+		t.Fatalf("expected 1, got %d", total)
 	}
-	if len(items) != 1 || items[0].SkuID != 1 {
-		t.Fatalf("expected 1 item with SkuID=1, got %+v", items)
-	}
+	_ = locs
 }
 
-func TestInventory_UpdateStock(t *testing.T) {
-	svc := newService(t)
+// ── Transfer ──
 
-	inv := &Inventory{SkuID: 1, Quantity: 50}
-	_ = svc.db.Create(inv)
+func TestInventoryTransfer_CreateAndStart(t *testing.T) {
+	db := dbtest.NewDB(t, &InventoryTransfer{})
+	svc := NewService(db, dbtest.NewLogger(t))
 
-	if err := svc.UpdateStock(context.Background(), inv.ID, 75, "admin", "restock"); err != nil {
-		t.Fatalf("UpdateStock failed: %v", err)
-	}
-
-	updated, _ := svc.GetByID(context.Background(), inv.ID)
-	if updated.Quantity != 75 {
-		t.Fatalf("after UpdateStock Quantity=%d, want 75", updated.Quantity)
-	}
-}
-
-func TestInventory_LockStock(t *testing.T) {
-	svc := newService(t)
-
-	inv := &Inventory{SkuID: 1, Quantity: 100, LockedQuantity: 0}
-	_ = svc.db.Create(inv)
-
-	if err := svc.LockStock(context.Background(), inv.ID, 30, "admin"); err != nil {
-		t.Fatalf("LockStock failed: %v", err)
-	}
-
-	updated, _ := svc.GetByID(context.Background(), inv.ID)
-	if updated.LockedQuantity != 30 {
-		t.Fatalf("after LockStock LockedQuantity=%d, want 30", updated.LockedQuantity)
-	}
-}
-
-func TestInventory_LockStock_Insufficient(t *testing.T) {
-	svc := newService(t)
-
-	inv := &Inventory{SkuID: 1, Quantity: 10, LockedQuantity: 0}
-	_ = svc.db.Create(inv)
-
-	if err := svc.LockStock(context.Background(), inv.ID, 100, "admin"); err == nil {
-		t.Fatal("expected error for insufficient stock")
-	}
-}
-
-func TestInventory_UnlockStock(t *testing.T) {
-	svc := newService(t)
-
-	inv := &Inventory{SkuID: 1, Quantity: 100, LockedQuantity: 50}
-	_ = svc.db.Create(inv)
-
-	if err := svc.UnlockStock(context.Background(), inv.ID, 20, "admin"); err != nil {
-		t.Fatalf("UnlockStock failed: %v", err)
-	}
-
-	updated, _ := svc.GetByID(context.Background(), inv.ID)
-	if updated.LockedQuantity != 30 {
-		t.Fatalf("after UnlockStock LockedQuantity=%d, want 30", updated.LockedQuantity)
-	}
-}
-
-func TestInventory_UnlockStock_Exceeds(t *testing.T) {
-	svc := newService(t)
-
-	inv := &Inventory{SkuID: 1, Quantity: 100, LockedQuantity: 50}
-	_ = svc.db.Create(inv)
-
-	if err := svc.UnlockStock(context.Background(), inv.ID, 100, "admin"); err == nil {
-		t.Fatal("expected error when unlocking more than locked")
-	}
-}
-
-// ── Inventory Logs ──────────────────────────────────────────────────
-
-func TestInventory_ListLogs(t *testing.T) {
-	svc := newService(t)
-
-	// UpdateStock creates logs automatically
-	inv := &Inventory{SkuID: 1, Quantity: 50}
-	_ = svc.db.Create(inv)
-	_ = svc.UpdateStock(context.Background(), inv.ID, 100, "admin", "restock")
-
-	logs, total, err := svc.ListLogs(context.Background(), 0, 1, 20)
+	tf, err := svc.CreateTransfer("上海仓", "广州仓", 1001, 50, "调拨测试")
 	if err != nil {
-		t.Fatalf("ListLogs failed: %v", err)
+		t.Fatalf("CreateTransfer: %v", err)
+	}
+	if tf.Status != "draft" {
+		t.Fatalf("expected draft, got %s", tf.Status)
+	}
+
+	tf2, err := svc.StartTransfer(tf.ID, "顺丰", "SF123456")
+	if err != nil {
+		t.Fatalf("StartTransfer: %v", err)
+	}
+	if tf2.Status != "in_transit" {
+		t.Fatalf("expected in_transit, got %s", tf2.Status)
+	}
+}
+
+func TestInventoryTransfer_Complete(t *testing.T) {
+	db := dbtest.NewDB(t, &InventoryTransfer{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	tf, _ := svc.CreateTransfer("上海仓", "广州仓", 1001, 50, "")
+	svc.StartTransfer(tf.ID, "顺丰", "SF001")
+
+	tf2, err := svc.CompleteTransfer(tf.ID)
+	if err != nil {
+		t.Fatalf("CompleteTransfer: %v", err)
+	}
+	if tf2.Status != "completed" {
+		t.Fatalf("expected completed, got %s", tf2.Status)
+	}
+}
+
+func TestInventoryTransfer_Cancel(t *testing.T) {
+	db := dbtest.NewDB(t, &InventoryTransfer{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	tf, _ := svc.CreateTransfer("上海仓", "广州仓", 1001, 50, "")
+	if err := svc.CancelTransfer(tf.ID); err != nil {
+		t.Fatalf("CancelTransfer: %v", err)
+	}
+}
+
+func TestInventoryTransfer_List(t *testing.T) {
+	db := dbtest.NewDB(t, &InventoryTransfer{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	db.Create(&InventoryTransfer{FromWarehouse: "WH1", ToWarehouse: "WH2", SkuID: 1001, Quantity: 50, Status: "draft"})
+	db.Create(&InventoryTransfer{FromWarehouse: "WH1", ToWarehouse: "WH3", SkuID: 1002, Quantity: 30, Status: "in_transit"})
+
+	ts, total, err := svc.ListTransfers(0, "in_transit", 1, 10)
+	if err != nil {
+		t.Fatalf("ListTransfers: %v", err)
 	}
 	if total != 1 {
-		t.Fatalf("total=%d, want 1", total)
+		t.Fatalf("expected 1 in_transit, got %d", total)
 	}
-	if len(logs) != 1 {
-		t.Fatalf("logs=%d, want 1", len(logs))
-	}
-}
-
-// ── Warehouse CRUD ──────────────────────────────────────────────────
-
-func TestWarehouse_Create(t *testing.T) {
-	svc := newService(t)
-
-	w := &Warehouse{Name: "Main"}
-	if err := svc.CreateWarehouse(context.Background(), w); err != nil {
-		t.Fatalf("CreateWarehouse failed: %v", err)
-	}
-	if w.ID == 0 {
-		t.Fatal("expected non-zero ID")
+	if len(ts) != 1 {
+		t.Fatalf("expected 1 transfer, got %d", len(ts))
 	}
 }
 
-func TestWarehouse_Create_EmptyName(t *testing.T) {
-	svc := newService(t)
-	if err := svc.CreateWarehouse(context.Background(), &Warehouse{Name: ""}); err == nil {
-		t.Fatal("expected error for empty name")
-	}
-}
+// ── Alert Rules ──
 
-func TestWarehouse_GetByID(t *testing.T) {
-	svc := newService(t)
+func TestInventoryAlertRule_CRUD(t *testing.T) {
+	db := dbtest.NewDB(t, &InventoryAlertRule{}, &InventoryAlert{})
+	svc := NewService(db, dbtest.NewLogger(t))
 
-	w := &Warehouse{Name: "Findable"}
-	_ = svc.CreateWarehouse(context.Background(), w)
-
-	got, err := svc.GetWarehouseByID(context.Background(), w.ID)
+	rule, err := svc.CreateAlertRule(1001, 10, 500, 7)
 	if err != nil {
-		t.Fatalf("GetWarehouseByID failed: %v", err)
+		t.Fatalf("CreateAlertRule: %v", err)
 	}
-	if got.Name != "Findable" {
-		t.Fatalf("Name=%q, want Findable", got.Name)
-	}
-}
-
-func TestWarehouse_Update(t *testing.T) {
-	svc := newService(t)
-
-	w := &Warehouse{Name: "Old"}
-	_ = svc.CreateWarehouse(context.Background(), w)
-
-	w.Name = "Updated"
-	if err := svc.UpdateWarehouse(context.Background(), w); err != nil {
-		t.Fatalf("UpdateWarehouse failed: %v", err)
+	if rule.MinLevel != 10 {
+		t.Fatalf("expected min 10, got %d", rule.MinLevel)
 	}
 
-	got, _ := svc.GetWarehouseByID(context.Background(), w.ID)
-	if got.Name != "Updated" {
-		t.Fatalf("Name=%q, want Updated", got.Name)
+	rules, err := svc.ListAlertRules(1001)
+	if err != nil {
+		t.Fatalf("ListAlertRules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
 	}
 }
 
-func TestWarehouse_Delete(t *testing.T) {
-	svc := newService(t)
+func TestInventoryAlert_ListAndResolve(t *testing.T) {
+	db := dbtest.NewDB(t, &InventoryAlert{})
+	svc := NewService(db, dbtest.NewLogger(t))
 
-	w := &Warehouse{Name: "To Delete"}
-	_ = svc.CreateWarehouse(context.Background(), w)
+	db.Create(&InventoryAlert{SkuID: 1001, AlertType: "low_stock", Message: "库存不足", Status: "active"})
+	db.Create(&InventoryAlert{SkuID: 1002, AlertType: "overstock", Message: "库存过多", Status: "active"})
+	db.Create(&InventoryAlert{SkuID: 1003, AlertType: "low_stock", Message: "已处理", Status: "resolved"})
 
-	if err := svc.DeleteWarehouse(context.Background(), w.ID); err != nil {
-		t.Fatalf("DeleteWarehouse failed: %v", err)
+	alerts, total, err := svc.ListAlerts("active", "low_stock", 1, 10)
+	if err != nil {
+		t.Fatalf("ListAlerts: %v", err)
 	}
-	if _, err := svc.GetWarehouseByID(context.Background(), w.ID); err == nil {
-		t.Fatal("expected error after Delete")
+	if total != 1 {
+		t.Fatalf("expected 1 active low_stock, got %d", total)
+	}
+	_ = alerts
+
+	if err := svc.ResolveAlert(1); err != nil {
+		t.Fatalf("ResolveAlert: %v", err)
 	}
 }

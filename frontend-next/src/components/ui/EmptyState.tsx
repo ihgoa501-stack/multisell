@@ -53,7 +53,7 @@ export default function EmptyState({
         description={null}
       >
         <Space direction="vertical" align="center" style={{ gap: s.gap, textAlign: 'center' }}>
-          <Text style={{ fontSize: s.fontSize, fontWeight: 500, color: '#262626' }}>
+          <Text style={{ fontSize: s.fontSize, fontWeight: 500, color: 'var(--t2)' }}>
             {description}
           </Text>
           {subtitle && (

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import {
   Badge,
   Button,
-  Card,
   Col,
   Empty,
   message,
@@ -25,6 +24,9 @@ import {
   ClockCircleOutlined,
   TeamOutlined,
   SafetyCertificateOutlined,
+  ApiOutlined,
+  ToolOutlined,
+  HeartOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -154,6 +156,23 @@ export default function AgentOSPage() {
     },
   });
 
+  // AIOS system health
+  interface AIOSHealth {
+    status: string;
+    runtime: string;
+    tools: number;
+    guardrails: string;
+    agents: number;
+    observability: boolean;
+  }
+  const { data: aiosHealth, isLoading: healthLoading } = useQuery({
+    queryKey: ['aios-health'],
+    queryFn: async () => {
+      const res = await apiClient.get<AIOSHealth>('/v1/aios/health');
+      return res.data;
+    },
+  });
+
   // Action operations
   const approveMutation = useMutation({
     mutationFn: async (id: string) =>
@@ -199,6 +218,7 @@ export default function AgentOSPage() {
     qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
     qc.invalidateQueries({ queryKey: ['agentos-autonomy'] });
+    qc.invalidateQueries({ queryKey: ['aios-health'] });
   };
 
   const workColumns = [
@@ -289,7 +309,7 @@ export default function AgentOSPage() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%', fontFamily: 'var(--body)' }}>
       <div
         style={{
           display: 'flex',
@@ -298,7 +318,9 @@ export default function AgentOSPage() {
           marginBottom: 16,
         }}
       >
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>AgentOS 驾驶舱</h1>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: 0 }}>
+          AgentOS 驾驶舱
+        </h1>
         <Button icon={<ReloadOutlined />} onClick={refreshAll}>
           刷新
         </Button>
@@ -307,36 +329,36 @@ export default function AgentOSPage() {
       {/* 顶部：统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
-          <Card>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
             <Statistic
               title="待审批总数"
               value={overview?.pending_total ?? 0}
-              prefix={<ClockCircleOutlined style={{ color: '#fa8c16' }} />}
-              valueStyle={{ color: '#fa8c16' }}
+              prefix={<ClockCircleOutlined style={{ color: 'var(--y4)' }} />}
+              valueStyle={{ color: 'var(--y4)' }}
             />
-          </Card>
+          </div>
         </Col>
         <Col xs={12} sm={6}>
-          <Card>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
             <Statistic
               title="SLA 超期"
               value={overview?.sla_breached ?? 0}
-              prefix={<AlertOutlined style={{ color: '#f5222d' }} />}
-              valueStyle={{ color: '#f5222d' }}
+              prefix={<AlertOutlined style={{ color: 'var(--r4)' }} />}
+              valueStyle={{ color: 'var(--r4)' }}
             />
-          </Card>
+          </div>
         </Col>
         <Col xs={12} sm={6}>
-          <Card>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
             <Statistic
               title="工作队列长度"
               value={overview?.work_queue_len ?? 0}
-              prefix={<TeamOutlined style={{ color: '#1677ff' }} />}
+              prefix={<TeamOutlined style={{ color: 'var(--i4)' }} />}
             />
-          </Card>
+          </div>
         </Col>
         <Col xs={12} sm={6}>
-          <Card>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
             <Statistic
               title="平均置信度"
               value={
@@ -344,10 +366,45 @@ export default function AgentOSPage() {
                   ? `${(overview.avg_confidence * 100).toFixed(0)}%`
                   : '-'
               }
-              prefix={<SafetyCertificateOutlined style={{ color: '#52c41a' }} />}
-              valueStyle={{ color: '#52c41a' }}
+              prefix={<SafetyCertificateOutlined style={{ color: 'var(--g4)' }} />}
+              valueStyle={{ color: 'var(--g4)' }}
             />
-          </Card>
+          </div>
+        </Col>
+      </Row>
+
+      {/* AIOS 系统指标 */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={8}>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
+            <Statistic
+              title="已注册 Agent"
+              value={aiosHealth?.agents ?? 0}
+              prefix={<ApiOutlined style={{ color: 'var(--i4)' }} />}
+              loading={healthLoading}
+            />
+          </div>
+        </Col>
+        <Col xs={12} sm={8}>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
+            <Statistic
+              title="已注册 Tool"
+              value={aiosHealth?.tools ?? 0}
+              prefix={<ToolOutlined style={{ color: 'var(--g4)' }} />}
+              loading={healthLoading}
+            />
+          </div>
+        </Col>
+        <Col xs={12} sm={8}>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
+            <Statistic
+              title="系统健康"
+              value={aiosHealth?.status === 'ok' ? '正常' : aiosHealth?.status ?? '-'}
+              prefix={<HeartOutlined style={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }} />}
+              valueStyle={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }}
+              loading={healthLoading}
+            />
+          </div>
         </Col>
       </Row>
 
@@ -355,206 +412,232 @@ export default function AgentOSPage() {
         {/* 左侧：Squad 健康地图 + 工作队列 */}
         <Col xs={24} lg={17}>
           {/* Squad 健康地图 */}
-          <Card title="Squad 健康地图" style={{ marginBottom: 16 }}>
-            <Spin spinning={overviewLoading}>
-              {(overview?.squads ?? []).length === 0 && !overviewLoading ? (
-                <Empty description="暂无 Squad 数据" />
-              ) : (
-                <Space direction="vertical" style={{ width: '100%' }} size="small">
-                  {(overview?.squads ?? []).map((squad) => (
-                    <Card
-                      key={squad.squad_id}
-                      size="small"
-                      style={{
-                        borderLeft: `4px solid ${
-                          squad.health === 'ok'
-                            ? '#52c41a'
-                            : squad.health === 'warn'
-                              ? '#fa8c16'
-                              : squad.health === 'critical'
-                                ? '#f5222d'
-                                : '#1677ff'
-                        }`,
-                      }}
-                    >
-                      <Row gutter={16} align="middle">
-                        <Col xs={24} sm={6}>
-                          <Space>
-                            <Text strong>{squad.name}</Text>
-                            <Badge
-                              status={
-                                squad.health === 'ok'
-                                  ? 'success'
-                                  : squad.health === 'warn'
-                                    ? 'warning'
-                                    : squad.health === 'critical'
-                                      ? 'error'
-                                      : 'processing'
-                              }
-                              text={
-                                <Tag color={healthColor(squad.health)}>
-                                  {squad.health}
-                                </Tag>
-                              }
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, marginBottom: 16 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
+              Squad 健康地图
+            </div>
+            <div style={{ padding: 16 }}>
+              <Spin spinning={overviewLoading}>
+                {(overview?.squads ?? []).length === 0 && !overviewLoading ? (
+                  <Empty description="暂无 Squad 数据" />
+                ) : (
+                  <Space direction="vertical" style={{ width: '100%' }} size="small">
+                    {(overview?.squads ?? []).map((squad) => (
+                      <div
+                        key={squad.squad_id}
+                        style={{
+                          background: 'var(--s1)',
+                          border: '1px solid var(--bd)',
+                          borderRadius: 8,
+                          borderLeft: `4px solid ${
+                            squad.health === 'ok'
+                              ? 'var(--g4)'
+                              : squad.health === 'warn'
+                                ? 'var(--y4)'
+                                : squad.health === 'critical'
+                                  ? 'var(--r4)'
+                                  : 'var(--i4)'
+                          }`,
+                          padding: '12px 16px',
+                        }}
+                      >
+                        <Row gutter={16} align="middle">
+                          <Col xs={24} sm={6}>
+                            <Space>
+                              <Text strong>{squad.name}</Text>
+                              <Badge
+                                status={
+                                  squad.health === 'ok'
+                                    ? 'success'
+                                    : squad.health === 'warn'
+                                      ? 'warning'
+                                      : squad.health === 'critical'
+                                        ? 'error'
+                                        : 'processing'
+                                }
+                                text={
+                                  <Tag color={healthColor(squad.health)}>
+                                    {squad.health}
+                                  </Tag>
+                                }
+                              />
+                            </Space>
+                          </Col>
+                          <Col xs={6} sm={4}>
+                            <Statistic
+                              title="Agent"
+                              value={squad.agent_count}
+                              valueStyle={{ fontSize: 16 }}
                             />
-                          </Space>
-                        </Col>
-                        <Col xs={6} sm={4}>
-                          <Statistic
-                            title="Agent"
-                            value={squad.agent_count}
-                            valueStyle={{ fontSize: 16 }}
-                          />
-                        </Col>
-                        <Col xs={6} sm={4}>
-                          <Statistic
-                            title="Trace"
-                            value={squad.trace_count}
-                            valueStyle={{ fontSize: 16 }}
-                          />
-                        </Col>
-                        <Col xs={6} sm={4}>
-                          <Statistic
-                            title="Action"
-                            value={squad.action_count}
-                            valueStyle={{ fontSize: 16 }}
-                          />
-                        </Col>
-                        <Col xs={6} sm={6}>
-                          <Statistic
-                            title="待办"
-                            value={squad.pending_count}
-                            valueStyle={{
-                              fontSize: 16,
-                              color: squad.pending_count > 0 ? '#fa8c16' : '#52c41a',
-                            }}
-                          />
-                        </Col>
-                      </Row>
-                    </Card>
-                  ))}
-                </Space>
-              )}
-            </Spin>
-          </Card>
+                          </Col>
+                          <Col xs={6} sm={4}>
+                            <Statistic
+                              title="Trace"
+                              value={squad.trace_count}
+                              valueStyle={{ fontSize: 16 }}
+                            />
+                          </Col>
+                          <Col xs={6} sm={4}>
+                            <Statistic
+                              title="Action"
+                              value={squad.action_count}
+                              valueStyle={{ fontSize: 16 }}
+                            />
+                          </Col>
+                          <Col xs={6} sm={6}>
+                            <Statistic
+                              title="待办"
+                              value={squad.pending_count}
+                              valueStyle={{
+                                fontSize: 16,
+                                color: squad.pending_count > 0 ? 'var(--y4)' : 'var(--g4)',
+                              }}
+                            />
+                          </Col>
+                        </Row>
+                      </div>
+                    ))}
+                  </Space>
+                )}
+              </Spin>
+            </div>
+          </div>
 
           {/* 待审批工作队列 */}
-          <Card title="待审批工作队列">
-            <Space style={{ marginBottom: 12 }}>
-              <Button
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
+              待审批工作队列
+            </div>
+            <div style={{ padding: 16 }}>
+              <Space style={{ marginBottom: 12 }}>
+                <Button
+                  size="small"
+                  onClick={() => setWorkFilter({})}
+                  type={!workFilter.risk_level && !workFilter.status ? 'primary' : 'default'}
+                >
+                  全部
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  type={workFilter.risk_level === 'high' ? 'primary' : 'default'}
+                  onClick={() => setWorkFilter({ risk_level: 'high' })}
+                >
+                  高风险
+                </Button>
+                <Button
+                  size="small"
+                  type={workFilter.risk_level === 'medium' ? 'primary' : 'default'}
+                  style={
+                    workFilter.risk_level === 'medium'
+                      ? { backgroundColor: 'var(--y4)', borderColor: 'var(--y4)' }
+                      : {}
+                  }
+                  onClick={() => setWorkFilter({ risk_level: 'medium' })}
+                >
+                  中风险
+                </Button>
+                <Button
+                  size="small"
+                  type={workFilter.risk_level === 'low' ? 'primary' : 'default'}
+                  style={
+                    workFilter.risk_level === 'low'
+                      ? { backgroundColor: 'var(--g4)', borderColor: 'var(--g4)' }
+                      : {}
+                  }
+                  onClick={() => setWorkFilter({ risk_level: 'low' })}
+                >
+                  低风险
+                </Button>
+              </Space>
+              <Table
+                rowKey="id"
+                loading={workLoading}
+                dataSource={workItemsData?.items ?? []}
+                columns={workColumns}
                 size="small"
-                onClick={() => setWorkFilter({})}
-                type={!workFilter.risk_level && !workFilter.status ? 'primary' : 'default'}
-              >
-                全部
-              </Button>
-              <Button
-                size="small"
-                danger
-                type={workFilter.risk_level === 'high' ? 'primary' : 'default'}
-                onClick={() => setWorkFilter({ risk_level: 'high' })}
-              >
-                高风险
-              </Button>
-              <Button
-                size="small"
-                type={workFilter.risk_level === 'medium' ? 'primary' : 'default'}
-                style={
-                  workFilter.risk_level === 'medium'
-                    ? { backgroundColor: '#fa8c16', borderColor: '#fa8c16' }
-                    : {}
-                }
-                onClick={() => setWorkFilter({ risk_level: 'medium' })}
-              >
-                中风险
-              </Button>
-              <Button
-                size="small"
-                type={workFilter.risk_level === 'low' ? 'primary' : 'default'}
-                style={
-                  workFilter.risk_level === 'low'
-                    ? { backgroundColor: '#52c41a', borderColor: '#52c41a' }
-                    : {}
-                }
-                onClick={() => setWorkFilter({ risk_level: 'low' })}
-              >
-                低风险
-              </Button>
-            </Space>
-            <Table
-              rowKey="id"
-              loading={workLoading}
-              dataSource={workItemsData?.items ?? []}
-              columns={workColumns}
-              size="small"
-              scroll={{ x: 'max-content' }}
-              pagination={{
-                pageSize: 10,
-                total: workItemsData?.total ?? 0,
-                showSizeChanger: false,
-              }}
-            />
-          </Card>
+                scroll={{ x: 'max-content' }}
+                pagination={{
+                  pageSize: 10,
+                  total: workItemsData?.total ?? 0,
+                  showSizeChanger: false,
+                }}
+              />
+            </div>
+          </div>
         </Col>
 
         {/* 右侧：Autonomy 控制面板 */}
         <Col xs={24} lg={7}>
-          <Card title="Autonomy 控制面板（只读）">
-            <Spin spinning={autonomyLoading}>
-              {(autonomyData ?? []).length === 0 && !autonomyLoading ? (
-                <Empty description="暂无 Autonomy 配置" />
-              ) : (
-                <Space direction="vertical" style={{ width: '100%' }} size="small">
-                  {(autonomyData ?? []).map((entry) => (
-                    <Card key={entry.agent_id} size="small">
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
+              Autonomy 控制面板（只读）
+            </div>
+            <div style={{ padding: 16 }}>
+              <Spin spinning={autonomyLoading}>
+                {(autonomyData ?? []).length === 0 && !autonomyLoading ? (
+                  <Empty description="暂无 Autonomy 配置" />
+                ) : (
+                  <Space direction="vertical" style={{ width: '100%' }} size="small">
+                    {(autonomyData ?? []).map((entry) => (
                       <div
+                        key={entry.agent_id}
                         style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
+                          background: 'var(--s1)',
+                          border: '1px solid var(--bd)',
+                          borderRadius: 8,
+                          padding: 12,
                         }}
                       >
-                        <Text strong>{entry.agent_id}</Text>
-                        <Tag color={autonomyColor(entry.autonomy_level)}>
-                          {entry.autonomy_level}
-                        </Tag>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <Text strong>{entry.agent_id}</Text>
+                          <Tag color={autonomyColor(entry.autonomy_level)}>
+                            {entry.autonomy_level}
+                          </Tag>
+                        </div>
+                        <div style={{ marginTop: 8 }}>
+                          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                              }}
+                            >
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                需要审批
+                              </Text>
+                              <Tag color={entry.requires_approval ? 'orange' : 'green'}>
+                                {entry.requires_approval ? '是' : '否'}
+                              </Tag>
+                            </div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                              }}
+                            >
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                每小时上限
+                              </Text>
+                              <Text style={{ fontSize: 12 }}>
+                                {entry.max_actions_per_hour}
+                              </Text>
+                            </div>
+                          </Space>
+                        </div>
                       </div>
-                      <div style={{ marginTop: 8 }}>
-                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                            }}
-                          >
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              需要审批
-                            </Text>
-                            <Tag color={entry.requires_approval ? 'orange' : 'green'}>
-                              {entry.requires_approval ? '是' : '否'}
-                            </Tag>
-                          </div>
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                            }}
-                          >
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              每小时上限
-                            </Text>
-                            <Text style={{ fontSize: 12 }}>
-                              {entry.max_actions_per_hour}
-                            </Text>
-                          </div>
-                        </Space>
-                      </div>
-                    </Card>
-                  ))}
-                </Space>
-              )}
-            </Spin>
-          </Card>
+                    ))}
+                  </Space>
+                )}
+              </Spin>
+            </div>
+          </div>
         </Col>
       </Row>
     </div>

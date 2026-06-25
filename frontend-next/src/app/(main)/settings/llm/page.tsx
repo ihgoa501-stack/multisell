@@ -2,7 +2,6 @@
 
 import { Card, Empty, Spin, Table, Tag } from 'antd';
 import { useQuery } from '@tanstack/react-query';
-import PageContainer from '@/components/ui/PageContainer';
 import apiClient from '@/lib/api-client';
 
 interface LlmConfig {
@@ -26,7 +25,8 @@ export default function SettingsLlmPage() {
   });
 
   return (
-    <PageContainer title="LLM 配置">
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: '0 0 16px 0' }}>LLM 配置</h1>
       <Card>
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: 48 }}>
@@ -55,6 +55,6 @@ export default function SettingsLlmPage() {
           />
         )}
       </Card>
-    </PageContainer>
+    </div>
   );
 }

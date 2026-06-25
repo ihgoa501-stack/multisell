@@ -1,52 +1,126 @@
 'use client';
 
-import { Layout, Button, Space, Avatar } from 'antd';
-import { SearchOutlined, RobotOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
-import Breadcrumbs from '@/components/layout/Breadcrumbs';
+import { Button, Space, Avatar } from 'antd';
+import { SearchOutlined, MoonOutlined, SunOutlined, BellOutlined } from '@ant-design/icons';
 import { useAppStore } from '@/stores/app-store';
+import ActivityFeed from '@/components/layout/ActivityFeed';
 
-const { Header } = Layout;
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  window.dispatchEvent(new CustomEvent('themechange', { detail: next }));
+}
 
 export default function AppHeader() {
-  const { sidebarCollapsed, toggleSidebar, setCommandPaletteOpen, setCopilotOpen } = useAppStore();
+  const { setCommandPaletteOpen, toggleActivityFeed, unseenCount, activityFeedOpen } = useAppStore();
 
   return (
-    <Header
-      style={{
-        background: '#fff',
-        padding: '0 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid #f0f0f0',
-        height: 56,
-      }}
-    >
-      <Space>
-        <Button
-          type="text"
-          icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-          onClick={toggleSidebar}
-        />
-        <Breadcrumbs />
-      </Space>
-      <Space>
+    <>
+      {/* Brand */}
+      <span
+        style={{
+          fontFamily: 'var(--ds)',
+          fontWeight: 700,
+          fontSize: '0.9rem',
+          color: 'var(--t1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            background: 'linear-gradient(135deg, var(--i4), var(--c4))',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}
+        >
+          ◆
+        </span>
+        凌镜
+      </span>
+
+      {/* Agent status */}
+      <span
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: '2px 10px 2px 6px',
+          borderRadius: 100,
+          background: 'rgba(34,211,238,0.08)',
+          border: '1px solid rgba(34,211,238,0.12)',
+          fontSize: '0.68rem',
+          color: 'var(--c4)',
+          flexShrink: 0,
+        }}
+      >
+        <span style={{
+          width: 4, height: 4, borderRadius: '50%',
+          background: 'var(--c4)',
+          display: 'inline-block',
+        }} />
+        3 Agents Online
+      </span>
+
+      <div style={{ flex: 1 }} />
+
+      {/* Right actions */}
+      <Space size="small">
         <Button
           icon={<SearchOutlined />}
           onClick={() => setCommandPaletteOpen(true)}
           type="text"
+          size="small"
+          style={{ color: 'var(--t2)', fontSize: '0.8rem' }}
         >
-          Cmd+K
+          /
         </Button>
         <Button
-          icon={<RobotOutlined />}
-          onClick={() => setCopilotOpen(true)}
           type="text"
+          icon={<SunOutlined />}
+          onClick={toggleTheme}
+          size="small"
+          style={{ color: 'var(--t2)' }}
         />
-        <Avatar size="small" style={{ backgroundColor: '#1677ff' }}>
-          U
+        <div style={{ position: 'relative' }}>
+          <Button
+            type="text"
+            icon={<BellOutlined />}
+            onClick={toggleActivityFeed}
+            size="small"
+            style={{ color: 'var(--t2)', position: 'relative' }}
+          />
+          {unseenCount > 0 && !activityFeedOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 2,
+                right: 2,
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: 'var(--r4)',
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+          <ActivityFeed />
+        </div>
+        <Avatar
+          size={24}
+          style={{
+            backgroundColor: 'var(--i5)',
+            fontFamily: 'var(--ds)',
+            fontSize: '0.75rem',
+            cursor: 'pointer',
+          }}
+        >
+          L
         </Avatar>
       </Space>
-    </Header>
+    </>
   );
 }

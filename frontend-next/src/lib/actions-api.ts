@@ -66,25 +66,25 @@ export async function fetchActions(params: ActionListParams = {}): Promise<PageR
   if (params.risk_level) query["risk_level"] = params.risk_level;
   if (params.agent_id) query["agent_id"] = params.agent_id;
   if (params.search) query["search"] = params.search;
-  return apiClient.getPage<UnifiedAction>("/ai/actions", query);
+  return apiClient.getPage<UnifiedAction>("/v1/ai/actions", query);
 }
 
 export async function fetchAction(id: number): Promise<Result<UnifiedAction>> {
-  return apiClient.get<UnifiedAction>("/ai/actions/" + id);
+  return apiClient.get<UnifiedAction>("/v1/ai/actions/" + id);
 }
 
 export async function approveAction(id: number, reason: string): Promise<Result<UnifiedAction>> {
-  return apiClient.post<UnifiedAction>("/ai/actions/" + id + "/approve", { operator: "user", reason });
+  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/approve", { operator: "user", reason });
 }
 
 export async function rejectAction(id: number, reason: string): Promise<Result<UnifiedAction>> {
-  return apiClient.post<UnifiedAction>("/ai/actions/" + id + "/reject", { operator: "user", reason });
+  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/reject", { operator: "user", reason });
 }
 
 export async function executeAction(id: number): Promise<Result<UnifiedAction>> {
-  return apiClient.post<UnifiedAction>("/ai/actions/" + id + "/execute", { operator: "user" });
+  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/execute", { operator: "user" });
 }
 
 export async function fetchPolicyRules(): Promise<Result<PolicyRule[]>> {
-  return apiClient.get<PolicyRule[]>("/policy/rules");
+  return apiClient.get<PolicyRule[]>("/v1/policy/rules");
 }

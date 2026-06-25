@@ -102,7 +102,7 @@ export default function DetailDrawer({
       {footer && (
         <div
           style={{
-            borderTop: '1px solid #f0f0f0',
+            borderTop: '1px solid var(--bd)',
             paddingTop: 16,
             marginTop: 16,
           }}

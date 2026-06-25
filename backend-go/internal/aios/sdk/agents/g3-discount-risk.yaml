@@ -1,0 +1,47 @@
+# G3 — Discount Risk
+# Squad: risk
+# Controls promotion discount risk and enforces price floor rules.
+agent_id: G3
+name: Discount Risk
+squad: risk
+version: "2.0.0"
+description: "折扣风控：促销折扣风险、价格底线"
+
+decision_points:
+  - name: discount_check
+    description: "检查促销折扣方案，评估利润率影响"
+  - name: promotion_validation
+    description: "验证促销活动是否符合价格底线规则"
+  - name: discount_risk_check
+    description: "定期扫描所有折扣活动，识别高风险促销"
+
+tools:
+  - finance.profit.calculate
+  - platform_fee.list
+  - order.read
+  - finance.profit.summary
+
+triggers:
+  - type: schedule
+    interval: "30m"
+    decision_point: discount_risk_check
+  - type: event
+    topic: "agent.decided.A5.stock_alert"
+    decision_point: discount_risk_check
+
+model_hint: "gpt-4o"
+autonomy: supervised
+risk_floor: high
+
+resource_limits:
+  max_tokens_per_minute: 20000
+  max_tokens_per_hour: 200000
+  max_api_calls_per_min: 30
+  max_api_calls_per_hour: 300
+  max_tool_chain_depth: 3
+  max_decision_duration: "30s"
+
+memory:
+  short_term_ttl: "30m"
+  long_term_enabled: true
+  long_term_ttl: "720h"

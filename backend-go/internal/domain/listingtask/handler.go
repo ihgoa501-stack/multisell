@@ -273,3 +273,25 @@ func (h *Handler) RetryItem(c *gin.Context) {
 	}
 	response.Success(c, item)
 }
+
+// ---------- Stats / Bulk Retry ----------
+
+// ListStats GET /listing-task/stats
+func (h *Handler) ListStats(c *gin.Context) {
+	stats, err := h.service.GetStats()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, stats)
+}
+
+// RetryAll POST /listing-task/retry-all
+func (h *Handler) RetryAll(c *gin.Context) {
+	count, err := h.service.RetryAllTasks()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"retried": count})
+}

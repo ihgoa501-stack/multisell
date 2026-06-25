@@ -74,7 +74,7 @@ export default function EvolutionPage() {
 
   // ---------- Mutations ----------
   const evaluateMut = useMutation({
-    mutationFn: () => apiClient.post('/evolution/nudges/evaluate'),
+    mutationFn: () => apiClient.post('/v1/evolution/nudges/evaluate'),
     onSuccess: () => {
       message.success('评估完成');
       qc.invalidateQueries({ queryKey: ['evolution-nudges'] });

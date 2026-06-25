@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import {
   Button,
-  Card,
   Col,
   Form,
   Input,
@@ -225,7 +224,7 @@ export default function AgentsPage() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%', fontFamily: 'var(--body)' }}>
       <div
         style={{
           display: 'flex',
@@ -234,7 +233,9 @@ export default function AgentsPage() {
           marginBottom: 16,
         }}
       >
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Agent 列表</h1>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: 0 }}>
+          Agent 列表
+        </h1>
         <Button
           icon={<ReloadOutlined />}
           onClick={() => qc.invalidateQueries({ queryKey: ['agents-list'] })}
@@ -246,17 +247,17 @@ export default function AgentsPage() {
       {/* 顶部统计 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
-          <Card>
+          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
             <Statistic
               title="Agent 总数"
               value={agents?.length ?? 0}
-              prefix={<TeamOutlined style={{ color: '#1677ff' }} />}
+              prefix={<TeamOutlined style={{ color: 'var(--i4)' }} />}
             />
-          </Card>
+          </div>
         </Col>
         {squadStats.map(([squad, count]) => (
           <Col xs={12} sm={6} key={squad}>
-            <Card>
+            <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
               <Statistic
                 title={
                   <Space size={4}>
@@ -270,20 +271,20 @@ export default function AgentsPage() {
                 valueStyle={{
                   color:
                     squad === 'autonomous'
-                      ? '#1677ff'
+                      ? 'var(--i4)'
                       : squad === 'governance'
-                        ? '#722ed1'
+                        ? 'var(--i5)'
                         : squad === 'ops'
-                          ? '#fa8c16'
+                          ? 'var(--y4)'
                           : undefined,
                 }}
               />
-            </Card>
+            </div>
           </Col>
         ))}
       </Row>
 
-      <Card>
+      <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 20 }}>
         <Table
           rowKey="id"
           loading={isLoading}
@@ -296,7 +297,7 @@ export default function AgentsPage() {
             showTotal: (t) => `共 ${t} 个 Agent`,
           }}
         />
-      </Card>
+      </div>
 
       {/* 运行 Modal */}
       <Modal

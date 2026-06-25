@@ -50,6 +50,10 @@ func testLogger() *zap.Logger {
 	return l
 }
 
+func newSvc(db *gorm.DB) *Service {
+	return NewService(db, testLogger(), NewInventoryRestockAdapter(db), NewOrderWriterAdapter(db))
+}
+
 func setupOrder(t *testing.T, db *gorm.DB) *order.Order {
 	t.Helper()
 	o := order.Order{
@@ -80,7 +84,7 @@ func setupInventory(t *testing.T, db *gorm.DB, skuID int64, qty int) *inventory.
 
 func TestService_Create_Full(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 2
@@ -112,7 +116,7 @@ func TestService_Create_Full(t *testing.T) {
 
 func TestService_Get_NotFound(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	_, err := svc.Get(99999)
 	if err == nil {
@@ -122,7 +126,7 @@ func TestService_Get_NotFound(t *testing.T) {
 
 func TestService_List_Pagination(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -146,7 +150,7 @@ func TestService_List_Pagination(t *testing.T) {
 
 func TestService_List_FilterByStatus(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -167,7 +171,7 @@ func TestService_List_FilterByStatus(t *testing.T) {
 
 func TestService_Update(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -185,7 +189,7 @@ func TestService_Update(t *testing.T) {
 
 func TestService_Delete(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -202,7 +206,7 @@ func TestService_Delete(t *testing.T) {
 
 func TestService_Delete_NotFound(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	err := svc.Delete(99999)
 	if err == nil {
@@ -212,7 +216,7 @@ func TestService_Delete_NotFound(t *testing.T) {
 
 func TestService_Approve(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -238,7 +242,7 @@ func TestService_Approve(t *testing.T) {
 
 func TestService_Reject(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -264,7 +268,7 @@ func TestService_Reject(t *testing.T) {
 
 func TestService_ApproveThenReceive(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	skuID := int64(1001)
@@ -302,7 +306,7 @@ func TestService_ApproveThenReceive(t *testing.T) {
 
 func TestService_Receive_NotApproved(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -317,7 +321,7 @@ func TestService_Receive_NotApproved(t *testing.T) {
 
 func TestService_ReceiveThenRefund(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	skuID := int64(1002)
@@ -363,7 +367,7 @@ func TestService_ReceiveThenRefund(t *testing.T) {
 
 func TestService_Refund_WrongStatus(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -380,7 +384,7 @@ func TestService_Refund_WrongStatus(t *testing.T) {
 
 func TestService_Summary(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	o := setupOrder(t, db)
 	qty := 1
@@ -404,7 +408,7 @@ func TestService_Summary(t *testing.T) {
 
 func TestService_Summary_Empty(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, testLogger())
+	svc := newSvc(db)
 
 	summary, err := svc.Summary()
 	if err != nil {

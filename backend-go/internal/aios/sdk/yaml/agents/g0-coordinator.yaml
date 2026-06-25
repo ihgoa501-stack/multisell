@@ -1,0 +1,52 @@
+# G0 — Coordinator
+# Squad: governance
+# Monitors system health, escalates anomalies, and coordinates cross-squad agents.
+agent_id: G0
+name: Coordinator
+squad: governance
+version: "1.0.0"
+description: "协调仲裁：系统健康、异常升级、跨Agent协作、Agent审计"
+
+decision_points:
+  - name: system_health
+    description: "Aggregate health signals from all agents and subsystems"
+  - name: anomaly_escalation
+    description: "Escalate unresolved anomalies to human operators"
+  - name: cross_squad_coordinate
+    description: "Route complex cross-squad workflows between agents"
+  - name: agent_audit
+    description: "Audit agent decisions and state transitions for compliance"
+
+tools:
+  - agent_query
+  - system_health_check
+  - event_query
+  - notification_send
+
+triggers:
+  - type: schedule
+    interval: "5m"
+    decision_point: system_health
+  - type: event
+    topic: "agent.*.degraded"
+    decision_point: anomaly_escalation
+  - type: event
+    topic: "agent.*.error"
+    decision_point: anomaly_escalation
+
+model_hint: "gpt-4o"
+autonomy: supervised
+risk_floor: high
+
+resource_limits:
+  max_tokens_per_minute: 40000
+  max_tokens_per_hour: 400000
+  max_api_calls_per_min: 60
+  max_api_calls_per_hour: 600
+  max_tool_chain_depth: 5
+  max_decision_duration: "60s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "72h"

@@ -49,7 +49,7 @@ export default function PageContainer({
   // --- Loading state ---
   if (loading) {
     return (
-      <div style={{ padding: 80, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <Spin size="large" tip={loadingDesc ?? '加载中...'}>
           <div style={{ padding: 50 }} />
         </Spin>
@@ -60,8 +60,9 @@ export default function PageContainer({
   // --- Empty state ---
   if (empty) {
     return (
-      <div style={{ padding: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 24 }}>{title}</h1>
+      <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>{title}</h1>
+        <div style={{ marginTop: 16 }} />
         <EmptyState
           description={emptyDesc ?? '暂无数据'}
           action={emptyAction}
@@ -73,8 +74,9 @@ export default function PageContainer({
   // --- Error state ---
   if (error) {
     return (
-      <div style={{ padding: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 24 }}>{title}</h1>
+      <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>{title}</h1>
+        <div style={{ marginTop: 16 }} />
         <EmptyState
           description={errorMsg ?? '加载失败'}
           subtitle="请检查网络连接后重试"
@@ -86,7 +88,7 @@ export default function PageContainer({
 
   // --- Normal state ---
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
       <div
         style={{
           display: 'flex',
@@ -97,7 +99,7 @@ export default function PageContainer({
         }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>{title}</h1>
+          <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: 0 }}>{title}</h1>
           {subtitle && (
             <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
               {subtitle}

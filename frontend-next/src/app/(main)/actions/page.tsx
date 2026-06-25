@@ -80,13 +80,13 @@ export default function ActionsPage() {
       if (riskFilter) params.risk_level = riskFilter;
       if (agentFilter) params.agent_id = agentFilter;
       if (search) params.search = search;
-      return apiClient.getPage<UnifiedAction>('/ai/actions', params);
+      return apiClient.getPage<UnifiedAction>('/v1/ai/actions', params);
     },
   });
 
   const approveMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient.post('/ai/actions/' + id + '/approve', { operator: 'user', reason: decisionReason }),
+      apiClient.post('/v1/ai/actions/' + id + '/approve', { operator: 'user', reason: decisionReason }),
     onSuccess: () => {
       message.success('已批准');
       setModalOpen(false);
@@ -97,7 +97,7 @@ export default function ActionsPage() {
 
   const rejectMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient.post('/ai/actions/' + id + '/reject', { operator: 'user', reason: decisionReason }),
+      apiClient.post('/v1/ai/actions/' + id + '/reject', { operator: 'user', reason: decisionReason }),
     onSuccess: () => {
       message.success('已拒绝');
       setModalOpen(false);
@@ -108,7 +108,7 @@ export default function ActionsPage() {
 
   const executeMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient.post('/ai/actions/' + id + '/execute', { operator: 'user' }),
+      apiClient.post('/v1/ai/actions/' + id + '/execute', { operator: 'user' }),
     onSuccess: () => {
       message.success('已执行');
       queryClient.invalidateQueries({ queryKey: ['actions'] });

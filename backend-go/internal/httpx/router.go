@@ -39,6 +39,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
+	"github.com/lingmirror/backend-go/internal/domain/settings"
 	"github.com/lingmirror/backend-go/internal/domain/settlement"
 	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
@@ -398,6 +399,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	notification.RegisterRoutes(protected, db, logger)
 	dashboard.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
+	settings.RegisterRoutes(protected, db, logger)
 	imagegen.RegisterRoutes(protected, db, logger)
 	importbatch.RegisterRoutes(protected, db, logger)
 	operationlog.RegisterRoutes(protected, db, logger)
@@ -416,7 +418,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
 	go hub.Run()
-	wsHandler := realtime.NewHandler(hub, logger, cfg.JWT.Secret)
+	wsHandler := realtime.NewHandler(hub, logger, cfg.JWT.Secret).WithAIChat(ai.NewAIChatHandler(aiOrch))
 	r.GET("/ws", wsHandler.ServeWS)
 
 	// AI routes need the hub for realtime broadcasts.

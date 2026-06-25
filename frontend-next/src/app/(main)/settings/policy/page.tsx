@@ -62,14 +62,14 @@ export default function PolicySettingsPage() {
 
   const { data: rulesData, isLoading } = useQuery<Result<PolicyRule[]>>({
     queryKey: ['policy-rules'],
-    queryFn: () => apiClient.get<PolicyRule[]>('/policy/rules'),
+    queryFn: () => apiClient.get<PolicyRule[]>('/v1/policy/rules'),
   });
 
   const rules = rulesData?.data || [];
 
   const createMutation = useMutation({
     mutationFn: (values: PolicyRuleFormData) =>
-      apiClient.post('/policy/rules', values),
+      apiClient.post('/v1/policy/rules', values),
     onSuccess: () => {
       message.success('创建成功');
       setFormModalOpen(false);
@@ -81,7 +81,7 @@ export default function PolicySettingsPage() {
 
   const updateMutation = useMutation({
     mutationFn: (values: PolicyRuleFormData & { id: number }) =>
-      apiClient.put('/policy/rules/' + values.id, values),
+      apiClient.put('/v1/policy/rules/' + values.id, values),
     onSuccess: () => {
       message.success('更新成功');
       setFormModalOpen(false);
@@ -94,7 +94,7 @@ export default function PolicySettingsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient.delete('/policy/rules/' + id),
+      apiClient.delete('/v1/policy/rules/' + id),
     onSuccess: () => {
       message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['policy-rules'] });
@@ -104,7 +104,7 @@ export default function PolicySettingsPage() {
 
   const toggleMutation = useMutation({
     mutationFn: (id: number) =>
-      apiClient.post('/policy/rules/' + id + '/toggle'),
+      apiClient.post('/v1/policy/rules/' + id + '/toggle'),
     onSuccess: () => {
       message.success('状态已更新');
       queryClient.invalidateQueries({ queryKey: ['policy-rules'] });

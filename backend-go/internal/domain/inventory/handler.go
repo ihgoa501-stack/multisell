@@ -280,3 +280,38 @@ func (h *Handler) ListInventoryBySku(c *gin.Context) {
 
 	response.Success(c, items)
 }
+
+// ── Bin Location handlers ──────────────────────────────────────────
+
+// ListLocations returns a paginated list of bin locations.
+// GET /api/v1/inventory/locations?warehouse=&page=&size=
+func (h *Handler) ListLocations(c *gin.Context) {
+	p := common.ParsePagination(c)
+	warehouse := c.Query("warehouse")
+
+	items, total, err := h.service.ListLocations(warehouse, p.Page, p.Size)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to list locations: "+err.Error())
+		return
+	}
+
+	response.Paginated(c, items, total, p.Page, p.Size)
+}
+
+// ── Transfer handlers ──────────────────────────────────────────────
+
+// ListTransfers returns a paginated list of inventory transfers.
+// GET /api/v1/inventory/transfers?sku_id=&status=&page=&size=
+func (h *Handler) ListTransfers(c *gin.Context) {
+	p := common.ParsePagination(c)
+	skuID, _ := strconv.ParseInt(c.Query("sku_id"), 10, 64)
+	status := c.Query("status")
+
+	items, total, err := h.service.ListTransfers(skuID, status, p.Page, p.Size)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to list transfers: "+err.Error())
+		return
+	}
+
+	response.Paginated(c, items, total, p.Page, p.Size)
+}

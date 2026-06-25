@@ -1,0 +1,39 @@
+# A1 — Product Scout
+# Squad: growth
+# Scans market opportunities, recommends new products, benchmarks competitors.
+agent_id: A1
+name: Product Scout
+squad: growth
+version: "2.0.0"
+description: "选品探路：市场机会扫描、新品推荐、竞品对标"
+
+decision_points:
+  - name: product_scout
+    description: "扫描平台热销趋势，识别新品机会"
+  - name: market_analysis
+    description: "竞品对标分析，输出差异化策略"
+
+tools:
+  - listing.read
+  - sku.read
+  - category.list
+  - supplier.query
+
+triggers: []
+
+model_hint: "gpt-4o"
+autonomy: advisory
+risk_floor: low
+
+resource_limits:
+  max_tokens_per_minute: 10000
+  max_tokens_per_hour: 100000
+  max_api_calls_per_min: 30
+  max_api_calls_per_hour: 200
+  max_tool_chain_depth: 3
+  max_decision_duration: "60s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "720h"

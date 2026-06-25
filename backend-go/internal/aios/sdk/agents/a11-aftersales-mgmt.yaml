@@ -1,0 +1,49 @@
+# A11 — Aftersales Mgmt
+# Squad: settle
+# Manages returns, refund decisions, dispute handling, and aftersales reporting.
+agent_id: A11
+name: Aftersales Mgmt
+squad: settle
+version: "2.0.0"
+description: "售后管理：退货分析、退款决策、纠纷处理、售后预警"
+
+decision_points:
+  - name: return_analysis
+    description: "分析退货原因和趋势，输出改善建议"
+  - name: refund_decision
+    description: "根据售后规则自动决策退款或驳回"
+  - name: dispute_manage
+    description: "跟踪和处理平台纠纷，准备举证材料"
+  - name: aftersales_report
+    description: "生成售后运营报告，预警异常售后指标"
+
+tools:
+  - aftersales.order.read
+  - aftersales.refund.decide
+  - aftersales.dispute.query
+  - order.read
+
+triggers:
+  - type: schedule
+    interval: "1h"
+    decision_point: return_analysis
+  - type: event
+    topic: "aftersales.*"
+    decision_point: dispute_manage
+
+model_hint: "gpt-4o"
+autonomy: supervised
+risk_floor: medium
+
+resource_limits:
+  max_tokens_per_minute: 10000
+  max_tokens_per_hour: 100000
+  max_api_calls_per_min: 30
+  max_api_calls_per_hour: 200
+  max_tool_chain_depth: 3
+  max_decision_duration: "30s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "720h"

@@ -39,7 +39,7 @@ export default function ProductCreatePage() {
 
   return (
     <PageContainer title="创建商品">
-      <Card style={{ maxWidth: 720 }}>
+      <Card style={{ maxWidth: 720, background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input placeholder="商品名称" />

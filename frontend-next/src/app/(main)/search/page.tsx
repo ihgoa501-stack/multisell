@@ -47,8 +47,8 @@ export default function SearchPage() {
   };
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>全局搜索</h1>
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>全局搜索</h1>
 
       <Input.Search
         size="large"
@@ -68,6 +68,7 @@ export default function SearchPage() {
         <List
           bordered
           dataSource={data}
+          style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}
           renderItem={(item) => (
             <List.Item
               style={{ cursor: 'pointer' }}

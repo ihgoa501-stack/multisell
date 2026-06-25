@@ -57,6 +57,32 @@ func (s *Streamer) StartSSE(c *gin.Context) {
 	c.Writer.Flush()
 }
 
+// BroadcastAIMessage sends an ai:stream message to all WebSocket clients
+// in the format: { type: "ai:stream", data: { trace_id, content, done } }.
+func (s *Streamer) BroadcastAIMessage(traceID, content string, done bool) {
+	if s.hub == nil {
+		return
+	}
+	msg := map[string]interface{}{
+		"type": "ai:stream",
+		"data": map[string]interface{}{
+			"trace_id": traceID,
+			"content":  content,
+			"done":     done,
+		},
+	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		s.logger.Warn("broadcast ai message marshal failed", zap.Error(err))
+		return
+	}
+	if done {
+		s.hub.BroadcastAndWait(payload)
+	} else {
+		s.hub.Broadcast(payload)
+	}
+}
+
 // BroadcastEvent pushes an event to all WebSocket clients (realtime ticker).
 func (s *Streamer) BroadcastEvent(ev *SSEEvent) {
 	if s.hub == nil {
@@ -91,8 +117,10 @@ func (s *Streamer) StreamChat(c *gin.Context, traceID, agentID, answer string) {
 			return
 		}
 		s.BroadcastEvent(ev)
+		s.BroadcastAIMessage(traceID, ch, false)
 		time.Sleep(15 * time.Millisecond)
 	}
+	s.BroadcastAIMessage(traceID, "", true)
 	done := &SSEEvent{
 		Event:     "done",
 		TraceID:   traceID,
