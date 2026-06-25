@@ -8,7 +8,7 @@ import (
 
 // RegisterRoutes registers listing routes on the given router group.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger)
+	svc := NewService(db, logger, NewSKUProvider(db), NewDecisionReader(db))
 	h := NewHandler(svc)
 
 	group := rg.Group("/listings")

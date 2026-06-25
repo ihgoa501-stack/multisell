@@ -229,7 +229,7 @@ func (h *Handler) RebuildOrderLedger(c *gin.Context) {
 	if !ok {
 		return
 	}
-	entries, err := h.service.RebuildOrderLedger(orderID)
+	entries, err := h.service.RebuildOrderLedger(c.Request.Context(), orderID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "order not found")

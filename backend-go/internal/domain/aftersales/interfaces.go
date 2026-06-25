@@ -2,21 +2,19 @@ package aftersales
 
 import "context"
 
-// Order is the aftersales view of a sales order (only fields needed by this module).
-type Order struct {
-	ID     int64
-	Status string
+// InventoryItem is the aftersales view of inventory (only fields needed by this module).
+type InventoryItem struct {
+	SkuID          int64
+	Quantity       int
+	LockedQuantity int
 }
 
-// OrderReader provides read access to sales orders without importing the order package.
-type OrderReader interface {
-	GetByID(ctx context.Context, orderID int64) (*Order, error)
-	// TODO: wire via dependency injection
+// InventoryRestocker provides inventory restock operations for aftersales.
+type InventoryRestocker interface {
+	Restock(ctx context.Context, skuID int64, quantity int, operator string, remark string) error
 }
 
-// InventoryChecker provides inventory checks and reservations for aftersales operations.
-type InventoryChecker interface {
-	GetStockLevel(ctx context.Context, skuID int64) (int, error)
-	ReserveStock(ctx context.Context, skuID int64, quantity int) error
-	// TODO: wire via dependency injection
+// OrderWriter provides order mutation operations for aftersales.
+type OrderWriter interface {
+	CancelOrder(ctx context.Context, orderID int64, operator string, remark string) error
 }

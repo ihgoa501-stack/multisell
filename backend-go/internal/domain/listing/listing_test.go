@@ -16,7 +16,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 
 func newService(t *testing.T) *Service {
 	t.Helper()
-	return NewService(newTestDB(t), dbtest.NewLogger(t))
+	db := newTestDB(t)
+	return NewService(db, dbtest.NewLogger(t), NewSKUProvider(db), NewDecisionReader(db))
 }
 
 func TestListing_Create(t *testing.T) {

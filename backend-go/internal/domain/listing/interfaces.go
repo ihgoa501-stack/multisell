@@ -19,11 +19,9 @@ type PreListingDecision struct {
 // SKUProvider provides SKU lookups without importing the sku package.
 type SKUProvider interface {
 	GetByIDs(ctx context.Context, ids []int64) ([]Sku, error)
-	// TODO: wire via dependency injection
 }
 
 // DecisionReader provides read access to pre-listing decisions without importing the decision package.
 type DecisionReader interface {
 	GetByIDs(ctx context.Context, ids []int64) ([]PreListingDecision, error)
-	// TODO: wire via dependency injection
 }
