@@ -1,184 +1,237 @@
 # CLAUDE.md
 
-This file gives Claude Code-specific guidance for working in this repository. The canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.
+This file gives Claude Code-specific guidance for working in this repository.
+Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.
 
 ## Project
 
-凌镜 LingMirror (technical name: MultiSell) is a cross-border e-commerce AI AgentOS.
+凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
+Version `v0.2.0` in `VERSION`, tracked on `main`.
 
-Active stack:
+| Stack | Dir | Entry |
+|-------|-----|-------|
+| Backend (active) | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
+| Frontend (active) | `frontend-next/` | `src/app/` — Next.js 16, React 19, TypeScript, Ant Design 6 |
+| Backend (legacy, frozen) | `backend/` | Python/FastAPI — reference only; no new features |
+| Frontend (legacy, frozen) | `frontend/` | Vue 3 — reference only; no new features |
 
-- Backend: Go / Gin / GORM / PostgreSQL 15 under `backend-go/`
-- Frontend: Next.js / React / TypeScript / Ant Design under `frontend-next/`
-- Backend entry: `backend-go/cmd/server/main.go`
-- Frontend entry: `frontend-next/src/app/`
-- API prefix: `/api/v1`
-- Health check: `/api/health`
-
-Legacy stack is paused:
-
-- `backend/` (Python / FastAPI) and `frontend/` (Vue 3) are reference-only.
-- Do not add new product features to legacy directories.
-- Legacy code may be touched only for migration, parity analysis, security rollback fixes, or documentation.
-- See `docs/ACTIVE_STACK_POLICY.md`.
-
-## First Steps
-
-1. This repo has `.codegraph/`; use CodeGraph before grep/find/opening source files when locating or understanding indexed code.
-2. Check `git status --short` before edits. Preserve user changes and unrelated dirty files.
-3. Prefer existing Go domain and Next page/component patterns over new abstractions.
-4. Keep frontend API calls aligned with Go routes under `/api/v1`.
-5. Run the smallest meaningful verification after changes, then broaden if the touched surface is shared.
+API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT.
 
 ## Commands
 
 ```bash
-# Docker
-docker compose up -d
-docker compose up -d db
+# Infrastructure
+docker compose up -d                 # Postgres 15
+docker compose up -d db              # Postgres only
+docker compose -f docker-compose.legacy.yml up -d  # legacy stack
 
 # Backend
-cd backend-go && go run cmd/server/main.go
-cd backend-go && go test ./...
-cd backend-go && go vet ./...
-cd backend-go && go build -o bin/server cmd/server/main.go
+cd backend-go
+go run cmd/server/main.go            # dev server
+go test ./...                        # all tests
+go test -v ./internal/domain/order/  # single package
+go vet ./...                         # static analysis
+go build -o bin/server cmd/server/main.go
 
 # Frontend
-cd frontend-next && npm run dev -- --hostname 127.0.0.1 --port 3000
-cd frontend-next && npm run build
-cd frontend-next && npm run lint
-cd frontend-next && npm test
+cd frontend-next
+npm run dev -- --hostname 127.0.0.1 --port 3000
+npm run build
+npm run lint                          # eslint, known failures
+npm test                              # vitest
 
-# Legacy reference only
-docker compose -f docker-compose.legacy.yml up -d
+# E2E (separate sub-project under frontend-next/)
+cd frontend-next/e2e && npx playwright test
 ```
 
-New dev database: `multisell`.
+New dev database: `multisell`. Migrations: `backend-go/migrations/` (run via Docker).
 
-## Agent Mode
+## Implementation Rigor
 
 根据改动的模块选择节奏：
 
 - **AI Platform** (`internal/ai/`, `internal/agent/`, `internal/agentos/`, `domain/agentrule/`, `domain/entropy/`, `domain/evolution/`, `domain/trustscore/`, `domain/actionpolicy/`, `domain/decision/`) + **Commerce** (`domain/order/`, `domain/shipping/`, `domain/settlement/`, `domain/finance/`, `domain/platformfee/`, `domain/exchangerate/`) — 先用 /plan → 写测试 → 小心实现。这是核心 + 钱走的地方。
 - **所有其他模块** (CRUD 为主的 product catalog, integration, UI 等) — 直接按现有 pattern 快速实现，不需要过度设计。
 
-
 ## Backend Architecture
 
-Active backend modules live under `backend-go/internal/`.
+### Module Pattern
 
-General module pattern:
+All domain modules under `internal/domain/*/` follow a consistent layout:
 
-- `routes.go` registers Gin routes.
-- `handler.go` handles HTTP request/response mapping.
-- `service.go` owns business logic.
-- `model.go` owns GORM models and request/response structs.
+| File | Purpose |
+|------|---------|
+| `routes.go` | Gin route registration |
+| `handler.go` | HTTP request/response mapping |
+| `service.go` | Business logic |
+| `model.go` | GORM models + request/response structs |
 
-`backend-go/internal/httpx/router.go` registers API routes under `/api/v1`.
+Modules register in `internal/httpx/router.go` under the JWT-protected `/api/v1` group. The router also wires event bus subscriptions, scheduler ticks, and the WebSocket hub.
 
-Important areas:
+### Standard Response Envelope
 
-- `backend-go/internal/auth` and `backend-go/internal/rbac` — JWT auth and permissions.
-- `backend-go/internal/httpx/middleware` — CORS, auth, audit, metrics, recovery.
-- `backend-go/internal/domain/*` — business modules.
-- `backend-go/internal/ai`, `backend-go/internal/agent`, `backend-go/internal/agentos` — AI runtime and AgentOS.
-- `backend-go/internal/platform/eventbus`, `command`, `scheduler` — event-driven agent infrastructure.
-- `backend-go/internal/realtime` — WebSocket hub.
-- `backend-go/migrations` — SQL migrations and migration runbook.
+```go
+response.Success(c, data)                       // {"code":0, "message":"ok", "data":...}
+response.Error(c, http.StatusBadRequest, msg)   // {"code":400, "message":msg}
+response.Paginated(c, data, total, page, size)  // + pagination fields
+response.InternalError(c, err)                  // 500, masks details in release mode
+```
 
-Common conventions:
+Pagination: `common.ParsePagination(c)`, `common.ParseSort(c)` from `internal/common/`.
 
-- Non-public endpoints should be protected by JWT auth.
-- Mutation routes should be auditable through the Go audit middleware or explicit operation log writes.
-- Keep new API contracts under `/api/v1/*`.
-- Use GORM transactions for multi-step state changes.
-- Add focused Go tests near touched behavior.
+### Middleware Stack
+
+`internal/httpx/middleware/`: `CORS` → `RequestID` → `Metrics` (opt-in) → `RecoveryWithSentry` → `Audit` (mutation logging). `Auth` (JWT) applied to the `/api/v1` protected group. Rate limiting in `ratelimit.go`.
+
+### Platform Infrastructure (`internal/platform/`)
+
+Three in-process coordination primitives for agent-to-agent and agent-to-system communication:
+
+- **Event Bus** (`eventbus/bus.go`) — pub/sub with glob topic matching (`order.*`). Used for agent pipeline chains, scheduler ticks, and cross-module async events. ~15 subscriptions in `router.go`.
+- **Command Dispatcher** (`command/command.go`) — typed handler registry bridging agent decisions to domain services: `stock_alert`, `replenish`, `price_review`, `listing_optimize`, `compliance_check`.
+- **Scheduler** (`scheduler/`) — periodic task runner (5 min to 6 hr intervals). Publishes `scheduler.tick.{agent_id}` events.
+
+### Agent Pipeline Chain
+
+Event bus subscriptions chain agent decisions automatically (defined in `router.go`):
+
+```
+A5 stock_alert (red)              → G3 discount_risk_check
+G3 discount_risk_check (block)     → A6 profit_watch
+A6 profit_watch (loss/threshold)   → A2 listing_optimize
+G0 system_health (anomaly > 3)    → G1 dashboard_overview
+
+All scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/trustscore/entropy
+```
+
+### WebSocket
+
+`internal/realtime/` — hub for AI streaming and live updates. Endpoint: `GET /ws`. Integrated into AI route streaming for real-time chat/decision output.
+
+### Configuration
+
+`backend-go/configs/config.yaml`, overridden by env vars. Full struct in `internal/config/config.go`.
+
+| Env | Config Path |
+|-----|-------------|
+| `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | `database.*` |
+| `JWT_SECRET` | `jwt.secret` |
+| `SERVER_PORT` | `server.port` |
+| `REDIS_ADDR` / `REDIS_PASSWORD` | `redis.*` |
+| `SENTRY_DSN` | `sentry.dsn` |
+| `CORS_ALLOWED_ORIGINS` | `cors.allowed_origins` |
+| `METRICS_ENABLED` | `metrics.enabled` |
+
+### Platform Integrations (`domain/integrations/`)
+
+E-commerce platforms implement the `PlatformAdapter` interface in `adapter.go` (Publish, SyncStatus, ValidateCredentials, SyncInventory, PushTracking, FetchOrders, etc.). Register via `RegisterAdapter("lazada", &Adapter{})` in `init()` — see `registry.go`. Current: `ozon`, `shopee`.
+
+### Auth & RBAC
+
+- `internal/auth/` — JWT login/register/refresh (public routes)
+- `internal/rbac/` — role-based permissions on protected routes
+
+### Monitoring
+
+- Prometheus metrics (opt-in): `/metrics` endpoint, middleware tracks request count/duration
+- Sentry in Go (`middleware.RecoveryWithSentry`) and frontend (`@sentry/nextjs`)
+- Audit middleware logs mutations to operationlog table
+
+### Test DB Helper
+
+```go
+import "github.com/lingmirror/backend-go/internal/dbtest"
+
+func TestX(t *testing.T) {
+    db := dbtest.NewDB(t, &MyModel{})  // in-memory SQLite, per-call isolation
+    svc := NewService(db, logger)
+}
+```
+
+Safe for `t.Parallel()`. Also provides `NewLogger(t)`, `StringPtr`/`IntPtr`/`FloatPtr`.
 
 ## Frontend Architecture
 
-Active frontend lives under `frontend-next/`.
+```
+src/
+├── app/
+│   ├── (auth)/login/       # public login page
+│   ├── (main)/             # authenticated pages
+│   │   ├── layout.tsx      # sidebar + header + content
+│   │   ├── dashboard/
+│   │   ├── products/
+│   │   └── ...             # one dir per backend domain module
+│   └── page.tsx            # landing → dashboard
+├── components/
+│   ├── auth/AuthGuard.tsx
+│   ├── crud/CrudListPage.tsx       # reusable CRUD table + search + pagination
+│   ├── layout/             # AntdProvider, AppHeader, AppSidebar, Breadcrumbs, CommandPalette
+│   └── ui/                 # PageContainer, FilterBar, ConfirmDialog, StatCard, etc.
+├── lib/
+│   ├── api-client.ts       # fetch wrapper with JWT refresh + request dedup
+│   ├── auth.ts             # token helpers (localStorage)
+│   ├── query-client.ts     # TanStack React Query client
+│   └── product-analysis.ts
+├── stores/                 # Zustand (app, auth, permission)
+├── config/menu.ts          # sidebar menu items
+└── types/api.ts            # Result / PageResult types
+```
 
-- App Router pages: `frontend-next/src/app/`
-- Shared components: `frontend-next/src/components/`
-- API client: `frontend-next/src/lib/api-client.ts`
-- Menu config: `frontend-next/src/config/menu.ts`
-- Stores: `frontend-next/src/stores/`
-- Types: `frontend-next/src/types/`
-- Alias: `@` maps to `frontend-next/src`
+Key deps: Ant Design 6, TanStack React Query 5, Zustand 5, dayjs, cmdk, reconnecting-websocket.
 
-When adding a page:
+E2E tests: `frontend-next/e2e/` (Playwright, separate sub-project).
 
-1. Add the route under `src/app/(main)/.../page.tsx` or `src/app/(auth)/...`.
-2. Add shared UI under `src/components/` only when reused.
-3. Add menu entries in `src/config/menu.ts` only for navigable top-level pages.
-4. Use `apiClient` with `/v1/*` paths so default base `http://localhost:8080/api` becomes `/api/v1/*`.
-5. Prefer Ant Design, React Query, and existing layout patterns.
-6. Run `npm run build`; run `npm run lint` when touching TypeScript/React.
+### Page Patterns
 
-## Agent System
+- Route → `src/app/(main)/{module}/page.tsx`
+- Shared UI → `src/components/` only when reused
+- Menu entry → `src/config/menu.ts` for top-level pages
+- API calls → `apiClient` with `/v1/*` paths
+- State → Zustand for global, React Query for server state
+- Alias `@` → `src/`
 
-AI and AgentOS currently span:
+## AI & AgentOS
 
-- `backend-go/internal/ai` — chat, run, traces, actions, streaming.
-- `backend-go/internal/agent` — Agent registry and execution entry points.
-- `backend-go/internal/agentos` — cockpit, work items, autonomy overview.
-- `backend-go/internal/domain/agentrule` — agent rules.
-- `backend-go/internal/domain/entropy` — entropy monitoring/defense.
-- `backend-go/internal/domain/evolution` — evolution nudges.
-- `backend-go/internal/domain/trustscore` — trust score and autonomy gating.
-- `backend-go/internal/domain/actionpolicy` — action approval policy.
+| Package | Purpose |
+|---------|---------|
+| `internal/ai/` | LLM orchestration, chat, streaming, traces, provider abstraction |
+| `internal/agent/` | Agent registry + execution entry points |
+| `internal/agentos/` | Cockpit dashboard, work items, autonomy overview |
+| `domain/agentrule/` | Agent behavior rules |
+| `domain/entropy/` | Self-cleansing: SPC control, health scoring, defenses |
+| `domain/evolution/` | Agent evolution nudges |
+| `domain/trustscore/` | Trust score calculation, autonomy gating |
+| `domain/actionpolicy/` | Action approval policy |
 
-The legacy Hermes Python implementation under `backend/app/agent/` is reference-only.
-
-## Configuration
-
-Backend config uses `backend-go/configs/config.yaml` plus environment overrides.
-
-Important env vars:
-
-- `DB_HOST`
-- `DB_PORT`
-- `DB_USER`
-- `DB_PASSWORD`
-- `DB_NAME`
-- `JWT_SECRET`
-- `SERVER_PORT`
-- `LLM_PROVIDER`
-- `LLM_API_KEY`
-- `LLM_MODEL`
-
-Frontend API base:
-
-- `NEXT_PUBLIC_API_URL=http://localhost:8080/api`
+Legacy Hermes Python (`backend/app/agent/`) is reference-only.
 
 ## Verification
 
-Use focused checks:
-
 ```bash
-cd backend-go && go test ./...
-cd backend-go && go vet ./...
-cd frontend-next && npm test
-cd frontend-next && npm run build
-cd frontend-next && npm run lint
+cd backend-go && go test ./...   # pass
+cd backend-go && go vet ./...    # pass
+cd frontend-next && npm test     # pass
+cd frontend-next && npm run build # pass
+cd frontend-next && npm run lint  # fail — known issue
+cd frontend-next/e2e && npx playwright test
 ```
 
-Current known state from 2026-06-24:
+## First Steps
 
-- Backend tests pass.
-- Backend vet passes.
-- Frontend tests pass.
-- Frontend build passes.
-- Frontend lint currently fails and should be fixed before treating the frontend quality gate as green.
+1. `.codegraph/` exists — use `codegraph explore <query>` before grep/find/Read.
+2. Check `git status --short` before edits. Preserve unrelated dirty files.
+3. Follow existing module patterns — no unrequested abstractions.
+4. Keep frontend API calls aligned with Go `/api/v1` routes.
+5. Run the smallest verification covering your touch surface.
+6. Pre-commit hooks in `.pre-commit-config.yaml`.
+7. Do not touch `.kilo/worktrees/` — managed by external tooling.
 
 ## Documentation
 
 - `AGENTS.md` — canonical cross-agent project instructions.
-- `docs/INDEX.md` — documentation index.
+- `docs/INDEX.md` — full documentation index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
 - `docs/ACTIVE_STACK_POLICY.md` — active stack and legacy freeze policy.
 - `docs/FRONTEND_PAGES_AND_ROUTING.md` — Next App Router page map.
-- `docs/FUNCTION_INVENTORY.md` — current feature inventory.
+- `docs/FUNCTION_INVENTORY.md` — complete feature inventory.
 - `docs/features/` — feature specs and template.
-
-Do not touch `.kilo/worktrees/`; it is managed by external tooling.

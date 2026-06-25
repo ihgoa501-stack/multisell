@@ -12,22 +12,17 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 ## Project
 
-凌镜 LingMirror (technical name: MultiSell) is a cross-border e-commerce AI AgentOS.
+凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
+Version `v0.2.0`.
 
-Active stack (full-site migration complete):
+| Stack | Dir | Entry |
+|-------|-----|-------|
+| Backend (active) | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
+| Frontend (active) | `frontend-next/` | `src/app/` — Next.js 16, React 19, TypeScript, Ant Design 6 |
+| Backend (legacy, frozen) | `backend/` | Python/FastAPI — reference only |
+| Frontend (legacy, frozen) | `frontend/` | Vue 3 — reference only |
 
-- Backend: Go / Gin / GORM / PostgreSQL 15 under `backend-go/`
-- Frontend: Next.js / React / TypeScript / Ant Design under `frontend-next/`
-- Backend entry: `backend-go/cmd/server/main.go`
-- Frontend entry: `frontend-next/src/app/`
-- API prefix: `/api/v1`
-
-Legacy stack is paused:
-
-- `backend/` (Python / FastAPI) and `frontend/` (Vue 3) are reference-only.
-- Do not add new product features to legacy directories.
-- Legacy code may be touched only for migration, parity analysis, security rollback fixes, or documentation.
-- See `docs/ACTIVE_STACK_POLICY.md`.
+API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT.
 
 ## Commands
 
@@ -37,78 +32,152 @@ Legacy stack is paused:
 | Docker DB only | `docker compose up -d db` |
 | Backend dev | `cd backend-go && go run cmd/server/main.go` |
 | Backend test all | `cd backend-go && go test ./...` |
+| Backend test pkg | `cd backend-go && go test -v ./internal/domain/order/` |
 | Backend vet | `cd backend-go && go vet ./...` |
 | Backend build | `cd backend-go && go build -o bin/server cmd/server/main.go` |
 | Frontend dev | `cd frontend-next && npm run dev -- --hostname 127.0.0.1 --port 3000` |
 | Frontend build | `cd frontend-next && npm run build` |
 | Frontend lint | `cd frontend-next && npm run lint` |
+| Frontend test | `cd frontend-next && npm test` |
+| E2E | `cd frontend-next/e2e && npx playwright test` |
 | Legacy full stack | `docker compose -f docker-compose.legacy.yml up -d` |
 
-New dev database: `multisell`.
+New dev database: `multisell`. Migrations under `backend-go/migrations/`.
 
-## Backend
+## Backend Architecture
 
-Active backend modules live under `backend-go/internal/`.
+### Module Pattern
 
-General pattern:
+Every domain module under `internal/domain/*/` follows a consistent layout: `routes.go` (route registration), `handler.go` (HTTP mapping), `service.go` (business logic), `model.go` (GORM models + request/response structs). Modules register in `internal/httpx/router.go`.
 
-- `routes.go` registers Gin routes.
-- `handler.go` handles HTTP request/response.
-- `service.go` owns business logic.
-- `model.go` owns GORM models and input/output structs.
+### Standard Response Envelope
 
-`backend-go/internal/httpx/router.go` registers API routes under `/api/v1`.
+```go
+response.Success(c, data)                       // {"code":0, "message":"ok", "data":...}
+response.Error(c, http.StatusBadRequest, msg)
+response.Paginated(c, data, total, page, size)  // + pagination fields
+response.InternalError(c, err)                  // 500, masked in release mode
+```
 
-Key modules:
+Pagination: `common.ParsePagination(c)`, `common.ParseSort(c)`.
 
-| Module | Role |
-|---|---|
-| `category` `brand` `sku` `price` `inventory` `supplier` | Product catalog, categories, SKU generation, pricing, stock, suppliers |
-| `platform` `listing` `listingtask` | Platform config, adapter-based publishing, multi-platform task queue |
-| `ai` `agent` `agentos` | AI command center, trace/evidence/action lifecycle, AgentOS cockpit |
-| `auth` `rbac` | JWT auth and permission checks |
-| `operationlog` | Mutation audit logs |
-| `dashboard` `search` | Overview stats and global search |
-| `shipping` `platformfee` `finance` `order` `settlement` | Order-to-settlement, fees, ledger, profit |
-| `decision` `allocation` | Pre-listing profitability and inventory allocation |
-| `importbatch` `orderimport` | Batch imports and order ingestion |
-| `imagegen` | Product image generation |
-| `notification` | Notifications and alert rules |
-| `exceptions` | Exception workbench |
-| `integrations` | Platform connection management |
+### Middleware Stack
 
-Legacy Python models under `backend/` are reference-only. Active GORM models live in each `backend-go/internal/**/model.go` file.
+`internal/httpx/middleware/`: CORS → RequestID → Metrics (opt-in) → RecoveryWithSentry → Audit (mutation logging). JWT `Auth` on the `/api/v1` protected group. Rate limiting via `ratelimit.go`.
+
+### Platform Infrastructure (`internal/platform/`)
+
+Three in-process coordination primitives for agent-to-agent and agent-to-system communication:
+
+- **Event Bus** (`eventbus/bus.go`) — pub/sub with glob topic matching (`order.*`). Used for agent pipeline chains, scheduler ticks, cross-module async events. ~15 subscriptions in `router.go`.
+- **Command Dispatcher** (`command/command.go`) — typed handler registry: `stock_alert`, `replenish`, `price_review`, `listing_optimize`, `compliance_check`.
+- **Scheduler** (`scheduler/`) — periodic task runner (5 min to 6 hr intervals). Publishes `scheduler.tick.{agent_id}` events.
+
+### Agent Pipeline Chain
+
+Event bus subscriptions chain agent decisions automatically (defined in `router.go`):
+
+```
+A5 stock_alert (red)              → G3 discount_risk_check
+G3 discount_risk_check (block)     → A6 profit_watch
+A6 profit_watch (loss/threshold)   → A2 listing_optimize
+G0 system_health (anomaly > 3)    → G1 dashboard_overview
+
+Scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/trustscore/entropy
+```
+
+### WebSocket
+
+`internal/realtime/` — hub for AI streaming and live updates. Endpoint: `GET /ws`.
+
+### Configuration
+
+`backend-go/configs/config.yaml`, overridden by env vars:
+
+| Env | Config Path |
+|-----|-------------|
+| `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | `database.*` |
+| `JWT_SECRET` | `jwt.secret` |
+| `SERVER_PORT` | `server.port` |
+| `REDIS_ADDR` / `REDIS_PASSWORD` | `redis.*` |
+| `SENTRY_DSN` | `sentry.dsn` |
+| `CORS_ALLOWED_ORIGINS` | `cors.allowed_origins` |
+| `METRICS_ENABLED` | `metrics.enabled` |
+
+### Platform Integrations (`domain/integrations/`)
+
+E-commerce platforms implement the `PlatformAdapter` interface (Publish, SyncStatus, SyncInventory, FetchOrders, etc.). Register via `RegisterAdapter("{code}", &Adapter{})` in `init()`. Current: `ozon`, `shopee`.
+
+### Auth & RBAC
+
+- `internal/auth/` — JWT login/register/refresh (public routes).
+- `internal/rbac/` — role-based permissions on protected routes.
+
+### Monitoring
+
+- Prometheus metrics (opt-in): `/metrics` endpoint + request tracking middleware.
+- Sentry in Go (`middleware.RecoveryWithSentry`) and frontend (`@sentry/nextjs`).
+- Audit middleware logs mutations to `operationlog` table.
+
+### Test DB Helper
+
+```go
+import "github.com/lingmirror/backend-go/internal/dbtest"
+
+func TestX(t *testing.T) {
+    db := dbtest.NewDB(t, &MyModel{})  // in-memory SQLite, isolated per call
+    svc := NewService(db, logger)
+}
+```
+
+Safe for `t.Parallel()`. No PostgreSQL needed.
 
 ## Frontend
 
-- App Router pages: `frontend-next/src/app/`.
-- Shared components: `frontend-next/src/components/`.
-- API client: `frontend-next/src/lib/api-client.ts`.
-- Alias: `@` points to `frontend-next/src`.
-- TypeScript strict mode is enabled.
+```
+src/
+├── app/(auth)/login/       # public login
+├── app/(main)/{mod}/page.tsx  # one per domain module
+├── components/
+│   ├── crud/CrudListPage.tsx   # reusable CRUD table + search
+│   ├── layout/                 # AntdProvider, AppHeader, AppSidebar
+│   └── ui/                     # PageContainer, FilterBar, ConfirmDialog, etc.
+├── lib/api-client.ts        # fetch wrapper with JWT refresh + dedup
+├── stores/                  # Zustand (app, auth, permission)
+├── config/menu.ts           # sidebar items
+└── types/api.ts             # Result / PageResult types
+```
 
-Prefer existing Ant Design and React Query patterns in `frontend-next/`.
+Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 
 ## Conventions
 
-- Auth/RBAC should be enforced on non-public endpoints.
-- Mutation routes should be auditable through the Go audit middleware or explicit operation log writes.
-- Migrations live in `backend-go/migrations/`.
-- Tests use Go `testing`; add focused tests for touched behavior.
-- Frontend changes should keep `npm run build` and `npm run lint` green.
-- Do not touch `.kilo/worktrees/`; it is managed by external tooling.
+- Non-public endpoints must use JWT auth. Mutation routes should be auditable.
+- Use GORM transactions for multi-step state changes.
+- Add focused Go tests near touched behavior.
+- Frontend: keep `npm run build` and `npm run lint` green (lint has known issues).
+- Do not touch `.kilo/worktrees/` — managed by external tooling.
 
-## Architecture Notes
+## AI & AgentOS
 
-- AI runtime lives in `backend-go/internal/ai/`, `backend-go/internal/agent/`, and `backend-go/internal/agentos/`.
-- Realtime WebSocket route is `/ws`.
-- Decision pipeline: SKU lookup -> shipping fee -> platform fee -> payment/other fees -> profit margin -> recommendation.
-- Config uses `backend-go/configs/config.yaml` plus env overrides. Important env vars: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `JWT_SECRET`, `SERVER_PORT`, `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`.
+| Package | Purpose |
+|---------|---------|
+| `internal/ai/` | LLM orchestration, chat, streaming, traces, provider abstraction |
+| `internal/agent/` | Agent registry + execution |
+| `internal/agentos/` | Cockpit dashboard, work items, autonomy |
+| `domain/agentrule/` | Agent behavior rules |
+| `domain/entropy/` | Self-cleansing: SPC control, health scoring |
+| `domain/evolution/` | Agent evolution nudges |
+| `domain/trustscore/` | Trust score + autonomy gating |
+| `domain/actionpolicy/` | Action approval policy |
+
+Legacy Hermes Python (`backend/app/agent/`) is reference-only.
 
 ## Documentation
 
-- `docs/INDEX.md` — documentation index
-- `docs/TIMELINE.md` — timeline and task board
-- `docs/ACTIVE_STACK_POLICY.md` — active stack and legacy freeze policy
-- `docs/features/` — feature specs; use `docs/features/TEMPLATE.md` for new feature docs
-- `CLAUDE.md` — Claude Code-specific guidance; keep it consistent with this file
+- `CLAUDE.md` — Claude Code guidance (keep consistent).
+- `docs/INDEX.md` — full doc index.
+- `docs/PROJECT_STATUS.md` — current new-stack status.
+- `docs/ACTIVE_STACK_POLICY.md` — active/legacy policy.
+- `docs/FRONTEND_PAGES_AND_ROUTING.md` — page map.
+- `docs/features/` — feature specs; use `TEMPLATE.md`.
