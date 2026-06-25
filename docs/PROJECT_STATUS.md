@@ -84,7 +84,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 | `cd backend-go && go vet ./...` | 通过 | 无 vet 输出 |
 | `cd frontend-next && npm test` | 通过 | 12 个 test files，77 tests |
 | `cd frontend-next && npm run build` | 通过 | Sentry auth token/source map 上传 warning 不阻塞 build |
-| `cd frontend-next && npm run lint` | 通过 | 实测已通过，无 error 输出 |
+| `cd frontend-next && npm run lint` | 1 error / 3 warnings | 剩余 1 error（AntdProvider.tsx setState in effect）和 3 个 unused var warning。较之前 16 errors 已大幅改善 |
 
 ## 本次修复内容（2026-06-25，4 Agent 并行执行）
 
@@ -99,9 +99,9 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 共 17 处调用跨 6 个前端文件。
 
-### 前端 lint ✅ 已验证通过
+### 前端 lint
 
-当前 `eslint` 无 error 输出，已清理。
+当前 `eslint` 剩余 1 error（AntdProvider.tsx setState in effect）和 3 个 unused var warning。较之前 16 errors / 22 warnings 已大幅改善，但仍有 1 个需修复。
 
 ### EventBus workerLoop 修复
 
