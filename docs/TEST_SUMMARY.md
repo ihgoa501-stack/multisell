@@ -1,76 +1,76 @@
 # 凌镜 LingMirror 测试说明
 
-## 测试日期
-2026-06-22
+> 更新时间：2026-06-24
+> 范围：当前活跃新栈 `backend-go/` + `frontend-next/`
 
----
+## 当前验证快照
 
-## 一、MCP 服务器测试
+| 检查 | 命令 | 结果 |
+|---|---|---:|
+| 后端测试 | `cd backend-go && go test ./...` | 通过 |
+| 后端 vet | `cd backend-go && go vet ./...` | 通过 |
+| 前端单测 | `cd frontend-next && npm test` | 通过，75 tests |
+| 前端生产构建 | `cd frontend-next && npm run build` | 通过 |
+| 前端 lint | `cd frontend-next && npm run lint` | 失败 |
 
-### 测试结果
+## 已知问题
 
-| 服务器 | 状态 | 说明 |
-|-------|------|------|
-| CodeGraph | ✅ 正常 | v1.0.1，代码探索、符号搜索正常 |
-| GitHub | ✅ 正常 | 已认证 ihgoa501-stack 账户 |
-| Chrome DevTools | ✅ 正常 | 浏览器自动化、截图正常 |
-| Playwright | ⚠️ 进程在运行但工具未加载 | 需重启会话 |
+### 前端 lint
 
-### 关键发现
-- 3/4 MCP 服务器正常工作
-- CodeGraph 可探索项目代码结构
-- Chrome DevTools 成功测试前端功能
+当前 lint 主要问题：
 
----
+- `@typescript-eslint/no-explicit-any`
+- `@typescript-eslint/no-unused-vars`
+- `react-hooks/set-state-in-effect`
 
-## 二、前端功能测试
+典型文件：
 
-### 测试模块 (9个)
+- `frontend-next/src/components/auth/AuthGuard.tsx`
+- `frontend-next/src/app/(auth)/login/page.tsx`
+- `frontend-next/src/app/(main)/decision/prelisting/page.tsx`
+- `frontend-next/src/app/(main)/listing-tasks/[id]/page.tsx`
+- `frontend-next/src/app/(main)/settlement/[id]/page.tsx`
 
-| 模块 | 状态 | 备注 |
-|-----|------|------|
-| 登录系统 | ✅ | admin/admin123 登录成功 |
-| 运营驾驶舱 | ✅ | 数据概览正常 |
-| 商品列表 | ✅ | 7个商品正常展示 |
-| Agent 团队 | ✅ | 3小队10个Agent |
-| 运费计算器 | ⚠️ | 功能正常，无物流渠道数据 |
-| 异常工作台 | ✅ | 空状态正常 |
-| 订单管理 | ✅ | 空状态正常 |
-| 库存分配 | ⚠️ | 模拟数据未加载 |
-| 平台管理 | ✅ | 5个平台配置正常 |
+### API 路径一致性
 
-### 通过率: 77.8%
+后端业务 API 统一为 `/api/v1/*`。前端默认 base 是 `http://localhost:8080/api`，因此 `apiClient` 调用应使用 `/v1/*`。
 
----
+仍需修正的调用包括：
 
-## 三、发现的问题
+- `/ai/actions`
+- `/policy/rules`
+- `/evolution/nudges`
+- `/trust-scores/summary`
 
-### 需要修复
-1. **运费计算器** - 缺少物流渠道配置
-2. **库存分配** - 模拟数据API未响应
+## 当前测试覆盖
 
-### 需要补充数据
-1. 订单管理 - 无订单数据
-2. 异常工作台 - 无异常数据
+### Go 后端
 
----
+当前 Go test 文件：
 
-## 四、生成的文档
+- `backend-go/internal/ai/ai_test.go`
+- `backend-go/internal/auth/auth_test.go`
+- `backend-go/internal/domain/aftersales/aftersales_test.go`
+- `backend-go/internal/domain/order/order_test.go`
+- `backend-go/internal/domain/settlement/settlement_test.go`
+- `backend-go/internal/domain/shipping/shipping_test.go`
+- `backend-go/internal/platform/eventbus/topic_test.go`
+- `backend-go/internal/rbac/rbac_test.go`
 
-| 文档 | 路径 |
-|-----|------|
-| MCP测试报告 | `docs/MCP_TEST_REPORT.md` |
-| 前端测试报告 | `docs/FRONTEND_TEST_REPORT.md` |
-| 本说明文档 | `docs/TEST_SUMMARY.md` |
+### Next 前端
 
----
+当前 Vitest 覆盖集中在共享 UI / CRUD 组件：
 
-## 五、测试工具
+- `frontend-next/src/components/crud/__tests__/CrudListPage.test.tsx`
+- `frontend-next/src/components/ui/__tests__/*.test.tsx`
 
-- **MCP测试:** CodeGraph CLI, GitHub CLI, Chrome DevTools MCP
-- **前端测试:** Chrome DevTools (截图、DOM快照、表单填写)
-- **测试环境:** http://localhost:3001
+## 建议的下一步
 
----
+1. 修复 `frontend-next` lint。
+2. 为 API 路径一致性补 smoke/e2e 检查。
+3. 为高风险 Go domain 模块补 focused tests：发布、库存、财务、AgentOS action chain。
+4. 为关键业务页面补 API mock + React component tests。
 
-*生成时间: 2026-06-22*
+## 历史测试报告
+
+2026-06-22 以前的 Chrome DevTools/Vue 页面测试报告属于旧前端阶段，只能作为历史参考，不能作为当前 `frontend-next/` 的验收结论。

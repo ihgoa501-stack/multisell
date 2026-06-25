@@ -6,18 +6,28 @@ This file gives Claude Code-specific guidance for working in this repository. Th
 
 凌镜 LingMirror (technical name: MultiSell) is a cross-border e-commerce AI AgentOS.
 
-Stack:
-- Backend: Python 3.11+ / FastAPI / SQLAlchemy 2.0 async / PostgreSQL 15
-- Frontend: Vue 3 / TypeScript / Naive UI / Pinia / Vite
-- Backend entry: `backend/app/main.py`
-- Frontend entry: `frontend/src/main.ts`
+Active stack:
+
+- Backend: Go / Gin / GORM / PostgreSQL 15 under `backend-go/`
+- Frontend: Next.js / React / TypeScript / Ant Design under `frontend-next/`
+- Backend entry: `backend-go/cmd/server/main.go`
+- Frontend entry: `frontend-next/src/app/`
+- API prefix: `/api/v1`
+- Health check: `/api/health`
+
+Legacy stack is paused:
+
+- `backend/` (Python / FastAPI) and `frontend/` (Vue 3) are reference-only.
+- Do not add new product features to legacy directories.
+- Legacy code may be touched only for migration, parity analysis, security rollback fixes, or documentation.
+- See `docs/ACTIVE_STACK_POLICY.md`.
 
 ## First Steps
 
-1. This repo has `.codegraph/`; use CodeGraph before grep/find/opening source files when locating or understanding code.
+1. This repo has `.codegraph/`; use CodeGraph before grep/find/opening source files when locating or understanding indexed code.
 2. Check `git status --short` before edits. Preserve user changes and unrelated dirty files.
-3. Prefer the existing module patterns over new abstractions.
-4. Keep backend and frontend API contracts in sync.
+3. Prefer existing Go domain and Next page/component patterns over new abstractions.
+4. Keep frontend API calls aligned with Go routes under `/api/v1`.
 5. Run the smallest meaningful verification after changes, then broaden if the touched surface is shared.
 
 ## Commands
@@ -28,121 +38,147 @@ docker compose up -d
 docker compose up -d db
 
 # Backend
-cd backend && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
-cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest -q
-cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_foo.py -q
-cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_foo.py::test_bar -q
-cd backend && .venv/bin/alembic upgrade heads
-cd backend && .venv/bin/alembic current --verbose
-cd backend && .venv/bin/alembic revision --autogenerate -m "desc"
-cd backend && PYTHONPATH="$PWD" .venv/bin/python seed.py
-cd backend && PYTHONPATH="$PWD" .venv/bin/python seed_agent_demo.py
+cd backend-go && go run cmd/server/main.go
+cd backend-go && go test ./...
+cd backend-go && go vet ./...
+cd backend-go && go build -o bin/server cmd/server/main.go
 
 # Frontend
-cd frontend && npm run dev -- --host 127.0.0.1 --port 3001
-cd frontend && npm run build
-cd frontend && npm run preview
+cd frontend-next && npm run dev -- --hostname 127.0.0.1 --port 3000
+cd frontend-next && npm run build
+cd frontend-next && npm run lint
+cd frontend-next && npm test
+
+# Legacy reference only
+docker compose -f docker-compose.legacy.yml up -d
 ```
 
-Tests use `product_management_test`. `backend/tests/conftest.py` sets `AUTH_ENABLED=False` and creates schema via fixtures. Use `TEST_DATABASE_URL` to override.
+New dev database: `multisell`.
+
+## Agent Mode
+
+根据改动的模块选择节奏：
+
+- **AI Platform** (`internal/ai/`, `internal/agent/`, `internal/agentos/`, `domain/agentrule/`, `domain/entropy/`, `domain/evolution/`, `domain/trustscore/`, `domain/actionpolicy/`, `domain/decision/`) + **Commerce** (`domain/order/`, `domain/shipping/`, `domain/settlement/`, `domain/finance/`, `domain/platformfee/`, `domain/exchangerate/`) — 先用 /plan → 写测试 → 小心实现。这是核心 + 钱走的地方。
+- **所有其他模块** (CRUD 为主的 product catalog, integration, UI 等) — 直接按现有 pattern 快速实现，不需要过度设计。
+
 
 ## Backend Architecture
 
-Every backend module under `backend/app/<module>/` should follow this shape:
+Active backend modules live under `backend-go/internal/`.
 
-- `__init__.py` exports `router`
-- `router.py` defines FastAPI endpoints, `Depends(get_db)`, and permission dependencies
-- `service.py` contains business logic and async SQLAlchemy queries
-- `schemas.py` contains Pydantic request/response models
+General module pattern:
 
-`backend/app/main.py` auto-discovers routers from `app.*` subpackages and mounts them under `/api`.
+- `routes.go` registers Gin routes.
+- `handler.go` handles HTTP request/response mapping.
+- `service.go` owns business logic.
+- `model.go` owns GORM models and request/response structs.
+
+`backend-go/internal/httpx/router.go` registers API routes under `/api/v1`.
+
+Important areas:
+
+- `backend-go/internal/auth` and `backend-go/internal/rbac` — JWT auth and permissions.
+- `backend-go/internal/httpx/middleware` — CORS, auth, audit, metrics, recovery.
+- `backend-go/internal/domain/*` — business modules.
+- `backend-go/internal/ai`, `backend-go/internal/agent`, `backend-go/internal/agentos` — AI runtime and AgentOS.
+- `backend-go/internal/platform/eventbus`, `command`, `scheduler` — event-driven agent infrastructure.
+- `backend-go/internal/realtime` — WebSocket hub.
+- `backend-go/migrations` — SQL migrations and migration runbook.
 
 Common conventions:
-- Router responses use `Result` / `PageResult`; avoid raw dict returns.
-- Endpoints use `require_permission("module:action")` unless intentionally public.
-- Mutation endpoints log with `OperationLogService.log(...)`.
-- Async DB only in request paths.
-- `get_db` commits on success and rolls back on exception.
-- Alembic currently has multiple heads; use `upgrade heads`.
 
-Important backend areas:
-- `backend/app/models.py` — primary SQLAlchemy models.
-- `backend/app/common/` — `Result`, `PageResult`, upload, shared helpers.
-- `backend/app/auth/` and `backend/app/rbac/` — auth and permissions.
-- `backend/app/listing/adapters/` — platform adapter registry.
-- `backend/app/agent/` — Hermes agent framework.
-- `backend/app/agent/entropy/` — rule entropy defenses.
-- `backend/app/decision/` — pre-listing profitability.
-- `backend/app/finance/` — finance accounts, reports, ledger.
-- `backend/app/order_import/` — order ingestion chain.
+- Non-public endpoints should be protected by JWT auth.
+- Mutation routes should be auditable through the Go audit middleware or explicit operation log writes.
+- Keep new API contracts under `/api/v1/*`.
+- Use GORM transactions for multi-step state changes.
+- Add focused Go tests near touched behavior.
 
 ## Frontend Architecture
 
-Frontend patterns:
-- `frontend/src/api/modules/*.ts` are auto-merged by `frontend/src/api/index.ts`.
-- `frontend/src/router/modules/*.ts` are auto-merged by `frontend/src/router/index.ts`.
-- Views live in `frontend/src/views/`.
-- Shared components live in `frontend/src/components/`.
-- Alias `@` maps to `frontend/src`.
+Active frontend lives under `frontend-next/`.
+
+- App Router pages: `frontend-next/src/app/`
+- Shared components: `frontend-next/src/components/`
+- API client: `frontend-next/src/lib/api-client.ts`
+- Menu config: `frontend-next/src/config/menu.ts`
+- Stores: `frontend-next/src/stores/`
+- Types: `frontend-next/src/types/`
+- Alias: `@` maps to `frontend-next/src`
 
 When adding a page:
-1. Add or update an API module under `src/api/modules`.
-2. Add route metadata under `src/router/modules`.
-3. Add the view under `src/views`.
-4. Use Naive UI components and existing layout patterns.
-5. Run `npm run build`.
+
+1. Add the route under `src/app/(main)/.../page.tsx` or `src/app/(auth)/...`.
+2. Add shared UI under `src/components/` only when reused.
+3. Add menu entries in `src/config/menu.ts` only for navigable top-level pages.
+4. Use `apiClient` with `/v1/*` paths so default base `http://localhost:8080/api` becomes `/api/v1/*`.
+5. Prefer Ant Design, React Query, and existing layout patterns.
+6. Run `npm run build`; run `npm run lint` when touching TypeScript/React.
 
 ## Agent System
 
-Hermes agents live under `backend/app/agent/`.
+AI and AgentOS currently span:
 
-Stages:
-- `OBSERVATION`
-- `SUGGESTION`
-- `SEMI_AUTONOMOUS`
-- `FULL_AUTONOMOUS`
+- `backend-go/internal/ai` — chat, run, traces, actions, streaming.
+- `backend-go/internal/agent` — Agent registry and execution entry points.
+- `backend-go/internal/agentos` — cockpit, work items, autonomy overview.
+- `backend-go/internal/domain/agentrule` — agent rules.
+- `backend-go/internal/domain/entropy` — entropy monitoring/defense.
+- `backend-go/internal/domain/evolution` — evolution nudges.
+- `backend-go/internal/domain/trustscore` — trust score and autonomy gating.
+- `backend-go/internal/domain/actionpolicy` — action approval policy.
 
-Agents are registered with `@register_agent`.
+The legacy Hermes Python implementation under `backend/app/agent/` is reference-only.
 
-Agent groups:
-- Governors: G1 dashboard, G2 warehouse/customs, G3 discount risk
-- Analysts: A5 inventory, A6 profit, A7 compliance
-- Specialists: A1 product scout, A2 listing optimizer, A3 ads, A4 customer service
+## Configuration
 
-Agent decisions are recorded by `AgentService`. Action extraction/execution goes through `AgentActionService`. Entropy controls live in `backend/app/agent/entropy/`.
+Backend config uses `backend-go/configs/config.yaml` plus environment overrides.
 
-## Database And Initialization
+Important env vars:
 
-Use `.env` / environment variables for:
-- `DATABASE_URL`
-- `DATABASE_URL_SYNC`
-- `TEST_DATABASE_URL`
-- `AUTH_ENABLED`
-- `ENCRYPTION_KEY`
-- `LLM_API_URL`
+- `DB_HOST`
+- `DB_PORT`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_NAME`
+- `JWT_SECRET`
+- `SERVER_PORT`
+- `LLM_PROVIDER`
 - `LLM_API_KEY`
 - `LLM_MODEL`
 
-For local development, prefer explicit IPv4 host `127.0.0.1` when a local PostgreSQL and Docker PostgreSQL may both exist.
+Frontend API base:
 
-Do not reset or drop an existing database unless the user explicitly approves the destructive action. For safe initialization, create a separate development database and seed it.
+- `NEXT_PUBLIC_API_URL=http://localhost:8080/api`
 
 ## Verification
 
 Use focused checks:
 
 ```bash
-cd backend && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/test_health.py -q
-cd frontend && npm run build
+cd backend-go && go test ./...
+cd backend-go && go vet ./...
+cd frontend-next && npm test
+cd frontend-next && npm run build
+cd frontend-next && npm run lint
 ```
 
-For backend changes, add or run tests near the touched module. For frontend API/view changes, run the production build at minimum.
+Current known state from 2026-06-24:
+
+- Backend tests pass.
+- Backend vet passes.
+- Frontend tests pass.
+- Frontend build passes.
+- Frontend lint currently fails and should be fixed before treating the frontend quality gate as green.
 
 ## Documentation
 
-- `AGENTS.md` — canonical cross-agent project instructions
-- `docs/INDEX.md` — documentation index
-- `docs/TIMELINE.md` — timeline and task board
-- `docs/features/` — feature specs and template
+- `AGENTS.md` — canonical cross-agent project instructions.
+- `docs/INDEX.md` — documentation index.
+- `docs/PROJECT_STATUS.md` — current new-stack status.
+- `docs/ACTIVE_STACK_POLICY.md` — active stack and legacy freeze policy.
+- `docs/FRONTEND_PAGES_AND_ROUTING.md` — Next App Router page map.
+- `docs/FUNCTION_INVENTORY.md` — current feature inventory.
+- `docs/features/` — feature specs and template.
 
 Do not touch `.kilo/worktrees/`; it is managed by external tooling.

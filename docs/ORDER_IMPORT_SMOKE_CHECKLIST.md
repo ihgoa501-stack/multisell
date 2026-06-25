@@ -1,171 +1,77 @@
-# CSV Order Import Smoke Checklist
+# Order Import Smoke Checklist
 
-This checklist verifies that imported external orders enter the operating chain:
+> 最后更新：2026-06-24
+> 状态：旧 Python smoke 已归档；Go 新栈 smoke 待重建
 
-CSV import -> sales order creation -> ledger rebuild -> exception generation -> visible processing result.
+## 当前结论
 
-Use it after changes that touch order import, order creation, finance ledger, exception generation, permissions, or the order import frontend.
+旧检查链路基于：
 
-## Preconditions
+- `backend/`
+- `/api/order-imports/*`
+- `backend/tests/test_order_import_csv_adapter.py`
+- `backend/tests/test_order_import_operational_chain.py`
 
-- Backend is running against a migrated local database.
-- Frontend is running against the same backend.
-- A user can log in with these permissions:
-  - `order_import:import`
-  - `order_import:view`
-  - `order_import:process`
-  - `order:view`
-  - `finance:ledger:rebuild`
-  - `exception:view`
-- Test SKUs exist with available inventory for `SKU-A` and `SKU-B`.
-- Platform adapter `csv_order` exists and supports order import.
+当前活跃后端是 `backend-go/`，业务 API 前缀是 `/api/v1`。因此旧 checklist 不能直接执行。
 
-## Test CSV
+## 当前 Go 新栈入口
 
-Save this as a local CSV file, for example `/tmp/order-import-smoke.csv`.
+相关模块：
 
-```csv
-platform,store_name,platform_order_no,order_no,sku_code,quantity,unit_price,currency,recipient_name,recipient_phone,country_code,shipping_address,shipping_fee,tracking_number,paid_at
-amazon,US,AMZ-SMOKE-1001,,SKU-A,1,20,CNY,Alice,123,US,Street 1,5,TRK-SMOKE-1,2026-06-16
-amazon,US,AMZ-SMOKE-1001,,SKU-B,2,15,CNY,Alice,123,US,Street 1,5,TRK-SMOKE-1,2026-06-16
-amazon,US,AMZ-SMOKE-1002,,SKU-MISSING,1,10,CNY,Bob,456,US,Street 2,0,,2026-06-16
+- `backend-go/internal/domain/orderimport/`
+- `backend-go/internal/domain/order/`
+- `backend-go/internal/domain/finance/`
+- `backend-go/internal/domain/exceptions/`
+
+路由挂载：
+
+- `backend-go/internal/httpx/router.go`
+- 统一前缀：`/api/v1`
+
+## 新栈 Smoke 应覆盖
+
+目标链路：
+
+```text
+订单导入 -> 订单创建 -> 库存/财务/异常链路 -> 前端可见处理结果
 ```
 
-Expected import result:
+最低验证项：
 
-- One system order is created for `AMZ-SMOKE-1001`.
-- That order has two order items: `SKU-A` quantity `1`, and `SKU-B` quantity `2`.
-- Both successful import rows reference the same `order_id`.
-- The missing SKU row is marked `failed`.
-- The batch remains `chain_pending` until chain processing is triggered.
+1. 登录并拿到 token。
+2. 上传订单导入文件。
+3. 查询导入批次。
+4. 查询导入行。
+5. 执行或触发处理链路。
+6. 验证订单、财务账本、异常工作台结果。
+7. 前端 `/order-import` 页面能展示批次和状态。
 
-## API Smoke Path
+## 待补工作
 
-Run these requests with a token that has the required permissions.
+1. 确认 Go `orderimport` 当前支持的文件格式和字段。
+2. 补 Go 后端 focused tests。
+3. 补 `/api/v1/*` curl smoke。
+4. 补 `frontend-next` 页面 smoke / e2e。
+5. 更新 `docs/demo-data/*.csv` 与 Go model 字段对齐。
 
-1. Upload the CSV:
+## 当前可运行验证
 
-```bash
-curl -X POST "http://localhost:8000/api/order-imports/csv" \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "adapter_code=csv_order" \
-  -F "file=@/tmp/order-import-smoke.csv"
-```
-
-Expected:
-
-- HTTP 200.
-- Response data includes `row_count=3`.
-- Response data includes `created_order_count=1`.
-- Response data includes `failed_count=1`.
-- Response data includes `chain_status=chain_pending`.
-
-2. Capture the returned batch id as `BATCH_ID`, then list items:
+在 smoke 重建前，先运行基础检查：
 
 ```bash
-curl "http://localhost:8000/api/order-imports/$BATCH_ID/items" \
-  -H "Authorization: Bearer $TOKEN"
-```
+cd backend-go
+go test ./...
+go vet ./...
 
-Expected:
-
-- Three import items are returned.
-- The two `AMZ-SMOKE-1001` rows have the same non-empty `order_id`.
-- The two `AMZ-SMOKE-1001` rows have `status=created_order` or `status=imported`.
-- The `SKU-MISSING` row has `status=failed`.
-
-3. Process the operating chain:
-
-```bash
-curl -X POST "http://localhost:8000/api/order-imports/$BATCH_ID/process-chain" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-Expected:
-
-- HTTP 200.
-- Response data includes `ledger_rebuilt_count=1`.
-- Response data includes `chain_failure_count=0`.
-- `exception_generated_count` is present. The value depends on whether exception rules detect anything for the imported order.
-
-4. Read the chain summary:
-
-```bash
-curl "http://localhost:8000/api/order-imports/$BATCH_ID/chain-summary" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-Expected:
-
-- Response data includes `chain_status=chain_processed`.
-- Response data includes `ledger_rebuilt_count=1`.
-- Response data includes item-level chain statuses.
-
-## Frontend Smoke Path
-
-1. Log in as a user with the required order import permissions.
-2. Open the order import page.
-3. Upload `/tmp/order-import-smoke.csv`.
-4. Confirm the batch table shows:
-   - Total rows: `3`.
-   - Created orders: `1`.
-   - Failed rows: `1`.
-   - Chain status: `未处理`.
-5. Open batch details.
-6. Confirm the two `AMZ-SMOKE-1001` rows are visible and share the same system order id.
-7. Click `处理链路`.
-8. Confirm the batch table refreshes and shows:
-   - Chain status: `已处理`.
-   - Rebuilt ledger count: `1`.
-   - Exception count column is populated.
-9. Reopen batch details.
-10. Confirm item chain status no longer shows all rows as `未处理`.
-
-## Negative Checks
-
-Run these when permissions or duplicate handling changed.
-
-- Upload a non-CSV file. Expected: HTTP 400 with "仅支持 CSV 文件".
-- Upload an empty CSV file. Expected: HTTP 400 with "空文件" or row validation failure.
-- Re-upload the same `AMZ-SMOKE-1001` CSV. Expected: no duplicate sales order is created.
-- Process a non-existent batch id. Expected: not found response.
-- Process the batch without `order_import:process`. Expected: HTTP 403.
-
-## Automated Verification
-
-Run these commands before merging changes that affect this path:
-
-```bash
-cd backend
-TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test /Users/lc/multisell/backend/.venv/bin/python -m pytest tests/test_order_import_csv_adapter.py tests/test_order_import_operational_chain.py -q
-```
-
-For shared order, ledger, or exception changes, run the full backend suite:
-
-```bash
-cd backend
-TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test /Users/lc/multisell/backend/.venv/bin/python -m pytest -q
-```
-
-For frontend changes:
-
-```bash
-cd frontend
+cd frontend-next
+npm test
 npm run build
 ```
 
-## Sign-Off Record
+## 历史 CSV
 
-Use this section when manually validating a release candidate.
+历史样例仍可作为字段设计参考：
 
-```text
-Date:
-Branch / commit:
-Tester:
-Backend command result:
-Frontend build result:
-CSV upload result:
-Chain processing result:
-Known issues:
-Decision: pass / fail
-```
+- `docs/demo-data/order_import_demo.csv`
+
+但旧接口 `/api/order-imports/*` 需要迁移为 Go 当前 `/api/v1/*` 路由后才能用于自动验收。

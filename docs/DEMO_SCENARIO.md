@@ -1,239 +1,122 @@
 # 凌镜 LingMirror Demo 场景
 
-本文档说明如何使用 Stage 13 Demo Seed / Sandbox Scenario 的模拟数据，
-在无真实业务数据的情况下演示完整的核心业务闭环。
+> 最后更新：2026-06-24
+> 状态：旧栈 demo 已归档；新栈 demo seed 待重建
 
----
+## 当前结论
 
-## 1. 环境准备
+此前的 Stage 13 Demo Seed / Sandbox Scenario 基于旧 Python/FastAPI 后端和 Vue 前端：
 
-### 1.1 确保 PostgreSQL 运行
+- `backend/scripts/load_demo_data.py`
+- `backend/scripts/acceptance_api.py`
+- `frontend/`
+- `/api/*`
 
-```bash
-docker ps | grep postgres
-```
+这些内容现在只作为历史参考。当前活跃新栈是：
 
-如果未运行，从项目根目录启动：
+- `backend-go/`
+- `frontend-next/`
+- `/api/v1/*`
 
-```bash
-cd /Users/lc/multisell
-docker compose up -d
-```
+截至 2026-06-24，`backend-go/` 下没有等价的 demo seed 脚本，因此不能继续按旧 demo 文档执行。
 
-### 1.2 确保测试数据库存在
+## 当前可运行验证
 
-```bash
-psql -h localhost -U postgres -c "CREATE DATABASE product_management_test;" 2>/dev/null || true
-```
-
-### 1.3 确保依赖已安装
+启动新栈：
 
 ```bash
-cd /Users/lc/multisell/backend
-/Users/lc/multisell/backend/.venv/bin/python -m pip install -r requirements.txt
+docker compose up -d db
+
+cd backend-go
+go run cmd/server/main.go
+
+cd frontend-next
+npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
----
-
-## 2. 加载 Demo Seed 数据
+基础验证：
 
 ```bash
-cd /Users/lc/multisell/backend
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
-  /Users/lc/multisell/backend/.venv/bin/python scripts/load_demo_data.py
-```
+curl http://localhost:8080/api/health
 
-预期输出：
+cd backend-go
+go test ./...
+go vet ./...
 
-```
-=======================================================
-  凌镜 LingMirror Demo 数据加载
-=======================================================
-
-📦 数据库: postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test
-🔄 连接中...
-✔ 数据表已就绪
-
-📋 加载 demo 数据...
-  ├─ 确保 admin 用户...
-  ├─ 确保 demo 用户...
-   │   ✔ demo / demo123 已创建
-  ├─ 确保权限码...
-  ...
-
-=======================================================
-  ✅ Demo 数据加载完成！
-=======================================================
-
-products created/updated: 7/0
-skus created/updated: 14/0
-inventory seeded: 14
-shipping rules seeded: 4
-platform fee rules seeded: 6
-demo csv paths: .../docs/demo-data/order_import_demo.csv, ...
-```
-
-> 脚本是幂等的，可重复执行。第二次执行不会创建重复数据。
-
-### 加载了什么数据
-
-| 实体 | 数量 | 说明 |
-|---|---|---|
-| 用户 | 2 | admin / demo（密码同用户名 + "123"） |
-| 商品 | 7 个 | 蓝牙耳机、智能手表、夹克、保温杯、精华液、坚果礼盒、瑜伽垫 |
-| SKU | 14 个 | 每商品 2 个 SKU |
-| 库存 | 14 条 | 每 SKU 对应一个库存记录 |
-| 物流供应商 | 3 家 | CDEK, Russian Post, Shopee Xpress |
-| 物流渠道 | 4 个 | CDEK Economy, CDEK Standard, EMS, Standard |
-| 报价规则 | 4 条 | 每渠道 1 条 fixed_plus_per_kg 规则 |
-| 平台费用规则 | 6 条 | Ozon/Shopee/Wildberries 各两条 |
-| 供应商 | 3 家 | 电子/服装/家居 |
-| 权限码 | 30+ | 覆盖所有业务模块 |
-
----
-
-## 3. 启动后端
-
-```bash
-cd /Users/lc/multisell/backend
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
-  /Users/lc/multisell/backend/.venv/bin/python -m uvicorn app.main:app --reload --port 8000
-```
-
-后端运行在 `http://localhost:8000`。
-
----
-
-## 4. 启动前端
-
-另开终端：
-
-```bash
-cd /Users/lc/multisell/frontend
-npm install
-npm run dev
-```
-
-前端运行在 `http://localhost:5173`（或终端提示的地址）。
-
----
-
-## 5. Demo 操作流程
-
-### 5.1 CSV 订单导入
-
-打开：**订单导入 → 上传 CSV**
-
-文件路径：`docs/demo-data/order_import_demo.csv`
-
-上传后查看批次详情，应看到：
-- 7 行记录，创建 6 个订单
-- OZ-10001 为 2 个 SKU 合并的同一订单
-- WB-30002 有运费但无运费快照（因为瑜伽垫 seed 未创建运费快照）
-
-### 5.2 处理经营链路
-
-在订单导入批次详情页，点击 **处理链路（Process Chain）**。
-
-预期结果：
-- 账本重建成功
-- 异常生成成功
-- 部分负利润订单（WB-30001 坚果）触发异常
-
-### 5.3 运费账单导入
-
-打开：**物流 → 运费账单 → 导入**
-
-文件路径：`docs/demo-data/shipping_bill_demo.csv`
-
-导入后点击 **对账**，预期结果：
-- RUS-TRK-001: matched（金额差异 ≤ 阈值）
-- RUS-TRK-002: amount_mismatch（账单含附加费）
-- SP-20002: matched（按 order_no 匹配）
-- RUS-TRK-003: amount_mismatch（金额差异）
-- UNMATCHED-BILL-001: unmatched_bill
-
-### 5.4 平台结算导入
-
-打开：**平台结算 → 导入**
-
-文件路径：`docs/demo-data/platform_settlement_demo.csv`
-
-导入后应看到 18 行记录，其中：
-- 大多数行 matched（有对应平台订单号）
-- UNMATCHED-SETTLEMENT-001: unmatched
-
-### 5.5 查看利润看板
-
-打开：**财务 → 利润看板**
-
-预期可看到：
-- 利润摘要卡片（总收入、成本、费用、利润）
-- 订单利润列表（6 个订单）
-- 运费差异报表（matched / amount_mismatch）
-- 负利润订单列表（WB-30001 坚果应为负利润）
-- 成本层分布统计
-
-### 5.6 查看异常工作台
-
-打开：**异常工作台**
-
-点击 **扫描生成异常**，可看到：
-- 订单负利润异常（WB-30001）
-- 运费账单 unmatched（UNMATCHED-BILL-001）
-- 平台结算 unmatched（UNMATCHED-SETTLEMENT-001）
-
-### 5.7 运费重算与快照
-
-打开：**订单 → 订单详情 → 选择任一订单 → 运费报价**
-
-可重新试算运费并保存运费快照。
-
-### 5.8 上架前利润测算
-
-打开：**决策 → 上架前决策**
-
-选择任一 Demo SKU（如 DEMO-BT-BLACK），填目标售价和数量，可进行利润测算。
-
----
-
-## 6. 重跑 Demo
-
-### 清空数据重跑
-
-```bash
-cd /Users/lc/multisell/backend
-python scripts/db_reset.py    # 如果有重置脚本
-# 或直接清表：
-psql -h localhost -U postgres -d product_management_test -c "
-DO \$\$ DECLARE r RECORD; BEGIN FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname='public') LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' CASCADE'; END LOOP; END \$\$;"
-python scripts/load_demo_data.py
-```
-
-### 只重跑 demo 数据（不清空已有配置）
-
-```bash
-cd /Users/lc/multisell/backend
-python scripts/load_demo_data.py
-```
-
-脚本幂等，不会创建重复 SKU、品牌、分类等。
-
----
-
-## 7. 验证
-
-### 后端测试
-
-```bash
-cd /Users/lc/multisell/backend
-TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
-  .venv/bin/python -m pytest tests/test_demo_seed.py -q
-```
-
-### 前端构建
-
-```bash
-cd /Users/lc/multisell/frontend
+cd frontend-next
+npm test
 npm run build
 ```
+
+## 新栈 Demo 应覆盖的业务闭环
+
+建议重建一个 Go + Next demo seed，覆盖以下场景：
+
+1. 登录和 RBAC
+2. 商品、SKU、库存、价格基础数据
+3. 物流供应商、渠道、区域、报价规则
+4. 平台和平台费用规则
+5. 上架前决策
+6. 刊登任务与任务详情
+7. 订单和订单详情
+8. 订单导入批次
+9. 结算和对账
+10. 财务利润报表
+11. 异常工作台
+12. AI chat、trace、action 审批
+13. AgentOS 工作队列、熵监控、信任分
+
+## 新栈 Demo Seed 建议
+
+建议新增：
+
+```text
+backend-go/cmd/seed-demo/main.go
+```
+
+或：
+
+```text
+backend-go/internal/demo/
+```
+
+要求：
+
+- 幂等，可重复执行。
+- 使用当前 GORM models。
+- 写入 `multisell` 开发库。
+- 可选参数控制清空/追加。
+- 输出 demo 用户、demo SKU、demo 订单和导入文件路径。
+
+## 新栈 Demo 数据建议
+
+| 实体 | 建议数量 | 说明 |
+|---|---:|---|
+| 用户 | 2 | admin / demo |
+| 商品 | 7 | 覆盖电子、服装、家居、美妆、食品、运动 |
+| SKU | 14 | 每商品 2 个 SKU |
+| 库存 | 14 | 覆盖正常、低库存、锁定库存 |
+| 平台 | 5 | Ozon、Shopee、Wildberries、AliExpress、Temu |
+| 物流渠道 | 4 | 覆盖 RU / SEA 示例 |
+| 平台费用规则 | 6 | 支持决策测算 |
+| 订单 | 6 | 覆盖 paid、shipped、completed、cancelled |
+| 结算行 | 10+ | 覆盖 matched / unmatched / mismatch |
+| 异常 | 5+ | 覆盖库存、利润、物流、结算 |
+| AI actions | 5+ | 覆盖 suggested / approved / executed / rejected |
+
+## 历史 demo 数据
+
+历史 CSV 文件仍在：
+
+- `docs/demo-data/order_import_demo.csv`
+- `docs/demo-data/shipping_bill_demo.csv`
+- `docs/demo-data/platform_settlement_demo.csv`
+
+它们可以作为新 Go demo seed 的输入样例，但旧 API 路径需要迁移到 `/api/v1/*`。
+
+## 待办
+
+1. 新增 Go demo seed。
+2. 更新 demo CSV 字段以匹配 Go models。
+3. 新增端到端 demo acceptance 脚本。
+4. 将 `docs/DEMO_ACCEPTANCE_REPORT.md` 更新为新栈验收结果。

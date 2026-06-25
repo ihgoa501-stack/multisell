@@ -19,6 +19,7 @@ class ApiClient {
   private baseUrl: string;
   private refreshing = false;
   private refreshQueue: QueueItem[] = [];
+  /** In-flight GET request deduplication map. Keys are full URL strings. */
   private inflightRequests: Map<string, Promise<unknown>> = new Map();
 
   constructor(baseUrl: string) {
@@ -40,7 +41,12 @@ class ApiClient {
     return headers;
   }
 
+  /**
+   * Attempt to refresh the access token using the stored refresh token.
+   * Uses a queue to prevent multiple concurrent refresh calls.
+   */
   private async refreshAccessToken(): Promise<string> {
+    // If a refresh is already in progress, queue this request to wait for it
     if (this.refreshing) {
       return new Promise<string>((resolve, reject) => {
         this.refreshQueue.push({ resolve, reject });
@@ -78,14 +84,17 @@ class ApiClient {
       setToken(access_token);
       setRefreshToken(refresh_token);
 
+      // Resolve all queued requests with the new token
       this.refreshQueue.forEach((item) => item.resolve(access_token));
       this.refreshQueue = [];
 
       return access_token;
     } catch (error) {
+      // Reject all queued requests
       this.refreshQueue.forEach((item) => item.reject(error));
       this.refreshQueue = [];
 
+      // Clear auth data and redirect
       removeToken();
       removeRefreshToken();
 
@@ -99,6 +108,10 @@ class ApiClient {
     }
   }
 
+  /**
+   * Perform a fetch request with automatic 401 handling and token refresh.
+   * For GET requests, concurrent identical calls are deduplicated.
+   */
   private async request<T>(
     method: string,
     path: string,
@@ -118,6 +131,7 @@ class ApiClient {
       body: body ? JSON.stringify(body) : undefined,
     };
 
+    // GET deduplication: if the same URL is already in-flight, reuse the promise.
     if (method === 'GET') {
       const urlStr = url.toString();
       const existing = this.inflightRequests.get(urlStr);
@@ -126,6 +140,8 @@ class ApiClient {
       const promise = this.executeWithRefresh<T>(url, options);
       this.inflightRequests.set(urlStr, promise);
       promise.finally(() => {
+        // Only remove if ours is still the active promise (avoid clearing a
+        // newer identical request's promise).
         if (this.inflightRequests.get(urlStr) === promise) {
           this.inflightRequests.delete(urlStr);
         }
@@ -136,12 +152,16 @@ class ApiClient {
     return this.executeWithRefresh<T>(url, options);
   }
 
+  /**
+   * Execute the fetch and handle 401 → token refresh → retry.
+   */
   private async executeWithRefresh<T>(
     url: URL,
     options: RequestInit,
   ): Promise<T> {
     const response = await fetch(url.toString(), options);
 
+    // If not a 401 or if we're server-side, just handle the response
     if (response.status !== 401) {
       if (!response.ok) {
         throw new Error(`API error: ${response.status} ${response.statusText}`);
@@ -149,18 +169,22 @@ class ApiClient {
       return response.json();
     }
 
+    // 401 handling — only on client side with a stored token
     if (typeof window === 'undefined') {
       throw new Error(`API error: ${response.status} ${response.statusText}`);
     }
 
     const originalToken = getToken();
     if (!originalToken) {
+      // No token at all — redirect to login
       window.location.href = '/login';
       throw new Error('Not authenticated');
     }
 
+    // Attempt token refresh
     const newToken = await this.refreshAccessToken();
 
+    // Retry the original request with the new token
     const retryOptions: RequestInit = {
       method: options.method || 'GET',
       headers: this.getHeaders(newToken),
@@ -169,6 +193,7 @@ class ApiClient {
 
     const retryResponse = await fetch(url.toString(), retryOptions);
     if (!retryResponse.ok) {
+      // Retry also failed — refresh token might be valid but access is denied
       throw new Error(`API error: ${retryResponse.status} ${retryResponse.statusText}`);
     }
 

@@ -174,6 +174,8 @@ func (s *Service) RejectAction(id int64, operator, reason string) (*UnifiedActio
 // boolean round-trip can be unreliable across drivers. If an action is in
 // "suggested" and was created with RequiresApproval=false (advisory agent),
 // it executes directly; if it required approval it would be in "approved".
+//
+// After Model(&a).Updates, GORM refreshes a in-place so no second First() is needed.
 func (s *Service) ExecuteAction(id int64, operator, _ string) (*UnifiedAction, error) {
 	var a UnifiedAction
 	if err := s.db.First(&a, id).Error; err != nil {
@@ -206,9 +208,6 @@ func (s *Service) ExecuteAction(id int64, operator, _ string) (*UnifiedAction, e
 	}).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.First(&a, id).Error; err != nil {
-		return nil, err
-	}
 	return &a, nil
 }
 
@@ -228,30 +227,87 @@ func (s *Service) ReviewAction(id int64) (*UnifiedAction, error) {
 }
 
 // Roster returns per-agent summaries for the cockpit.
+// Uses aggregated GROUP BY queries instead of N+1 per-agent lookups.
 func (s *Service) Roster() ([]AgentRosterSummary, error) {
 	registry := DefaultRegistry()
+	if len(registry.Agents) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]string, 0, len(registry.Agents))
+	for _, a := range registry.Agents {
+		ids = append(ids, a.ID)
+	}
+
+	// Aggregate 1: trace count per agent.
+	type rowCount struct {
+		AgentID string
+		Count   int64
+	}
+	var traceCounts []rowCount
+	_ = s.db.Model(&AITrace{}).
+		Select("agent_id, COUNT(*) AS count").
+		Where("agent_id IN ?", ids).Group("agent_id").Scan(&traceCounts).Error
+	tcMap := make(map[string]int64, len(traceCounts))
+	for _, v := range traceCounts {
+		tcMap[v.AgentID] = v.Count
+	}
+
+	// Aggregate 2: action count per agent.
+	var actionCounts []rowCount
+	_ = s.db.Model(&UnifiedAction{}).
+		Select("agent_id, COUNT(*) AS count").
+		Where("agent_id IN ?", ids).Group("agent_id").Scan(&actionCounts).Error
+	acMap := make(map[string]int64, len(actionCounts))
+	for _, v := range actionCounts {
+		acMap[v.AgentID] = v.Count
+	}
+
+	// Aggregate 3: pending action count per agent.
+	var pendingCounts []rowCount
+	_ = s.db.Model(&UnifiedAction{}).
+		Select("agent_id, COUNT(*) AS count").
+		Where("agent_id IN ? AND status IN ?", ids, []string{"suggested", "pending"}).
+		Group("agent_id").Scan(&pendingCounts).Error
+	pcMap := make(map[string]int64, len(pendingCounts))
+	for _, v := range pendingCounts {
+		pcMap[v.AgentID] = v.Count
+	}
+
+	// Aggregate 4: average confidence per agent.
+	type confAvg struct {
+		AgentID string
+		Avg     float64
+	}
+	var confAvgs []confAvg
+	_ = s.db.Model(&AITrace{}).
+		Select("agent_id, COALESCE(AVG(confidence),0) AS avg").
+		Where("agent_id IN ? AND confidence IS NOT NULL", ids).
+		Group("agent_id").Scan(&confAvgs).Error
+	caMap := make(map[string]float64, len(confAvgs))
+	for _, v := range confAvgs {
+		caMap[v.AgentID] = v.Avg
+	}
+
 	out := make([]AgentRosterSummary, 0, len(registry.Agents))
 	for _, a := range registry.Agents {
-		summary := AgentRosterSummary{
+		out = append(out, AgentRosterSummary{
 			AgentID:       a.ID,
 			Name:          a.Name,
 			Squad:         a.Squad,
 			DecisionPoint: a.PrimaryDecisionPoint(),
 			AutonomyLevel: a.Autonomy,
-		}
-		_ = s.db.Model(&AITrace{}).Where("agent_id = ?", a.ID).Count(&summary.TraceCount).Error
-		_ = s.db.Model(&UnifiedAction{}).Where("agent_id = ?", a.ID).Count(&summary.ActionCount).Error
-		_ = s.db.Model(&UnifiedAction{}).Where("agent_id = ? AND status IN ?", a.ID, []string{"suggested", "pending"}).Count(&summary.PendingCount).Error
-		var conf struct{ Avg float64 }
-		_ = s.db.Model(&AITrace{}).Where("agent_id = ? AND confidence IS NOT NULL", a.ID).
-			Select("COALESCE(AVG(confidence),0) AS avg").Scan(&conf).Error
-		summary.AvgConfidence = conf.Avg
-		out = append(out, summary)
+			TraceCount:    tcMap[a.ID],
+			ActionCount:   acMap[a.ID],
+			PendingCount:  pcMap[a.ID],
+			AvgConfidence: caMap[a.ID],
+		})
 	}
 	return out, nil
 }
 
 // transitionAction is the shared lifecycle helper.
+// After Model(&a).Updates, GORM refreshes a in-place so no second First() is needed.
 func (s *Service) transitionAction(id int64, toStatus string, updates map[string]interface{}, allowedFrom ...string) (*UnifiedAction, error) {
 	var a UnifiedAction
 	if err := s.db.First(&a, id).Error; err != nil {
@@ -271,9 +327,6 @@ func (s *Service) transitionAction(id int64, toStatus string, updates map[string
 	}
 	updates["status"] = toStatus
 	if err := s.db.Model(&a).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	if err := s.db.First(&a, id).Error; err != nil {
 		return nil, err
 	}
 	return &a, nil

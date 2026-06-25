@@ -1,5 +1,9 @@
 # 平台费用规则方案文档 (Platform Fee Rules Plan)
 
+> 最后更新：2026-06-24
+> 当前实现入口：`backend-go/internal/domain/platformfee/`
+> API 前缀：`/api/v1/platform-fee`
+
 ## 1. 目标 (Goals)
 
 标准化计算不同平台、国家、类目的销售费用，为“上架前经营决策”提供准确的成本依据。
@@ -35,17 +39,17 @@
 | created_at | DateTime | 创建时间 |
 | updated_at | DateTime | 更新时间 |
 
-## 4. API 建议 (API Design)
+## 4. 当前 API (API Design)
 
 ### 4.1 规则管理 (CRUD)
-- `GET /api/platform-fee-rules`：列表查询（支持按平台、站点、类目筛选）。
-- `POST /api/platform-fee-rules`：创建规则。
-- `GET /api/platform-fee-rules/{id}`：详情查询。
-- `PUT /api/platform-fee-rules/{id}`：更新规则。
-- `DELETE /api/platform-fee-rules/{id}`：删除规则。
+- `GET /api/v1/platform-fee`：列表查询。
+- `POST /api/v1/platform-fee`：创建规则。
+- `GET /api/v1/platform-fee/{id}`：详情查询。
+- `PUT /api/v1/platform-fee/{id}`：更新规则。
+- `DELETE /api/v1/platform-fee/{id}`：删除规则。
 
-### 4.2 规则匹配 (Internal/Public)
-- `POST /api/platform-fee-rules/match`：根据平台、站点、类目匹配最佳规则。
+### 4.2 费用计算
+- `POST /api/v1/platform-fee/calculate`：根据平台、站点、类目、金额等输入计算费用。
     - **匹配优先级**：(平台+站点+类目) > (平台+站点) > (平台全局)。
 
 ## 5. 与 Pre-listing Decision 集成方式
@@ -53,18 +57,7 @@
 目前 `PreListingDecisionRequest` 接收手动的费率参数。改进方案如下：
 
 1. **请求参数扩展**：
-   ```python
-   class PreListingDecisionRequest(BaseModel):
-       sku_id: int
-       destination_country: str
-       target_sale_price: float
-       platform_id: Optional[int]  # 新增：指定平台
-       category_id: Optional[int]  # 新增：指定类目（或从SKU自动获取）
-       # 以下参数保留，若指定了 platform_id 则优先从规则库匹配，未匹配到时使用传入值
-       platform_fee_pct: Optional[float] 
-       payment_fee_pct: Optional[float]
-       # ...
-   ```
+   Go request/response 结构以 `backend-go/internal/domain/decision/` 和 `backend-go/internal/domain/platformfee/` 当前 model 为准。
 
 2. **逻辑流程**：
    - 步骤 1：根据 `platform_id`, `destination_country`, `category_id` 调用 `PlatformFeeRuleService.match()`。
@@ -98,7 +91,7 @@
 
 ## 8. 迁移计划 (Migration Plan)
 
-1. **Schema 迁移**：使用 Alembic 创建 `platform_fee_rule` 表。
+1. **Schema 迁移**：使用 `backend-go/migrations/` 中的 SQL migration 管理表结构。
 2. **数据初始化**：预置主流平台（如 Ozon, Shopee）的通用默认规则。
 3. **代码重构**：更新 `PreListingDecisionService`，引入规则查找逻辑，保持对旧 API 的向后兼容性（如果未传 platform_id 则继续使用旧逻辑）。
 

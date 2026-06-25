@@ -1,131 +1,66 @@
 # Demo Acceptance Report
 
-## Meta
+> 最后更新：2026-06-24
+> 状态：历史验收报告，旧栈结果已归档；新栈 demo acceptance 待重建
 
-| Field | Value |
-|---|---|
-| Date | 2026-06-17 |
-| Branch | `codex/demo-acceptance` |
-| Acceptance reference | Current branch HEAD after acceptance fixes |
-| Backend | `DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test /Users/lc/multisell/backend/.venv/bin/python -m uvicorn app.main:app --reload --port 8000` |
-| Frontend | `cd frontend && npm run dev` |
+## 当前结论
 
-## Demo Seed Result
+2026-06-17 的 demo acceptance 基于旧 Python/FastAPI + Vue 栈：
 
-```bash
-cd backend && DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
-  /Users/lc/multisell/backend/.venv/bin/python scripts/load_demo_data.py
-```
+- 后端：`backend/`
+- 前端：`frontend/`
+- API：`/api/*`
+- Demo seed：`backend/scripts/load_demo_data.py`
+- Acceptance script：`backend/scripts/acceptance_api.py`
 
-**Result:** ✅ Pass
-- products created/updated: 7/0
-- skus created/updated: 14/0
-- inventory seeded: 14
-- shipping rules seeded: 4
-- platform fee rules seeded: 6
-- demo csv paths exist and accessible
-- Second execution: idempotent
+当前项目已经完成全站迁移，活跃栈变为：
 
-## Page-by-Page Acceptance
+- 后端：`backend-go/`
+- 前端：`frontend-next/`
+- API：`/api/v1/*`
 
-### 1. Login
-**Result:** ✅ PASS
-- demo/demo123 可登录
-- 修复：seed 脚本中 demo 用户 role 改为 admin（原为 user，无权限）
+因此旧验收结果只作为历史参考，不再代表当前新栈 demo readiness。
 
-### 2. Products / SKU / Inventory
-**Result:** ✅ PASS
-- API `GET /api/products` 返回 7 个 Demo 商品
-- SKU 通过 `GET /api/products/{product_id}/skus` 可见（没有独立的 `/api/skus` 全局列表）
+## 当前新栈验证状态
 
-### 3. Shipping Calculator
-**Result:** ✅ PASS（API 验证）
-- `POST /api/shipping/calculate` 支持 sku 和 manual 两种模式
-- 需传递 `mode=sku&sku_id=1` 或 `mode=manual&package={...}`
-- 存在已 seed 的报价规则（CDEK Economy / Standard, EMS, Shopee Xpress Standard）
+2026-06-24：
 
-### 4. Pre-listing Decision
-**Result:** ✅ PASS（API 验证）
-- `POST /api/decisions/prelisting` 接收 `sku_id`, `target_sale_price`, `destination_country` 等参数
+| 检查 | 结果 |
+|---|---:|
+| `cd backend-go && go test ./...` | 通过 |
+| `cd backend-go && go vet ./...` | 通过 |
+| `cd frontend-next && npm test` | 通过 |
+| `cd frontend-next && npm run build` | 通过 |
+| `cd frontend-next && npm run lint` | 失败 |
 
-### 5. CSV Order Import
-**Result:** ✅ PASS
-- API 工作正常：可见多 SKU 合并、创建订单数
-- 上传格式：`adapter_code` 作为 Form 字段，`file` 作为 File 字段
-- 修复：Demo CSV 地址字段已加引号，避免逗号导致 `shipping_fee/tracking_number/paid_at` 错位。
-- 最新结果：7 行记录，创建 6 个订单，失败 0 行。
+## 新栈 Demo Acceptance 待办
 
-### 6. Process Chain
-**Result:** ✅ PASS
-- `POST /api/order-imports/{batch_id}/process-chain` 成功重建账本并生成异常
+1. 新增 Go demo seed。
+2. 新增新栈 acceptance script，使用 `/api/v1/*`。
+3. 覆盖登录、商品、SKU、库存、物流报价、决策、刊登任务、订单、结算、财务、异常、AI action。
+4. 补前端 E2E 或 smoke test。
+5. 重新生成本报告。
 
-### 7. Shipping Bill Import & Reconcile
-**Result:** ⚠️ WARN
-- 导入成功（5 行）
-- 对账结果：matched=0, mismatch=3, unmatched=2
-- 说明：对账接口可运行并能分类异常；当前 demo 未创建运费快照，所以不会产生 matched，适合作为异常工作台演示输入。
+## 历史结果摘要
 
-### 8. Settlement Import
-**Result:** ✅ PASS
-- 导入成功（18 行）
-- platform_order_no 可匹配到导入订单
+旧栈验收曾覆盖：
 
-### 9. Exception Workbench
-**Result:** ✅ PASS
-- `POST /api/exceptions/generate` 生成 23 条异常
-- `GET /api/exceptions` 返回异常列表
+- demo/demo123 登录
+- 商品 / SKU / 库存
+- 运费计算器
+- 上架前决策
+- CSV 订单导入
+- 经营链路处理
+- 运费账单导入与对账
+- 平台结算导入
+- 异常工作台
+- 利润看板
+- 前端 build
 
-### 10. Profit Dashboard
-**Result:** ⚠️ PARTIAL
-- Profit Summary 返回 revenue=0
-- **原因：** 已通过 process-chain 重建账本，但重建过程需要订单中的 product_cost 等字段才有利润数据。Demo CSV 没有 product_cost 字段
-- Negative Profit Orders: 0
-- 需要补充：订单导入后需要设置订单的 product_cost 才能正确计算利润
+旧栈已知限制：
 
-### 11. Frontend Build
-**Result:** ✅ PASS
-- `npm run build` 零警告通过
+- Demo 订单没有完整运费快照
+- Profit dashboard revenue 依赖 CSV 中的成本字段
+- 部分 API 路径是旧 `/api/*`，需要迁移到 `/api/v1/*`
 
-## Issues Found
-
-### Fixed
-
-| # | Issue | Fix | Status |
-|---|---|---|---|
-| 1 | Demo user has no permissions (role=user, empty permissions) | Updated seed to set role="admin" and update existing users | ✅ |
-| 2 | `order_import_batch` / `order_import_item` tables not created by seed script | Added `from app.order_import import models` to seed imports | ✅ |
-| 3 | ensure_demo_user only creates, doesn't update existing | Updated to update role/display_name on existing | ✅ |
-
-### Known / Not Fixed (documented)
-
-| # | Issue | Impact | Workaround |
-|---|---|---|---|
-| 4 | Demo 订单没有运费快照 | Shipping bill reconcile 无 matched，主要产生 mismatch/unmatched | Stage 14.2 增加 demo 快照或导入后自动快照 |
-| 5 | Profit dashboard revenue=0 | Process chain → ledger rebuild doesn't have product_cost data from CSV | Add `product_cost` field to order_import_demo.csv |
-| 6 | No independent `/api/skus` list endpoint (only `/api/products/{product_id}/skus`) | Demo scripts must look up SKU through product detail | Use product-scoped endpoint |
-| 7 | Negative profit report is empty | Demo cannot yet show negative-profit BI card | Add product_cost and settlement/fee data to imported orders |
-
-## Next Steps
-
-1. **Immediate (Stage 14.1):** Add `product_cost` field to order import CSV so profit calculation works
-2. **Immediate (Stage 14.2):** Add demo order shipping snapshots so shipping bills can produce matched and amount_mismatch examples
-3. **Short-term:** Add a standalone SKU list endpoint
-4. **Demo docs:** Update DEMO_SCENARIO.md with accurate API paths and expected results
-5. **Long-term:** Add automated E2E test that runs the full acceptance script
-
-## Verification
-
-```bash
-# Backend tests
-cd backend && TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/product_management_test \
-  /Users/lc/multisell/backend/.venv/bin/python -m pytest tests/test_demo_seed.py -q
-# → 17 passed
-
-# Frontend build
-cd frontend && npm run build
-# → ✓ 4292 modules transformed, ✓ built in 2.10s
-
-# API acceptance
-cd backend && /Users/lc/multisell/backend/.venv/bin/python scripts/acceptance_api.py
-# → PASS: 12  FAIL: 0  WARN: 3  TOTAL: 15
-```
+详见 `docs/DEMO_SCENARIO.md` 的新栈重建建议。

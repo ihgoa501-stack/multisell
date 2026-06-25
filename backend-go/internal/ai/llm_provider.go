@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -243,8 +244,30 @@ func (p *openAICompatible) ChatStream(ctx context.Context, req *LLMRequest) (<-c
 	go func() {
 		defer close(ch)
 		defer resp.Body.Close()
-		dec := json.NewDecoder(resp.Body)
-		for {
+
+		scanner := bufio.NewScanner(resp.Body)
+		// Increase buffer for long lines (some SSE payloads span multiple KB).
+		scanner.Buffer(make([]byte, 0, 16384), 65536)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			// SSE uses empty line as event separator.
+			if line == "" {
+				continue
+			}
+			// Only process lines with the SSE data: prefix.
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			payload := strings.TrimPrefix(line, "data: ")
+
+			// OpenAI sends "data: [DONE]" to signal stream end.
+			if payload == "[DONE]" {
+				ch <- LLMChunk{Done: true}
+				return
+			}
+
 			var ev struct {
 				Choices []struct {
 					Delta struct {
@@ -253,13 +276,12 @@ func (p *openAICompatible) ChatStream(ctx context.Context, req *LLMRequest) (<-c
 					FinishReason string `json:"finish_reason"`
 				} `json:"choices"`
 			}
-			if err := dec.Decode(&ev); err != nil {
-				if err != io.EOF {
-					ch <- LLMChunk{Err: err}
-				}
+			if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+				ch <- LLMChunk{Err: fmt.Errorf("SSE parse: %w", err)}
 				ch <- LLMChunk{Done: true}
 				return
 			}
+
 			if len(ev.Choices) > 0 {
 				c := ev.Choices[0]
 				if c.Delta.Content != "" {
@@ -271,6 +293,11 @@ func (p *openAICompatible) ChatStream(ctx context.Context, req *LLMRequest) (<-c
 				}
 			}
 		}
+
+		if err := scanner.Err(); err != nil {
+			ch <- LLMChunk{Err: fmt.Errorf("SSE read error: %w", err)}
+		}
+		ch <- LLMChunk{Done: true}
 	}()
 	return ch, nil
 }

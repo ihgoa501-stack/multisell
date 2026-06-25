@@ -1,0 +1,312 @@
+package aftersales
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/inventory"
+	"github.com/lingmirror/backend-go/internal/domain/order"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+)
+
+// Service provides aftersales business logic.
+type Service struct {
+	db     *gorm.DB
+	logger *zap.Logger
+}
+
+// NewService creates a new aftersales service.
+func NewService(db *gorm.DB, logger *zap.Logger) *Service {
+	return &Service{db: db, logger: logger}
+}
+
+// List returns paginated aftersales orders with optional filter.
+func (s *Service) List(p *common.Pagination, f *ListFilter) ([]AfterSalesOrder, int64, error) {
+	q := s.db.Model(&AfterSalesOrder{})
+	if f != nil {
+		if f.Search != "" {
+			like := "%" + f.Search + "%"
+			q = q.Where(
+				"LOWER(reason) LIKE LOWER(?) OR order_id IN (SELECT id FROM sales_order WHERE LOWER(order_no) LIKE LOWER(?))",
+				like, like,
+			)
+		}
+		if f.Status != "" {
+			q = q.Where("status = ?", f.Status)
+		}
+		if f.OrderID != nil {
+			q = q.Where("order_id = ?", *f.OrderID)
+		}
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []AfterSalesOrder
+	if err := q.Order("id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// Get returns a single aftersales order.
+func (s *Service) Get(id int64) (*AfterSalesOrder, error) {
+	var o AfterSalesOrder
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// Create inserts a new aftersales order.
+func (s *Service) Create(in *CreateInput) (*AfterSalesOrder, error) {
+	status := in.Status
+	if status == "" {
+		status = "pending"
+	}
+	o := AfterSalesOrder{
+		OrderID:       in.OrderID,
+		ItemID:        in.ItemID,
+		SkuID:         in.SkuID,
+		Reason:        in.Reason,
+		Status:        status,
+		InspectionResult: "",
+		CreatedBy:     in.CreatedBy,
+	}
+	if in.ReturnQuantity != nil {
+		o.ReturnQuantity = *in.ReturnQuantity
+	}
+	if in.RefundAmount != nil {
+		o.RefundAmount = *in.RefundAmount
+	}
+	if err := s.db.Create(&o).Error; err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// Update applies partial updates to an aftersales order.
+func (s *Service) Update(id int64, in *UpdateInput) (*AfterSalesOrder, error) {
+	var o AfterSalesOrder
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	updates := map[string]interface{}{}
+	if in.ReturnQuantity != nil {
+		updates["return_quantity"] = *in.ReturnQuantity
+	}
+	if in.Reason != nil {
+		updates["reason"] = *in.Reason
+	}
+	if in.Status != nil {
+		updates["status"] = *in.Status
+	}
+	if in.RefundAmount != nil {
+		updates["refund_amount"] = *in.RefundAmount
+	}
+	if in.InspectionResult != nil {
+		updates["inspection_result"] = *in.InspectionResult
+	}
+	if in.RejectionReason != nil {
+		updates["rejection_reason"] = *in.RejectionReason
+	}
+	if len(updates) == 0 {
+		return &o, nil
+	}
+	if err := s.db.Model(&o).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// Delete removes an aftersales order by id.
+func (s *Service) Delete(id int64) error {
+	res := s.db.Delete(&AfterSalesOrder{}, id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// Approve marks an aftersales order as approved.
+func (s *Service) Approve(id int64, in *ApproveInput) (*AfterSalesOrder, error) {
+	var o AfterSalesOrder
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":            "approved",
+		"approved_by":       in.ApprovedBy,
+		"approved_at":       &now,
+		"inspection_result": in.InspectionResult,
+	}
+	if err := s.db.Model(&o).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// Reject marks an aftersales order as rejected.
+func (s *Service) Reject(id int64, in *RejectInput) (*AfterSalesOrder, error) {
+	var o AfterSalesOrder
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":           "rejected",
+		"rejected_by":      in.RejectedBy,
+		"rejected_at":      &now,
+		"rejection_reason": in.RejectionReason,
+	}
+	if err := s.db.Model(&o).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// Receive marks an aftersales order as received (goods returned received)
+// and restocks the returned items back into inventory.
+func (s *Service) Receive(id int64, in *ReceiveInput) (*AfterSalesOrder, error) {
+	var o AfterSalesOrder
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	if o.Status != "approved" {
+		return nil, fmt.Errorf("cannot receive aftersales order in status %s", o.Status)
+	}
+	now := time.Now()
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"status":      "received",
+			"received_by": in.ReceivedBy,
+			"received_at": &now,
+		}
+		if err := tx.Model(&AfterSalesOrder{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+		// Restock inventory if SKU is specified
+		if o.SkuID != nil && o.ReturnQuantity > 0 {
+			var inv inventory.Inventory
+			if err := tx.Where("sku_id = ?", *o.SkuID).First(&inv).Error; err != nil {
+				return fmt.Errorf("inventory not found for sku_id %d: %w", *o.SkuID, err)
+			}
+			beforeQty := inv.Quantity
+			inv.Quantity += o.ReturnQuantity
+			inv.LockedQuantity -= o.ReturnQuantity
+			if inv.LockedQuantity < 0 {
+				inv.LockedQuantity = 0
+			}
+			if err := tx.Save(&inv).Error; err != nil {
+				return err
+			}
+			// Log the restock
+			return tx.Create(&inventory.InventoryLog{
+				SkuID:      *o.SkuID,
+				ChangeType: "in",
+				ChangeQty:  o.ReturnQuantity,
+				BeforeQty:  beforeQty,
+				AfterQty:   inv.Quantity,
+				Remark:     fmt.Sprintf("aftersales return, aftersales_id=%d", id),
+				Operator:   in.ReceivedBy,
+				CreatedAt:  time.Now(),
+			}).Error
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// Refund marks an aftersales order as refunded and records the refund amount.
+// It also transitions the original order to "cancelled" status.
+func (s *Service) Refund(id int64, in *RefundInput) (*AfterSalesOrder, error) {
+	var o AfterSalesOrder
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	if o.Status != "received" && o.Status != "approved" {
+		return nil, fmt.Errorf("cannot refund aftersales order in status %s", o.Status)
+	}
+	now := time.Now()
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"status":        "refunded",
+			"refunded_by":   in.RefundedBy,
+			"refunded_at":   &now,
+			"refund_amount": in.RefundAmount,
+		}
+		if err := tx.Model(&AfterSalesOrder{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+		// Cancel the original order
+		if err := tx.Model(&order.Order{}).Where("id = ?", o.OrderID).Update("status", "cancelled").Error; err != nil {
+			return err
+		}
+		return tx.Create(&order.OrderStatusLog{
+			OrderID:    o.OrderID,
+			FromStatus: "",
+			ToStatus:   "cancelled",
+			Operator:   in.RefundedBy,
+			Remark:     fmt.Sprintf("aftersales refund, aftersales_id=%d", id),
+		}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// Summary returns aggregation by status and total refund amount.
+func (s *Service) Summary() (*Summary, error) {
+	var total int64
+	if err := s.db.Model(&AfterSalesOrder{}).Count(&total).Error; err != nil {
+		return nil, err
+	}
+	type statusCount struct {
+		Status string
+		Cnt    int64
+	}
+	var scs []statusCount
+	if err := s.db.Model(&AfterSalesOrder{}).
+		Select("status, COUNT(*) AS cnt").Group("status").Scan(&scs).Error; err != nil {
+		return nil, err
+	}
+	byStatus := make(map[string]int64, len(scs))
+	for _, sc := range scs {
+		byStatus[sc.Status] = sc.Cnt
+	}
+	var rev struct {
+		Total float64
+	}
+	if err := s.db.Model(&AfterSalesOrder{}).
+		Select("COALESCE(SUM(refund_amount),0) AS total").
+		Where("status = ?", "refunded").
+		Scan(&rev).Error; err != nil {
+		return nil, err
+	}
+	return &Summary{Total: total, ByStatus: byStatus, TotalRefunded: rev.Total}, nil
+}

@@ -1,4 +1,6 @@
 __pycache__/
+.pytest_cache/
+.ruff_cache/
 *.py[cod]
 *.egg-info/
 .env
@@ -33,22 +35,11 @@ src/main/
 test-screenshot-*.png
 frontend/.sdd_finale_base
 
-# Go test binaries
-*.test
-
-# Backend Go build artifacts
-backend-go/bin/
-
-# Frontend build
-frontend-next/.next/
-frontend-next/tsconfig.tsbuildinfo
-
-# Load test results
-backend-go/loadtest/results/
-
-# Compiled server binary
+# Active stack exclusions
 backend-go/server
-
-# Playwright reports
+bin/
+backend-go/loadtest/results/
 frontend-next/e2e/playwright-report/
 frontend-next/e2e/test-results/
+frontend-next/e2e/node_modules/
+.gstack/

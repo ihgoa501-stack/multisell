@@ -1,183 +1,139 @@
 # Permissions And Audit Guide
 
+> 最后更新：2026-06-24
+> 适用范围：当前 Go 后端 `backend-go/`
+
 ## 目标
 
-MultiSell 的权限和审计目标是：
+凌镜的权限和审计目标是：
 
-- 未登录用户不能操作受保护接口。
+- 未登录用户不能访问受保护接口。
 - 普通用户只能执行自己角色拥有权限的操作。
-- 管理员可以执行所有操作。
-- 所有关键写操作都留下操作日志，便于追责和排查。
+- 管理员和系统级账号可以按业务规则获得更高权限。
+- 所有关键写操作都留下操作日志，便于追责、排查和 Agent 行为复盘。
 
 ## 核心文件
 
-- `backend/app/auth/dependencies.py`
-- `backend/app/auth/service.py`
-- `backend/app/auth/router.py`
-- `backend/app/rbac/service.py`
-- `backend/app/rbac/router.py`
-- `backend/app/operation_log/service.py`
-- `backend/app/operation_log/router.py`
+| 能力 | 文件 |
+|---|---|
+| JWT middleware | `backend-go/internal/httpx/middleware/auth.go` |
+| 全局审计 middleware | `backend-go/internal/httpx/middleware/audit.go` |
+| RBAC routes / service / model | `backend-go/internal/rbac/` |
+| 认证 routes / service / model | `backend-go/internal/auth/` |
+| 操作日志 domain | `backend-go/internal/domain/operationlog/` |
+| 路由挂载 | `backend-go/internal/httpx/router.go` |
 
 ## 认证规则
 
-### `AUTH_ENABLED=False`
+公共接口：
 
-用于本地开发和测试兼容。
+- `/api/health`
+- `/api/v1/health`
+- `/api/v1/auth/login`
+- `/api/v1/auth/register`
+- `/api/v1/auth/refresh`
 
-行为：
+受保护接口：
 
-- 不检查 token。
-- 返回 mock 系统用户。
-- mock 用户角色是 `admin`。
+- `backend-go/internal/httpx/router.go` 中 `protected := api.Group("")`
+- `protected.Use(middleware.Auth(cfg))`
+- 所有注册到 `protected` 的 domain、RBAC、AI、AgentOS 路由都要求 `Authorization: Bearer <token>`
 
-### `AUTH_ENABLED=True`
+JWT middleware 行为：
 
-用于生产或真实权限测试。
+- 缺少 `Authorization` header 返回 401
+- 非 `Bearer <token>` 格式返回 401
+- token 无效或过期返回 401
+- token 有效时把 `user_id` 写入 Gin context
 
-行为：
+## RBAC 数据模型
 
-- 请求必须携带 `Authorization: Bearer <token>`。
-- token 无效返回 HTTP 401。
-- 用户禁用返回 HTTP 403。
-- 权限不足返回 HTTP 403。
+当前 RBAC 表：
 
-## 权限依赖
+- `role`
+- `permission`
+- `user_role`
+- `role_permission`
 
-业务接口应使用：
+Go model 定义在：
 
-```python
-from fastapi import Depends
-from app.auth import require_permission
-from app.models import User
+- `backend-go/internal/rbac/model.go`
 
+RBAC service 支持：
 
-@router.post("/example")
-async def create_example(
-    current_user: User = Depends(require_permission("example:create")),
-):
-    ...
+- 角色 CRUD
+- 权限 CRUD
+- 用户角色分配
+- 角色权限分配
+- 聚合用户权限：`GetUserPermissions(userID)`
+
+当前权限聚合逻辑通过：
+
+```text
+user_role -> role_permission -> permission.code
 ```
 
-规则：
+## 前端权限入口
 
-- `current_user.role == "admin"`：直接通过。
-- 普通用户：通过 `UserRole -> Role -> RolePermission -> Permission` 查询权限。
-- 权限码匹配 `Permission.code`。
+前端权限 store：
 
-## 已接入的权限码
+- `frontend-next/src/stores/permission-store.ts`
 
-当前已覆盖主业务模块：
+菜单过滤：
 
-| 模块 | 权限码 | 审计日志 |
-| --- | --- | --- |
-| 商品 | `product:view`, `product:create`, `product:update`, `product:delete`, `product:import`, `product:export`, `product:ai` | 已覆盖 |
-| 分类 | `category:view`, `category:create`, `category:update`, `category:delete` | 已覆盖 |
-| 品牌 | `brand:view`, `brand:create`, `brand:update`, `brand:delete` | 已覆盖 |
-| SKU | `sku:view`, `sku:create`, `sku:update`, `sku:delete` | 已覆盖 |
-| 价格 | `price:view`, `price:update`, `price:batch_update` | 已覆盖 |
-| 库存 | `inventory:view`, `inventory:update`, `inventory:adjust` | 已覆盖 |
-| 供应商 | `supplier:view`, `supplier:create`, `supplier:update`, `supplier:delete` | 已覆盖 |
-| 平台 | `platform:view`, `platform:create`, `platform:update`, `platform:delete` | 已覆盖 |
-| 发布 | `listing:view`, `listing:publish`, `listing:sync`, `listing:task_manage` | 已覆盖 |
-| 上架任务 | `listing:view`, `listing:task_manage`, `listing:publish` | create_from_decision, recheck, cancel, publish |
-| 上架决策 | `decision:calculate` | 无写操作 |
-| 物流运费 | `shipping:view`, `shipping:manage`, `shipping:calculate` | 已覆盖 |
-| 运费账单 | `shipping:bill:import`, `shipping:bill:view`, `shipping:reconcile` | import, reconcile, resolve |
-| 平台结算 | `settlement:import`, `settlement:view`, `settlement:match` | import |
-| 平台费用规则 | `platform_fee:view`, `platform_fee:manage`, `platform_fee:calculate` | 已覆盖 |
-| 订单 | `order:view`, `order:create`, `order:update`, `order:update_status`, `order:cancel` | 已覆盖 |
-| 上架任务 | `listing:view`, `listing:task_manage`, `listing:publish` | create_from_decision, recheck, cancel, publish |
-| 财务账本 | `finance:ledger:view`, `finance:ledger:rebuild` | rebuild |
-| 财务报表 | `finance:report:view` | 查看（只读） |
-| 异常工作台 | `exception:view`, `exception:manage`, `exception:generate` | generate, assign, resolve, ignore |
-| Agent 动作 | `agent_action:view`, `agent_action:propose`, `agent_action:approve`, `agent_action:execute` | propose, approve, reject, execute |
-| CSV 订单导入 | `order_import:import`, `order_import:view`, `order_import:process` | import, process_chain |
-| 搜索 | `search:view` | 无写操作 |
+- `frontend-next/src/components/layout/AppSidebar.tsx`
+- `frontend-next/src/config/menu.ts`
+
+页面保护：
+
+- `frontend-next/src/components/auth/AuthGuard.tsx`
 
 ## 审计日志规则
 
-状态变化接口成功后应调用：
+全局审计 middleware：
 
-```python
-from app.operation_log.service import OperationLogService
+- 文件：`backend-go/internal/httpx/middleware/audit.go`
+- 挂载位置：`backend-go/internal/httpx/router.go`
+- 记录对象：POST / PUT / PATCH / DELETE
+- 跳过对象：GET / HEAD / OPTIONS、health checks
 
-await OperationLogService.log(
-    db,
-    module="product",
-    action="create",
-    resource_id=str(product.id),
-    content=f"创建商品: {product.name}",
-    operator=current_user.username,
-)
-```
+审计字段：
 
-建议字段含义：
+| 字段 | 来源 |
+|---|---|
+| `module` | 从 request path 提取，例如 `/api/v1/order/123` -> `order` |
+| `action` | HTTP method + route template 生成 |
+| `resource_id` | path param，优先 `:id`、`:trace_id`、`:action_id` 等 |
+| `content` | path、query、status、截断后的 body |
+| `operator` | Gin context 中的 `username` 或 `user_id` |
+| `ip` | `c.ClientIP()` |
+| `duration` | handler 执行耗时 |
 
-| 字段 | 说明 |
-| --- | --- |
-| `module` | 模块名，如 `product`、`order`、`listing` |
-| `action` | 操作，如 `create`、`update`、`delete`、`publish` |
-| `resource_id` | 被操作资源 ID |
-| `content` | 简短可读说明 |
-| `operator` | 操作人用户名 |
-| `ip` | 后续可从 Request 中补充 |
-| `duration` | 后续可记录接口耗时 |
-
-## 当前审计覆盖范围
-
-已覆盖主业务写操作模块：
-
-| 模块 | 审计操作 |
-| --- | --- |
-| 商品 | create, update, delete, batch_update_status, batch_delete, duplicate, import, export, ai_enhance |
-| 分类 | create, update, delete |
-| 品牌 | create, update, delete |
-| 订单 | create, update_status, cancel, bind_shipping_quote, update_profit_inputs |
-| 库存 | update |
-| 价格 | set_price, batch_update |
-| SKU | define_specs, generate_skus, update |
-| 供应商 | create, update, delete, bind_product, unbind_product |
-| 平台 | create, update, delete |
-| 平台费用规则 | create, update, delete |
-| 发布 | publish, publish_failed |
-| 上架任务 | create_from_decision, recheck, cancel, publish |
-| 运费账单 | import, reconcile, resolve |
-| 平台结算 | import |
-| 财务账本 | rebuild |
-| 异常工作台 | generate, assign, resolve, ignore |
-| Agent 动作 | propose, approve, reject, execute |
-| CSV 订单导入 | import, process_chain |
-
-## 测试
-
-权限和审计集成测试：
-
-```bash
-cd backend
-python3 -m pytest tests/test_auth_rbac_audit_integration.py -q
-```
-
-测试覆盖：
-
-- 开启鉴权后，未登录创建商品返回 401。
-- 普通用户没有 `product:create` 返回 403。
-- 拥有 `product:create` 后可以创建商品，并写入操作日志。
-- `admin` 角色不需要显式权限即可创建商品。
+审计写入是后台 goroutine，失败只打 warning，不阻塞业务响应。
 
 ## 接入新模块的步骤
 
-1. 先写测试，验证未登录返回 401。
-2. 写测试，验证普通用户无权限返回 403。
-3. 写测试，验证授予权限后操作成功。
-4. 写测试，验证操作成功后产生审计日志。
-5. 在路由函数参数中加入 `Depends(require_permission("<module>:<action>"))`。
-6. 操作成功后调用 `OperationLogService.log(...)`。
-7. 跑局部测试和全量测试。
+1. 新路由挂到 `backend-go/internal/httpx/router.go` 的 protected group，除非明确是 public endpoint。
+2. 在业务 handler/service 中保持清晰的状态变化边界。
+3. 对复杂或高风险写操作，除全局 audit 外可显式写 operation log。
+4. 新增 RBAC 权限时同步 `permission` seed / migration / 管理页面展示。
+5. 前端菜单项如需权限控制，在 `frontend-next/src/config/menu.ts` 填 `permission`。
+6. 添加 focused Go tests，至少覆盖未授权、授权成功和关键状态变化。
+
+## 当前验证
+
+2026-06-24 复核：
+
+```bash
+cd backend-go && go test ./...
+cd backend-go && go vet ./...
+```
+
+结果均通过。
 
 ## 注意事项
 
-- 不要只在前端隐藏按钮，后端必须强制校验权限。
-- 不要把权限判断写死在每个路由里，统一使用 `require_permission(...)`。
-- 不要在失败操作后写成功日志。
-- 不要把平台 API key、用户密码 hash、token 等敏感数据写入 `content`。
+- 不要只在前端隐藏按钮，后端必须强制校验鉴权和关键权限。
+- 不要把平台 API key、用户密码 hash、token 等敏感数据写入审计 `content`。
+- 不要为读请求写审计日志，除非业务上需要单独的安全审计。
+- 不要在新代码中使用旧 FastAPI 的 `require_permission(...)` 或 `OperationLogService.log(...)` 写法；那只适用于 legacy `backend/`。
