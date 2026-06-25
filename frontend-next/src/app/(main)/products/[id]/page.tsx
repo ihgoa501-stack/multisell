@@ -3,7 +3,7 @@
 import { Card, Descriptions, Result, Spin, Image } from 'antd';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, TeamOutlined } from '@ant-design/icons';
 import { Button } from 'antd';
 import PageContainer from '@/components/ui/PageContainer';
 import apiClient from '@/lib/api-client';
@@ -43,6 +43,15 @@ export default function ProductDetailPage() {
         style={{ marginBottom: 16 }}
       >
         返回列表
+      </Button>
+      <Button
+        icon={<TeamOutlined />}
+        onClick={() => router.push(`/products/${id}/suppliers`)}
+        style={{ marginBottom: 16, marginLeft: 8 }}
+        type="primary"
+        ghost
+      >
+        供应商对比
       </Button>
 
       {isLoading ? (

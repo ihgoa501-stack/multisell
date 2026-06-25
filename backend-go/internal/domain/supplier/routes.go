@@ -29,4 +29,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		ps.PUT("/:id", h.UpdateProductSupplier)
 		ps.DELETE("/:id", h.DeleteProductSupplier)
 	}
+
+	// Supplier comparison — sits under products route but uses supplier service
+	products := rg.Group("/products")
+	{
+		products.GET("/:id/supplier-comparison", h.GetSupplierComparison)
+	}
 }

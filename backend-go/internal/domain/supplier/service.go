@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -118,4 +119,54 @@ func (s *Service) UpdateProductSupplier(ctx context.Context, ps *ProductSupplier
 // DeleteProductSupplier removes a product-supplier association by ID.
 func (s *Service) DeleteProductSupplier(ctx context.Context, id int64) error {
 	return s.db.WithContext(ctx).Delete(&ProductSupplier{}, id).Error
+}
+
+// GetSupplierComparison returns a product's suppliers side-by-side.
+func (s *Service) GetSupplierComparison(ctx context.Context, productID int64) (*SupplierComparisonResponse, error) {
+	type productName struct {
+		ID   int64  `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+	}
+	var p productName
+	if err := s.db.WithContext(ctx).Table("product").Select("id,name").First(&p, productID).Error; err != nil {
+		return nil, err
+	}
+
+	type row struct {
+		SupplierID    int64            `gorm:"column:supplier_id"`
+		SupplierName  string           `gorm:"column:supplier_name"`
+		SupplyPrice   *decimal.Decimal `gorm:"column:supply_price"`
+		MinOrderQty   int              `gorm:"column:min_order_qty"`
+		SpecSummary   string           `gorm:"column:spec_summary"`
+	}
+	var rows []row
+	q := s.db.WithContext(ctx).Table("product_supplier ps").
+		Select("ps.supplier_id, s.name AS supplier_name, ps.supply_price, ps.min_order_qty").
+		Joins("JOIN supplier s ON s.id = ps.supplier_id").
+		Where("ps.product_id = ?", productID).
+		Order("ps.id ASC")
+
+	// left join sourcing_1688_product for spec summary
+	q = q.Joins("LEFT JOIN sourcing_1688_product sp ON sp.product_id = ps.product_id AND sp.supplier_id_1688::bigint = ps.supplier_id")
+
+	if err := q.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	suppliers := make([]SupplierRow, 0, len(rows))
+	for _, r := range rows {
+		suppliers = append(suppliers, SupplierRow{
+			SupplierID:   r.SupplierID,
+			SupplierName: r.SupplierName,
+			SupplyPrice:  r.SupplyPrice,
+			MinOrderQty:  r.MinOrderQty,
+			SpecSummary:  r.SpecSummary,
+		})
+	}
+
+	return &SupplierComparisonResponse{
+		ProductID:   p.ID,
+		ProductName: p.Name,
+		Suppliers:   suppliers,
+	}, nil
 }

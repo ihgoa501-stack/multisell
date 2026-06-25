@@ -85,6 +85,35 @@ type RunAgentResult struct {
 // In production this would proxy to an LLM provider and real tool calls.
 // For now it produces deterministic stub output so the full UI flow works.
 func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
+	return o.runWithTimeout(req, 0)
+}
+
+// RunWithContext runs an agent decision with a context deadline.
+// The context governs the entire execution — cancelled/deadline-exceeded
+// contexts abort the run and return an error.
+func (o *Orchestrator) RunWithContext(ctx context.Context, req *RunAgentRequest) (*RunAgentResult, error) {
+	done := make(chan struct {
+		res *RunAgentResult
+		err error
+	}, 1)
+	go func() {
+		res, err := o.runWithTimeout(req, 0)
+		done <- struct {
+			res *RunAgentResult
+			err error
+		}{res, err}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-done:
+		return r.res, r.err
+	}
+}
+
+// runWithTimeout is the internal implementation used by both Run and RunWithContext.
+// A timeoutSeconds value of 0 means no timeout.
+func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) (*RunAgentResult, error) {
 	agent, ok := o.registry.Get(req.AgentID)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent: %s", req.AgentID)

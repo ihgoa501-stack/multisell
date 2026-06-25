@@ -1,9 +1,10 @@
 package agentos
 
 import (
-	"github.com/lingmirror/backend-go/internal/ai"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+
+	"github.com/lingmirror/backend-go/internal/ai"
 )
 
 // Service provides AgentOS cockpit aggregation.
@@ -24,27 +25,29 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 
 // CockpitOverview is the top-level AgentOS cockpit payload.
 type CockpitOverview struct {
-	Squads       []SquadHealth    `json:"squads"`
-	Agents       []ai.AgentRosterSummary `json:"agents"`
-	PendingByRisk map[string]int64 `json:"pending_by_risk"`
-	PendingTotal int64            `json:"pending_total"`
-	SlaBreached  int64            `json:"sla_breached"`
-	WorkQueueLen int64            `json:"work_queue_len"`
+	Squads        []SquadHealth          `json:"squads"`
+	Agents        []ai.AgentRosterSummary `json:"agents"`
+	PendingByRisk map[string]int64       `json:"pending_by_risk"`
+	PendingTotal  int64                  `json:"pending_total"`
+	SlaBreached   int64                  `json:"sla_breached"`
+	WorkQueueLen  int64                  `json:"work_queue_len"`
 }
 
 // SquadHealth summarizes one squad's health.
 type SquadHealth struct {
-	Squad        string  `json:"squad"`
-	AgentCount   int     `json:"agent_count"`
-	TraceCount   int64   `json:"trace_count"`
-	ActionCount  int64   `json:"action_count"`
-	PendingCount int64   `json:"pending_count"`
-	AvgConfidence float64 `json:"avg_confidence"`
-	Health       string  `json:"health"` // ok | warn | critical
-	Warnings     []string `json:"warnings"`
+	Squad         string   `json:"squad"`
+	AgentCount    int      `json:"agent_count"`
+	TraceCount    int64    `json:"trace_count"`
+	ActionCount   int64    `json:"action_count"`
+	PendingCount  int64    `json:"pending_count"`
+	AvgConfidence float64  `json:"avg_confidence"`
+	Health        string   `json:"health"` // ok | warn | critical
+	Warnings      []string `json:"warnings"`
 }
 
-// Overview builds the cockpit overview.
+// Overview builds the cockpit overview with best-effort querying.
+// DB errors are logged and result in zero defaults — partial data is
+// returned rather than failing the entire request.
 func (s *Service) Overview() (*CockpitOverview, error) {
 	overview := &CockpitOverview{
 		PendingByRisk: map[string]int64{"low": 0, "medium": 0, "high": 0, "critical": 0},
@@ -58,7 +61,7 @@ func (s *Service) Overview() (*CockpitOverview, error) {
 	}
 	overview.Agents = roster
 
-	// Group by squad.
+	// Group by squad — use a single batched query.
 	bySquad := s.registry.BySquad()
 	squads := make([]SquadHealth, 0, len(bySquad))
 	for squadName, agents := range bySquad {
@@ -68,13 +71,47 @@ func (s *Service) Overview() (*CockpitOverview, error) {
 			agentIDs = append(agentIDs, a.ID)
 		}
 		if len(agentIDs) > 0 {
-			_ = s.db.Table("ai_trace").Where("agent_id IN ?", agentIDs).Count(&sh.TraceCount).Error
-			_ = s.db.Table("unified_action").Where("agent_id IN ?", agentIDs).Count(&sh.ActionCount).Error
-			_ = s.db.Table("unified_action").Where("agent_id IN ? AND status IN ?", agentIDs, []string{"suggested", "pending"}).Count(&sh.PendingCount).Error
-			var conf struct{ Avg float64 }
-			_ = s.db.Table("ai_trace").Where("agent_id IN ? AND confidence IS NOT NULL", agentIDs).
-				Select("COALESCE(AVG(confidence),0) AS avg").Scan(&conf).Error
-			sh.AvgConfidence = conf.Avg
+			// Single batched query for all squad metrics.
+			type squadMetrics struct {
+				TraceCount    int64
+				ActionCount   int64
+				PendingCount  int64
+				AvgConfidence float64
+			}
+			var m squadMetrics
+			err := s.db.Raw(`
+				SELECT
+					COALESCE(t.trace_count, 0) AS trace_count,
+					COALESCE(a.action_count, 0) AS action_count,
+					COALESCE(a.pending_count, 0) AS pending_count,
+					COALESCE(t.avg_conf, 0) AS avg_confidence
+				FROM (
+					SELECT
+						COUNT(*) AS trace_count,
+						COALESCE(AVG(confidence), 0) AS avg_conf
+					FROM ai_trace
+					WHERE agent_id IN ? AND confidence IS NOT NULL
+				) t,
+				(
+					SELECT
+						COUNT(*) AS action_count,
+						COUNT(*) FILTER (WHERE status IN ('suggested','pending')) AS pending_count
+					FROM unified_action
+					WHERE agent_id IN ?
+				) a`,
+				agentIDs, agentIDs,
+			).Scan(&m).Error
+			if err != nil {
+				s.logger.Warn("overview squad query failed",
+					zap.String("squad", squadName),
+					zap.Error(err))
+				// Continue with zero defaults.
+			} else {
+				sh.TraceCount = m.TraceCount
+				sh.ActionCount = m.ActionCount
+				sh.PendingCount = m.PendingCount
+				sh.AvgConfidence = m.AvgConfidence
+			}
 		}
 		sh.Health = classifyHealth(sh.PendingCount, sh.AvgConfidence)
 		if sh.Health == "warn" {
@@ -87,21 +124,45 @@ func (s *Service) Overview() (*CockpitOverview, error) {
 	}
 	overview.Squads = squads
 
-	// Pending by risk.
-	var pendingLow, pendingMedium, pendingHigh, pendingCritical int64
-	_ = s.db.Table("unified_action").Where("status IN ? AND risk_level = ?", []string{"suggested", "pending"}, "low").Count(&pendingLow).Error
-	_ = s.db.Table("unified_action").Where("status IN ? AND risk_level = ?", []string{"suggested", "pending"}, "medium").Count(&pendingMedium).Error
-	_ = s.db.Table("unified_action").Where("status IN ? AND risk_level = ?", []string{"suggested", "pending"}, "high").Count(&pendingHigh).Error
-	_ = s.db.Table("unified_action").Where("status IN ? AND risk_level = ?", []string{"suggested", "pending"}, "critical").Count(&pendingCritical).Error
-	overview.PendingByRisk["low"] = pendingLow
-	overview.PendingByRisk["medium"] = pendingMedium
-	overview.PendingByRisk["high"] = pendingHigh
-	overview.PendingByRisk["critical"] = pendingCritical
-	overview.PendingTotal = pendingLow + pendingMedium + pendingHigh + pendingCritical
+	// Pending by risk — single query with GROUP BY.
+	type riskCount struct {
+		RiskLevel string
+		Count     int64
+	}
+	var riskCounts []riskCount
+	if err := s.db.Table("unified_action").
+		Select("risk_level, COUNT(*) AS count").
+		Where("status IN ?", []string{"suggested", "pending"}).
+		Group("risk_level").
+		Scan(&riskCounts).Error; err != nil {
+		s.logger.Warn("overview risk count query failed", zap.Error(err))
+	} else {
+		for _, rc := range riskCounts {
+			if _, ok := overview.PendingByRisk[rc.RiskLevel]; ok {
+				overview.PendingByRisk[rc.RiskLevel] = rc.Count
+			}
+			overview.PendingTotal += rc.Count
+		}
+	}
 
-	// Work queue = suggested actions older than 1h count as SLA breached.
-	_ = s.db.Table("unified_action").Where("status IN ?", []string{"suggested", "pending"}).Count(&overview.WorkQueueLen).Error
-	_ = s.db.Table("unified_action").Where("status IN ? AND proposed_at < NOW() - INTERVAL '1 hour'", []string{"suggested", "pending"}).Count(&overview.SlaBreached).Error
+	// Work queue and SLA — single query with conditional aggregation.
+	type queueMetrics struct {
+		QueueLen    int64
+		SlaBreached int64
+	}
+	var qm queueMetrics
+	if err := s.db.Raw(`
+		SELECT
+			COUNT(*) AS queue_len,
+			COUNT(*) FILTER (WHERE proposed_at < NOW() - INTERVAL '1 hour') AS sla_breached
+		FROM unified_action
+		WHERE status IN ('suggested', 'pending')`,
+	).Scan(&qm).Error; err != nil {
+		s.logger.Warn("overview queue query failed", zap.Error(err))
+	} else {
+		overview.WorkQueueLen = qm.QueueLen
+		overview.SlaBreached = qm.SlaBreached
+	}
 
 	return overview, nil
 }
@@ -116,14 +177,14 @@ type WorkItemsFilter struct {
 
 // WorkItem is a lightweight action view for the queue.
 type WorkItem struct {
-	ID          int64   `json:"id"`
-	Title       string  `json:"title"`
-	AgentID     string  `json:"agent_id"`
-	SquadID     string  `json:"squad_id"`
-	RiskLevel   string  `json:"risk_level"`
-	Status      string  `json:"status"`
+	ID          int64    `json:"id"`
+	Title       string   `json:"title"`
+	AgentID     string   `json:"agent_id"`
+	SquadID     string   `json:"squad_id"`
+	RiskLevel   string   `json:"risk_level"`
+	Status      string   `json:"status"`
 	Confidence  *float64 `json:"confidence,omitempty"`
-	ProposedAt  string  `json:"proposed_at"`
+	ProposedAt  string   `json:"proposed_at"`
 }
 
 // WorkItems lists the work queue.
@@ -163,10 +224,10 @@ func (s *Service) WorkItems(limit int, f *WorkItemsFilter) ([]WorkItem, int64, e
 
 // AutonomyConfig holds trust/autonomy controls.
 type AutonomyConfig struct {
-	AgentID       string `json:"agent_id"`
-	AutonomyLevel string `json:"autonomy_level"`
-	RequiresApproval bool `json:"requires_approval"`
-	MaxActionsPerHour int `json:"max_actions_per_hour"`
+	AgentID            string `json:"agent_id"`
+	AutonomyLevel      string `json:"autonomy_level"`
+	RequiresApproval   bool   `json:"requires_approval"`
+	MaxActionsPerHour  int    `json:"max_actions_per_hour"`
 }
 
 // Autonomy returns the current autonomy config per agent.

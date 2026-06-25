@@ -33,7 +33,11 @@ func Success(c *gin.Context, data interface{}) {
 }
 
 // Error sends an error response with the given status code and message.
+// In release mode, 5xx error messages are masked to avoid leaking internal details.
 func Error(c *gin.Context, code int, message string) {
+	if code >= http.StatusInternalServerError && gin.Mode() == gin.ReleaseMode {
+		message = http.StatusText(code)
+	}
 	c.JSON(code, Result{
 		Code:    code,
 		Message: message,
@@ -50,4 +54,14 @@ func Paginated(c *gin.Context, data interface{}, total int64, page, size int) {
 		Page:    page,
 		Size:    size,
 	})
+}
+
+// InternalError sends a 500 error with message masked in release mode.
+// Convenience wrapper for handlers that pass err.Error() directly.
+func InternalError(c *gin.Context, err error) {
+	if gin.Mode() == gin.ReleaseMode {
+		Error(c, http.StatusInternalServerError, "internal server error")
+	} else {
+		Error(c, http.StatusInternalServerError, err.Error())
+	}
 }

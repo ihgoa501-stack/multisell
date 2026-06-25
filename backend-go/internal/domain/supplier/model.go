@@ -35,3 +35,24 @@ type ProductSupplier struct {
 
 // TableName overrides the default table name.
 func (ProductSupplier) TableName() string { return "product_supplier" }
+
+// SupplierComparisonResponse is the response for product-vs-supplier comparison.
+type SupplierComparisonResponse struct {
+	ProductID   int64             `json:"product_id"`
+	ProductName string            `json:"product_name"`
+	Suppliers   []SupplierRow     `json:"suppliers"`
+	SpecNames   map[string]string `json:"spec_names,omitempty"`
+}
+
+// SupplierRow is one supplier's row in a comparison.
+type SupplierRow struct {
+	SupplierID     int64            `json:"supplier_id"`
+	SupplierName   string           `json:"supplier_name"`
+	SupplyPrice    *decimal.Decimal `json:"supply_price,omitempty"`
+	MinOrderQty    int              `json:"min_order_qty"`
+	SpecSummary    string           `json:"spec_summary"`     // from sourcing_1688_product
+	PackageLength  *decimal.Decimal `json:"package_length_cm,omitempty"`
+	PackageWidth   *decimal.Decimal `json:"package_width_cm,omitempty"`
+	PackageHeight  *decimal.Decimal `json:"package_height_cm,omitempty"`
+	PackageWeight  *decimal.Decimal `json:"package_weight_kg,omitempty"`
+}

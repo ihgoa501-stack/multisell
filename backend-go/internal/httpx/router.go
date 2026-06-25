@@ -190,6 +190,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		svc := trustscore.NewService(db, logger)
 		return svc.Recalculate()
 	})
+		// scheduler.tick.entropy → run entropy defenses
+		bus.Subscribe("scheduler.tick.entropy", func(ctx context.Context, evt eventbus.Event) error {
+			svc := entropy.NewService(db, logger)
+			_, err := svc.RunDefenses(0)
+			return err
+		})
 
 	// -------------------------------------------------------
 	// Pipeline chain rules (via event bus)
@@ -199,7 +205,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Subscribe("agent.decided.A5.stock_alert", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
 		if status, ok := payload["stock_status"].(string); ok && status == "red" {
-			_, err := aiOrch.Run(&ai.RunAgentRequest{
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "G3",
 				DecisionPoint: "discount_risk_check",
 				Context:       payload,
@@ -213,7 +221,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Subscribe("agent.decided.G3.discount_risk_check", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
 		if action, ok := payload["action"].(string); ok && action == "block" {
-			_, err := aiOrch.Run(&ai.RunAgentRequest{
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "A6",
 				DecisionPoint: "profit_watch",
 				Context:       payload,
@@ -229,7 +239,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		isLoss, _ := payload["is_loss"].(bool)
 		belowThreshold, _ := payload["below_threshold"].(bool)
 		if isLoss || belowThreshold {
-			_, err := aiOrch.Run(&ai.RunAgentRequest{
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "A2",
 				DecisionPoint: "listing_optimize",
 				Context:       payload,
@@ -243,7 +255,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Subscribe("agent.decided.G0.system_health", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
 		if count, ok := payload["anomaly_count"].(int); ok && count > 3 {
-			_, err := aiOrch.Run(&ai.RunAgentRequest{
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "G1",
 				DecisionPoint: "dashboard_overview",
 				Context:       payload,
@@ -252,7 +266,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		}
 		// Also check for float64 (JSON unmarshal from scheduler)
 		if count, ok := payload["anomaly_count"].(float64); ok && count > 3 {
-			_, err := aiOrch.Run(&ai.RunAgentRequest{
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "G1",
 				DecisionPoint: "dashboard_overview",
 				Context:       payload,
@@ -307,6 +323,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Interval: time.Hour * 1, Description: "信任分重算",
 	})
 	sched.Register(scheduler.Task{
+		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
 
@@ -383,11 +400,23 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
 	go hub.Run()
-	wsHandler := realtime.NewHandler(hub, logger)
+	wsHandler := realtime.NewHandler(hub, logger, cfg.JWT.Secret)
 	r.GET("/ws", wsHandler.ServeWS)
 
 	// AI routes need the hub for realtime broadcasts.
 	ai.RegisterRoutes(protected, db, logger, hub)
 
 	return r
+}
+
+// runAgentWithTimeout runs an agent with a 30-second timeout for pipeline chains.
+func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, ctx map[string]interface{}) error {
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err := orch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+		AgentID:       agentID,
+		DecisionPoint: decisionPoint,
+		Context:       ctx,
+	})
+	return err
 }

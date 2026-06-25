@@ -190,3 +190,21 @@ func (h *Handler) DeleteProductSupplier(c *gin.Context) {
 
 	response.Success(c, gin.H{"id": id})
 }
+
+// GetSupplierComparison returns a product vs its suppliers side-by-side.
+// GET /api/v1/products/:id/supplier-comparison
+func (h *Handler) GetSupplierComparison(c *gin.Context) {
+	productID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid product id")
+		return
+	}
+
+	result, err := h.service.GetSupplierComparison(c.Request.Context(), productID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to get supplier comparison: "+err.Error())
+		return
+	}
+
+	response.Success(c, result)
+}
