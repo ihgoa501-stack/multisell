@@ -1,0 +1,37 @@
+package listing
+
+import (
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+)
+
+// RegisterRoutes registers listing routes on the given router group.
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+	svc := NewService(db, logger)
+	h := NewHandler(svc)
+
+	group := rg.Group("/listings")
+	{
+		group.GET("", h.List)
+		group.GET("/:id", h.Get)
+		group.POST("", h.Create)
+		group.PUT("/:id", h.Update)
+		group.DELETE("/:id", h.Delete)
+		group.POST("/:id/publish", h.Publish)
+		group.POST("/:id/sync", h.Sync)
+	}
+
+	// Listing publish chain — uses /listing (singular) prefix.
+	chain := rg.Group("/listing")
+	{
+		chain.POST("/products/:product_id/publish/:platform_id", h.PublishProduct)
+		chain.GET("/products/:product_id/listings", h.ListByProduct)
+
+		// Static path from-decisions must be registered before :task_id.
+		chain.POST("/listing-tasks/from-decisions", h.CreateTasksFromDecisions)
+		chain.POST("/listing-tasks/:task_id/recheck", h.RecheckTask)
+		chain.POST("/listing-tasks/:task_id/cancel", h.CancelTask)
+		chain.POST("/listing-tasks/:task_id/publish", h.PublishTask)
+	}
+}

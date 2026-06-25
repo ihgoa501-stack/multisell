@@ -1,225 +1,163 @@
 # 凌镜 LingMirror Roadmap
 
-更新时间：2026-06-16（Stage 1-7 已完成，Stage 11 CSV 订单导入已完成，Stage 12 经营链路已完成）
+> 更新时间：2026-06-24
+> 当前阶段：全站新栈迁移后收敛
 
 ## 当前阶段判断
 
-项目已经越过“纯原型”阶段，进入“核心业务闭环补齐”阶段。
+项目已完成从 Python/FastAPI + Vue 到 Go/Gin + Next.js 的全站迁移。当前重点不再是“双栈迁移”，而是把新栈打磨到可持续交付状态：
 
-现在最重要的不是继续加页面，而是把后台系统必须可靠的几条链路补完整：
+- API 路径和前后端 contract 收敛
+- 前端 lint 质量门禁恢复
+- 新栈 demo seed / acceptance 重建
+- 高风险业务模块测试补齐
+- AgentOS、财务、发布、订单履约链路稳定化
 
-- 权限和审计
-- 订单和库存
-- Excel 批量运营
-- 多平台发布和同步
-- 报表和异常处理
+## Phase 0：新栈事实源对齐
 
-## Phase 0：运行和迁移基线
-
-状态：已完成第一版。
+状态：进行中。
 
 已完成：
 
-- Docker PostgreSQL 默认配置对齐。
-- 测试数据库路径明确。
-- Alembic 基线可运行。
-- README 启动说明已更新。
+- `README.md` 指向 `backend-go/` 和 `frontend-next/`。
+- `AGENTS.md` 指向新栈。
+- `CLAUDE.md` 已同步到新栈。
+- `docs/PROJECT_STATUS.md` 已重写为当前状态。
+- `docs/FRONTEND_PAGES_AND_ROUTING.md` 已重写为 Next App Router 路由说明。
+- `docs/FUNCTION_INVENTORY.md` 已重写为新栈功能清单。
+- `docs/UI_FRAMEWORK_GAP_ANALYSIS.md` 已改为新栈页面覆盖审计。
 
-后续可改进：
+待完成：
 
-- 把动态 `Base.metadata.create_all` baseline 改成显式 Alembic 表结构。
-- 增加 CI migration check。
+- 清理或标注剩余旧栈历史文档。
+- archived plans 保持历史原貌，但在索引中避免误导为当前待办。
 
-## Phase 1：商品核心质量
+## Phase 1：质量门禁恢复
 
-状态：已完成第一版。
+状态：待做。
 
-已完成：
+目标：
 
-- 商品生命周期测试。
-- SKU 生成幂等。
-- SKU 库存读取改为 `Inventory.quantity`。
-- 商品删除保护。
+- `cd frontend-next && npm run lint` 通过。
+- lint 修复不通过降级规则绕过完成。
 
-后续可改进：
+当前主要问题：
 
-- 增加分类删除保护。
-- 增加品牌删除保护。
-- 为 SKU、价格、库存补更多边界测试。
+- `no-explicit-any`
+- `no-unused-vars`
+- `react-hooks/set-state-in-effect`
 
-## Phase 2：权限和审计
+建议优先级：
 
-状态：主业务模块已完成，少量基础资料接口待补。
+1. 修 `AuthGuard` hooks 规则。
+2. 清理登录页、决策页、刊登任务详情、结算详情中的 `any`。
+3. 清理未使用 import / 变量。
 
-已完成：
+## Phase 2：API Contract 收敛
 
-- `require_permission(...)` 统一权限依赖。
-- 商品模块写操作权限校验。
-- 商品模块写操作审计日志。
-- 权限和审计集成测试。
-- 订单接口接入权限和审计。
-- 库存、价格、SKU 接入权限和审计。
-- 供应商、平台、发布接入权限和审计。
-- RBAC 管理接口接入 `rbac:manage` / `rbac:view`。
-- 操作日志查看接口接入 `operation_log:view`。
-- 前端按权限隐藏菜单和按钮。
-- 后端 `/auth/me` 返回用户权限列表。
-- 路由守卫保存 redirect 参数。
+状态：待做。
 
-待补：
+目标：
 
-- 分类接口接入 `category:*` 权限和审计。
-- 品牌接口接入 `brand:*` 权限和审计。
-- 按上线要求决定是否给商品读取和全局搜索增加后端权限。
+- 前端所有 `apiClient` 调用统一使用 `/v1/*`。
+- 后端所有业务 API 保持 `/api/v1/*`。
+- 增加 smoke test 防止回退到 `/api/*`。
 
-相关测试：121 个后端测试全通过，前端 build 通过。
+已知风险调用：
 
-## Phase 3：订单库存闭环
+- `/ai/actions`
+- `/policy/rules`
+- `/evolution/nudges`
+- `/trust-scores/summary`
 
-状态：订单库存闭环已完成第一版。
+## Phase 3：新栈 Demo Seed / Acceptance
 
-已完成：
+状态：待做。
 
-- 订单表、订单明细表、状态日志表。
-- 订单创建、列表、详情、状态更新。
-- 状态流转校验。
-- ✅ 订单创建锁库存。
-- ✅ 支付扣减库存并释放锁定。
-- ✅ 取消释放锁定库存。
-- ✅ 库存不足阻止订单创建。
-- ✅ 库存变动日志。
-- ✅ 行锁防止并发超卖。
+目标：
 
-待下一阶段：
+- 新增 Go demo seed。
+- 新增 `/api/v1/*` acceptance script。
+- 支持一键准备演示数据。
 
-- `paid -> cancelled` 自动退库存（需售后工作流）。
-- 售后退货入库。
-- 多仓库分配。
-- 并发压力测试。
+建议覆盖：
 
-## Phase 4：平台发布 adapter
+- 商品 / SKU / 库存 / 价格
+- 平台 / 平台费用 / 刊登任务
+- 物流报价
+- 订单 / 订单导入
+- 结算 / 财务
+- 异常
+- AI chat / trace / action
+- AgentOS work items / entropy / trust score
 
-状态：adapter 边界已完成，真实平台未接入。
+## Phase 4：测试覆盖补齐
 
-已完成：
+状态：待做。
 
-- `ListingAdapter` 协议。
-- `MockListingAdapter`。
-- 发布前检查。
-- 发布成功 / 失败记录。
-- 平台密钥不返回前端。
+后端优先模块：
 
-下一步：
+- `listing`
+- `listingtask`
+- `inventory`
+- `finance`
+- `decision`
+- `allocation`
+- `agentos`
+- `actionpolicy`
+- `evolution`
+- `entropy`
+- `trustscore`
 
-1. 选第一个真实平台，建议 Ozon 或 Shopee。
-2. 建平台字段映射模型。
-3. 增加平台类目映射。
-4. 实现发布请求和错误解析。
-5. 实现发布状态同步。
-6. 实现失败重试。
+前端优先页面：
 
-## Phase 5：Excel、AI、搜索和报表
+- 登录与 AuthGuard
+- Dashboard
+- 商品列表 / 商品详情
+- 订单详情
+- 刊登任务详情
+- AI / Agent actions
+- AgentOS work items
+- 设置 / RBAC / policy
 
-状态：基础能力已有，生产质量不足。
+## Phase 5：业务链路稳定化
 
-下一步：
+状态：进行中。
 
-1. 修复 Excel 导入模板和字段映射错位。
-2. 支持 SKU、价格、库存批量导入。
-3. 导入时返回错误行和错误原因。
-4. AI 返回内容增加 schema 校验。
-5. AI 结果增加人工确认流程。
-6. 搜索增加索引和更多对象类型。
-7. 报表增加订单、库存、发布成功率和利润指标。
+优先链路：
 
-## Phase 6：物流与运费
+1. 商品 -> SKU -> 库存 -> 价格
+2. SKU -> 物流报价 -> 平台费用 -> 上架前决策
+3. 决策 -> 刊登任务 -> 发布动作
+4. 订单 -> 库存 -> 结算 -> 财务账本
+5. 异常 -> Agent action -> 审批 -> 执行 -> 复盘
 
-状态：第四阶段已完成。订单可保存运费快照并进行利润一期测算，物流报价表可导入。
+每条链路需要：
 
-物流和运费是跨境电商订单履约的核心环节。系统需要管理商品/SKU 的物流属性（包装尺寸、重量）、物流供应商渠道、报价规则和运费计算，以支持运营人员快速对比不同物流方案并做出选择。
+- 后端 focused tests
+- 前端 smoke / e2e
+- demo data
+- 文档中的 API 路径和页面路径一致
 
-相关文档：
+## Phase 6：生产化准备
 
-- [物流与运费 PRD](LOGISTICS_AND_SHIPPING_PRD.md)
-- [物流与运费技术规格](LOGISTICS_SHIPPING_TECH_SPEC.md)
-- [报价规则示例](LOGISTICS_QUOTE_RULE_EXAMPLES.md)
+状态：待做。
 
-主要任务：
+重点：
 
-1. ✅ Product / SKU 表新增物流字段（包装尺寸、重量、货品类型）。
-2. ✅ 实现物流供应商和渠道管理模块。
-3. ✅ 实现报价规则引擎（固定费+每公斤、首重续重、阶梯价等）。
-4. ✅ 实现运费计算 API，支持多渠道对比。
-5. ✅ 订单运费快照。
-6. ✅ 商品列表展示物流数据完整性状态（第一阶段已完成）。
-7. ✅ 前端物流信息编辑和管理页面。
-8. ✅ 运费计算器面板（多渠道对比、排序）。
-9. ✅ 订单利润一期测算。
-10. ✅ 物流报价表导入（`.xlsx` / `.csv`）。
-11. ✅ 同一渠道按目的国家/区域使用不同报价规则。
+- CI 接入 Go test / vet / build。
+- CI 接入 frontend test / build / lint。
+- PostgreSQL migration rehearsal。
+- Sentry release/source map 配置策略。
+- Docker compose / prod compose 验证。
+- 回滚 runbook 复核。
 
-12. ✅ **商品列表物流数据工作台重构** — 商品尺寸/重量/包装尺寸/包装重量/货品类型/物流状态全列展示、按货品类型和物流状态筛选、导出导入包含物流字段、商品详情物流信息卡片、导入按表头解析。
+## 已完成迁移边界
 
-待下一阶段：报价版本管理、Excel 模板下载、真实承运商 API、装箱优化、面单/追踪、运费对账。
+旧栈状态：
 
-## Phase 7：前端体验和权限 UI
+- `backend/`：reference-only
+- `frontend/`：reference-only
+- `docker-compose.legacy.yml`：rollback/reference only
 
-状态：基础页面可用。
-
-已完成：
-
-- 登录后跳回原访问页面。
-- 根据权限隐藏菜单。
-
-下一步：
-
-1. 根据权限隐藏各页面内的主要操作按钮。
-2. 统一接口错误提示。
-3. 统一 loading、empty、error 状态。
-4. 发布失败原因在页面中可读可重试。
-5. Excel 导入增加预览和错误下载。
-
-## Phase 8：发布准备
-
-状态：未开始。
-
-上线前必须完成：
-
-1. `AUTH_ENABLED=True`。
-2. 更换 `ENCRYPTION_KEY`。
-3. 更换 JWT secret 来源，不再使用默认值。
-4. 平台 API key 只加密存储，不进入日志。
-5. 后端全量测试通过。
-6. 前端 production build 通过。
-7. Docker Compose 或目标部署环境可从空库迁移启动。
-8. 有最小运维手册：备份、恢复、重置、查看日志。
-
-## 推荐下一步任务
-
-最推荐继续做：
-
-```text
-真实平台 adapter 接入与自动发布。
-```
-
-原因：
-
-- Stage 1-9 已完成核心成本闭环：决策 → 任务 → 运费对账 → 成本标识 → 结算导入 → 利润账本 → 异常 → 动作审计 → 分摊 → 报表。
-- Stage 11 已完成 CSV 订单导入：CSV 上传 → 批次解析 → 订单创建 → 状态同步 → 审计日志。
-- 下一步应接入真实平台 adapter（如 Ozon、Shopee），完成从 listing task 到真实平台发布的最后落地。
-- 真实平台发布后才能验证全链路：决策 → 任务 → 发布 → 订单 → 运费 → 对账 → 利润。
-
-## Stage 13 Demo Seed / Sandbox Scenario
-
-状态：已完成。
-
-已实现：
-- Demo CSV 数据（订单导入、运费账单、平台结算）
-- 幂等 seed 脚本 `scripts/load_demo_data.py`
-- Demo 验收文档 `docs/DEMO_SCENARIO.md`
-- 自动测试 `tests/test_demo_seed.py`
-- 完整业务闭环演示：商品 → SKU → 库存 → 物流报价 → 平台费用规则 → CSV 订单导入 → 运费账单 → 平台结算 → 利润账本 → 异常工作台 → 利润看板
-
-后续：
-- 可扩展更多 demo 场景（多平台竞争、广告费、FBA 头程）
-- 可为每个主要模块提供独立的 demo 数据集
+新功能不得继续落到旧栈。

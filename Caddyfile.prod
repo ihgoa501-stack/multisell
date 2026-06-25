@@ -1,0 +1,84 @@
+# LingMirror Production Caddyfile Template
+#
+# Prerequisites:
+#   1. Set DOMAIN (your FQDN) and ACME_EMAIL env vars
+#   2. Ports 80 and 443 reachable from the internet
+#   3. DNS A/AAAA record pointing to this server
+#
+# Usage with Docker Compose:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Standalone (outside Docker):
+#   caddy run --config Caddyfile.prod
+#
+# For staging / testing, uncomment the staging CA line below
+# to avoid Let's Encrypt rate limits.
+
+{
+    # Let's Encrypt contact email for certificate expiry & renewal notices
+    email {$ACME_EMAIL:admin@lingmirror.com}
+
+    # Uncomment for staging to avoid rate limits during testing:
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$DOMAIN:localhost} {
+    # ── Security headers ───────────────────────────────────────────
+    # Caddy v2 applies these to every response unless overridden.
+    header {
+        # HTTP Strict Transport Security — 1 year, include subdomains, preload
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent MIME type sniffing
+        X-Content-Type-Options "nosniff"
+        # Prevent clickjacking
+        X-Frame-Options "DENY"
+        # Control referrer information
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Content Security Policy
+        # Next.js needs 'unsafe-inline' for client-side styles and scripts.
+        # Tune this for your specific deployment — e.g. use nonce/hash for tighter CSP.
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: wss:; frame-ancestors 'none'; form-action 'self'"
+    }
+
+    # ── WebSocket endpoint ──────────────────────────────────────────
+    # Backend serves WebSocket at /ws. Caddy auto-upgrades to WebSocket.
+    handle /ws {
+        reverse_proxy backend:8080 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # ── API routes -> backend ──────────────────────────────────────
+    # NOTE: The Go backend serves routes WITH the /api prefix
+    # (e.g. /api/health, /api/v1/...). Keep the prefix intact.
+    handle /api/* {
+        reverse_proxy backend:8080 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # ── Everything else -> frontend (Next.js) ──────────────────────
+    handle {
+        reverse_proxy frontend:3000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # ── Access logs (optional, uncomment to enable) ────────────────
+    # log {
+    #     output file /var/log/caddy/access.log {
+    #         roll_size 100mb
+    #         roll_keep 5
+    #     }
+    #     format json
+    # }
+}

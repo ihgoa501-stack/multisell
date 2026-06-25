@@ -1,7 +1,7 @@
 # 凌镜 LingMirror — 文档索引
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 最后更新：2026-06-18
+> 最后更新：2026-06-24
 
 ---
 
@@ -10,10 +10,12 @@
 | 文档 | 说明 |
 |------|------|
 | [项目状态](PROJECT_STATUS.md) | 当前完成进度、功能清单 |
+| [全站功能清单](FUNCTION_INVENTORY.md) | 当前页面、操作和 API 功能梳理 |
 | [Agent Commerce OS 完整蓝图](LINGMIRROR_AGENT_COMMERCE_OS_BLUEPRINT.md) | 完整产品定位、系统分层、开发路径 |
 | [产品愿景与 MVP](PRODUCT_VISION_AND_MVP.md) | 产品定位、第一可用版本定义 |
 | [路线图](ROADMAP.md) | Phase 0–8 详细阶段规划 |
 | [项目治理与 Agent 协作规范](PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | 协作规则、验收标准 |
+| [Active Stack Policy](ACTIVE_STACK_POLICY.md) | Go + Next 活跃技术栈和旧栈边界 |
 
 ## 🧠 知识库 (Knowledge Base)
 
@@ -45,7 +47,11 @@
 
 | 文档 | 说明 |
 |------|------|
+| [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
+| [运维手册](ops/RUNBOOK.md) | 当前 Docker/Go/Next/PostgreSQL 运维命令 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
+| [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
+| [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
 | [AgentOS Phase 1 实现计划](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) | 第一版工程骨架总控台 |
 | [Agent Commerce 动作中枢计划](superpowers/plans/2026-06-22-agent-commerce-action-center.md) | Phase 2 动作提案、审批、执行、复盘 |
 | [核心模块架构](PERMISSIONS_AND_AUDIT.md) | 权限系统 + 审计日志设计 |
@@ -53,14 +59,16 @@
 | [物流与运费技术规格](LOGISTICS_SHIPPING_TECH_SPEC.md) | 物流技术实现 |
 | [报价规则示例](LOGISTICS_QUOTE_RULE_EXAMPLES.md) | 运费报价案例 |
 | [平台费用规则方案](platform-fee-rules-plan.md) | 平台费用设计 |
+| [测试说明](TEST_SUMMARY.md) | 当前新栈测试状态、已知问题和覆盖面 |
+| [前端测试报告](FRONTEND_TEST_REPORT.md) | `frontend-next` build/test/lint 状态 |
 
 ### Demo & 验收
 
 | 文档 | 说明 |
 |------|------|
-| [演示场景](DEMO_SCENARIO.md) | 完整演示流程 |
-| [验收报告](DEMO_ACCEPTANCE_REPORT.md) | 验收结果 |
-| [订单导入冒烟检查](ORDER_IMPORT_SMOKE_CHECKLIST.md) | CSV 订单导入测试清单 |
+| [演示场景](DEMO_SCENARIO.md) | 新栈 demo seed 待重建说明 |
+| [验收报告](DEMO_ACCEPTANCE_REPORT.md) | 旧栈验收归档与新栈验收待办 |
+| [订单导入冒烟检查](ORDER_IMPORT_SMOKE_CHECKLIST.md) | Go 新栈订单导入 smoke 待重建说明 |
 
 ### Demo 数据
 
