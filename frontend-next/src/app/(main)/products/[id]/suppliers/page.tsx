@@ -76,7 +76,7 @@ export default function SupplierComparisonPage() {
   if (isLoading) {
     return (
       <PageContainer title="供应商对比">
-        <Card><div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div></Card>
+        <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}><div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div></Card>
       </PageContainer>
     );
   }
@@ -96,7 +96,7 @@ export default function SupplierComparisonPage() {
       </Button>
 
       {data.suppliers.length === 0 ? (
-        <Card>
+        <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
           <Result
             status="info"
             title="暂无供应商数据"

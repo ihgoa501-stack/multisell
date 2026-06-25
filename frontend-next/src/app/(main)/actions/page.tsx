@@ -232,10 +232,10 @@ export default function ActionsPage() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={3}>Action Center</Title>
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+      <Title level={3} style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>Action Center</Title>
 
-      <Card style={{ marginBottom: 16 }}>
+      <Card style={{ marginBottom: 16, background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
         <Row gutter={16} align="middle">
           <Col>
             <Select
@@ -358,7 +358,7 @@ export default function ActionsPage() {
             {selectedAction.rejection_reason && (
               <p><Text strong>拒绝原因：</Text><Text type="danger">{selectedAction.rejection_reason}</Text></p>
             )}
-            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, maxHeight: 300, overflow: 'auto', fontSize: 12 }}>
+            <pre style={{ background: 'var(--s2)', padding: 12, borderRadius: 'var(--r2)', maxHeight: 300, overflow: 'auto', fontSize: 12 }}>
               {JSON.stringify(selectedAction.payload, null, 2)}
             </pre>
           </div>
