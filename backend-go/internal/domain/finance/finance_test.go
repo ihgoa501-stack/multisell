@@ -1,6 +1,7 @@
 package finance
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -26,7 +27,8 @@ func newTestDB(t *testing.T, models ...interface{}) *Service {
 		models = []interface{}{&FinanceAccount{}, &FinanceTransaction{}, &FinanceLedgerEntry{}, &order.Order{}, &order.OrderItem{}}
 	}
 	db := dbtest.NewDB(t, models...)
-	return NewService(db, zap.NewNop())
+	adapter := NewOrderFinanceReaderAdapter(db)
+	return NewService(db, zap.NewNop(), adapter)
 }
 
 func insertTestOrder(t *testing.T, svc *Service, payAmount, platformFee, shippingFee, productCost, otherFee float64) int64 {
@@ -384,7 +386,7 @@ func TestOrderProfit(t *testing.T) {
 	oid := insertTestOrder(t, svc, 1000, 100, 50, 400, 30)
 	insertTestOrderItem(t, svc, oid, 101, 1000)
 
-	entries, err := svc.RebuildOrderLedger(oid)
+	entries, err := svc.RebuildOrderLedger(context.Background(),oid)
 	if err != nil {
 		t.Fatalf("RebuildOrderLedger: %v", err)
 	}
@@ -409,7 +411,7 @@ func TestListOrderLedger(t *testing.T) {
 	svc := newTestDB(t)
 
 	oid := insertTestOrder(t, svc, 500, 50, 25, 200, 10)
-	svc.RebuildOrderLedger(oid)
+	svc.RebuildOrderLedger(context.Background(),oid)
 
 	entries, err := svc.ListOrderLedger(oid)
 	if err != nil {
@@ -423,7 +425,7 @@ func TestListOrderLedger(t *testing.T) {
 func TestRebuildOrderLedger_NotFound(t *testing.T) {
 	svc := newTestDB(t)
 
-	_, err := svc.RebuildOrderLedger(99999)
+	_, err := svc.RebuildOrderLedger(context.Background(),99999)
 	if err != gorm.ErrRecordNotFound {
 		t.Errorf("expected ErrRecordNotFound, got %v", err)
 	}
@@ -437,7 +439,7 @@ func TestRebuildOrderLedger_ZeroSubtotal(t *testing.T) {
 		t.Fatalf("create order: %v", err)
 	}
 
-	entries, err := svc.RebuildOrderLedger(o.ID)
+	entries, err := svc.RebuildOrderLedger(context.Background(),o.ID)
 	if err != nil {
 		t.Fatalf("RebuildOrderLedger: %v", err)
 	}
@@ -516,7 +518,7 @@ func TestMock_DefaultCount(t *testing.T) {
 
 func TestHandler_ListAccounts(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -539,7 +541,7 @@ func TestHandler_ListAccounts(t *testing.T) {
 
 func TestHandler_CreateAccount(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -555,7 +557,7 @@ func TestHandler_CreateAccount(t *testing.T) {
 
 func TestHandler_CreateAccount_InvalidBody(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -570,7 +572,7 @@ func TestHandler_CreateAccount_InvalidBody(t *testing.T) {
 
 func TestHandler_GetAccount_Found(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -595,7 +597,7 @@ func TestHandler_GetAccount_Found(t *testing.T) {
 
 func TestHandler_GetAccount_NotFound(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -609,7 +611,7 @@ func TestHandler_GetAccount_NotFound(t *testing.T) {
 
 func TestHandler_GetAccount_InvalidID(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -623,7 +625,7 @@ func TestHandler_GetAccount_InvalidID(t *testing.T) {
 
 func TestHandler_UpdateAccount(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -648,7 +650,7 @@ func TestHandler_UpdateAccount(t *testing.T) {
 
 func TestHandler_UpdateAccount_NotFound(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -664,7 +666,7 @@ func TestHandler_UpdateAccount_NotFound(t *testing.T) {
 
 func TestHandler_DeleteAccount(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -688,7 +690,7 @@ func TestHandler_DeleteAccount(t *testing.T) {
 
 func TestHandler_ListTransactions(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{}, &FinanceTransaction{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -702,7 +704,7 @@ func TestHandler_ListTransactions(t *testing.T) {
 
 func TestHandler_CreateTransaction(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{}, &FinanceTransaction{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -728,7 +730,7 @@ func TestHandler_CreateTransaction(t *testing.T) {
 
 func TestHandler_CreateTransaction_InvalidBody(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{}, &FinanceTransaction{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -743,7 +745,7 @@ func TestHandler_CreateTransaction_InvalidBody(t *testing.T) {
 
 func TestHandler_Summary(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceAccount{}, &FinanceLedgerEntry{}, &FinanceTransaction{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -757,7 +759,7 @@ func TestHandler_Summary(t *testing.T) {
 
 func TestHandler_Mock(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceLedgerEntry{}, &order.Order{}, &order.OrderItem{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -772,7 +774,7 @@ func TestHandler_Mock(t *testing.T) {
 
 func TestHandler_ListLedger(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceLedgerEntry{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -786,7 +788,7 @@ func TestHandler_ListLedger(t *testing.T) {
 
 func TestHandler_RebuildOrderLedger(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceLedgerEntry{}, &order.Order{}, &order.OrderItem{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -805,7 +807,7 @@ func TestHandler_RebuildOrderLedger(t *testing.T) {
 
 func TestHandler_ListOrderLedger(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceLedgerEntry{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -819,7 +821,7 @@ func TestHandler_ListOrderLedger(t *testing.T) {
 
 func TestHandler_OrderProfit(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceLedgerEntry{}, &order.Order{}, &order.OrderItem{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 
@@ -836,7 +838,7 @@ func TestHandler_OrderProfit(t *testing.T) {
 
 func TestHandler_InvalidOrderID(t *testing.T) {
 	db := dbtest.NewDB(t, &FinanceLedgerEntry{})
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), NewOrderFinanceReaderAdapter(db))
 	h := NewHandler(svc)
 	r := setupFinanceRouter(h)
 

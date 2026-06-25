@@ -8,7 +8,9 @@ import (
 
 // RegisterRoutes registers aftersales routes on the given router group.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger)
+	invAdapter := NewInventoryRestockAdapter(db)
+	orderAdapter := NewOrderWriterAdapter(db)
+	svc := NewService(db, logger, invAdapter, orderAdapter)
 	h := NewHandler(svc)
 
 	group := rg.Group("/aftersales")

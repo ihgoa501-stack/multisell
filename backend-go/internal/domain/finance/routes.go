@@ -8,7 +8,8 @@ import (
 
 // RegisterRoutes registers finance routes on the given router group.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger)
+	adapter := NewOrderFinanceReaderAdapter(db)
+	svc := NewService(db, logger, adapter)
 	h := NewHandler(svc)
 
 	group := rg.Group("/finance")

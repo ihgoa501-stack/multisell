@@ -5,20 +5,20 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
-	"github.com/lingmirror/backend-go/internal/domain/order"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides finance business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db          *gorm.DB
+	logger      *zap.Logger
+	orderReader OrderFinanceReader
 }
 
 // NewService creates a new finance service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+func NewService(db *gorm.DB, logger *zap.Logger, orderReader OrderFinanceReader) *Service {
+	return &Service{db: db, logger: logger, orderReader: orderReader}
 }
 
 // ---------- FinanceAccount ----------
@@ -452,13 +452,13 @@ func (s *Service) OrderProfit(orderID int64) (*OrderProfit, error) {
 // RebuildOrderLedger deletes and regenerates ledger entries for an order.
 // It reads from sales_order (which already snapshots shipping fee, product cost
 // and fees) and sales_order_item to rebuild revenue and cost lines.
-func (s *Service) RebuildOrderLedger(orderID int64) ([]FinanceLedgerEntry, error) {
-	var o order.Order
-	if err := s.db.First(&o, orderID).Error; err != nil {
+func (s *Service) RebuildOrderLedger(ctx context.Context, orderID int64) ([]FinanceLedgerEntry, error) {
+	o, err := s.orderReader.GetByID(ctx, orderID)
+	if err != nil {
 		return nil, err
 	}
-	var items []order.OrderItem
-	if err := s.db.Where("order_id = ?", orderID).Find(&items).Error; err != nil {
+	items, err := s.orderReader.GetItemsByOrderID(ctx, orderID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -481,7 +481,7 @@ func (s *Service) RebuildOrderLedger(orderID int64) ([]FinanceLedgerEntry, error
 		{OrderID: &orderID, EntryType: "other_fee", Amount: o.OtherFee, Currency: "CNY", CostLayer: "actual", SourceType: "sales_order", SourceID: &orderID, Description: "other fee"},
 	}
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("order_id = ?", orderID).Delete(&FinanceLedgerEntry{}).Error; err != nil {
 			return err
 		}
@@ -499,12 +499,12 @@ func (s *Service) RebuildOrderLedger(orderID int64) ([]FinanceLedgerEntry, error
 // CalculateOrderProfit calculates profit for a single order and stores per-SKU records.
 // Profit = Revenue - PlatformFee - LogisticsFee - PurchaseCost - AdvertisingCost - OtherCost.
 func (s *Service) CalculateOrderProfit(ctx context.Context, orderID int64) (*ProfitCalculation, error) {
-	var o order.Order
-	if err := s.db.First(&o, orderID).Error; err != nil {
+	o, err := s.orderReader.GetByID(ctx, orderID)
+	if err != nil {
 		return nil, err
 	}
-	var items []order.OrderItem
-	if err := s.db.Where("order_id = ?", orderID).Find(&items).Error; err != nil {
+	items, err := s.orderReader.GetItemsByOrderID(ctx, orderID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -586,8 +586,8 @@ func (s *Service) CalculateOrderProfit(ctx context.Context, orderID int64) (*Pro
 // BatchCalculate calculates profit for all orders within the given time range.
 // Returns the number of orders processed.
 func (s *Service) BatchCalculate(ctx context.Context, since, until time.Time) (int, error) {
-	var orders []order.Order
-	if err := s.db.Where("created_at >= ? AND created_at <= ?", since, until).Find(&orders).Error; err != nil {
+	orders, err := s.orderReader.ListByTimeRange(ctx, since, until)
+	if err != nil {
 		return 0, err
 	}
 

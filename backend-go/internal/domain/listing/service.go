@@ -1,28 +1,29 @@
 package listing
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
-	"github.com/lingmirror/backend-go/internal/domain/decision"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
-	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides listing business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db              *gorm.DB
+	logger          *zap.Logger
+	skuProvider     SKUProvider
+	decisionReader  DecisionReader
 }
 
 // NewService creates a new listing service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+func NewService(db *gorm.DB, logger *zap.Logger, skuProvider SKUProvider, decisionReader DecisionReader) *Service {
+	return &Service{db: db, logger: logger, skuProvider: skuProvider, decisionReader: decisionReader}
 }
 
 // List returns paginated listings with platform/status filters and search.
@@ -238,8 +239,9 @@ func (s *Service) CreateTasksFromDecisions(decisionIDs []int64) ([]listingtask.L
 	if len(decisionIDs) == 0 {
 		return nil, errors.New("decision_ids is required")
 	}
-	var decisions []decision.PreListingDecision
-	if err := s.db.Where("id IN ?", decisionIDs).Find(&decisions).Error; err != nil {
+	ctx := context.Background()
+	decisions, err := s.decisionReader.GetByIDs(ctx, decisionIDs)
+	if err != nil {
 		return nil, err
 	}
 	if len(decisions) == 0 {
@@ -250,8 +252,8 @@ func (s *Service) CreateTasksFromDecisions(decisionIDs []int64) ([]listingtask.L
 	for _, d := range decisions {
 		skuIDs = append(skuIDs, d.SkuID)
 	}
-	var skus []sku.Sku
-	if err := s.db.Where("id IN ?", skuIDs).Find(&skus).Error; err != nil {
+	skus, err := s.skuProvider.GetByIDs(ctx, skuIDs)
+	if err != nil {
 		return nil, err
 	}
 	skuProduct := make(map[int64]int64, len(skus))
@@ -260,7 +262,7 @@ func (s *Service) CreateTasksFromDecisions(decisionIDs []int64) ([]listingtask.L
 	}
 
 	tasks := make([]listingtask.ListingTask, 0, len(decisions))
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		for _, d := range decisions {
 			productID, ok := skuProduct[d.SkuID]
 			if !ok {
