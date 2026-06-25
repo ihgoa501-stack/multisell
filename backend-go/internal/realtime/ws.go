@@ -1,8 +1,11 @@
 package realtime
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -18,17 +21,35 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// AIChatChunk is one streaming chunk from the AI.
+type AIChatChunk struct {
+	TraceID string `json:"trace_id"`
+	Content string `json:"content"`
+	Done    bool   `json:"done"`
+}
+
+// AIChatFunc processes an AI chat message via the orchestrator and streams
+// response chunks back through the returned channel.
+type AIChatFunc func(ctx context.Context, message string, userID *int64) (<-chan AIChatChunk, error)
+
 // Handler handles WebSocket upgrade requests.
 type Handler struct {
-	hub       *Hub
-	logger    *zap.Logger
-	jwtSecret string
+	hub           *Hub
+	logger        *zap.Logger
+	jwtSecret     string
+	aiChatHandler AIChatFunc
 }
 
 // NewHandler creates a new WebSocket handler.
 // jwtSecret is used to validate token query param on upgrade.
 func NewHandler(hub *Hub, logger *zap.Logger, jwtSecret string) *Handler {
 	return &Handler{hub: hub, logger: logger, jwtSecret: jwtSecret}
+}
+
+// WithAIChat sets the AI chat handler for streaming responses over WebSocket.
+func (h *Handler) WithAIChat(handler AIChatFunc) *Handler {
+	h.aiChatHandler = handler
+	return h
 }
 
 // ServeWS upgrades HTTP connections to WebSocket after validating JWT token.
@@ -47,6 +68,7 @@ func (h *Handler) ServeWS(c *gin.Context) {
 		return
 	}
 
+	var userID *int64
 	if h.jwtSecret != "" {
 		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -64,8 +86,12 @@ func (h *Handler) ServeWS(c *gin.Context) {
 		}
 		// Store user identity from token for downstream use.
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			if userID, exists := claims["user_id"]; exists {
-				c.Set("user_id", userID)
+			if uid, exists := claims["user_id"]; exists {
+				switch v := uid.(type) {
+				case float64:
+					n := int64(v)
+					userID = &n
+				}
 			}
 		}
 	}
@@ -77,9 +103,11 @@ func (h *Handler) ServeWS(c *gin.Context) {
 	}
 
 	client := &Client{
-		Hub:  h.hub,
-		Conn: conn,
-		Send: make(chan []byte, 256),
+		Hub:        h.hub,
+		Conn:       conn,
+		Send:       make(chan []byte, 256),
+		UserID:     userID,
+		aiChatFunc: h.aiChatHandler,
 	}
 
 	h.hub.register <- client
@@ -98,13 +126,63 @@ func (c *Client) readPump() {
 		c.Conn.Close()
 	}()
 	for {
-		mt, _, err := c.Conn.ReadMessage()
+		_, msgBytes, err := c.Conn.ReadMessage()
 		if err != nil {
 			break
 		}
-		if mt == websocket.TextMessage {
-			c.Send <- []byte(`{"type":"pong"}`)
+		var incoming struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
 		}
+		if err := json.Unmarshal(msgBytes, &incoming); err != nil {
+			c.writeJSON(map[string]string{"type": "error", "data": "invalid JSON"})
+			continue
+		}
+		switch incoming.Type {
+		case "ai:chat":
+			go c.handleAIChat(incoming.Message)
+		default:
+			c.writeJSON(map[string]string{"type": "pong"})
+		}
+	}
+}
+
+func (c *Client) handleAIChat(message string) {
+	if c.aiChatFunc == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	chunkChan, err := c.aiChatFunc(ctx, message, c.UserID)
+	if err != nil {
+		c.writeJSON(map[string]interface{}{
+			"type": "error",
+			"data": map[string]string{"message": err.Error()},
+		})
+		return
+	}
+	for chunk := range chunkChan {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"type": "ai:stream",
+			"data": chunk,
+		})
+		select {
+		case c.Send <- payload:
+		default:
+			return
+		}
+	}
+}
+
+func (c *Client) writeJSON(v interface{}) {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	select {
+	case c.Send <- payload:
+	default:
+		c.Hub.logger.Warn("client send buffer full, dropping message")
 	}
 }
 

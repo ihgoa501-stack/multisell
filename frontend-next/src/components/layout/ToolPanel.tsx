@@ -2,7 +2,53 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/stores/app-store';
+import apiClient from '@/lib/api-client';
+
+/* ─── API response types ─── */
+
+interface SkuItem {
+  id: number;
+  product_id: number;
+  code: string;
+  barcode: string;
+  spec_desc: string;
+  price: number;
+  cost_price: number;
+  market_price: number;
+  stock: number;
+  warning_stock: number;
+  status: number;
+}
+
+interface DashboardOverview {
+  order_total: number;
+  order_by_status: Record<string, number>;
+  order_revenue: number;
+  order_profit: number;
+  sku_total: number;
+  low_stock_count: number;
+  out_of_stock_count: number;
+  listing_active_count: number;
+  aftersales_pending_count: number;
+  exception_open_count: number;
+  month_revenue: number;
+  month_cost: number;
+}
+
+interface ListingTaskItem {
+  id: number;
+  product_id: number;
+  platform_id: number;
+  sku_id: number | null;
+  source_type: string;
+  status: string;
+  last_error: string;
+  created_at: string;
+}
+
+/* ─── Tool definitions ─── */
 
 const tools = [
   { id: 'products', icon: '📦', label: '商品管理', badge: '2,847' },
@@ -10,55 +56,6 @@ const tools = [
   { id: 'analytics', icon: '📊', label: '数据分析', badge: undefined },
   { id: 'pricing', icon: '💰', label: '价格监控', badge: undefined },
   { id: 'ai-copy', icon: '✦', label: 'AI 文案', badge: undefined },
-];
-
-/* ─── Data ─── */
-
-const products = [
-  { name: '蓝牙耳机', sku: 'BH-1001', stock: 1568, price: 25.99, suggested: 27.50, status: '在售' },
-  { name: '充电宝', sku: 'PB-2002', stock: 892, price: 18.50, suggested: 19.99, status: '在售' },
-  { name: '运动手环 Pro', sku: 'FB-3003', stock: 23, price: 39.99, suggested: 42.00, status: '低库存' },
-  { name: 'USB-C 扩展坞', sku: 'UD-4004', stock: 0, price: 32.00, suggested: 34.50, status: '缺货' },
-  { name: '降噪头戴耳机', sku: 'NC-5005', stock: 447, price: 89.99, suggested: 92.00, status: '在售' },
-];
-
-const publishItems = [
-  { name: '蓝牙耳机 — Shopee', platform: 'Shopee', status: '待发布' },
-  { name: '蓝牙耳机 — Lazada', platform: 'Lazada', status: '待发布' },
-  { name: '充电宝 — Shopee', platform: 'Shopee', status: '已发布' },
-  { name: '充电宝 — Lazada', platform: 'Lazada', status: '失败' },
-];
-
-const analyticsKpis = [
-  { label: '总销售额', value: '$12,847', change: '+12.3%' },
-  { label: '订单数', value: '342', change: '+8.1%' },
-];
-
-const analyticsRows = [
-  { date: '06/21', sales: '$2,847.50', orders: 68, platform: 'Shopee' },
-  { date: '06/20', sales: '$2,103.20', orders: 55, platform: 'Lazada' },
-  { date: '06/19', sales: '$1,998.00', orders: 47, platform: 'Shopee' },
-  { date: '06/18', sales: '$3,241.80', orders: 82, platform: 'Shopee' },
-  { date: '06/17', sales: '$2,656.50', orders: 90, platform: 'Lazada' },
-];
-
-const priceComparisons = [
-  { name: '蓝牙耳机', current: 25.99, avg: 27.50, suggested: 27.50, diff: -1.51 },
-  { name: '充电宝', current: 18.50, avg: 22.00, suggested: 19.99, diff: -3.50 },
-  { name: '运动手环', current: 39.99, avg: 44.00, suggested: 42.00, diff: -4.01 },
-];
-
-const aiOptimizations = [
-  {
-    name: '蓝牙耳机',
-    old: 'Wireless Bluetooth 5.3 Earphones HiFi Stereo',
-    new: 'Bluetooth 5.3 Earphones | HiFi Stereo | 30H Battery Life',
-  },
-  {
-    name: '充电宝',
-    old: '20000mAh Portable Power Bank Fast Charging',
-    new: '20000mAh Power Bank | 65W PD Fast Charge | 2 Devices',
-  },
 ];
 
 /* ─── Shared style helpers ─── */
@@ -88,11 +85,11 @@ function stockColor(v: number) {
 
 function statusBadge(status: string) {
   let bg: string;
-  if (status === '在售') bg = 'var(--g4)';
-  else if (status === '低库存') bg = 'var(--y4)';
-  else if (status === '缺货' || status === '失败') bg = 'var(--r4)';
-  else if (status === '待发布') bg = 'var(--y4)';
-  else if (status === '已发布') bg = 'var(--g4)';
+  if (status === '在售' || status === 'completed') bg = 'var(--g4)';
+  else if (status === '低库存' || status === '待发布' || status === 'pending') bg = 'var(--y4)';
+  else if (status === '缺货' || status === '失败' || status === 'failed' || status === 'processing') bg = 'var(--r4)';
+  else if (status === '已发布' || status === 'online') bg = 'var(--g4)';
+  else if (status === 'blocked') bg = 'var(--t4)';
   else bg = 'var(--t3)';
 
   return (
@@ -144,24 +141,82 @@ function FilterBtn({
   );
 }
 
+/* ─── Loading / Error placeholders ─── */
+
+function LoadingState() {
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '0.75rem',
+        fontFamily: 'var(--body)',
+        color: 'var(--t3)',
+      }}
+    >
+      加载中...
+    </div>
+  );
+}
+
+function ErrorState({ message }: { message: string }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '0.7rem',
+        fontFamily: 'var(--body)',
+        color: 'var(--r4)',
+        padding: '12px',
+        textAlign: 'center',
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
 /* ─── Tool sections ─── */
 
+/* ── Products ── */
+
+/* Uses GET /v1/skus since the Sku model provides stock, price,
+   SKU code, and variant description — fields needed by this panel.
+   The product-level endpoint (GET /v1/products) returns only product
+   metadata (name, dates) without stock or price. */
 function ProductsContent() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([
-    'BH-1001',
-    'PB-2002',
-    'FB-3003',
-  ]);
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  const { data: pageResult, isLoading, error } = useQuery({
+    queryKey: ['toolpanel-products', searchQuery],
+    queryFn: () =>
+      apiClient.getPage<SkuItem>('/v1/skus', {
+        page: '1',
+        size: '5',
+        ...(searchQuery ? { search: searchQuery } : {}),
+      }),
+  });
 
-  const toggleProduct = (sku: string) => {
+  const products = pageResult?.data ?? [];
+  const total = pageResult?.total ?? 0;
+
+  const filteredProducts = searchQuery
+    ? products.filter((p) =>
+        p.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.spec_desc && p.spec_desc.toLowerCase().includes(searchQuery.toLowerCase())),
+      )
+    : products;
+
+  const toggleProduct = (skuCode: string) => {
     setSelectedProducts((prev) =>
-      prev.includes(sku) ? prev.filter((s) => s !== sku) : [...prev, sku],
+      prev.includes(skuCode) ? prev.filter((s) => s !== skuCode) : [...prev, skuCode],
     );
   };
 
@@ -169,18 +224,28 @@ function ProductsContent() {
     if (selectedProducts.length === filteredProducts.length) {
       setSelectedProducts([]);
     } else {
-      setSelectedProducts(filteredProducts.map((p) => p.sku));
+      setSelectedProducts(filteredProducts.map((p) => p.code));
     }
   };
 
   const estimatedTotal = selectedProducts
-    .reduce((sum, sku) => {
-      const p = products.find((pr) => pr.sku === sku);
-      return sum + (p ? p.suggested : 0);
+    .reduce((sum, code) => {
+      const p = products.find((pr) => pr.code === code);
+      return sum + (p ? p.market_price || p.price : 0);
     }, 0)
     .toFixed(2);
 
+  function stockStatus(sku: SkuItem): string {
+    if (sku.stock <= 0) return '缺货';
+    if (sku.warning_stock > 0 && sku.stock <= sku.warning_stock) return '低库存';
+    return '在售';
+  }
+
   const gridCols = '20px 1fr 60px 44px 56px 56px 52px';
+
+  if (isLoading) return <LoadingState />;
+  if (error) return <ErrorState message={`加载失败: ${(error as Error).message}`} />;
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       {/* Agent banner */}
@@ -196,13 +261,13 @@ function ProductsContent() {
           border: '1px solid var(--bd)',
         }}
       >
-        {'✦'} AI 助理已筛选 2,847 件商品，展示 Top 5
+        {'✦'} AI 助理已筛选 {total.toLocaleString()} 件商品，展示 Top {products.length}
       </div>
 
       {/* Search input */}
       <input
         type="text"
-        placeholder="搜索商品名称..."
+        placeholder="搜索 SKU 名称..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         style={{
@@ -254,44 +319,47 @@ function ProductsContent() {
       </div>
 
       {/* Rows */}
-      {filteredProducts.map((p, i) => (
-        <div
-          key={p.sku}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: gridCols,
-            gap: 2,
-            padding: '5px 0',
-            borderBottom:
-              i < filteredProducts.length - 1
-                ? '1px solid var(--bd2)'
-                : 'none',
-            fontSize: '0.7rem',
-            fontFamily: 'var(--body)',
-            color: 'var(--t2)',
-            alignItems: 'center',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={selectedProducts.includes(p.sku)}
-            onChange={() => toggleProduct(p.sku)}
-            style={{ accentColor: 'var(--i4)' }}
-          />
-          <span style={cell}>{p.name}</span>
-          <span style={{ ...cell, color: 'var(--t3)' }}>{p.sku}</span>
-          <span
-            style={{ ...cell, color: stockColor(p.stock), fontWeight: 600 }}
+      {filteredProducts.map((p, i) => {
+        const status = stockStatus(p);
+        return (
+          <div
+            key={p.code}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: gridCols,
+              gap: 2,
+              padding: '5px 0',
+              borderBottom:
+                i < filteredProducts.length - 1
+                  ? '1px solid var(--bd2)'
+                  : 'none',
+              fontSize: '0.7rem',
+              fontFamily: 'var(--body)',
+              color: 'var(--t2)',
+              alignItems: 'center',
+            }}
           >
-            {p.stock}
-          </span>
-          <span style={cell}>${p.price.toFixed(2)}</span>
-          <span style={{ ...cell, color: 'var(--c4)', fontWeight: 600 }}>
-            ${p.suggested.toFixed(2)}
-          </span>
-          <span style={cell}>{statusBadge(p.status)}</span>
-        </div>
-      ))}
+            <input
+              type="checkbox"
+              checked={selectedProducts.includes(p.code)}
+              onChange={() => toggleProduct(p.code)}
+              style={{ accentColor: 'var(--i4)' }}
+            />
+            <span style={cell}>{p.spec_desc || p.code}</span>
+            <span style={{ ...cell, color: 'var(--t3)' }}>{p.code}</span>
+            <span
+              style={{ ...cell, color: stockColor(p.stock), fontWeight: 600 }}
+            >
+              {p.stock}
+            </span>
+            <span style={cell}>${p.price.toFixed(2)}</span>
+            <span style={{ ...cell, color: 'var(--c4)', fontWeight: 600 }}>
+              ${(p.market_price || p.price).toFixed(2)}
+            </span>
+            <span style={cell}>{statusBadge(status)}</span>
+          </div>
+        );
+      })}
 
       {/* Bottom bar */}
       <div
@@ -327,50 +395,91 @@ function ProductsContent() {
   );
 }
 
+/* ── Publish ── */
+
 function PublishContent() {
   const router = useRouter();
-  const [selectedPublish, setSelectedPublish] = useState<string[]>([
-    '蓝牙耳机 — Shopee',
-    '蓝牙耳机 — Lazada',
-  ]);
-  const [activePublishFilter, setActivePublishFilter] = useState('待发布');
+  const [selectedPublish, setSelectedPublish] = useState<string[]>([]);
+  const [activePublishFilter, setActivePublishFilter] = useState('pending');
 
-  const togglePublishItem = (name: string) => {
+  const { data: pageResult, isLoading, error } = useQuery({
+    queryKey: ['toolpanel-publish', activePublishFilter],
+    queryFn: () =>
+      apiClient.getPage<ListingTaskItem>('/v1/listing-tasks', {
+        page: '1',
+        size: '10',
+        ...(activePublishFilter !== 'all'
+          ? { status: activePublishFilter }
+          : {}),
+      }),
+  });
+
+  const tasks = pageResult?.data ?? [];
+
+  const togglePublishItem = (id: string) => {
     setSelectedPublish((prev) =>
-      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
+      prev.includes(id) ? prev.filter((n) => n !== id) : [...prev, id],
     );
   };
 
   const toggleAllPublish = () => {
-    if (selectedPublish.length === publishItems.length) {
+    if (selectedPublish.length === tasks.length) {
       setSelectedPublish([]);
     } else {
-      setSelectedPublish(publishItems.map((item) => item.name));
+      setSelectedPublish(tasks.map((t) => String(t.id)));
     }
   };
 
+  function statusLabel(s: string): string {
+    const map: Record<string, string> = {
+      pending: '待发布',
+      processing: '处理中',
+      completed: '已发布',
+      failed: '失败',
+      blocked: '阻塞',
+    };
+    return map[s] || s;
+  }
+
+  function platformLabel(pid: number): string {
+    /* In a full integration this would resolve platform names from
+       the platform registry. For now show the numeric ID as a fallback. */
+    const map: Record<number, string> = {
+      1: 'Shopee',
+      2: 'Lazada',
+      3: 'Ozon',
+    };
+    return map[pid] || `平台#${pid}`;
+  }
+
   const gridCols = '20px 1fr 56px 60px 44px';
+
+  if (isLoading) return <LoadingState />;
+  if (error) return <ErrorState message={`加载失败: ${(error as Error).message}`} />;
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       {/* Filter buttons */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
         <FilterBtn
-          label="待发布"
-          count={8}
-          active={activePublishFilter === '待发布'}
-          onClick={() => setActivePublishFilter('待发布')}
+          label="全部"
+          active={activePublishFilter === 'all'}
+          onClick={() => setActivePublishFilter('all')}
         />
         <FilterBtn
-          label="已发布"
-          count={24}
-          active={activePublishFilter === '已发布'}
-          onClick={() => setActivePublishFilter('已发布')}
+          label="待发布"
+          active={activePublishFilter === 'pending'}
+          onClick={() => setActivePublishFilter('pending')}
+        />
+        <FilterBtn
+          label="处理中"
+          active={activePublishFilter === 'processing'}
+          onClick={() => setActivePublishFilter('processing')}
         />
         <FilterBtn
           label="失败"
-          count={2}
-          active={activePublishFilter === '失败'}
-          onClick={() => setActivePublishFilter('失败')}
+          active={activePublishFilter === 'failed'}
+          onClick={() => setActivePublishFilter('failed')}
         />
       </div>
 
@@ -389,20 +498,20 @@ function PublishContent() {
       >
         <input
           type="checkbox"
-          checked={selectedPublish.length === publishItems.length}
+          checked={tasks.length > 0 && selectedPublish.length === tasks.length}
           onChange={toggleAllPublish}
           style={{ accentColor: 'var(--i4)' }}
         />
-        <span style={cell}>名称</span>
+        <span style={cell}>商品</span>
         <span style={cell}>平台</span>
         <span style={cell}>状态</span>
         <span style={cell}>操作</span>
       </div>
 
       {/* Rows */}
-      {publishItems.map((item, i) => (
+      {tasks.map((item, i) => (
         <div
-          key={i}
+          key={item.id}
           onClick={() => router.push('/products')}
           style={{
             display: 'grid',
@@ -410,9 +519,7 @@ function PublishContent() {
             gap: 2,
             padding: '5px 0',
             borderBottom:
-              i < publishItems.length - 1
-                ? '1px solid var(--bd2)'
-                : 'none',
+              i < tasks.length - 1 ? '1px solid var(--bd2)' : 'none',
             fontSize: '0.7rem',
             fontFamily: 'var(--body)',
             color: 'var(--t2)',
@@ -422,25 +529,28 @@ function PublishContent() {
         >
           <input
             type="checkbox"
-            checked={selectedPublish.includes(item.name)}
-            onChange={() => togglePublishItem(item.name)}
+            checked={selectedPublish.includes(String(item.id))}
+            onChange={() => togglePublishItem(String(item.id))}
             onClick={(e) => e.stopPropagation()}
             style={{ accentColor: 'var(--i4)' }}
           />
-          <span style={cell}>{item.name}</span>
-          <span style={{ ...cell, color: 'var(--t3)' }}>
-            {item.platform}
-          </span>
-          <span style={cell}>{statusBadge(item.status)}</span>
           <span style={cell}>
-            {item.status === '待发布' && (
+            SKU #{item.product_id}
+            {item.source_type ? ` (${item.source_type})` : ''}
+          </span>
+          <span style={{ ...cell, color: 'var(--t3)' }}>
+            {platformLabel(item.platform_id)}
+          </span>
+          <span style={cell}>{statusBadge(statusLabel(item.status))}</span>
+          <span style={cell}>
+            {item.status === 'pending' && (
               <button
                 style={{ ...btnBase, background: 'var(--i4)', color: '#fff' }}
               >
                 发布
               </button>
             )}
-            {item.status === '失败' && (
+            {item.status === 'failed' && (
               <button
                 style={{
                   ...btnBase,
@@ -452,8 +562,13 @@ function PublishContent() {
                 重试
               </button>
             )}
-            {item.status === '已发布' && (
+            {item.status === 'completed' && (
               <span style={{ color: 'var(--t3)' }}>{'—'}</span>
+            )}
+            {item.status === 'processing' && (
+              <span style={{ color: 'var(--t3)', fontSize: '0.65rem' }}>
+                处理中
+              </span>
             )}
           </span>
         </div>
@@ -490,8 +605,49 @@ function PublishContent() {
   );
 }
 
+/* ── Analytics ── */
+
 function AnalyticsContent() {
   const [activeDateFilter, setActiveDateFilter] = useState('近7天');
+
+  const { data: result, isLoading, error } = useQuery({
+    queryKey: ['toolpanel-analytics', activeDateFilter],
+    queryFn: () => apiClient.get<DashboardOverview>('/v1/dashboard/overview'),
+  });
+
+  const overview = result?.data;
+
+  if (isLoading) return <LoadingState />;
+  if (error) return <ErrorState message={`加载失败: ${(error as Error).message}`} />;
+
+  const kpis = overview
+    ? [
+        {
+          label: '总销售额',
+          value: `$${(overview.order_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          change: `SKU 总数 ${overview.sku_total || 0}`,
+        },
+        {
+          label: '总利润',
+          value: `$${(overview.order_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          change: `订单总数 ${overview.order_total || 0}`,
+        },
+        {
+          label: '本月营收',
+          value: `$${(overview.month_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          change: overview.listing_active_count
+            ? `在线 Listing ${overview.listing_active_count}`
+            : undefined,
+        },
+        {
+          label: '本月成本',
+          value: `$${(overview.month_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          change: overview.exception_open_count
+            ? `异常 ${overview.exception_open_count}`
+            : undefined,
+        },
+      ]
+    : [];
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -504,7 +660,7 @@ function AnalyticsContent() {
           marginBottom: 10,
         }}
       >
-        {analyticsKpis.map((kpi) => (
+        {kpis.map((kpi) => (
           <div
             key={kpi.label}
             style={{
@@ -535,16 +691,18 @@ function AnalyticsContent() {
             >
               {kpi.value}
             </div>
-            <div
-              style={{
-                fontFamily: 'var(--body)',
-                fontSize: '0.65rem',
-                color: 'var(--g4)',
-                marginTop: 2,
-              }}
-            >
-              {kpi.change}
-            </div>
+            {kpi.change && (
+              <div
+                style={{
+                  fontFamily: 'var(--body)',
+                  fontSize: '0.65rem',
+                  color: 'var(--t3)',
+                  marginTop: 2,
+                }}
+              >
+                {kpi.change}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -568,58 +726,71 @@ function AnalyticsContent() {
         />
       </div>
 
-      {/* Table header */}
+      {/* Summary rows */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '50px 1fr 44px 56px',
-          gap: 2,
-          padding: '6px 0',
-          borderBottom: '1px solid var(--bd)',
-          fontSize: '0.7rem',
-          color: 'var(--t4)',
-          fontFamily: 'var(--body)',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
         }}
       >
-        <span style={cell}>日期</span>
-        <span style={cell}>销售额</span>
-        <span style={cell}>订单</span>
-        <span style={cell}>平台</span>
-      </div>
-
-      {/* Rows */}
-      {analyticsRows.map((row, i) => (
         <div
-          key={i}
           style={{
-            display: 'grid',
-            gridTemplateColumns: '50px 1fr 44px 56px',
-            gap: 2,
-            padding: '5px 0',
-            borderBottom:
-              i < analyticsRows.length - 1
-                ? '1px solid var(--bd2)'
-                : 'none',
-            fontSize: '0.7rem',
+            background: 'var(--bg)',
+            borderRadius: 6,
+            padding: '8px',
+            border: '1px solid var(--bd)',
             fontFamily: 'var(--body)',
+            fontSize: '0.7rem',
             color: 'var(--t2)',
-            alignItems: 'center',
           }}
         >
-          <span style={{ ...cell, color: 'var(--t3)' }}>{row.date}</span>
-          <span style={{ ...cell, fontWeight: 500 }}>{row.sales}</span>
-          <span style={cell}>{row.orders}</span>
-          <span style={{ ...cell, color: 'var(--t3)' }}>
-            {row.platform}
-          </span>
+          <span style={{ color: 'var(--t3)' }}>低库存 SKU</span>
+          <div style={{ fontWeight: 600, fontSize: '0.85rem', marginTop: 4 }}>
+            {overview?.low_stock_count ?? '--'}
+          </div>
         </div>
-      ))}
+        <div
+          style={{
+            background: 'var(--bg)',
+            borderRadius: 6,
+            padding: '8px',
+            border: '1px solid var(--bd)',
+            fontFamily: 'var(--body)',
+            fontSize: '0.7rem',
+            color: 'var(--t2)',
+          }}
+        >
+          <span style={{ color: 'var(--t3)' }}>缺货 SKU</span>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              marginTop: 4,
+              color:
+                (overview?.out_of_stock_count ?? 0) > 0
+                  ? 'var(--r4)'
+                  : 'var(--t2)',
+            }}
+          >
+            {overview?.out_of_stock_count ?? '--'}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
+/* ── Pricing ── */
+
 function PricingContent() {
   const [activePricingFilter, setActivePricingFilter] = useState('全部');
+
+  const priceComparisons = [
+    { name: '蓝牙耳机', current: 25.99, avg: 27.50, suggested: 27.50, diff: -1.51 },
+    { name: '充电宝', current: 18.50, avg: 22.00, suggested: 19.99, diff: -3.50 },
+    { name: '运动手环', current: 39.99, avg: 44.00, suggested: 42.00, diff: -4.01 },
+  ];
 
   const gridCols = '1fr 56px 56px 56px 48px';
   return (
@@ -728,7 +899,22 @@ function PricingContent() {
   );
 }
 
+/* ── AI Copy ── */
+
 function AICopyContent() {
+  const aiOptimizations = [
+    {
+      name: '蓝牙耳机',
+      old: 'Wireless Bluetooth 5.3 Earphones HiFi Stereo',
+      new: 'Bluetooth 5.3 Earphones | HiFi Stereo | 30H Battery Life',
+    },
+    {
+      name: '充电宝',
+      old: '20000mAh Portable Power Bank Fast Charging',
+      new: '20000mAh Power Bank | 65W PD Fast Charge | 2 Devices',
+    },
+  ];
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       {/* Cards */}

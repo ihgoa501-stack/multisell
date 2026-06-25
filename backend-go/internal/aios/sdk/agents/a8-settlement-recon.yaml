@@ -1,0 +1,46 @@
+# A8 — Settlement Recon
+# Squad: settle
+# Imports settlement data, performs three-way reconciliation, and monitors cash flow.
+agent_id: A8
+name: Settlement Recon
+squad: settle
+version: "2.0.0"
+description: "结算对账：settlement导入、三方对账、差异处理、资金监控"
+
+decision_points:
+  - name: settlement_import
+    description: "导入平台结算单，解析为系统可处理格式"
+  - name: reconciliation_check
+    description: "执行三方对账（平台/系统/银行），识别差异"
+  - name: discrepancy_resolve
+    description: "对差异项进行分析并提出处理建议"
+  - name: cash_flow_watch
+    description: "监控资金流水，预警异常资金变动"
+
+tools:
+  - finance.settlement.import
+  - finance.settlement.reconcile
+  - finance.profit.calculate
+  - order.read
+
+triggers:
+  - type: event
+    topic: "order.settled"
+    decision_point: reconciliation_check
+
+model_hint: "gpt-4o"
+autonomy: supervised
+risk_floor: critical
+
+resource_limits:
+  max_tokens_per_minute: 20000
+  max_tokens_per_hour: 200000
+  max_api_calls_per_min: 30
+  max_api_calls_per_hour: 200
+  max_tool_chain_depth: 3
+  max_decision_duration: "60s"
+
+memory:
+  short_term_ttl: "30m"
+  long_term_enabled: true
+  long_term_ttl: "2160h"

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
@@ -268,6 +269,93 @@ func (h *Handler) OrderProfit(c *gin.Context) {
 	response.Success(c, p)
 }
 
+
+// ---------- Profit Calculation ----------
+
+// CalculateProfit POST /finance/profit/calculate
+func (h *Handler) CalculateProfit(c *gin.Context) {
+	var in CalculateProfitInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	p, err := h.service.CalculateOrderProfit(c.Request.Context(), in.OrderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "order not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, p)
+}
+
+// BatchCalculateProfit POST /finance/profit/batch-calculate
+func (h *Handler) BatchCalculateProfit(c *gin.Context) {
+	var in BatchCalculateInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	since, err := time.Parse("2006-01-02", in.Since)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid since date (use YYYY-MM-DD)")
+		return
+	}
+	until, err := time.Parse("2006-01-02", in.Until)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid until date (use YYYY-MM-DD)")
+		return
+	}
+	count, err := h.service.BatchCalculate(c.Request.Context(), since, until)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"processed": count})
+}
+
+// GetProfitSummary GET /finance/profit/summary
+func (h *Handler) GetProfitSummary(c *gin.Context) {
+	sinceStr := c.Query("since")
+	untilStr := c.Query("until")
+	since, err := time.Parse("2006-01-02", sinceStr)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid since date (use YYYY-MM-DD)")
+		return
+	}
+	until, err := time.Parse("2006-01-02", untilStr)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid until date (use YYYY-MM-DD)")
+		return
+	}
+	sum, err := h.service.GetProfitSummary(c.Request.Context(), since, until)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, sum)
+}
+
+// GetSKUProfitRanking GET /finance/profit/ranking
+func (h *Handler) GetSKUProfitRanking(c *gin.Context) {
+	sinceStr := c.Query("since")
+	since, err := time.Parse("2006-01-02", sinceStr)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid since date (use YYYY-MM-DD)")
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	results, err := h.service.GetSKUProfitRanking(c.Request.Context(), since, limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, results)
+}
+
+// Mock POST /finance/mock
 // Mock POST /finance/mock
 func (h *Handler) Mock(c *gin.Context) {
 	var in MockDataInput

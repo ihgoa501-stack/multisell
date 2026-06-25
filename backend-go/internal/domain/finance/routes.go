@@ -13,7 +13,15 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 
 	group := rg.Group("/finance")
 	{
+
+		// Profit calculation routes
+		group.POST("/profit/calculate", h.CalculateProfit)
+		group.POST("/profit/batch-calculate", h.BatchCalculateProfit)
+		group.GET("/profit/summary", h.GetProfitSummary)
+		group.GET("/profit/ranking", h.GetSKUProfitRanking)
+
 		// Static routes first to avoid conflict with /:id
+// Static routes first to avoid conflict with /:id
 		group.GET("/summary", h.Summary)
 		group.GET("/profit-summary", h.ProfitSummary)
 		group.GET("/ledger", h.ListLedger)

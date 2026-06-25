@@ -1,0 +1,46 @@
+# A10 — Logistics Ops
+# Squad: fulfillment
+# Optimizes logistics: carrier comparison, shipping bill audit, performance evaluation.
+agent_id: A10
+name: Logistics Ops
+squad: fulfillment
+version: "2.0.0"
+description: "物流优化：承运商比价、运费审计、绩效评估、仓配策略"
+
+decision_points:
+  - name: carrier_compare
+    description: "比较不同承运商的价格和时效，推荐最优方案"
+  - name: shipping_bill_audit
+    description: "审计物流账单，识别异常收费和多收费"
+  - name: carrier_performance
+    description: "评估承运商履约绩效（时效/破损率/妥投率）"
+  - name: logistics_route_opt
+    description: "根据成本和时效优化仓配路由策略"
+
+tools:
+  - shipping.carrier.compare
+  - shipping.bill.audit
+  - shipping.track
+  - order.read
+
+triggers:
+  - type: schedule
+    interval: "1h"
+    decision_point: carrier_performance
+
+model_hint: "gpt-4o-mini"
+autonomy: supervised
+risk_floor: medium
+
+resource_limits:
+  max_tokens_per_minute: 10000
+  max_tokens_per_hour: 100000
+  max_api_calls_per_min: 30
+  max_api_calls_per_hour: 300
+  max_tool_chain_depth: 3
+  max_decision_duration: "45s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "720h"

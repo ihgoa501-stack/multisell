@@ -20,6 +20,13 @@ export const menuGroups: MenuGroup[] = [
     ],
   },
   {
+    label: '采购管理',
+    items: [
+      { key: '/purchase', icon: 'ShoppingCartOutlined', label: '采购订单' },
+      { key: '/purchase/suggestions', label: '采购建议' },
+    ],
+  },
+  {
     label: '商品管理',
     items: [
       { key: '/products', icon: 'ShoppingOutlined', label: '商品' },
@@ -82,6 +89,8 @@ export const menuGroups: MenuGroup[] = [
       { key: '/reports', label: '报表' },
       { key: '/aftersales', label: '售后' },
       { key: '/sourcing1688', label: '1688采购' },
+      { key: '/support', label: '客服中心', icon: 'CustomerServiceOutlined' },
+      { key: '/support/templates', label: '回复模板' },
     ],
   },
   {

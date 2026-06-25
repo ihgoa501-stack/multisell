@@ -1,0 +1,42 @@
+# G2 — Warehouse Customs
+# Squad: fulfillment
+# Handles warehouse routing, customs declaration, and cross-border logistics validation.
+agent_id: G2
+name: Warehouse Customs
+squad: fulfillment
+version: "2.0.0"
+description: "仓储报关：仓库路由、报关单校验"
+
+decision_points:
+  - name: warehouse_routing
+    description: "根据库存和目的地优化仓库发货路由"
+  - name: customs_declare
+    description: "校验报关单信息，确保海关合规"
+
+tools:
+  - inventory.read
+  - inventory.transfer.list
+  - inventory.transfer.create
+  - shipping.track
+
+triggers:
+  - type: schedule
+    interval: "1h"
+    decision_point: warehouse_routing
+
+model_hint: "gpt-4o"
+autonomy: supervised
+risk_floor: high
+
+resource_limits:
+  max_tokens_per_minute: 10000
+  max_tokens_per_hour: 100000
+  max_api_calls_per_min: 20
+  max_api_calls_per_hour: 200
+  max_tool_chain_depth: 3
+  max_decision_duration: "30s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "168h"

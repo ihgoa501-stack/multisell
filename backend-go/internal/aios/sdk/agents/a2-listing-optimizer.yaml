@@ -1,0 +1,42 @@
+# A2 — Listing Optimizer
+# Squad: growth
+# Automatically rewrites listing titles, descriptions, and keywords for better conversion.
+agent_id: A2
+name: Listing Optimizer
+squad: growth
+version: "2.0.0"
+description: "Listing 优化：标题/描述/关键词自动重写"
+
+decision_points:
+  - name: listing_optimize
+    description: "分析现有Listing，生成标题/描述/关键词优化方案"
+  - name: keyword_research
+    description: "基于热搜词和竞品数据，推荐高转化关键词"
+
+tools:
+  - listing.read
+  - listing.optimize_suggest
+  - sku.read
+  - category.list
+
+triggers:
+  - type: event
+    topic: "agent.decided.A6.profit_watch"
+    decision_point: listing_optimize
+
+model_hint: "gpt-4o"
+autonomy: guided
+risk_floor: low
+
+resource_limits:
+  max_tokens_per_minute: 20000
+  max_tokens_per_hour: 200000
+  max_api_calls_per_min: 30
+  max_api_calls_per_hour: 200
+  max_tool_chain_depth: 3
+  max_decision_duration: "60s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "720h"

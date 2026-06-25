@@ -1,6 +1,7 @@
 package finance
 
 import (
+	"context"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -490,6 +491,165 @@ func (s *Service) RebuildOrderLedger(orderID int64) ([]FinanceLedgerEntry, error
 		return nil, err
 	}
 	return entries, nil
+}
+
+
+// ---------- Profit Calculation ----------
+
+// CalculateOrderProfit calculates profit for a single order and stores per-SKU records.
+// Profit = Revenue - PlatformFee - LogisticsFee - PurchaseCost - AdvertisingCost - OtherCost.
+func (s *Service) CalculateOrderProfit(ctx context.Context, orderID int64) (*ProfitCalculation, error) {
+	var o order.Order
+	if err := s.db.First(&o, orderID).Error; err != nil {
+		return nil, err
+	}
+	var items []order.OrderItem
+	if err := s.db.Where("order_id = ?", orderID).Find(&items).Error; err != nil {
+		return nil, err
+	}
+
+	// Remove any existing profit records for this order
+	if err := s.db.Where("order_id = ?", orderID).Delete(&ProfitCalculation{}).Error; err != nil {
+		return nil, err
+	}
+
+	totalSubtotal := 0.0
+	for _, it := range items {
+		totalSubtotal += it.Subtotal
+	}
+	if totalSubtotal == 0 {
+		totalSubtotal = o.PayAmount
+	}
+
+	// Derive time boundaries from the order
+	now := time.Now()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	periodEnd := periodStart.AddDate(0, 1, 0).Add(-time.Nanosecond)
+
+	aggregate := &ProfitCalculation{
+		OrderID:     orderID,
+		PeriodStart: periodStart,
+		PeriodEnd:   periodEnd,
+	}
+
+	for _, it := range items {
+		ratio := 1.0
+		if totalSubtotal > 0 {
+			ratio = it.Subtotal / totalSubtotal
+		}
+
+		revenue := it.Subtotal
+		platformFee := o.PlatformFee * ratio
+		logisticsFee := o.ShippingFee * ratio
+		purchaseCost := o.ProductCost * ratio
+		otherCost := o.OtherFee * ratio
+		netProfit := revenue - platformFee - logisticsFee - purchaseCost - otherCost
+
+		margin := 0.0
+		if revenue > 0 {
+			margin = netProfit / revenue
+		}
+
+		rec := ProfitCalculation{
+			OrderID:      orderID,
+			SkuID:        it.SkuID,
+			Revenue:      revenue,
+			PlatformFee:  platformFee,
+			LogisticsFee: logisticsFee,
+			PurchaseCost: purchaseCost,
+			OtherCost:    otherCost,
+			NetProfit:    netProfit,
+			ProfitMargin: margin,
+			PeriodStart:  periodStart,
+			PeriodEnd:    periodEnd,
+		}
+		if err := s.db.Create(&rec).Error; err != nil {
+			return nil, err
+		}
+
+		// Accumulate into the aggregate
+		aggregate.Revenue += revenue
+		aggregate.PlatformFee += platformFee
+		aggregate.LogisticsFee += logisticsFee
+		aggregate.PurchaseCost += purchaseCost
+		aggregate.OtherCost += otherCost
+		aggregate.NetProfit += netProfit
+	}
+
+	if aggregate.Revenue > 0 {
+		aggregate.ProfitMargin = aggregate.NetProfit / aggregate.Revenue
+	}
+
+	return aggregate, nil
+}
+
+// BatchCalculate calculates profit for all orders within the given time range.
+// Returns the number of orders processed.
+func (s *Service) BatchCalculate(ctx context.Context, since, until time.Time) (int, error) {
+	var orders []order.Order
+	if err := s.db.Where("created_at >= ? AND created_at <= ?", since, until).Find(&orders).Error; err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, o := range orders {
+		if _, err := s.CalculateOrderProfit(ctx, o.ID); err != nil {
+			s.logger.Warn("batch calculate: order profit failed", zap.Int64("order_id", o.ID), zap.Error(err))
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+// GetProfitSummary returns profit summary for the given time range.
+func (s *Service) GetProfitSummary(ctx context.Context, since, until time.Time) (*ProfitSummaryResult, error) {
+	q := s.db.Model(&ProfitCalculation{}).
+		Where("period_start >= ? AND period_end <= ?", since, until)
+
+	type row struct {
+		TotalProfit  float64
+		AvgMargin    float64
+		LossSKUCount int64
+		PeriodCount  int64
+		TotalRevenue float64
+		TotalCost    float64
+	}
+	var r row
+	if err := q.Select(`
+		COALESCE(SUM(net_profit),0) AS total_profit,
+		COALESCE(AVG(profit_margin),0) AS avg_margin,
+		COALESCE(SUM(CASE WHEN net_profit < 0 THEN 1 ELSE 0 END),0) AS loss_sku_count,
+		COUNT(DISTINCT order_id) AS period_count,
+		COALESCE(SUM(revenue),0) AS total_revenue,
+		COALESCE(SUM(platform_fee+logistics_fee+purchase_cost+advertising_cost+other_cost),0) AS total_cost
+	`).Scan(&r).Error; err != nil {
+		return nil, err
+	}
+
+	return &ProfitSummaryResult{
+		TotalProfit:  r.TotalProfit,
+		AvgMargin:    r.AvgMargin,
+		LossSKUCount: r.LossSKUCount,
+		PeriodCount:  r.PeriodCount,
+		TotalRevenue: r.TotalRevenue,
+		TotalCost:    r.TotalCost,
+	}, nil
+}
+
+// GetSKUProfitRanking returns SKU profit ranking ordered by net profit descending.
+func (s *Service) GetSKUProfitRanking(ctx context.Context, since time.Time, limit int) ([]*ProfitCalculation, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var results []*ProfitCalculation
+	if err := s.db.Where("period_start >= ?", since).
+		Order("net_profit DESC").
+		Limit(limit).
+		Find(&results).Error; err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 // Mock generates N fake ledger entries for development/demo.

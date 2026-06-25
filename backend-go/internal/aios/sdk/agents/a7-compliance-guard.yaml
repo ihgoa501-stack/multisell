@@ -1,0 +1,41 @@
+# A7 — Compliance Guard
+# Squad: risk
+# Validates product compliance, checks certifications, and flags prohibited terms.
+agent_id: A7
+name: Compliance Guard
+squad: risk
+version: "2.0.0"
+description: "合规守门：商品合规、认证查询、禁售词"
+
+decision_points:
+  - name: compliance_check
+    description: "检查商品Listing的合规性，识别禁售词/违禁品类"
+  - name: certification_lookup
+    description: "查询目标市场所需认证资质，核验已有认证有效性"
+
+tools:
+  - listing.read
+  - sku.read
+  - category.list
+
+triggers:
+  - type: schedule
+    interval: "2h"
+    decision_point: compliance_check
+
+model_hint: "gpt-4o"
+autonomy: supervised
+risk_floor: high
+
+resource_limits:
+  max_tokens_per_minute: 10000
+  max_tokens_per_hour: 100000
+  max_api_calls_per_min: 20
+  max_api_calls_per_hour: 200
+  max_tool_chain_depth: 3
+  max_decision_duration: "30s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "168h"

@@ -1,0 +1,41 @@
+# A3 — Ad Advice
+# Squad: growth
+# Analyzes ACOS and provides advertising optimization recommendations.
+agent_id: A3
+name: Ad Advice
+squad: growth
+version: "2.0.0"
+description: "广告建议：ACOS 分析、投放优化"
+
+decision_points:
+  - name: acos_analysis
+    description: "分析广告花费与销售比例，识别低效投放"
+  - name: ad_optimization
+    description: "生成关键词、出价、投放时段等优化建议"
+
+tools:
+  - platform_fee.list
+  - finance.profit.summary
+  - finance.profit.calculate
+
+triggers:
+  - type: schedule
+    interval: "1h"
+    decision_point: acos_analysis
+
+model_hint: "gpt-4o-mini"
+autonomy: advisory
+risk_floor: low
+
+resource_limits:
+  max_tokens_per_minute: 10000
+  max_tokens_per_hour: 100000
+  max_api_calls_per_min: 30
+  max_api_calls_per_hour: 200
+  max_tool_chain_depth: 3
+  max_decision_duration: "30s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "720h"

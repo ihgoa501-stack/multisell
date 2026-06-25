@@ -402,7 +402,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
 	go hub.Run()
-	wsHandler := realtime.NewHandler(hub, logger, cfg.JWT.Secret)
+	wsHandler := realtime.NewHandler(hub, logger, cfg.JWT.Secret).WithAIChat(ai.NewAIChatHandler(aiOrch))
 	r.GET("/ws", wsHandler.ServeWS)
 
 	// AI routes need the hub for realtime broadcasts.

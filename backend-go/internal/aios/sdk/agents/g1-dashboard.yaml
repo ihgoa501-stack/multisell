@@ -1,0 +1,43 @@
+# G1 — Dashboard
+# Squad: risk
+# Aggregates global metrics, trends, and anomaly summaries for the cockpit view.
+agent_id: G1
+name: Dashboard
+squad: risk
+version: "2.0.0"
+description: "驾驶舱聚合：全局指标、趋势、异常汇总"
+
+decision_points:
+  - name: dashboard_overview
+    description: "聚合全局经营指标，输出驾驶舱摘要和趋势分析"
+
+tools:
+  - finance.profit.summary
+  - inventory.read
+  - order.read
+  - platform_fee.list
+
+triggers:
+  - type: schedule
+    interval: "5m"
+    decision_point: dashboard_overview
+  - type: event
+    topic: "agent.decided.G0.system_health"
+    decision_point: dashboard_overview
+
+model_hint: "gpt-4o-mini"
+autonomy: advisory
+risk_floor: low
+
+resource_limits:
+  max_tokens_per_minute: 10000
+  max_tokens_per_hour: 100000
+  max_api_calls_per_min: 20
+  max_api_calls_per_hour: 200
+  max_tool_chain_depth: 3
+  max_decision_duration: "30s"
+
+memory:
+  short_term_ttl: "15m"
+  long_term_enabled: true
+  long_term_ttl: "168h"

@@ -9,9 +9,11 @@ import (
 
 // Client represents a WebSocket client.
 type Client struct {
-	Hub  *Hub
-	Conn *websocket.Conn
-	Send chan []byte
+	Hub     *Hub
+	Conn    *websocket.Conn
+	Send    chan []byte
+	UserID  *int64
+	aiChatFunc AIChatFunc
 }
 
 // Hub maintains a set of active clients and broadcasts messages.
