@@ -1,0 +1,2 @@
+-- No destructive action needed for seed data; this is a no-op down migration.
+-- If you need to remove the Ozon platform, run: DELETE FROM platform WHERE code = 'ozon';

@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -148,6 +149,24 @@ func (s *Service) TestConnection(id int64) (*TestConnectionResult, error) {
 		return &TestConnectionResult{Success: false, Message: "access token is empty"}, nil
 	}
 	return &TestConnectionResult{Success: true, Message: "ok"}, nil
+}
+
+// ListOzonProducts fetches the product catalog from Ozon for the given
+// integration account ID by delegating to the Ozon adapter.
+func (s *Service) ListOzonProducts(ctx context.Context, accountID int64) ([]OzonProduct, error) {
+	var a PlatformIntegrationAccount
+	if err := s.db.First(&a, accountID).Error; err != nil {
+		return nil, err
+	}
+	adapter, ok := GetAdapter("ozon")
+	if !ok {
+		return nil, errors.New("ozon adapter not registered")
+	}
+	ozon, ok := adapter.(*OzonAdapter)
+	if !ok {
+		return nil, errors.New("ozon adapter type assertion failed")
+	}
+	return ozon.ListProducts(ctx, a.PlatformID)
 }
 
 // TriggerSync marks the account as syncing.

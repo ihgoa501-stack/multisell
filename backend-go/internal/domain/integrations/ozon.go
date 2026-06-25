@@ -412,6 +412,114 @@ func (a *OzonAdapter) FetchReturns(ctx context.Context, input *FetchReturnsInput
 	return items, nil
 }
 
+// ─── Ozon-specific product listing (not part of PlatformAdapter) ───
+
+// OzonProduct is a simplified product view from Ozon.
+type OzonProduct struct {
+	OfferID    string  `json:"offer_id"`
+	Name       string  `json:"name"`
+	Price      float64 `json:"price"`
+	OldPrice   float64 `json:"old_price,omitempty"`
+	Stock      int     `json:"stock"`
+	CategoryID int64   `json:"category_id"`
+	State      string  `json:"state"`
+	ImageURL   string  `json:"image_url,omitempty"`
+}
+
+// ListProducts fetches the product catalog from Ozon via /v1/product/list
+// and /v3/product/info/list. Returns a flat list of simplified products.
+func (a *OzonAdapter) ListProducts(ctx context.Context, platformID int64) ([]OzonProduct, error) {
+	auth, err := a.getAuth(ctx, platformID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 1: list all offer IDs (paginated)
+	var allOffers []string
+	page := 1
+	for {
+		body, err := a.do(ctx, http.MethodPost, "/v1/product/list", auth, map[string]interface{}{
+			"page": page, "page_size": 100,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("ozon list_products page %d: %w", page, err)
+		}
+		var r struct {
+			Result struct {
+				Items []struct {
+					OfferID string `json:"offer_id"`
+				} `json:"items"`
+				Total int `json:"total"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, fmt.Errorf("ozon list_products parse: %w", err)
+		}
+		for _, item := range r.Result.Items {
+			allOffers = append(allOffers, item.OfferID)
+		}
+		if len(allOffers) >= r.Result.Total || len(r.Result.Items) == 0 {
+			break
+		}
+		page++
+	}
+	if len(allOffers) == 0 {
+		return nil, nil
+	}
+
+	// Step 2: fetch details in batches (Ozon /v3/product/info/list allows up to 1000 per call)
+	var products []OzonProduct
+	batchSize := 100
+	for i := 0; i < len(allOffers); i += batchSize {
+		end := i + batchSize
+		if end > len(allOffers) {
+			end = len(allOffers)
+		}
+		batch := allOffers[i:end]
+
+		body, err := a.do(ctx, http.MethodPost, "/v3/product/info/list", auth, map[string]interface{}{
+			"offer_id": batch,
+		})
+		if err != nil {
+			a.logger.Warn("ozon product info batch failed, skipping",
+				zap.Int("from", i), zap.Int("count", len(batch)), zap.Error(err))
+			continue
+		}
+		var r struct {
+			Result struct {
+				Items []struct {
+					OfferID     string  `json:"offer_id"`
+					Name        string  `json:"name"`
+					Price       float64 `json:"price"`
+					OldPrice    float64 `json:"old_price,omitempty"`
+					Stock       int     `json:"stock"`
+					CategoryID  int64   `json:"category_id"`
+					State       string  `json:"state"`
+					PrimaryImg  string  `json:"primary_image"`
+				} `json:"items"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(body, &r); err != nil {
+			a.logger.Warn("ozon product info parse failed, skipping batch",
+				zap.Int("from", i), zap.Error(err))
+			continue
+		}
+		for _, item := range r.Result.Items {
+			products = append(products, OzonProduct{
+				OfferID:    item.OfferID,
+				Name:       item.Name,
+				Price:      item.Price,
+				OldPrice:   item.OldPrice,
+				Stock:      item.Stock,
+				CategoryID: item.CategoryID,
+				State:      item.State,
+				ImageURL:   item.PrimaryImg,
+			})
+		}
+	}
+	return products, nil
+}
+
 // --- helpers ---
 
 func sf(s string) float64 {
