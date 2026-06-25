@@ -24,7 +24,6 @@ import (
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func main() {
@@ -95,45 +94,50 @@ func seed(db *gorm.DB) error {
 
 	// --- SKU ---
 	skuCode := "DEMO-SKU-A5-001"
-	s := sku.Sku{
-		ProductID:   product.ID,
-		Code:        skuCode,
-		Barcode:     "6900000000001",
-		Stock:       5,
-		LockStock:   0,
-		WarningStock: 20,
-		Weight:      decimal.NewFromFloat(1.5),
-		Price:       decimal.NewFromFloat(88.00),
-		CostPrice:   decimal.NewFromFloat(45.00),
-		Status:      1,
-	}
-
-	// Upsert on code so re-running is safe.
-	result = db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "code"}},
-		UpdateAll: true,
-	}).Create(&s)
-	if result.Error != nil {
-		return fmt.Errorf("sku: %w", result.Error)
+	var s sku.Sku
+	if err := db.Where("code = ?", skuCode).First(&s).Error; err != nil {
+		s = sku.Sku{
+			ProductID:    product.ID,
+			Code:         skuCode,
+			Barcode:      "6900000000001",
+			Stock:        5,
+			LockStock:    0,
+			WarningStock: 20,
+			Weight:       decimal.NewFromFloat(1.5),
+			Price:        decimal.NewFromFloat(88.00),
+			CostPrice:    decimal.NewFromFloat(45.00),
+			Status:       1,
+		}
+		if err := db.Create(&s).Error; err != nil {
+			return fmt.Errorf("sku: %w", err)
+		}
+	} else {
+		s.Stock = 5
+		s.Price = decimal.NewFromFloat(88.00)
+		s.CostPrice = decimal.NewFromFloat(45.00)
+		db.Save(&s)
 	}
 	fmt.Printf("  sku: id=%d code=%s stock=%d\n", s.ID, s.Code, s.Stock)
 
 	// --- Inventory ---
-	inv := inventory.Inventory{
-		SkuID:     s.ID,
-		Warehouse: "默认仓库",
-		Quantity:  5,
-		LockedQuantity: 0,
-		SafetyStock: 14,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	result = db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "sku_id"}},
-		UpdateAll: true,
-	}).Create(&inv)
-	if result.Error != nil {
-		return fmt.Errorf("inventory: %w", result.Error)
+	var inv inventory.Inventory
+	if err := db.Where("sku_id = ?", s.ID).First(&inv).Error; err != nil {
+		inv = inventory.Inventory{
+			SkuID:          s.ID,
+			Warehouse:      "默认仓库",
+			Quantity:       5,
+			LockedQuantity: 0,
+			SafetyStock:    14,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}
+		if err := db.Create(&inv).Error; err != nil {
+			return fmt.Errorf("inventory: %w", err)
+		}
+	} else {
+		inv.Quantity = 5
+		inv.SafetyStock = 14
+		db.Save(&inv)
 	}
 	fmt.Printf("  inventory: sku_id=%d quantity=%d safety_stock=%d\n", inv.SkuID, inv.Quantity, inv.SafetyStock)
 
