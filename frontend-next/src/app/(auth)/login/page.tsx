@@ -1,14 +1,14 @@
 'use client';
 
-import { Form, Input, Button, Card, Typography, message } from 'antd';
-import { UserOutlined, LockOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Form, Input, Button, message, Typography } from 'antd';
+import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { setToken, setRefreshToken, setStoredUser } from '@/lib/auth';
 import type { User } from '@/types/api';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface LoginResponse {
   access_token: string;
@@ -22,7 +22,6 @@ export default function LoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: async (values: { username: string; password: string }) => {
-      // The backend expects username and password
       const res = await apiClient.post<LoginResponse>('/v1/auth/login', {
         username: values.username,
         password: values.password,
@@ -50,7 +49,7 @@ export default function LoginPage() {
       const values = await form.validateFields();
       loginMutation.mutate(values);
     } catch {
-      // Validation error — form rules already show messages
+      // Validation error
     }
   };
 
@@ -61,140 +60,179 @@ export default function LoginPage() {
         justifyContent: 'center',
         alignItems: 'center',
         minHeight: '100vh',
-        background: 'radial-gradient(circle at 10% 20%, rgb(18, 16, 28) 0%, rgb(10, 8, 16) 90%)',
+        background: 'var(--bg)',
         position: 'relative',
         overflow: 'hidden',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'var(--body)',
       }}
     >
-      {/* Decorative background design blobs */}
+      {/* Subtle gradient orbs */}
       <div
         style={{
           position: 'absolute',
-          width: '500px',
-          height: '500px',
+          width: 480,
+          height: 480,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(147, 51, 234, 0.15) 0%, rgba(147, 51, 234, 0) 70%)',
-          top: '-10%',
+          background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)',
+          top: '-20%',
           right: '-10%',
-          filter: 'blur(40px)',
-          zIndex: 0,
+          pointerEvents: 'none',
         }}
       />
       <div
         style={{
           position: 'absolute',
-          width: '600px',
-          height: '600px',
+          width: 400,
+          height: 400,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0) 70%)',
-          bottom: '-10%',
+          background: 'radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 70%)',
+          bottom: '-15%',
           left: '-10%',
-          filter: 'blur(50px)',
-          zIndex: 0,
+          pointerEvents: 'none',
         }}
       />
 
-      <Card
+      <div
         style={{
-          width: 420,
-          background: 'rgba(255, 255, 255, 0.03)',
-          backdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+          width: 400,
+          position: 'relative',
           zIndex: 1,
         }}
-        bodyStyle={{ padding: '40px 32px' }}
       >
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        {/* Brand */}
+        <div style={{ textAlign: 'center', marginBottom: 36 }}>
           <div
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 56,
-              height: 56,
-              borderRadius: '14px',
-              background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+              width: 48,
+              height: 48,
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, var(--i5), var(--c5))',
               marginBottom: 16,
-              boxShadow: '0 8px 16px rgba(139, 92, 246, 0.3)',
+              fontSize: '1.2rem',
+              color: 'white',
             }}
           >
-            <ThunderboltOutlined style={{ fontSize: 28, color: '#fff' }} />
+            ✦
           </div>
-          <Title level={2} style={{ color: '#fff', margin: 0, fontWeight: 700, letterSpacing: '-0.5px' }}>
-            凌镜 LingMirror
-          </Title>
-          <Text style={{ color: 'rgba(255, 255, 255, 0.45)', display: 'block', marginTop: 8 }}>
-            跨境电商智能 Agent 协同系统
+          <div
+            style={{
+              fontFamily: 'var(--ds)',
+              fontWeight: 800,
+              fontSize: '1.6rem',
+              color: 'var(--t1)',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            凌镜
+          </div>
+          <Text
+            style={{
+              color: 'var(--t3)',
+              display: 'block',
+              marginTop: 4,
+              fontSize: '0.85rem',
+              fontFamily: 'var(--body)',
+            }}
+          >
+            跨境电商 AI Agent 工作台
           </Text>
         </div>
 
-        <Form
-          form={form}
-          layout="vertical"
-          requiredMark={false}
-          onFinish={handleSubmit}
+        {/* Login card */}
+        <div
+          style={{
+            background: 'var(--s1)',
+            border: '1px solid var(--bd)',
+            borderRadius: 12,
+            padding: '32px 28px',
+          }}
         >
-          <Form.Item
-            name="username"
-            rules={[{ required: true, message: '请输入用户名/邮箱' }]}
+          <Form
+            form={form}
+            layout="vertical"
+            requiredMark={false}
+            onFinish={handleSubmit}
           >
-            <Input
-              aria-label="Email"
-              prefix={<UserOutlined style={{ color: 'rgba(255, 255, 255, 0.35)' }} />}
-              placeholder="用户名 / 邮箱"
-              size="large"
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#fff',
-                borderRadius: '8px',
-              }}
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="password"
-            rules={[{ required: true, message: '请输入密码' }]}
-            style={{ marginBottom: 32 }}
-          >
-            <Input.Password
-              aria-label="Password"
-              prefix={<LockOutlined style={{ color: 'rgba(255, 255, 255, 0.35)' }} />}
-              placeholder="密码"
-              size="large"
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#fff',
-                borderRadius: '8px',
-              }}
-            />
-          </Form.Item>
-
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Button
-              type="primary"
-              htmlType="submit"
-              size="large"
-              loading={loginMutation.isPending}
-              style={{
-                width: '100%',
-                background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-                border: 'none',
-                height: '48px',
-                borderRadius: '8px',
-                fontWeight: 600,
-                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.25)',
-              }}
+            <Form.Item
+              name="username"
+              rules={[{ required: true, message: '请输入用户名/邮箱' }]}
+              style={{ marginBottom: 20 }}
             >
-              登录
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
+              <Input
+                aria-label="Email"
+                prefix={<UserOutlined style={{ color: 'var(--t3)' }} />}
+                placeholder="用户名 / 邮箱"
+                size="large"
+                style={{
+                  background: 'var(--s2)',
+                  border: '1px solid var(--bd)',
+                  color: 'var(--t1)',
+                  borderRadius: 8,
+                  fontFamily: 'var(--body)',
+                }}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="password"
+              rules={[{ required: true, message: '请输入密码' }]}
+              style={{ marginBottom: 28 }}
+            >
+              <Input.Password
+                aria-label="Password"
+                prefix={<LockOutlined style={{ color: 'var(--t3)' }} />}
+                placeholder="密码"
+                size="large"
+                style={{
+                  background: 'var(--s2)',
+                  border: '1px solid var(--bd)',
+                  color: 'var(--t1)',
+                  borderRadius: 8,
+                  fontFamily: 'var(--body)',
+                }}
+              />
+            </Form.Item>
+
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                size="large"
+                loading={loginMutation.isPending}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, var(--i5), var(--c5))',
+                  border: 'none',
+                  height: 44,
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  fontFamily: 'var(--body)',
+                  fontSize: '0.9rem',
+                  boxShadow: '0 2px 12px rgba(99,102,241,0.25)',
+                }}
+              >
+                登录
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            textAlign: 'center',
+            marginTop: 24,
+            fontSize: '0.72rem',
+            color: 'var(--t4)',
+            fontFamily: 'var(--body)',
+          }}
+        >
+          LingMirror v0.2.0 · 跨境电商 AI AgentOS
+        </div>
+      </div>
     </div>
   );
 }
