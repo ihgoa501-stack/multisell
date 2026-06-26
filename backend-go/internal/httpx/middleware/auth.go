@@ -7,10 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lingmirror/backend-go/internal/config"
+	"gorm.io/gorm"
 )
 
 // Auth returns a JWT authentication middleware.
-func Auth(cfg *config.Config) gin.HandlerFunc {
+// If db is non-nil, it also checks that the user exists and is not disabled.
+func Auth(cfg *config.Config, db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if header == "" {
@@ -57,6 +59,19 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 
 		if userID, exists := claims["user_id"]; exists {
 			c.Set("user_id", userID)
+
+			// Check that the user still exists and is not disabled.
+			if db != nil {
+				var disabled bool
+				db.Raw("SELECT status IS DISTINCT FROM 1 FROM \"user\" WHERE id = ?", int64(userID.(float64))).Scan(&disabled)
+				if disabled {
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+						"code":    403,
+						"message": "账号已被禁用",
+					})
+					return
+				}
+			}
 		}
 
 		c.Next()

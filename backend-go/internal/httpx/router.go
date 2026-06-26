@@ -58,7 +58,9 @@ import (
 )
 
 // NewRouter creates and configures the Gin engine with all routes.
-func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine {
+// busCtx is the lifecycle context for the event bus and scheduler;
+// the caller must cancel it after the HTTP server shuts down.
+func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger, busCtx context.Context) *gin.Engine {
 	gin.SetMode(cfg.Server.Mode)
 
 	r := gin.New()
@@ -93,8 +95,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Create event bus (with optional outbox persistence).
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
-	busCtx, busCancel := context.WithCancel(context.Background())
-	defer busCancel()
 	bus.Start(busCtx)
 
 	// Initialize platform adapters (Ozon, Shopee, etc.).
@@ -329,6 +329,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 	sched.Register(scheduler.Task{
 		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
+		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "run_defense",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
 	sched.Register(scheduler.Task{
@@ -366,7 +367,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")
-	protected.Use(middleware.Auth(cfg))
+	protected.Use(middleware.Auth(cfg, db))
 
 	// RBAC routes
 	rbac.RegisterRoutes(protected, db, logger)

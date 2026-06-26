@@ -25,6 +25,11 @@ type Orchestrator struct {
 	traces     *TraceWriter
 	provider   LLMProvider
 	agentImpls map[string]impl.Agent
+
+	// trustScoreSync forces synchronous trust score recalculation after each Run().
+	// In production this runs in a goroutine; tests with SQLite can set this to
+	// true to avoid table-lock races during cleanup.
+	trustScoreSync bool
 }
 
 // NewOrchestrator creates a new AI orchestrator.
@@ -42,6 +47,14 @@ func NewOrchestrator(db *gorm.DB, logger *zap.Logger) *Orchestrator {
 // WithProvider overrides the LLM provider (useful for tests).
 func (o *Orchestrator) WithProvider(p LLMProvider) *Orchestrator {
 	o.provider = p
+	return o
+}
+
+// WithSyncTrustScore forces synchronous trust score recalculation after Run().
+// In production the recalculation runs in a goroutine; tests using shared SQLite
+// should set this to true to avoid table-lock races during cleanup.
+func (o *Orchestrator) WithSyncTrustScore() *Orchestrator {
+	o.trustScoreSync = true
 	return o
 }
 
@@ -137,6 +150,21 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		return nil, err
 	}
 
+	// On any early return, mark the trace as failed so it does not
+	// remain in 'running' status forever.
+	var runErr error
+	defer func() {
+		if runErr != nil {
+			finalBytes, _ := json.Marshal(map[string]string{"error": runErr.Error()})
+			_, _ = o.traces.Complete(traceID, &CompleteTraceInput{
+				FinalOutput: finalBytes,
+				Confidence:  nil,
+				RiskLevel:   "high",
+				Status:      "failed",
+			})
+		}
+	}()
+
 	// Emit prompt_start.
 	_, _ = o.traces.AppendEvent(traceID, &AppendEventInput{
 		EventType: "prompt_start",
@@ -162,6 +190,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	// otherwise fall back to the deterministic stub.
 	output, confidence, riskLevel, err := o.synthesizeOutput(agent, req.DecisionPoint, req.Context)
 	if err != nil {
+		runErr = err
 		return nil, err
 	}
 
@@ -284,6 +313,17 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			return
 		}
 		ug := trustscore.NewUpgrader(db, logger)
+	// Trigger trust score recalculation for conditional autonomy upgrades.
+	// In production (async) this runs in a goroutine to avoid blocking the
+	// agent response on 40+ database queries. Tests with SQLite set
+	// trustScoreSync=true to avoid table-lock races during cleanup.
+	recalcTrustScores := func() {
+		tsSvc := trustscore.NewService(o.db, o.logger)
+		if err := tsSvc.Recalculate(); err != nil {
+			o.logger.Warn("trust score recalculation failed", zap.Error(err))
+			return
+		}
+		ug := trustscore.NewUpgrader(o.db, o.logger)
 		if upgraded, err := ug.UpgradeEligible(); err != nil {
 			logger.Warn("autonomy upgrade failed", zap.Error(err))
 		} else if len(upgraded) > 0 {
@@ -296,6 +336,12 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			}
 		}
 	}(o.db, o.logger)
+	}
+	if o.trustScoreSync {
+		recalcTrustScores()
+	} else {
+		go recalcTrustScores()
+	}
 
 	return &RunAgentResult{
 		TraceID:       traceID,

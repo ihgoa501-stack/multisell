@@ -54,8 +54,12 @@ func main() {
 		sugar.Fatalf("failed to connect database: %v", err)
 	}
 
-	// Setup router
-	router := httpx.NewRouter(db, cfg, logger)
+	// Setup event bus lifecycle context (cancelled after server shutdown).
+	busCtx, busCancel := context.WithCancel(context.Background())
+	defer busCancel()
+
+	// Setup router with bus context for event bus and scheduler.
+	router := httpx.NewRouter(db, cfg, logger, busCtx)
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
