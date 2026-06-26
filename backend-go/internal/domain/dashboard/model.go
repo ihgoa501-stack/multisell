@@ -16,31 +16,6 @@ type DashboardOverview struct {
 	ExceptionOpenCount    int64            `json:"exception_open_count"`
 	MonthRevenue          float64          `json:"month_revenue"`
 	MonthCost             float64          `json:"month_cost"`
-
-	// Platform connections summary
-	PlatformConnections []PlatformConnectionStatus `json:"platform_connections"`
-	// Agent status summary
-	AgentStatuses       []AgentStatusEntry         `json:"agent_statuses"`
-}
-
-// PlatformConnectionStatus shows one connected platform account.
-type PlatformConnectionStatus struct {
-	PlatformID   int64     `json:"platform_id"`
-	PlatformCode string    `json:"platform_code"`
-	PlatformName string    `json:"platform_name"`
-	StoreName    string    `json:"store_name"`
-	Status       string    `json:"status"`
-	SyncStatus   string    `json:"sync_status"`
-	LastSyncAt   *string   `json:"last_sync_at,omitempty"`
-	LastError    string    `json:"last_error,omitempty"`
-}
-
-// AgentStatusEntry shows one agent's current status.
-type AgentStatusEntry struct {
-	AgentID      string `json:"agent_id"`
-	Name         string `json:"name"`
-	Status       string `json:"status"`
-	LastActivity *string `json:"last_activity,omitempty"`
 }
 
 // OrderTrendPoint is one day in the 30-day order trend.

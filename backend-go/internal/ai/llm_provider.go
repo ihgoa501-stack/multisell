@@ -363,9 +363,13 @@ func (p *anthropicProvider) Chat(ctx context.Context, req *LLMRequest) (*LLMResp
 		msgs = append(msgs, map[string]string{"role": m.Role, "content": m.Content})
 	}
 	payload := map[string]interface{}{
-		"model":      req.Model,
-		"max_tokens": req.MaxTokens,
-		"messages":   msgs,
+		"model":    req.Model,
+		"messages": msgs,
+	}
+	if req.MaxTokens > 0 {
+		payload["max_tokens"] = req.MaxTokens
+	} else {
+		payload["max_tokens"] = 4096
 	}
 	if req.System != "" {
 		payload["system"] = req.System

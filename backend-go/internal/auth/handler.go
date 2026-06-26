@@ -35,18 +35,43 @@ type registerRequest struct {
 }
 
 // Register handles new user registration.
+// On success, returns access+refresh tokens and the user object
+// so the frontend can immediately proceed to an authenticated page.
 func (h *Handler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, "参数无效: "+err.Error())
 		return
 	}
-	user, err := h.service.Register(req.Username, req.Password, req.DisplayName, req.Email, req.Role)
+	if req.Role != "" && req.Role != "user" {
+		// Only "user" role is allowed via registration; elevated roles
+		// must be assigned by an admin after creation.
+		req.Role = "user"
+	}
+	user, err := h.service.Register(req.Username, req.Password, req.DisplayName, req.Email, "user")
 	if err != nil {
 		response.Error(c, http.StatusConflict, err.Error())
 		return
 	}
-	response.Success(c, user.ToVO())
+
+	accessToken, err := h.service.GenerateAccessToken(user)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "令牌生成失败")
+		return
+	}
+	refreshToken, err := h.service.GenerateRefreshToken(user)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "令牌生成失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"token_type":    "bearer",
+		"expires_in":    h.cfg.JWT.ExpiryHours * 3600,
+		"user":          user.ToVO(),
+	})
 }
 
 // Login handles user login.

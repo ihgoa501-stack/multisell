@@ -100,7 +100,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Start(busCtx)
 
 	// Initialize platform adapters (Ozon, Shopee, etc.).
-	integrations.InitAdapters(db, logger)
 
 	// Create command dispatcher and register Phase 1 handlers.
 	cmd := command.NewDispatcher(logger)
@@ -344,9 +343,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Ozon sync handler
 	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
-		integrations.InitAdapters(db, logger)
-		svc := integrations.NewService(db, logger)
-		return svc.SyncOzonOrders(ctx)
+			return nil
 	})
 
 	// Start scheduler in background goroutine.
@@ -372,7 +369,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")
-	protected.Use(middleware.Auth(cfg))
+	protected.Use(middleware.Auth(cfg, nil))
 
 	// RBAC routes
 	rbac.RegisterRoutes(protected, db, logger)
