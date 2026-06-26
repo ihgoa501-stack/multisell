@@ -86,6 +86,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/image-gen', label: '图片生成' },
       { key: '/import-batches', label: '批量导入' },
       { key: '/operation-logs', label: '操作日志' },
+      { key: '/metabolism', icon: 'ExperimentOutlined', label: '代谢管理' },
       { key: '/search', label: '搜索' },
       { key: '/reports', label: '报表' },
       { key: '/aftersales', label: '售后' },

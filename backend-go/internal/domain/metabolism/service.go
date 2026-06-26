@@ -1,10 +1,12 @@
 package metabolism
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -99,6 +101,18 @@ func clamp01(v float64) float64 {
 }
 
 // ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+// Config controls Phase 2 metabolism behavior.
+type Config struct {
+	DryRun        bool          // false = actually excrete
+	ArchiveTTL    time.Duration // how long before moving to archive (default 7d)
+	PhysicalTTL   time.Duration // how long before physical delete (default 14d)
+	FinanceExempt bool          // true = skip financial data
+}
+
+// ---------------------------------------------------------------------------
 // MetabolismService
 // ---------------------------------------------------------------------------
 
@@ -108,16 +122,39 @@ type MetabolismService struct {
 	semanticScorer SemanticScorer
 	db             *gorm.DB
 	logger         *zap.Logger
+	cfg            *Config
+	bus            *eventbus.Bus
+	archiveCfg     *ArchiveConfig
 }
 
 // NewService creates a new MetabolismService.
-func NewService(db *gorm.DB, logger *zap.Logger, adapter ScoringAdapter, scorer SemanticScorer) *MetabolismService {
+// When cfg is nil, DryRun defaults to true (backward compatible).
+// Additional options: WithBus(bus) and WithArchiveConfig(ac) are available as
+// method chain calls after construction.
+func NewService(db *gorm.DB, logger *zap.Logger, adapter ScoringAdapter, scorer SemanticScorer, cfg ...*Config) *MetabolismService {
+	c := &Config{DryRun: true}
+	if len(cfg) > 0 && cfg[0] != nil {
+		c = cfg[0]
+	}
 	return &MetabolismService{
 		adapter:        adapter,
 		semanticScorer: scorer,
 		db:             db,
 		logger:         logger,
+		cfg:            c,
 	}
+}
+
+// WithBus attaches an event bus for publishing excretion events.
+func (s *MetabolismService) WithBus(bus *eventbus.Bus) *MetabolismService {
+	s.bus = bus
+	return s
+}
+
+// WithArchiveConfig sets the archive table configuration.
+func (s *MetabolismService) WithArchiveConfig(ac *ArchiveConfig) *MetabolismService {
+	s.archiveCfg = ac
+	return s
 }
 
 // scoreAt is the pure scoring engine. It evaluates a ScorableEvent and returns
@@ -231,13 +268,42 @@ func (s *MetabolismService) Execute(dryRun bool) error {
 			continue
 		}
 
-		// In non-dry-run mode, mark as excreted.
-		if !dryRun && ms.Excretable {
+		// Phase 2: actual excretion.
+		actualExcrete := !dryRun && !s.cfg.DryRun && ms.Excretable && !s.cfg.FinanceExempt
+		if actualExcrete {
 			if err := s.adapter.MarkExcreted(ev.ID, ms.Reason); err != nil {
 				s.logger.Error("metabolism: mark excreted failed", zap.Error(err))
 			} else {
 				s.logger.Info("metabolism: event marked excreted",
 					zap.Int64("event_id", ev.ID))
+
+				// Publish metabolism.waste.{source} event via bus.
+				if s.bus != nil {
+					ctx := context.Background()
+					topic := "metabolism.waste." + ev.Source
+					s.bus.Publish(ctx, topic, "metabolism", map[string]interface{}{
+						"event_id": ev.ID,
+						"source":   ev.Source,
+						"reason":   ms.Reason,
+						"topic":    ev.Topic,
+						"score":    ms.Combined,
+					})
+				}
+			}
+		}
+	}
+
+	// Archive and purge old records.
+	phase2 := !dryRun && !s.cfg.DryRun
+	if phase2 {
+		if s.cfg.ArchiveTTL > 0 {
+			if err := s.Archive(context.Background()); err != nil {
+				s.logger.Error("metabolism: archive failed", zap.Error(err))
+			}
+		}
+		if s.cfg.PhysicalTTL > 0 {
+			if err := s.Purge(context.Background()); err != nil {
+				s.logger.Error("metabolism: purge failed", zap.Error(err))
 			}
 		}
 	}
@@ -281,4 +347,105 @@ func (s *MetabolismService) GetLog(id int64) (*MetabolismLog, error) {
 		return nil, err
 	}
 	return &log, nil
+}
+
+// ---------------------------------------------------------------------------
+// Undelete, Archive, Purge — Phase 2 lifecycle operations
+// ---------------------------------------------------------------------------
+
+// Undelete clears the excretion marker from a previously excreted event
+// and logs the action to metabolism_log.
+func (s *MetabolismService) Undelete(eventID int64, reason string) error {
+	if s.adapter == nil {
+		return fmt.Errorf("metabolism: no adapter registered, cannot undelete")
+	}
+	if err := s.adapter.ClearExcreted(eventID); err != nil {
+		return fmt.Errorf("metabolism: clear excreted failed: %w", err)
+	}
+
+	// Log the undelete action.
+	logEntry := MetabolismLog{
+		EventID:   eventID,
+		Source:    "undelete",
+		Reason:    "undelete: " + reason,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := s.db.Create(&logEntry).Error; err != nil {
+		s.logger.Error("metabolism: failed to log undelete", zap.Error(err))
+		return fmt.Errorf("metabolism: log undelete failed: %w", err)
+	}
+
+	s.logger.Info("metabolism: event undeleted",
+		zap.Int64("event_id", eventID),
+		zap.String("reason", reason))
+	return nil
+}
+
+// Archive moves metabolism_log records older than ArchiveTTL to the archive
+// table. No-op if no archive table is configured.
+func (s *MetabolismService) Archive(ctx context.Context) error {
+	if s.archiveCfg == nil || s.archiveCfg.ArchiveTable == "" {
+		s.logger.Debug("metabolism: archive skipped, no archive table configured")
+		return nil
+	}
+	if s.cfg == nil || s.cfg.ArchiveTTL <= 0 {
+		return nil
+	}
+
+	deadline := time.Now().Add(-s.cfg.ArchiveTTL)
+
+	// Create archive table if it does not exist.
+	createSQL := fmt.Sprintf(
+		"CREATE TABLE IF NOT EXISTS %s (LIKE metabolism_log INCLUDING ALL)",
+		s.archiveCfg.ArchiveTable,
+	)
+	if err := s.db.WithContext(ctx).Exec(createSQL).Error; err != nil {
+		return fmt.Errorf("create archive table: %w", err)
+	}
+
+	// Insert old records into archive.
+	insertSQL := fmt.Sprintf(
+		"INSERT INTO %s SELECT * FROM metabolism_log WHERE created_at < ?",
+		s.archiveCfg.ArchiveTable,
+	)
+	if err := s.db.WithContext(ctx).Exec(insertSQL, deadline).Error; err != nil {
+		return fmt.Errorf("archive insert: %w", err)
+	}
+
+	// Delete from source.
+	if err := s.db.WithContext(ctx).Exec(
+		"DELETE FROM metabolism_log WHERE created_at < ?", deadline,
+	).Error; err != nil {
+		return fmt.Errorf("archive delete source: %w", err)
+	}
+
+	s.logger.Info("metabolism: archive completed",
+		zap.Time("deadline", deadline),
+		zap.String("archive_table", s.archiveCfg.ArchiveTable))
+	return nil
+}
+
+// Purge physically deletes records from the archive table that are older than
+// PhysicalTTL. No-op if no archive table is configured.
+func (s *MetabolismService) Purge(ctx context.Context) error {
+	if s.archiveCfg == nil || s.archiveCfg.ArchiveTable == "" {
+		s.logger.Debug("metabolism: purge skipped, no archive table configured")
+		return nil
+	}
+	if s.cfg == nil || s.cfg.PhysicalTTL <= 0 {
+		return nil
+	}
+
+	deadline := time.Now().Add(-s.cfg.PhysicalTTL)
+
+	q := fmt.Sprintf("DELETE FROM %s WHERE created_at < ?", s.archiveCfg.ArchiveTable)
+	if err := s.db.WithContext(ctx).Exec(q, deadline).Error; err != nil {
+		return fmt.Errorf("purge: %w", err)
+	}
+
+	s.logger.Info("metabolism: purge completed",
+		zap.Time("deadline", deadline),
+		zap.String("archive_table", s.archiveCfg.ArchiveTable))
+	return nil
 }
