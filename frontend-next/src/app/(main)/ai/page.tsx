@@ -160,7 +160,7 @@ export default function AICommandPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const conversationRef = useRef<HTMLDivElement>(null);
   const streamingAbortRef = useRef<AbortController | null>(null);
-  const streamingRef = useRef(false);
+  const [streaming, setStreaming] = useState(false);
 
   // Keep a reference to the app store
   useAppStore();
@@ -184,7 +184,7 @@ export default function AICommandPage() {
         ...prev,
         { role: 'assistant', content: '', streaming: true },
       ]);
-      streamingRef.current = true;
+      setStreaming(true);
 
       const abortController = new AbortController();
       streamingAbortRef.current = abortController;
@@ -266,7 +266,7 @@ export default function AICommandPage() {
         }
 
         // Finalize the assistant message
-        streamingRef.current = false;
+        setStreaming(false);
         setMessages((prev) => {
           const msgs = [...prev];
           const last = msgs[msgs.length - 1];
@@ -284,7 +284,7 @@ export default function AICommandPage() {
         message.success('AI 已回复');
         return true;
       } catch (err) {
-        streamingRef.current = false;
+        setStreaming(false);
 
         // If aborted, don't add a fallback message
         if (err instanceof DOMException && err.name === 'AbortError') {
@@ -474,7 +474,7 @@ export default function AICommandPage() {
   };
 
   const isPending =
-    chatMutation.isPending || runMutation.isPending || streamingRef.current;
+    chatMutation.isPending || runMutation.isPending || streaming;
 
   // ---------- Render: message components ----------
   const renderUserMessage = (m: ChatMessage) => (

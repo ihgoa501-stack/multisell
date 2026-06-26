@@ -13,9 +13,9 @@ func TestService_CRUD(t *testing.T) {
 
 	// Create batch
 	b := &ImportBatch{
-		Type:     "product",
-		FileName: "products_202606.csv",
-		CreatedBy: "admin",
+		SourceType: "product",
+		FileName:   "products_202606.csv",
+		CreatedBy:  "admin",
 	}
 	err := svc.CreateBatch(b)
 	if err != nil {
@@ -90,5 +90,26 @@ func TestService_CRUD(t *testing.T) {
 	_, err = svc.GetBatch(b.ID)
 	if err == nil {
 		t.Fatal("expected error after delete")
+	}
+}
+
+func TestService_ListBatches_FilterBySourceType(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ImportBatch{}, &ImportBatchRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Create two batches with different source types
+	_ = svc.CreateBatch(&ImportBatch{SourceType: "excel", FileName: "a.xlsx"})
+	_ = svc.CreateBatch(&ImportBatch{SourceType: "csv", FileName: "b.csv"})
+
+	items, total, err := svc.ListBatches("excel", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListBatches: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 batch, got %d", total)
+	}
+	if items[0].SourceType != "excel" {
+		t.Fatalf("SourceType = %s", items[0].SourceType)
 	}
 }

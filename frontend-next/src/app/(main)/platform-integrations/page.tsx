@@ -5,6 +5,7 @@ import { LinkOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import apiClient from '@/lib/api-client';
+import type { Result } from '@/types/api';
 
 interface IntegrationAccount {
   id: number;
@@ -44,13 +45,14 @@ export default function PlatformIntegrationsPage() {
       });
     },
     onSuccess: () => { message.success('Ozon 店铺已连接'); setModalOpen(false); form.resetFields(); qc.invalidateQueries({ queryKey: ['platform-integrations'] }); },
-    onError: (e: any) => { message.error(e?.response?.data?.message || '连接失败'); },
+    onError: (e: Error) => { message.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message || '连接失败'); },
   });
 
   const testMut = useMutation({
-    mutationFn: (id: number) => apiClient.post(`/v1/platform-integrations/${id}/test`, {}),
-    onSuccess: (res: any) => { message.success(res.data?.success ? '验证成功' : res.data?.message || '验证失败'); },
-    onError: (e: any) => { message.error(e?.response?.data?.message || '验证失败'); },
+    mutationFn: (id: number): Promise<Result<{ success?: boolean; message?: string }>> =>
+      apiClient.post(`/v1/platform-integrations/${id}/test`, {}),
+    onSuccess: (res) => { message.success(res.data?.success ? '验证成功' : res.data?.message || '验证失败'); },
+    onError: (e: Error) => { message.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message || '验证失败'); },
   });
 
   const productsUrl = (id: number) => `/platform-integrations/${id}/ozon-products`;
@@ -74,7 +76,7 @@ export default function PlatformIntegrationsPage() {
           { title: '上次同步', dataIndex: 'last_sync_at', width: 160, render: (s?: string) => s ? s.slice(0, 16).replace('T', ' ') : '-' },
           {
             title: '操作', width: 220,
-            render: (_: any, r: IntegrationAccount) => (
+            render: (_: unknown, r: IntegrationAccount) => (
               <Space>
                 <Tooltip title="验证连接"><Button size="small" loading={testMut.isPending} onClick={() => testMut.mutate(r.id)}>验证</Button></Tooltip>
                 <Button size="small" href={productsUrl(r.id)}>查看商品</Button>

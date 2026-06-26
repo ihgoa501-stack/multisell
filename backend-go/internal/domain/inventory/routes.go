@@ -21,7 +21,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		group.POST("/:id/unlock", h.Unlock)
 		group.GET("/logs", h.ListLogs)
 
-		// Warehouse management
+		// DEPRECATED: Warehouse management.
+		// Use /api/v1/allocation/warehouses instead (allocation module).
+		// These routes are kept for backward compatibility only.
+		// TODO: Remove these routes after frontend migrates to allocation/warehouses.
 		group.GET("/warehouses", h.ListWarehouses)
 		group.POST("/warehouses", h.CreateWarehouse)
 		group.GET("/warehouses/:id", h.GetWarehouse)

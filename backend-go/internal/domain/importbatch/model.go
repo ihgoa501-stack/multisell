@@ -8,7 +8,7 @@ import (
 // ImportBatch maps to the `import_batch` table.
 type ImportBatch struct {
 	ID           int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	Type         string          `gorm:"column:type;size:30;not null" json:"type"`
+	SourceType   string          `gorm:"column:source_type;size:30;not null" json:"source_type"`
 	FileName     string          `gorm:"column:file_name;size:255" json:"file_name"`
 	Status       string          `gorm:"column:status;size:20;not null;default:pending" json:"status"`
 	TotalRows    int             `gorm:"column:total_rows;default:0" json:"total_rows"`

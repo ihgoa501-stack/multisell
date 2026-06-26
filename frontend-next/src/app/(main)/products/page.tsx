@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Form, Input, InputNumber, message, Modal, Select, Space, Tag } from 'antd';
+import { Button, Form, Input, InputNumber, message, Modal, Select, Tag } from 'antd';
 import { ExportOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import CrudListPage, { fmtDate } from '@/components/crud/CrudListPage';
 import apiClient from '@/lib/api-client';
+import type { Result } from '@/types/api';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   '0': { label: '草稿', color: 'default' },
@@ -23,25 +24,25 @@ export default function ProductsPage() {
   const { data: accountsData } = useQuery({
     queryKey: ['platform-integrations', 'ozon'],
     queryFn: async () => {
-      const res = await apiClient.get<{ items: any[]; total: number }>('/v1/platform-integrations?size=50');
+      const res = await apiClient.get<{ items: Array<Record<string, unknown>>; total: number }>('/v1/platform-integrations?size=50');
       return res.data?.items ?? [];
     },
   });
 
   const publishMut = useMutation({
-    mutationFn: async (vals: { product_id: number; account_id: number; price: number }) => {
+    mutationFn: async (vals: { product_id: number; account_id: number; price: number }): Promise<Result<{ platform_url?: string; message?: string }>> => {
       return apiClient.post('/v1/platform-integrations/publish-to-ozon', vals);
     },
-    onSuccess: (res: any) => {
+    onSuccess: (res) => {
       const data = res.data;
       message.success(data?.platform_url ? `已发布！链接: ${data.platform_url}` : '已提交到 Ozon');
       setPublishOpen(false);
       qc.invalidateQueries({ queryKey: ['products'] });
     },
-    onError: (e: any) => { message.error(e?.response?.data?.message || '发布失败'); },
+    onError: (e: Error) => { message.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message || '发布失败'); },
   });
 
-  const ozonAccounts = (accountsData ?? []).filter((a: any) => a.platform_id === 1);
+  const ozonAccounts = (accountsData ?? []).filter((a: Record<string, unknown>) => a.platform_id === 1);
 
   return (
     <>
@@ -58,7 +59,7 @@ export default function ProductsPage() {
           { title: '分类ID', dataIndex: 'category_id', width: 90 },
           { title: '单位', dataIndex: 'unit', width: 80 },
           { title: '状态', dataIndex: 'status', width: 100,
-            render: (s: any) => {
+            render: (s: unknown) => {
               const v = STATUS_MAP[String(s)] || { label: String(s), color: 'default' };
               return <Tag color={v.color}>{v.label}</Tag>;
             },
@@ -67,9 +68,9 @@ export default function ProductsPage() {
           { title: '创建时间', dataIndex: 'created_at', width: 160, render: fmtDate },
           {
             title: '操作', dataIndex: 'id', width: 150,
-            render: (_: any, r: any) => (
+            render: (_: unknown, r: Record<string, unknown>) => (
               <Button type="link" size="small" icon={<ExportOutlined />}
-                onClick={() => { setSelectedProductId(r.id); setPublishOpen(true); }}>
+                onClick={() => { setSelectedProductId(r.id as number); setPublishOpen(true); }}>
                 发布到 Ozon
               </Button>
             ),
@@ -98,8 +99,8 @@ export default function ProductsPage() {
           </Form.Item>
           <Form.Item name="account_id" label="Ozon 店铺" rules={[{ required: true }]}>
             <Select placeholder="选择目标店铺">
-              {ozonAccounts.map((a: any) => (
-                <Select.Option key={a.id} value={a.id}>{a.store_name}</Select.Option>
+              {ozonAccounts.map((a: Record<string, unknown>) => (
+                <Select.Option key={a.id as number} value={a.id as number}>{a.store_name as string}</Select.Option>
               ))}
             </Select>
           </Form.Item>

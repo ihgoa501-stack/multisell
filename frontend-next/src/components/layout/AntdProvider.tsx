@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { ConfigProvider, theme as antdTheme } from 'antd';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { getQueryClient } from '@/lib/query-client';
@@ -59,26 +59,17 @@ function getDesignTokens(isDark: boolean) {
 
 export function AntdProvider({ children }: { children: React.ReactNode }) {
   const queryClient = getQueryClient();
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Read initial theme from html element
-  const isDark =
-    mounted && document.documentElement.getAttribute('data-theme') !== 'light';
-
-  // Prevent flash of wrong theme on first render
-  if (!mounted) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <ConfigProvider theme={getDesignTokens(true)}>
-          {children}
-        </ConfigProvider>
-      </QueryClientProvider>
-    );
-  }
+  // Subscribe to data-theme attribute changes without triggering setState-in-effect
+  const isDark = useSyncExternalStore(
+    (onStoreChange) => {
+      const handler = () => onStoreChange();
+      window.addEventListener('themechange', handler);
+      return () => window.removeEventListener('themechange', handler);
+    },
+    () => document.documentElement.getAttribute('data-theme') !== 'light',
+    () => true, // SSR fallback — default to dark to prevent flash
+  );
 
   return (
     <QueryClientProvider client={queryClient}>

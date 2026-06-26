@@ -29,5 +29,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		group.GET("/cost/batches", h.ListBatches)
 		group.POST("/cost/batches", h.CreateBatch)
 		group.GET("/cost/batches/:id", h.GetBatch)
+		group.POST("/cost/:batchId/compute", h.ComputeAllocation)
+
+		// Auto-allocate
+		group.POST("/auto-allocate/:skuId", h.AutoAllocate)
 	}
 }

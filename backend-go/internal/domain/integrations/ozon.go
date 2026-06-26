@@ -18,6 +18,10 @@ const (
 	OzonDefaultTimeout = 30 * time.Second
 )
 
+func init() {
+	RegisterAdapter("ozon", NewOzonAdapter(nil, nil))
+}
+
 // OzonAdapter implements PlatformAdapter for the Ozon seller API.
 type OzonAdapter struct {
 	httpClient *http.Client

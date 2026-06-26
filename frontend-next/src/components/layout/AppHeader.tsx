@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, Space, Avatar } from 'antd';
-import { SearchOutlined, MoonOutlined, SunOutlined, BellOutlined } from '@ant-design/icons';
+import { SearchOutlined, SunOutlined, BellOutlined } from '@ant-design/icons';
 import { useAppStore } from '@/stores/app-store';
 import ActivityFeed from '@/components/layout/ActivityFeed';
 

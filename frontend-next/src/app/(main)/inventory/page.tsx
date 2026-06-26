@@ -1,12 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import CrudListPage, { fmtDate } from '@/components/crud/CrudListPage';
-import { Table, Tag, Tabs, Typography, Space } from 'antd';
+import { Table, Tag, Tabs } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-
-const { Text } = Typography;
 
 // --- Types ---
 interface BinLocation {
@@ -29,13 +26,6 @@ interface InventoryTransfer {
   carrier?: string;
   estimated_arrival?: string;
   created_at: string;
-}
-
-interface PageResponse<T> {
-  data: T[];
-  total: number;
-  page: number;
-  size: number;
 }
 
 export default function InventoryPage() {
