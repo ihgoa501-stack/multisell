@@ -53,6 +53,16 @@ func (m *mockScoringAdapter) MarkExcreted(eventID int64, reason string) error {
 	return errors.New("event not found")
 }
 
+func (m *mockScoringAdapter) ClearExcreted(eventID int64) error {
+	for i := range m.events {
+		if m.events[i].ID == eventID {
+			m.events[i].Status = "pending"
+			return nil
+		}
+	}
+	return errors.New("event not found")
+}
+
 // approx checks that |got - want| < eps.
 func approx(got, want, eps float64) bool {
 	diff := got - want
@@ -617,6 +627,13 @@ func (a *testOutboxAdapter) MarkExcreted(eventID int64, reason string) error {
 	return a.db.Exec(
 		"UPDATE event_outbox SET excreted_at = CURRENT_TIMESTAMP, excretion_reason = ? WHERE id = ?",
 		reason, eventID,
+	).Error
+}
+
+func (a *testOutboxAdapter) ClearExcreted(eventID int64) error {
+	return a.db.Exec(
+		"UPDATE event_outbox SET excreted_at = NULL, excretion_reason = NULL WHERE id = ?",
+		eventID,
 	).Error
 }
 

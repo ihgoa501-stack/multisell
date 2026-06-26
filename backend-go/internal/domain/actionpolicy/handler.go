@@ -43,6 +43,13 @@ func (h *Handler) DeleteRule(c *gin.Context) {
 	response.Success(c, gin.H{"deleted": true})
 }
 
+func (h *Handler) HandleToggleRule(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if id == 0 { response.Error(c, http.StatusBadRequest, "invalid id"); return }
+	if err := h.service.ToggleRule(id); err != nil { response.Error(c, http.StatusInternalServerError, err.Error()); return }
+	response.Success(c, gin.H{"toggled": true})
+}
+
 func (h *Handler) Evaluate(c *gin.Context) {
 	var ctx ActionContext
 	if err := c.ShouldBindJSON(&ctx); err != nil { response.Error(c, http.StatusBadRequest, err.Error()); return }

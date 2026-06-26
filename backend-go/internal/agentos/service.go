@@ -1,6 +1,8 @@
 package agentos
 
 import (
+	"time"
+
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -252,4 +254,40 @@ func classifyHealth(pending int64, avgConf float64) string {
 		return "warn"
 	}
 	return "ok"
+}
+
+// SLAEscalation escalates actions that have been suggested for over 1 hour
+// without human review. It updates their status to "escalated" and logs each
+// escalation for observability.
+func (s *Service) SLAEscalation() error {
+	cutoff := time.Now().Add(-1 * time.Hour)
+	var overdue []struct {
+		ID     int64
+		Title  string
+		UserID *int64
+	}
+	if err := s.db.Table("unified_action").
+		Select("id, title, user_id").
+		Where("status = ? AND created_at < ?", ai.ActionStatusSuggested, cutoff).
+		Find(&overdue).Error; err != nil {
+		return err
+	}
+
+	for _, o := range overdue {
+		s.logger.Warn("sla escalation",
+			zap.Int64("action_id", o.ID),
+			zap.String("title", o.Title),
+		)
+	}
+
+	if len(overdue) > 0 {
+		var ids []int64
+		for _, o := range overdue {
+			ids = append(ids, o.ID)
+		}
+		return s.db.Table("unified_action").
+			Where("id IN ?", ids).
+			Update("status", ai.ActionStatusEscalated).Error
+	}
+	return nil
 }

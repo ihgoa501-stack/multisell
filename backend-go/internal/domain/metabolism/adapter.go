@@ -10,6 +10,9 @@ type ScoringAdapter interface {
 
 	// MarkExcreted records the excretion decision for the event.
 	MarkExcreted(eventID int64, reason string) error
+
+	// ClearExcreted removes the excretion mark (for undelete).
+	ClearExcreted(eventID int64) error
 }
 
 // SemanticScorer provides contextual scoring via an LLM or heuristic.

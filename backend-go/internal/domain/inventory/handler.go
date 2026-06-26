@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
@@ -208,7 +209,7 @@ func (h *Handler) GetWarehouse(c *gin.Context) {
 // CreateWarehouse creates a new warehouse.
 // POST /api/v1/inventory/warehouses
 func (h *Handler) CreateWarehouse(c *gin.Context) {
-	var w Warehouse
+	var w allocation.Warehouse
 	if err := c.ShouldBindJSON(&w); err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
@@ -231,7 +232,7 @@ func (h *Handler) UpdateWarehouse(c *gin.Context) {
 		return
 	}
 
-	var w Warehouse
+	var w allocation.Warehouse
 	if err := c.ShouldBindJSON(&w); err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return

@@ -59,11 +59,11 @@ export default function AppSidebar() {
   const activeSession =
     sessions.find((s) => pathname.startsWith(s.key))?.key ?? '';
 
-  const runningTasks = [
+  const [runningTasks] = useState(() => [
     { label: '补货 Shopee', status: '3/3', color: 'var(--i4)', startedAt: new Date(Date.now() - 3 * 60 * 1000) },
     { label: '标题优化', status: '5/12', color: 'var(--y4)', startedAt: new Date(Date.now() - 15 * 60 * 1000) },
     { label: 'Ozon 价格对比', status: '✓', color: 'var(--g4)', startedAt: new Date(Date.now() - 30 * 60 * 1000) },
-  ];
+  ]);
 
   const toolButtons = [
     { icon: '📦', label: '商品管理', badge: '2,847', tool: 'products' },

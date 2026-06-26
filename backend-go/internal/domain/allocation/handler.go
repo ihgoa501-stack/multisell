@@ -233,3 +233,39 @@ func (h *Handler) GetBatch(c *gin.Context) {
 		"total": total,
 	})
 }
+
+// ComputeAllocation computes cost allocation for a batch.
+// POST /api/v1/allocation/cost/:batchId/compute
+func (h *Handler) ComputeAllocation(c *gin.Context) {
+	batchID, err := strconv.ParseInt(c.Param("batchId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid batch id")
+		return
+	}
+
+	if err := h.service.ComputeAllocation(c.Request.Context(), batchID); err != nil {
+		response.Error(c, http.StatusInternalServerError, "allocation computation failed: "+err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"batch_id": batchID})
+}
+
+// ── AutoAllocate handlers ──────────────────────────────────────────
+
+// AutoAllocate distributes available inventory for a SKU across warehouses.
+// POST /api/v1/allocation/auto-allocate/:skuId
+func (h *Handler) AutoAllocate(c *gin.Context) {
+	skuID, err := strconv.ParseInt(c.Param("skuId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid sku_id")
+		return
+	}
+
+	if err := h.service.AutoAllocate(c.Request.Context(), skuID); err != nil {
+		response.Error(c, http.StatusInternalServerError, "auto-allocate failed: "+err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"sku_id": skuID, "status": "allocated"})
+}

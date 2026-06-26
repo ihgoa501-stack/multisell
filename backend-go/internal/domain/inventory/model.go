@@ -34,23 +34,9 @@ type InventoryLog struct {
 // TableName overrides the default table name.
 func (InventoryLog) TableName() string { return "inventory_log" }
 
-// Warehouse maps to the PostgreSQL "warehouse" table.
-type Warehouse struct {
-	ID        int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	Name      string    `gorm:"column:name;not null" json:"name"`
-	Code      string    `gorm:"column:code;unique" json:"code"`
-	Address   string    `gorm:"column:address" json:"address"`
-	Contact   string    `gorm:"column:contact" json:"contact"`
-	Phone     string    `gorm:"column:phone" json:"phone"`
-	IsDefault int16     `gorm:"column:is_default;default:0" json:"is_default"`
-	Status    int16     `gorm:"column:status;default:1" json:"status"`
-	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
-}
-
-// TableName overrides the default table name.
-func (Warehouse) TableName() string { return "warehouse" }
-
+// Warehouse is managed by the allocation module.
+// Import allocation.Warehouse for the canonical definition.
+// See: internal/domain/allocation/model.go
 // InventoryWarehouse maps to the PostgreSQL "inventory_warehouse" table.
 type InventoryWarehouse struct {
 	ID              int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
