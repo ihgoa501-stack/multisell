@@ -1,41 +1,12 @@
  'use client';
 
 import { useEffect, useState } from 'react';
-import { Layout, Menu } from 'antd';
-import {
-  DashboardOutlined,
-  RobotOutlined,
-  ShoppingOutlined,
-  ShopOutlined,
-  FileTextOutlined,
-  DollarOutlined,
-  ThunderboltOutlined,
-  WarningOutlined,
-  SettingOutlined,
-  MessageOutlined,
-} from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { menuGroups, type MenuItem } from '@/config/menu';
 
 type SessionItem = {
-const { Sider } = Layout;
-
-const iconMap: Record<string, React.ReactNode> = {
-  DashboardOutlined: <DashboardOutlined />,
-  RobotOutlined: <RobotOutlined />,
-  ShoppingOutlined: <ShoppingOutlined />,
-  ShopOutlined: <ShopOutlined />,
-  FileTextOutlined: <FileTextOutlined />,
-  DollarOutlined: <DollarOutlined />,
-  ThunderboltOutlined: <ThunderboltOutlined />,
-  WarningOutlined: <WarningOutlined />,
-  SettingOutlined: <SettingOutlined />,
-  MessageOutlined: <MessageOutlined />,
-};
-
-interface MenuItemConfig {
   key: string;
   label: string;
   group: string;
