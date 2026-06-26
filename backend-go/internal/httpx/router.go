@@ -43,6 +43,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/search"
 	"github.com/lingmirror/backend-go/internal/domain/settings"
 	"github.com/lingmirror/backend-go/internal/domain/settlement"
+	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
@@ -203,6 +204,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		_, err := svc.RunDefenses(0)
 		return err
 	})
+	// scheduler.tick.A8 → placeholder for batch sourcing scanning
+	bus.Subscribe("scheduler.tick.A8", sourcing.HandleSourcingTick(db, logger))
 
 	// -------------------------------------------------------
 	// Pipeline chain rules (via event bus)
@@ -326,6 +329,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Interval: time.Hour * 2, Description: "合规检测",
 	})
 	sched.Register(scheduler.Task{
+		ID: "tick-a8", AgentID: "A8", DecisionPoint: "product_sourcing",
+		Interval: time.Hour * 1, Description: "选品扫描",
+	})
+	sched.Register(scheduler.Task{
 		ID: "tick-trustscore", AgentID: "trustscore", DecisionPoint: "recalculate",
 		Interval: time.Hour * 1, Description: "信任分重算",
 	})
@@ -337,6 +344,26 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 			ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
 			Interval: time.Minute * 15, Description: "Ozon 订单同步",
 		})
+
+	// sourcing.recommend → A2 listing_optimize (score >= 7)
+	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		score, _ := payload["score"].(int)
+		if scoreFloat, ok := payload["score"].(float64); ok {
+			score = int(scoreFloat)
+		}
+		if score >= 7 {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "A2",
+				DecisionPoint: "listing_optimize",
+				Context:       payload,
+			})
+			return err
+		}
+		return nil
+	})
 		sched.Register(scheduler.Task{
 			ID: "tick-m1", AgentID: "M1", DecisionPoint: "excretion_scoring",
 			Interval: time.Hour * 1, Description: "代谢排泄评分",
@@ -455,6 +482,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing1688.RegisterRoutes(protected, db, logger)
+	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
 	productanalysis.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
 	report.RegisterRoutes(protected, db, logger)
