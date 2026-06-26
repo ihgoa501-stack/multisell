@@ -21,10 +21,6 @@ const (
 	ShopeeDefault    = "https://partner.shopeemobile.com"
 )
 
-func init() {
-	RegisterAdapter("shopee", NewShopeeAdapter(nil, nil))
-}
-
 // ShopeeAdapter implements PlatformAdapter for Shopee Open API v2.
 type ShopeeAdapter struct {
 	httpClient *http.Client

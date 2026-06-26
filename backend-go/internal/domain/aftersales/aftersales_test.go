@@ -57,8 +57,13 @@ func testLogger() *zap.Logger {
 }
 
 func newSvc(db *gorm.DB) *Service {
-	return NewService(db, testLogger(), NewInventoryRestockAdapter(db), NewOrderWriterAdapter(db))
+	return NewService(db, testLogger(), NewOrderWriterAdapter(db), &mockEventPublisher{})
 }
+
+type mockEventPublisher struct{}
+
+func (m *mockEventPublisher) Publish(_ context.Context, _, _ string, _ map[string]interface{}) (string, error) { return "", nil }
+
 
 func setupOrder(t *testing.T, db *gorm.DB) *order.Order {
 	t.Helper()
@@ -278,7 +283,7 @@ func TestService_ApproveThenReceive(t *testing.T) {
 
 	o := setupOrder(t, db)
 	skuID := int64(1001)
-	inv := setupInventory(t, db, skuID, 50)
+	setupInventory(t, db, skuID, 50)
 	qty := 3
 	as, _ := svc.Create(&CreateInput{
 		OrderID: o.ID, ItemID: &o.ID, SkuID: &skuID,
@@ -288,7 +293,7 @@ func TestService_ApproveThenReceive(t *testing.T) {
 	// Approve
 	svc.Approve(as.ID, &ApproveInput{ApprovedBy: "manager", InspectionResult: "OK"})
 
-	// Receive (triggers restock)
+	// Receive (restock is handled asynchronously via event bus)
 	received, err := svc.Receive(as.ID, &ReceiveInput{ReceivedBy: "warehouse"})
 	if err != nil {
 		t.Fatalf("Receive failed: %v", err)
@@ -298,15 +303,6 @@ func TestService_ApproveThenReceive(t *testing.T) {
 	}
 	if received.ReceivedBy != "warehouse" {
 		t.Errorf("expected received_by warehouse, got %s", received.ReceivedBy)
-	}
-
-	// Verify inventory was restocked
-	var updatedInv inventory.Inventory
-	if err := db.First(&updatedInv, inv.ID).Error; err != nil {
-		t.Fatalf("fetch inventory: %v", err)
-	}
-	if updatedInv.Quantity != 53 {
-		t.Errorf("expected inventory qty 53 (50+3), got %d", updatedInv.Quantity)
 	}
 }
 
