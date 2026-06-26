@@ -1,25 +1,33 @@
 package purchase
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/supplyevent"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// EventPublisher is the minimal interface for publishing events.
+// Matches the eventbus.Bus.Publish signature.
+type EventPublisher interface {
+	Publish(ctx context.Context, topic, source string, payload map[string]interface{}) (string, error)
+}
 
 // Service provides purchase business logic.
 type Service struct {
 	db     *gorm.DB
 	logger *zap.Logger
+	events EventPublisher
 }
 
 // NewService creates a new purchase service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+func NewService(db *gorm.DB, logger *zap.Logger, events EventPublisher) *Service {
+	return &Service{db: db, logger: logger, events: events}
 }
 
 // GenerateOrderNo generates a unique purchase order number.
@@ -33,15 +41,6 @@ func (s *Service) GenerateOrderNo() (string, error) {
 
 // CreateOrder creates a purchase order with items in a transaction.
 func (s *Service) CreateOrder(in *CreateOrderInput) (*PurchaseOrder, error) {
-	// Verify supplier exists
-	var sup Supplier
-	if err := s.db.First(&sup, in.SupplierID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("supplier not found")
-		}
-		return nil, err
-	}
-
 	orderNo, err := s.GenerateOrderNo()
 	if err != nil {
 		return nil, err
@@ -164,7 +163,12 @@ func (s *Service) ReceiveOrder(id int64, in *ReceiveOrderInput) (*PurchaseOrder,
 	if err != nil {
 		return nil, err
 	}
-	return s.GetOrder(id)
+
+	// Publish supply chain event so inventory can auto-update.
+	o, _ = s.GetOrder(id)
+	s.publishOrderReceived(o)
+
+	return o, nil
 }
 
 // CancelOrder cancels a non-completed purchase order.
@@ -280,121 +284,33 @@ func (s *Service) GenerateSuggestions() ([]PurchaseSuggestion, error) {
 	return suggestions, nil
 }
 
-// ---------- Supplier operations ----------
-
-// CreateSupplier creates a new supplier.
-func (s *Service) CreateSupplier(in *CreateSupplierInput) (*Supplier, error) {
-	sup := Supplier{
-		Name:          in.Name,
-		ContactPerson: in.ContactPerson,
-		Phone:         in.Phone,
-		Email:         in.Email,
-		Address:       in.Address,
-		PriceHistory:  in.PriceHistory,
+// publishOrderReceived publishes a supplyevent.OrderReceived event after
+// a purchase order is successfully received.
+func (s *Service) publishOrderReceived(o *PurchaseOrder) {
+	if s.events == nil {
+		return
 	}
-	if err := s.db.Create(&sup).Error; err != nil {
-		return nil, err
+	items := make([]supplyevent.ReceivedItem, 0, len(o.Items))
+	for _, it := range o.Items {
+		items = append(items, supplyevent.ReceivedItem{
+			SkuID: it.SkuID,
+			Qty:   it.ReceivedQty,
+		})
 	}
-	return &sup, nil
-}
-
-// UpdateSupplier updates a supplier.
-func (s *Service) UpdateSupplier(id int64, in *UpdateSupplierInput) (*Supplier, error) {
-	var sup Supplier
-	if err := s.db.First(&sup, id).Error; err != nil {
-		return nil, err
+	evt := supplyevent.OrderReceived{
+		OrderNo:    o.OrderNo,
+		SupplierID: o.SupplierID,
+		Items:      items,
+		ReceivedAt: time.Now(),
 	}
-	updates := map[string]interface{}{}
-	if in.Name != nil {
-		updates["name"] = *in.Name
+	payload, err := supplyevent.ToPayload(evt)
+	if err != nil {
+		s.logger.Warn("failed to serialize OrderReceived event", zap.Error(err))
+		return
 	}
-	if in.ContactPerson != nil {
-		updates["contact_person"] = *in.ContactPerson
+	if _, err := s.events.Publish(context.Background(), "supplychain.order.received", "purchase", payload); err != nil {
+		s.logger.Warn("failed to publish OrderReceived event", zap.Error(err))
 	}
-	if in.Phone != nil {
-		updates["phone"] = *in.Phone
-	}
-	if in.Email != nil {
-		updates["email"] = *in.Email
-	}
-	if in.Address != nil {
-		updates["address"] = *in.Address
-	}
-	if in.PriceHistory != nil {
-		updates["price_history"] = in.PriceHistory
-	}
-	if len(updates) > 0 {
-		if err := s.db.Model(&sup).Updates(updates).Error; err != nil {
-			return nil, err
-		}
-	}
-	return &sup, nil
-}
-
-// DeleteSupplier deletes a supplier.
-func (s *Service) DeleteSupplier(id int64) error {
-	return s.db.Delete(&Supplier{}, id).Error
-}
-
-// ListSuppliers returns paginated suppliers.
-func (s *Service) ListSuppliers(p *common.Pagination, search string) ([]Supplier, int64, error) {
-	q := s.db.Model(&Supplier{})
-	if search != "" {
-		like := "%" + strings.ToLower(search) + "%"
-		q = q.Where("LOWER(name) LIKE ? OR LOWER(COALESCE(contact_person,'')) LIKE ?", like, like)
-	}
-	var total int64
-	if err := q.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	var items []Supplier
-	if err := q.Order("id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
-		return nil, 0, err
-	}
-	return items, total, nil
-}
-
-// GetSupplier returns a single supplier.
-func (s *Service) GetSupplier(id int64) (*Supplier, error) {
-	var sup Supplier
-	if err := s.db.First(&sup, id).Error; err != nil {
-		return nil, err
-	}
-	return &sup, nil
-}
-
-// GetSupplierKPI calculates and returns a supplier's KPI score.
-func (s *Service) GetSupplierKPI(id int64) (*SupplierKPIResponse, error) {
-	var sup Supplier
-	if err := s.db.First(&sup, id).Error; err != nil {
-		return nil, err
-	}
-
-	// Count orders for this supplier.
-	var orderCount int64
-	s.db.Model(&PurchaseOrder{}).Where("supplier_id = ?", id).Count(&orderCount)
-
-	// Calculate on-time delivery rate based on completed orders with
-	// expected_delivery set. If expected_delivery is before or on updated_at,
-	// consider it on-time. This is simplified; real logic would compare
-	// actual delivery date.
-	var onTimeCount int64
-	s.db.Model(&PurchaseOrder{}).
-		Where("supplier_id = ? AND status = ? AND expected_delivery IS NOT NULL", id, StatusCompleted).
-		Count(&onTimeCount)
-
-	var onTimeRate float64
-	if orderCount > 0 {
-		onTimeRate = float64(onTimeCount) / float64(orderCount) * 100
-	}
-
-	return &SupplierKPIResponse{
-		SupplierID:   sup.ID,
-		SupplierName: sup.Name,
-		KpiScore:     sup.KpiScore,
-		OrderCount:   orderCount,
-		OnTimeRate:   onTimeRate,
-	}, nil
 }
 
 // canTransition checks if a status transition is allowed.

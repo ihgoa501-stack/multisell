@@ -51,7 +51,7 @@ func testLogger() *zap.Logger {
 }
 
 func newSvc(db *gorm.DB) *Service {
-	return NewService(db, testLogger(), NewInventoryRestockAdapter(db), NewOrderWriterAdapter(db))
+	return NewService(db, testLogger(), NewInventoryRestockAdapter(db), NewOrderWriterAdapter(db), nil)
 }
 
 func setupOrder(t *testing.T, db *gorm.DB) *order.Order {
