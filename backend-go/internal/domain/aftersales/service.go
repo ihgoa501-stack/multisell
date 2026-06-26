@@ -13,21 +13,19 @@ import (
 
 // Service provides aftersales business logic.
 type Service struct {
-	db                *gorm.DB
-	logger            *zap.Logger
-	inventoryRestocker InventoryRestocker
-	orderWriter        OrderWriter
-	events            EventPublisher
+	db          *gorm.DB
+	logger      *zap.Logger
+	orderWriter OrderWriter
+	events      EventPublisher
 }
 
 // NewService creates a new aftersales service.
-func NewService(db *gorm.DB, logger *zap.Logger, inventoryRestocker InventoryRestocker, orderWriter OrderWriter, events EventPublisher) *Service {
+func NewService(db *gorm.DB, logger *zap.Logger, orderWriter OrderWriter, events EventPublisher) *Service {
 	return &Service{
-		db:                db,
-		logger:            logger,
-		inventoryRestocker: inventoryRestocker,
-		orderWriter:        orderWriter,
-		events:            events,
+		db:          db,
+		logger:      logger,
+		orderWriter: orderWriter,
+		events:      events,
 	}
 }
 
@@ -190,7 +188,7 @@ func (s *Service) Reject(id int64, in *RejectInput) (*AfterSalesOrder, error) {
 }
 
 // Receive marks an aftersales order as received (goods returned received)
-// and restocks the returned items back into inventory.
+// and publishes an event so inventory auto-restocks.
 func (s *Service) Receive(id int64, in *ReceiveInput) (*AfterSalesOrder, error) {
 	var o AfterSalesOrder
 	if err := s.db.First(&o, id).Error; err != nil {
@@ -208,13 +206,7 @@ func (s *Service) Receive(id int64, in *ReceiveInput) (*AfterSalesOrder, error) 
 	if err := s.db.Model(&AfterSalesOrder{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	// DEPRECATED: direct Restock call via inventory_adapter — kept until
-	// the event-based handler (supplychain.aftersale.completed) is verified.
 	if o.SkuID != nil && o.ReturnQuantity > 0 {
-		remark := fmt.Sprintf("aftersales return, aftersales_id=%d", id)
-		if err := s.inventoryRestocker.Restock(context.Background(), *o.SkuID, o.ReturnQuantity, in.ReceivedBy, remark); err != nil {
-			return nil, err
-		}
 		s.publishAfterSaleProcessed(&o)
 	}
 	if err := s.db.First(&o, id).Error; err != nil {
