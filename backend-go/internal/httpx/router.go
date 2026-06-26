@@ -502,6 +502,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 			return nil
 		})
 
+		// Agent completion declaration — agent reports "I'm done with this data"
+		bus.Subscribe("metabolism.digested.*", func(ctx context.Context, evt eventbus.Event) error {
+			payload := evt.Payload
+			eventID, _ := payload["event_id"].(float64)
+			source, _ := payload["source"].(string)
+			logger.Info("metabolism: agent digested event",
+				zap.Float64("event_id", eventID),
+				zap.String("source", source))
+			return nil
+		})
+
 	// WebSocket route
 	hub := realtime.NewHub(logger)
 	go hub.Run()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
@@ -109,7 +110,7 @@ type Config struct {
 	DryRun        bool          // false = actually excrete
 	ArchiveTTL    time.Duration // how long before moving to archive (default 7d)
 	PhysicalTTL   time.Duration // how long before physical delete (default 14d)
-	FinanceExempt bool          // true = skip financial data
+	FinanceExempt bool // true = global override: skip ALL excretion regardless of event type
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +281,8 @@ func (s *MetabolismService) Execute(dryRun bool) error {
 		}
 
 		// Phase 2: actual excretion.
-		actualExcrete := !dryRun && !s.cfg.DryRun && ms.Excretable && !s.cfg.FinanceExempt
+		// FinanceExempt: global override skips ALL events; otherwise per-event check.
+		actualExcrete := !dryRun && !s.cfg.DryRun && ms.Excretable && !s.cfg.FinanceExempt && !s.isFinanceRelated(ev)
 		if actualExcrete {
 			if err := s.adapter.MarkExcreted(ev.ID, ms.Reason); err != nil {
 				s.logger.Error("metabolism: mark excreted failed", zap.Error(err))
@@ -326,6 +328,34 @@ func (s *MetabolismService) Execute(dryRun bool) error {
 
 	s.logger.Info("metabolism: M1 Execute completed")
 	return nil
+}
+
+// isFinanceRelated checks whether an event is finance-related based on its
+// Source and Topic fields. Used for per-event excretion exemption.
+// Three checks are performed:
+//   a) Source contains "finance", "settlement", "platformfee", or "exchangeRate"
+//   b) Topic contains "settlement", "payout", "fee", or "exchange"
+//   c) Topic contains "order" AND source contains "finance"
+func (s *MetabolismService) isFinanceRelated(ev ScorableEvent) bool {
+	src := strings.ToLower(ev.Source)
+	tpc := strings.ToLower(ev.Topic)
+
+	// a) Source-based check.
+	if strings.Contains(src, "finance") || strings.Contains(src, "settlement") || strings.Contains(src, "platformfee") || strings.Contains(src, "exchangerate") {
+		return true
+	}
+
+	// b) Topic-based check.
+	if strings.Contains(tpc, "settlement") || strings.Contains(tpc, "payout") || strings.Contains(tpc, "fee") || strings.Contains(tpc, "exchange") {
+		return true
+	}
+
+	// c) Combined check: order topic from finance source.
+	if strings.Contains(tpc, "order") && strings.Contains(src, "finance") {
+		return true
+	}
+
+	return false
 }
 
 // ---------------------------------------------------------------------------
