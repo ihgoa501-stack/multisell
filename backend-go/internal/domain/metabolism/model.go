@@ -59,3 +59,11 @@ type MetabolismLog struct {
 func (MetabolismLog) TableName() string {
 	return "metabolism_log"
 }
+
+// ArchiveConfig controls the archive lifecycle for excreted data.
+type ArchiveConfig struct {
+	ArchiveTable   string        // table name for archived records (default: metabolism_log_archive)
+	RetentionDays  int           // days to keep before archiving (default: 7)
+	PhysicalDelete bool          // whether to physically delete after retention period
+	PhysicalDays   int           // days before physical deletion (default: 14)
+}
