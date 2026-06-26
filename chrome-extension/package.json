@@ -1,0 +1,16 @@
+{
+  "name": "lingmirror-sourcing-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LingMirror AI sourcing extension — collect 1688 product data",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf build",
+    "rebuild": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/chrome": "^0.0.270"
+  }
+}
