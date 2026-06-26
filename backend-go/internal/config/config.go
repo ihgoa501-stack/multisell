@@ -91,6 +91,16 @@ func Load() (*Config, error) {
 	v.AddConfigPath("./configs")
 	v.AddConfigPath(".")
 
+	// Sensible defaults — applied before config file / env var overrides, so
+	// the server remains functional even when no config.yaml is found at the
+	// expected working-directory paths (e.g. systemd with a non-standard CWD).
+	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.mode", "release")
+	v.SetDefault("database.host", "localhost")
+	v.SetDefault("database.port", 5432)
+	v.SetDefault("jwt.expiry_hours", 24)
+	v.SetDefault("jwt.refresh_expiry_hours", 168)
+
 	// Environment variable overrides
 	v.SetEnvPrefix("")
 	v.AutomaticEnv()

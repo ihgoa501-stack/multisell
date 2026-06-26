@@ -163,37 +163,7 @@ func (h *Handler) Sync(c *gin.Context) {
 	response.Success(c, gin.H{"id": a.ID, "sync_status": a.SyncStatus})
 }
 
-// ListOzonProducts GET /platform-integrations/:id/ozon-products
-func (h *Handler) ListOzonProducts(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	products, err := h.service.ListOzonProducts(c.Request.Context(), id)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if products == nil {
-		products = []OzonProduct{}
-	}
-	response.Success(c, products)
-}
-
-// PublishToOzon POST /platform-integrations/publish-to-ozon
-func (h *Handler) PublishToOzon(c *gin.Context) {
-	var in PublishToOzonInput
-	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	result, err := h.service.PublishToOzon(c.Request.Context(), &in)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, result)
-}
+// ListCategories GET /platform-integrations/:id/categories
 func (h *Handler) ListCategories(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
