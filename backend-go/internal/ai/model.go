@@ -56,6 +56,17 @@ type AIEvidenceRef struct {
 
 func (AIEvidenceRef) TableName() string { return "ai_evidence_ref" }
 
+// UnifiedAction status constants
+const (
+	ActionStatusSuggested  = "suggested"
+	ActionStatusApproved   = "approved"
+	ActionStatusRejected   = "rejected"
+	ActionStatusExecuting  = "executing"
+	ActionStatusExecuted   = "executed"
+	ActionStatusReviewed   = "reviewed"
+	ActionStatusEscalated  = "escalated"
+)
+
 // UnifiedAction maps to "unified_action".
 type UnifiedAction struct {
 	ID                int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`

@@ -475,7 +475,7 @@ class AgentLlmService:
             intent = summary.get("intent", "")
             if intent:
                 return f"💬 客户意图: {intent}。消息: {msg[:50]}…"
-            return '💬 收到客户消息，建议人工处理。'
+            return "💬 收到客户消息，建议人工处理。"
         if agent_id == "A1":
             cat = summary.get("category", "")
             n = summary.get("candidate_count", 0)

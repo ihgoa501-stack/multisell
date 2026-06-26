@@ -4,23 +4,18 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-
-	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 var (
 	// adapters is a thread-safe registry of platform code → adapter.
-	// Platform code is the lower-case short name, e.g. "ozon", "shopee".
+	// Platform code is the lower-case short name, e.g. "shopify", "lazada".
 	adapters sync.Map
 )
 
-// InitAdapters creates and registers all built-in platform adapters with their
-// runtime dependencies. Must be called once at server startup before any adapter
-// is used.
-func InitAdapters(db *gorm.DB, logger *zap.Logger) {
-	RegisterAdapter("ozon", NewOzonAdapter(db, logger))
-	RegisterAdapter("shopee", NewShopeeAdapter(db, logger))
+func init() {
+	// Register built-in adapters.
+	RegisterAdapter("ozon", NewOzonAdapter())
+	RegisterAdapter("shopee", NewShopeeAdapter())
 }
 
 // RegisterAdapter registers a PlatformAdapter implementation under the given

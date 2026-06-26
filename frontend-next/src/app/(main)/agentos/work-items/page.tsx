@@ -47,7 +47,7 @@ export default function AgentosWorkItemsPage() {
 
   const act = useMutation({
     mutationFn: async ({ id, action }: { id: string | number; action: 'approve' | 'reject' | 'execute' }) =>
-      apiClient.post(`/v1/agentos/work-items/${id}/${action}`),
+      apiClient.post(`/v1/ai/actions/${id}/${action}`, { operator: 'user' }),
     onSuccess: (_d, _v, ctx) => {
       message.success('操作成功');
       qc.invalidateQueries({ queryKey: ['agentos', 'work-items'] });

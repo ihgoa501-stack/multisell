@@ -11,6 +11,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// validTransitions defines allowed status transitions.
+// Map key = current status, values = set of allowed next statuses.
+var validTransitions = map[string]map[string]bool{
+	"pending":  {"approved": true, "rejected": true},
+	"approved": {"received": true, "rejected": true},
+	"received": {"refunded": true},
+}
+
+// checkTransition returns an error if moving from `current` to `target` is not allowed.
+func checkTransition(current, target string) error {
+	allowed, ok := validTransitions[current]
+	if !ok {
+		return fmt.Errorf("cannot transition aftersales order from terminal status %s", current)
+	}
+	if !allowed[target] {
+		return fmt.Errorf("cannot transition aftersales order from %s to %s", current, target)
+	}
+	return nil
+}
+
 // Service provides aftersales business logic.
 type Service struct {
 	db          *gorm.DB
@@ -149,6 +169,9 @@ func (s *Service) Approve(id int64, in *ApproveInput) (*AfterSalesOrder, error) 
 	if err := s.db.First(&o, id).Error; err != nil {
 		return nil, err
 	}
+	if err := checkTransition(o.Status, "approved"); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	updates := map[string]interface{}{
 		"status":            "approved",
@@ -169,6 +192,9 @@ func (s *Service) Approve(id int64, in *ApproveInput) (*AfterSalesOrder, error) 
 func (s *Service) Reject(id int64, in *RejectInput) (*AfterSalesOrder, error) {
 	var o AfterSalesOrder
 	if err := s.db.First(&o, id).Error; err != nil {
+		return nil, err
+	}
+	if err := checkTransition(o.Status, "rejected"); err != nil {
 		return nil, err
 	}
 	now := time.Now()

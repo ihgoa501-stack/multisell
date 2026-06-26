@@ -1,15 +1,13 @@
 'use client';
 
-import {
-  Badge, Card, Col, Descriptions, Empty, Row, Spin, Statistic, Table, Tag,
-} from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, LinkOutlined, RobotOutlined } from '@ant-design/icons';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { useAppStore } from '@/stores/app-store';
 import apiClient from '@/lib/api-client';
 
 interface OverviewData {
   order_total?: number;
-  order_by_status?: Record<string, number>;
   order_revenue?: number;
   order_profit?: number;
   sku_total?: number;
@@ -20,210 +18,184 @@ interface OverviewData {
   exception_open_count?: number;
   month_revenue?: number;
   month_cost?: number;
-  platform_connections?: PlatformConnection[];
-  agent_statuses?: AgentStatus[];
-}
-
-interface PlatformConnection {
-  platform_id: number;
-  platform_code: string;
-  platform_name: string;
-  store_name: string;
-  status: string;
-  sync_status: string;
-  last_sync_at?: string;
-  last_error?: string;
-}
-
-interface AgentStatus {
-  agent_id: string;
-  name: string;
-  status: string;
-  last_activity?: string;
-}
-
-interface ExceptionItem {
-  type: string;
-  count: number;
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  pending: 'default',
-  paid: 'blue',
-  shipped: 'cyan',
-  completed: 'green',
-  cancelled: 'red',
-  refunded: 'orange',
-};
-
-const PLATFORM_COLORS: Record<string, string> = {
-  ozon: 'blue',
-  shopee: 'orange',
-};
-
-const AGENT_COLORS: Record<string, string> = {
-  A4: 'green', A5: 'red', A6: 'purple',
-  A8: 'geekblue', A10: 'cyan', A9: 'gold',
-  G0: 'volcano', G1: 'lime', G3: 'orange',
-};
-
-function Money({ value }: { value: number | undefined }) {
-  return (
-    <Statistic value={value ?? 0} precision={2} prefix="¥" />
-  );
+  order_by_status?: Record<string, number>;
 }
 
 export default function DashboardPage() {
-  const { data: overview, isLoading: overviewLoading } = useQuery({
+  const router = useRouter();
+  const { setActiveTool, toggleToolPanel } = useAppStore();
+  const [input, setInput] = useState('');
+
+  const { data: overview, isLoading } = useQuery<OverviewData>({
     queryKey: ['dashboard', 'overview'],
     queryFn: async () => {
       const res = await apiClient.get<OverviewData>('/v1/dashboard/overview');
-      return res.data;
+      return res.data ?? {};
     },
   });
-
-  const { data: exceptions, isLoading: exceptionsLoading } = useQuery({
-    queryKey: ['dashboard', 'exceptions'],
-    queryFn: async () => {
-      const res = await apiClient.get<ExceptionItem[]>('/v1/dashboard/exceptions');
-      return res.data ?? [];
-    },
-  });
-
-  if (overviewLoading) {
-    return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
-        <Spin tip="加载中..." />
-      </div>
-    );
-  }
 
   const o = overview ?? {};
-  const statusEntries = Object.entries(o.order_by_status ?? {});
-  const platforms = o.platform_connections ?? [];
-  const agents = o.agent_statuses ?? [];
+
+  const quickActions = [
+    { label: '📦 商品管理', tool: 'products' as const, desc: `${o.sku_total ?? 0} 件商品` },
+    { label: '📤 平台发布', tool: 'publish' as const, desc: `${o.listing_active_count ?? 0} 待处理` },
+    { label: '📊 数据分析', tool: 'analytics' as const, desc: '查看运营报告' },
+    { label: '💰 价格监控', tool: 'pricing' as const, desc: `${o.low_stock_count ?? 0} 件预警` },
+  ];
+
+  const openTool = (tool: string) => {
+    setActiveTool(tool);
+    toggleToolPanel();
+  };
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    // ponytail: navigate to /ai page with the command as context
+    router.push('/ai');
+    setInput('');
+  };
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 24 }}>Dashboard</h1>
-
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card><Statistic title="订单总数" value={o.order_total ?? 0} /></Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card>
-            <Money value={o.order_revenue} />
-            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>订单收入</div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card>
-            <Money value={o.order_profit} />
-            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>订单利润</div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card><Statistic title="SKU 总数" value={o.sku_total ?? 0} /></Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card>
-            <Statistic title="低库存" value={o.low_stock_count ?? 0}
-              valueStyle={{ color: (o.low_stock_count ?? 0) > 0 ? '#fa8c16' : undefined }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card>
-            <Statistic title="异常" value={o.exception_open_count ?? 0}
-              valueStyle={{ color: (o.exception_open_count ?? 0) > 0 ? '#cf1322' : undefined }} />
-          </Card>
-        </Col>
-      </Row>
-
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card title={<><LinkOutlined /> 平台对接</>}>
-            {platforms.length === 0 ? (
-              <Empty description="暂无已对接平台">
-                <a href="/platform-integrations">连接 Ozon 店铺</a>
-              </Empty>
-            ) : platforms.map((p) => (
-              <Card key={p.platform_id} size="small" style={{ marginBottom: 8, borderLeft: p.status === 'active' ? '3px solid #52c41a' : '3px solid #ff4d4f' }}>
-                <Descriptions column={2} size="small">
-                  <Descriptions.Item label="平台">
-                    <Tag color={PLATFORM_COLORS[p.platform_code] || 'default'}>{p.platform_name}</Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="状态">
-                    {p.status === 'active' ? <Badge status="success" text="已连接" /> : <Badge status="error" text="断开" />}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="店铺">{p.store_name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="同步"><Tag>{p.sync_status}</Tag></Descriptions.Item>
-                  {p.last_sync_at && (
-                    <Descriptions.Item label="上次同步" span={2}>{p.last_sync_at?.slice(0, 16).replace('T', ' ')}</Descriptions.Item>
-                  )}
-                </Descriptions>
-              </Card>
-            ))}
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={12}>
-          <Card title={<><RobotOutlined /> AI Agent 状态</>}>
-            {agents.length === 0 ? (
-              <Empty description="Agent 暂无活动"><span style={{ color: '#999' }}>系统启动中...</span></Empty>
-            ) : (
-              <Row gutter={[12, 12]}>
-                {agents.map((a) => (
-                  <Col key={a.agent_id} xs={12} md={8}>
-                    <Card size="small">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <Tag color={AGENT_COLORS[a.agent_id] || 'default'}>{a.agent_id}</Tag>
-                        {a.status === 'active' ? <CheckCircleOutlined style={{ color: '#52c41a' }} /> : <CloseCircleOutlined style={{ color: '#999' }} />}
-                      </div>
-                      <div style={{ fontWeight: 500, fontSize: 13 }}>{a.name}</div>
-                      <div style={{ color: '#999', fontSize: 11, marginTop: 4 }}>
-                        {a.last_activity ? a.last_activity.slice(0, 16).replace('T', ' ') : '等待运行'}
-                      </div>
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '16px 20px',
+        overflow: 'auto',
+        background: 'var(--bg)',
+        gap: 12,
+      }}
+    >
+      {/* Agent greeting */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div
+          style={{
+            width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+            background: 'linear-gradient(135deg, var(--i5), var(--c5))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.75rem', color: 'white', marginTop: 2,
+          }}
+        >
+          ✦
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--t2)', marginBottom: 2 }}>
+            凌镜 Agent
+          </div>
+          <div
+            style={{
+              fontSize: '0.88rem', lineHeight: 1.6, color: 'var(--t1)',
+              background: 'var(--s1)', padding: '10px 14px',
+              borderRadius: 8, border: '1px solid var(--bd)',
+            }}
+          >
+            ☀️ 早上好！昨晚已完成数据同步。
+            {!isLoading && (
+              <>
+                {' '}目前管理 <span style={{ color: 'var(--c4)', fontWeight: 500 }}>{o.sku_total ?? 0}</span> 件商品，
+                <span style={{ color: 'var(--r4)', fontWeight: 500 }}>{o.low_stock_count ?? 0}</span> 件库存预警，
+                本月收入 <span style={{ color: 'var(--g4)', fontWeight: 500 }}>¥{(o.month_revenue ?? 0).toLocaleString()}</span>。
+              </>
             )}
-          </Card>
-        </Col>
-      </Row>
+          </div>
+        </div>
+      </div>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card title="订单状态分布">
-            {statusEntries.length === 0 ? <Empty description="暂无数据" /> : (
-              <Row gutter={[12, 12]}>
-                {statusEntries.map(([status, count]) => (
-                  <Col key={status} xs={12} md={8}>
-                    <Statistic title={<Tag color={STATUS_COLORS[status] ?? 'default'}>{status}</Tag>} value={count} />
-                  </Col>
-                ))}
-              </Row>
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title="当月收入 vs 成本">
-            <Row gutter={16}>
-              <Col span={12}><Money value={o.month_revenue} /><div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>收入</div></Col>
-              <Col span={12}><Statistic title="成本" value={o.month_cost ?? 0} precision={2} prefix="¥" valueStyle={{ color: '#cf1322' }} /></Col>
-            </Row>
-          </Card>
-        </Col>
-      </Row>
+      {/* Stats row */}
+      {!isLoading && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+          {[
+            { label: '商品总数', value: o.sku_total ?? 0, color: 'var(--t1)' },
+            { label: '订单收入', value: `¥${(o.order_revenue ?? 0).toLocaleString()}`, color: 'var(--g4)' },
+            { label: '低库存', value: o.low_stock_count ?? 0, color: o.low_stock_count ? 'var(--r4)' : 'var(--g4)' },
+            { label: '异常', value: o.exception_open_count ?? 0, color: o.exception_open_count ? 'var(--y4)' : 'var(--g4)' },
+          ].map(s => (
+            <div
+              key={s.label}
+              style={{
+                background: 'var(--s1)', borderRadius: 8, padding: '10px 12px',
+                border: '1px solid var(--bd)',
+              }}
+            >
+              <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--t4)' }}>
+                {s.label}
+              </div>
+              <div style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: '1.2rem', color: s.color, marginTop: 2 }}>
+                {s.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-      <Card title="异常分布" style={{ marginTop: 16 }}>
-        <Table rowKey="type" loading={exceptionsLoading} dataSource={exceptions} pagination={false} size="small"
-          columns={[
-            { title: '异常类型', dataIndex: 'type' },
-            { title: '数量', dataIndex: 'count', width: 120 },
-          ]} />
-      </Card>
+      {/* Quick actions */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--t4)' }}>
+          ▸ 快捷操作
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
+          {quickActions.map(a => (
+            <button
+              key={a.tool}
+              onClick={() => openTool(a.tool)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 10px', borderRadius: 6,
+                background: 'var(--s1)', border: '1px solid var(--bd)',
+                color: 'var(--t2)', cursor: 'pointer',
+                fontFamily: 'var(--body)', fontSize: '0.78rem',
+                transition: 'background 80ms',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{ fontSize: '1rem' }}>{a.label.split(' ')[0]}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 500, color: 'var(--t1)' }}>{a.label.split(' ').slice(1).join(' ')}</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--t3)' }}>{a.desc}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Spacer */}
+      <div style={{ flex: 1 }} />
+
+      {/* Input bar */}
+      <div
+        style={{
+          display: 'flex', gap: 6, alignItems: 'center',
+          padding: '6px 10px 8px',
+          borderTop: '1px solid var(--bd)',
+        }}
+      >
+        <input
+          type="text"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSend()}
+          placeholder="告诉凌镜做什么... '发布蓝牙耳机到 Ozon' '分析上周销售'"
+          style={{
+            flex: 1, padding: '8px 14px', borderRadius: 10,
+            background: 'var(--s2)', border: '1px solid var(--bd2)',
+            fontFamily: 'var(--body)', fontSize: '0.82rem',
+            color: 'var(--t1)', outline: 'none',
+          }}
+        />
+        <button
+          onClick={handleSend}
+          style={{
+            width: 32, height: 32, borderRadius: 6,
+            background: 'var(--i5)', border: 'none', color: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', fontSize: '0.85rem',
+            flexShrink: 0,
+          }}
+        >
+          ↵
+        </button>
+      </div>
     </div>
   );
 }

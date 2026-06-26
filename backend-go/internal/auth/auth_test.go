@@ -356,7 +356,7 @@ func TestParseToken_ForgedToken(t *testing.T) {
 // handler that echoes the user_id from context.
 func newMiddlewareEngine(cfg *config.Config) *gin.Engine {
 	r := gin.New()
-	r.Use(middleware.Auth(cfg))
+	r.Use(middleware.Auth(cfg, nil))
 	r.GET("/protected", func(c *gin.Context) {
 		uid, _ := c.Get("user_id")
 		c.JSON(http.StatusOK, gin.H{"user_id": uid})
@@ -446,7 +446,7 @@ func TestMiddleware_SetsUserID(t *testing.T) {
 	}
 
 	r := gin.New()
-	r.Use(middleware.Auth(cfg))
+	r.Use(middleware.Auth(cfg, nil))
 	var captured interface{}
 	r.GET("/probe", func(c *gin.Context) {
 		captured, _ = c.Get("user_id")

@@ -260,6 +260,8 @@ class WildberriesListingAdapter:
 
     async def validate_credentials(self, *, platform: Platform) -> bool:
         """用 WB Cursor List API 校验 Token。"""
+        if platform.status != 1:
+            return False
         if not platform.api_key:
             return False
         try:
