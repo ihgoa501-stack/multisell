@@ -490,6 +490,16 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		})
 		metabolism.RegisterRoutes(protected, db, logger, nil, semanticScorer)
 
+		// Waste event recycling — route metabolism.waste.{source} to interested agents
+		bus.Subscribe("metabolism.waste.*", func(ctx context.Context, evt eventbus.Event) error {
+			logger.Info("metabolism: waste event received",
+				zap.String("topic", evt.Topic),
+				zap.Any("payload", evt.Payload))
+			// Extract source from topic: "metabolism.waste.ozon" → "ozon"
+			// Potential future: route to agents that subscribe to this waste type
+			return nil
+		})
+
 	// WebSocket route
 	hub := realtime.NewHub(logger)
 	go hub.Run()

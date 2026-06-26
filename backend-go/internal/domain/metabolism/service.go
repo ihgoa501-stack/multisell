@@ -125,6 +125,7 @@ type MetabolismService struct {
 	cfg            *Config
 	bus            *eventbus.Bus
 	archiveCfg     *ArchiveConfig
+	learner        *Learner
 }
 
 // NewService creates a new MetabolismService.
@@ -155,6 +156,11 @@ func (s *MetabolismService) WithBus(bus *eventbus.Bus) *MetabolismService {
 func (s *MetabolismService) WithArchiveConfig(ac *ArchiveConfig) *MetabolismService {
 	s.archiveCfg = ac
 	return s
+}
+
+// SetLearner attaches an optional Learner for adaptive parameter tuning.
+func (s *MetabolismService) SetLearner(l *Learner) {
+	s.learner = l
 }
 
 // scoreAt is the pure scoring engine. It evaluates a ScorableEvent and returns
@@ -268,6 +274,11 @@ func (s *MetabolismService) Execute(dryRun bool) error {
 			continue
 		}
 
+		// Record decision for learner.
+		if s.learner != nil {
+			s.learner.RecordDecision(logEntry.EventID, logEntry.Source, logEntry.TotalScore, logEntry.Excretable, false)
+		}
+
 		// Phase 2: actual excretion.
 		actualExcrete := !dryRun && !s.cfg.DryRun && ms.Excretable && !s.cfg.FinanceExempt
 		if actualExcrete {
@@ -291,6 +302,11 @@ func (s *MetabolismService) Execute(dryRun bool) error {
 				}
 			}
 		}
+	}
+
+	// Optionally tune learner weights based on this cycle's decisions.
+	if s.learner != nil {
+		s.learner.TuneWeights()
 	}
 
 	// Archive and purge old records.
