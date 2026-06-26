@@ -306,17 +306,6 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	// Trigger trust score recalculation asynchronously — must not block the
 	// agent run response. Recalculation iterates all agents and can be expensive
 	// when the trace or action tables are large.
-	go func(db *gorm.DB, logger *zap.Logger) {
-		tsSvc := trustscore.NewService(db, logger)
-		if err := tsSvc.Recalculate(); err != nil {
-			logger.Warn("trust score recalculation failed", zap.Error(err))
-			return
-		}
-		ug := trustscore.NewUpgrader(db, logger)
-	// Trigger trust score recalculation for conditional autonomy upgrades.
-	// In production (async) this runs in a goroutine to avoid blocking the
-	// agent response on 40+ database queries. Tests with SQLite set
-	// trustScoreSync=true to avoid table-lock races during cleanup.
 	recalcTrustScores := func() {
 		tsSvc := trustscore.NewService(o.db, o.logger)
 		if err := tsSvc.Recalculate(); err != nil {
@@ -325,17 +314,16 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		}
 		ug := trustscore.NewUpgrader(o.db, o.logger)
 		if upgraded, err := ug.UpgradeEligible(); err != nil {
-			logger.Warn("autonomy upgrade failed", zap.Error(err))
+			o.logger.Warn("autonomy upgrade failed", zap.Error(err))
 		} else if len(upgraded) > 0 {
 			for _, u := range upgraded {
-				logger.Info("agent autonomy upgraded via trust score",
+				o.logger.Info("agent autonomy upgraded via trust score",
 					zap.String("agent", u.AgentID),
 					zap.String("from", u.FromLevel),
 					zap.String("to", u.ToLevel),
 				)
 			}
 		}
-	}(o.db, o.logger)
 	}
 	if o.trustScoreSync {
 		recalcTrustScores()

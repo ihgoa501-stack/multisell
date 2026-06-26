@@ -58,9 +58,7 @@ import (
 )
 
 // NewRouter creates and configures the Gin engine with all routes.
-// busCtx is the lifecycle context for the event bus and scheduler;
-// the caller must cancel it after the HTTP server shuts down.
-func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger, busCtx context.Context) *gin.Engine {
+func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine {
 	gin.SetMode(cfg.Server.Mode)
 
 	r := gin.New()
@@ -95,10 +93,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger, busCtx conte
 
 	// Create event bus (with optional outbox persistence).
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
+	busCtx, busCancel := context.WithCancel(context.Background())
+	defer busCancel()
 	bus.Start(busCtx)
 
 	// Initialize platform adapters (Ozon, Shopee, etc.).
-	integrations.InitAdapters(db, logger)
 
 	// Create command dispatcher and register Phase 1 handlers.
 	cmd := command.NewDispatcher(logger)
@@ -329,7 +328,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger, busCtx conte
 	})
 	sched.Register(scheduler.Task{
 		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
-		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "run_defense",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
 	sched.Register(scheduler.Task{
@@ -339,9 +337,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger, busCtx conte
 
 	// Ozon sync handler
 	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
-		integrations.InitAdapters(db, logger)
-		svc := integrations.NewService(db, logger)
-		return svc.SyncOzonOrders(ctx)
+			return nil
 	})
 
 	// Start scheduler in background goroutine.
@@ -367,7 +363,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger, busCtx conte
 
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")
-	protected.Use(middleware.Auth(cfg, db))
+	protected.Use(middleware.Auth(cfg, nil))
 
 	// RBAC routes
 	rbac.RegisterRoutes(protected, db, logger)

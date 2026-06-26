@@ -19,6 +19,7 @@ type Config struct {
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Log      LogConfig      `mapstructure:"log"`
 	Sentry   SentryConfig   `mapstructure:"sentry"`
+	EncryptionKey string         `mapstructure:"encryption_key"`
 }
 
 // ServerConfig holds server-specific settings.
@@ -115,6 +116,7 @@ func Load() (*Config, error) {
 	v.BindEnv("redis.addr", "REDIS_ADDR")
 	v.BindEnv("redis.password", "REDIS_PASSWORD")
 	v.BindEnv("jwt.secret", "JWT_SECRET")
+	v.BindEnv("encryption_key", "ENCRYPTION_KEY")
 	v.BindEnv("server.port", "SERVER_PORT")
 	v.BindEnv("sentry.dsn", "SENTRY_DSN")
 	v.BindEnv("cors.allowed_origins", "CORS_ALLOWED_ORIGINS")
