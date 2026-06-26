@@ -103,3 +103,21 @@ func (h *Hub) ClientCount() int {
 	defer h.mu.RUnlock()
 	return len(h.clients)
 }
+
+// SendToUser sends a message to all connections belonging to the given user.
+// Non-blocking per-client; if a client's send buffer is full the client is
+// closed and removed.
+func (h *Hub) SendToUser(userID int64, msg []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for client := range h.clients {
+		if client.UserID != nil && *client.UserID == userID {
+			select {
+			case client.Send <- msg:
+			default:
+				close(client.Send)
+				delete(h.clients, client)
+			}
+		}
+	}
+}
