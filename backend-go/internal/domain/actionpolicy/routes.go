@@ -16,6 +16,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		p.POST("/rules", h.CreateRule)
 		p.PUT("/rules/:id", h.UpdateRule)
 		p.DELETE("/rules/:id", h.DeleteRule)
+			p.POST("/rules/:id/toggle", h.HandleToggleRule)
 		p.POST("/evaluate", h.Evaluate)
 	}
 }
