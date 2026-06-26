@@ -13,9 +13,8 @@ import (
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, events interface {
 	Publish(ctx context.Context, topic, source string, payload map[string]interface{}) (string, error)
 }) {
-	invAdapter := NewInventoryRestockAdapter(db)
 	orderAdapter := NewOrderWriterAdapter(db)
-	svc := NewService(db, logger, invAdapter, orderAdapter, events)
+	svc := NewService(db, logger, orderAdapter, events)
 	h := NewHandler(svc)
 
 	group := rg.Group("/aftersales")
