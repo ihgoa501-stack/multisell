@@ -463,13 +463,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	evolution.RegisterRoutes(protected, db, logger)
 	entropy.RegisterRoutes(protected, db, logger)
 
-	// Metabolism M1 -- scheduled excretion scoring
-	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
-	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
-		logger.Info("metabolism: M1 tick received")
+		// Metabolism M1 -- scheduled excretion scoring
+		semanticScorer := metabolism.NewLLMSemanticScorer(aiOrch.Provider(), logger)
+		m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, semanticScorer)
+		bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
+			logger.Info("metabolism: M1 tick received")
 			return m1Svc.Execute(true)
-	})
-	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
+		})
+		metabolism.RegisterRoutes(protected, db, logger, nil, semanticScorer)
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
