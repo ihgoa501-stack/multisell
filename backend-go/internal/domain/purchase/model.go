@@ -1,7 +1,6 @@
 package purchase
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -56,22 +55,6 @@ type PurchaseOrderItem struct {
 // TableName overrides the default table name.
 func (PurchaseOrderItem) TableName() string { return "purchase_order_item" }
 
-// Supplier maps to "purchase_supplier".
-type Supplier struct {
-	ID            int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	Name          string          `gorm:"column:name;not null" json:"name"`
-	ContactPerson string          `gorm:"column:contact_person" json:"contact_person"`
-	Phone         string          `gorm:"column:phone" json:"phone"`
-	Email         string          `gorm:"column:email" json:"email"`
-	Address       string          `gorm:"column:address" json:"address"`
-	KpiScore      float64         `gorm:"column:kpi_score;default:0" json:"kpi_score"`
-	PriceHistory  json.RawMessage `gorm:"column:price_history;type:jsonb" json:"price_history,omitempty"`
-	CreatedAt     time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-}
-
-// TableName overrides the default table name.
-func (Supplier) TableName() string { return "purchase_supplier" }
-
 // PurchaseSuggestion maps to "purchase_suggestion".
 type PurchaseSuggestion struct {
 	ID           int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
@@ -118,33 +101,4 @@ type PurchaseOrderListFilter struct {
 	Status     string
 	SupplierID *int64
 	Search     string
-}
-
-// CreateSupplierInput is the payload for POST /purchase/suppliers.
-type CreateSupplierInput struct {
-	Name          string          `json:"name" binding:"required"`
-	ContactPerson string          `json:"contact_person"`
-	Phone         string          `json:"phone"`
-	Email         string          `json:"email"`
-	Address       string          `json:"address"`
-	PriceHistory  json.RawMessage `json:"price_history"`
-}
-
-// UpdateSupplierInput is the payload for PUT /purchase/suppliers/:id.
-type UpdateSupplierInput struct {
-	Name          *string         `json:"name"`
-	ContactPerson *string         `json:"contact_person"`
-	Phone         *string         `json:"phone"`
-	Email         *string         `json:"email"`
-	Address       *string         `json:"address"`
-	PriceHistory  json.RawMessage `json:"price_history"`
-}
-
-// SupplierKPIResponse is the KPI detail response.
-type SupplierKPIResponse struct {
-	SupplierID   int64   `json:"supplier_id"`
-	SupplierName string  `json:"supplier_name"`
-	KpiScore     float64 `json:"kpi_score"`
-	OrderCount   int64   `json:"order_count"`
-	OnTimeRate   float64 `json:"on_time_rate"`
 }

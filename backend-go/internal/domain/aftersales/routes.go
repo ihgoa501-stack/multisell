@@ -1,16 +1,21 @@
 package aftersales
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers aftersales routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+// The events parameter is optional; pass nil if no event publishing is desired.
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, events interface {
+	Publish(ctx context.Context, topic, source string, payload map[string]interface{}) (string, error)
+}) {
 	invAdapter := NewInventoryRestockAdapter(db)
 	orderAdapter := NewOrderWriterAdapter(db)
-	svc := NewService(db, logger, invAdapter, orderAdapter)
+	svc := NewService(db, logger, invAdapter, orderAdapter, events)
 	h := NewHandler(svc)
 
 	group := rg.Group("/aftersales")

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/supplyevent"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -16,15 +17,17 @@ type Service struct {
 	logger            *zap.Logger
 	inventoryRestocker InventoryRestocker
 	orderWriter        OrderWriter
+	events            EventPublisher
 }
 
 // NewService creates a new aftersales service.
-func NewService(db *gorm.DB, logger *zap.Logger, inventoryRestocker InventoryRestocker, orderWriter OrderWriter) *Service {
+func NewService(db *gorm.DB, logger *zap.Logger, inventoryRestocker InventoryRestocker, orderWriter OrderWriter, events EventPublisher) *Service {
 	return &Service{
 		db:                db,
 		logger:            logger,
 		inventoryRestocker: inventoryRestocker,
 		orderWriter:        orderWriter,
+		events:            events,
 	}
 }
 
@@ -205,12 +208,14 @@ func (s *Service) Receive(id int64, in *ReceiveInput) (*AfterSalesOrder, error) 
 	if err := s.db.Model(&AfterSalesOrder{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	// Restock inventory in its own transaction (eventual consistency)
+	// DEPRECATED: direct Restock call via inventory_adapter — kept until
+	// the event-based handler (supplychain.aftersale.completed) is verified.
 	if o.SkuID != nil && o.ReturnQuantity > 0 {
 		remark := fmt.Sprintf("aftersales return, aftersales_id=%d", id)
 		if err := s.inventoryRestocker.Restock(context.Background(), *o.SkuID, o.ReturnQuantity, in.ReceivedBy, remark); err != nil {
 			return nil, err
 		}
+		s.publishAfterSaleProcessed(&o)
 	}
 	if err := s.db.First(&o, id).Error; err != nil {
 		return nil, err
@@ -278,4 +283,27 @@ func (s *Service) Summary() (*Summary, error) {
 		return nil, err
 	}
 	return &Summary{Total: total, ByStatus: byStatus, TotalRefunded: rev.Total}, nil
+}
+
+// publishAfterSaleProcessed publishes a supplyevent.AfterSaleProcessed event.
+func (s *Service) publishAfterSaleProcessed(o *AfterSalesOrder) {
+	if s.events == nil || o.SkuID == nil {
+		return
+	}
+	evt := supplyevent.AfterSaleProcessed{
+		AftersaleID: o.ID,
+		OrderID:     o.OrderID,
+		SkuID:       *o.SkuID,
+		Quantity:    o.ReturnQuantity,
+		Type:        "return",
+		ProcessedAt: time.Now(),
+	}
+	payload, err := supplyevent.ToPayload(evt)
+	if err != nil {
+		s.logger.Warn("failed to serialize AfterSaleProcessed event", zap.Error(err))
+		return
+	}
+	if _, err := s.events.Publish(context.Background(), "supplychain.aftersale.completed", "aftersales", payload); err != nil {
+		s.logger.Warn("failed to publish AfterSaleProcessed event", zap.Error(err))
+	}
 }

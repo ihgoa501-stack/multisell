@@ -37,6 +37,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
+	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
 	"github.com/lingmirror/backend-go/internal/domain/settings"
@@ -384,6 +385,48 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	price.RegisterRoutes(protected, db, logger)
 	inventory.RegisterRoutes(protected, db, logger)
 	supplier.RegisterRoutes(protected, db, logger)
+	purchase.RegisterRoutes(protected, db, logger, bus)
+
+	// Supply chain event: purchase order received → auto-increment inventory
+	bus.Subscribe("supplychain.order.received", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		invSvc := inventory.NewService(db, logger)
+		items, ok := payload["items"].([]interface{})
+		if !ok {
+			return nil
+		}
+		orderNo, _ := payload["order_no"].(string)
+		for _, item := range items {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			skuID := int64(m["sku_id"].(float64))
+			qty := int(m["qty"].(float64))
+			inv, err := invSvc.GetBySkuID(ctx, skuID)
+			if err != nil {
+				logger.Warn("supplychain: inventory not found for sku", zap.Int64("sku_id", skuID), zap.Error(err))
+				continue
+			}
+			_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "采购入库: "+orderNo)
+		}
+		return nil
+	})
+	// Supply chain event: after-sale completed → auto-adjust inventory
+	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		invSvc := inventory.NewService(db, logger)
+		skuID := int64(payload["sku_id"].(float64))
+		qty := int(payload["quantity"].(float64))
+		inv, err := invSvc.GetBySkuID(ctx, skuID)
+		if err != nil {
+			logger.Warn("supplychain: inventory not found for sku in aftersale", zap.Int64("sku_id", skuID), zap.Error(err))
+			return nil
+		}
+		// Aftersales restock adds stock back to inventory
+		_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "售后入库")
+		return nil
+	})
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
 	listingtask.RegisterRoutes(protected, db, logger)
@@ -405,7 +448,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	operationlog.RegisterRoutes(protected, db, logger)
 	integrations.RegisterRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
-	aftersales.RegisterRoutes(protected, db, logger)
+	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing1688.RegisterRoutes(protected, db, logger)
 	productanalysis.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)

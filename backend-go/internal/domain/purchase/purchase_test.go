@@ -1,6 +1,8 @@
 package purchase
 
 import (
+	"context"
+	"sync"
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -9,9 +11,37 @@ import (
 	"gorm.io/gorm"
 )
 
+// mockPublisher records published events for verification.
+type mockPublisher struct {
+	mu     sync.Mutex
+	events []struct {
+		Topic   string
+		Payload map[string]interface{}
+	}
+}
+
+func (m *mockPublisher) Publish(_ context.Context, topic, source string, payload map[string]interface{}) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, struct {
+		Topic   string
+		Payload map[string]interface{}
+	}{Topic: topic, Payload: payload})
+	return "mock-id", nil
+}
+
+func (m *mockPublisher) lastTopic() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.events) == 0 {
+		return ""
+	}
+	return m.events[len(m.events)-1].Topic
+}
+
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return dbtest.NewDB(t, &Supplier{}, &PurchaseOrder{}, &PurchaseOrderItem{}, &PurchaseSuggestion{})
+	return dbtest.NewDB(t, &PurchaseOrder{}, &PurchaseOrderItem{}, &PurchaseSuggestion{})
 }
 
 func newTestLogger(t *testing.T) *zap.Logger {
@@ -19,29 +49,33 @@ func newTestLogger(t *testing.T) *zap.Logger {
 	return dbtest.NewLogger(t)
 }
 
-func seedSupplier(t *testing.T, db *gorm.DB) *Supplier {
+// seedSupplier inserts a row directly into the shared supplier table.
+// The table must be auto-migrated since it lives in a different domain module.
+func seedSupplier(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
-	sup := Supplier{
-		Name:          "Test Supplier",
-		ContactPerson: "Zhang San",
-		Phone:         "13800138000",
-		Email:         "test@supplier.com",
+	type SupplierSeed struct {
+		ID   int64  `gorm:"column:id;primaryKey;autoIncrement"`
+		Name string `gorm:"column:name;not null"`
 	}
+	if err := db.AutoMigrate(&SupplierSeed{}); err != nil {
+		t.Fatalf("migrate supplier: %v", err)
+	}
+	sup := SupplierSeed{Name: "Test Supplier"}
 	if err := db.Create(&sup).Error; err != nil {
 		t.Fatalf("seed supplier: %v", err)
 	}
-	return &sup
+	return sup.ID
 }
 
 // ---------- Tests ----------
 
 func TestService_CreateOrder(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
-	sup := seedSupplier(t, db)
+	svc := NewService(db, newTestLogger(t), nil)
+	supID := seedSupplier(t, db)
 
 	o, err := svc.CreateOrder(&CreateOrderInput{
-		SupplierID: sup.ID,
+		SupplierID: supID,
 		Items: []OrderItemInput{
 			{SkuID: 1, Quantity: 10, UnitPrice: 15.5},
 			{SkuID: 2, Quantity: 5, UnitPrice: 30.0},
@@ -70,11 +104,11 @@ func TestService_CreateOrder(t *testing.T) {
 
 func TestService_ApproveOrder(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
-	sup := seedSupplier(t, db)
+	svc := NewService(db, newTestLogger(t), nil)
+	supID := seedSupplier(t, db)
 
 	o, _ := svc.CreateOrder(&CreateOrderInput{
-		SupplierID: sup.ID,
+		SupplierID: supID,
 		Items:      []OrderItemInput{{SkuID: 1, Quantity: 10, UnitPrice: 10}},
 	})
 	approved, err := svc.ApproveOrder(o.ID)
@@ -88,11 +122,11 @@ func TestService_ApproveOrder(t *testing.T) {
 
 func TestService_ReceiveOrder_Full(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
-	sup := seedSupplier(t, db)
+	svc := NewService(db, newTestLogger(t), nil)
+	supID := seedSupplier(t, db)
 
 	o, _ := svc.CreateOrder(&CreateOrderInput{
-		SupplierID: sup.ID,
+		SupplierID: supID,
 		Items:      []OrderItemInput{{SkuID: 1, Quantity: 10, UnitPrice: 10}},
 	})
 	_, _ = svc.ApproveOrder(o.ID)
@@ -113,11 +147,11 @@ func TestService_ReceiveOrder_Full(t *testing.T) {
 
 func TestService_ReceiveOrder_Partial(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
-	sup := seedSupplier(t, db)
+	svc := NewService(db, newTestLogger(t), nil)
+	supID := seedSupplier(t, db)
 
 	o, _ := svc.CreateOrder(&CreateOrderInput{
-		SupplierID: sup.ID,
+		SupplierID: supID,
 		Items:      []OrderItemInput{{SkuID: 1, Quantity: 10, UnitPrice: 10}},
 	})
 	_, _ = svc.ApproveOrder(o.ID)
@@ -153,11 +187,11 @@ func TestService_ReceiveOrder_Partial(t *testing.T) {
 
 func TestService_CancelOrder(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
-	sup := seedSupplier(t, db)
+	svc := NewService(db, newTestLogger(t), nil)
+	supID := seedSupplier(t, db)
 
 	o, _ := svc.CreateOrder(&CreateOrderInput{
-		SupplierID: sup.ID,
+		SupplierID: supID,
 		Items:      []OrderItemInput{{SkuID: 1, Quantity: 10, UnitPrice: 10}},
 	})
 	cancelled, err := svc.CancelOrder(o.ID)
@@ -169,30 +203,17 @@ func TestService_CancelOrder(t *testing.T) {
 	}
 }
 
-func TestService_CreateOrder_SupplierNotFound(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
-
-	_, err := svc.CreateOrder(&CreateOrderInput{
-		SupplierID: 999,
-		Items:      []OrderItemInput{{SkuID: 1, Quantity: 10, UnitPrice: 10}},
-	})
-	if err == nil {
-		t.Fatal("expected error for non-existent supplier")
-	}
-}
-
 func TestService_ListOrders(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
-	sup := seedSupplier(t, db)
+	svc := NewService(db, newTestLogger(t), nil)
+	supID := seedSupplier(t, db)
 
 	_, _ = svc.CreateOrder(&CreateOrderInput{
-		SupplierID: sup.ID,
+		SupplierID: supID,
 		Items:      []OrderItemInput{{SkuID: 1, Quantity: 5, UnitPrice: 10}},
 	})
 	_, _ = svc.CreateOrder(&CreateOrderInput{
-		SupplierID: sup.ID,
+		SupplierID: supID,
 		Items:      []OrderItemInput{{SkuID: 2, Quantity: 3, UnitPrice: 20}},
 	})
 
@@ -208,11 +229,11 @@ func TestService_ListOrders(t *testing.T) {
 
 func TestService_InvalidTransitions(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
-	sup := seedSupplier(t, db)
+	svc := NewService(db, newTestLogger(t), nil)
+	supID := seedSupplier(t, db)
 
 	o, _ := svc.CreateOrder(&CreateOrderInput{
-		SupplierID: sup.ID,
+		SupplierID: supID,
 		Items:      []OrderItemInput{{SkuID: 1, Quantity: 10, UnitPrice: 10}},
 	})
 
@@ -234,7 +255,7 @@ func TestService_InvalidTransitions(t *testing.T) {
 
 func TestService_GenerateSuggestions(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
+	svc := NewService(db, newTestLogger(t), nil)
 
 	// Seed inventory data into the shared "inventory" table.
 	type InventoryRow struct {
@@ -277,67 +298,26 @@ func TestService_GenerateSuggestions(t *testing.T) {
 	}
 }
 
-func TestService_SupplierCRUD(t *testing.T) {
+func TestService_ReceiveOrder_PublishesEvent(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, newTestLogger(t))
+	pub := &mockPublisher{}
+	svc := NewService(db, newTestLogger(t), pub)
+	supID := seedSupplier(t, db)
 
-	// Create
-	sup, err := svc.CreateSupplier(&CreateSupplierInput{
-		Name:          "New Supplier",
-		ContactPerson: "Li Si",
-		Phone:         "13900139000",
+	o, _ := svc.CreateOrder(&CreateOrderInput{
+		SupplierID: supID,
+		Items:      []OrderItemInput{{SkuID: 100, Quantity: 5, UnitPrice: 10}},
+	})
+	_, _ = svc.ApproveOrder(o.ID)
+
+	_, err := svc.ReceiveOrder(o.ID, &ReceiveOrderInput{
+		Items: []ReceiveItemInput{{ItemID: o.Items[0].ID, ReceivedQty: 5}},
 	})
 	if err != nil {
-		t.Fatalf("CreateSupplier: %v", err)
-	}
-	if sup.ID == 0 {
-		t.Fatal("ID should be set")
+		t.Fatalf("ReceiveOrder: %v", err)
 	}
 
-	// Get
-	fetched, err := svc.GetSupplier(sup.ID)
-	if err != nil {
-		t.Fatalf("GetSupplier: %v", err)
-	}
-	if fetched.Name != "New Supplier" {
-		t.Fatalf("name = %s", fetched.Name)
-	}
-
-	// Update
-	newName := "Updated Supplier"
-	updated, err := svc.UpdateSupplier(sup.ID, &UpdateSupplierInput{Name: &newName})
-	if err != nil {
-		t.Fatalf("UpdateSupplier: %v", err)
-	}
-	if updated.Name != "Updated Supplier" {
-		t.Fatalf("name = %s", updated.Name)
-	}
-
-	// List
-	p := common.Pagination{Page: 1, Size: 10}
-	items, total, err := svc.ListSuppliers(&p, "")
-	if err != nil {
-		t.Fatalf("ListSuppliers: %v", err)
-	}
-	if total != 1 || len(items) != 1 {
-		t.Fatalf("total=%d len=%d, want 1", total, len(items))
-	}
-
-	// KPI
-	kpi, err := svc.GetSupplierKPI(sup.ID)
-	if err != nil {
-		t.Fatalf("GetSupplierKPI: %v", err)
-	}
-	if kpi.SupplierID != sup.ID {
-		t.Fatalf("kpi supplier_id = %d", kpi.SupplierID)
-	}
-
-	// Delete
-	if err := svc.DeleteSupplier(sup.ID); err != nil {
-		t.Fatalf("DeleteSupplier: %v", err)
-	}
-	_, err = svc.GetSupplier(sup.ID)
-	if err == nil {
-		t.Fatal("expected error after delete")
+	if topic := pub.lastTopic(); topic != "supplychain.order.received" {
+		t.Fatalf("expected supplychain.order.received event, got %q", topic)
 	}
 }
