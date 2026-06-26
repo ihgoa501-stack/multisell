@@ -13,7 +13,7 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 ## Project
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
-Version `v0.2.0`.
+Version `v0.2.1`.
 
 | Stack | Dir | Entry |
 |-------|-----|-------|
@@ -67,11 +67,12 @@ Pagination: `common.ParsePagination(c)`, `common.ParseSort(c)`.
 
 ### Platform Infrastructure (`internal/platform/`)
 
-Three in-process coordination primitives for agent-to-agent and agent-to-system communication:
+Four in-process coordination primitives for agent-to-agent and agent-to-system communication:
 
 - **Event Bus** (`eventbus/bus.go`) — pub/sub with glob topic matching (`order.*`). Used for agent pipeline chains, scheduler ticks, cross-module async events. ~15 subscriptions in `router.go`.
 - **Command Dispatcher** (`command/command.go`) — typed handler registry: `stock_alert`, `replenish`, `price_review`, `listing_optimize`, `compliance_check`.
 - **Scheduler** (`scheduler/`) — periodic task runner (5 min to 6 hr intervals). Publishes `scheduler.tick.{agent_id}` events.
+- **ToolBridge** (`toolbridge/bridge.go`) — plugin-driver-based tool execution bridge for agents to run external tools.
 
 ### Agent Pipeline Chain
 
@@ -168,6 +169,8 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 | `domain/agentrule/` | Agent behavior rules |
 | `domain/entropy/` | Self-cleansing: SPC control, health scoring |
 | `domain/evolution/` | Agent evolution nudges |
+| `domain/logistics/` | Cross-border shipping rate engine (A10) |
+| `domain/sourcing/` | Sourcing profit formula engine (A8) |
 | `domain/trustscore/` | Trust score + autonomy gating |
 | `domain/actionpolicy/` | Action approval policy |
 

@@ -243,11 +243,13 @@
 | GET/POST | `/api/v1/aftersales` | 售后单 CRUD |
 | GET/PUT/DELETE | `/api/v1/aftersales/:id` | 售后单管理 |
 
-### 1688 采购
+### 1688 采购 & AI 选品
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | GET/POST/PUT/DELETE | `/api/v1/sourcing-1688` | 1688 采购 CRUD |
+| POST | `/api/v1/sourcing/fetch` | AI 选品：抓取并分析 1688 商品 |
+| GET | `/api/v1/sourcing/recommendations` | 获取 AI 选品推荐列表 |
 
 ### 分配（Allocation）
 
@@ -435,6 +437,10 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=deepseek-v4-flash
 | A5 | 库存助理 | ops | stock_alert | guided |
 | A6 | 利润看护 | ops | profit_watch, profit_check | supervised |
 | A7 | 合规专员 | ops | compliance_check, certification_lookup | supervised |
+| A8 | 选品盈利分析 | insight | sourcing_analysis, profit_forecast | advisory |
+| A9 | 批量运维 | ops | batch_ops | guided |
+| A10 | 物流运费引擎 | ops | logistics_rate, shipping_recommend | guided |
+| A11 | 售后管理 | ops | aftersales_auto_resolve | guided |
 | G0 | 系统健康员 | governance | system_health | supervised |
 | G1 | 驾驶舱 | governance | dashboard_overview | advisory |
 | G2 | 仓储专员 | governance | warehouse_routing, customs_declare | supervised |
@@ -528,6 +534,8 @@ http://localhost:3000
 | `/purchase` | GET /api/v1/purchase |
 | `/exchange-rates` | GET /api/v1/exchange-rates |
 | `/product-analysis` | GET /api/v1/product-analysis |
+| `/sourcing` | POST /api/v1/sourcing/fetch, GET /api/v1/sourcing/recommendations |
+| `/metabolism` | GET /api/v1/metabolism |
 
 ### 前端开发命令
 
@@ -585,8 +593,9 @@ backend-go/
 │   ├── platform/             # 基础设施
 │   │   ├── eventbus/         # 事件总线（pub/sub）
 │   │   ├── command/          # 命令分发器
+│   │   ├── toolbridge/       # 工具执行桥接（plugin driver）
 │   │   └── scheduler/        # 定时任务
-│   ├── realtime/             # WebSocket Hub
+│   ├── realtime/             # WebSocket Hub + extension handler
 │   └── response/             # 统一响应格式
 ├── migrations/               # SQL 迁移
 └── configs/config.yaml       # 配置文件
@@ -602,7 +611,7 @@ integrations     inventory        listing          listingtask      notification
 operationlog     order            orderimport      personalrule     platform
 platformfee      price            productanalysis  purchase         report
 search           settings         settlement       shipping         sku
-sourcing1688     supplier         support          trustscore
+logistics        sourcing         sourcing1688     supplier         support          trustscore
 ```
 
 ### 开发命令
@@ -772,6 +781,7 @@ response.InternalError(c, err)                  // 500
 |------|------|
 | Event Bus | pub/sub with glob topic matching（`order.*`） |
 | Command Dispatcher | 桥接 Agent 决策到 domain service |
+| ToolBridge | 插件驱动的工具执行桥接（plugin driver 模式） |
 | Scheduler | 定期任务（5min - 6hr） |
 | WebSocket Hub | 实时推送 AI 输出 |
 

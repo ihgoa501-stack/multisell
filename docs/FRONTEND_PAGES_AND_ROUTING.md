@@ -1,6 +1,6 @@
 # 凌镜 LingMirror 前端页面与路由
 
-> 最后更新：2026-06-24
+> 最后更新：2026-06-26
 > 框架：Next.js / React / TypeScript / Ant Design
 > 入口：`frontend-next/src/app/`
 
@@ -88,6 +88,7 @@ API client：
 | `/shipping` | 物流管理 |
 | `/platform-fees` | 平台费用 |
 | `/aftersales` | 售后 |
+| `/metabolism` | 代谢评分（M1） |
 
 ### 财务与经营决策
 
@@ -130,6 +131,7 @@ API client：
 | `/search` | 搜索 |
 | `/reports` | 报表 |
 | `/sourcing1688` | 1688 采购 |
+| `/sourcing` | AI 选品 |
 
 ### 设置
 
@@ -142,7 +144,7 @@ API client：
 
 ## 菜单覆盖
 
-`frontend-next/src/config/menu.ts` 当前定义 41 个菜单入口。2026-06-24 复核结果：所有菜单入口均有对应 `page.tsx`。
+`frontend-next/src/config/menu.ts` 当前定义 42 个菜单入口。2026-06-26 复核结果：所有菜单入口均有对应 `page.tsx`。
 
 菜单入口仅覆盖主导航页面；详情页、创建页和工作台子页面不一定出现在菜单中。
 
