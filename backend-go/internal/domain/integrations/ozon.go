@@ -15,6 +15,11 @@ const (
 	OzonDefaultTimeout = 30 * time.Second
 )
 
+// OzonAdapter implements PlatformAdapter for the Ozon seller API.
+//
+// Deprecated: Use OzonRealAdapter instead. OzonAdapter is a stub that only
+// works with hardcoded placeholder credentials and fake API responses.
+// New code should register OzonRealAdapter via InitRealAdapters.
 type OzonAdapter struct {
 	httpClient *http.Client
 }

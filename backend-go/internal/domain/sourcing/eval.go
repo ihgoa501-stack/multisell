@@ -4,33 +4,6 @@ package sourcing
 
 import "unicode/utf8"
 
-// PageData represents structured product information collected from a
-// 1688 product page via the Tool Bridge. This is a subset focused on
-// fields relevant to quality evaluation.
-type PageData struct {
-	Title         string        `json:"title"`
-	Price         float64       `json:"price_1688"`
-	Images        []string      `json:"images"`
-	SupplierName  string        `json:"supplier_name"`
-	SupplierScore *int          `json:"supplier_score,omitempty"`
-	Description   string        `json:"description,omitempty"`
-	SpecVariants  []SpecVariant `json:"spec_variants,omitempty"`
-	PackageWeight *float64      `json:"package_weight_kg,omitempty"`
-	PackageLength *float64      `json:"package_length_cm,omitempty"`
-	PackageWidth  *float64      `json:"package_width_cm,omitempty"`
-	PackageHeight *float64      `json:"package_height_cm,omitempty"`
-	FreightCNY    *float64      `json:"freight_cny,omitempty"`
-}
-
-// SpecVariant represents a single product specification variant (e.g.
-// colour, size) with its own price and stock.
-type SpecVariant struct {
-	Spec     string  `json:"spec"`
-	Price    float64 `json:"price"`
-	Stock    int     `json:"stock"`
-	ImageURL string  `json:"image_url,omitempty"`
-}
-
 // QualityReport holds the result of an LLM-quality evaluation for a
 // product page. This struct is used as the deterministic baseline; when
 // real LLM calls are added later their output can be compared against it.

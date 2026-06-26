@@ -29,6 +29,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/domain/logistics"
 	"github.com/lingmirror/backend-go/internal/domain/metabolism"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
@@ -472,6 +473,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing1688.RegisterRoutes(protected, db, logger)
+	logistics.RegisterRoutes(protected, db, logger)
 	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
 	productanalysis.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)

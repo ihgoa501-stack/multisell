@@ -96,9 +96,10 @@ export const menuGroups: MenuGroup[] = [
     ],
   },
   {
-    label: '设置',
+    label: '系统管理',
     items: [
       { key: '/settings', icon: 'SettingOutlined', label: '系统设置' },
+      { key: '/approvals', icon: 'CheckCircleOutlined', label: '审批管理' },
       { key: '/settings/llm', label: 'LLM 配置' },
       { key: '/settings/rbac', label: '权限管理' },
       { key: '/settings/policy', label: '审批策略' },
