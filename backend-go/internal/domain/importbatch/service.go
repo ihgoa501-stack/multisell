@@ -16,11 +16,11 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
 }
 
-// ListBatches returns import batches, optionally filtered by type/status.
-func (s *Service) ListBatches(batchType, status string, page, size int) ([]ImportBatch, int64, error) {
+// ListBatches returns import batches, optionally filtered by source_type/status.
+func (s *Service) ListBatches(sourceType, status string, page, size int) ([]ImportBatch, int64, error) {
 	q := s.db.Model(&ImportBatch{})
-	if batchType != "" {
-		q = q.Where("type = ?", batchType)
+	if sourceType != "" {
+		q = q.Where("source_type = ?", sourceType)
 	}
 	if status != "" {
 		q = q.Where("status = ?", status)

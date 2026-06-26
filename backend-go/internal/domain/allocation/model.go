@@ -28,6 +28,7 @@ func (Warehouse) TableName() string { return "warehouse" }
 type AllocationRule struct {
 	ID            int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	Name          string          `gorm:"column:name;not null" json:"name"`
+	SkuID         int64           `gorm:"column:sku_id;default:0;index" json:"sku_id"`
 	Priority      int             `gorm:"column:priority;default:0" json:"priority"`
 	RuleType      string          `gorm:"column:rule_type;not null" json:"rule_type"`
 	WarehouseID   int64           `gorm:"column:warehouse_id;not null" json:"warehouse_id"`

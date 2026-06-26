@@ -6,7 +6,7 @@
  * disconnect with a 3s delay.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getToken } from '@/lib/auth';
 
 /** Wire format from backend (SSEEvent). */
@@ -36,13 +36,24 @@ export function useAIWebSocket(
   enabled = true,
 ) {
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
-
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const wsRef = useRef<WebSocket | null>(null);
   const mounted = useRef(true);
+  const enabledRef = useRef(enabled);
 
-  const connect = useCallback(() => {
+  // Keep refs in sync via effects (safer than render-time assignment)
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
+  useEffect(() => {
+    enabledRef.current = enabled;
+  }, [enabled]);
+
+  // Reconnect counter — incrementing triggers a fresh connection
+  const [reconnectKey, setReconnectKey] = useState(0);
+
+  // Connect effect
+  useEffect(() => {
     if (!enabled) return;
 
     const token = getToken();
@@ -66,18 +77,19 @@ export function useAIWebSocket(
     ws.onclose = () => {
       wsRef.current = null;
       if (mounted.current) {
-        reconnectTimer.current = setTimeout(connect, 3000);
+        reconnectTimer.current = setTimeout(() => {
+          if (mounted.current && enabledRef.current) {
+            setReconnectKey((k) => k + 1);
+          }
+        }, 3000);
       }
     };
 
     ws.onerror = () => {
       ws.close();
     };
-  }, [enabled]);
 
-  useEffect(() => {
     mounted.current = true;
-    connect();
 
     return () => {
       mounted.current = false;
@@ -85,5 +97,5 @@ export function useAIWebSocket(
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [connect]);
+  }, [enabled, reconnectKey]);
 }

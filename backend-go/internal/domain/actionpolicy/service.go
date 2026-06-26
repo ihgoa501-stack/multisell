@@ -43,6 +43,11 @@ func (s *Service) DeleteRule(id int64) error {
 	return s.db.Model(&PolicyRule{}).Where("id = ?", id).Update("enabled", false).Error
 }
 
+func (s *Service) ToggleRule(id int64) error {
+	return s.db.Model(&PolicyRule{}).Where("id = ?", id).
+		Update("enabled", gorm.Expr("NOT enabled")).Error
+}
+
 func (s *Service) Evaluate(ctx *ActionContext) (*PolicyEvaluationResult, error) {
 	rules, err := s.ListRules()
 	if err != nil { return nil, err }

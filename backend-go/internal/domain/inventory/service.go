@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -207,11 +208,12 @@ func (s *Service) ListLogs(ctx context.Context, skuID int64, page, size int) ([]
 // ── Warehouse ─────────────────────────────────────────────────────
 
 // ListWarehouses returns a paginated list of warehouses.
-func (s *Service) ListWarehouses(ctx context.Context, page, size int, search string) ([]Warehouse, int64, error) {
-	var items []Warehouse
+// Warehouse is defined in the allocation module.
+func (s *Service) ListWarehouses(ctx context.Context, page, size int, search string) ([]allocation.Warehouse, int64, error) {
+	var items []allocation.Warehouse
 	var total int64
 
-	q := s.db.WithContext(ctx).Model(&Warehouse{})
+	q := s.db.WithContext(ctx).Model(&allocation.Warehouse{})
 	if search != "" {
 		q = q.Where("name ILIKE ? OR code ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
@@ -234,8 +236,8 @@ func (s *Service) ListWarehouses(ctx context.Context, page, size int, search str
 }
 
 // GetWarehouseByID retrieves a single warehouse by ID.
-func (s *Service) GetWarehouseByID(ctx context.Context, id int64) (*Warehouse, error) {
-	var w Warehouse
+func (s *Service) GetWarehouseByID(ctx context.Context, id int64) (*allocation.Warehouse, error) {
+	var w allocation.Warehouse
 	if err := s.db.WithContext(ctx).First(&w, id).Error; err != nil {
 		return nil, err
 	}
@@ -243,7 +245,7 @@ func (s *Service) GetWarehouseByID(ctx context.Context, id int64) (*Warehouse, e
 }
 
 // CreateWarehouse inserts a new warehouse.
-func (s *Service) CreateWarehouse(ctx context.Context, w *Warehouse) error {
+func (s *Service) CreateWarehouse(ctx context.Context, w *allocation.Warehouse) error {
 	w.Name = strings.TrimSpace(w.Name)
 	if w.Name == "" {
 		return gorm.ErrInvalidData
@@ -252,7 +254,7 @@ func (s *Service) CreateWarehouse(ctx context.Context, w *Warehouse) error {
 }
 
 // UpdateWarehouse saves changes to an existing warehouse.
-func (s *Service) UpdateWarehouse(ctx context.Context, w *Warehouse) error {
+func (s *Service) UpdateWarehouse(ctx context.Context, w *allocation.Warehouse) error {
 	w.Name = strings.TrimSpace(w.Name)
 	if w.Name == "" {
 		return gorm.ErrInvalidData
@@ -262,7 +264,7 @@ func (s *Service) UpdateWarehouse(ctx context.Context, w *Warehouse) error {
 
 // DeleteWarehouse removes a warehouse by ID (hard delete).
 func (s *Service) DeleteWarehouse(ctx context.Context, id int64) error {
-	return s.db.WithContext(ctx).Delete(&Warehouse{}, id).Error
+	return s.db.WithContext(ctx).Delete(&allocation.Warehouse{}, id).Error
 }
 
 // ── InventoryWarehouse ───────────────────────────────────────────
