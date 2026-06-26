@@ -48,6 +48,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
+	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
@@ -89,10 +90,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
-	// ==========================================================
-	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
-	// ==========================================================
-
+	// ===================================================	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
+	// ===================================================
 	// Create event bus (with optional outbox persistence).
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
 	busCtx, busCancel := context.WithCancel(context.Background())
@@ -115,10 +114,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI orchestrator (shared by /ai and /agents routes).
 	aiOrch := ai.NewOrchestrator(db, logger)
 
-	// ==========================================================
-	// Event Bus Subscriptions: agent triggers + pipeline chains
-	// ==========================================================
-
+	// ===================================================	// Event Bus Subscriptions: agent triggers + pipeline chains
+	// ===================================================
 	// scheduler.tick.A5 → orchestrator runs A5 stock_alert
 	bus.Subscribe("scheduler.tick.A5", func(ctx context.Context, evt eventbus.Event) error {
 		_, err := aiOrch.Run(&ai.RunAgentRequest{
@@ -284,10 +281,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return nil
 	})
 
-	// ==========================================================
-	// Schedule all agent periodic tasks
-	// ==========================================================
-
+	// ===================================================	// Schedule all agent periodic tasks
+	// ===================================================
 	sched.Register(scheduler.Task{
 		ID: "tick-g0", AgentID: "G0", DecisionPoint: "system_health",
 		Interval: time.Minute * 5, Description: "协调仲裁健康检查",
@@ -349,10 +344,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
 
-	// ==========================================================
-	// HTTP routes
-	// ==========================================================
-
+	// ===================================================	// HTTP routes
+	// ===================================================
 	// API v1 routes
 	api := r.Group("/api/v1")
 
@@ -477,6 +470,41 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI routes need the hub for realtime broadcasts.
 	ai.RegisterRoutes(protected, db, logger, hub)
 
+	// Feedback routes with full AgentOS integration
+	feedback.RegisterRoutes(api, cfg, db, logger,
+		// AI classification function
+		func(ctx context.Context, system, user string) (string, error) {
+			resp, err := aiOrch.Provider().Chat(ctx, &ai.LLMRequest{
+				System:      system,
+				Messages:    []ai.LLMMessage{{Role: "user", Content: user}},
+				Temperature: 0.1,
+				MaxTokens:   300,
+			})
+			if err != nil {
+				return "", err
+			}
+			return resp.Answer, nil
+		},
+		// WebSocket hub for real-time notifications
+		hub,
+		// UnifiedAction creator for AgentOS integration
+		func(table, sourceID, title, payload string) error {
+			aiSvc := ai.NewService(db, logger)
+			_, err := aiSvc.CreateAction(&ai.CreateActionInput{
+				SourceTable:  table,
+				SourceID:     sourceID,
+				SourceType:   "feedback",
+				ActionType:   "feedback_triage",
+				Title:        title,
+				Description:  payload,
+				AgentID:      "A8",
+				SquadID:      "governance",
+				RiskLevel:    "medium",
+				RequiresApproval: boolPtr(true),
+			})
+			return err
+		},
+	)
 	return r
 }
 
@@ -491,3 +519,5 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 	})
 	return err
 }
+
+func boolPtr(b bool) *bool { return &b }
