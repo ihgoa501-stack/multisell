@@ -29,6 +29,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/domain/metabolism"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/order"
@@ -332,10 +333,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
-	sched.Register(scheduler.Task{
-		ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
-		Interval: time.Minute * 15, Description: "Ozon 订单同步",
-	})
+		sched.Register(scheduler.Task{
+			ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
+			Interval: time.Minute * 15, Description: "Ozon 订单同步",
+		})
+		sched.Register(scheduler.Task{
+			ID: "tick-m1", AgentID: "M1", DecisionPoint: "excretion_scoring",
+			Interval: time.Hour * 1, Description: "代谢排泄评分",
+		})
 
 	// Ozon sync handler
 	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
@@ -457,6 +462,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	agentrule.RegisterRoutes(protected, db, logger)
 	evolution.RegisterRoutes(protected, db, logger)
 	entropy.RegisterRoutes(protected, db, logger)
+
+	// Metabolism M1 -- scheduled excretion scoring
+	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
+	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
+		logger.Info("metabolism: M1 tick received")
+			return m1Svc.Execute(true)
+	})
+	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
