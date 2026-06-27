@@ -12,12 +12,11 @@ import (
 
 // encryptionKey returns the AES-GCM key used for token encryption.
 // Configured via PLATFORM_TOKEN_ENCRYPTION_KEY env var (32 bytes, base64-encoded).
-// Falls back to a dev-only key when the env var is unset (NOT production-safe).
+// Fatal if unset — there is no safe default.
 func encryptionKey() ([]byte, error) {
 	keyStr := os.Getenv("PLATFORM_TOKEN_ENCRYPTION_KEY")
 	if keyStr == "" {
-		// Dev-only fallback: NOT safe for production.
-		return []byte("0123456789abcdef0123456789abcdef"), nil
+		return nil, errors.New("PLATFORM_TOKEN_ENCRYPTION_KEY is not set")
 	}
 	return base64.StdEncoding.DecodeString(keyStr)
 }

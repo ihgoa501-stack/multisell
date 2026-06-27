@@ -8,6 +8,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/agent"
 	"github.com/lingmirror/backend-go/internal/agentos"
 	"github.com/lingmirror/backend-go/internal/ai"
+	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
+	"github.com/lingmirror/backend-go/internal/aios/setup"
 	"github.com/lingmirror/backend-go/internal/auth"
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
@@ -16,6 +18,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
+	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
@@ -117,10 +120,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	sched := scheduler.New(bus, logger)
 
 	// AI orchestrator (shared by /ai and /agents routes).
-	aiOrch := ai.NewOrchestrator(db, logger)
+	aiosCfg := setup.Initialize(db, bus, logger)
+	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
+	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget)
 
 	// ToolBridge for sourcing data collection
 	_ = toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
+
+	// ==========================================================
+	// Event Bus Subscriptions: agent triggers + pipeline chains
+	// ==========================================================
+
 
 	// ==========================================================
 	// Event Bus Subscriptions: agent triggers + pipeline chains
@@ -491,6 +501,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	agentrule.RegisterRoutes(protected, db, logger)
 	evolution.RegisterRoutes(protected, db, logger)
 	entropy.RegisterRoutes(protected, db, logger)
+	cost.RegisterRoutes(protected, db, logger, cfg.LLM.DailyBudgetUSD)
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
