@@ -57,3 +57,29 @@ func (h *Handler) DryRun(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"message": "dry-run completed"})
 }
+
+// ExecuteEntities POST /api/v1/metabolism/execute
+func (h *Handler) ExecuteEntities(c *gin.Context) {
+	dryRun := c.DefaultQuery("dry_run", "true") == "true"
+	result, err := h.service.ScoreAndExcreteEntities(dryRun)
+	if err != nil {
+		h.logger.Error("metabolism: execute entities error", zap.Error(err))
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// GetExcretionResult GET /api/v1/metabolism/excretion-result
+func (h *Handler) GetExcretionResult(c *gin.Context) {
+	// This endpoint returns a summary of recent excretion activity.
+	// For now, it lists the most recent metabolism_log entries that were excretable.
+	p := common.ParsePagination(c)
+	logs, total, err := h.service.ListLogs(p.Page, p.Size)
+	if err != nil {
+		h.logger.Error("metabolism: list logs error", zap.Error(err))
+		response.InternalError(c, err)
+		return
+	}
+	response.Paginated(c, logs, total, p.Page, p.Size)
+}

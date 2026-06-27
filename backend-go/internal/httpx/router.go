@@ -502,7 +502,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
 	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
 		logger.Info("metabolism: M1 tick received")
-			return m1Svc.Execute(true)
+			_, err := m1Svc.ScoreAndExcreteEntities(false)
+			return err
 	})
 	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 

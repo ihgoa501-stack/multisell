@@ -59,3 +59,65 @@ type MetabolismLog struct {
 func (MetabolismLog) TableName() string {
 	return "metabolism_log"
 }
+
+// ---------------------------------------------------------------------------
+// Entity-based (M1) excretion types
+// ---------------------------------------------------------------------------
+
+// ExcretionTargetType identifies the type of entity being evaluated.
+type ExcretionTargetType string
+
+const (
+	ExcretionTargetListing ExcretionTargetType = "listing"
+	ExcretionTargetAgent   ExcretionTargetType = "agent"
+)
+
+// ExcretionItem represents the result of scoring a single entity.
+type ExcretionItem struct {
+	ID          int64               `json:"id"`
+	TargetType  ExcretionTargetType `json:"target_type"`
+	TargetID    int64               `json:"target_id"`
+	TargetName  string              `json:"target_name"`
+	Score       float64             `json:"score"`       // 0-100 combined score
+	StaleScore  float64             `json:"stale_score"` // staleness contribution (0-100)
+	PerfScore   float64             `json:"perf_score"`  // performance contribution (0-100)
+	Action      string              `json:"action"`      // "keep" | "flag" | "excrete"
+	Reason      string              `json:"reason"`
+	EvaluatedAt time.Time           `json:"evaluated_at"`
+}
+
+// M1ExcretionResult summarizes a full M1 execution run.
+type M1ExcretionResult struct {
+	TotalItems  int             `json:"total_items"`
+	Excreted    int             `json:"excreted"`
+	Flagged     int             `json:"flagged"`
+	DryRun      bool            `json:"dry_run"`
+	StartedAt   time.Time       `json:"started_at"`
+	CompletedAt time.Time       `json:"completed_at"`
+	Items       []ExcretionItem `json:"items"`
+}
+
+// M1Config holds thresholds and weights for the M1 entity excretion scoring.
+type M1Config struct {
+	// StaleDays is the number of days of inactivity that scores as fully stale (100).
+	StaleDays int `json:"stale_days"`
+	// FlagThreshold: items with score below this are flagged for review.
+	FlagThreshold float64 `json:"flag_threshold"`
+	// ExcreteThreshold: items with score below this are automatically excreted.
+	ExcreteThreshold float64 `json:"excrete_threshold"`
+	// StaleWeight is the weight for the staleness component (0-1).
+	StaleWeight float64 `json:"stale_weight"`
+	// PerfWeight is the weight for the performance component (0-1).
+	PerfWeight float64 `json:"perf_weight"`
+}
+
+// DefaultM1Config returns the default configuration for M1 excretion scoring.
+func DefaultM1Config() M1Config {
+	return M1Config{
+		StaleDays:         90,
+		FlagThreshold:     40,
+		ExcreteThreshold:  20,
+		StaleWeight:       0.6,
+		PerfWeight:        0.4,
+	}
+}
