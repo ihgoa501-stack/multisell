@@ -18,7 +18,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
-		"github.com/lingmirror/backend-go/internal/domain/content"
+	"github.com/lingmirror/backend-go/internal/domain/content"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
@@ -43,6 +43,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
+	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
@@ -215,6 +216,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		svc := entropy.NewService(db, logger)
 		_, err := svc.RunDefenses(0)
 		return err
+	})
 
 	// scheduler.tick.freshness -> check for stale product data
 	bus.Subscribe("scheduler.tick.freshness", func(ctx context.Context, evt eventbus.Event) error {
@@ -229,7 +231,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 			)
 		}
 		return nil
-	})
 	})
 
 	// scheduler.tick.A8 → sourcing batch scan
@@ -415,9 +416,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Auth routes (public — login, register, refresh)
 	auth.RegisterRoutes(api, db, cfg, logger)
 
-	// Webhook routes (public — platforms call these without authentication)
-	integrations.RegisterWebhookRoutes(api, bus, logger)
-
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")
 	protected.Use(middleware.Auth(cfg))
@@ -513,7 +511,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	importbatch.RegisterRoutes(protected, db, logger)
 	operationlog.RegisterRoutes(protected, db, logger)
 	integrations.RegisterRoutes(protected, db, logger)
-	integrations.RegisterWebhookAdminRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
@@ -538,8 +535,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
 		logger.Info("metabolism: M1 tick received")
-			_, err := m1Svc.ScoreAndExcreteEntities(false)
-			return err
+		err := m1Svc.Execute(false)
+		return err
 	})
 	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 

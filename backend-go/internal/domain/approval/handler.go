@@ -24,16 +24,16 @@ func NewHandler(service *Service) *Handler {
 // ListApprovals godoc
 // GET /api/v1/approval?page=1&size=20&status=pending&request_type=publish
 func (h *Handler) ListApprovals(c *gin.Context) {
-	page, size := common.ParsePagination(c)
+	p := common.ParsePagination(c)
 	status := c.Query("status")
 	requestType := c.Query("request_type")
 
-	items, total, err := h.service.List(page, size, status, requestType)
+	items, total, err := h.service.List(p.Page, p.Size, status, requestType)
 	if err != nil {
 		response.InternalError(c, err)
 		return
 	}
-	response.Paginated(c, items, total, page, size)
+	response.Paginated(c, items, total, p.Page, p.Size)
 }
 
 // GetApproval godoc
@@ -108,14 +108,14 @@ func (h *Handler) ReviewApproval(c *gin.Context) {
 // MyPending godoc
 // GET /api/v1/approval/my?page=1&size=20
 func (h *Handler) MyPending(c *gin.Context) {
-	page, size := common.ParsePagination(c)
+	p := common.ParsePagination(c)
 
-	items, total, err := h.service.MyPending(page, size)
+	items, total, err := h.service.MyPending(p.Page, p.Size)
 	if err != nil {
 		response.InternalError(c, err)
 		return
 	}
-	response.Paginated(c, items, total, page, size)
+	response.Paginated(c, items, total, p.Page, p.Size)
 }
 
 // ApprovalStats godoc
