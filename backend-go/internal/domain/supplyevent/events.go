@@ -53,3 +53,30 @@ type AfterSaleProcessed struct {
 	Type        string `json:"type"`      // "return", "exchange", "refund"
 	ProcessedAt time.Time `json:"processed_at"`
 }
+
+// AftersaleReturned is published when a customer initiates a return, before
+// the aftersales order enters inspection. The orchestrator consumes this to
+// create a reverse supply-chain flow (return -> inspect -> refund/resend).
+//
+// Consumer topic: "supplychain.aftersale.returned".
+type AftersaleReturned struct {
+	AftersaleID int64     `json:"aftersale_id"`
+	OrderID     int64     `json:"order_id"`
+	SkuID       int64     `json:"sku_id"`
+	Quantity    int       `json:"quantity"`
+	Reason      string    `json:"reason"`
+	ReturnedAt  time.Time `json:"returned_at"`
+}
+
+// StockCritical is published when A5 stock_alert detects a red (critical) stock level.
+// StockCritical is published when A5 stock_alert detects a red (critical) stock level.
+// The supply chain orchestrator consumes this to trigger A8 sourcing scanning.
+//
+// Consumer topic: "supplychain.stock.critical".
+type StockCritical struct {
+	SkuID        int64     `json:"sku_id"`
+	CurrentStock int       `json:"current_stock"`
+	SafetyStock  int       `json:"safety_stock"`
+	SellableDays float64   `json:"sellable_days"`
+	ReportedAt   time.Time `json:"reported_at"`
+}

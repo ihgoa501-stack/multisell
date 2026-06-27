@@ -54,6 +54,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/order-import', label: '订单导入' },
       { key: '/shipping', label: '物流' },
       { key: '/platform-fees', label: '平台费用' },
+      { key: '/supplychain', icon: 'ApartmentOutlined', label: '供应链追踪' },
     ],
   },
   {
