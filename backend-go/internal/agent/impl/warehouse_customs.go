@@ -11,8 +11,11 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"strings"
+
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 )
 
 // ---------- Context field names ----------
@@ -41,6 +44,15 @@ func hsCodeKey(cargo, country string) string {
 	return strings.ToLower(cargo) + "_" + strings.ToUpper(country)
 }
 
+// decisionPointToTool maps the legacy decision point names used in the
+// Decide interface to the tool names registered in the ToolRegistry.
+// This enables the ToolRegistry-based dispatch path while keeping the
+// existing public interface unchanged.
+var decisionPointToTool = map[string]string{
+	"customs_clearance": "customs_declare",
+	"warehouse_advice":  "warehouse_routing",
+}
+
 // ---------- WarehouseCustomsAgent ----------
 
 // WarehouseCustomsAgent implements G2 Warehouse & Customs logic.
@@ -48,19 +60,155 @@ func hsCodeKey(cargo, country string) string {
 // Decision points:
 //   - "customs_clearance" — HS code lookup, tariff estimate, document checklist
 //   - "warehouse_advice" — warehouse strategy recommendation
-type WarehouseCustomsAgent struct{}
+//
+// When a ToolRegistry is configured via SetToolRegistry, the agent delegates
+// through it, gaining hook-based middleware, circuit-breaker protection, and
+// LLM function-calling discoverability.
+type WarehouseCustomsAgent struct {
+	registry *toolregistry.ToolRegistry
+}
 
 // NewWarehouseCustomsAgent creates a new WarehouseCustomsAgent.
+// Call SetToolRegistry to enable ToolRegistry-based dispatch.
 func NewWarehouseCustomsAgent() *WarehouseCustomsAgent {
 	return &WarehouseCustomsAgent{}
 }
 
+// SetToolRegistry configures the ToolRegistry for this agent and registers its
+// decision points as discoverable tools. After this call, Decide() will delegate
+// through the ToolRegistry.
+func (a *WarehouseCustomsAgent) SetToolRegistry(registry *toolregistry.ToolRegistry) {
+	if registry == nil {
+		return
+	}
+	a.registry = registry
+	a.registerTools()
+}
+
+// registerTools registers the agent's decision points as tools in the ToolRegistry.
+func (a *WarehouseCustomsAgent) registerTools() {
+	if a.registry == nil {
+		return
+	}
+
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "customs_declare",
+		Version:     "1.0.0",
+		Description: "报关单校验——HS编码建议、关税估算、必要单据清单",
+		Squad:       "fulfillment",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "报关校验参数",
+			Properties: map[string]*toolregistry.Schema{
+				"product_name":        {Type: "string", Description: "商品名称"},
+				"destination_country": {Type: "string", Description: "目的国代码（如 US/EU/JP）"},
+				"cargo_type":          {Type: "string", Description: "货物类型（如 electronics/clothing/food）"},
+				"declared_value":      {Type: "number", Description: "申报价值（美元，可选）"},
+				"weight_kg":           {Type: "number", Description: "重量（千克，可选）"},
+			},
+			Required: []string{"product_name", "destination_country", "cargo_type"},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "报关结果，包含HS编码、关税估算、必要单据清单和置信度",
+		},
+		RequiredPermissions: []string{"fulfillment:read:customs"},
+		RiskLevel:           toolregistry.RiskHigh,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.clearance(input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "warehouse_routing",
+		Version:     "1.0.0",
+		Description: "仓库路由——根据销量和目的地推荐仓库发货策略（FBA/海外仓/国内直发）",
+		Squad:       "fulfillment",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "仓库路由参数",
+			Properties: map[string]*toolregistry.Schema{
+				"destination_country":  {Type: "string", Description: "目的国代码（如 US/DE/FR/IT/ES/UK）"},
+				"monthly_sales_volume": {Type: "number", Description: "月销量"},
+			},
+			Required: []string{"destination_country", "monthly_sales_volume"},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "仓库路由建议，包含发货策略和详细说明",
+		},
+		RequiredPermissions: []string{"fulfillment:read:warehouse_routing"},
+		RiskLevel:           toolregistry.RiskLow,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.warehouse(input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+}
+
 // Decide dispatches to the correct decision handler based on decisionPoint.
+//
+// When a ToolRegistry is configured, the agent delegates via registry.Call(),
+// which applies hooks, circuit breakers, and schema validation.
+// Without a ToolRegistry, the agent falls back to direct internal dispatch.
 //
 // Supported decision points:
 //   - "customs_clearance"
 //   - "warehouse_advice"
 func (a *WarehouseCustomsAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	if a.registry != nil {
+		return a.decideViaRegistry(decisionPoint, ctx)
+	}
+	return a.decideDirect(decisionPoint, ctx)
+}
+
+// decideViaRegistry delegates the decision through the ToolRegistry's hook chain,
+// mapping the decision point to its corresponding registered tool name.
+func (a *WarehouseCustomsAgent) decideViaRegistry(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	toolName, ok := decisionPointToTool[decisionPoint]
+	if !ok {
+		return a.decideDirect(decisionPoint, ctx)
+	}
+
+	result, callErr := a.registry.Call(context.Background(), toolName, ctx)
+	if callErr != nil {
+		// Tool not found or hook rejected; fall through to the direct dispatch table.
+		return a.decideDirect(decisionPoint, ctx)
+	}
+
+	// Unwrap the tool output envelope.
+	env, ok := result.(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{
+			"status":         "unknown",
+			"decision_point": decisionPoint,
+			"error":          "unexpected tool output format",
+		}, 0.0, "low", nil
+	}
+
+	if out, ok := env["output"].(map[string]interface{}); ok {
+		output = out
+	}
+	if conf, ok := env["confidence"].(float64); ok {
+		confidence = conf
+	}
+	if risk, ok := env["risk_level"].(string); ok {
+		riskLevel = risk
+	}
+	return output, confidence, riskLevel, nil
+}
+
+// decideDirect is the legacy direct-dispatch path (no ToolRegistry configured).
+func (a *WarehouseCustomsAgent) decideDirect(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "customs_clearance":
 		return a.clearance(ctx)

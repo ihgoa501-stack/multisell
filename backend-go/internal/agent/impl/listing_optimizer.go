@@ -10,22 +10,11 @@
 package impl
 
 import (
+	"context"
 	"fmt"
-	"sort"
-	"strings"
+
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 )
-
-// ---------- Required context field names ----------
-
-var listingOptimizerRequiredFields = []string{"product_name", "marketplace"}
-
-// ---------- Helper types ----------
-
-// keywordItem represents a keyword with its search volume.
-type keywordItem struct {
-	Word   string
-	Volume float64
-}
 
 // ---------- ListingOptimizerAgent ----------
 
@@ -53,7 +42,23 @@ func NewListingOptimizerAgent() *ListingOptimizerAgent {
 func (a *ListingOptimizerAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "listing_optimize":
-		return a.optimize(ctx)
+		result, callErr := toolregistry.DefaultRegistry.Call(context.Background(), "listing.optimize", ctx)
+		if callErr != nil {
+			return map[string]interface{}{
+				"status":         "error",
+				"decision_point": decisionPoint,
+				"error":          callErr.Error(),
+			}, 0.0, "low", nil
+		}
+		output, ok := result.(map[string]interface{})
+		if !ok {
+			return map[string]interface{}{
+				"status":         "error",
+				"decision_point": decisionPoint,
+				"error":          "unexpected tool result type",
+			}, 0.0, "low", nil
+		}
+		return output, 0.0, "low", nil
 	case "keyword_research":
 		return a.researchKeywords(ctx)
 	default:
@@ -63,114 +68,6 @@ func (a *ListingOptimizerAgent) Decide(decisionPoint string, ctx map[string]inte
 			"error":          fmt.Sprintf("unknown decision point: %s", decisionPoint),
 		}, 0.0, "low", nil
 	}
-}
-
-// ---------- Decision point: listing_optimize ----------
-
-// optimize generates listing optimization suggestions based on context:
-//
-// Required context fields: product_name, marketplace
-// Optional context fields: features, current_bullets, keywords
-//
-// Each keyword in the keywords list should be a map with "word" (string)
-// and "volume" (float64) keys.
-//
-// Returns:
-//   - title: optimized title with top-3 keywords prepended, capped at 200 chars
-//   - bullets: up to 5 feature+keyword pairs
-//   - search_terms: unique top-20 keywords not already in product name
-//   - keyword_count: total number of input keywords
-//   - suggestions: actionable improvement notes
-func (a *ListingOptimizerAgent) optimize(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	// Validate required fields.
-	if miss := missingFields(ctx, listingOptimizerRequiredFields); len(miss) > 0 {
-		return insufficientData("listing_optimize", miss), 0.0, "low", nil
-	}
-
-	name := safeString(ctx["product_name"])
-	mp := safeString(ctx["marketplace"], "US")
-	features := parseStringList(ctx["features"])
-	bulletsInput := parseStringList(ctx["current_bullets"])
-	keywords := parseKeywords(ctx["keywords"])
-
-	// Sort keywords by search volume descending, mirroring Python:
-	//   sorted(k, key=lambda kw: _sf(kw.get("volume", 0)), reverse=True)
-	sortedKW := sortKeywordsByVolume(keywords)
-
-	// Title: Top 3 high-volume keywords + " - " + product_name, capped at 200 chars.
-	topKW := topKeywords(sortedKW, 3)
-	title := strings.Join(topKW, " ") + " - " + name
-	if len(title) > 200 {
-		title = title[:200]
-	}
-
-	// Bullets: Up to 5 features, each appended with a ranked keyword.
-	var bullets []string
-	for i, f := range features {
-		if i >= 5 {
-			break
-		}
-		kw := ""
-		if i < len(sortedKW) {
-			kw = sortedKW[i].Word
-		}
-		if kw != "" {
-			bullets = append(bullets, fmt.Sprintf("%s — %s", f, kw))
-		} else {
-			bullets = append(bullets, f)
-		}
-	}
-
-	// Search terms: Unique keywords, excluding those appearing in product name.
-	nameLower := strings.ToLower(name)
-	seenWord := make(map[string]struct{})
-	var searchTerms []string
-	for _, kw := range sortedKW {
-		if len(searchTerms) >= 20 {
-			break
-		}
-		w := strings.TrimSpace(kw.Word)
-		if w == "" {
-			continue
-		}
-		if _, seen := seenWord[w]; seen {
-			continue
-		}
-		seenWord[w] = struct{}{}
-		if strings.Contains(nameLower, strings.ToLower(w)) {
-			continue
-		}
-		searchTerms = append(searchTerms, w)
-	}
-
-	// Suggestions.
-	var suggestions []string
-	if len(features) == 0 {
-		suggestions = append(suggestions, "请补充产品卖点 features 以获得更精准的优化")
-	}
-	if len(bulletsInput) < 3 {
-		suggestions = append(suggestions, "当前五点描述不足，建议补充至5条")
-	}
-
-	// Fall back to input bullets if no generated bullets.
-	bulletsOutput := bullets
-	if len(bulletsOutput) == 0 {
-		bulletsOutput = bulletsInput
-		if len(bulletsOutput) > 5 {
-			bulletsOutput = bulletsOutput[:5]
-		}
-	}
-
-	output = map[string]interface{}{
-		"title":         title,
-		"bullets":       bulletsOutput,
-		"search_terms":  searchTerms,
-		"marketplace":   mp,
-		"keyword_count": len(sortedKW),
-		"suggestions":   suggestions,
-	}
-
-	return output, 0.85, "low", nil
 }
 
 // ---------- Decision point: keyword_research ----------
@@ -206,34 +103,7 @@ func (a *ListingOptimizerAgent) researchKeywords(ctx map[string]interface{}) (ou
 	return output, 0.80, "low", nil
 }
 
-// ---------- Helper: keyword parsing and sorting ----------
-
-// parseKeywords extracts keyword items from an interface{} value.
-//
-// Input is expected to be []interface{} where each element is
-// map[string]interface{} with at least "word" (string) and optionally
-// "volume" (float64) keys (from JSON unmarshalling).
-func parseKeywords(v interface{}) []keywordItem {
-	if v == nil {
-		return nil
-	}
-	list, ok := v.([]interface{})
-	if !ok {
-		return nil
-	}
-	out := make([]keywordItem, 0, len(list))
-	for _, item := range list {
-		m, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		out = append(out, keywordItem{
-			Word:   safeString(m["word"]),
-			Volume: safeFloat(m["volume"]),
-		})
-	}
-	return out
-}
+// ---------- Helper ----------
 
 // parseStringList extracts a []string from an interface{} value.
 //
@@ -253,29 +123,6 @@ func parseStringList(v interface{}) []string {
 		if ok {
 			out = append(out, s)
 		}
-	}
-	return out
-}
-
-// sortKeywordsByVolume returns a new slice sorted by Volume descending.
-// Does not modify the input slice (mirrors Python sorted()).
-func sortKeywordsByVolume(items []keywordItem) []keywordItem {
-	sorted := make([]keywordItem, len(items))
-	copy(sorted, items)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].Volume > sorted[j].Volume
-	})
-	return sorted
-}
-
-// topKeywords returns up to n keyword word strings from the front of items.
-func topKeywords(items []keywordItem, n int) []string {
-	if n > len(items) {
-		n = len(items)
-	}
-	out := make([]string, n)
-	for i := 0; i < n; i++ {
-		out[i] = items[i].Word
 	}
 	return out
 }

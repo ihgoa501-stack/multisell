@@ -6,14 +6,26 @@
 package impl
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// agentTrust holds trust score data for a single agent.
+type agentTrust struct {
+	AgentID    string
+	TrustScore float64
+	Autonomy   string
+	TotalAct   int
+	RejectedCt int
+}
 
 // CoordinatorAgent implements G0 Coordinator / Supervisor logic.
 type CoordinatorAgent struct {
@@ -55,45 +67,55 @@ func (a *CoordinatorAgent) systemHealth(ctx map[string]interface{}) (output map[
 	var warnings []string
 	var criticals []string
 
-	// Aggregate agent stats from DB if available.
-	if a.db != nil {
-		// Count pending actions older than 1 hour (SLA breach).
-		var stalePending int64
+	ctxGo := context.Background()
+
+	// Aggregate agent stats via tool registry or DB fallback.
+	var stalePending int64
+	var recentFails int64
+	var criticalPending int64
+
+	// 1. Count stale pending actions (SLA breach > 1h).
+	if ok, _ := a.invokeToolInt64(ctxGo, "coordinator.action.stale_pending_count",
+		map[string]interface{}{"since_hours": 1}, &stalePending); !ok && a.db != nil {
 		a.db.Raw(
 			`SELECT COUNT(*) FROM unified_action
 			 WHERE status IN ('suggested','pending')
 			 AND proposed_at < ?`,
 			time.Now().Add(-1*time.Hour),
 		).Scan(&stalePending)
-		if stalePending > 0 {
-			warnings = append(warnings, fmt.Sprintf("%d pending actions exceed 1h SLA", stalePending))
-		}
+	}
+	if stalePending > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d pending actions exceed 1h SLA", stalePending))
+	}
 
-		// Count recent failures in the last 24h.
-		var recentFails int64
+	// 2. Count recent failures in the last 24h.
+	if ok, _ := a.invokeToolInt64(ctxGo, "coordinator.trace.failure_count_24h",
+		map[string]interface{}{"since_hours": 24}, &recentFails); !ok && a.db != nil {
 		a.db.Raw(
 			`SELECT COUNT(*) FROM ai_trace
 			 WHERE status = 'failed'
 			 AND started_at > ?`,
 			time.Now().Add(-24*time.Hour),
 		).Scan(&recentFails)
-		if recentFails > 5 {
-			warnings = append(warnings, fmt.Sprintf("%d trace failures in 24h", recentFails))
-		}
-		if recentFails > 20 {
-			criticals = append(criticals, fmt.Sprintf("%d trace failures in 24h — critical", recentFails))
-		}
+	}
+	if recentFails > 5 {
+		warnings = append(warnings, fmt.Sprintf("%d trace failures in 24h", recentFails))
+	}
+	if recentFails > 20 {
+		criticals = append(criticals, fmt.Sprintf("%d trace failures in 24h — critical", recentFails))
+	}
 
-		// Count actions with critical risk pending.
-		var criticalPending int64
+	// 3. Count critical-risk pending actions.
+	if ok, _ := a.invokeToolInt64(ctxGo, "coordinator.action.critical_pending_count",
+		map[string]interface{}{"risk_level": "critical"}, &criticalPending); !ok && a.db != nil {
 		a.db.Raw(
 			`SELECT COUNT(*) FROM unified_action
 			 WHERE status IN ('suggested','pending')
 			 AND risk_level = 'critical'`,
 		).Scan(&criticalPending)
-		if criticalPending > 0 {
-			criticals = append(criticals, fmt.Sprintf("%d critical-risk actions pending", criticalPending))
-		}
+	}
+	if criticalPending > 0 {
+		criticals = append(criticals, fmt.Sprintf("%d critical-risk actions pending", criticalPending))
 	}
 
 	if len(criticals) > 0 {
@@ -163,14 +185,14 @@ func (a *CoordinatorAgent) anomalyEscalation(ctx map[string]interface{}) (output
 	}
 
 	output = map[string]interface{}{
-		"status":           "completed",
-		"decision_point":   "anomaly_escalation",
-		"anomaly_type":     anomalyType,
-		"severity":         severity,
-		"details":          details,
-		"escalate_to":      escalateTo,
+		"status":            "completed",
+		"decision_point":    "anomaly_escalation",
+		"anomaly_type":      anomalyType,
+		"severity":          severity,
+		"details":           details,
+		"escalate_to":       escalateTo,
 		"suggested_actions": suggestedActions,
-		"confidence":       confidence,
+		"confidence":        confidence,
 	}
 	return output, confidence, riskLevel, nil
 }
@@ -196,10 +218,10 @@ func (a *CoordinatorAgent) crossSquadCoordinate(ctx map[string]interface{}) (out
 	// Default resolution if no conflicts specified.
 	if len(resolutions) == 0 {
 		resolutions = append(resolutions, map[string]interface{}{
-			"conflict":   "general_coordination",
-			"priority":   "balanced",
-			"action":     "maintain_current_allocation",
-			"reasoning":  "无明确冲突，保持当前资源分配",
+			"conflict":  "general_coordination",
+			"priority":  "balanced",
+			"action":    "maintain_current_allocation",
+			"reasoning": "无明确冲突，保持当前资源分配",
 		})
 	}
 
@@ -246,56 +268,55 @@ func resolveConflict(conflict map[string]interface{}, idx int) map[string]interf
 func (a *CoordinatorAgent) agentAudit(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	var auditResults []map[string]interface{}
 
-	if a.db != nil {
-		// Query trust scores for all agents.
-		type agentTrust struct {
-			AgentID    string
-			TrustScore float64
-			Autonomy   string
-			TotalAct   int
-			RejectedCt int
-		}
-		var scores []agentTrust
-		a.db.Raw(
-			`SELECT agent_id, trust_score, autonomy_level as autonomy,
-			        total_actions as total_act, rejected_actions as rejected_ct
-			 FROM agent_trust_score
-			 ORDER BY trust_score ASC`,
-		).Scan(&scores)
+	ctxGo := context.Background()
 
-		for _, s := range scores {
-			status := "healthy"
-			var issues []string
-
-			if s.TrustScore < 0.3 {
-				status = "at_risk"
-				issues = append(issues, "信任分低于0.3，建议降级或停用")
-			} else if s.TrustScore < 0.5 {
-				status = "warning"
-				issues = append(issues, "信任分偏低，需要关注")
-			}
-
-			if s.TotalAct > 0 {
-				rejectRate := float64(s.RejectedCt) / float64(s.TotalAct)
-				if rejectRate > 0.3 {
-					issues = append(issues, fmt.Sprintf("拒绝率%.0f%%偏高", rejectRate*100))
-					if status == "healthy" {
-						status = "warning"
-					}
-				}
-			}
-
-			auditResults = append(auditResults, map[string]interface{}{
-				"agent_id":    s.AgentID,
-				"trust_score": math.Round(s.TrustScore*100) / 100,
-				"autonomy":    s.Autonomy,
-				"status":      status,
-				"issues":      issues,
-			})
+	// Try to fetch trust scores via tool registry first.
+	var scores []agentTrust
+	if ok, _ := a.invokeToolJSON(ctxGo, "coordinator.trust_score.list",
+		map[string]interface{}{}, &scores); !ok || len(scores) == 0 {
+		// Fall back to direct DB query.
+		if a.db != nil {
+			a.db.Raw(
+				`SELECT agent_id, trust_score, autonomy_level as autonomy,
+				        total_actions as total_act, rejected_actions as rejected_ct
+				 FROM agent_trust_score
+				 ORDER BY trust_score ASC`,
+			).Scan(&scores)
 		}
 	}
 
-	// If no DB, return a placeholder audit.
+	for _, s := range scores {
+		status := "healthy"
+		var issues []string
+
+		if s.TrustScore < 0.3 {
+			status = "at_risk"
+			issues = append(issues, "信任分低于0.3，建议降级或停用")
+		} else if s.TrustScore < 0.5 {
+			status = "warning"
+			issues = append(issues, "信任分偏低，需要关注")
+		}
+
+		if s.TotalAct > 0 {
+			rejectRate := float64(s.RejectedCt) / float64(s.TotalAct)
+			if rejectRate > 0.3 {
+				issues = append(issues, fmt.Sprintf("拒绝率%.0f%%偏高", rejectRate*100))
+				if status == "healthy" {
+					status = "warning"
+				}
+			}
+		}
+
+		auditResults = append(auditResults, map[string]interface{}{
+			"agent_id":    s.AgentID,
+			"trust_score": math.Round(s.TrustScore*100) / 100,
+			"autonomy":    s.Autonomy,
+			"status":      status,
+			"issues":      issues,
+		})
+	}
+
+	// If no results, return a placeholder audit.
 	if len(auditResults) == 0 {
 		auditResults = append(auditResults, map[string]interface{}{
 			"agent_id":    "all",
@@ -317,6 +338,68 @@ func (a *CoordinatorAgent) agentAudit(ctx map[string]interface{}) (output map[st
 		"confidence":     confidence,
 	}
 	return output, confidence, riskLevel, nil
+}
+
+// ----- tool registry helpers -----
+
+// invokeToolInt64 calls a tool via DefaultRegistry and unmarshals the result
+// into an int64 pointer. Returns (true, nil) on success, false on error/miss.
+func (a *CoordinatorAgent) invokeToolInt64(ctx context.Context, name string, input map[string]interface{}, out *int64) (bool, error) {
+	if toolregistry.DefaultRegistry == nil {
+		return false, nil
+	}
+	result, err := toolregistry.DefaultRegistry.Invoke(name, input)
+	if err != nil {
+		return false, err
+	}
+	switch v := result.(type) {
+	case float64:
+		*out = int64(v)
+		return true, nil
+	case int64:
+		*out = v
+		return true, nil
+	case int:
+		*out = int64(v)
+		return true, nil
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return false, err
+		}
+		*out = n
+		return true, nil
+	}
+	return false, fmt.Errorf("invokeToolInt64: unexpected type %T for tool %s", result, name)
+}
+
+// invokeToolJSON calls a tool via DefaultRegistry and unmarshals the result
+// into the provided target using json.Unmarshal. Returns (true, nil) on
+// success, false on error/miss.
+func (a *CoordinatorAgent) invokeToolJSON(ctx context.Context, name string, input map[string]interface{}, target interface{}) (bool, error) {
+	if toolregistry.DefaultRegistry == nil {
+		return false, nil
+	}
+	result, err := toolregistry.DefaultRegistry.Invoke(name, input)
+	if err != nil {
+		return false, err
+	}
+	// If the result is already the right type, assign directly.
+	if t, ok := result.([]byte); ok {
+		if err := json.Unmarshal(t, target); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	// Try marshalling and unmarshalling through JSON for safe conversion.
+	data, err := json.Marshal(result)
+	if err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // stringFromCtx safely extracts a string value from context map.

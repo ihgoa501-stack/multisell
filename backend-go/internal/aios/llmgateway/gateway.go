@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/ai"
 	"go.uber.org/zap"
 )
 
@@ -114,11 +115,12 @@ type RoutingEvent struct {
 // Gateway is the central LLM Gateway that orchestrates model routing, caching,
 // LLM invocation, and observability for every agent request.
 type Gateway struct {
-	router   Router
-	cache    Cache
-	fallback FallbackChain
-	provider Provider
-	logger   *zap.Logger
+	router      Router
+	cache       Cache
+	fallback    FallbackChain
+	provider    Provider
+	costTracker *CostTracker
+	logger      *zap.Logger
 }
 
 // GatewayOption allows functional configuration of a Gateway.
@@ -137,6 +139,11 @@ func WithCache(c Cache) GatewayOption {
 // WithFallback sets a custom fallback chain.
 func WithFallback(f FallbackChain) GatewayOption {
 	return func(g *Gateway) { g.fallback = f }
+}
+
+// WithCostTracker sets a cost tracker on the gateway.
+func WithCostTracker(ct *CostTracker) GatewayOption {
+	return func(g *Gateway) { g.costTracker = ct }
 }
 
 // NewGateway creates a new Gateway with the given provider, logger, and options.
@@ -225,6 +232,11 @@ func (g *Gateway) Chat(ctx context.Context, req *Request) (*Response, error) {
 		zap.Bool("cached", cacheHit),
 		zap.Bool("fallback_used", fallbackUsed),
 	)
+
+	// Record cost if a tracker is configured.
+	if g.costTracker != nil {
+		g.costTracker.Record(resp.ModelUsed, resp.TokensIn, resp.TokensOut)
+	}
 
 	return resp, nil
 }
@@ -332,4 +344,46 @@ func (m *mockProvider) Chat(_ context.Context, _ *Request) (*Response, error) {
 		return nil, m.err
 	}
 	return m.response, nil
+}
+
+// ---------------------------------------------------------------------------
+// AI Provider adapter (wraps ai.LLMProvider into Gateway Provider)
+// ---------------------------------------------------------------------------
+
+// NewAIProvider wraps an existing ai.LLMProvider to satisfy the Gateway's
+// Provider interface. Model, Temperature, and MaxTokens are left at defaults
+// from the underlying provider's configuration.
+func NewAIProvider(inner ai.LLMProvider) *aiProviderAdapter {
+	return &aiProviderAdapter{inner: inner}
+}
+
+// aiProviderAdapter translates between the gateway's type system and the
+// existing ai package types (LLMRequest / LLMResponse).
+type aiProviderAdapter struct {
+	inner ai.LLMProvider
+}
+
+func (a *aiProviderAdapter) Name() string { return a.inner.Name() }
+
+func (a *aiProviderAdapter) Chat(ctx context.Context, req *Request) (*Response, error) {
+	aiReq := &ai.LLMRequest{
+		System:   req.System,
+		Messages: make([]ai.LLMMessage, len(req.Messages)),
+	}
+	for i, m := range req.Messages {
+		aiReq.Messages[i] = ai.LLMMessage{Role: m.Role, Content: m.Content}
+	}
+
+	aiResp, err := a.inner.Chat(ctx, aiReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Response{
+		Content:   aiResp.Answer,
+		ModelUsed: aiResp.Model,
+		TokensIn:  aiResp.TokensIn,
+		TokensOut: aiResp.TokensOut,
+		Latency:   time.Duration(aiResp.LatencyMs) * time.Millisecond,
+	}, nil
 }
