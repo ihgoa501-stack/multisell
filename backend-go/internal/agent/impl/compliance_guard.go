@@ -11,8 +11,11 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"strings"
+
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 )
 
 // ---------- Context field names ----------
@@ -130,7 +133,25 @@ func NewComplianceGuardAgent() *ComplianceGuardAgent {
 // Supported decision points:
 //   - "compliance_check"
 //   - "certification_lookup"
+//
+// Delegates to toolregistry.DefaultRegistry.Call() first. Falls back to
+// built-in logic when no tool is registered for the decision point.
 func (a *ComplianceGuardAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	// Try toolregistry first — tools registered via init() functions may
+	// provide a more up-to-date or dynamic implementation.
+	result, regErr := toolregistry.DefaultRegistry.Call(context.Background(), decisionPoint, ctx)
+	if regErr == nil {
+		if m, ok := result.(map[string]interface{}); ok {
+			conf, _ := m["confidence"].(float64)
+			r, _ := m["risk_level"].(string)
+			if r == "" {
+				r = "low"
+			}
+			return m, conf, r, nil
+		}
+	}
+
+	// Fallback to built-in logic.
 	switch decisionPoint {
 	case "compliance_check":
 		return a.check(ctx)

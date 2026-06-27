@@ -8,10 +8,12 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
 	"github.com/lingmirror/backend-go/internal/domain/finance"
 	"github.com/lingmirror/backend-go/internal/domain/order"
@@ -44,18 +46,142 @@ type AccountInfo struct {
 // It handles settlement report import, order-vs-settlement reconciliation,
 // discrepancy resolution, and platform cash flow monitoring.
 type SettlementReconAgent struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db       *gorm.DB
+	logger   *zap.Logger
+	registry *toolregistry.ToolRegistry
 }
 
 // NewSettlementReconAgent creates a new SettlementReconAgent.
 // The db handle is used for querying settlement records, orders, ledger entries,
 // platform accounts, and exchange rates.
 func NewSettlementReconAgent(db *gorm.DB, logger *zap.Logger) *SettlementReconAgent {
-	return &SettlementReconAgent{db: db, logger: logger}
+	a := &SettlementReconAgent{
+		db:       db,
+		logger:   logger,
+		registry: toolregistry.NewToolRegistry(logger),
+	}
+	a.registerTools()
+	return a
+}
+
+// agentResult wraps the tuple returned by agent decision handlers for transport
+// through the tool registry's Call method (which returns interface{}).
+type agentResult struct {
+	Output     map[string]interface{}
+	Confidence float64
+	RiskLevel  string
+}
+
+// registerTools registers each decision point as a tool in the tool registry.
+func (a *SettlementReconAgent) registerTools() {
+	tools := []toolregistry.Tool{
+		{
+			Name:        "settlement_import",
+			Version:     "1.0.0",
+			Description: "Import a settlement report for a platform",
+			Parameters: &toolregistry.Schema{
+				Type:        "object",
+				Description: "Settlement import parameters",
+				Properties: map[string]*toolregistry.Schema{
+					"platform": {Type: "string", Description: "Platform name (e.g. shopify, amazon, etsy)"},
+					"filename": {Type: "string", Description: "Report filename for duplicate checking"},
+					"raw_data": {Type: "array", Description: "Inline data rows to simulate import"},
+				},
+				Required: []string{"platform"},
+			},
+			Returns: &toolregistry.Schema{
+				Type:        "object",
+				Description: "Import result with records count, warnings, and recommendations",
+			},
+			RiskLevel:  toolregistry.RiskMedium,
+			MaxDuration: 30 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				output, confidence, riskLevel, err := a.importSettlement(input)
+				if err != nil {
+					return nil, err
+				}
+				return &agentResult{Output: output, Confidence: confidence, RiskLevel: riskLevel}, nil
+			},
+		},
+		{
+			Name:        "reconciliation_check",
+			Version:     "1.0.0",
+			Description: "Cross-reference settlement items against orders and ledger entries",
+			Parameters: &toolregistry.Schema{
+				Type:        "object",
+				Description: "Reconciliation parameters",
+				Properties: map[string]*toolregistry.Schema{
+					"period_start": {Type: "string", Description: "Start date (YYYY-MM-DD)"},
+					"period_end":   {Type: "string", Description: "End date (YYYY-MM-DD)"},
+				},
+			},
+			Returns: &toolregistry.Schema{
+				Type:        "object",
+				Description: "Reconciliation result with match rate, discrepancy list, and recommendations",
+			},
+			RiskLevel:  toolregistry.RiskLow,
+			MaxDuration: 60 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				output, confidence, riskLevel, err := a.reconciliationCheck(input)
+				if err != nil {
+					return nil, err
+				}
+				return &agentResult{Output: output, Confidence: confidence, RiskLevel: riskLevel}, nil
+			},
+		},
+		{
+			Name:        "discrepancy_resolve",
+			Version:     "1.0.0",
+			Description: "Suggest a resolution action for a given discrepancy",
+			Parameters: &toolregistry.Schema{
+				Type:        "object",
+				Description: "Discrepancy resolution parameters",
+				Properties: map[string]*toolregistry.Schema{
+					"discrepancy_type": {Type: "string", Description: "One of amount_mismatch, missing_order, extra_settlement"},
+					"item_id":          {Type: "integer", Description: "Specific settlement_item ID to resolve"},
+				},
+			},
+			Returns: &toolregistry.Schema{
+				Type:        "object",
+				Description: "Resolution action, reasoning, and confidence",
+			},
+			RiskLevel:  toolregistry.RiskMedium,
+			MaxDuration: 15 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				output, confidence, riskLevel, err := a.discrepancyResolve(input)
+				if err != nil {
+					return nil, err
+				}
+				return &agentResult{Output: output, Confidence: confidence, RiskLevel: riskLevel}, nil
+			},
+		},
+		{
+			Name:        "cash_flow_watch",
+			Version:     "1.0.0",
+			Description: "Monitor platform account balances and forecast cash flow",
+			Returns: &toolregistry.Schema{
+				Type:        "object",
+				Description: "Cash flow overview with pending amounts, forecast, and currency risk assessment",
+			},
+			RiskLevel:  toolregistry.RiskLow,
+			MaxDuration: 30 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				output, confidence, riskLevel, err := a.cashFlowWatch(input)
+				if err != nil {
+					return nil, err
+				}
+				return &agentResult{Output: output, Confidence: confidence, RiskLevel: riskLevel}, nil
+			},
+		},
+	}
+
+	for i := range tools {
+		a.registry.Register(&tools[i])
+	}
 }
 
 // Decide dispatches to the correct decision handler based on decisionPoint.
+// It looks up the tool in the registry and delegates execution.
 //
 // Supported decision points:
 //   - "settlement_import"     -- import a settlement report for a platform
@@ -65,22 +191,16 @@ func NewSettlementReconAgent(db *gorm.DB, logger *zap.Logger) *SettlementReconAg
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
 func (a *SettlementReconAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	switch decisionPoint {
-	case "settlement_import":
-		return a.importSettlement(ctx)
-	case "reconciliation_check":
-		return a.reconciliationCheck(ctx)
-	case "discrepancy_resolve":
-		return a.discrepancyResolve(ctx)
-	case "cash_flow_watch":
-		return a.cashFlowWatch(ctx)
-	default:
+	result, err := a.registry.Call(context.Background(), decisionPoint, ctx)
+	if err != nil {
 		return map[string]interface{}{
 			"status":         "unknown",
 			"decision_point": decisionPoint,
 			"error":          fmt.Sprintf("unknown decision point: %s", decisionPoint),
 		}, 0.0, "low", nil
 	}
+	war := result.(*agentResult)
+	return war.Output, war.Confidence, war.RiskLevel, nil
 }
 
 // ====================== Decision Point: settlement_import ======================

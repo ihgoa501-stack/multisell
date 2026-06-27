@@ -2,7 +2,7 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-06-24
+更新时间：2026-06-26
 
 ## 当前结论
 
@@ -53,11 +53,11 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 - 商品基础：`category`、`brand`、`sku`、`price`、`inventory`、`supplier`
 - 平台与发布：`platform`、`integrations`、`listing`、`listingtask`
-- 订单履约：`order`、`orderimport`、`shipping`、`platformfee`、`aftersales`
+- 订单履约：`order`、`orderimport`、`shipping`、`logistics`、`platformfee`、`aftersales`
 - 财务经营：`finance`、`settlement`、`decision`、`allocation`、`report`、`exchangerate`
 - 运营支撑：`dashboard`、`search`、`notification`、`exceptions`、`operationlog`、`importbatch`
 - AI / AgentOS：`ai`、`agent`、`agentos`、`agentrule`、`entropy`、`evolution`、`trustscore`、`actionpolicy`
-- 选品与生图：`sourcing1688`、`imagegen`
+- 选品与生图：`sourcing`、`sourcing1688`、`imagegen`
 - 实时能力：WebSocket `/ws`
 
 ### 前端
@@ -67,20 +67,21 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - Dashboard / AI / AgentOS / Action Center
 - 商品、SKU、分类、品牌、库存、供应商
 - 平台、平台集成、刊登、刊登任务、刊登任务详情
-- 订单、订单详情、订单导入、售后
+- 订单、订单详情、订单导入、售后、代谢评分
 - 物流、平台费用、结算、结算详情、财务、经营决策、成本分摊
+- 选品分析、1688 采购
 - 异常、通知、生图、画布、批量导入、操作日志、搜索、报表
 - 设置、LLM 配置、RBAC、审批策略
 
-侧边栏菜单目前有 41 个入口，已确认都能匹配到 `frontend-next/src/app` 下的实际页面。
+侧边栏菜单目前有 47 个入口，已确认都能匹配到 `frontend-next/src/app` 下的实际页面。
 
 ## 验证状态
 
-2026-06-25 复核结果（本次并行修复后）：
+2026-06-26 复核结果（July gap-fill P1 追加后）：
 
 | 检查 | 结果 | 说明 |
 |---|---:|---|
-| `cd backend-go && go test ./...` | 通过 | 34 个 Go 测试包，含新增 6 个 domain 模块测试（158 tests） |
+| `cd backend-go && go test ./...` | 通过 | 38 个 Go 测试包，新增 logistics、sourcing、toolbridge 等模块测试 |
 | `cd backend-go && go vet ./...` | 通过 | 无 vet 输出 |
 | `cd frontend-next && npm test` | 通过 | 12 个 test files，77 tests |
 | `cd frontend-next && npm run build` | 通过 | Sentry auth token/source map 上传 warning 不阻塞 build |
@@ -140,3 +141,49 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - `frontend-next/README.md`
 
 历史文档中出现 `backend/app/*`、`frontend/src/views/*`、`/api/*` 时，默认按旧栈参考处理，不能直接作为当前实现事实。
+
+## 本次新增内容（2026-06-26，July gap-fill P1）
+
+### 新领域模块
+
+| 模块 | 位置 | 说明 |
+|------|------|------|
+| **sourcing** | `internal/domain/sourcing/` | A8 选品盈利分析引擎：利润公式计算、Eval 评估、Handler/Service/Routes 已定义（`POST /api/v1/sourcing/fetch`、`GET /api/v1/sourcing/recommendations`），⚠️ 尚未在 `router.go` 接线 |
+| **logistics** | `internal/domain/logistics/` | 全新运费费率引擎（独立于 shipping 包），支持四种定价模式（first_additional / tiered / fixed / per_kg），YAML 配置加载 |
+| **toolbridge** | `internal/platform/toolbridge/` | 插件驱动的工具执行桥接，允许 Agent 通过已注册插件执行外部工具 |
+| **echo_ext** | `internal/realtime/extension_handler.go` | WebSocket 扩展处理器，支持实时连接扩展 |
+
+### 新增 Agent（A8–A11）
+
+`internal/agent/impl/agents.go` 中已注册 15 个 Agent（A1-A11 + G0-G3）：
+
+| ID | 名称 | Squad | 决策点 |
+|----|------|-------|--------|
+| A8 | 选品盈利分析 | insight | sourcing_recommend |
+| A9 | 批量运维 | ops | batch_price_update, batch_inventory_sync, batch_listing_update, import_validation |
+| A10 | 物流运费引擎 | ops | carrier_compare, shipping_bill_audit, carrier_performance, logistics_route_opt |
+| A11 | 售后管理 | ops | return_analysis, refund_decision, dispute_manage, aftersales_report |
+
+### 新增前端页面
+
+- `/sourcing` — AI 选品面板，对接 `POST /api/v1/sourcing/fetch`
+- `/metabolism` — M1 代谢评分引擎 UI
+
+### Chrome 扩展
+
+- `chrome-extension/` — 全新的浏览器扩展，支持内容脚本注入、侧边栏面板、实时 WebSocket 通信。协议定义在 `shared/protocol.ts`。
+
+### 其他改进
+
+- aftersales 同步：新增 `sync.go` 实现平台售后单同步
+- allocation 扩展：细化成本分摊维度
+- importbatch 增强：新增 YAML/JSON parser 和异步 processor
+- inventory 扩展：库存字段扩展和预警规则
+- AGENT_CAPABILITIES.md 新增
+
+### 文档清理（本次）
+
+- `AGENTS.md` — 新增 ToolBridge 和 logistics/sourcing 模块
+- `docs/AGENT_CAPABILITIES.md` — 新增 Agent 花名册 A8-A11、sourcing API、新前端页面、ToolBridge、Chrome 扩展
+- `docs/FRONTEND_PAGES_AND_ROUTING.md` — 新增 `/sourcing`、`/metabolism` 路由
+- `docs/PROJECT_STATUS.md` — 本次更新

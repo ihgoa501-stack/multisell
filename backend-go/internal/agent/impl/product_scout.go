@@ -10,8 +10,11 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"sort"
+
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 )
 
 // ---------- Context field names ----------
@@ -21,12 +24,12 @@ var productScoutRequiredFields = []string{"category", "marketplace"}
 // ---------- candidateItem represents a product candidate with scoring data ----------
 
 type candidateItem struct {
-	Name            string
-	SearchVolume    float64
-	TrendGrowth     float64
-	ReviewCount     float64
-	Price           float64
-	Cost            float64
+	Name         string
+	SearchVolume float64
+	TrendGrowth  float64
+	ReviewCount  float64
+	Price        float64
+	Cost         float64
 }
 
 // ---------- ProductScoutAgent ----------
@@ -36,19 +39,161 @@ type candidateItem struct {
 // Decision points:
 //   - "product_scout" — scores and ranks product candidates by multi-dimension formula
 //   - "market_analysis" — returns a market analysis summary
-type ProductScoutAgent struct{}
+//
+// When a ToolRegistry is configured via SetToolRegistry, the agent delegates
+// through it, gaining hook-based middleware, circuit-breaker protection, and
+// LLM function-calling discoverability.
+type ProductScoutAgent struct {
+	registry *toolregistry.ToolRegistry
+}
 
 // NewProductScoutAgent creates a new ProductScoutAgent.
+// Call SetToolRegistry to enable ToolRegistry-based dispatch.
 func NewProductScoutAgent() *ProductScoutAgent {
 	return &ProductScoutAgent{}
 }
 
+// SetToolRegistry configures the ToolRegistry for this agent and registers its
+// decision points as discoverable tools. After this call, Decide() will delegate
+// through the ToolRegistry.
+func (a *ProductScoutAgent) SetToolRegistry(registry *toolregistry.ToolRegistry) {
+	if registry == nil {
+		return
+	}
+	a.registry = registry
+	a.registerTools()
+}
+
+// registerTools registers the agent's decision points as tools in the ToolRegistry.
+func (a *ProductScoutAgent) registerTools() {
+	if a.registry == nil {
+		return
+	}
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "product_scout",
+		Version:     "1.0.0",
+		Description: "选品打分——多维度（需求/竞争/利润/趋势）对候选商品打分排序，返回 Top-20 结果",
+		Squad:       "growth",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "选品打分参数",
+			Properties: map[string]*toolregistry.Schema{
+				"category":    {Type: "string", Description: "商品类目"},
+				"marketplace": {Type: "string", Description: "目标市场（如 US/JP/EU）"},
+				"candidates": {
+					Type:        "array",
+					Description: "候选商品列表",
+					Items: &toolregistry.Schema{
+						Type: "object",
+						Properties: map[string]*toolregistry.Schema{
+							"name":          {Type: "string", Description: "商品名称"},
+							"price":         {Type: "number", Description: "售价"},
+							"cost":          {Type: "number", Description: "成本"},
+							"search_volume": {Type: "number", Description: "搜索量"},
+							"trend_growth":  {Type: "number", Description: "趋势增长率(%)"},
+							"review_count":  {Type: "number", Description: "竞品评论数"},
+						},
+					},
+				},
+			},
+			Required: []string{"category", "marketplace", "candidates"},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "选品排序结果，包含 Top-20 商品及其多维度评分和风险标记",
+		},
+		RequiredPermissions: []string{"growth:read:product_scout"},
+		RiskLevel:           toolregistry.RiskLow,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.scout(input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "market_analysis",
+		Version:     "1.0.0",
+		Description: "市场分析——快速评估品类市场概况（市场规模、趋势方向、置信度）",
+		Squad:       "growth",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "市场分析参数",
+			Properties: map[string]*toolregistry.Schema{
+				"category":    {Type: "string", Description: "商品类目"},
+				"marketplace": {Type: "string", Description: "目标市场（如 US/JP/EU，默认 US）"},
+				"trend":       {Type: "string", Description: "趋势方向（可选，如 stable/rising/declining）"},
+			},
+			Required: []string{"category"},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "市场分析概要，包含类目、市场规模评估、趋势方向和置信度",
+		},
+		RequiredPermissions: []string{"growth:read:market_analysis"},
+		RiskLevel:           toolregistry.RiskLow,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.analyzeMarket(input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+}
+
 // Decide dispatches to the correct decision handler based on decisionPoint.
+//
+// When a ToolRegistry is configured, the agent delegates via registry.Call(),
+// which applies hooks, circuit breakers, and schema validation.
+// Without a ToolRegistry, the agent falls back to direct internal dispatch.
 //
 // Supported decision points:
 //   - "product_scout"
 //   - "market_analysis"
 func (a *ProductScoutAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	if a.registry != nil {
+		return a.decideViaRegistry(decisionPoint, ctx)
+	}
+	return a.decideDirect(decisionPoint, ctx)
+}
+
+// decideViaRegistry delegates the decision through the ToolRegistry's hook chain.
+func (a *ProductScoutAgent) decideViaRegistry(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	result, callErr := a.registry.Call(context.Background(), decisionPoint, ctx)
+	if callErr != nil {
+		// Tool not found or hook rejected; fall through to the direct dispatch table.
+		return a.decideDirect(decisionPoint, ctx)
+	}
+
+	// Unwrap the tool output envelope.
+	env, ok := result.(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{
+			"status":         "unknown",
+			"decision_point": decisionPoint,
+			"error":          "unexpected tool output format",
+		}, 0.0, "low", nil
+	}
+
+	if out, ok := env["output"].(map[string]interface{}); ok {
+		output = out
+	}
+	if conf, ok := env["confidence"].(float64); ok {
+		confidence = conf
+	}
+	if risk, ok := env["risk_level"].(string); ok {
+		riskLevel = risk
+	}
+	return output, confidence, riskLevel, nil
+}
+
+// decideDirect is the legacy direct-dispatch path (no ToolRegistry configured).
+func (a *ProductScoutAgent) decideDirect(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "product_scout":
 		return a.scout(ctx)
@@ -99,13 +244,13 @@ func (a *ProductScoutAgent) scout(ctx map[string]interface{}) (output map[string
 	}
 
 	type scoredCandidate struct {
-		Name             string  `json:"name"`
-		Score            float64 `json:"score"`
-		DemandScore      float64 `json:"demand_score"`
-		CompetitionScore float64 `json:"competition_score"`
-		MarginScore      float64 `json:"margin_score"`
-		TrendScore       float64 `json:"trend_score"`
-		EstimatedMargin  float64 `json:"estimated_margin"`
+		Name             string   `json:"name"`
+		Score            float64  `json:"score"`
+		DemandScore      float64  `json:"demand_score"`
+		CompetitionScore float64  `json:"competition_score"`
+		MarginScore      float64  `json:"margin_score"`
+		TrendScore       float64  `json:"trend_score"`
+		EstimatedMargin  float64  `json:"estimated_margin"`
 		RiskFlags        []string `json:"risk_flags"`
 	}
 

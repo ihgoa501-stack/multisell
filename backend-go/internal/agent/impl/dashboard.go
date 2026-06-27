@@ -4,19 +4,22 @@
 // backend/app/agent/agents/dashboard.py (Python FastAPI codebase).
 //
 // Design docs: docs/AI_AGENT_FEASIBLE_DEVELOPMENT_SPEC.md section 7.1.5
-//   - Dashboard overview — returns a message directing to the dedicated API endpoint
+//   - Dashboard overview — calls the dashboard.overview tool via ToolRegistry
 //   - G1's dashboard data is provided via dedicated API endpoint (not via Decide)
-//   - This agent is a placeholder for future extensibility
+//   - This agent delegates logic to the registered dashboard tool
 package impl
 
 import (
+	"context"
 	"fmt"
+
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 )
 
 // DashboardAgent implements G1 Dashboard logic.
 //
 // Decision points:
-//   - "dashboard_overview" — returns a message directing to the API endpoint
+//   - "dashboard_overview" — calls the dashboard.overview tool via ToolRegistry
 type DashboardAgent struct{}
 
 // NewDashboardAgent creates a new DashboardAgent.
@@ -27,12 +30,24 @@ func NewDashboardAgent() *DashboardAgent {
 // Decide dispatches to the correct decision handler based on decisionPoint.
 //
 // Supported decision points:
-//   - "dashboard_overview"
+//   - "dashboard_overview" — delegates to toolregistry.DefaultRegistry.Call()
 func (a *DashboardAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	if decisionPoint == "dashboard_overview" {
-		output = map[string]interface{}{
-			"message":    "请使用 /api/agents/dashboard 端点获取驾驶舱数据",
-			"confidence": 0.0,
+		result, callErr := toolregistry.DefaultRegistry.Call(context.Background(), "dashboard.overview", ctx)
+		if callErr != nil {
+			return map[string]interface{}{
+				"status":         "error",
+				"decision_point": decisionPoint,
+				"error":          callErr.Error(),
+			}, 0.0, "low", nil
+		}
+		output, ok := result.(map[string]interface{})
+		if !ok {
+			return map[string]interface{}{
+				"status":         "error",
+				"decision_point": decisionPoint,
+				"error":          "unexpected tool result type",
+			}, 0.0, "low", nil
 		}
 		return output, 0.0, "low", nil
 	}

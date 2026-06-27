@@ -13,8 +13,12 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"math"
+
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry/tools"
 )
 
 // ---------- Required and optional context field names ----------
@@ -27,28 +31,77 @@ var (
 // ---------- AdAdviceAgent ----------
 
 // AdAdviceAgent implements A3 Ad Advice logic.
+// It registers its tools on the ToolRegistry and dispatches decisions through it.
 //
 // Decision points:
 //   - "acos_analysis" — analyzes ACoS metrics, detects anomalies, provides bid suggestions
 //   - "ad_optimization" — suggests optimization actions (negative keywords, bid, budget)
-type AdAdviceAgent struct{}
+type AdAdviceAgent struct {
+	registry *toolregistry.ToolRegistry
+}
 
-// NewAdAdviceAgent creates a new AdAdviceAgent.
+// NewAdAdviceAgent creates a new AdAdviceAgent without a ToolRegistry.
+// Use NewAdAdviceAgentWithRegistry to create one that dispatches through
+// the ToolRegistry. This no-arg constructor is kept for backward compatibility
+// with existing callers (agents.go, tests) — it falls back to direct execution.
 func NewAdAdviceAgent() *AdAdviceAgent {
 	return &AdAdviceAgent{}
 }
 
+// NewAdAdviceAgentWithRegistry creates a new AdAdviceAgent that registers its
+// tools on the provided ToolRegistry and dispatches decisions through it.
+func NewAdAdviceAgentWithRegistry(registry *toolregistry.ToolRegistry) *AdAdviceAgent {
+	a := &AdAdviceAgent{registry: registry}
+	a.registerTools()
+	return a
+}
+
+// registerTools registers the A3 domain tools on the ToolRegistry with
+// handlers that wrap the existing business logic.
+func (a *AdAdviceAgent) registerTools() {
+	specs := tools.AdAdviceTools()
+	for i := range specs {
+		spec := &specs[i]
+		switch spec.Name {
+		case "acos.analyze":
+			spec.Handler = a.handleAcosAnalyze
+		case "ad.optimize":
+			spec.Handler = a.handleAdOptimize
+		}
+		a.registry.Register(spec)
+	}
+}
+
+// handleAcosAnalyze is the ToolRegistry handler for "acos.analyze".
+// It delegates to the existing analyzeAcos method and converts the
+// multi-return output into a single interface{} response.
+func (a *AdAdviceAgent) handleAcosAnalyze(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+	output, _, _, _ := a.analyzeAcos(input)
+	return output, nil
+}
+
+// handleAdOptimize is the ToolRegistry handler for "ad.optimize".
+// It delegates to the existing suggestAdOptimization method.
+func (a *AdAdviceAgent) handleAdOptimize(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+	output, _, _, _ := a.suggestAdOptimization(input)
+	return output, nil
+}
+
 // Decide dispatches to the correct decision handler based on decisionPoint.
 //
+// When a ToolRegistry is available, the decision is routed through it by
+// mapping decision points to tool names and calling through the registry.
+// When no registry is configured, the agent falls back to direct method calls.
+//
 // Supported decision points:
-//   - "acos_analysis"
-//   - "ad_optimization"
+//   - "acos_analysis" → tool "acos.analyze"
+//   - "ad_optimization" → tool "ad.optimize"
 func (a *AdAdviceAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "acos_analysis":
-		return a.analyzeAcos(ctx)
+		return a.dispatchOrDirect("acos.analyze", decisionPoint, ctx, a.analyzeAcos)
 	case "ad_optimization":
-		return a.suggestAdOptimization(ctx)
+		return a.dispatchOrDirect("ad.optimize", decisionPoint, ctx, a.suggestAdOptimization)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",
@@ -56,6 +109,43 @@ func (a *AdAdviceAgent) Decide(decisionPoint string, ctx map[string]interface{})
 			"error":          fmt.Sprintf("unknown decision point: %s", decisionPoint),
 		}, 0.0, "low", nil
 	}
+}
+
+// dispatchOrDirect tries the ToolRegistry first; if unavailable, falls back to
+// the provided direct handler.
+func (a *AdAdviceAgent) dispatchOrDirect(
+	toolName string,
+	_ string, // decisionPoint — reserved for future use
+	ctx map[string]interface{},
+	direct func(map[string]interface{}) (map[string]interface{}, float64, string, error),
+) (map[string]interface{}, float64, string, error) {
+	if a.registry != nil {
+		result, callErr := a.registry.Call(context.Background(), toolName, ctx)
+		if callErr == nil {
+			if m, ok := result.(map[string]interface{}); ok {
+				// Extract confidence from the output map if present.
+				conf := extractConfidence(m)
+				return m, conf, "low", nil
+			}
+		}
+		// Registry call failed — fall back to direct below.
+		// Logging would go here if we had a logger on the agent.
+	}
+	return direct(ctx)
+}
+
+// extractConfidence looks for a "confidence" field in the output map.
+// Returns 0.85 as default if not found.
+func extractConfidence(m map[string]interface{}) float64 {
+	if v, ok := m["confidence"]; ok {
+		switch c := v.(type) {
+		case float64:
+			return c
+		case int:
+			return float64(c)
+		}
+	}
+	return 0.85
 }
 
 // ---------- Decision point: acos_analysis ----------

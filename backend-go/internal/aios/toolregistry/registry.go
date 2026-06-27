@@ -8,6 +8,38 @@ import (
 	"go.uber.org/zap"
 )
 
+// DefaultRegistry is the package-level default ToolRegistry singleton.
+// It is set by NewToolRegistry on first creation (first-instance-wins) and
+// may optionally be set by callers that need to override the default before
+// any agent implementations reference it.
+var DefaultRegistry *ToolRegistry
+
+func init() {
+	DefaultRegistry = NewToolRegistry(zap.NewNop())
+}
+
+// Invoke is a package-level convenience function that delegates to
+// DefaultRegistry.Invoke. It returns an error if DefaultRegistry is nil.
+// Invoke calls a tool by name and returns the result as a map.
+func Invoke(name string, input map[string]interface{}) (map[string]interface{}, error) {
+	if DefaultRegistry == nil {
+		return nil, fmt.Errorf("toolregistry: DefaultRegistry is nil")
+	}
+	res, err := DefaultRegistry.Call(context.Background(), name, input)
+	if err != nil {
+		return nil, err
+	}
+	out, _ := res.(map[string]interface{})
+	return out, nil
+}
+
+func InvokeCtx(ctx context.Context, name string, input map[string]interface{}) (interface{}, error) {
+	if DefaultRegistry == nil {
+		return nil, fmt.Errorf("toolregistry: DefaultRegistry is nil")
+	}
+	return DefaultRegistry.Call(ctx, name, input)
+}
+
 // ToolRegistry is the central registry for all agent-callable tools.
 // It provides thread-safe registration, lookup, listing, and invocation
 // of tools with hook chain support and circuit breaker integration.
@@ -23,12 +55,18 @@ type ToolRegistry struct {
 }
 
 // NewToolRegistry creates a new ToolRegistry with the given logger.
+// If DefaultRegistry is nil, the newly created registry is assigned to it
+// (first-instance-wins — subsequent calls do not overwrite).
 func NewToolRegistry(logger *zap.Logger) *ToolRegistry {
-	return &ToolRegistry{
+	reg := &ToolRegistry{
 		tools:  make(map[string]*Tool),
 		hooks:  make([]ToolHook, 0),
 		logger: logger,
 	}
+	if DefaultRegistry == nil {
+		DefaultRegistry = reg
+	}
+	return reg
 }
 
 // Register adds a tool to the registry. It panics if a tool with the same
@@ -162,6 +200,17 @@ func (r *ToolRegistry) snapshotHooks() []ToolHook {
 	hooks := make([]ToolHook, len(r.hooks))
 	copy(hooks, r.hooks)
 	return hooks
+}
+
+// Invoke calls a tool by name with the provided input, delegating to Call.
+// It is a convenience alias that accepts a nil-safe context and input.
+// Invoke calls a tool by name, accepts optional context as last arg.
+func (r *ToolRegistry) Invoke(name string, input map[string]interface{}, ctx ...context.Context) (interface{}, error) {
+	c := context.Background()
+	if len(ctx) > 0 {
+		c = ctx[0]
+	}
+	return r.Call(c, name, input)
 }
 
 // ToolCount returns the number of registered tools.

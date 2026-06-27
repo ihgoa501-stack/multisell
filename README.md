@@ -28,6 +28,9 @@
 | 平台管理 | 配置Ozon/Shopee等多平台API密钥 |
 | 发布管理 | 一键发布商品到多平台、发布状态追踪 |
 | AI增强 | AI生成商品标题/描述/SEO关键词 |
+| AI选品 | A8 Agent 利润分析引擎，1688 选品采集与评估 |
+| 物流费率 | A10 物流费率引擎，四类定价模式，YAML 费率表配置 |
+| 工具桥接 | Agent 插件执行桥接，WebSocket → Chrome 扩展采集 |
 | 全局搜索 | 搜索商品/SKU/供应商（快捷键 `/`） |
 | 仪表盘 | 数据总览、平台发布统计、近期动态 |
 | 操作日志 | 系统操作审计记录 |
@@ -105,6 +108,10 @@ npm run lint
 | [开发指南](docs/DEVELOPMENT_GUIDE.md) | 本地启动、测试、模块约定、交接提示词 |
 | [权限与审计](docs/PERMISSIONS_AND_AUDIT.md) | 鉴权规则、权限码、审计日志接入方式 |
 | [路线图](docs/ROADMAP.md) | 后续阶段优先级和每阶段待办 |
+| [AI 选品使用指南](docs/sourcing-guide.md) | A8 选品引擎使用说明与 API 参考 |
+| [物流费率引擎指南](docs/logistics-guide.md) | 物流费率引擎配置与调用 |
+| [ToolBridge 指南](docs/toolbridge-guide.md) | Agent 工具桥接插件开发 |
+| [Chrome 扩展指南](docs/chrome-extension-guide.md) | 选品助手扩展安装与协议 |
 | [剩余开发总文档](docs/DEVELOPMENT_BACKLOG_AND_SPEC.md) | 还需要开发的全部事项、优先级、模块规格和验收标准 |
 | [Active Stack Policy](docs/ACTIVE_STACK_POLICY.md) | 新旧版本边界、旧栈冻结规则、默认开发入口 |
 | [新技术栈重构计划](docs/superpowers/plans/2026-06-23-lingmirror-new-tech-refactor.md) | Go + Next + AI 页面完整重构计划 |

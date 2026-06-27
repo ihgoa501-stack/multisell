@@ -12,10 +12,12 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
 
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
@@ -34,20 +36,205 @@ var (
 )
 
 // InventoryAlertAgent implements A5 Inventory Alert logic.
+//
+// Decision points:
+//   - "stock_alert" — three-tier stock status with replenish suggestion
+//   - "replenishment_plan" — suggested reorder quantity calculation
+//   - "logistics_choice" — logistics channel recommendation by urgency
+//
+// When a ToolRegistry is configured via SetToolRegistry, the agent delegates
+// through it, gaining hook-based middleware, circuit-breaker protection, and
+// LLM function-calling discoverability.
 type InventoryAlertAgent struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db       *gorm.DB
+	logger   *zap.Logger
+	registry *toolregistry.ToolRegistry
 }
 
 // NewInventoryAlertAgent creates a new InventoryAlertAgent.
+// Call SetToolRegistry to enable ToolRegistry-based dispatch.
 func NewInventoryAlertAgent(db *gorm.DB, logger *zap.Logger) *InventoryAlertAgent {
 	return &InventoryAlertAgent{db: db, logger: logger}
 }
 
+// SetToolRegistry configures the ToolRegistry for this agent and registers its
+// decision points as discoverable tools. After this call, Decide() will delegate
+// through the ToolRegistry.
+func (a *InventoryAlertAgent) SetToolRegistry(registry *toolregistry.ToolRegistry) {
+	if registry == nil {
+		return
+	}
+	a.registry = registry
+	a.registerTools()
+}
+
+// registerTools registers the agent's decision points as tools in the ToolRegistry.
+func (a *InventoryAlertAgent) registerTools() {
+	if a.registry == nil {
+		return
+	}
+
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "stock_alert",
+		Version:     "1.0.0",
+		Description: "库存预警——基于可售天数与提前期/安全库存对比，产出红/黄/绿三级库存状态及补货建议",
+		Squad:       "logistics",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "库存预警参数",
+			Properties: map[string]*toolregistry.Schema{
+				"sku_code":          {Type: "string", Description: "SKU编码"},
+				"sellable_stock":    {Type: "number", Description: "可售库存数量"},
+				"locked_stock":      {Type: "number", Description: "锁定库存数量"},
+				"in_transit_stock":  {Type: "number", Description: "在途库存数量"},
+				"sales_7d":          {Type: "number", Description: "近7天销量"},
+				"sales_14d":         {Type: "number", Description: "近14天销量"},
+				"sales_30d":         {Type: "number", Description: "近30天销量"},
+				"lead_time_days":    {Type: "number", Description: "采购提前期（天）"},
+				"safety_stock_days": {Type: "number", Description: "安全库存天数"},
+				"moq":               {Type: "number", Description: "最小起订量"},
+			},
+			Required: []string{"sku_code", "sellable_stock", "sales_7d", "lead_time_days", "safety_stock_days"},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "库存预警结果，包含状态（red/yellow/green）、可售天数、风险原因和补货建议",
+		},
+		RequiredPermissions: []string{"inventory:read:alert"},
+		RiskLevel:           toolregistry.RiskLow,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.checkStockAlert("stock_alert", input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "replenishment_plan",
+		Version:     "1.0.0",
+		Description: "补货计划——根据销量、提前期和MOQ计算建议补货量，标注紧急程度",
+		Squad:       "logistics",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "补货计划参数",
+			Properties: map[string]*toolregistry.Schema{
+				"sku_code":          {Type: "string", Description: "SKU编码"},
+				"sellable_stock":    {Type: "number", Description: "可售库存数量"},
+				"in_transit_stock":  {Type: "number", Description: "在途库存数量"},
+				"sales_7d":          {Type: "number", Description: "近7天销量"},
+				"sales_14d":         {Type: "number", Description: "近14天销量"},
+				"sales_30d":         {Type: "number", Description: "近30天销量"},
+				"lead_time_days":    {Type: "number", Description: "采购提前期（天）"},
+				"safety_stock_days": {Type: "number", Description: "安全库存天数"},
+				"moq":               {Type: "number", Description: "最小起订量"},
+			},
+			Required: []string{"sku_code", "sellable_stock", "sales_30d", "lead_time_days", "moq"},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "补货计算结果，包含目标库存、建议补货量和紧急程度",
+		},
+		RequiredPermissions: []string{"inventory:write:replenish"},
+		RiskLevel:           toolregistry.RiskMedium,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.calculateReplenishment("replenishment_plan", input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "logistics_choice",
+		Version:     "1.0.0",
+		Description: "物流渠道推荐——根据库存紧急程度（红/黄/绿）和目的地推荐最优物流方案",
+		Squad:       "logistics",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "物流推荐参数",
+			Properties: map[string]*toolregistry.Schema{
+				"stock_status":   {Type: "string", Description: "库存状态（red/yellow/green）"},
+				"sellable_days":  {Type: "number", Description: "可售天数"},
+				"lead_time_days": {Type: "number", Description: "采购提前期（天）"},
+				"cargo_value":    {Type: "number", Description: "货值"},
+				"weight_kg":      {Type: "number", Description: "重量（kg）"},
+				"destination":    {Type: "string", Description: "目的地（US/EU，默认US）"},
+				"is_peak_season": {Type: "boolean", Description: "是否为旺季"},
+			},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "物流推荐结果，包含推荐方式、备选方案列表和置信度",
+		},
+		RequiredPermissions: []string{"logistics:read:route"},
+		RiskLevel:           toolregistry.RiskLow,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.recommendLogistics("logistics_choice", input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+}
+
 // Decide dispatches to the correct decision handler based on decisionPoint.
+//
+// When a ToolRegistry is configured, the agent delegates via registry.Call(),
+// which applies hooks, circuit breakers, and schema validation.
+// Without a ToolRegistry, the agent falls back to direct internal dispatch.
+//
+// Supported decision points:
+//   - "stock_alert"
+//   - "replenishment_plan"
+//   - "logistics_choice"
 func (a *InventoryAlertAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	a.fillSkuFromDB(ctx)
 
+	if a.registry != nil {
+		return a.decideViaRegistry(decisionPoint, ctx)
+	}
+	return a.decideDirect(decisionPoint, ctx)
+}
+
+// decideViaRegistry delegates the decision through the ToolRegistry's hook chain.
+func (a *InventoryAlertAgent) decideViaRegistry(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	result, callErr := a.registry.Call(context.Background(), decisionPoint, ctx)
+	if callErr != nil {
+		// Tool not found or hook rejected; fall through to direct dispatch.
+		return a.decideDirect(decisionPoint, ctx)
+	}
+
+	// Unwrap the tool output envelope.
+	env, ok := result.(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{
+			"status":         "unknown",
+			"decision_point": decisionPoint,
+			"error":          "unexpected tool output format",
+		}, 0.0, "low", nil
+	}
+
+	if out, ok := env["output"].(map[string]interface{}); ok {
+		output = out
+	}
+	if conf, ok := env["confidence"].(float64); ok {
+		confidence = conf
+	}
+	if risk, ok := env["risk_level"].(string); ok {
+		riskLevel = risk
+	}
+	return output, confidence, riskLevel, nil
+}
+
+// decideDirect is the legacy direct-dispatch path (no ToolRegistry configured).
+func (a *InventoryAlertAgent) decideDirect(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "stock_alert":
 		return a.checkStockAlert(decisionPoint, ctx)
