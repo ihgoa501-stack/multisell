@@ -1,7 +1,10 @@
 // Package impl provides concrete agent implementations.
 //
-// ProfitWatchAgent implements A6 Profit Watch business logic ported from
-// backend/app/agent/agents/profit_watch.py (Python FastAPI codebase).
+// ProfitWatchAgent implements A6 Profit Watch. The agent enriches input
+// context from the database (SKU lookup, platform fee rules) and then
+// delegates the pure-computation business logic (fee breakdown, margin
+// analysis, cost-optimization) to tools registered on
+// toolregistry.DefaultRegistry.
 //
 // Design docs: docs/AI_AGENT_FEASIBLE_DEVELOPMENT_SPEC.md section 7.1.4
 //   - Input: SKU code, selling price, cost price, platform, country, fees
@@ -14,6 +17,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
@@ -253,30 +257,10 @@ func (a *ProfitWatchAgent) checkProfit(decisionPoint string, ctx map[string]inte
 		return insufficientData(decisionPoint, missing), 0.0, "low", nil
 	}
 
-	skuCode := safeString(ctx["sku_code"])
-	sellingPrice := safeFloat(ctx["selling_price"])
-	costPrice := safeFloat(ctx["cost_price"])
-	platform := safeString(ctx["platform"], "unknown")
-	country := safeString(ctx["country"], "unknown")
-	minMarginThreshold := safeFloat(ctx["min_margin_threshold"], 15.0)
+		sellingPrice := safeFloat(ctx["selling_price"])
 
-	// ── Fee calculation ──
-
-	// Platform commission.
-	platformFeeRate := safeFloat(ctx["platform_fee_rate"], 0)
-	platformFee := safeFloat(ctx["platform_fee"], 0)
-	if platformFee == 0 && platformFeeRate > 0 {
-		platformFee = sellingPrice * platformFeeRate / 100
-	}
-	platformFeeR := round2(platformFee)
-
-	// Fixed fee.
-	fixedFee := round2(safeFloat(ctx["fixed_fee"], 0))
-
-	// Shipping fee.
-	shippingFee := round2(safeFloat(ctx["shipping_fee"], 0))
-
-	// Discount amortization.
+	// Compute discount_rate from discounts array if present (tools cannot
+	// handle the complex discounts structure; we flatten it here).
 	discountRate := 0.0
 	if discounts, ok := ctx["discounts"]; ok {
 		if discountList, ok := discounts.([]interface{}); ok && len(discountList) > 0 {
@@ -297,124 +281,71 @@ func (a *ProfitWatchAgent) checkProfit(decisionPoint string, ctx map[string]inte
 			if discountRate > 100 {
 				discountRate = 100
 			}
+			ctx["discount_rate"] = discountRate
 		}
-	} else if _, ok := ctx["discount_rate"]; ok {
-		discountRate = safeFloat(ctx["discount_rate"], 0)
-	}
-	discountRateR := round2(discountRate)
-	discountAmount := sellingPrice * discountRate / 100
-	discountAmountR := round2(discountAmount)
-
-	// Ad cost per unit.
-	adCost := round2(safeFloat(ctx["ad_cost_per_unit"], 0))
-
-	// Refund cost (estimated by refund rate applied to selling price).
-	refundRate := safeFloat(ctx["refund_rate"], 0)
-	refundCost := round2(sellingPrice * refundRate / 100)
-
-	// Total fees.
-	totalFees := platformFeeR + fixedFee + shippingFee + discountAmountR + adCost + refundCost
-	feesTotal := round2(totalFees)
-
-	// ── Profit calculation ──
-	effectiveRevenue := sellingPrice - discountAmount
-	profitPerUnit := round2(effectiveRevenue - costPrice - feesTotal)
-	grossMargin := 0.0
-	if effectiveRevenue > 0 {
-		grossMargin = round2(profitPerUnit / effectiveRevenue * 100)
 	}
 
-	// ── Risk assessment ──
-	isLoss := profitPerUnit < 0
-	belowThreshold := grossMargin < minMarginThreshold
-
-	anomalyReason := ""
-	optimizationSuggestions := []string{}
-
-	if isLoss {
-		anomalyReason = fmt.Sprintf(
-			"单件亏损 ¥%.2f，营收 ¥%.2f 不足以覆盖成本 ¥%.2f + 费用 ¥%.2f",
-			absf(profitPerUnit), effectiveRevenue, costPrice, feesTotal,
-		)
-		optimizationSuggestions = []string{
-			"考虑提高售价",
-			"降低采购成本",
-			"减少折扣力度",
-			"优化物流渠道降低成本",
-		}
-		confidence = 0.95
-		riskLevel = "high"
-	} else if belowThreshold {
-		anomalyReason = fmt.Sprintf(
-			"毛利率 %.2f%% 低于阈值 %.2f%%，建议优化成本结构",
-			grossMargin, minMarginThreshold,
-		)
-		optimizationSuggestions = []string{
-			"适当提高售价",
-			"检查平台佣金是否有优化空间",
-			"评估广告成本是否可控",
-		}
-		confidence = 0.88
-		riskLevel = "medium"
-	} else {
-		anomalyReason = "毛利率正常，在安全范围内"
-		optimizationSuggestions = []string{"维持当前策略，定期监控"}
-		confidence = 0.85
-		riskLevel = "low"
+	// Build the tool input from the enriched context.
+	toolInput := map[string]interface{}{
+		"sku_code":             ctx["sku_code"],
+		"selling_price":        ctx["selling_price"],
+		"cost_price":           ctx["cost_price"],
+		"platform":             ctx["platform"],
+		"country":              ctx["country"],
+		"platform_fee_rate":    ctx["platform_fee_rate"],
+		"platform_fee":         ctx["platform_fee"],
+		"fixed_fee":            ctx["fixed_fee"],
+		"shipping_fee":         ctx["shipping_fee"],
+		"discount_rate":        ctx["discount_rate"],
+		"ad_cost_per_unit":     ctx["ad_cost_per_unit"],
+		"refund_rate":          ctx["refund_rate"],
+		"min_margin_threshold": ctx["min_margin_threshold"],
 	}
 
-	// ── Fee-ratio warnings ──
-	feeWarnings := []string{}
-	costRatioThreshold := 0.5
-	if effectiveRevenue > 0 && feesTotal > effectiveRevenue*costRatioThreshold {
-		feeWarnings = append(feeWarnings,
-			fmt.Sprintf("总费用占比过高(%.0f%%)", feesTotal/effectiveRevenue*100))
-	}
-	if effectiveRevenue > 0 && platformFee > effectiveRevenue*0.2 {
-		feeWarnings = append(feeWarnings,
-			fmt.Sprintf("平台佣金(%.2f)占比较高", platformFee))
-	}
-	if effectiveRevenue > 0 && shippingFee > effectiveRevenue*0.25 {
-		feeWarnings = append(feeWarnings,
-			fmt.Sprintf("物流费用(%.2f)占比较高", shippingFee))
+	// Delegate computation to the tool.
+	rawResult, invokeErr := toolregistry.DefaultRegistry.Invoke("profit_watch.check_profit", toolInput)
+	if invokeErr != nil {
+		a.logger.Error("profit_watch.check_profit tool invocation failed", zap.Error(invokeErr))
+		return map[string]interface{}{
+			"status":         "error",
+			"decision_point": decisionPoint,
+			"error":          invokeErr.Error(),
+		}, 0.0, "low", invokeErr
 	}
 
-	// ── Status determination ──
-	status := "allow"
-	if isLoss {
-		status = "block"
-	} else if belowThreshold {
-		status = "warn"
+	result, ok := rawResult.(map[string]interface{})
+	if !ok {
+		a.logger.Error("profit_watch.check_profit tool returned unexpected type")
+		return map[string]interface{}{
+			"status":         "error",
+			"decision_point": decisionPoint,
+			"error":          "tool returned unexpected type",
+		}, 0.0, "low", fmt.Errorf("unexpected tool result type: %T", rawResult)
 	}
 
-	feeBreakdown := map[string]interface{}{
-		"platform_fee": platformFeeR,
-		"fixed_fee":    fixedFee,
-		"shipping_fee": shippingFee,
-		"discount":     discountAmountR,
-		"ad_cost":      adCost,
-		"refund_cost":  refundCost,
-		"total":        feesTotal,
-	}
+	// Extract confidence and risk level from the tool result.
+	confidence = safeFloat(result["confidence"], 0.85)
+	riskLevel = safeString(result["risk_level"], "low")
 
+	// Build the full output in the standard envelope.
 	output = map[string]interface{}{
-		"profit_check_status":      status,
-		"sku_code":                 skuCode,
-		"platform":                 platform,
-		"country":                  country,
-		"selling_price":            sellingPrice,
-		"cost_price":               costPrice,
-		"effective_revenue":        round2(effectiveRevenue),
-		"discount_rate":            discountRateR,
-		"profit_per_unit":          profitPerUnit,
-		"gross_margin":             grossMargin,
-		"min_margin_threshold":     minMarginThreshold,
-		"is_loss":                  isLoss,
-		"below_threshold":          belowThreshold,
-		"fee_breakdown":            feeBreakdown,
-		"fee_warnings":             feeWarnings,
-		"anomaly_reason":           anomalyReason,
-		"optimization_suggestions": optimizationSuggestions,
+		"profit_check_status":      result["profit_check_status"],
+		"sku_code":                 result["sku_code"],
+		"platform":                 result["platform"],
+		"country":                  result["country"],
+		"selling_price":            result["selling_price"],
+		"cost_price":               result["cost_price"],
+		"effective_revenue":        result["effective_revenue"],
+		"discount_rate":            result["discount_rate"],
+		"profit_per_unit":          result["profit_per_unit"],
+		"gross_margin":             result["gross_margin"],
+		"min_margin_threshold":     result["min_margin_threshold"],
+		"is_loss":                  result["is_loss"],
+		"below_threshold":          result["below_threshold"],
+		"fee_breakdown":            result["fee_breakdown"],
+		"fee_warnings":             result["fee_warnings"],
+		"anomaly_reason":           result["anomaly_reason"],
+		"optimization_suggestions": result["optimization_suggestions"],
 		"confidence":               confidence,
 		"decision_point":           decisionPoint,
 	}
@@ -425,8 +356,8 @@ func (a *ProfitWatchAgent) checkProfit(decisionPoint string, ctx map[string]inte
 // ---------- Decision point: costOptimization ----------
 
 // suggestCostOptimization analyzes the cost structure for a SKU and generates
-// price-increase and/or cost-reduction suggestions when the current margin
-// falls below the target margin.
+// price-increase and/or cost-reduction suggestions by delegating to the
+// profit_watch.cost_optimization tool.
 func (a *ProfitWatchAgent) suggestCostOptimization(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	// Enrich context from DB if possible.
 	a.fillSkuFromDB(ctx)
@@ -436,58 +367,49 @@ func (a *ProfitWatchAgent) suggestCostOptimization(ctx map[string]interface{}) (
 		return insufficientData("cost_optimization", missing), 0.0, "low", nil
 	}
 
-	skuCode := safeString(ctx["sku_code"])
-	sellingPrice := safeFloat(ctx["selling_price"])
-	costPrice := safeFloat(ctx["cost_price"])
-
-	currentMargin := 0.0
-	if sellingPrice > 0 {
-		currentMargin = round2((sellingPrice - costPrice) / sellingPrice * 100)
+	// Build the tool input from the enriched context.
+	toolInput := map[string]interface{}{
+		"sku_code":      ctx["sku_code"],
+		"selling_price": ctx["selling_price"],
+		"cost_price":    ctx["cost_price"],
+		"target_margin": ctx["target_margin"],
 	}
-	targetMargin := safeFloat(ctx["target_margin"], 20.0)
 
-	suggestions := make([]map[string]interface{}, 0)
-
-	if currentMargin < targetMargin {
-		// Price increase: calculate the revenue needed to hit target margin.
-		neededRevenue := costPrice / (1 - targetMargin/100)
-		priceSuggest := round2(neededRevenue)
-		if priceSuggest > sellingPrice {
-			increasePct := round2((priceSuggest - sellingPrice) / sellingPrice * 100)
-			suggestions = append(suggestions, map[string]interface{}{
-				"type":           "price_increase",
-				"current_price":  sellingPrice,
-				"suggested_price": priceSuggest,
-				"increase_pct":   increasePct,
-				"description": fmt.Sprintf("提价至 ¥%.2f 可达到 %.2f%% 毛利率",
-					priceSuggest, targetMargin),
-			})
-		}
-
-		// Cost reduction: calculate the max cost that hits target margin.
-		neededCost := sellingPrice * (1 - targetMargin/100)
-		if neededCost < costPrice {
-			reductionPct := round2((costPrice - neededCost) / costPrice * 100)
-			suggestions = append(suggestions, map[string]interface{}{
-				"type":          "cost_reduction",
-				"current_cost":  costPrice,
-				"target_cost":   round2(neededCost),
-				"reduction_pct": reductionPct,
-				"description":   fmt.Sprintf("采购成本需降至 ¥%.2f 以下", round2(neededCost)),
-			})
-		}
+	// Delegate computation to the tool.
+	rawResult, invokeErr := toolregistry.DefaultRegistry.Invoke("profit_watch.cost_optimization", toolInput)
+	if invokeErr != nil {
+		a.logger.Error("profit_watch.cost_optimization tool invocation failed", zap.Error(invokeErr))
+		return map[string]interface{}{
+			"status":         "error",
+			"decision_point": "cost_optimization",
+			"error":          invokeErr.Error(),
+		}, 0.0, "low", invokeErr
 	}
+
+	result, ok := rawResult.(map[string]interface{})
+	if !ok {
+		a.logger.Error("profit_watch.cost_optimization tool returned unexpected type")
+		return map[string]interface{}{
+			"status":         "error",
+			"decision_point": "cost_optimization",
+			"error":          "tool returned unexpected type",
+		}, 0.0, "low", fmt.Errorf("unexpected tool result type: %T", rawResult)
+	}
+
+	// Map the tool result to the output envelope.
+	confidence = safeFloat(result["confidence"], 0.85)
+	riskLevel = safeString(result["risk_level"], "medium")
 
 	output = map[string]interface{}{
-		"sku_code":       skuCode,
-		"current_margin": currentMargin,
-		"target_margin":  targetMargin,
-		"suggestions":    suggestions,
-		"confidence":     0.85,
+		"sku_code":       result["sku_code"],
+		"current_margin": result["current_margin"],
+		"target_margin":  result["target_margin"],
+		"suggestions":    result["suggestions"],
+		"confidence":     confidence,
 		"decision_point": "cost_optimization",
 	}
 
-	return output, 0.85, "medium", nil
+	return output, confidence, riskLevel, nil
 }
 
 // ---------- Helpers ----------

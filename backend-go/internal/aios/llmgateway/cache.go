@@ -40,23 +40,35 @@ type cacheEntry struct {
 
 // MemoryCache is a thread-safe, in-memory implementation of the Cache interface.
 // Entries are evicted lazily on read — expired entries are not returned and
-// are cleaned up on subsequent Get calls.
+// are cleaned up on subsequent Get calls. A periodic cleanup goroutine
+// purges expired entries at a configurable interval.
 type MemoryCache struct {
-	mu         sync.RWMutex
-	entries    map[string]cacheEntry
-	defaultTTL time.Duration
+	mu              sync.RWMutex
+	entries         map[string]cacheEntry
+	defaultTTL      time.Duration
+	cleanupInterval time.Duration
+	stopCh          chan struct{}
 }
 
 // NewMemoryCache creates a MemoryCache with the given default TTL.
 // Default TTL is used when Set is called without a specific TTL (zero value).
+// A periodic cleanup goroutine is started; call StopCleanup to shut it down.
 func NewMemoryCache(defaultTTL time.Duration) *MemoryCache {
 	if defaultTTL <= 0 {
 		defaultTTL = 5 * time.Minute
 	}
-	return &MemoryCache{
-		entries:    make(map[string]cacheEntry),
-		defaultTTL: defaultTTL,
+	cleanupInterval := defaultTTL / 4
+	if cleanupInterval < time.Second {
+		cleanupInterval = time.Second
 	}
+	mc := &MemoryCache{
+		entries:         make(map[string]cacheEntry),
+		defaultTTL:      defaultTTL,
+		cleanupInterval: cleanupInterval,
+		stopCh:          make(chan struct{}),
+	}
+	go mc.cleanupLoop()
+	return mc
 }
 
 // Get returns a cached response if the key exists and the entry has not
@@ -127,6 +139,41 @@ func (m *MemoryCache) Len() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.entries)
+}
+
+// StopCleanup stops the periodic cleanup goroutine. After this call the
+// goroutine exits and no further evictions from the cleanup loop occur.
+// The cache remains usable but should no longer be considered active.
+// Callers should defer this in long-lived contexts to prevent goroutine leaks.
+func (m *MemoryCache) StopCleanup() {
+	close(m.stopCh)
+}
+
+// cleanupLoop runs periodically, removing expired entries from the cache.
+// It exits when the stopCh is closed (via StopCleanup).
+func (m *MemoryCache) cleanupLoop() {
+	ticker := time.NewTicker(m.cleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-m.stopCh:
+			return
+		case <-ticker.C:
+			m.purgeExpired()
+		}
+	}
+}
+
+// purgeExpired removes all entries whose TTL has expired.
+func (m *MemoryCache) purgeExpired() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	for key, entry := range m.entries {
+		if now.Sub(entry.CreatedAt) >= entry.TTL {
+			delete(m.entries, key)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
