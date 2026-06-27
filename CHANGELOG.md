@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.3.0.0 (2026-06-27) — AIOS Phase 1-3 Infrastructure
+
+### Added
+- **ToolRegistry** (`internal/aios/toolregistry/`) — centralized tool registry with JSON Schema metadata, hook chain, circuit breaker, permission checks, and risk-level classification. All 16 agents register and discover tools through it.
+- **LLM Gateway** (`internal/aios/llmgateway/`) — response caching with TTL and periodic eviction, cost tracking with per-model estimation (Opus/Sonnet/Haiku), and provider abstraction layer.
+- **Discount risk tools** for G3 agent — `discount.check`, `discount.risk_check`, and `discount.validate` tools with multi-discount stacking simulation and margin risk analysis. Fills the last gap in AIOS migration.
+- **Customer Service agent** (A4) migrated to ToolRegistry — `classifyIntent`, `autoReplyCS`, and `extractNested` tools for automated support handling.
+- **Product Scout** and **Dashboard** tools — registered via ToolRegistry for AI-driven product research and dashboard insights.
+- **Ad Advice tool** — AI-powered advertising analysis and optimization suggestions.
+
+### Changed
+- All 16 agents now delegate decision execution through ToolRegistry with middleware/hook/circuit-breaker dispatch, replacing inline business logic.
+- Agent coordination: standardized `callTool` pattern with type-safe output extraction (confidence, risk level, structured data).
+- Real-time extension handler refactored for reduced latency.
+
+### Fixed
+- G3 (DiscountRisk) silent failure — agent called unregistered tool names; now has `discount.check`, `discount.risk_check`, and `discount.validate` tools registered and tested.
+- A4 (CustomerService) migration to ToolRegistry completed — classifyIntent and autoReply logic available as registered tools.
+- Sourcing agent imports and tool registration alignment.
+
+### Removed
+- Legacy `backend/app/agent/agents/` Python agent implementations (reference-only) — all logic now in Go ToolRegistry.
+- Dead code: `internal/domain/metabolism/adapters/` (agent_decision, execution_logs), `internal/rbac/middleware.go`, old shipping rate engine files.
+- Python FastAPI feedback system (`internal/feedback/`) — replaced by Go-native audit and operation log infrastructure.
+- Deprecated `backend-go/internal/prismadapter/` — Prism integration now handled through ToolRegistry.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
 ## v0.2.1 (2026-06-26) — July gap-fill P1
 
 ### New Modules
