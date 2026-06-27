@@ -60,6 +60,7 @@ API client：
 | `/products` | 商品列表 |
 | `/products/create` | 新建商品 |
 | `/products/[id]` | 商品详情 |
+| `/products/[id]/suppliers` | 商品供应商管理 |
 | `/categories` | 分类管理 |
 | `/brands` | 品牌管理 |
 | `/sku` | SKU 管理 |
@@ -72,6 +73,7 @@ API client：
 |---|---|
 | `/platforms` | 平台管理 |
 | `/platform-integrations` | 平台集成 |
+| `/platform-integrations/[id]/ozon-products` | Ozon 商品列表 |
 | `/listings` | 刊登管理 |
 | `/listings/create` | 创建刊登 |
 | `/listing-tasks` | 上架任务 |
@@ -144,7 +146,7 @@ API client：
 
 ## 菜单覆盖
 
-`frontend-next/src/config/menu.ts` 当前定义 42 个菜单入口。2026-06-26 复核结果：所有菜单入口均有对应 `page.tsx`。
+`frontend-next/src/config/menu.ts` 当前定义 47 个菜单入口。2026-06-26 复核结果：所有菜单入口均有对应 `page.tsx`。额外详情页面（如 `/[id]`、`/[id]/suppliers`、`/[id]/ozon-products`、`/templates`）不出现在菜单中但路由正常。
 
 菜单入口仅覆盖主导航页面；详情页、创建页和工作台子页面不一定出现在菜单中。
 

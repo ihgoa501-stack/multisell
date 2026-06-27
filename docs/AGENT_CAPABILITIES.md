@@ -78,16 +78,19 @@
 | GET | `/api/health` | 健康检查 |
 | GET | `/api/v1/health` | API 版本健康检查 |
 | GET | `/metrics` | Prometheus 指标（需配置开启） |
-| GET | `/ws` | WebSocket 端点（AI 流式输出） |
+| GET | `/ws` | WebSocket 端点（AI 流式输出，需 JWT） |
 | POST | `/api/v1/auth/login` | 登录（获取 access_token + refresh_token） |
 | POST | `/api/v1/auth/register` | 注册用户 |
 | POST | `/api/v1/auth/refresh` | 刷新 token |
-| GET | `/api/v1/auth/me` | 获取当前用户信息 |
 
 ### 认证 & RBAC
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
+| POST | `/api/v1/auth/login` | 登录（获取 access_token + refresh_token） |
+| POST | `/api/v1/auth/register` | 注册用户 |
+| POST | `/api/v1/auth/refresh` | 刷新 token |
+| GET | `/api/v1/auth/me` | 获取当前用户信息（需 JWT） |
 | GET/POST/PUT/DELETE | `/api/v1/rbac/*` | RBAC 角色权限管理 |
 
 ### 商品管理（SKU / Product）
@@ -168,19 +171,19 @@
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/v1/orders` | 订单列表 |
-| GET | `/api/v1/orders/summary` | 订单汇总 |
-| GET/POST/PUT/DELETE | `/api/v1/orders/:id` | 订单 CRUD |
-| POST | `/api/v1/orders/:id/status` | 更新订单状态 |
+| GET | `/api/v1/order` | 订单列表 |
+| GET | `/api/v1/order/summary` | 订单汇总 |
+| GET/POST/PUT/DELETE | `/api/v1/order/:id` | 订单 CRUD |
+| POST | `/api/v1/order/:id/status` | 更新订单状态 |
 
 ### 订单导入
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/v1/order-import` | 导入批次列表 |
-| POST | `/api/v1/order-import` | 创建导入批次 |
-| GET | `/api/v1/order-import/:id` | 导入批次详情 |
-| DELETE | `/api/v1/order-import/:id` | 删除导入批次 |
+| GET | `/api/v1/orderimport` | 导入批次列表 |
+| POST | `/api/v1/orderimport` | 创建导入批次 |
+| GET | `/api/v1/orderimport/:id` | 导入批次详情 |
+| DELETE | `/api/v1/orderimport/:id` | 删除导入批次 |
 
 ### 物流（Shipping）
 
@@ -198,8 +201,8 @@
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/v1/platform-fees` | 平台费用列表 |
-| POST/PUT/DELETE | `/api/v1/platform-fees/:id` | 平台费用 CRUD |
+| GET | `/api/v1/platform-fee` | 平台费用列表 |
+| POST/PUT/DELETE | `/api/v1/platform-fee/:id` | 平台费用 CRUD |
 
 ### 结算（Settlement）
 
@@ -248,8 +251,8 @@
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | GET/POST/PUT/DELETE | `/api/v1/sourcing-1688` | 1688 采购 CRUD |
-| POST | `/api/v1/sourcing/fetch` | AI 选品：抓取并分析 1688 商品 |
-| GET | `/api/v1/sourcing/recommendations` | 获取 AI 选品推荐列表 |
+| POST | `/api/v1/sourcing/fetch` | AI 选品：抓取并分析 1688 商品（⚠️ 已定义但未在 router.go 接线） |
+| GET | `/api/v1/sourcing/recommendations` | 获取 AI 选品推荐列表（⚠️ 同上） |
 
 ### 分配（Allocation）
 
@@ -289,7 +292,7 @@
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/v1/notifications` | 通知列表 |
+| GET | `/api/v1/notification` | 通知列表 |
 
 ### 搜索
 
@@ -303,29 +306,29 @@
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | GET | `/api/v1/dashboard` | 仪表盘数据 |
-| GET | `/api/v1/reports` | 报表列表 |
-| GET | `/api/v1/reports/summary` | 报表汇总 |
+| GET | `/api/v1/report` | 报表列表 |
+| GET | `/api/v1/report/summary` | 报表汇总 |
 
 ### 设置
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/v1/settings` | 系统设置 |
-| PUT | `/api/v1/settings` | 更新设置 |
+| GET | `/api/v1/setting` | 系统设置 |
+| PUT | `/api/v1/setting` | 更新设置 |
 
 ### 图片生成
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/v1/image-gen` | 图片生成列表 |
-| POST | `/api/v1/image-gen` | 生成图片 |
+| GET | `/api/v1/imagegen` | 图片生成列表 |
+| POST | `/api/v1/imagegen` | 生成图片 |
 
 ### 导入批次 & 操作日志
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET/POST | `/api/v1/import-batches` | 导入批次管理 |
-| GET | `/api/v1/operation-logs` | 操作日志列表 |
+| GET/POST | `/api/v1/importbatch` | 导入批次管理 |
+| GET | `/api/v1/operationlog` | 操作日志列表 |
 
 ### 汇率 & 产品分析
 
@@ -437,10 +440,10 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=deepseek-v4-flash
 | A5 | 库存助理 | ops | stock_alert | guided |
 | A6 | 利润看护 | ops | profit_watch, profit_check | supervised |
 | A7 | 合规专员 | ops | compliance_check, certification_lookup | supervised |
-| A8 | 选品盈利分析 | insight | sourcing_analysis, profit_forecast | advisory |
-| A9 | 批量运维 | ops | batch_ops | guided |
-| A10 | 物流运费引擎 | ops | logistics_rate, shipping_recommend | guided |
-| A11 | 售后管理 | ops | aftersales_auto_resolve | guided |
+| A8 | 选品盈利分析 | insight | sourcing_recommend | advisory |
+| A9 | 批量运维 | ops | batch_price_update, batch_inventory_sync, batch_listing_update, import_validation | guided |
+| A10 | 物流运费引擎 | ops | carrier_compare, shipping_bill_audit, carrier_performance, logistics_route_opt | guided |
+| A11 | 售后管理 | ops | return_analysis, refund_decision, dispute_manage, aftersales_report | guided |
 | G0 | 系统健康员 | governance | system_health | supervised |
 | G1 | 驾驶舱 | governance | dashboard_overview | advisory |
 | G2 | 仓储专员 | governance | warehouse_routing, customs_declare | supervised |
@@ -461,6 +464,7 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=deepseek-v4-flash
 | A7 | 2 hr | compliance_check |
 | trustscore | 1 hr | recalculate |
 | entropy | 6 hr | defend |
+| M1 | 1 hr | excretion_scoring |
 | ozon_sync | 15 min | sync_orders |
 
 ### Agent 管道链（Pipeline Chain）
@@ -502,7 +506,7 @@ http://localhost:3000
 | `/products/:id` | GET /api/v1/products/:id |
 | `/categories` | GET /api/v1/categories |
 | `/brands` | GET /api/v1/brands |
-| `/skus` | GET /api/v1/skus |
+| `/sku` | GET /api/v1/sku |
 | `/listings` | GET /api/v1/listings |
 | `/listing-tasks` | GET /api/v1/listing/listing-tasks |
 | `/inventory` | GET /api/v1/inventory |
@@ -512,9 +516,10 @@ http://localhost:3000
 | `/shipping` | GET /api/v1/shipping/* |
 | `/settlement` | GET /api/v1/settlement |
 | `/finance` | GET /api/v1/finance/* |
-| `/platform-fees` | GET /api/v1/platform-fees |
+| `/platform-fees` | GET /api/v1/platform-fee |
 | `/platforms` | GET /api/v1/platforms |
 | `/platform-integrations` | GET /api/v1/platform-integrations |
+| `/platform-integrations/:id/ozon-products` | GET /api/v1/platform-integrations/:id |
 | `/suppliers` | GET /api/v1/suppliers |
 | `/aftersales` | GET /api/v1/aftersales |
 | `/sourcing1688` | GET /api/v1/sourcing-1688 |
@@ -523,15 +528,17 @@ http://localhost:3000
 | `/decision` | GET /api/v1/decision |
 | `/ai` | POST /api/v1/ai/* |
 | `/agents` / `/agentos` | GET /api/v1/agents / /agentos |
-| `/settings` | GET /api/v1/settings |
+| `/settings` | GET /api/v1/setting |
 | `/support` | GET /api/v1/support/* |
-| `/notifications` | GET /api/v1/notifications |
-| `/operation-logs` | GET /api/v1/operation-logs |
+| `/support/templates` | GET /api/v1/support/templates |
+| `/notifications` | GET /api/v1/notification |
+| `/operation-logs` | GET /api/v1/operationlog |
 | `/search` | GET /api/v1/search |
-| `/reports` | GET /api/v1/reports |
-| `/image-gen` | GET /api/v1/image-gen |
-| `/import-batches` | GET /api/v1/import-batches |
+| `/reports` | GET /api/v1/report |
+| `/image-gen` | GET /api/v1/imagegen |
+| `/import-batches` | GET /api/v1/importbatch |
 | `/purchase` | GET /api/v1/purchase |
+| `/purchase/suggestions` | — |
 | `/exchange-rates` | GET /api/v1/exchange-rates |
 | `/product-analysis` | GET /api/v1/product-analysis |
 | `/sourcing` | POST /api/v1/sourcing/fetch, GET /api/v1/sourcing/recommendations |

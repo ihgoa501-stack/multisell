@@ -84,7 +84,7 @@ G3 discount_risk_check (block)     → A6 profit_watch
 A6 profit_watch (loss/threshold)   → A2 listing_optimize
 G0 system_health (anomaly > 3)    → G1 dashboard_overview
 
-Scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/trustscore/entropy
+Scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/M1/trustscore/entropy
 ```
 
 ### WebSocket

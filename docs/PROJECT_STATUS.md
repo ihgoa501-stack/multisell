@@ -73,7 +73,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - 异常、通知、生图、画布、批量导入、操作日志、搜索、报表
 - 设置、LLM 配置、RBAC、审批策略
 
-侧边栏菜单目前有 42 个入口，已确认都能匹配到 `frontend-next/src/app` 下的实际页面。
+侧边栏菜单目前有 47 个入口，已确认都能匹配到 `frontend-next/src/app` 下的实际页面。
 
 ## 验证状态
 
@@ -148,7 +148,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 | 模块 | 位置 | 说明 |
 |------|------|------|
-| **sourcing** | `internal/domain/sourcing/` | A8 选品盈利分析引擎：利润公式计算、Eval 评估、Handler/Service/Routes，路由 `POST /api/v1/sourcing/fetch`、`GET /api/v1/sourcing/recommendations` |
+| **sourcing** | `internal/domain/sourcing/` | A8 选品盈利分析引擎：利润公式计算、Eval 评估、Handler/Service/Routes 已定义（`POST /api/v1/sourcing/fetch`、`GET /api/v1/sourcing/recommendations`），⚠️ 尚未在 `router.go` 接线 |
 | **logistics** | `internal/domain/logistics/` | 全新运费费率引擎（独立于 shipping 包），支持四种定价模式（first_additional / tiered / fixed / per_kg），YAML 配置加载 |
 | **toolbridge** | `internal/platform/toolbridge/` | 插件驱动的工具执行桥接，允许 Agent 通过已注册插件执行外部工具 |
 | **echo_ext** | `internal/realtime/extension_handler.go` | WebSocket 扩展处理器，支持实时连接扩展 |
@@ -159,10 +159,10 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 | ID | 名称 | Squad | 决策点 |
 |----|------|-------|--------|
-| A8 | 选品盈利分析 | insight | sourcing_analysis, profit_forecast |
-| A9 | 批量运维 | ops | batch_ops |
-| A10 | 物流运费引擎 | ops | logistics_rate, shipping_recommend |
-| A11 | 售后管理 | ops | aftersales_auto_resolve |
+| A8 | 选品盈利分析 | insight | sourcing_recommend |
+| A9 | 批量运维 | ops | batch_price_update, batch_inventory_sync, batch_listing_update, import_validation |
+| A10 | 物流运费引擎 | ops | carrier_compare, shipping_bill_audit, carrier_performance, logistics_route_opt |
+| A11 | 售后管理 | ops | return_analysis, refund_decision, dispute_manage, aftersales_report |
 
 ### 新增前端页面
 
