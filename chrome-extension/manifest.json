@@ -1,34 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "LingMirror Sourcing Agent",
+  "name": "凌镜 AI 选品助手",
   "version": "0.1.0",
-  "description": "LingMirror AI sourcing extension — collect and analyze 1688 product data for cross-border e-commerce",
+  "description": "凌镜跨境电商 AI 选品采集助手 — 一键采集 1688 商品信息",
   "permissions": [
     "storage",
     "activeTab"
   ],
   "host_permissions": [
-    "https://detail.1688.com/*",
-    "https://www.1688.com/*"
-  ],
-  "background": {
-    "service_worker": "build/background.js",
-    "type": "module"
-  },
-  "content_scripts": [
-    {
-      "matches": ["https://detail.1688.com/offer/*"],
-      "js": ["build/content-script.js"],
-      "run_at": "document_idle"
-    }
+    "https://*.1688.com/*",
+    "https://*.taobao.com/*",
+    "http://localhost:8080/*",
+    "wss://*.lingmirror.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "LingMirror Sourcing"
+    "default_icon": "icon.png"
   },
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+  "content_scripts": [
+    {
+      "matches": ["https://detail.1688.com/*", "https://item.taobao.com/*"],
+      "js": ["utils.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
   }
 }

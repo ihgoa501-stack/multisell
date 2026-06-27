@@ -3,6 +3,12 @@
 This file gives Claude Code-specific guidance for working in this repository.
 Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.
 
+## Onboarding
+
+Before working, read [Agent Capabilities](./docs/AGENT_CAPABILITIES.md) — it lists
+all MCP servers, API endpoints, CLI tools, database schemas, and development
+commands available to you.
+
 ## Project
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.

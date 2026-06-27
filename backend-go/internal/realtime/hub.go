@@ -1,10 +1,18 @@
 package realtime
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+)
+
+var (
+	// ErrNoClient is returned when no client is connected for the given user ID.
+	ErrNoClient = errors.New("no client found for user")
+	// ErrBufferFull is returned when the client's send buffer is full.
+	ErrBufferFull = errors.New("client send buffer full")
 )
 
 // Client represents a WebSocket client.
@@ -104,20 +112,21 @@ func (h *Hub) ClientCount() int {
 	return len(h.clients)
 }
 
-// SendToUser sends a message to all connections belonging to the given user.
-// Non-blocking per-client; if a client's send buffer is full the client is
-// closed and removed.
-func (h *Hub) SendToUser(userID int64, msg []byte) {
+// SendToUser sends a message to a specific user by userID.
+// Returns ErrNoClient if no client is connected for that user.
+// Returns ErrBufferFull if the client's send buffer is full.
+func (h *Hub) SendToUser(userID int64, msg []byte) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for client := range h.clients {
 		if client.UserID != nil && *client.UserID == userID {
 			select {
 			case client.Send <- msg:
+				return nil
 			default:
-				close(client.Send)
-				delete(h.clients, client)
+				return ErrBufferFull
 			}
 		}
 	}
+	return ErrNoClient
 }

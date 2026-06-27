@@ -44,17 +44,17 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/search"
 	"github.com/lingmirror/backend-go/internal/domain/settings"
 	"github.com/lingmirror/backend-go/internal/domain/settlement"
-	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
+	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
-	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
@@ -92,8 +92,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
-	// ===================================================	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
-	// ===================================================
+	// ==========================================================
+	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
+	// ==========================================================
+
 	// Create event bus (with optional outbox persistence).
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
 	busCtx, busCancel := context.WithCancel(context.Background())
@@ -101,6 +103,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Start(busCtx)
 
 	// Initialize platform adapters (Ozon, Shopee, etc.).
+	integrations.InitAdapters(db, logger)
 
 	// Create command dispatcher and register Phase 1 handlers.
 	cmd := command.NewDispatcher(logger)
@@ -116,8 +119,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI orchestrator (shared by /ai and /agents routes).
 	aiOrch := ai.NewOrchestrator(db, logger)
 
-	// ===================================================	// Event Bus Subscriptions: agent triggers + pipeline chains
-	// ===================================================
+	// ToolBridge for sourcing data collection
+	_ = toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
+
+	// ==========================================================
+	// Event Bus Subscriptions: agent triggers + pipeline chains
+	// ==========================================================
+
 	// scheduler.tick.A5 → orchestrator runs A5 stock_alert
 	bus.Subscribe("scheduler.tick.A5", func(ctx context.Context, evt eventbus.Event) error {
 		_, err := aiOrch.Run(&ai.RunAgentRequest{
@@ -201,8 +209,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		_, err := svc.RunDefenses(0)
 		return err
 	})
-	// scheduler.tick.A8 → placeholder for batch sourcing scanning
-	bus.Subscribe("scheduler.tick.A8", sourcing.HandleSourcingTick(db, logger))
+
+	// scheduler.tick.A8 → sourcing batch scan
+	bus.Subscribe("scheduler.tick.A8", func(ctx context.Context, evt eventbus.Event) error {
+		return sourcing.HandleSourcingTick(db, logger)(ctx, evt)
+	})
 
 	// -------------------------------------------------------
 	// Pipeline chain rules (via event bus)
@@ -285,8 +296,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return nil
 	})
 
-	// ===================================================	// Schedule all agent periodic tasks
-	// ===================================================
+	// ==========================================================
+	// Schedule all agent periodic tasks
+	// ==========================================================
+
 	sched.Register(scheduler.Task{
 		ID: "tick-g0", AgentID: "G0", DecisionPoint: "system_health",
 		Interval: time.Minute * 5, Description: "协调仲裁健康检查",
@@ -324,10 +337,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Interval: time.Hour * 2, Description: "合规检测",
 	})
 	sched.Register(scheduler.Task{
-		ID: "tick-a8", AgentID: "A8", DecisionPoint: "product_sourcing",
-		Interval: time.Hour * 1, Description: "选品扫描",
-	})
-	sched.Register(scheduler.Task{
 		ID: "tick-trustscore", AgentID: "trustscore", DecisionPoint: "recalculate",
 		Interval: time.Hour * 1, Description: "信任分重算",
 	})
@@ -339,26 +348,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 			ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
 			Interval: time.Minute * 15, Description: "Ozon 订单同步",
 		})
-
-	// sourcing.recommend → A2 listing_optimize (score >= 7)
-	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
-		payload := evt.Payload
-		score, _ := payload["score"].(int)
-		if scoreFloat, ok := payload["score"].(float64); ok {
-			score = int(scoreFloat)
-		}
-		if score >= 7 {
-			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer timeoutCancel()
-			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
-				AgentID:       "A2",
-				DecisionPoint: "listing_optimize",
-				Context:       payload,
-			})
-			return err
-		}
-		return nil
-	})
+		sched.Register(scheduler.Task{
+			ID: "tick-a8", AgentID: "A8", DecisionPoint: "sourcing_scan",
+			Interval: time.Hour * 1, Description: "选品扫描",
+		})
 		sched.Register(scheduler.Task{
 			ID: "tick-m1", AgentID: "M1", DecisionPoint: "excretion_scoring",
 			Interval: time.Hour * 1, Description: "代谢排泄评分",
@@ -366,14 +359,18 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Ozon sync handler
 	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
-			return nil
+		integrations.InitAdapters(db, logger)
+		svc := integrations.NewService(db, logger)
+		return svc.SyncOzonOrders(ctx)
 	})
 
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
 
-	// ===================================================	// HTTP routes
-	// ===================================================
+	// ==========================================================
+	// HTTP routes
+	// ==========================================================
+
 	// API v1 routes
 	api := r.Group("/api/v1")
 
@@ -390,7 +387,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")
-	protected.Use(middleware.Auth(cfg, nil))
+	protected.Use(middleware.Auth(cfg))
 
 	// RBAC routes
 	rbac.RegisterRoutes(protected, db, logger)
@@ -435,6 +432,18 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		}
 		return nil
 	})
+	// sourcing.recommend (A8) -> A2 listing_optimize for high-score products
+	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
+			// Process recommendation through the handler (logging, etc.)
+		_ = sourcing.HandleSourcingRecommend(db, logger)(ctx, evt)
+		score, _ := evt.Payload["score"].(int)
+		scoreFloat, _ := evt.Payload["score"].(float64)
+		if score >= 7 || scoreFloat >= 7 {
+			return runAgentWithTimeout(aiOrch, "A2", "listing_optimize", evt.Payload)
+		}
+		return nil
+	})
+
 	// Supply chain event: after-sale completed → auto-adjust inventory
 	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
@@ -472,9 +481,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	integrations.RegisterRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
+	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
 	sourcing1688.RegisterRoutes(protected, db, logger)
 	logistics.RegisterRoutes(protected, db, logger)
-	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
 	productanalysis.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
 	report.RegisterRoutes(protected, db, logger)
@@ -483,35 +492,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	evolution.RegisterRoutes(protected, db, logger)
 	entropy.RegisterRoutes(protected, db, logger)
 
-		// Metabolism M1 -- scheduled excretion scoring
-		semanticScorer := metabolism.NewLLMSemanticScorer(aiOrch.Provider(), logger)
-		m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, semanticScorer)
-		bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
-			logger.Info("metabolism: M1 tick received")
+	// Metabolism M1 -- scheduled excretion scoring
+	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
+	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
+		logger.Info("metabolism: M1 tick received")
 			return m1Svc.Execute(true)
-		})
-		metabolism.RegisterRoutes(protected, db, logger, nil, semanticScorer)
-
-		// Waste event recycling — route metabolism.waste.{source} to interested agents
-		bus.Subscribe("metabolism.waste.*", func(ctx context.Context, evt eventbus.Event) error {
-			logger.Info("metabolism: waste event received",
-				zap.String("topic", evt.Topic),
-				zap.Any("payload", evt.Payload))
-			// Extract source from topic: "metabolism.waste.ozon" → "ozon"
-			// Potential future: route to agents that subscribe to this waste type
-			return nil
-		})
-
-		// Agent completion declaration — agent reports "I'm done with this data"
-		bus.Subscribe("metabolism.digested.*", func(ctx context.Context, evt eventbus.Event) error {
-			payload := evt.Payload
-			eventID, _ := payload["event_id"].(float64)
-			source, _ := payload["source"].(string)
-			logger.Info("metabolism: agent digested event",
-				zap.Float64("event_id", eventID),
-				zap.String("source", source))
-			return nil
-		})
+	})
+	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
@@ -522,41 +509,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI routes need the hub for realtime broadcasts.
 	ai.RegisterRoutes(protected, db, logger, hub)
 
-	// Feedback routes with full AgentOS integration
-	feedback.RegisterRoutes(api, cfg, db, logger,
-		// AI classification function
-		func(ctx context.Context, system, user string) (string, error) {
-			resp, err := aiOrch.Provider().Chat(ctx, &ai.LLMRequest{
-				System:      system,
-				Messages:    []ai.LLMMessage{{Role: "user", Content: user}},
-				Temperature: 0.1,
-				MaxTokens:   300,
-			})
-			if err != nil {
-				return "", err
-			}
-			return resp.Answer, nil
-		},
-		// WebSocket hub for real-time notifications
-		hub,
-		// UnifiedAction creator for AgentOS integration
-		func(table, sourceID, title, payload string) error {
-			aiSvc := ai.NewService(db, logger)
-			_, err := aiSvc.CreateAction(&ai.CreateActionInput{
-				SourceTable:  table,
-				SourceID:     sourceID,
-				SourceType:   "feedback",
-				ActionType:   "feedback_triage",
-				Title:        title,
-				Description:  payload,
-				AgentID:      "A8",
-				SquadID:      "governance",
-				RiskLevel:    "medium",
-				RequiresApproval: boolPtr(true),
-			})
-			return err
-		},
-	)
 	return r
 }
 
@@ -571,5 +523,3 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 	})
 	return err
 }
-
-func boolPtr(b bool) *bool { return &b }

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>凌镜 Extension Protocol Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Mono", "Fira Code", "Consolas", monospace;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 24px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    h1 { font-size: 18px; margin-bottom: 8px; color: #f1f5f9; }
+    h2 { font-size: 15px; margin: 20px 0 8px; color: #94a3b8; }
+    p { color: #64748b; margin-bottom: 12px; }
+    .protocol-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 8px 0;
+    }
+    .protocol-box h3 {
+      color: #6366f1;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    pre {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+    .arrow {
+      color: #6366f1;
+      font-size: 20px;
+      margin: 4px 0;
+      text-align: center;
+    }
+    .direction-label {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+    }
+    .direction-label.server-to-ext {
+      background: #1e3a5f;
+      color: #60a5fa;
+    }
+    .direction-label.ext-to-server {
+      background: #3b1f4e;
+      color: #c084fc;
+    }
+    .direction-label.ext-internal {
+      background: #1e293b;
+      color: #94a3b8;
+    }
+    .valid-badge {
+      display: inline-block;
+      background: #166534;
+      color: #22c55e;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 3px;
+      margin-left: 6px;
+    }
+    .note {
+      color: #94a3b8;
+      font-size: 11px;
+      margin-top: 4px;
+      font-style: italic;
+    }
+    .flow-diagram {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 16px 0;
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 12px;
+      line-height: 2;
+      white-space: pre;
+    }
+    .test-btn {
+      display: inline-block;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      margin: 8px 4px 8px 0;
+    }
+    .test-btn:hover {
+      background: #4f46e5;
+    }
+    .test-btn.secondary {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+    }
+    .test-btn.secondary:hover {
+      background: #334155;
+      color: #e2e8f0;
+    }
+    #output {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 8px;
+      min-height: 60px;
+      white-space: pre-wrap;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+    .pass { color: #22c55e; }
+    .fail { color: #ef4444; }
+    .info { color: #60a5fa; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 12px;
+    }
+    th, td {
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid #1e293b;
+    }
+    th { color: #6366f1; font-weight: 600; }
+    td { color: #cbd5e1; }
+    .field-name { color: #f59e0b; }
+    .field-req { color: #ef4444; font-size: 10px; }
+    .field-opt { color: #64748b; font-size: 10px; }
+  </style>
+</head>
+<body>
+
+<h1>凌镜 Extension — WebSocket 协议验证工具</h1>
+<p>该页面验证 extension 与后端之间的消息格式和协议流程。所有消息均为标准 JSON 格式。</p>
+
+<!-- ─── Protocol Overview ────────────────────────────────────────── -->
+
+<h2>协议概览</h2>
+
+<div class="flow-diagram">
+
+<span class="info">● WebSocket 连接流程</span>
+
+  扩展                         后端
+   │                           │
+   ├── connect ───────────────→│
+   │                           │
+   ├── {"type":"auth",         │
+   │    "token":"..."} ───────→│  ← 连接后立即发送 Token
+   │                           │
+   │←─ {"type":"auth_ok"} ─────┤  ← 认证成功
+   │                           │
+   │←─ {"type":"pong"} ────────┤  ← 每隔 15s 心跳回复
+   │                           │
+
+<span class="info">● Fetch Product 请求/响应流程</span>
+
+  后端     扩展 Background     Content Script
+  │           │                    │
+  ├─ fetch_product ─→┤             │  ← WS 消息
+  │                   ├─ tab.sendMessage ─→┤
+  │                   │                    ├─ 提取页面数据
+  │                   │←── sendResponse ───┤
+  │←─ fetch_product_result ─┤             │  ← WS 消息
+  │           │                    │
+  </div>
+
+<!-- ─── Message Specification ────────────────────────────────────── -->
+
+<h2>消息格式规范</h2>
+
+<div class="grid">
+
+<div class="protocol-box">
+  <h3>1. 认证消息 <span class="valid-badge">REQUIRED</span></h3>
+  <span class="direction-label ext-to-server">Extension → Server</span>
+  <pre>{
+  "type": "auth",
+  "token": "eyJhbGciOiJIUzI1NiIs..."
+}</pre>
+  <div class="note">连接建立后立即发送。使用 JWT Bearer Token。</div>
+</div>
+
+<div class="protocol-box">
+  <h3>2. Heartbeat <span class="valid-badge">REQUIRED</span></h3>
+  <span class="direction-label ext-to-server">Extension → Server</span>
+  <pre>{
+  "type": "ping"
+}</pre>
+  <span class="direction-label server-to-ext">Server → Extension</span>
+  <pre>{
+  "type": "pong"
+}</pre>
+  <div class="note">每隔 15 秒发送 ping。</div>
+</div>
+
+<div class="protocol-box">
+  <h3>3. Fetch Product 请求</h3>
+  <span class="direction-label server-to-ext">Server → Extension</span>
+  <pre>{
+  "type": "fetch_product",
+  "id": "req_uuid",
+  "payload": {
+    "url": "https://detail.1688.com/offer/123.html"
+  }
+}</pre>
+</div>
+
+<div class="protocol-box">
+  <h3>4. Fetch Product 成功响应</h3>
+  <span class="direction-label ext-to-server">Extension → Server</span>
+  <pre>{
+  "type": "fetch_product_result",
+  "id": "req_uuid",
+  "payload": {
+    "status": "ok",
+    "data": { ... }
+  }
+}</pre>
+</div>
+
+<div class="protocol-box">
+  <h3>5. Fetch Product 错误响应</h3>
+  <span class="direction-label ext-to-server">Extension → Server</span>
+  <pre>{
+  "type": "fetch_product_error",
+  "id": "req_uuid",
+  "payload": {
+    "code": "TAB_NOT_FOUND",
+    "message": "No open tab found for URL: ..."
+  }
+}</pre>
+</div>
+
+<div class="protocol-box">
+  <h3>6. Content Script 内部消息</h3>
+  <span class="direction-label ext-internal">Background → Content Script</span>
+  <pre>{
+  "type": "fetch_product_from_page",
+  "requestId": "req_uuid"
+}</pre>
+  <span class="direction-label ext-internal">Content Script → Background</span>
+  <pre>{
+  "type": "fetch_product_from_page_result",
+  "requestId": "req_uuid",
+  "payload": {
+    "status": "ok",
+    "data": {
+      "source_url": "...",
+      "collected_at": "2026-06-26T...",
+      "driver": "extension",
+      "title": "商品标题",
+      "price_1688": 29.99,
+      "price_min": 19.99,
+      "price_max": 39.99,
+      "currency": "CNY",
+      "min_order_qty": 2,
+      "images": [
+        "https://cbu01.alicdn.com/...jpg"
+      ],
+      "spec_variants": [
+        { "spec": "红色/L", "price": 29.99, "stock": 100 }
+      ],
+      "supplier_name": "某某工厂",
+      "supplier_id_1688": "12345678",
+      "description": "商品描述..."
+    }
+  }
+}</pre>
+</div>
+
+</div>
+
+<!-- ─── PageData Schema ──────────────────────────────────────────── -->
+
+<h2>PageData Schema</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>类型</th>
+      <th>必需</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="field-name">source_url</td>
+      <td>string</td>
+      <td class="field-req">是</td>
+      <td>商品页面 URL</td>
+    </tr>
+    <tr>
+      <td class="field-name">collected_at</td>
+      <td>string</td>
+      <td class="field-req">是</td>
+      <td>ISO 8601 采集时间</td>
+    </tr>
+    <tr>
+      <td class="field-name">driver</td>
+      <td>string</td>
+      <td class="field-req">是</td>
+      <td>固定值 "extension"</td>
+    </tr>
+    <tr>
+      <td class="field-name">title</td>
+      <td>string</td>
+      <td class="field-req">是</td>
+      <td>商品标题</td>
+    </tr>
+    <tr>
+      <td class="field-name">price_1688</td>
+      <td>number</td>
+      <td class="field-req">是</td>
+      <td>1688 价格 (CNY)</td>
+    </tr>
+    <tr>
+      <td class="field-name">price_min</td>
+      <td>number|null</td>
+      <td class="field-opt">否</td>
+      <td>规格最低价</td>
+    </tr>
+    <tr>
+      <td class="field-name">price_max</td>
+      <td>number|null</td>
+      <td class="field-opt">否</td>
+      <td>规格最高价</td>
+    </tr>
+    <tr>
+      <td class="field-name">currency</td>
+      <td>string</td>
+      <td class="field-req">是</td>
+      <td>固定值 "CNY"</td>
+    </tr>
+    <tr>
+      <td class="field-name">min_order_qty</td>
+      <td>number</td>
+      <td class="field-req">是</td>
+      <td>最小起订量 (默认 1)</td>
+    </tr>
+    <tr>
+      <td class="field-name">images</td>
+      <td>string[]</td>
+      <td class="field-opt">否</td>
+      <td>商品图片 URL 列表</td>
+    </tr>
+    <tr>
+      <td class="field-name">spec_variants</td>
+      <td>array</td>
+      <td class="field-opt">否</td>
+      <td>SKU 规格列表</td>
+    </tr>
+    <tr>
+      <td class="field-name">supplier_name</td>
+      <td>string</td>
+      <td class="field-opt">否</td>
+      <td>供应商名称</td>
+    </tr>
+    <tr>
+      <td class="field-name">supplier_id_1688</td>
+      <td>string</td>
+      <td class="field-opt">否</td>
+      <td>供应商 1688 ID</td>
+    </tr>
+    <tr>
+      <td class="field-name">description</td>
+      <td>string</td>
+      <td class="field-opt">否</td>
+      <td>商品描述摘要</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ─── Protocol Validation Tests ────────────────────────────────── -->
+
+<h2>协议验证</h2>
+
+<p>点击按钮验证消息结构是否符合规范。</p>
+
+<button class="test-btn" onclick="testAuthMessage()">验证 Auth 消息</button>
+<button class="test-btn" onclick="testFetchRequest()">验证 Fetch Request</button>
+<button class="test-btn" onclick="testFetchResponse()">验证 Fetch Response</button>
+<button class="test-btn" onclick="testFlow()">验证完整流程</button>
+<button class="test-btn secondary" onclick="clearOutput()">清空</button>
+
+<div id="output">点击按钮开始验证...</div>
+
+<script>
+// ─── Test Validators ──────────────────────────────────────────────────
+
+/**
+ * Validate that an object has the expected structure.
+ * Returns { pass, errors } where errors is an array of messages.
+ */
+function validateSchema(obj, schema, path) {
+  var errors = [];
+  path = path || '$';
+
+  for (var key in schema) {
+    if (!schema.hasOwnProperty(key)) continue;
+    var def = schema[key];
+    var value = obj[key];
+    var currentPath = path + '.' + key;
+
+    if (def.required && value === undefined) {
+      errors.push(currentPath + ': MISSING (required)');
+      continue;
+    }
+
+    if (value === undefined || value === null) continue;
+
+    // Check type
+    if (def.type === 'array') {
+      if (!Array.isArray(value)) {
+        errors.push(currentPath + ': expected array, got ' + typeof value);
+        continue;
+      }
+      // Validate items if specified
+      if (def.items && value.length > 0) {
+        for (var i = 0; i < value.length; i++) {
+          var itemErrors = validateSchema(value[i], def.items, currentPath + '[' + i + ']');
+          errors = errors.concat(itemErrors);
+        }
+      }
+    } else if (def.type === 'object') {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        errors.push(currentPath + ': expected object, got ' + (value === null ? 'null' : typeof value));
+        continue;
+      }
+      // Check nested schema
+      if (def.properties) {
+        var nestedErrors = validateSchema(value, def.properties, currentPath);
+        errors = errors.concat(nestedErrors);
+      }
+    } else if (def.type === 'string') {
+      if (typeof value !== 'string') {
+        errors.push(currentPath + ': expected string, got ' + typeof value + ' (' + JSON.stringify(value) + ')');
+      }
+    } else if (def.type === 'number') {
+      if (typeof value !== 'number' || isNaN(value)) {
+        errors.push(currentPath + ': expected number, got ' + typeof value + ' (' + JSON.stringify(value) + ')');
+      }
+    } else if (def.type === 'any') {
+      // Accept any type
+    }
+  }
+
+  return { pass: errors.length === 0, errors: errors };
+}
+
+function runTest(name, schema, payload) {
+  var result = validateSchema(payload, schema);
+  var output = document.getElementById('output');
+
+  if (result.pass) {
+    output.innerHTML = output.innerHTML + '\n<span class="pass">✓ PASS:</span> ' + name + '\n';
+  } else {
+    output.innerHTML = output.innerHTML + '\n<span class="fail">✗ FAIL:</span> ' + name + '\n';
+    for (var i = 0; i < result.errors.length; i++) {
+      output.innerHTML = output.innerHTML + '  <span class="fail">- ' + result.errors[i] + '</span>\n';
+    }
+  }
+
+  output.innerHTML = output.innerHTML + '<span class="info">Payload:</span> ' + JSON.stringify(payload, null, 2) + '\n\n';
+}
+
+function clearOutput() {
+  document.getElementById('output').innerHTML = '';
+}
+
+// ─── Auth Message Schema ──────────────────────────────────────────
+
+var authSchema = {
+  type:  { required: true, type: 'string' },
+  token: { required: true, type: 'string' }
+};
+
+var fetchRequestSchema = {
+  type:    { required: true, type: 'string' },
+  id:      { required: true, type: 'string' },
+  payload: {
+    required: true,
+    type: 'object',
+    properties: {
+      url: { required: true, type: 'string' }
+    }
+  }
+};
+
+var fetchResponseSchema = {
+  type: { required: true, type: 'string' },
+  id:   { required: true, type: 'string' },
+  payload: {
+    required: true,
+    type: 'object',
+    properties: {
+      status: { required: true, type: 'string' },
+      data:   { required: false, type: 'object' }
+    }
+  }
+};
+
+var fetchErrorSchema = {
+  type: { required: true, type: 'string' },
+  id:   { required: true, type: 'string' },
+  payload: {
+    required: true,
+    type: 'object',
+    properties: {
+      code:    { required: true, type: 'string' },
+      message: { required: true, type: 'string' }
+    }
+  }
+};
+
+var contentScriptRequestSchema = {
+  type:      { required: true, type: 'string' },
+  requestId: { required: true, type: 'string' }
+};
+
+var contentScriptResponseSchema = {
+  type:      { required: true, type: 'string' },
+  requestId: { required: true, type: 'string' },
+  payload: {
+    required: true,
+    type: 'object'
+  }
+};
+
+var pageDataSchema = {
+  source_url:    { required: true, type: 'string' },
+  collected_at:  { required: true, type: 'string' },
+  driver:        { required: true, type: 'string' },
+  title:         { required: true, type: 'string' },
+  price_1688:    { required: true, type: 'number' },
+  price_min:     { required: false, type: 'any' },
+  price_max:     { required: false, type: 'any' },
+  currency:      { required: true, type: 'string' },
+  min_order_qty: { required: true, type: 'number' },
+  images:        { required: false, type: 'array', items: { required: true, type: 'string' } },
+  spec_variants: { required: false, type: 'array' },
+  supplier_name: { required: false, type: 'string' }
+};
+
+// ─── Test Cases ───────────────────────────────────────────────────
+
+function testAuthMessage() {
+  var msg = {
+    type: 'auth',
+    token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6Ikxpbm1pcnJvciJ9'
+  };
+  runTest('Auth 消息结构', authSchema, msg);
+}
+
+function testFetchRequest() {
+  var msg = {
+    type: 'fetch_product',
+    id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    payload: {
+      url: 'https://detail.1688.com/offer/1234567890.html'
+    }
+  };
+  runTest('Fetch Request 消息结构', fetchRequestSchema, msg);
+}
+
+function testFetchResponse() {
+  var msg = {
+    type: 'fetch_product_result',
+    id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    payload: {
+      status: 'ok',
+      data: {
+        source_url: 'https://detail.1688.com/offer/1234567890.html',
+        collected_at: new Date().toISOString(),
+        driver: 'extension',
+        title: '2024新款夏季女装连衣裙韩版修身显瘦',
+        price_1688: 29.99,
+        price_min: 19.99,
+        price_max: 49.99,
+        currency: 'CNY',
+        min_order_qty: 2,
+        images: ['https://cbu01.alicdn.com/img/ibank/2024/123/456/abcdefg.jpg'],
+        spec_variants: [
+          { spec: '红色/S', price: 29.99, stock: 100 },
+          { spec: '红色/M', price: 29.99, stock: 80 },
+          { spec: '蓝色/S', price: 34.99, stock: 60 }
+        ],
+        supplier_name: '某某服装工厂',
+        supplier_id_1688: 'b2b-12345678',
+        description: '优质面料，舒适透气，多色可选，支持一件代发'
+      }
+    }
+  };
+  runTest('Fetch Response 消息结构', fetchResponseSchema, msg);
+  runTest('PageData 结构', pageDataSchema, msg.payload.data);
+}
+
+function testFlow() {
+  // Simulate the full fetch_product → fetch_product_result flow
+  var requestId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  var output = document.getElementById('output');
+
+  // Step 1: Server sends fetch_product
+  var fetchReq = {
+    type: 'fetch_product',
+    id: requestId,
+    payload: {
+      url: 'https://detail.1688.com/offer/1234567890.html'
+    }
+  };
+  output.innerHTML = output.innerHTML + '\n<span class="info">═══ 完整流程验证 ═══</span>\n';
+  output.innerHTML = output.innerHTML + '\n';
+
+  var reqValid = validateSchema(fetchReq, fetchRequestSchema);
+  output.innerHTML = output.innerHTML + (reqValid.pass
+    ? '<span class="pass">✓ Step 1:</span> Backend → Extension: fetch_product\n'
+    : '<span class="fail">✗ Step 1:</span> fetch_product\n');
+
+  // Step 2: Background sends fetch_product_from_page to content script
+  var csReq = {
+    type: 'fetch_product_from_page',
+    requestId: requestId
+  };
+  var csReqValid = validateSchema(csReq, contentScriptRequestSchema);
+  output.innerHTML = output.innerHTML + (csReqValid.pass
+    ? '<span class="pass">✓ Step 2:</span> Background → Content Script: fetch_product_from_page\n'
+    : '<span class="fail">✗ Step 2:</span> fetch_product_from_page\n');
+
+  // Step 3: Content script responds with extraction result
+  var csResp = {
+    type: 'fetch_product_from_page_result',
+    requestId: requestId,
+    payload: {
+      status: 'ok',
+      data: {
+        source_url: 'https://detail.1688.com/offer/1234567890.html',
+        collected_at: new Date().toISOString(),
+        driver: 'extension',
+        title: '2024新款夏季女装连衣裙韩版修身显瘦',
+        price_1688: 29.99,
+        price_min: 19.99,
+        price_max: 49.99,
+        currency: 'CNY',
+        min_order_qty: 2,
+        images: ['https://cbu01.alicdn.com/img/ibank/2024/123/456/abcdefg.jpg'],
+        spec_variants: [
+          { spec: '红色/S', price: 29.99, stock: 100 }
+        ],
+        supplier_name: '某某服装工厂',
+        supplier_id_1688: 'b2b-12345678',
+        description: '优质面料，舒适透气，多色可选'
+      }
+    }
+  };
+  var csRespValid = validateSchema(csResp, contentScriptResponseSchema);
+  output.innerHTML = output.innerHTML + (csRespValid.pass
+    ? '<span class="pass">✓ Step 3:</span> Content Script → Background: fetch_product_from_page_result\n'
+    : '<span class="fail">✗ Step 3:</span> fetch_product_from_page_result\n');
+
+  // Step 4: Background forwards to server
+  var wsResp = {
+    type: 'fetch_product_result',
+    id: requestId,
+    payload: {
+      status: 'ok',
+      data: csResp.payload.data
+    }
+  };
+  var wsRespValid = validateSchema(wsResp, fetchResponseSchema);
+  output.innerHTML = output.innerHTML + (wsRespValid.pass
+    ? '<span class="pass">✓ Step 4:</span> Extension → Backend: fetch_product_result\n'
+    : '<span class="fail">✗ Step 4:</span> fetch_product_result\n');
+
+  // PageData validation
+  var pdValid = validateSchema(csResp.payload.data, pageDataSchema);
+  output.innerHTML = output.innerHTML + (pdValid.pass
+    ? '<span class="pass">✓ Step 5:</span> PageData 结构验证\n'
+    : '<span class="fail">✗ Step 5:</span> PageData 结构验证\n');
+
+  if (reqValid.pass && csReqValid.pass && csRespValid.pass && wsRespValid.pass && pdValid.pass) {
+    output.innerHTML = output.innerHTML + '\n<span class="pass">═══ 所有步骤验证通过 ═══</span>\n';
+  } else {
+    output.innerHTML = output.innerHTML + '\n<span class="fail">═══ 存在验证失败 ═══</span>\n';
+  }
+}
+</script>
+
+</body>
+</html>

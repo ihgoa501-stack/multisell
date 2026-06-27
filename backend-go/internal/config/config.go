@@ -19,7 +19,6 @@ type Config struct {
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Log      LogConfig      `mapstructure:"log"`
 	Sentry   SentryConfig   `mapstructure:"sentry"`
-	EncryptionKey string         `mapstructure:"encryption_key"`
 }
 
 // ServerConfig holds server-specific settings.
@@ -92,16 +91,6 @@ func Load() (*Config, error) {
 	v.AddConfigPath("./configs")
 	v.AddConfigPath(".")
 
-	// Sensible defaults — applied before config file / env var overrides, so
-	// the server remains functional even when no config.yaml is found at the
-	// expected working-directory paths (e.g. systemd with a non-standard CWD).
-	v.SetDefault("server.port", 8080)
-	v.SetDefault("server.mode", "release")
-	v.SetDefault("database.host", "localhost")
-	v.SetDefault("database.port", 5432)
-	v.SetDefault("jwt.expiry_hours", 24)
-	v.SetDefault("jwt.refresh_expiry_hours", 168)
-
 	// Environment variable overrides
 	v.SetEnvPrefix("")
 	v.AutomaticEnv()
@@ -116,7 +105,6 @@ func Load() (*Config, error) {
 	v.BindEnv("redis.addr", "REDIS_ADDR")
 	v.BindEnv("redis.password", "REDIS_PASSWORD")
 	v.BindEnv("jwt.secret", "JWT_SECRET")
-	v.BindEnv("encryption_key", "ENCRYPTION_KEY")
 	v.BindEnv("server.port", "SERVER_PORT")
 	v.BindEnv("sentry.dsn", "SENTRY_DSN")
 	v.BindEnv("cors.allowed_origins", "CORS_ALLOWED_ORIGINS")

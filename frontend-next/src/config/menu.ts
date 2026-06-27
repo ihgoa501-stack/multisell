@@ -81,12 +81,11 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '运营',
     items: [
-      { key: '/feedback', icon: 'MessageOutlined', label: '用户反馈' },
+      { key: '/exceptions', icon: 'WarningOutlined', label: '异常' },
       { key: '/notifications', label: '通知' },
       { key: '/image-gen', label: '图片生成' },
       { key: '/import-batches', label: '批量导入' },
       { key: '/operation-logs', label: '操作日志' },
-      { key: '/metabolism', icon: 'ExperimentOutlined', label: '代谢管理' },
       { key: '/search', label: '搜索' },
       { key: '/reports', label: '报表' },
       { key: '/aftersales', label: '售后' },
@@ -96,10 +95,9 @@ export const menuGroups: MenuGroup[] = [
     ],
   },
   {
-    label: '系统管理',
+    label: '设置',
     items: [
       { key: '/settings', icon: 'SettingOutlined', label: '系统设置' },
-      { key: '/approvals', icon: 'CheckCircleOutlined', label: '审批管理' },
       { key: '/settings/llm', label: 'LLM 配置' },
       { key: '/settings/rbac', label: '权限管理' },
       { key: '/settings/policy', label: '审批策略' },

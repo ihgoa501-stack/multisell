@@ -1,11 +1,14 @@
 package integrations
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -150,6 +153,24 @@ func (s *Service) TestConnection(id int64) (*TestConnectionResult, error) {
 	return &TestConnectionResult{Success: true, Message: "ok"}, nil
 }
 
+// ListOzonProducts fetches the product catalog from Ozon for the given
+// integration account ID by delegating to the Ozon adapter.
+func (s *Service) ListOzonProducts(ctx context.Context, accountID int64) ([]OzonProduct, error) {
+	var a PlatformIntegrationAccount
+	if err := s.db.First(&a, accountID).Error; err != nil {
+		return nil, err
+	}
+	adapter, ok := GetAdapter("ozon")
+	if !ok {
+		return nil, errors.New("ozon adapter not registered")
+	}
+	ozon, ok := adapter.(*OzonAdapter)
+	if !ok {
+		return nil, errors.New("ozon adapter type assertion failed")
+	}
+	return ozon.ListProducts(ctx, a.PlatformID)
+}
+
 // TriggerSync marks the account as syncing.
 func (s *Service) TriggerSync(id int64) (*PlatformIntegrationAccount, error) {
 	var a PlatformIntegrationAccount
@@ -221,4 +242,117 @@ func (s *Service) CreateAttributeMapping(accountID int64, in *CreateAttributeMap
 		return nil, err
 	}
 	return &m, nil
+}
+
+// PublishToOzonInput is the request payload for publishing a product to Ozon.
+type PublishToOzonInput struct {
+	ProductID    int64   `json:"product_id" binding:"required"`
+	AccountID    int64   `json:"account_id" binding:"required"`
+	Price        float64 `json:"price" binding:"required"`
+	CurrencyCode string  `json:"currency_code"`
+	ImageURL     string  `json:"image_url,omitempty"`
+}
+
+// PublishToOzon publishes a local product to the Ozon platform.
+func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*PublishResult, error) {
+	var prod sku.Product
+	if err := s.db.WithContext(ctx).First(&prod, in.ProductID).Error; err != nil {
+		return nil, fmt.Errorf("publish to ozon: product %d not found", in.ProductID)
+	}
+	type skuRow struct {
+		ID   int64
+		Code string
+	}
+	var skus []skuRow
+	if err := s.db.Table("sku").Where("product_id = ?", in.ProductID).Find(&skus).Error; err != nil {
+		return nil, fmt.Errorf("publish to ozon: list skus: %w", err)
+	}
+	if len(skus) == 0 {
+		return nil, fmt.Errorf("publish to ozon: product %d has no SKUs", in.ProductID)
+	}
+	var acct PlatformIntegrationAccount
+	if err := s.db.WithContext(ctx).First(&acct, in.AccountID).Error; err != nil {
+		return nil, fmt.Errorf("publish to ozon: account %d not found", in.AccountID)
+	}
+	var plat struct{ Code string }
+	if err := s.db.Table("platform").Select("code").Where("id = ?", acct.PlatformID).Scan(&plat).Error; err != nil {
+		return nil, fmt.Errorf("publish to ozon: platform lookup: %w", err)
+	}
+	adapter, ok := GetAdapter(plat.Code)
+	if !ok {
+		return nil, fmt.Errorf("publish to ozon: no adapter for platform %s", plat.Code)
+	}
+	prices := make(map[int64]string)
+	inventories := make(map[int64]int)
+	publishSKUs := make([]PublishSKU, 0, len(skus))
+	for _, sk := range skus {
+		publishSKUs = append(publishSKUs, PublishSKU{SkuID: sk.ID, SkuCode: sk.Code})
+		prices[sk.ID] = fmt.Sprintf("%.2f", in.Price)
+		var stock int64
+		s.db.Table("sku").Select("stock").Where("id = ?", sk.ID).Scan(&stock)
+		inventories[sk.ID] = int(stock)
+	}
+	pkgH, _ := prod.PackageHeightCm.Float64()
+	pkgW, _ := prod.PackageWidthCm.Float64()
+	pkgL, _ := prod.PackageLengthCm.Float64()
+	pkgWt, _ := prod.PackageWeightKg.Float64()
+
+	return adapter.Publish(ctx, &PublishInput{
+		ProductID:      prod.ID,
+		PlatformID:     acct.PlatformID,
+		AccountID:      in.AccountID,
+		ProductName:    prod.Name,
+		Description:    prod.Description,
+		CategoryID:     prod.CategoryID,
+		SKUs:           publishSKUs,
+		Prices:         prices,
+		Inventories:    inventories,
+		PackageHeight:  pkgH,
+		PackageWidth:   pkgW,
+		PackageLength:  pkgL,
+		PackageWeight:  pkgWt,
+		MainImage:      in.ImageURL,
+	})
+}
+
+// SyncOzonOrders fetches new orders from all active Ozon accounts via the adapter.
+// Called by the scheduler on a 15-minute interval.
+func (s *Service) SyncOzonOrders(ctx context.Context) error {
+	type accountRow struct {
+		ID         int64
+		PlatformID int64
+	}
+	var accounts []accountRow
+	if err := s.db.Table("platform_integration_account AS a").
+		Select("a.id, a.platform_id").
+		Joins("JOIN platform p ON p.id = a.platform_id").
+		Where("p.code = ? AND a.status = ?", "ozon", "active").
+		Find(&accounts).Error; err != nil {
+		return fmt.Errorf("sync ozon: %w", err)
+	}
+	if len(accounts) == 0 {
+		return nil
+	}
+	adapter, ok := GetAdapter("ozon")
+	if !ok {
+		return fmt.Errorf("sync ozon: no adapter")
+	}
+	ozon, ok := adapter.(*OzonAdapter)
+	if !ok {
+		return fmt.Errorf("sync ozon: type error")
+	}
+	since := time.Now().Add(-72 * time.Hour)
+	for _, acct := range accounts {
+		orders, err := ozon.FetchOrders(ctx, &FetchOrdersInput{PlatformID: acct.PlatformID, Since: since})
+		if err != nil {
+			s.db.Table("platform_integration_account").Where("id = ?", acct.ID).Updates(
+				map[string]interface{}{"last_error": err.Error(), "last_sync_at": time.Now(), "sync_status": "error"})
+			s.logger.Warn("ozon sync error", zap.Int64("account", acct.ID), zap.Error(err))
+			continue
+		}
+		s.logger.Info("ozon sync done", zap.Int64("account", acct.ID), zap.Int("orders", len(orders)))
+		s.db.Table("platform_integration_account").Where("id = ?", acct.ID).Updates(
+			map[string]interface{}{"last_sync_at": time.Now(), "last_error": "", "sync_status": "idle"})
+	}
+	return nil
 }

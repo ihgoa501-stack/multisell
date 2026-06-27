@@ -205,6 +205,52 @@ func TestDashboardAgent_Decide(t *testing.T) {
 	_ = risk
 }
 
+func TestSourcingAgent_Decide(t *testing.T) {
+	a := NewSourcingAgent()
+	// Viable product.
+	out, conf, risk, err := a.Decide("sourcing_recommend", map[string]interface{}{
+		"source_url": "https://detail.1688.com/offer/xxx.html",
+		"price_1688": 50.0,
+		"weight_kg":  0.5,
+		"destination": "US",
+		"product_name": "测试商品",
+	})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if out == nil {
+		t.Fatal("nil output")
+	}
+	if out["status"] != "viable" {
+		t.Errorf("expected viable, got %v", out["status"])
+	}
+	if conf < 0 || conf > 1 {
+		t.Fatalf("confidence out of range: %f", conf)
+	}
+	_ = risk
+
+	// Missing required fields.
+	out2, conf2, _, _ := a.Decide("sourcing_recommend", map[string]interface{}{})
+	if out2 == nil {
+		t.Fatal("nil output for missing fields")
+	}
+	if out2["status"] != "insufficient_data" {
+		t.Errorf("expected insufficient_data, got %v", out2["status"])
+	}
+	if conf2 != 0 {
+		t.Errorf("expected confidence 0 for insufficient data, got %f", conf2)
+	}
+
+	// Unknown decision point.
+	out3, conf3, _, _ := a.Decide("unknown_dp", nil)
+	if out3 == nil {
+		t.Fatal("nil output for unknown dp")
+	}
+	if conf3 != 0 {
+		t.Errorf("expected confidence 0 for unknown dp, got %f", conf3)
+	}
+}
+
 func TestSafeFloat(t *testing.T) {
 	tests := []struct {
 		name string
