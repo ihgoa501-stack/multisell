@@ -190,8 +190,8 @@ export default function SourcingPage() {
       <h1
         style={{
           fontFamily: 'var(--ds)',
-          fontWeight: 600,
-          fontSize: '1rem',
+          fontWeight: 700,
+          fontSize: 'var(--text-h1)',
           color: 'var(--t1)',
           margin: '0 0 16px 0',
         }}

@@ -215,8 +215,9 @@ export default function MetabolismPage() {
         <div>
           <h1
             style={{
-              fontSize: 24,
-              fontWeight: 600,
+              fontFamily: 'var(--ds)',
+              fontWeight: 700,
+              fontSize: 'var(--text-h1)',
               margin: 0,
             }}
           >
