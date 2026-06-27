@@ -10,9 +10,12 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/agent/impl"
+	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
+	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
+	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -25,6 +28,19 @@ type Orchestrator struct {
 	traces     *TraceWriter
 	provider   LLMProvider
 	agentImpls map[string]impl.Agent
+	hub        *realtime.Hub
+
+	// guardrails is the AIOS guardrails chain for L1-L5 defensive checks.
+	// When nil, all checks pass through (no-op). Set via WithGuardrails().
+	guardrails *guardrails.Chain
+
+	// budget controls LLM spend. When nil, no cost capping applied.
+	budget *costcontrol.Controller
+
+	// trustScoreSync forces synchronous trust score recalculation after each Run().
+	// In production this runs in a goroutine; tests with SQLite can set this to
+	// true to avoid table-lock races during cleanup.
+	trustScoreSync bool
 }
 
 // NewOrchestrator creates a new AI orchestrator.
@@ -53,6 +69,32 @@ func (o *Orchestrator) Registry() *AgentRegistry { return o.registry }
 
 // TraceWriter exposes the trace writer.
 func (o *Orchestrator) TraceWriter() *TraceWriter { return o.traces }
+
+// WithSyncTrustScore forces synchronous trust score recalculation after Run().
+// In production the recalculation runs in a goroutine; tests using shared SQLite
+// should set this to true to avoid table-lock races during cleanup.
+func (o *Orchestrator) WithSyncTrustScore() *Orchestrator {
+	o.trustScoreSync = true
+	return o
+}
+
+// WithHub sets the WebSocket hub for real-time notifications.
+func (o *Orchestrator) WithHub(hub *realtime.Hub) *Orchestrator {
+	o.hub = hub
+	return o
+}
+
+// WithGuardrails sets the AIOS guardrails chain for L1-L5 defensive checks.
+func (o *Orchestrator) WithGuardrails(c *guardrails.Chain) *Orchestrator {
+	o.guardrails = c
+	return o
+}
+
+// WithBudget sets the LLM cost budget controller.
+func (o *Orchestrator) WithBudget(b *costcontrol.Controller) *Orchestrator {
+	o.budget = b
+	return o
+}
 
 // RunAgentRequest is the input for executing an agent decision.
 type RunAgentRequest struct {
@@ -333,14 +375,53 @@ func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[stri
 	userMsg := fmt.Sprintf("Agent %s @ %s — please decide.", agent.ID, dp)
 	if ctx != nil {
 		if m, ok := ctx["message"].(string); ok && m != "" {
+			// Run user input through guardrails chain before sending to LLM.
+			if o.guardrails != nil {
+				inp := &guardrails.GuardInput{RawInput: m}
+				res, err := o.guardrails.Check(context.Background(), inp)
+				if err != nil {
+					o.logger.Warn("guardrails check failed", zap.Error(err))
+				} else if res.Blocked {
+					o.logger.Warn("guardrails blocked user input", zap.String("reason", res.Reason))
+					// ponytail: blocked input falls back to safe default.
+					// Upgrade to full HTTP 400 rejection when the caller
+					// surfaces guardrails results to the API layer.
+					userMsg = fmt.Sprintf("[input blocked: %s] %s", res.Reason, userMsg)
+					goto afterMessageCheck
+				}
+			}
 			userMsg = m
 		}
 	}
+afterMessageCheck:
 	req := &LLMRequest{
 		Model:    agent.ModelHint,
 		System:   system,
 		Messages: []LLMMessage{{Role: "user", Content: userMsg}},
 		Metadata: map[string]interface{}{"agent_id": agent.ID, "decision_point": dp},
+	}
+
+	// Budget check — can block or force downgrade to cheapest model.
+	if o.budget != nil {
+		budgetIn := costcontrol.AllowInput{AgentID: agent.ID, Model: req.Model, Tokens: len(userMsg) / 4}
+		budgetRes, budgetErr := o.budget.Allow(context.Background(), budgetIn)
+		if budgetErr == nil && budgetRes.Action == costcontrol.ActionBlock {
+			o.logger.Warn("budget blocked LLM call",
+				zap.String("agent", agent.ID),
+				zap.String("reason", budgetRes.Reason),
+				zap.Float64("daily_spent", budgetRes.DailySpent),
+			)
+			out, conf, risk := stubFinalOutput(agent, dp, ctx)
+			return out, conf, risk, nil
+		}
+		if budgetErr == nil && budgetRes.Action == costcontrol.ActionDowngrade {
+			o.logger.Info("budget downgraded LLM model",
+				zap.String("agent", agent.ID),
+				zap.String("from", req.Model),
+				zap.String("to", budgetRes.Cheapest),
+			)
+			req.Model = budgetRes.Cheapest
+		}
 	}
 
 	// Only call the real provider when it isn't the stub, to avoid silently
@@ -354,6 +435,7 @@ func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[stri
 				zap.String("provider", o.provider.Name()),
 				zap.String("agent", agent.ID),
 				zap.Error(err))
+			o.recordLLMCost(agent, req, resp, 0, false)
 			// In production, do NOT silently fall back to stub output.
 			envVal := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
 			ginVal := strings.ToLower(strings.TrimSpace(os.Getenv("GIN_MODE")))
@@ -361,6 +443,8 @@ func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[stri
 				return nil, 0, "", fmt.Errorf("LLM provider call failed: %w", err)
 			}
 		} else if resp != nil {
+			o.recordLLMCost(agent, req, resp, 0, false)
+
 			out := map[string]interface{}{
 				"agent_id":       agent.ID,
 				"decision_point": dp,
@@ -394,6 +478,41 @@ func clampConfidence(v float64) float64 {
 		return 0.99
 	}
 	return v
+}
+
+// recordLLMCost writes the cost of an LLM call to the budget controller.
+// resp may be nil (failed calls); cached indicates whether the response was a cache hit.
+func (o *Orchestrator) recordLLMCost(agent AgentSpec, req *LLMRequest, resp *LLMResponse, userID int64, cached bool) {
+	if o.budget == nil {
+		return
+	}
+	if cached || resp == nil {
+		return
+	}
+	// Estimate cost from token counts (Haiku ≈ $0.25/M, Sonnet ≈ $3/M, Opus ≈ $15/M input).
+	var rateIn, rateOut float64
+	m := req.Model
+	switch {
+	case strings.Contains(m, "haiku"):
+		rateIn, rateOut = 0.25, 1.25
+	case strings.Contains(m, "sonnet"):
+		rateIn, rateOut = 3.0, 15.0
+	case strings.Contains(m, "opus"):
+		rateIn, rateOut = 15.0, 75.0
+	default:
+		rateIn, rateOut = 3.0, 15.0 // sonnet default
+	}
+	cost := (float64(resp.TokensIn)/1_000_000)*rateIn + (float64(resp.TokensOut)/1_000_000)*rateOut
+	rec := costcontrol.RecordInput{
+		UserID:    userID,
+		AgentID:   agent.ID,
+		Model:     resp.Model,
+		TokensIn:  resp.TokensIn,
+		TokensOut: resp.TokensOut,
+		CostUSD:   cost,
+		Cached:    cached,
+	}
+	_ = o.budget.Record(context.Background(), rec)
 }
 
 // Chat is a convenience entry point for /ai/chat. It maps a natural-language

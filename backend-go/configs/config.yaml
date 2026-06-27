@@ -8,7 +8,7 @@ database:
   user: postgres
   password: postgres
   dbname: multisell
-  sslmode: disable
+  sslmode: disable  # override to "require" for production via DB_SSLMODE env
   max_idle_conns: 10
   max_open_conns: 100
   schemas:
@@ -34,6 +34,11 @@ jwt:
   secret: dev-secret-change-in-production
   expiry_hours: 24
   refresh_expiry_hours: 168
+
+llm:
+  daily_budget_usd: 0       # 0 = unlimited; set to cap daily LLM spend in USD
+  provider: openai           # openai | anthropic | stub
+  api_key: ""                # set via LLM_API_KEY env var
 
 log:
   level: debug

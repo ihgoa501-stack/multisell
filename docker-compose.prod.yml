@@ -11,7 +11,7 @@ services:
       - ./backend-go/migrations:/migrations
     command:
       -path /migrations
-      -database "postgresql://postgres:postgres@db:5432/multisell?sslmode=disable"
+      -database "postgresql://${DB_USER:?required}:${DB_PASSWORD:?required}@db:5432/${DB_NAME:?required}?sslmode=require"
       up
     restart: "no"
 
@@ -20,15 +20,14 @@ services:
     environment:
       GIN_MODE: release
       DB_HOST: db
-      DB_PORT: "5432"
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: multisell
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_USER: "${DB_USER:?required}"
+      DB_PASSWORD: "${DB_PASSWORD:?required}"
+      DB_NAME: "${DB_NAME:?required}"
+      JWT_SECRET: "${JWT_SECRET:?required}"
+      LLM_API_KEY: "${LLM_API_KEY}"
+      LLM_PROVIDER: "${LLM_PROVIDER:-openai}"
       SERVER_PORT: "8080"
-      # Set through .env or host environment before production use.
-      # JWT_SECRET: "<strong-secret>"
-      # LLM_PROVIDER: "openai"
-      # LLM_API_KEY: "<provider-key>"
     depends_on:
       db:
         condition: service_healthy
