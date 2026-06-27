@@ -180,10 +180,10 @@
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/v1/order-import` | 导入批次列表 |
-| POST | `/api/v1/order-import` | 创建导入批次 |
-| GET | `/api/v1/order-import/:id` | 导入批次详情 |
-| DELETE | `/api/v1/order-import/:id` | 删除导入批次 |
+| GET | `/api/v1/orderimport` | 导入批次列表 |
+| POST | `/api/v1/orderimport` | 创建导入批次 |
+| GET | `/api/v1/orderimport/:id` | 导入批次详情 |
+| DELETE | `/api/v1/orderimport/:id` | 删除导入批次 |
 
 ### 物流（Shipping）
 
@@ -528,7 +528,7 @@ http://localhost:3000
 | `/decision` | GET /api/v1/decision |
 | `/ai` | POST /api/v1/ai/* |
 | `/agents` / `/agentos` | GET /api/v1/agents / /agentos |
-| `/settings` | GET /api/v1/settings |
+| `/settings` | GET /api/v1/setting |
 | `/support` | GET /api/v1/support/* |
 | `/support/templates` | GET /api/v1/support/templates |
 | `/notifications` | GET /api/v1/notification |

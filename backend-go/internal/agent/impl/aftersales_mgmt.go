@@ -82,7 +82,7 @@ func (a *AftersalesMgmtAgent) registerTools() {
 			},
 		},
 		{
-			Name:        "aftersales.agent.report",
+			Name:        "aftersales.agent.aftersales_report",
 			Version:     "1.0.0",
 			Description: "售后KPI报告",
 			RiskLevel:   toolregistry.RiskLow,
