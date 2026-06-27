@@ -14,15 +14,12 @@ import (
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/aftersales"
-	"github.com/lingmirror/backend-go/internal/domain/agentlearning"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
-	"github.com/lingmirror/backend-go/internal/domain/cost"
 		"github.com/lingmirror/backend-go/internal/domain/content"
-
+	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
@@ -34,8 +31,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
-	"github.com/lingmirror/backend-go/internal/domain/landedcost"
-tt"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
@@ -48,7 +43,6 @@ tt"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
-		"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
@@ -60,7 +54,6 @@ tt"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
-	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
@@ -139,11 +132,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Event Bus Subscriptions: agent triggers + pipeline chains
 	// ==========================================================
 
-
-	// ==========================================================
-	// Event Bus Subscriptions: agent triggers + pipeline chains
-	// ==========================================================
-
 	// scheduler.tick.A5 → orchestrator runs A5 stock_alert
 	bus.Subscribe("scheduler.tick.A5", func(ctx context.Context, evt eventbus.Event) error {
 		_, err := aiOrch.Run(&ai.RunAgentRequest{
@@ -216,35 +204,32 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		})
 		return err
 	})
-	// scheduler.tick.trustscore → recalculate trust scores
+	// scheduler.tick.trustscore → recalculate trust scores + auto-upgrade eligible agents
 	bus.Subscribe("scheduler.tick.trustscore", func(ctx context.Context, evt eventbus.Event) error {
-		svc := trustscore.NewService(db, logger)
-		return svc.Recalculate()
+		ug := trustscore.NewUpgrader(db, logger)
+		_, err := ug.AutoUpgrade()
+		return err
 	})
 	// scheduler.tick.entropy → run entropy defenses
 	bus.Subscribe("scheduler.tick.entropy", func(ctx context.Context, evt eventbus.Event) error {
 		svc := entropy.NewService(db, logger)
 		_, err := svc.RunDefenses(0)
 		return err
-	})
 
-	// scheduler.tick.agent-learning → evaluate recent decisions and recalculate accuracy
-	bus.Subscribe("scheduler.tick.agent-learning", func(ctx context.Context, evt eventbus.Event) error {
-		svc := agentlearning.NewService(db, logger)
-		if err := svc.EvaluateRecentTraces(); err != nil {
+	// scheduler.tick.freshness -> check for stale product data
+	bus.Subscribe("scheduler.tick.freshness", func(ctx context.Context, evt eventbus.Event) error {
+		fSvc := producthub.NewFreshnessService(db, logger)
+		stale, err := fSvc.CheckFreshness(ctx)
+		if err != nil {
 			return err
 		}
-		// Recalculate accuracy for tracked agents
-		agents := []string{"A2", "A3", "A8", "G3"}
-		periods := []string{"7d", "30d", "90d"}
-		for _, agentID := range agents {
-			for _, period := range periods {
-				if err := svc.RecalculateAccuracy(agentID, period); err != nil {
-					logger.Warn("accuracy recalc failed", zap.String("agent", agentID), zap.String("period", period), zap.Error(err))
-				}
-			}
+		if len(stale) > 0 {
+			logger.Warn("stale product data detected",
+				zap.Int("count", len(stale)),
+			)
 		}
 		return nil
+	})
 	})
 
 	// scheduler.tick.A8 → sourcing batch scan
@@ -253,9 +238,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 
 	// -------------------------------------------------------
-	// Approval: auto-create when agent confidence < 0.7
-	bus.Subscribe("agent.decided.*", approval.NewAgentDecisionSubscriber(db, logger))
-		
 	// Pipeline chain rules (via event bus)
 	// -------------------------------------------------------
 
@@ -384,6 +366,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
+	sched.Register(scheduler.Task{
+		ID: "tick-freshness", AgentID: "freshness", DecisionPoint: "freshness_check",
+		Interval: time.Hour * 2, Description: "数据新鲜度扫描",
+	})
 		sched.Register(scheduler.Task{
 			ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
 			Interval: time.Minute * 15, Description: "Ozon 订单同步",
@@ -395,6 +381,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		sched.Register(scheduler.Task{
 			ID: "tick-m1", AgentID: "M1", DecisionPoint: "excretion_scoring",
 			Interval: time.Hour * 1, Description: "代谢排泄评分",
+		})
+		sched.Register(scheduler.Task{
+			ID: "tick-sla-escalation", AgentID: "agentos", DecisionPoint: "sla_escalation",
+			Interval: time.Minute * 15, Description: "SLA过期升级待审批动作",
 		})
 
 	// Ozon sync handler
@@ -447,14 +437,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	sku.RegisterRoutes(protected, db, logger)
 	price.RegisterRoutes(protected, db, logger)
 	inventory.RegisterRoutes(protected, db, logger)
-
-	// Oversell watcher: scheduled sweep for cross-platform inventory sync.
-	oversellWatcher := inventory.NewOversellWatcher(db, bus, logger)
-	sched.Register("inventory_oversell_sweep", inventory.OversellSweepInterval, func(ctx context.Context) error {
-		oversellWatcher.RunOnce(ctx)
-		return nil
-	})
-
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
 
@@ -523,6 +505,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	allocation.RegisterRoutes(protected, db, logger)
 	exceptions.RegisterRoutes(protected, db, logger)
 	notification.RegisterRoutes(protected, db, logger)
+		content.RegisterRoutes(protected, db, logger, aiOrch)
 	dashboard.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
 	settings.RegisterRoutes(protected, db, logger)
@@ -531,14 +514,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	operationlog.RegisterRoutes(protected, db, logger)
 	integrations.RegisterRoutes(protected, db, logger)
 	integrations.RegisterWebhookAdminRoutes(protected, db, logger)
-	approval.RegisterRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
 	sourcing1688.RegisterRoutes(protected, db, logger)
 	logistics.RegisterRoutes(protected, db, logger)
 	productanalysis.RegisterRoutes(protected, db, logger)
-	producthub.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
 	report.RegisterRoutes(protected, db, logger)
 	exchangerate.RegisterRoutes(protected, db, logger)
@@ -549,9 +530,16 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
+		// scheduler.tick.agentos -> SLA escalation for overdue pending actions
+		bus.Subscribe("scheduler.tick.agentos", func(ctx context.Context, evt eventbus.Event) error {
+			agentosSvc := agentos.NewService(db, logger)
+			return agentosSvc.SLAEscalation()
+		})
+
 	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
 		logger.Info("metabolism: M1 tick received")
-			return m1Svc.Execute(true)
+			_, err := m1Svc.ScoreAndExcreteEntities(false)
+			return err
 	})
 	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 
@@ -563,43 +551,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// AI routes need the hub for realtime broadcasts.
 	ai.RegisterRoutes(protected, db, logger, hub)
-
-	// Feedback routes with full AgentOS integration
-	feedback.RegisterRoutes(api, cfg, db, logger,
-		// AI classification function
-		func(ctx context.Context, system, user string) (string, error) {
-			resp, err := aiOrch.Provider().Chat(ctx, &ai.LLMRequest{
-				System:      system,
-				Messages:    []ai.LLMMessage{{Role: "user", Content: user}},
-				Temperature: 0.1,
-				MaxTokens:   300,
-			})
-			if err != nil {
-				return "", err
-			}
-			return resp.Answer, nil
-		},
-		// WebSocket hub for real-time notifications
-		hub,
-		// UnifiedAction creator for AgentOS integration
-		func(table, sourceID, title, payload string) error {
-			aiSvc := ai.NewService(db, logger)
-				requiresApproval := true
-			_, err := aiSvc.CreateAction(&ai.CreateActionInput{
-				SourceTable:  table,
-				SourceID:     sourceID,
-				SourceType:   "feedback",
-				ActionType:   "feedback_triage",
-				Title:        title,
-				Description:  payload,
-				AgentID:      "A8",
-				SquadID:      "governance",
-				RiskLevel:    "medium",
-				RequiresApproval:   &requiresApproval,
-			})
-			return err
-		},
-	)
 
 	return r
 }

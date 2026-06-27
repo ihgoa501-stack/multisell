@@ -184,7 +184,7 @@ func (o *PipelineOrchestrator) AdvancePipeline(ctx context.Context, productID in
 		})
 	if pubErr != nil {
 		o.logger.Warn("publish orchestration.pipeline.completed failed",
-			zap.Int64("product_id"), productID, zap.Error(pubErr))
+			zap.Int64("product_id", productID), zap.Error(pubErr))
 	}
 
 	return nil
