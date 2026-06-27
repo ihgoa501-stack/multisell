@@ -39,8 +39,8 @@ export default function AgentosWorkItemsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['agentos', 'work-items'],
     queryFn: async () => {
-      const res = await apiClient.get<WorkItem[]>('/v1/agentos/work-items');
-      return res.data ?? [];
+      const res = await apiClient.get<{ items: WorkItem[] }>('/v1/agentos/work-items');
+      return res.data?.items ?? [];
     },
     retry: false,
   });
