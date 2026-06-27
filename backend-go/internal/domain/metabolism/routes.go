@@ -15,5 +15,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, adapte
 		metabolism.GET("", h.ListLogs)
 		metabolism.GET("/:id", h.GetLog)
 		metabolism.POST("/dry-run", h.DryRun)
+		metabolism.POST("/execute", h.ExecuteEntities)
+		metabolism.GET("/excretion-result", h.GetExcretionResult)
 	}
 }

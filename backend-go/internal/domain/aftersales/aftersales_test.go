@@ -986,3 +986,86 @@ func (m *fetchErrAdapter) PushTracking(_ context.Context, _ *integrations.PushTr
 func (m *fetchErrAdapter) FetchOrders(_ context.Context, _ *integrations.FetchOrdersInput) ([]*integrations.PlatformOrder, error) { return nil, nil }
 func (m *fetchErrAdapter) FetchSettlements(_ context.Context, _ *integrations.FetchSettlementsInput) ([]*integrations.PlatformSettlement, error) { return nil, nil }
 func (m *fetchErrAdapter) FetchReturns(_ context.Context, _ *integrations.FetchReturnsInput) ([]*integrations.PlatformReturn, error) { return nil, m.err }
+
+func TestService_Get_Found(t *testing.T) {
+	db := newTestDB(t)
+	svc := newSvc(db)
+
+	o := setupOrder(t, db)
+	qty := 2
+	as, err := svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "test found", CreatedBy: "tester"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := svc.Get(as.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.ID != as.ID {
+		t.Errorf("expected ID %d, got %d", as.ID, got.ID)
+	}
+	if got.Reason != "test found" {
+		t.Errorf("expected reason 'test found', got %q", got.Reason)
+	}
+	if got.ReturnQuantity != 2 {
+		t.Errorf("expected return_quantity 2, got %d", got.ReturnQuantity)
+	}
+	if got.Status != "pending" {
+		t.Errorf("expected status 'pending', got %q", got.Status)
+	}
+}
+
+func TestService_List_FilterBySearch(t *testing.T) {
+	db := newTestDB(t)
+	svc := newSvc(db)
+
+	o := setupOrder(t, db)
+	qty := 1
+	svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "customer dispute - item not received", CreatedBy: "admin"})
+	svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "normal return 质量问题", CreatedBy: "admin"})
+	svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "shipping dispute - package damaged", CreatedBy: "admin"})
+
+	// Search for "dispute" should match 2 records.
+	items, total, err := svc.List(&common.Pagination{Page: 1, Size: 10}, &ListFilter{Search: "dispute"})
+	if err != nil {
+		t.Fatalf("List with search failed: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("expected 2 matches for 'dispute', got %d", total)
+	}
+	_ = items
+
+	// Search for "normal" should match 1 record.
+	items2, total2, err := svc.List(&common.Pagination{Page: 1, Size: 10}, &ListFilter{Search: "normal"})
+	if err != nil {
+		t.Fatalf("List with search failed: %v", err)
+	}
+	if total2 != 1 {
+		t.Errorf("expected 1 match for 'normal', got %d", total2)
+	}
+	_ = items2
+}
+
+func TestService_List_FilterByOrderID(t *testing.T) {
+	db := newTestDB(t)
+	svc := newSvc(db)
+
+	o1 := setupOrder(t, db)
+	o2 := setupOrder(t, db)
+	qty := 1
+	svc.Create(&CreateInput{OrderID: o1.ID, ReturnQuantity: &qty, Reason: "order1", CreatedBy: "admin"})
+	svc.Create(&CreateInput{OrderID: o1.ID, ReturnQuantity: &qty, Reason: "order1 again", CreatedBy: "admin"})
+	svc.Create(&CreateInput{OrderID: o2.ID, ReturnQuantity: &qty, Reason: "order2", CreatedBy: "admin"})
+
+	items, total, err := svc.List(&common.Pagination{Page: 1, Size: 10}, &ListFilter{OrderID: &o1.ID})
+	if err != nil {
+		t.Fatalf("List with order_id filter failed: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("expected 2 items for order1, got %d", total)
+	}
+	if len(items) != 2 {
+		t.Errorf("expected 2 items in result, got %d", len(items))
+	}
+}
