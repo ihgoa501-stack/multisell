@@ -1,7 +1,7 @@
 'use client';
 
 import { Alert, Button, Card, Descriptions, Image, Input, message, Modal, Progress, Select, Skeleton, Space, Table, Tabs, Tag, Result, Tooltip, Typography } from 'antd';
-import { AlertOutlined, ArrowLeftOutlined, CheckCircleOutlined, RollbackOutlined, ReloadOutlined } from '@ant-design/icons';
+import { AlertOutlined, ArrowLeftOutlined, CheckCircleOutlined, ExclamationCircleOutlined, ReloadOutlined, RollbackOutlined, WarningOutlined } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import PageContainer from '@/components/ui/PageContainer';
@@ -382,6 +382,84 @@ function ContentAITab({
   );
 }
 
+interface FreshnessItem {
+  id: number;
+  product_id: number;
+  dimension: string;
+  last_verified_at: string;
+  next_check_at: string;
+  freshness_days: number;
+  status: string;
+  drift_detected: boolean;
+  last_value: string | null;
+  current_value: string | null;
+  freshness_label: string;
+  days_since_check: number;
+}
+
+function FreshnessTab({ productId }: { productId: string }) {
+  const { data: freshnessList, isLoading, refetch, isRefetching } = useQuery({
+    queryKey: ["product-freshness", productId],
+    queryFn: async () => {
+      const res = await apiClient.get<FreshnessItem[]>("/v1/products/" + productId + "/freshness");
+      return res.data;
+    },
+    enabled: !!productId,
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: async ({ dimension, value }: { dimension: string; value: string }) => {
+      await apiClient.post("/v1/products/" + productId + "/freshness/verify", { dimension, current_value: value });
+    },
+    onSuccess: () => { message.success("验证记录已保存"); refetch(); },
+    onError: (err: Error) => { message.error("验证失败: " + err.message); },
+  });
+
+  const handleVerify = (dimension: string) => {
+    verifyMutation.mutate({ dimension, value: new Date().toISOString().split("T")[0] });
+  };
+
+  const FRESHNESS_COLORS: Record<string, string> = { fresh: "success", stale: "warning", expired: "error", drift: "red", unknown: "default" };
+  const FRESHNESS_LABELS: Record<string, string> = { fresh: "新鲜", stale: "待检查", expired: "过期", drift: "数据漂移", unknown: "未知" };
+  const FRESHNESS_DIMENSION_LABELS: Record<string, string> = { pricing: "定价", content: "内容", inventory: "库存", compliance: "合规" };
+
+  const cols = [
+    { title: "维度", dataIndex: "dimension", key: "dimension", width: 120, render: (v: string) => FRESHNESS_DIMENSION_LABELS[v] ?? v },
+    {
+      title: "状态", dataIndex: "freshness_label", key: "freshness_label", width: 130,
+      render: (_: unknown, r: FreshnessItem) => {
+        const color = FRESHNESS_COLORS[r.freshness_label] ?? "default";
+        const label = FRESHNESS_LABELS[r.freshness_label] ?? r.freshness_label;
+        const icon = r.freshness_label === "fresh" ? <CheckCircleOutlined style={{ marginRight: 4 }} /> : r.freshness_label === "drift" ? <WarningOutlined style={{ marginRight: 4 }} /> : <ExclamationCircleOutlined style={{ marginRight: 4 }} />;
+        return <Tag color={color} icon={icon}>{label}</Tag>;
+      },
+    },
+    { title: "上次验证", dataIndex: "last_verified_at", key: "last_verified_at", width: 170, render: (v: string) => v ? fmtDate(v) : "-" },
+    { title: "下次检查", dataIndex: "next_check_at", key: "next_check_at", width: 170, render: (v: string) => v ? fmtDate(v) : "-" },
+    { title: "间隔(天)", dataIndex: "freshness_days", key: "freshness_days", width: 90 },
+    { title: "上次值", dataIndex: "last_value", key: "last_value", ellipsis: true, render: (v: string | null) => v ?? "-" },
+    { title: "当前值", dataIndex: "current_value", key: "current_value", ellipsis: true, render: (v: string | null) => v ?? "-" },
+    { title: "距上次(天)", dataIndex: "days_since_check", key: "days_since_check", width: 100, render: (v: number) => v ?? 0 },
+    {
+      title: "操作", key: "action", width: 80,
+      render: (_: unknown, r: FreshnessItem) => (
+        <Button size="small" type="link" icon={<CheckCircleOutlined />} loading={verifyMutation.isPending} onClick={() => handleVerify(r.dimension)}>验证</Button>
+      ),
+    },
+  ];
+
+  return (
+    <Card title="数据新鲜度" extra={<Button icon={<ReloadOutlined />} size="small" loading={isRefetching} onClick={() => refetch()}>刷新</Button>}>
+      {isLoading ? <Skeleton active paragraph={{ rows: 4 }} /> : freshnessList && freshnessList.length > 0 ? (
+        <Table rowKey="id" dataSource={freshnessList} columns={cols} pagination={false} size="small" />
+      ) : (
+        <div style={{ textAlign: "center", padding: 24, color: "var(--text-secondary)" }}>暂无数据新鲜度记录。点击"验证"按钮开始追踪。</div>
+      )}
+    </Card>
+  );
+}
+
+
 export default function Product360Page() {
   const params = useParams();
   const router = useRouter();
@@ -501,10 +579,26 @@ export default function Product360Page() {
       children: (
         <>
           <Card style={{ marginBottom: 16 }}>
-            <Descriptions bordered column={3} size="small">
+            <Descriptions bordered column={2} size="small">
               <Descriptions.Item label="成本价">{data.cost_price != null ? fmtMoney(data.cost_price) : '-'}</Descriptions.Item>
               <Descriptions.Item label="利润评分">{data.profit_score != null ? data.profit_score + '/100' : '-'}</Descriptions.Item>
-              <Descriptions.Item label="需求评分">{data.demand_score != null ? data.demand_score + '/100' : '-'}</Descriptions.Item>
+              <Descriptions.Item label="需求分">
+                {data.demand_score != null ? (
+                  <Progress
+                    percent={data.demand_score}
+                    size="small"
+                    strokeColor={demandScoreColor(data.demand_score)}
+                    format={(pct) => `${pct}/100`}
+                  />
+                ) : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="竞争指数">
+                {data.competition_score != null ? (
+                  <Tag color={competitionScoreInfo(data.competition_score).color}>
+                    {competitionScoreInfo(data.competition_score).label} ({data.competition_score}/100)
+                  </Tag>
+                ) : '-'}
+              </Descriptions.Item>
             </Descriptions>
           </Card>
           <Card title="各平台利润明细"><Table rowKey="key" dataSource={profitData} columns={profitColumns} pagination={false} size="small" /></Card>
