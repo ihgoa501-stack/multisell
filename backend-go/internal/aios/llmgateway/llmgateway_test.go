@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/ai"
 	"go.uber.org/zap"
 )
 
@@ -758,4 +759,299 @@ func (p *callTrackingProvider) Chat(_ context.Context, _ *Request) (*Response, e
 		return nil, errors.New("transient error")
 	}
 	return p.response, nil
+}
+
+// ---------------------------------------------------------------------------
+// CostTracker tests
+// ---------------------------------------------------------------------------
+
+func TestCostTracker_Record(t *testing.T) {
+	ct := NewCostTracker()
+
+	ct.Record("claude-sonnet-4", 100, 50)
+	ct.Record("claude-haiku-4", 50, 20)
+
+	s := ct.Summary()
+	if s.TotalCalls != 2 {
+		t.Errorf("expected 2 calls, got %d", s.TotalCalls)
+	}
+	if s.TotalTokensIn != 150 {
+		t.Errorf("expected 150 tokens in, got %d", s.TotalTokensIn)
+	}
+	if s.TotalTokensOut != 70 {
+		t.Errorf("expected 70 tokens out, got %d", s.TotalTokensOut)
+	}
+	if s.TotalCostUSD <= 0 {
+		t.Errorf("expected positive total cost, got %f", s.TotalCostUSD)
+	}
+	if s.CallsByModel["claude-sonnet-4"] != 1 {
+		t.Errorf("expected 1 sonnet call, got %d", s.CallsByModel["claude-sonnet-4"])
+	}
+}
+
+func TestCostTracker_Summary(t *testing.T) {
+	ct := NewCostTracker()
+
+	ct.Record("claude-opus-4", 200, 100)
+	ct.Record("claude-sonnet-4", 100, 50)
+	ct.Record("claude-sonnet-4", 80, 40)
+
+	s := ct.Summary()
+	if s.TotalCalls != 3 {
+		t.Errorf("expected 3 calls, got %d", s.TotalCalls)
+	}
+	if s.CallsByModel["claude-opus-4"] != 1 {
+		t.Errorf("expected 1 opus call, got %d", s.CallsByModel["claude-opus-4"])
+	}
+	if s.CallsByModel["claude-sonnet-4"] != 2 {
+		t.Errorf("expected 2 sonnet calls, got %d", s.CallsByModel["claude-sonnet-4"])
+	}
+	if s.TokensByModel["claude-sonnet-4"] != 270 {
+		t.Errorf("expected 270 total sonnet tokens, got %d", s.TokensByModel["claude-sonnet-4"])
+	}
+}
+
+func TestCostTracker_Reset(t *testing.T) {
+	ct := NewCostTracker()
+	ct.Record("claude-opus-4", 200, 100)
+	ct.Reset()
+
+	s := ct.Summary()
+	if s.TotalCalls != 0 {
+		t.Errorf("expected 0 calls after reset, got %d", s.TotalCalls)
+	}
+	if s.TotalCostUSD != 0 {
+		t.Errorf("expected 0 cost after reset, got %f", s.TotalCostUSD)
+	}
+}
+
+func TestCostTracker_ConcurrentAccess(t *testing.T) {
+	ct := NewCostTracker()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ct.Record("claude-haiku-4", 10, 5)
+			s := ct.Summary()
+			_ = s
+		}()
+	}
+	wg.Wait()
+
+	s := ct.Summary()
+	if s.TotalCalls != 50 {
+		t.Errorf("expected 50 calls, got %d", s.TotalCalls)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Gateway + CostTracker integration
+// ---------------------------------------------------------------------------
+
+func TestGateway_WithCostTracker(t *testing.T) {
+	logger := testLogger(t)
+	ct := NewCostTracker()
+	provider := &mockProvider{
+		name:     "test",
+		response: testResponse("claude-sonnet-4"),
+	}
+	gw := NewGateway(provider, logger, WithCostTracker(ct))
+
+	// First call misses cache and tracks cost.
+	_, err := gw.Chat(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("call 1 failed: %v", err)
+	}
+
+	// Subsequent calls hit cache and should NOT record again (no provider call).
+	for i := 0; i < 2; i++ {
+		_, err := gw.Chat(context.Background(), testRequest())
+		if err != nil {
+			t.Fatalf("call %d failed: %v", i+2, err)
+		}
+	}
+
+	s := ct.Summary()
+	if s.TotalCalls != 1 {
+		t.Errorf("expected 1 tracked call (first miss), got %d", s.TotalCalls)
+	}
+	if s.TotalTokensIn <= 0 {
+		t.Errorf("expected positive input tokens, got %d", s.TotalTokensIn)
+	}
+}
+
+func TestGateway_WithCostTracker_CacheHit(t *testing.T) {
+	logger := testLogger(t)
+	ct := NewCostTracker()
+	provider := &mockProvider{
+		name:     "test",
+		response: testResponse("claude-sonnet-4"),
+	}
+	gw := NewGateway(provider, logger, WithCostTracker(ct))
+
+	// First call populates cache and records cost.
+	_, err := gw.Chat(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("first call failed: %v", err)
+	}
+
+	// Second call returns cached — cost is already recorded from the first call.
+	// Cache hits bypass the provider so no additional cost is tracked.
+	_, err = gw.Chat(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("second call failed: %v", err)
+	}
+
+	s := ct.Summary()
+	if s.TotalCalls != 1 {
+		t.Errorf("expected 1 tracked call (first miss), got %d", s.TotalCalls)
+	}
+	if s.TotalTokensIn <= 0 {
+		t.Errorf("expected positive input tokens, got %d", s.TotalTokensIn)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EstimateCost tests
+// ---------------------------------------------------------------------------
+
+func TestEstimateCost(t *testing.T) {
+	tests := []struct {
+		model     string
+		tokensIn  int
+		tokensOut int
+		wantMin   float64
+		wantMax   float64
+	}{
+		{"claude-opus-4", 1000, 500, 15+37.5-1, 15+37.5+1},
+		{"claude-sonnet-4", 1000, 500, 3+7.5-1, 3+7.5+1},
+		{"claude-haiku-4", 1000, 500, 0.25+0.625-0.1, 0.25+0.625+0.1},
+		{"unknown-model", 1000, 500, 0.25+0.625-0.1, 0.25+0.625+0.1},
+	}
+	for _, tt := range tests {
+		cost := EstimateCost(tt.model, tt.tokensIn, tt.tokensOut)
+		if cost < tt.wantMin || cost > tt.wantMax {
+			t.Errorf("EstimateCost(%q, %d, %d) = %f, want between %f and %f",
+				tt.model, tt.tokensIn, tt.tokensOut, cost, tt.wantMin, tt.wantMax)
+		}
+	}
+}
+
+func TestCostTracker_Record_EstimateCost(t *testing.T) {
+	// Verify that Record stores the cost estimate from EstimateCost.
+	ct := NewCostTracker()
+	ct.Record("claude-sonnet-4", 1000, 500)
+	recs := ct.Records()
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(recs))
+	}
+	expected := EstimateCost("claude-sonnet-4", 1000, 500)
+	if recs[0].CostUSD != expected {
+		t.Errorf("recorded cost %f != EstimateCost %f", recs[0].CostUSD, expected)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AI Provider adapter tests (wraps ai.LLMProvider)
+// ---------------------------------------------------------------------------
+
+func TestNewAIProvider(t *testing.T) {
+	stub := &ai.StubProvider{}
+	adapter := NewAIProvider(stub)
+	if adapter == nil {
+		t.Fatal("expected non-nil adapter")
+	}
+	if adapter.Name() != "stub" {
+		t.Errorf("expected name 'stub', got %s", adapter.Name())
+	}
+}
+
+func TestAIProviderAdapter_Chat(t *testing.T) {
+	stub := &ai.StubProvider{}
+	adapter := NewAIProvider(stub)
+
+	req := &Request{
+		System:   "You are a helpful assistant.",
+		Messages: []Message{{Role: "user", Content: "Hello"}},
+	}
+
+	resp, err := adapter.Chat(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if resp.Content == "" {
+		t.Error("expected non-empty content")
+	}
+	if resp.ModelUsed == "" {
+		t.Error("expected non-empty model")
+	}
+	if resp.TokensIn <= 0 {
+		t.Error("expected positive tokens in")
+	}
+	if resp.TokensOut <= 0 {
+		t.Error("expected positive tokens out")
+	}
+}
+
+func TestAIProviderAdapter_TranslatesRequest(t *testing.T) {
+	stub := &ai.StubProvider{}
+	adapter := NewAIProvider(stub)
+
+	req := &Request{
+		System:   "System prompt",
+		Messages: []Message{
+			{Role: "user", Content: "User message 1"},
+			{Role: "assistant", Content: "Assistant reply"},
+			{Role: "user", Content: "User message 2"},
+		},
+	}
+
+	resp, err := adapter.Chat(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	// The stub provider should produce content based on the last user message.
+	if resp.Content == "" {
+		t.Error("expected non-empty response from stub provider")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Cache periodic cleanup test
+// ---------------------------------------------------------------------------
+
+func TestMemoryCache_StopCleanup(t *testing.T) {
+	// Verify that StopCleanup doesn't panic and that the goroutine exits.
+	cache := NewMemoryCache(5 * time.Minute)
+	cache.Set(context.Background(), "k", testResponse("haiku"), 0)
+
+	// Should not panic.
+	cache.StopCleanup()
+
+	// Cache should still be usable after stop.
+	_, ok := cache.Get(context.Background(), "k")
+	if !ok {
+		t.Error("expected cache to work after StopCleanup")
+	}
+}
+
+func TestMemoryCache_PurgeExpired(t *testing.T) {
+	// purgeExpired is called by the cleanup goroutine; test it directly.
+	cache := NewMemoryCache(1 * time.Minute)
+	cache.Set(context.Background(), "expired", testResponse("haiku"), 50*time.Millisecond)
+	cache.Set(context.Background(), "fresh", testResponse("sonnet"), 30*time.Second)
+
+	time.Sleep(80 * time.Millisecond)
+	cache.purgeExpired()
+
+	_, ok := cache.Get(context.Background(), "expired")
+	if ok {
+		t.Error("expected expired entry to be purged")
+	}
+	_, ok = cache.Get(context.Background(), "fresh")
+	if !ok {
+		t.Error("expected fresh entry to survive purge")
+	}
 }
