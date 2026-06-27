@@ -35,10 +35,3 @@ func DashboardTools() []toolregistry.Tool {
 		},
 	}
 }
-
-func init() {
-	tools := DashboardTools()
-	for i := range tools {
-		toolregistry.DefaultRegistry.Register(&tools[i])
-	}
-}

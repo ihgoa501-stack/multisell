@@ -13,6 +13,8 @@ package impl
 import (
 	"fmt"
 	"strings"
+
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 )
 
 // ---------- Context field names ----------
@@ -89,6 +91,22 @@ func NewCustomerServiceAgent() *CustomerServiceAgent {
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
 func (a *CustomerServiceAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	// Try tool first.
+	raw, toolErr := toolregistry.DefaultRegistry.Invoke("customer_service."+decisionPoint, ctx)
+	if toolErr == nil {
+		if result, ok := raw.(map[string]interface{}); ok {
+			if c, ok := result["confidence"].(float64); ok {
+				confidence = c
+			}
+			if r, ok := result["risk"].(string); ok {
+				riskLevel = r
+			}
+			delete(result, "confidence")
+			delete(result, "risk")
+			return result, confidence, riskLevel, nil
+		}
+	}
+	// Fallback to built-in logic.
 	switch decisionPoint {
 	case "auto_reply":
 		return a.autoReply(ctx)

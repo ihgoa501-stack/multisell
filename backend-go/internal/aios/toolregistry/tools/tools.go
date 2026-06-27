@@ -16,5 +16,18 @@ func AllTools() []toolregistry.Tool {
 	all = append(all, SupplierTools()...)
 	all = append(all, PlatformTools()...)
 	all = append(all, ProductScoutTools()...)
+	all = append(all, AdAdviceTools()...)
+	all = append(all, DashboardTools()...)
+	all = append(all, SourcingTools()...)
 	return all
+}
+
+func init() {
+	reg := toolregistry.DefaultRegistry
+	if reg == nil {
+		return
+	}
+	for _, t := range AllTools() {
+		reg.Register(&t)
+	}
 }
