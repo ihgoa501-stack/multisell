@@ -838,3 +838,298 @@ func TestScore_ReasonPopulated(t *testing.T) {
 		t.Error("expected non-empty reason for excretable event")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Entity-based M1 excretion — pure function tests
+// ---------------------------------------------------------------------------
+
+func TestScoreStaleness(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		daysSinceActivity int
+		minExpected       float64
+		maxExpected       float64
+	}{
+		{name: "zero days — active today", daysSinceActivity: 0, minExpected: 0, maxExpected: 0},
+		{name: "negative days — treat as 0", daysSinceActivity: -5, minExpected: 0, maxExpected: 0},
+		{name: "1 day — slight staleness", daysSinceActivity: 1, minExpected: 1, maxExpected: 5},
+		{name: "30 days — moderate staleness", daysSinceActivity: 30, minExpected: 30, maxExpected: 55},
+		{name: "45 days — half stale", daysSinceActivity: 45, minExpected: 50, maxExpected: 75},
+		{name: "90 days — fully stale", daysSinceActivity: 90, maxExpected: 100, minExpected: 99},
+		{name: "180 days — well past stale", daysSinceActivity: 180, maxExpected: 100, minExpected: 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ScoreStaleness(tt.daysSinceActivity)
+			if got < tt.minExpected || got > tt.maxExpected {
+				t.Errorf("ScoreStaleness(%d) = %.2f, want [%.2f, %.2f]",
+					tt.daysSinceActivity, got, tt.minExpected, tt.maxExpected)
+			}
+		})
+	}
+}
+
+func TestScorePerformance(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		salesVelocity float64
+		profitMargin  float64
+		minExpected   float64
+		maxExpected   float64
+	}{
+		{name: "no sales, no margin", salesVelocity: 0, profitMargin: 0, minExpected: 0, maxExpected: 0},
+		{name: "no sales, negative margin", salesVelocity: 0, profitMargin: -0.1, minExpected: 0, maxExpected: 0},
+		{name: "low sales, no margin", salesVelocity: 0.5, profitMargin: 0, minExpected: 10, maxExpected: 50},
+		{name: "high sales, no margin", salesVelocity: 10, profitMargin: 0, minExpected: 78, maxExpected: 82},
+		{name: "high sales, high margin", salesVelocity: 10, profitMargin: 0.3, minExpected: 95, maxExpected: 100},
+		{name: "medium sales, medium margin", salesVelocity: 3, profitMargin: 0.15, minExpected: 50, maxExpected: 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ScorePerformance(tt.salesVelocity, tt.profitMargin)
+			if got < tt.minExpected || got > tt.maxExpected {
+				t.Errorf("ScorePerformance(%.2f, %.2f) = %.2f, want [%.2f, %.2f]",
+					tt.salesVelocity, tt.profitMargin, got, tt.minExpected, tt.maxExpected)
+			}
+		})
+	}
+}
+
+func TestScoreEntity(t *testing.T) {
+	t.Parallel()
+
+	svc := &MetabolismService{logger: zap.NewNop()}
+
+	tests := []struct {
+		name       string
+		staleScore float64
+		perfScore  float64
+		minScore   float64
+		maxScore   float64
+	}{
+		{name: "all good — no excretion needed", staleScore: 0, perfScore: 100, minScore: 95, maxScore: 100},
+		{name: "fully stale, no sales — high excretion risk", staleScore: 100, perfScore: 0, minScore: 0, maxScore: 5},
+		{name: "stale but good performance — moderate health", staleScore: 100, perfScore: 100, minScore: 35, maxScore: 45},
+		{name: "active but no performance — healthy enough", staleScore: 0, perfScore: 0, minScore: 55, maxScore: 65},
+		{name: "moderately stale, mediocre performance — flagged",
+			staleScore: 50, perfScore: 30, minScore: 37, maxScore: 47},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := svc.ScoreEntity(tt.staleScore, tt.perfScore)
+			if got < tt.minScore || got > tt.maxScore {
+				t.Errorf("ScoreEntity(%.2f, %.2f) = %.2f, want [%.2f, %.2f]",
+					tt.staleScore, tt.perfScore, got, tt.minScore, tt.maxScore)
+			}
+		})
+	}
+}
+
+func TestClassifyAction(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		score    float64
+		expected string
+	}{
+		{name: "very low score — excrete", score: 10, expected: "excrete"},
+		{name: "just below excrete threshold — excrete", score: 19, expected: "excrete"},
+		{name: "at excrete threshold — flag (not < threshold)", score: 20, expected: "flag"},
+		{name: "just above excrete threshold — flag", score: 21, expected: "flag"},
+		{name: "middle of flag zone — flag", score: 30, expected: "flag"},
+		{name: "just below flag threshold — flag", score: 39, expected: "flag"},
+		{name: "at flag threshold — keep (not < threshold)", score: 40, expected: "keep"},
+		{name: "just above flag threshold — keep", score: 41, expected: "keep"},
+		{name: "high score — keep", score: 80, expected: "keep"},
+		{name: "maximum score — keep", score: 100, expected: "keep"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifyAction(tt.score)
+			if got != tt.expected {
+				t.Errorf("classifyAction(%.0f) = %s, want %s", tt.score, got, tt.expected)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Entity-based M1 excretion — integration tests
+// ---------------------------------------------------------------------------
+
+func TestScoreAndExcreteEntities_NoListings(t *testing.T) {
+	t.Parallel()
+
+	db := dbtest.NewDB(t, &MetabolismLog{})
+	logger := dbtest.NewLogger(t)
+	svc := NewService(db, logger, nil, nil)
+
+	// Create product_listing table but with no rows.
+	db.Exec(`CREATE TABLE product_listing (
+		id INTEGER PRIMARY KEY,
+		product_id INTEGER NOT NULL DEFAULT 0,
+		status TEXT DEFAULT 'active',
+		last_sync_at TIMESTAMP,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+
+	result, err := svc.ScoreAndExcreteEntities(false)
+	if err != nil {
+		t.Fatalf("ScoreAndExcreteEntities: %v", err)
+	}
+	if result.TotalItems != 0 {
+		t.Errorf("expected 0 items with empty listing table, got %d", result.TotalItems)
+	}
+	if result.Excreted != 0 || result.Flagged != 0 {
+		t.Errorf("expected 0 excreted/flagged, got excreted=%d flagged=%d", result.Excreted, result.Flagged)
+	}
+}
+
+func TestScoreAndExcreteEntities_WithListings(t *testing.T) {
+	t.Parallel()
+
+	db := dbtest.NewDB(t, &MetabolismLog{})
+	logger := dbtest.NewLogger(t)
+	svc := NewService(db, logger, nil, nil)
+
+	db.Exec(`CREATE TABLE product_listing (
+		id INTEGER PRIMARY KEY,
+		product_id INTEGER NOT NULL DEFAULT 0,
+		status TEXT DEFAULT 'active',
+		last_sync_at TIMESTAMP,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+
+	// Listing 1: very old, never synced — should be excreted.
+	db.Exec(`INSERT INTO product_listing (id, product_id, status, last_sync_at, created_at, updated_at)
+		VALUES (1, 100, 'active', NULL, ?, ?)`,
+		now.Add(-180*24*time.Hour), now.Add(-180*24*time.Hour))
+
+	// Listing 2: moderately old, some activity — should be flagged.
+	db.Exec(`INSERT INTO product_listing (id, product_id, status, last_sync_at, created_at, updated_at)
+		VALUES (2, 200, 'active', ?, ?, ?)`,
+		now.Add(-60*24*time.Hour), now.Add(-90*24*time.Hour), now.Add(-60*24*time.Hour))
+
+	// Listing 3: recently synced — should be kept.
+	db.Exec(`INSERT INTO product_listing (id, product_id, status, last_sync_at, created_at, updated_at)
+		VALUES (3, 300, 'active', ?, ?, ?)`,
+		now.Add(-1*24*time.Hour), now.Add(-30*24*time.Hour), now.Add(-1*24*time.Hour))
+
+	// Listing 4: already archived — should be excluded from scoring.
+	db.Exec(`INSERT INTO product_listing (id, product_id, status, last_sync_at, created_at, updated_at)
+		VALUES (4, 400, 'archived', NULL, ?, ?)`,
+		now.Add(-365*24*time.Hour), now.Add(-365*24*time.Hour))
+
+	result, err := svc.ScoreAndExcreteEntities(false)
+	if err != nil {
+		t.Fatalf("ScoreAndExcreteEntities: %v", err)
+	}
+
+	// Should have scored 3 listings (archived excluded, ai_trace table not available for agents).
+	if result.TotalItems != 3 {
+		t.Errorf("expected 3 total items (listings only, no ai_trace table), got %d", result.TotalItems)
+	}
+
+	// Check that items are classified and results are populated.
+	var listingItems []ExcretionItem
+	for _, item := range result.Items {
+		if item.TargetType == ExcretionTargetListing {
+			listingItems = append(listingItems, item)
+		}
+	}
+	if len(listingItems) != 3 {
+		t.Fatalf("expected 3 listing items, got %d", len(listingItems))
+	}
+
+	// Listing 1 (id=1, 180 days stale, no perf data) gets health score 0 — excreted.
+	item1 := listingItems[0]
+	if item1.TargetID != 1 {
+		t.Fatalf("expected listing 1 first, got listing %d", item1.TargetID)
+	}
+	if item1.Action != "excrete" && item1.Action != "excreted" {
+		t.Errorf("listing 1: expected action 'excrete' or 'excreted', got %s", item1.Action)
+	}
+	if item1.StaleScore <= 0 {
+		t.Errorf("listing 1: expected staleScore > 0 for 180d stale item, got %.2f", item1.StaleScore)
+	}
+
+	// Verify archived listings count: pre-existing archived (1) + newly excreted (2) = 3.
+	var count int64
+	db.Model(&listingRow{}).Where("status = ?", "archived").Count(&count)
+	if count != 3 {
+		t.Errorf("expected 3 archived listings (1 pre-existing + 2 newly excreted), got %d", count)
+	}
+}
+
+func TestScoreAndExcreteEntities_DryRun(t *testing.T) {
+	t.Parallel()
+
+	db := dbtest.NewDB(t, &MetabolismLog{})
+	logger := dbtest.NewLogger(t)
+	svc := NewService(db, logger, nil, nil)
+
+	db.Exec(`CREATE TABLE product_listing (
+		id INTEGER PRIMARY KEY,
+		product_id INTEGER NOT NULL DEFAULT 0,
+		status TEXT DEFAULT 'active',
+		last_sync_at TIMESTAMP,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+
+	// Very old listing that would be excreted in non-dry-run mode.
+	db.Exec(`INSERT INTO product_listing (id, product_id, status, last_sync_at, created_at, updated_at)
+		VALUES (1, 100, 'active', NULL, ?, ?)`,
+		now.Add(-365*24*time.Hour), now.Add(-365*24*time.Hour))
+
+	result, err := svc.ScoreAndExcreteEntities(true)
+	if err != nil {
+		t.Fatalf("ScoreAndExcreteEntities(dryRun=true): %v", err)
+	}
+
+	// Should be marked as excrete in the result.
+	if result.Excreted <= 0 {
+		t.Errorf("expected some items excreted in result, got %d", result.Excreted)
+	}
+
+	// But the listing should NOT have been archived in dry-run mode.
+	var status string
+	db.Raw(`SELECT status FROM product_listing WHERE id = 1`).Scan(&status)
+	if status != "active" {
+		t.Errorf("dry-run: listing should remain 'active', got %s", status)
+	}
+}
+
+func TestScoreAndExcreteEntities_NoTables(t *testing.T) {
+	t.Parallel()
+
+	// Test with completely empty DB — no product_listing or ai_trace tables.
+	db := dbtest.NewDB(t, &MetabolismLog{})
+	logger := dbtest.NewLogger(t)
+	svc := NewService(db, logger, nil, nil)
+
+	// Should not panic; should gracefully handle missing tables.
+	result, err := svc.ScoreAndExcreteEntities(false)
+	if err != nil {
+		t.Fatalf("ScoreAndExcreteEntities with no tables: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	t.Logf("Total items scored with no tables: %d", result.TotalItems)
+}
