@@ -243,8 +243,15 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	})
 
 	// Optionally create a unified action if the agent's autonomy is non-advisory.
+	// The autonomy level is looked up from the trust score table (dynamic, with
+	// fallback to the in-memory registry spec) so that agent upgrades from the
+	// autonomy pipeline are reflected at runtime.
 	var action *UnifiedAction
-	if agent.Autonomy != "advisory" {
+	dynamicAutonomy := agent.Autonomy
+	if ts, tsErr := trustscore.NewService(o.db, o.logger).GetByAgent(agent.ID); tsErr == nil && ts != nil {
+		dynamicAutonomy = ts.AutonomyLevel
+	}
+	if dynamicAutonomy != "advisory" {
 		actionInput := &CreateActionInput{
 			SourceTable:        "ai_trace",
 			SourceID:           traceID,
@@ -262,8 +269,8 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			Confidence:         &confidence,
 			ProposedBy:         "agent:" + agent.ID,
 		}
-		// Advisory = no approval needed; supervised = needs approval.
-		requires := agent.Autonomy == "supervised" || agent.Autonomy == "guided"
+		// advisory = no action; guided/supervised = human approval required; autonomous = no approval needed
+		requires := dynamicAutonomy == "supervised" || dynamicAutonomy == "guided"
 		actionInput.RequiresApproval = &requires
 		action, _ = o.persistAction(actionInput)
 		// Evaluate against approval policy for auto-approve/block decisions.

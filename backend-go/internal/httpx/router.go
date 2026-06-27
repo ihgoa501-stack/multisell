@@ -203,10 +203,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		})
 		return err
 	})
-	// scheduler.tick.trustscore → recalculate trust scores
+	// scheduler.tick.trustscore → recalculate trust scores + auto-upgrade eligible agents
 	bus.Subscribe("scheduler.tick.trustscore", func(ctx context.Context, evt eventbus.Event) error {
-		svc := trustscore.NewService(db, logger)
-		return svc.Recalculate()
+		ug := trustscore.NewUpgrader(db, logger)
+		_, err := ug.AutoUpgrade()
+		return err
 	})
 	// scheduler.tick.entropy → run entropy defenses
 	bus.Subscribe("scheduler.tick.entropy", func(ctx context.Context, evt eventbus.Event) error {
@@ -361,6 +362,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 			ID: "tick-m1", AgentID: "M1", DecisionPoint: "excretion_scoring",
 			Interval: time.Hour * 1, Description: "代谢排泄评分",
 		})
+		sched.Register(scheduler.Task{
+			ID: "tick-sla-escalation", AgentID: "agentos", DecisionPoint: "sla_escalation",
+			Interval: time.Minute * 15, Description: "SLA过期升级待审批动作",
+		})
 
 	// Ozon sync handler
 	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
@@ -500,6 +505,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
+		// scheduler.tick.agentos -> SLA escalation for overdue pending actions
+		bus.Subscribe("scheduler.tick.agentos", func(ctx context.Context, evt eventbus.Event) error {
+			agentosSvc := agentos.NewService(db, logger)
+			return agentosSvc.SLAEscalation()
+		})
+
 	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
 		logger.Info("metabolism: M1 tick received")
 			return m1Svc.Execute(true)

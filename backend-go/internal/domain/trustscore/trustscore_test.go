@@ -130,11 +130,11 @@ func TestDetermineTargetLevel(t *testing.T) {
 	})
 
 	// one-step-upgrade constraint: advisory with very high score
-	// (current behavior: loop overwrites with last matching level = current level)
+	// upgrades to guided (one step up)
 	t.Run("advisory high (one-step constraint)", func(t *testing.T) {
 		got := determineTargetLevel(0.90, "advisory")
-		if got != "advisory" {
-			t.Errorf("determineTargetLevel(0.90, advisory) = %v, want advisory", got)
+		if got != "guided" {
+			t.Errorf("determineTargetLevel(0.90, advisory) = %v, want guided (one step up)", got)
 		}
 	})
 
@@ -315,13 +315,13 @@ func TestRecalculate(t *testing.T) {
 		t.Errorf("expected %d scores, got %d", allAgents, len(scores))
 	}
 
-	// First call goes through new-record path -> only agent_id/name/squad set, rest are defaults
+	// First call creates records with computed values from batch data
 	a1First, _ := svc.GetByAgent("A1")
-	if a1First.TotalActions != 0 {
-		t.Errorf("first call: expected total_actions=0 (new record), got %d", a1First.TotalActions)
+	if a1First.TotalActions != 10 {
+		t.Errorf("first call: expected total_actions=10, got %d", a1First.TotalActions)
 	}
-	if a1First.TrustScore != 0.0 {
-		t.Errorf("first call: expected trust_score=0 (new record), got %f", a1First.TrustScore)
+	if !approx(a1First.TrustScore, 0.805, 0.0005) {
+		t.Errorf("first call: expected trust_score=~0.805, got %f", a1First.TrustScore)
 	}
 
 	// ---- Second Recalculate: updates existing records with computed values ----
@@ -362,8 +362,8 @@ func TestRecalculate(t *testing.T) {
 	if a1.AutonomyLevel != "advisory" {
 		t.Errorf("autonomy_level: want advisory, got %s", a1.AutonomyLevel)
 	}
-	if a1.TargetLevel != "advisory" {
-		t.Errorf("target_level: want advisory, got %s", a1.TargetLevel)
+	if a1.TargetLevel != "guided" {
+		t.Errorf("target_level: want guided, got %s", a1.TargetLevel)
 	}
 
 	// --- Verify A2 ---
@@ -538,8 +538,6 @@ func TestUpgradeEligible(t *testing.T) {
 	svc := newTestDB(t)
 	upgrader := NewUpgraderFromSvc(svc)
 
-	// Since determineTargetLevel always returns currentLevel, manually set
-	// target_level to a different value to test the upgrade logic.
 	// A1: eligible (trust>=0.55, not autonomous) and target != current -> upgraded
 	score := NewTrustScore("A1", "Scout", "autonomous")
 	score.TrustScore = 0.60
@@ -620,14 +618,13 @@ func TestAutoUpgrade(t *testing.T) {
 	svc.db.Exec(`INSERT INTO ai_trace (id, agent_id, confidence) VALUES (1, 'A1', 0.95)`)
 
 	// AutoUpgrade calls Recalculate then UpgradeEligible.
-	// After Recalculate, target_level == autonomy_level for all records,
-	// so UpgradeEligible skips them all (no target improvements found).
+	// A1 has trust=0.985 (advisory -> guided), so one upgrade is expected.
 	results, err := upgrader.AutoUpgrade()
 	if err != nil {
 		t.Fatalf("AutoUpgrade() error: %v", err)
 	}
-	if len(results) != 0 {
-		t.Errorf("expected 0 upgrades, got %d", len(results))
+	if len(results) != 1 {
+		t.Errorf("expected 1 upgrade (A1 advisory->guided), got %d", len(results))
 	}
 
 	// Verify Recalculate created all agent records

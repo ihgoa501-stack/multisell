@@ -169,6 +169,18 @@ func (s *Service) recalculateOne(agent agentInfo, as actionRow, avgConf float64,
 		score.AgentID = agent.ID
 		score.AgentName = agent.Name
 		score.SquadID = agent.Squad
+		score.TotalActions = as.Total
+		score.AdoptedActions = as.Adopted
+		score.RejectedActions = as.Rejected
+		score.FailedActions = as.Failed
+		score.AutoApproved = as.Auto
+		score.AdoptionRate = math.Round(adoptionRate*10000) / 10000
+		score.ExecutionSuccess = math.Round(execSuccess*10000) / 10000
+		score.AvgConfidence = math.Round(avgConf*10000) / 10000
+		score.TrustScore = math.Round(trustScore*10000) / 10000
+		score.AutonomyLevel = currentLevel
+		score.TargetLevel = targetLevel
+		score.LastActionAt = lastActionAt
 		return s.db.Create(score).Error
 	}
 
@@ -285,8 +297,10 @@ func (s *Service) UpdateAutonomyLevel(agentID, level string) error {
 }
 
 // determineTargetLevel finds the highest autonomy level the agent qualifies for.
+// Iterates ascending (advisory → autonomous) and never downgrades.
+// Upgrades at most one level per cycle (one-step constraint).
 func determineTargetLevel(trustScore float64, currentLevel string) string {
-	levels := []string{"autonomous", "supervised", "guided", "advisory"}
+	levels := []string{"advisory", "guided", "supervised", "autonomous"}
 	levelOrder := map[string]int{
 		"advisory":   0,
 		"guided":     1,
@@ -298,7 +312,7 @@ func determineTargetLevel(trustScore float64, currentLevel string) string {
 	best := currentLevel
 	for _, level := range levels {
 		threshold := AutonomyThresholds[level]
-		if trustScore >= threshold && levelOrder[level] >= currentOrd {
+		if trustScore >= threshold && levelOrder[level] > levelOrder[best] {
 			best = level
 		}
 	}
