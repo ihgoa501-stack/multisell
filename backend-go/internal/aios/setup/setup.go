@@ -64,6 +64,7 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 		reg.Register(&t)
 	}
 	toolregistry.DefaultRegistry = reg
+	tools.SetAftersalesDB(db)
 
 	// 2. Create Runtime (agent lifecycle, heartbeats, resource limits).
 	rt := runtime.New(logger, bus)

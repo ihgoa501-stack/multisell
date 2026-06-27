@@ -251,6 +251,43 @@ func TestSourcingAgent_Decide(t *testing.T) {
 	}
 }
 
+func TestAftersalesMgmtAgent_Decide(t *testing.T) {
+	a := NewAftersalesMgmtAgent(nil, zap.NewNop())
+
+	tests := []struct {
+		name string
+		dp   string
+		ctx  map[string]interface{}
+	}{
+		{"return analysis default period", "return_analysis", map[string]interface{}{}},
+		{"return analysis 7d", "return_analysis", map[string]interface{}{"period": "7d"}},
+		{"refund decision - single", "refund_decision", map[string]interface{}{"after_sales_id": float64(0)}},
+		{"refund decision - scan", "refund_decision", map[string]interface{}{}},
+		{"dispute manage", "dispute_manage", map[string]interface{}{}},
+		{"aftersales report default", "aftersales_report", map[string]interface{}{}},
+		{"aftersales report 90d", "aftersales_report", map[string]interface{}{"period": "90d"}},
+		{"unknown decision point", "bogus", map[string]interface{}{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, conf, risk, err := a.Decide(tt.dp, tt.ctx)
+			if err != nil {
+				t.Fatalf("Decide(%q): %v", tt.dp, err)
+			}
+			if out == nil {
+				t.Fatalf("Decide(%q): nil output", tt.dp)
+			}
+			if conf < 0 || conf > 1 {
+				t.Fatalf("Decide(%q): confidence out of range: %f", tt.dp, conf)
+			}
+			if risk == "" {
+				t.Fatalf("Decide(%q): empty risk level", tt.dp)
+			}
+		})
+	}
+}
+
 func TestSafeFloat(t *testing.T) {
 	tests := []struct {
 		name string
