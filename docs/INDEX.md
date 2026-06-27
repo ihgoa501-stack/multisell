@@ -48,6 +48,10 @@
 
 | 文档 | 说明 |
 |------|------|
+| [Owner-First 开发协议](governance/OWNER_FIRST_PROTOCOL.md) | 非技术 Owner 如何提需求，Agent 如何澄清、拆解、验收和汇报 |
+| [平台宪法](governance/PLATFORM_CONSTITUTION.md) | 平台优先最高规则：系统分层、风险等级、禁止事项、Owner 决策边界 |
+| [Agent 开发协议](governance/AGENT_DEVELOPMENT_PROTOCOL.md) | 多 Agent 角色、开工检查、review、QA、交接规则 |
+| [Kernel 契约](governance/KERNEL_CONTRACTS.md) | EventBus、Command、Scheduler、ToolBridge、Approval、Audit 等内核契约 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 当前 Docker/Go/Next/PostgreSQL 运维命令 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
