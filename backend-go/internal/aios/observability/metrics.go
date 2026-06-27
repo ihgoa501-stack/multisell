@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-<<<<<<< ours
 // Prometheus metrics for agent heartbeat and instance state monitoring.
 var (
 	AgentMissedHeartbeats = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -24,8 +23,8 @@ var (
 	AgentInstanceState = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "multisell_agent_instance_state",
 		Help: "Agent instance state: 0=Running, 1=Degraded, 2=Stopped",
-=======
-var (
+	}, []string{"agent_id"})
+
 	// AgentAdoptionRate tracks the action adoption rate per agent.
 	AgentAdoptionRate = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "multisell_agent_adoption_rate",
@@ -36,7 +35,6 @@ var (
 	AgentSuccessRate = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "multisell_agent_success_rate",
 		Help: "Execution success rate per agent",
->>>>>>> theirs
 	}, []string{"agent_id"})
 )
 
