@@ -19,6 +19,15 @@ type Config struct {
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Log      LogConfig      `mapstructure:"log"`
 	Sentry   SentryConfig   `mapstructure:"sentry"`
+	LLM      LLMConfig      `mapstructure:"llm"`
+	EncryptionKey string         `mapstructure:"encryption_key"`
+}
+
+// LLMConfig holds LLM-related settings.
+type LLMConfig struct {
+	DailyBudgetUSD float64 `mapstructure:"daily_budget_usd"`
+	Provider       string  `mapstructure:"provider"`
+	APIKey         string  `mapstructure:"api_key"`
 }
 
 // ServerConfig holds server-specific settings.

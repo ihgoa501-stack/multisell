@@ -1,0 +1,5 @@
+# ponytail: one team handles all workflow/config review. Add per-path teams
+# when the project grows enough that different teams own different dirs.
+
+.github/workflows/ @ihgoa501-stack
+.github/CODEOWNERS @ihgoa501-stack
