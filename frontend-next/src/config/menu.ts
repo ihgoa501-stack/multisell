@@ -101,6 +101,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/settings/llm', label: 'LLM 配置' },
       { key: '/settings/rbac', label: '权限管理' },
       { key: '/settings/policy', label: '审批策略' },
+      { key: '/webhooks', label: 'Webhooks' },
     ],
   },
 ];

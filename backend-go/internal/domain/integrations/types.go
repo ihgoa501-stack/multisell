@@ -1,6 +1,9 @@
 package integrations
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // ---------- 发布域 (Listing) ----------
 
@@ -134,4 +137,23 @@ type PlatformReturn struct {
 	Status       string `json:"status"`
 	CreatedAt    string `json:"created_at"`
 	RefundAmount string `json:"refund_amount,omitempty"`
+}
+
+// ---------- 平台事件域 (Platform Events) ----------
+
+// PlatformEvent represents an event received from an external e-commerce platform.
+type PlatformEvent struct {
+	PlatformID int64                  `json:"platform_id"`
+	EventType  string                 `json:"event_type"` // listing_blocked, listing_live, price_changed, inventory_changed
+	ProductID  string                 `json:"product_id"` // platform's product ID
+	SKUCode    string                 `json:"sku_code"`
+	Data       map[string]interface{} `json:"data,omitempty"`
+	OccurredAt time.Time              `json:"occurred_at"`
+}
+
+// PlatformEventReceiver defines the interface for receiving events from
+// external platforms. Implementations should poll or listen via webhook
+// and push events to the provided channel.
+type PlatformEventReceiver interface {
+	Start(ctx context.Context, events chan<- PlatformEvent) error
 }

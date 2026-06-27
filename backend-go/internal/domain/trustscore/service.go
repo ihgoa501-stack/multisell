@@ -4,6 +4,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/aios/observability"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -141,6 +142,10 @@ func (s *Service) recalculateOne(agent agentInfo, as actionRow, avgConf float64,
 		execSuccess = 1.0 - (float64(as.Failed) / total)
 	}
 	avgConf = clamp01(avgConf)
+
+	// Publish agent adoption and success rate to Prometheus.
+	observability.AgentAdoptionRate.WithLabelValues(agent.ID).Set(adoptionRate)
+	observability.AgentSuccessRate.WithLabelValues(agent.ID).Set(execSuccess)
 
 	trustScore := adoptionRate*0.40 + execSuccess*0.30 + avgConf*0.30
 	trustScore = clamp01(trustScore)

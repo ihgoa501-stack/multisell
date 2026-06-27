@@ -14,11 +14,14 @@ import (
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/aftersales"
+	"github.com/lingmirror/backend-go/internal/domain/agentlearning"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
+		"github.com/lingmirror/backend-go/internal/domain/content"
+
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
@@ -30,6 +33,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
+	"github.com/lingmirror/backend-go/internal/domain/landedcost"
+tt"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
@@ -42,6 +47,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
+		"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
@@ -221,6 +227,25 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return err
 	})
 
+	// scheduler.tick.agent-learning → evaluate recent decisions and recalculate accuracy
+	bus.Subscribe("scheduler.tick.agent-learning", func(ctx context.Context, evt eventbus.Event) error {
+		svc := agentlearning.NewService(db, logger)
+		if err := svc.EvaluateRecentTraces(); err != nil {
+			return err
+		}
+		// Recalculate accuracy for tracked agents
+		agents := []string{"A2", "A3", "A8", "G3"}
+		periods := []string{"7d", "30d", "90d"}
+		for _, agentID := range agents {
+			for _, period := range periods {
+				if err := svc.RecalculateAccuracy(agentID, period); err != nil {
+					logger.Warn("accuracy recalc failed", zap.String("agent", agentID), zap.String("period", period), zap.Error(err))
+				}
+			}
+		}
+		return nil
+	})
+
 	// scheduler.tick.A8 → sourcing batch scan
 	bus.Subscribe("scheduler.tick.A8", func(ctx context.Context, evt eventbus.Event) error {
 		return sourcing.HandleSourcingTick(db, logger)(ctx, evt)
@@ -396,6 +421,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Auth routes (public — login, register, refresh)
 	auth.RegisterRoutes(api, db, cfg, logger)
 
+	// Webhook routes (public — platforms call these without authentication)
+	integrations.RegisterWebhookRoutes(api, bus, logger)
+
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")
 	protected.Use(middleware.Auth(cfg))
@@ -415,6 +443,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	sku.RegisterRoutes(protected, db, logger)
 	price.RegisterRoutes(protected, db, logger)
 	inventory.RegisterRoutes(protected, db, logger)
+
+	// Oversell watcher: scheduled sweep for cross-platform inventory sync.
+	oversellWatcher := inventory.NewOversellWatcher(db, bus, logger)
+	sched.Register("inventory_oversell_sweep", inventory.OversellSweepInterval, func(ctx context.Context) error {
+		oversellWatcher.RunOnce(ctx)
+		return nil
+	})
+
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
 
@@ -490,12 +526,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	importbatch.RegisterRoutes(protected, db, logger)
 	operationlog.RegisterRoutes(protected, db, logger)
 	integrations.RegisterRoutes(protected, db, logger)
+	integrations.RegisterWebhookAdminRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
 	sourcing1688.RegisterRoutes(protected, db, logger)
 	logistics.RegisterRoutes(protected, db, logger)
 	productanalysis.RegisterRoutes(protected, db, logger)
+	producthub.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
 	report.RegisterRoutes(protected, db, logger)
 	exchangerate.RegisterRoutes(protected, db, logger)

@@ -47,6 +47,7 @@ interface Product360 {
   cost_price: number;
   profit_score: number;
   demand_score: number | null;
+  competition_score: number | null;
   lifecycle_status: string;
   decision_trace: DecisionTraceItem[];
   _metadata: {
@@ -93,6 +94,21 @@ const statusLabel = (s: string) => label(s, { draft: '草稿', active: '上架',
 const stockLabel = (s: string) => label(s, { in_stock: '有库存', low_stock: '库存不足', out_of_stock: '缺货', overstock: '库存过剩' });
 const lifecycleLabel = (s: string) => label(s, { active: '活跃', declining: '衰退', end_of_life: '停产', new: '新品' });
 const complianceLabel = (s: string) => label(s, { ok: '合规', warning: '警告', fail: '不合规', pending: '审核中' });
+
+// Competition & demand helpers
+function competitionScoreInfo(score: number | null): { color: string; label: string } {
+  if (score == null) return { color: 'default', label: '-' };
+  if (score >= 70) return { color: 'red', label: '高' };
+  if (score >= 40) return { color: 'orange', label: '中' };
+  return { color: 'green', label: '低' };
+}
+
+function demandScoreColor(score: number | null): string {
+  if (score == null) return '#d9d9d9';
+  if (score >= 70) return '#34D399';
+  if (score >= 40) return '#FBBF24';
+  return '#F87171';
+}
 
 // ----- Component -----
 

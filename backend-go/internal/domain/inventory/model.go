@@ -51,3 +51,39 @@ type InventoryWarehouse struct {
 
 // TableName overrides the default table name.
 func (InventoryWarehouse) TableName() string { return "inventory_warehouse" }
+
+// ── Cross-Platform Sync ────────────────────────────────────────────────────
+
+// CrossPlatformSyncResult holds the result of a cross-platform inventory sync.
+type CrossPlatformSyncResult struct {
+	ProductID          int64                `json:"product_id"`
+	AvailableInventory int                  `json:"available_inventory"`
+	TotalCommitted     int                  `json:"total_committed"`
+	OversellDetected   bool                 `json:"oversell_detected"`
+	OversellBy         int                  `json:"oversell_by,omitempty"`
+	PlatformBreakdown  []PlatformCommitment `json:"platform_breakdown"`
+	AlertGenerated     bool                 `json:"alert_generated"`
+}
+
+// PlatformCommitment describes how much stock is committed to a single platform.
+type PlatformCommitment struct {
+	PlatformID int64  `json:"platform_id"`
+	Status     string `json:"status"`
+	Committed  int    `json:"committed"`
+	MaxAllowed int    `json:"max_allowed"`
+}
+
+// InventoryOversellLog maps to the "inventory_oversell_log" table.
+type InventoryOversellLog struct {
+	ID              int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ProductID       int64      `gorm:"column:product_id;not null" json:"product_id"`
+	AvailableStock  int        `gorm:"column:available_stock;not null" json:"available_stock"`
+	TotalCommitted  int        `gorm:"column:total_committed;not null" json:"total_committed"`
+	OversellBy      int        `gorm:"column:oversell_by;default:0" json:"oversell_by"`
+	DetectedAt      time.Time  `gorm:"column:detected_at;autoCreateTime" json:"detected_at"`
+	ResolvedAt      *time.Time `gorm:"column:resolved_at" json:"resolved_at,omitempty"`
+	Status          string     `gorm:"column:status;default:open" json:"status"`
+}
+
+// TableName overrides the default table name.
+func (InventoryOversellLog) TableName() string { return "inventory_oversell_log" }

@@ -47,6 +47,12 @@ interface ExceptionItem {
   count: number;
 }
 
+interface RejectionReasonStat {
+  agent_id: string;
+  rejection_reason: string;
+  count: number;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   pending: 'default',
   paid: 'blue',
@@ -86,6 +92,14 @@ export default function DashboardPage() {
     queryKey: ['dashboard', 'exceptions'],
     queryFn: async () => {
       const res = await apiClient.get<ExceptionItem[]>('/v1/dashboard/exceptions');
+      return res.data ?? [];
+    },
+  });
+
+  const { data: rejectionReasons, isLoading: rejectionLoading } = useQuery({
+    queryKey: ['dashboard', 'rejection-reasons'],
+    queryFn: async () => {
+      const res = await apiClient.get<RejectionReasonStat[]>('/v1/dashboard/rejection-reasons');
       return res.data ?? [];
     },
   });
@@ -222,6 +236,19 @@ export default function DashboardPage() {
           columns={[
             { title: '异常类型', dataIndex: 'type' },
             { title: '数量', dataIndex: 'count', width: 120 },
+          ]} />
+      </Card>
+
+      <Card title="拒绝原因分析" style={{ marginTop: 16 }}>
+        <Table rowKey={(r) => `${r.agent_id}-${r.rejection_reason}`}
+          loading={rejectionLoading}
+          dataSource={rejectionReasons}
+          pagination={false}
+          size="small"
+          columns={[
+            { title: 'Agent ID', dataIndex: 'agent_id', width: 100 },
+            { title: '拒绝原因', dataIndex: 'rejection_reason' },
+            { title: '次数', dataIndex: 'count', width: 80 },
           ]} />
       </Card>
     </div>

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { menuGroups, type MenuItem } from '@/config/menu';
+import { ShoppingOutlined, SendOutlined, BarChartOutlined, DollarOutlined, EditOutlined } from '@ant-design/icons';
 
 type SessionItem = {
   key: string;
@@ -66,11 +67,11 @@ export default function AppSidebar() {
   ]);
 
   const toolButtons = [
-    { icon: '📦', label: '商品管理', badge: '2,847', tool: 'products' },
-    { icon: '📤', label: '平台发布', badge: '8 待处理', tool: 'publish' },
-    { icon: '📊', label: '数据分析', badge: null, tool: 'analytics' },
-    { icon: '💰', label: '价格监控', badge: null, tool: 'price' },
-    { icon: '✦', label: 'AI 文案', badge: null, tool: 'copywriting' },
+    { icon: <ShoppingOutlined />, label: '商品管理', badge: '2,847', tool: 'products' },
+    { icon: <SendOutlined />, label: '平台发布', badge: '8 待处理', tool: 'publish' },
+    { icon: <BarChartOutlined />, label: '数据分析', badge: null, tool: 'analytics' },
+    { icon: <DollarOutlined />, label: '价格监控', badge: null, tool: 'price' },
+    { icon: <EditOutlined />, label: 'AI 文案', badge: null, tool: 'copywriting' },
   ];
 
   return (
@@ -355,7 +356,7 @@ export default function AppSidebar() {
                     'transparent';
                 }}
               >
-                <span style={{ fontSize: '0.75rem', flexShrink: 0 }}>
+                <span style={{ fontSize: '0.85rem', flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
                   {btn.icon}
                 </span>
                 <span
@@ -422,8 +423,8 @@ export default function AppSidebar() {
                     color: isActive ? 'var(--t1)' : 'var(--t2)',
                     fontWeight: isActive ? 600 : 400,
                     borderLeft: isActive
-                      ? '2px solid var(--i4)'
-                      : '2px solid transparent',
+                      ? '3px solid var(--i5)'
+                      : '3px solid transparent',
                     background: isActive ? 'var(--s2)' : 'transparent',
                     transition: 'background var(--dur-micro)',
                   }}
