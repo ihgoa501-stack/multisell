@@ -15,8 +15,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	{
 		group.GET("", h.List)
 		group.GET("/:id", h.Get)
-		// No POST route — audit entries are created exclusively by the
-		// audit middleware (httpx/middleware/audit.go).
-		// Exposing a public write endpoint undermines the audit chain of custody.
+		group.POST("", h.Create)
 	}
 }

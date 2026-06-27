@@ -15,8 +15,8 @@ func TestService_CreateAndGet(t *testing.T) {
 	p, err := svc.Create(&CreateInput{
 		SourceURL:    "https://detail.1688.com/offer/123.html",
 		SupplierName: "某供应商",
-		Price1688:    dbtest.FloatPtr(50.0),
-		MinOrderQty:  dbtest.IntPtr(10),
+		Price:        dbtest.FloatPtr(50.0),
+		MOQ:          dbtest.IntPtr(10),
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -27,8 +27,8 @@ func TestService_CreateAndGet(t *testing.T) {
 	if p.SourceURL != "https://detail.1688.com/offer/123.html" {
 		t.Fatalf("SourceURL = %s", p.SourceURL)
 	}
-	if p.Status != "pending" {
-		t.Fatalf("Status = %s, expected pending", p.Status)
+	if p.Status != "collected" {
+		t.Fatalf("Status = %s, expected collected", p.Status)
 	}
 
 	got, err := svc.Get(p.ID)
@@ -47,9 +47,9 @@ func TestService_Update(t *testing.T) {
 
 	p, _ := svc.Create(&CreateInput{SourceURL: "https://detail.1688.com/offer/456.html"})
 	updated, err := svc.Update(p.ID, &UpdateInput{
-		SupplierName:  dbtest.StringPtr("新供应商"),
-		Price1688:     dbtest.FloatPtr(60.0),
-		Status:        dbtest.StringPtr("reviewed"),
+		SupplierName: dbtest.StringPtr("新供应商"),
+		Price:        dbtest.FloatPtr(60.0),
+		Status:       dbtest.StringPtr("reviewed"),
 	})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
@@ -57,8 +57,8 @@ func TestService_Update(t *testing.T) {
 	if updated.SupplierName != "新供应商" {
 		t.Fatalf("SupplierName = %s", updated.SupplierName)
 	}
-	if updated.Price1688 != 60.0 {
-		t.Fatalf("Price1688 = %v", updated.Price1688)
+	if updated.Price == nil || *updated.Price != 60.0 {
+		t.Fatalf("Price = %v", updated.Price)
 	}
 }
 
@@ -141,9 +141,9 @@ func TestService_Summary(t *testing.T) {
 	db := dbtest.NewDB(t, &Sourcing1688Product{})
 	svc := NewService(db, dbtest.NewLogger(t))
 
-	svc.Create(&CreateInput{SourceURL: "u1", Status: "pending"})
+	svc.Create(&CreateInput{SourceURL: "u1", Status: "collected"})
 	svc.Create(&CreateInput{SourceURL: "u2", Status: "imported"})
-	svc.Create(&CreateInput{SourceURL: "u3", Status: "pending"})
+	svc.Create(&CreateInput{SourceURL: "u3", Status: "collected"})
 
 	summary, err := svc.Summary()
 	if err != nil {
@@ -152,7 +152,7 @@ func TestService_Summary(t *testing.T) {
 	if summary.Total != 3 {
 		t.Fatalf("Total = %d", summary.Total)
 	}
-	if summary.ByStatus["pending"] != 2 {
-		t.Fatalf("pending = %d", summary.ByStatus["pending"])
+	if summary.ByStatus["collected"] != 2 {
+		t.Fatalf("collected = %d", summary.ByStatus["collected"])
 	}
 }

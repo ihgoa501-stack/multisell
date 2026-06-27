@@ -7,17 +7,19 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // ToolBridge defines the interface for fetching product data from external sources.
 // Concrete implementations (PluginDriver, PlaywrightDriver, API1688Driver) are
-// injected at construction time to avoid a direct dependency on the toolbridge package.
+// injected at construction time. The Route method returns toolbridge.PageData,
+// which is converted to sourcing.PageData internally via fromToolbridgePageData.
 type ToolBridge interface {
 	// Route dispatches a fetch request to the appropriate driver and returns
-	// structured PageData. Returns an error if all drivers are unavailable.
-	Route(ctx context.Context, url string) (*PageData, error)
+	// structured toolbridge.PageData. Returns an error if all drivers are unavailable.
+	Route(ctx context.Context, url string) (*toolbridge.PageData, error)
 }
 
 // EventPublisher defines the interface for publishing events to the event bus.
@@ -50,12 +52,58 @@ func (s *Service) FetchProduct(ctx context.Context, url string) (*PageData, erro
 	if s.bridge == nil {
 		return nil, fmt.Errorf("sourcing: ToolBridge not configured")
 	}
-	pageData, err := s.bridge.Route(ctx, url)
+	tbData, err := s.bridge.Route(ctx, url)
 	if err != nil {
 		s.logger.Warn("fetch product failed", zap.String("url", url), zap.Error(err))
 		return nil, fmt.Errorf("sourcing: fetch failed: %w", err)
 	}
-	return pageData, nil
+	return fromToolbridgePageData(tbData), nil
+}
+
+// fromToolbridgePageData converts a toolbridge.PageData to sourcing.PageData.
+// The two types differ in naming (PriceCNY vs Price, WeightKg vs PackageWeight, etc.)
+// so this function handles the field mapping explicitly.
+func fromToolbridgePageData(tb *toolbridge.PageData) *PageData {
+	if tb == nil {
+		return nil
+	}
+
+	specVariants := make([]SpecVariant, len(tb.SpecVariants))
+	for i, sv := range tb.SpecVariants {
+		specVariants[i] = SpecVariant{
+			Spec:  sv.Spec,
+			Price: sv.Price,
+			Stock: sv.Stock,
+		}
+	}
+
+	imageFirst := ""
+	if len(tb.Images) > 0 {
+		imageFirst = tb.Images[0]
+	}
+
+	return &PageData{
+		SourceURL:      tb.SourceURL,
+		CollectedAt:    tb.CollectedAt,
+		Driver:         tb.Driver,
+		Title:          tb.Title,
+		Price:          tb.PriceCNY,
+		PriceMin:       tb.PriceMinCNY,
+		PriceMax:       tb.PriceMaxCNY,
+		Currency:       "CNY",
+		MOQ:            tb.MOQ,
+		Images:         tb.Images,
+		ImageFirst:     imageFirst,
+		SpecVariants:   specVariants,
+		SupplierName:   tb.SupplierName,
+		SupplierScore:  tb.SupplierScore,
+		PackageWeight:  tb.WeightKg,
+		PackageLength:  tb.PackageLengthCm,
+		PackageWidth:   tb.PackageWidthCm,
+		PackageHeight:  tb.PackageHeightCm,
+		Description:    tb.Description,
+		Attributes:     nil,
+	}
 }
 
 // AnalyzePage evaluates page quality and returns a score 1-10.
@@ -136,25 +184,18 @@ func (s *Service) SaveRecommendation(ctx context.Context, data *PageData, score 
 		return nil, fmt.Errorf("sourcing: cannot save nil page data")
 	}
 
-	// Determine the main image URL.
-	imageURL := data.ImageFirst
-	if imageURL == "" && len(data.Images) > 0 {
-		imageURL = data.Images[0]
-	}
-
 	// Build source data JSON from PageData.
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("sourcing: marshal page data: %w", err)
 	}
-	sourceData := json.RawMessage(raw)
+	rawData := json.RawMessage(raw)
 
 	// Determine price (use PriceMin if set, otherwise main price).
 	price := data.Price
 	if data.PriceMin != nil && *data.PriceMin > 0 {
 		price = *data.PriceMin
 	}
-
 
 	moq := data.MOQ
 	if moq <= 0 {
@@ -168,16 +209,33 @@ func (s *Service) SaveRecommendation(ctx context.Context, data *PageData, score 
 		status = "low_quality"
 	}
 
-	// Store in sourcing1688 table.
+	// Marshal images into JSON for the images JSONB column.
+	var imagesJSON *json.RawMessage
+	if len(data.Images) > 0 {
+		imgBytes, _ := json.Marshal(data.Images)
+		imgRaw := json.RawMessage(imgBytes)
+		imagesJSON = &imgRaw
+	}
+
+	// Marshal spec variants into JSON for the sku_variants JSONB column.
+	var skuVariantsJSON *json.RawMessage
+	if len(data.SpecVariants) > 0 {
+		svBytes, _ := json.Marshal(data.SpecVariants)
+		svRaw := json.RawMessage(svBytes)
+		skuVariantsJSON = &svRaw
+	}
+
+	// Store in sourcing1688 table with columns matching the migration schema.
 	p1688 := sourcing1688.Sourcing1688Product{
-		SourceURL:      data.SourceURL,
-		SupplierName:   data.SupplierName,
-		SupplierID1688: data.SupplierID,
-		Price1688:      price,
-		MinOrderQty:    moq,
-		ImageURL:       imageURL,
-		Status:         status,
-		SourceData:     sourceData,
+		SourceURL:    data.SourceURL,
+		Title:        &data.Title,
+		SupplierName: data.SupplierName,
+		Price:        &price,
+		MOQ:          moq,
+		Images:       imagesJSON,
+		SkuVariants:  skuVariantsJSON,
+		Status:       status,
+		RawData:      &rawData,
 	}
 
 	if err := s.db.WithContext(ctx).Create(&p1688).Error; err != nil {
@@ -225,22 +283,26 @@ func (s *Service) ListRecommendations(page, size int) ([]Recommendation, int64, 
 
 	recs := make([]Recommendation, 0, len(products))
 	for _, p := range products {
-		rec := Recommendation{
-			ID:            p.ID,
-			SourceURL:     p.SourceURL,
-			SupplierName:  p.SupplierName,
-			Price:         p.Price1688,
-			Status:        p.Status,
-			ProductID1688: p.SupplierID1688,
-			ImageURL:      p.ImageURL,
-			CreatedAt:     p.CreatedAt.Format(time.RFC3339),
+		price := 0.0
+		if p.Price != nil {
+			price = *p.Price
 		}
 
-		// Try to extract title from source_data if available.
-		if p.SourceData != nil {
+		rec := Recommendation{
+			ID:           p.ID,
+			SourceURL:    p.SourceURL,
+			SupplierName: p.SupplierName,
+			Price:        price,
+			Status:       p.Status,
+			CreatedAt:    p.CreatedAt.Format(time.RFC3339),
+		}
+
+		// Try to extract title and other fields from raw_data if available.
+		if p.RawData != nil {
 			var pd PageData
-			if err := json.Unmarshal(p.SourceData, &pd); err == nil {
+			if err := json.Unmarshal(*p.RawData, &pd); err == nil {
 				rec.Title = pd.Title
+				rec.ImageURL = pd.ImageFirst
 				// If no separate score field, estimate from status.
 				switch p.Status {
 				case "recommended":

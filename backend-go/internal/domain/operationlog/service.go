@@ -27,11 +27,6 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
 }
 
-// DB returns the underlying GORM DB connection for direct query access.
-func (s *Service) DB() *gorm.DB {
-	return s.db
-}
-
 // List returns a paginated list of operation logs with filters.
 func (s *Service) List(f ListFilter, page, size int) ([]OperationLog, int64, error) {
 	q := s.db.Model(&OperationLog{})

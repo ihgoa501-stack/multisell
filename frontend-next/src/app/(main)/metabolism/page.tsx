@@ -1,239 +1,367 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Card, Col, Row, Space, Statistic, Table, Tag, Button, message } from 'antd';
 import {
-  Button, Card, Col, Progress, Row, Statistic, Table, Tag, Switch, message,
-} from 'antd';
-import {
-  ExperimentOutlined, ReloadOutlined, DeleteOutlined,
-  RiseOutlined, FallOutlined,
+  ExperimentOutlined,
+  ReloadOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
 import apiClient from '@/lib/api-client';
-import PageContainer from '@/components/ui/PageContainer';
+import type { PageResult } from '@/types/api';
 
-dayjs.extend(relativeTime);
+// ─────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────
 
 interface MetabolismLog {
   id: number;
-  event_id: number;
   source: string;
-  total_score: number;
-  impact_score: number;
-  ref_score: number;
-  freshness_score: number;
-  semantic_score: number;
-  sem_skipped: boolean;
+  score: number;
+  dims: string;
   excretable: boolean;
-  reason: string;
+  reason?: string;
   created_at: string;
 }
 
-export default function MetabolismPage() {
-  const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [dryRun, setDryRun] = useState(true);
+interface MetabolismSummary {
+  total_scored: number;
+  excretable_count: number;
+  excretable_rate: number;
+  avg_score: number;
+  last_m1_run_at: string;
+  score_distribution: ScoreBucket[];
+}
 
-  // Fetch metabolism logs
-  const { data, isLoading } = useQuery({
-    queryKey: ['metabolism', page],
-    queryFn: async () => {
-      const res = await apiClient.get<{ data: MetabolismLog[]; total: number }>('/v1/metabolism', {
+interface ScoreBucket {
+  range: string;
+  min: number;
+  max: number;
+  count: number;
+}
+
+// ─────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────
+
+function scoreColor(score: number): string {
+  if (score >= 0.7) return 'red';
+  if (score >= 0.5) return 'orange';
+  if (score >= 0.3) return 'blue';
+  return 'green';
+}
+
+function scoreLabel(score: number): string {
+  return (score * 100).toFixed(0) + '%';
+}
+
+function buildScoreBuckets(logs: MetabolismLog[]): ScoreBucket[] {
+  const buckets: ScoreBucket[] = [
+    { range: '0 – 0.3', min: 0, max: 0.3, count: 0 },
+    { range: '0.3 – 0.5', min: 0.3, max: 0.5, count: 0 },
+    { range: '0.5 – 0.7', min: 0.5, max: 0.7, count: 0 },
+    { range: '0.7 – 1.0', min: 0.7, max: 1.0, count: 0 },
+  ];
+
+  for (const log of logs) {
+    const bucket = buckets.find(
+      (b) => log.score >= b.min && log.score < b.max,
+    );
+    if (bucket) bucket.count += 1;
+  }
+
+  return buckets;
+}
+
+// ─────────────────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────────────────
+
+export default function MetabolismPage() {
+  const qc = useQueryClient();
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+
+  // ── Paginated log list with 30 s auto-refresh ──
+  const { data: listData, isLoading } = useQuery<PageResult<MetabolismLog>>({
+    queryKey: ['metabolism', 'logs', page],
+    queryFn: () =>
+      apiClient.getPage<MetabolismLog>('/v1/metabolism', {
         page: String(page),
-        page_size: '20',
-      });
-      return res.data;
-    },
+        page_size: String(pageSize),
+      }),
     refetchInterval: 30_000,
   });
 
-  // Trigger M1 dry-run
-  const dryRunMutation = useMutation({
-    mutationFn: async () => {
-      await apiClient.post('/v1/metabolism/dry-run', {});
-    },
+  const logs = listData?.data ?? [];
+  const total = listData?.total ?? 0;
+
+  // ── Stats computed from the first page of logs ──
+  // In a production setup a dedicated /v1/metabolism/stats endpoint
+  // would provide accurate aggregates across all records.
+  const stats = useMemo<MetabolismSummary>(() => {
+    const totalScored = total;
+    const excretableCount = logs.filter((l) => l.excretable).length;
+    const excretableRate =
+      totalScored > 0 ? excretableCount / totalScored : 0;
+    const avgScore =
+      logs.length > 0
+        ? logs.reduce((s, l) => s + l.score, 0) / logs.length
+        : 0;
+    const lastRun = logs.length > 0 ? logs[0].created_at : '';
+    const buckets = buildScoreBuckets(logs);
+
+    return {
+      total_scored: totalScored,
+      excretable_count: excretableCount,
+      excretable_rate: excretableRate,
+      avg_score: avgScore,
+      last_m1_run_at: lastRun,
+      score_distribution: buckets,
+    };
+  }, [logs, total]);
+
+  const bucketMax = useMemo(
+    () => Math.max(...stats.score_distribution.map((b) => b.count), 1),
+    [stats.score_distribution],
+  );
+
+  // ── Dry-run ──
+  const dryRunMut = useMutation({
+    mutationFn: () =>
+      apiClient.post<unknown>('/v1/metabolism/dry-run'),
     onSuccess: () => {
-      message.success('M1 代谢评分已触发');
-      queryClient.invalidateQueries({ queryKey: ['metabolism'] });
+      message.success('Dry-run 完成');
+      qc.invalidateQueries({ queryKey: ['metabolism'] });
     },
-    onError: () => message.error('触发失败'),
+    onError: () => message.error('Dry-run 失败'),
   });
 
-  // Compute stats
-  const logs = data?.data ?? [];
-  const total = data?.total ?? 0;
-  const avgScore = logs.length
-    ? (logs.reduce((s, l) => s + l.total_score, 0) / logs.length).toFixed(3)
-    : '0';
-  const excretableCount = logs.filter((l) => l.excretable).length;
-  const scoreRanges = {
-    low: logs.filter((l) => l.total_score < 0.3).length,
-    mid: logs.filter((l) => l.total_score >= 0.3 && l.total_score < 0.7).length,
-    high: logs.filter((l) => l.total_score >= 0.7).length,
-  };
+  // ── Manual M1 trigger ──
+  const triggerMut = useMutation({
+    mutationFn: () => apiClient.post<unknown>('/v1/metabolism/run'),
+    onSuccess: () => {
+      message.success('M1 触发成功');
+      qc.invalidateQueries({ queryKey: ['metabolism'] });
+    },
+    onError: () => message.error('M1 触发失败'),
+  });
 
+  // ── Table columns ──
   const columns = [
     {
       title: 'ID',
       dataIndex: 'id',
-      key: 'id',
-      width: 60,
+      width: 70,
     },
     {
-      title: '来源',
+      title: 'Source',
       dataIndex: 'source',
-      key: 'source',
+      width: 130,
+    },
+    {
+      title: 'Score',
+      dataIndex: 'score',
       width: 100,
-      render: (s: string) => <Tag>{s}</Tag>,
-    },
-    {
-      title: '总分',
-      dataIndex: 'total_score',
-      key: 'total_score',
-      width: 80,
       render: (v: number) => (
-        <span style={{ color: v >= 0.7 ? '#ff4d4f' : '#52c41a', fontWeight: 600 }}>
-          {v.toFixed(2)}
-        </span>
+        <Tag color={scoreColor(v)}>{scoreLabel(v)}</Tag>
       ),
     },
     {
-      title: '维度',
-      key: 'dims',
-      width: 160,
-      render: (_: unknown, r: MetabolismLog) => (
-        <span style={{ fontSize: 12, color: '#888' }}>
-          I:{r.impact_score.toFixed(2)} R:{r.ref_score.toFixed(2)}
-          F:{r.freshness_score.toFixed(2)}
-          {!r.sem_skipped && ` S:${r.semantic_score.toFixed(2)}`}
-        </span>
-      ),
-    },
-    {
-      title: '可排泄',
-      dataIndex: 'excretable',
-      key: 'excretable',
-      width: 80,
-      render: (v: boolean) => v
-        ? <Tag color="red">是</Tag>
-        : <Tag color="green">否</Tag>,
-    },
-    {
-      title: '原因',
-      dataIndex: 'reason',
-      key: 'reason',
+      title: 'Dims',
+      dataIndex: 'dims',
+      width: 220,
       ellipsis: true,
     },
     {
-      title: '时间',
+      title: 'Excretable',
+      dataIndex: 'excretable',
+      width: 100,
+      render: (v: boolean) =>
+        v ? (
+          <Tag color="red">是</Tag>
+        ) : (
+          <Tag color="default">否</Tag>
+        ),
+    },
+    {
+      title: 'Reason',
+      dataIndex: 'reason',
+      ellipsis: true,
+    },
+    {
+      title: 'Time',
       dataIndex: 'created_at',
-      key: 'created_at',
-      width: 120,
-      render: (v: string) => dayjs(v).fromNow(),
+      width: 160,
+      render: (t: string) =>
+        t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '-',
     },
   ];
 
+  // ── Render ──
   return (
-    <PageContainer
-      title="代谢管理"
-      subtitle="M1 排泄系统 — 四维评分引擎状态监控"
-    >
-      {/* Stats cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col span={6}>
+    <div style={{ padding: 24 }}>
+      {/* ── Header ── */}
+      <Space
+        style={{
+          marginBottom: 20,
+          justifyContent: 'space-between',
+          width: '100%',
+        }}
+        align="start"
+      >
+        <div>
+          <h1
+            style={{
+              fontSize: 24,
+              fontWeight: 600,
+              margin: 0,
+            }}
+          >
+            <ExperimentOutlined style={{ marginRight: 8 }} />
+            代谢管理
+          </h1>
+        </div>
+
+        <Space>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => dryRunMut.mutate()}
+            loading={dryRunMut.isPending}
+          >
+            Dry-Run
+          </Button>
+          <Button
+            type="primary"
+            icon={<ThunderboltOutlined />}
+            onClick={() => triggerMut.mutate()}
+            loading={triggerMut.isPending}
+          >
+            触发 M1
+          </Button>
+        </Space>
+      </Space>
+
+      {/* ── Stats cards ── */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic title="总评分项" value={stats.total_scored} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="已评分事件"
-              value={total}
-              prefix={<RiseOutlined />}
-              valueStyle={{ color: '#1677ff' }}
+              title="可排出率"
+              value={stats.excretable_rate}
+              precision={2}
+              valueStyle={{
+                color:
+                  stats.excretable_rate > 0.5 ? '#cf1322' : '#52c41a',
+              }}
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="可排泄率"
-              value={total > 0 ? ((excretableCount / total) * 100).toFixed(1) : 0}
-              suffix="%"
-              prefix={<DeleteOutlined />}
-              valueStyle={{ color: excretableCount > 0 ? '#ff4d4f' : '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="平均分"
-              value={avgScore}
+              title="平均分数"
+              value={stats.avg_score}
               precision={3}
-              prefix={<ExperimentOutlined />}
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="评分分布"
-              value={`${scoreRanges.low}/${scoreRanges.mid}/${scoreRanges.high}`}
-              prefix={<RiseOutlined />}
-              suffix="(低/中/高)"
+              title="上次 M1 运行"
+              value={
+                stats.last_m1_run_at
+                  ? dayjs(stats.last_m1_run_at).format('MM-DD HH:mm')
+                  : 'N/A'
+              }
             />
           </Card>
         </Col>
       </Row>
 
-      {/* Score distribution bar */}
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 8 }}>评分分布</div>
-        <Progress
-          percent={total > 0 ? (scoreRanges.low / total) * 100 : 0}
-          strokeColor="#52c41a"
-          format={() => `低 ${scoreRanges.low}`}
-          style={{ marginBottom: 4 }}
-        />
-        <Progress
-          percent={total > 0 ? (scoreRanges.mid / total) * 100 : 0}
-          strokeColor="#1677ff"
-          format={() => `中 ${scoreRanges.mid}`}
-          style={{ marginBottom: 4 }}
-        />
-        <Progress
-          percent={total > 0 ? (scoreRanges.high / total) * 100 : 0}
-          strokeColor="#ff4d4f"
-          format={() => `高 ${scoreRanges.high}`}
-        />
-      </Card>
-
-      {/* Actions */}
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span>Dry-run 模式:</span>
-          <Switch
-            checked={dryRun}
-            onChange={(v) => {
-              setDryRun(v);
-              message.info(dryRun ? '切换到评分+排泄模式' : '切换到仅评分模式');
+      {/* ── Score distribution bar chart ── */}
+      <Card title="分数分布" style={{ marginBottom: 20 }}>
+        {stats.score_distribution.length === 0 ? (
+          <div
+            style={{
+              textAlign: 'center',
+              padding: 24,
+              color: '#999',
             }}
-          />
-          <Button
-            type="primary"
-            icon={<ReloadOutlined />}
-            loading={dryRunMutation.isPending}
-            onClick={() => dryRunMutation.mutate()}
           >
-            立即触发评分
-          </Button>
-          <span style={{ fontSize: 12, color: '#888' }}>
-            {dryRun ? '仅评分，不执行排泄' : '评分 + 实际排泄'}
-          </span>
-        </div>
+            暂无数据
+          </div>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              gap: 16,
+              alignItems: 'flex-end',
+              height: 160,
+              padding: '0 16px',
+            }}
+          >
+            {stats.score_distribution.map((bucket) => (
+              <div
+                key={bucket.range}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  height: '100%',
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    marginBottom: 4,
+                    color: '#666',
+                  }}
+                >
+                  {bucket.count}
+                </div>
+                <div
+                  style={{
+                    width: '100%',
+                    maxWidth: 60,
+                    height: `${(bucket.count / bucketMax) * 120}px`,
+                    background:
+                      'linear-gradient(180deg, #1677ff 0%, #69b1ff 100%)',
+                    borderRadius: '4px 4px 0 0',
+                    transition: 'height .3s',
+                    minHeight: bucket.count > 0 ? 6 : 2,
+                  }}
+                />
+                <div
+                  style={{
+                    fontSize: 11,
+                    marginTop: 6,
+                    color: '#999',
+                  }}
+                >
+                  {bucket.range}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
-      {/* Log table */}
-      <Card>
+      {/* ── Log table ── */}
+      <Card
+        title="代谢日志"
+        styles={{ body: { padding: 0 } }}
+      >
         <Table
           dataSource={logs}
           columns={columns}
@@ -241,14 +369,14 @@ export default function MetabolismPage() {
           loading={isLoading}
           pagination={{
             current: page,
-            pageSize: 20,
+            pageSize,
             total,
-            onChange: setPage,
-            showSizeChanger: false,
+            onChange: (p) => setPage(p),
+            showTotal: (t) => `共 ${t} 条`,
           }}
-          size="small"
+          size="middle"
         />
       </Card>
-    </PageContainer>
+    </div>
   );
 }

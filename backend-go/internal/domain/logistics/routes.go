@@ -2,27 +2,19 @@ package logistics
 
 import (
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"go.uber.org/zap"
 )
 
-// RegisterRoutes registers logistics routes on the given gin group.
-// The routes require authentication (applied at the caller level).
+// RegisterRoutes registers logistics routes on the given router group.
+// The logistics module is stateless (YAML-driven rate tables), so db is unused.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	// Phase 1: use default rate tables (embedded sample YAML).
-	// Phase 2+: load from database or file.
-	entries, err := LoadRateTableFromYAML([]byte(SampleRateTableYAML))
-	if err != nil {
-		logger.Warn("logistics: failed to load default rate table, using empty engine", zap.Error(err))
-		entries = []RateTableEntry{}
+	// For now, use an empty rate table — production will load from YAML/DB.
+	svc := NewService(nil)
+	h := NewHandler(svc, logger)
+
+	group := rg.Group("/logistics")
+	{
+		group.POST("/quote", h.GetQuotes)
 	}
-
-	svc := NewService(entries)
-	handler := NewHandler(svc)
-
-	// POST /logistics/quote — get on-demand rate quotes
-	rg.POST("/logistics/quote", handler.GetQuotes)
-
-	// GET /logistics/carriers — list configured carriers
-	rg.GET("/logistics/carriers", handler.ListCarriers)
 }

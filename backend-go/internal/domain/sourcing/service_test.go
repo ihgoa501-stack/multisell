@@ -4,22 +4,42 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 )
 
 // mockToolBridge implements ToolBridge for testing.
 type mockToolBridge struct {
-	pageData *PageData
+	pageData *toolbridge.PageData
 	err      error
 }
 
-func (m *mockToolBridge) Route(_ context.Context, _ string) (*PageData, error) {
+func (m *mockToolBridge) Route(_ context.Context, _ string) (*toolbridge.PageData, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.pageData, nil
+}
+
+// newToolbridgePageData is a test helper that creates a toolbridge.PageData
+// from the common test fields used across sourcing tests.
+func newToolbridgePageData(sourceURL, title string, price float64, images []string, supplierName string) *toolbridge.PageData {
+	tb := &toolbridge.PageData{
+		SourceURL:    sourceURL,
+		Title:        title,
+		PriceCNY:        price,
+		Images:       images,
+		SupplierName: supplierName,
+		MOQ:          1,
+		CollectedAt:  time.Now(),
+	}
+	if len(images) > 0 {
+		tb.Images = images
+	}
+	return tb
 }
 
 // mockEventPublisher implements EventPublisher for testing.
@@ -46,13 +66,13 @@ func newTestService(t *testing.T, bridge ToolBridge, events EventPublisher) *Ser
 func TestFetchProduct_Success(t *testing.T) {
 	t.Parallel()
 	bridge := &mockToolBridge{
-		pageData: &PageData{
-			SourceURL:    "https://detail.1688.com/offer/test.html",
-			Title:        "Test Product with Long Title for Scoring",
-			Price:        99.50,
-			Images:       []string{"img1.jpg", "img2.jpg", "img3.jpg"},
-			SupplierName: "Test Supplier",
-		},
+		pageData: newToolbridgePageData(
+			"https://detail.1688.com/offer/test.html",
+			"Test Product with Long Title for Scoring",
+			99.50,
+			[]string{"img1.jpg", "img2.jpg", "img3.jpg"},
+			"Test Supplier",
+		),
 	}
 	svc := newTestService(t, bridge, nil)
 
@@ -94,10 +114,10 @@ func TestAnalyzePage_FullScore(t *testing.T) {
 	svc := newTestService(t, nil, nil)
 
 	data := &PageData{
-		Title:      "A very long product title that exceeds fifty characters easily for testing purposes",
-		Price:      100.0,
-		PriceMin:   floatPtr(90.0),
-		Images:     []string{"a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg"},
+		Title:        "A very long product title that exceeds fifty characters easily for testing purposes",
+		Price:        100.0,
+		PriceMin:     floatPtr(90.0),
+		Images:       []string{"a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg"},
 		SupplierName: "Test Supplier",
 	}
 
@@ -138,13 +158,13 @@ func TestAnalyzePage_NilData(t *testing.T) {
 func TestSaveRecommendation_Success(t *testing.T) {
 	t.Parallel()
 	bridge := &mockToolBridge{
-		pageData: &PageData{
-			SourceURL:    "https://detail.1688.com/offer/save-test.html",
-			Title:        "Save Test Product",
-			Price:        50.0,
-			Images:       []string{"img1.jpg"},
-			SupplierName: "Save Supplier",
-		},
+		pageData: newToolbridgePageData(
+			"https://detail.1688.com/offer/save-test.html",
+			"Save Test Product",
+			50.0,
+			[]string{"img1.jpg"},
+			"Save Supplier",
+		),
 	}
 	publisher := &mockEventPublisher{}
 	svc := newTestService(t, bridge, publisher)

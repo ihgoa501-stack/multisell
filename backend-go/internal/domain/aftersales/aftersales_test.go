@@ -62,7 +62,9 @@ func newSvc(db *gorm.DB) *Service {
 
 type mockEventPublisher struct{}
 
-func (m *mockEventPublisher) Publish(_ context.Context, _, _ string, _ map[string]interface{}) (string, error) { return "", nil }
+func (m *mockEventPublisher) Publish(_ context.Context, _, _ string, _ map[string]interface{}) (string, error) {
+	return "", nil
+}
 
 
 func setupOrder(t *testing.T, db *gorm.DB) *order.Order {
@@ -283,7 +285,6 @@ func TestService_ApproveThenReceive(t *testing.T) {
 
 	o := setupOrder(t, db)
 	skuID := int64(1001)
-	setupInventory(t, db, skuID, 50)
 	qty := 3
 	as, _ := svc.Create(&CreateInput{
 		OrderID: o.ID, ItemID: &o.ID, SkuID: &skuID,
@@ -293,7 +294,7 @@ func TestService_ApproveThenReceive(t *testing.T) {
 	// Approve
 	svc.Approve(as.ID, &ApproveInput{ApprovedBy: "manager", InspectionResult: "OK"})
 
-	// Receive (restock is handled asynchronously via event bus)
+	// Receive (triggers restock)
 	received, err := svc.Receive(as.ID, &ReceiveInput{ReceivedBy: "warehouse"})
 	if err != nil {
 		t.Fatalf("Receive failed: %v", err)
@@ -304,6 +305,9 @@ func TestService_ApproveThenReceive(t *testing.T) {
 	if received.ReceivedBy != "warehouse" {
 		t.Errorf("expected received_by warehouse, got %s", received.ReceivedBy)
 	}
+
+	// Inventory restock is published asynchronously via EventPublisher;
+	// verify via event publisher mocks in integration tests.
 }
 
 func TestService_Receive_NotApproved(t *testing.T) {

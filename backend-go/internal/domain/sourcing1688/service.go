@@ -56,25 +56,26 @@ func (s *Service) Get(id int64) (*Sourcing1688Product, error) {
 func (s *Service) Create(in *CreateInput) (*Sourcing1688Product, error) {
 	status := in.Status
 	if status == "" {
-		status = "pending"
+		status = "collected"
 	}
 	p := Sourcing1688Product{
-		ProductID:      in.ProductID,
-		SourceURL:      in.SourceURL,
-		SupplierName:   in.SupplierName,
-		SupplierID1688: in.SupplierID1688,
-		ImageURL:       in.ImageURL,
-		SpecSummary:    in.SpecSummary,
-		Status:         status,
-		SourceData:     in.SourceData,
+		SourceURL:    in.SourceURL,
+		Title:        in.Title,
+		SupplierName: in.SupplierName,
+		SupplierID:   in.SupplierID,
+		ShopURL:      in.ShopURL,
+		ShopLocation: in.ShopLocation,
+		Description:  in.Description,
+		Status:       status,
+		RawData:      in.RawData,
 	}
-	if in.Price1688 != nil {
-		p.Price1688 = *in.Price1688
+	if in.Price != nil {
+		p.Price = in.Price
 	}
-	if in.MinOrderQty != nil {
-		p.MinOrderQty = *in.MinOrderQty
+	if in.MOQ != nil {
+		p.MOQ = *in.MOQ
 	} else {
-		p.MinOrderQty = 1
+		p.MOQ = 1
 	}
 	if err := s.db.Create(&p).Error; err != nil {
 		return nil, err
@@ -89,35 +90,44 @@ func (s *Service) Update(id int64, in *UpdateInput) (*Sourcing1688Product, error
 		return nil, err
 	}
 	updates := map[string]interface{}{}
-	if in.ProductID != nil {
-		updates["product_id"] = *in.ProductID
-	}
 	if in.SourceURL != nil {
 		updates["source_url"] = *in.SourceURL
+	}
+	if in.Title != nil {
+		updates["title"] = *in.Title
+	}
+	if in.Price != nil {
+		updates["price"] = *in.Price
+	}
+	if in.MOQ != nil {
+		updates["moq"] = *in.MOQ
 	}
 	if in.SupplierName != nil {
 		updates["supplier_name"] = *in.SupplierName
 	}
-	if in.SupplierID1688 != nil {
-		updates["supplier_id_1688"] = *in.SupplierID1688
+	if in.ShopURL != nil {
+		updates["shop_url"] = *in.ShopURL
 	}
-	if in.Price1688 != nil {
-		updates["price_1688"] = *in.Price1688
+	if in.ShopLocation != nil {
+		updates["shop_location"] = *in.ShopLocation
 	}
-	if in.MinOrderQty != nil {
-		updates["min_order_qty"] = *in.MinOrderQty
+	if in.Description != nil {
+		updates["description"] = *in.Description
 	}
-	if in.ImageURL != nil {
-		updates["image_url"] = *in.ImageURL
+	if in.ProductID != nil {
+		updates["product_id"] = *in.ProductID
 	}
-	if in.SpecSummary != nil {
-		updates["spec_summary"] = *in.SpecSummary
+	if in.SupplierID != nil {
+		updates["supplier_id"] = *in.SupplierID
+	}
+	if in.CollectedBy != nil {
+		updates["collected_by"] = *in.CollectedBy
 	}
 	if in.Status != nil {
 		updates["status"] = *in.Status
 	}
-	if in.SourceData != nil {
-		updates["source_data"] = *in.SourceData
+	if in.RawData != nil {
+		updates["raw_data"] = *in.RawData
 	}
 	if len(updates) == 0 {
 		return &p, nil

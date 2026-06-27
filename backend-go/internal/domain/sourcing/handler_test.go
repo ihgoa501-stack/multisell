@@ -7,22 +7,26 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 )
 
 func setupHandlerTest(t *testing.T) (*Service, *Handler, *mockToolBridge) {
 	t.Helper()
 	db := dbtest.NewDB(t, &sourcing1688.Sourcing1688Product{})
 	bridge := &mockToolBridge{
-		pageData: &PageData{
+		pageData: &toolbridge.PageData{
 			SourceURL:    "https://detail.1688.com/offer/handler-test.html",
 			Title:        "Handler Test Product with Adequate Title",
-			Price:        75.0,
+			PriceCNY:        75.0,
 			Images:       []string{"img1.jpg", "img2.jpg", "img3.jpg"},
 			SupplierName: "Handler Supplier",
+			MOQ:          1,
+			CollectedAt:  time.Now(),
 		},
 	}
 	svc := NewService(db, dbtest.NewLogger(t), bridge, nil)
@@ -139,10 +143,12 @@ func TestHandler_ListRecommendations_WithData(t *testing.T) {
 	db := dbtest.NewDB(t, &sourcing1688.Sourcing1688Product{})
 	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
-	// Pre-populate some recommendations directly in DB.
+	// Pre-populate some recommendations directly in DB with new model fields.
+	price1 := 10.0
+	price2 := 20.0
 	products := []sourcing1688.Sourcing1688Product{
-		{SourceURL: "https://example.com/1", SupplierName: "S1", Price1688: 10.0, ImageURL: "img1.jpg", Status: "recommended"},
-		{SourceURL: "https://example.com/2", SupplierName: "S2", Price1688: 20.0, ImageURL: "img2.jpg", Status: "pending"},
+		{SourceURL: "https://example.com/1", SupplierName: "S1", Price: &price1, Status: "recommended"},
+		{SourceURL: "https://example.com/2", SupplierName: "S2", Price: &price2, Status: "pending"},
 	}
 	for _, p := range products {
 		if err := db.Create(&p).Error; err != nil {

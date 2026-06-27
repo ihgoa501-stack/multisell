@@ -10,7 +10,6 @@
 //   - LoadRateTableFromYAML: parses rate tables from YAML configuration files.
 //
 // Pricing modes:
-//   - base_plus_per_kg: fixed base fee plus per-kilogram charge
 //   - first_additional: first kg price plus incremental additional kg charges
 //   - tiered: weight bracket-based fixed prices
 //   - fixed: flat fee regardless of weight
@@ -18,7 +17,4 @@
 //
 // Each quote includes base fee, surcharges, fuel surcharge, and total.
 // Minimum charge enforcement and fuel surcharge percentages are supported.
-//
-// CarrierAdapter interface and carrier-specific stubs (Yanwen, Yuntu) provide
-// the abstraction layer for third-party carrier API integration.
 package logistics
