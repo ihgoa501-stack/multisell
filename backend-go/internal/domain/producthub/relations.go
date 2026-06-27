@@ -11,6 +11,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// discovered is the result type for auto-discovered relations.
+type discovered struct {
+	targetID     int64
+	relationType string
+	weight       float64
+}
+
 // RelationService handles product relationship graph operations.
 type RelationService struct {
 	db     *gorm.DB
@@ -33,9 +40,9 @@ func (s *RelationService) GetRelatedProducts(productID int64) (*RelationListResp
 
 	// Collect related product IDs.
 	type candidate struct {
-		id           int64
-		relationType string
-		weight       float64
+		id             int64
+		relationType   string
+		weight         float64
 		autoDiscovered bool
 	}
 	var candidates []candidate
@@ -212,11 +219,6 @@ func (s *RelationService) AutoDiscoverRelations(productID int64) (*RelationListR
 	}
 
 	// Collect all discovered relations and persist them.
-	type discovered struct {
-		targetID       int64
-		relationType   string
-		weight         float64
-	}
 	all := make([]discovered, 0,
 		len(crossSellProducts)+len(alternatives)+len(variants),
 	)
@@ -436,13 +438,6 @@ func (s *RelationService) discoverVariants(productID int64, p *sku.Product) ([]d
 		}
 	}
 	return result, nil
-}
-
-// extracted result type for discovered relations.
-type discovered struct {
-	targetID     int64
-	relationType string
-	weight       float64
 }
 
 // extractKeywords splits a product name into meaningful keywords (>= 2 chars).

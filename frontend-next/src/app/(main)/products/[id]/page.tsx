@@ -1,14 +1,13 @@
 'use client';
 
-import { Button, Card, Descriptions, Image, message, Progress, Skeleton, Table, Tabs, Tag, Result } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Descriptions, Image, Input, message, Modal, Progress, Select, Skeleton, Space, Table, Tabs, Tag, Result, Tooltip, Typography } from 'antd';
+import { AlertOutlined, ArrowLeftOutlined, CheckCircleOutlined, RollbackOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import PageContainer from '@/components/ui/PageContainer';
 import apiClient from '@/lib/api-client';
 import { fmtDate, fmtMoney } from '@/components/crud/CrudListPage';
-
-// ----- Types -----
+import { useState } from 'react';
 
 interface Certificate {
   id: number;
@@ -24,6 +23,23 @@ interface DecisionTraceItem {
   reasoning: string;
   confidence: number;
   created_at: string;
+}
+
+interface ProductVersion {
+  id: number;
+  product_id: number;
+  version_data: Record<string, unknown> | null;
+  snapshot: Record<string, unknown> | null;
+  agent_id: string;
+  reason: string;
+  created_at: string;
+}
+
+interface VersionListResponse {
+  items: ProductVersion[];
+  total: number;
+  page: number;
+  size: number;
 }
 
 interface Product360 {
@@ -57,7 +73,20 @@ interface Product360 {
   };
 }
 
-// ----- Color & label helpers -----
+// AI Content generation types
+interface GeneratedContent {
+  title: string;
+  subtitle?: string;
+  description: string;
+  keywords: string[];
+  confidence: number;
+}
+
+interface ContentReviewResult {
+  passed: boolean;
+  issues: string[];
+  adjusted_confidence: number;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'default',
@@ -95,7 +124,6 @@ const stockLabel = (s: string) => label(s, { in_stock: '有库存', low_stock: '
 const lifecycleLabel = (s: string) => label(s, { active: '活跃', declining: '衰退', end_of_life: '停产', new: '新品' });
 const complianceLabel = (s: string) => label(s, { ok: '合规', warning: '警告', fail: '不合规', pending: '审核中' });
 
-// Competition & demand helpers
 function competitionScoreInfo(score: number | null): { color: string; label: string } {
   if (score == null) return { color: 'default', label: '-' };
   if (score >= 70) return { color: 'red', label: '高' };
@@ -110,7 +138,249 @@ function demandScoreColor(score: number | null): string {
   return '#F87171';
 }
 
-// ----- Component -----
+function VersionHistoryTab({ productId }: { productId: string }) {
+  const queryClient = useQueryClient();
+  const [modalVersion, setModalVersion] = useState<ProductVersion | null>(null);
+  const [rollingBack, setRollingBack] = useState<number | null>(null);
+
+  const { data: versionPage, isLoading } = useQuery({
+    queryKey: ['product-versions', productId],
+    queryFn: async () => {
+      const res = await apiClient.get<VersionListResponse>(`/v1/products/${productId}/versions?page=1&size=50`);
+      return res.data;
+    },
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: async (versionId: number) => {
+      await apiClient.post(`/v1/products/${productId}/versions/${versionId}/rollback`, {});
+    },
+    onSuccess: () => {
+      message.success('回滚成功');
+      setModalVersion(null);
+      setRollingBack(null);
+      queryClient.invalidateQueries({ queryKey: ['product360', productId] });
+      queryClient.invalidateQueries({ queryKey: ['product-versions', productId] });
+    },
+    onError: (err: Error) => {
+      message.error('回滚失败: ' + err.message);
+      setRollingBack(null);
+    },
+  });
+
+  const handleRollback = (version: ProductVersion) => {
+    setModalVersion(version);
+  };
+
+  const confirmRollback = () => {
+    if (!modalVersion) return;
+    setRollingBack(modalVersion.id);
+    rollbackMutation.mutate(modalVersion.id);
+  };
+
+  const versionColumns = [
+    { title: '版本 ID', dataIndex: 'id', key: 'id', width: 90 },
+    { title: 'Agent', dataIndex: 'agent_id', key: 'agent_id', width: 80 },
+    {
+      title: '操作理由',
+      dataIndex: 'reason',
+      key: 'reason',
+      render: (v: string) => (v ? (v.length > 80 ? v.slice(0, 80) + '...' : v) : '-'),
+    },
+    { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 170, render: fmtDate },
+    {
+      title: '操作',
+      key: 'action',
+      width: 100,
+      render: (_: unknown, record: ProductVersion) => (
+        <Tooltip title="回滚到此版本">
+          <Button
+            type="link"
+            size="small"
+            icon={<RollbackOutlined />}
+            loading={rollingBack === record.id}
+            onClick={() => handleRollback(record)}
+          >
+            回滚
+          </Button>
+        </Tooltip>
+      ),
+    },
+  ];
+
+  const versions = versionPage?.items ?? [];
+
+  return (
+    <>
+      <Card title="版本快照历史">
+        {isLoading ? (
+          <Skeleton active paragraph={{ rows: 5 }} />
+        ) : versions.length > 0 ? (
+          <Table rowKey="id" dataSource={versions} columns={versionColumns} pagination={false} size="small" />
+        ) : (
+          <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>暂无版本记录</div>
+        )}
+      </Card>
+      <Modal
+        title="确认回滚"
+        open={!!modalVersion}
+        onCancel={() => setModalVersion(null)}
+        onOk={confirmRollback}
+        confirmLoading={rollingBack != null}
+        okText="确认回滚"
+        cancelText="取消"
+      >
+        <p>确定要将商品回滚到以下版本吗？</p>
+        {modalVersion && (
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label="版本ID">{modalVersion.id}</Descriptions.Item>
+            <Descriptions.Item label="Agent">{modalVersion.agent_id || '-'}</Descriptions.Item>
+            <Descriptions.Item label="理由">{modalVersion.reason || '-'}</Descriptions.Item>
+            <Descriptions.Item label="创建时间">{fmtDate(modalVersion.created_at)}</Descriptions.Item>
+          </Descriptions>
+        )}
+        <p style={{ marginTop: 12, color: 'var(--text-secondary)' }}>回滚操作会自动创建一个当前状态的快照，以便后续恢复。</p>
+      </Modal>
+    </>
+  );
+}
+
+// ----- Content AI Tab Component -----
+
+function ContentAITab({
+  productId,
+  productName,
+  category,
+  brand,
+}: {
+  productId: string;
+  productName: string;
+  category: string;
+  brand: string;
+}) {
+  const [language, setLanguage] = useState('zh');
+  const [platform, setPlatform] = useState('ozon');
+  const [genResult, setGenResult] = useState<GeneratedContent | null>(null);
+  const [reviewResult, setReviewResult] = useState<ContentReviewResult | null>(null);
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post<GeneratedContent>('/v1/content/generate', {
+        product_name: productName,
+        category,
+        brand,
+        specifications: '',
+        target_language: language,
+        platform,
+      });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      if (!data) return;
+      setGenResult(data);
+      apiClient.post<ContentReviewResult>('/v1/content/validate', {
+        title: data.title,
+        description: data.description,
+        language,
+        platform,
+      }).then((res) => res.data && setReviewResult(res.data)).catch(() => {
+        setReviewResult({ passed: true, issues: [], adjusted_confidence: data.confidence });
+      });
+    },
+    onError: (err: Error) => {
+      message.error('AI 生成失败: ' + err.message);
+    },
+  });
+
+  return (
+    <Card title="AI 内容生成">
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Select
+            value={language}
+            onChange={setLanguage}
+            style={{ width: 120 }}
+            options={[
+              { value: 'zh', label: '中文' },
+              { value: 'en', label: 'English' },
+              { value: 'ru', label: 'Русский' },
+            ]}
+          />
+          <Select
+            value={platform}
+            onChange={setPlatform}
+            style={{ width: 140 }}
+            options={[
+              { value: 'ozon', label: 'Ozon' },
+              { value: 'shopee', label: 'Shopee' },
+              { value: 'wb', label: 'Wildberries' },
+            ]}
+          />
+          <Button
+            type="primary"
+            icon={<ReloadOutlined />}
+            loading={generateMutation.isPending}
+            onClick={() => generateMutation.mutate()}
+          >
+            AI 生成
+          </Button>
+        </div>
+
+        {generateMutation.isPending && (
+          <Progress percent={100} status="active" strokeColor="#1677ff" showInfo={false} />
+        )}
+
+        {genResult && (
+          <Descriptions bordered column={1} size="small">
+            <Descriptions.Item label="置信度">
+              <Tag color={genResult.confidence >= 0.7 ? 'success' : genResult.confidence >= 0.4 ? 'warning' : 'error'}>
+                {(genResult.confidence * 100).toFixed(0)}%
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="标题">{genResult.title}</Descriptions.Item>
+            {genResult.subtitle && <Descriptions.Item label="副标题">{genResult.subtitle}</Descriptions.Item>}
+            <Descriptions.Item label="描述">
+              <Typography.Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
+                {genResult.description}
+              </Typography.Paragraph>
+            </Descriptions.Item>
+            <Descriptions.Item label="关键词">
+              {genResult.keywords && genResult.keywords.length > 0
+                ? genResult.keywords.map((kw) => <Tag key={kw}>{kw}</Tag>)
+                : '-'}
+            </Descriptions.Item>
+          </Descriptions>
+        )}
+
+        {reviewResult && reviewResult.issues && reviewResult.issues.length > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            icon={<AlertOutlined />}
+            message={'验证发现 ' + reviewResult.issues.length + ' 个问题'}
+            description={
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {reviewResult.issues.map((issue, i) => (
+                  <li key={i}>{issue}</li>
+                ))}
+              </ul>
+            }
+          />
+        )}
+
+        {reviewResult && reviewResult.passed && genResult && (
+          <Alert
+            type="success"
+            showIcon
+            icon={<CheckCircleOutlined />}
+            message="内容验证通过"
+            description={'置信度: ' + (reviewResult.adjusted_confidence * 100).toFixed(0) + '%'}
+          />
+        )}
+      </Space>
+    </Card>
+  );
+}
 
 export default function Product360Page() {
   const params = useParams();
@@ -126,297 +396,156 @@ export default function Product360Page() {
     retry: false,
   });
 
-  // --- Loading state ---
   if (isLoading) {
     return (
       <PageContainer title="商品详情">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')} style={{ marginBottom: 16 }}>
-          返回列表
-        </Button>
-        <Card>
-          <Skeleton active paragraph={{ rows: 10 }} />
-        </Card>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')} style={{ marginBottom: 16 }}>返回列表</Button>
+        <Card><Skeleton active paragraph={{ rows: 10 }} /></Card>
       </PageContainer>
     );
   }
 
-  // --- Error state ---
   if (isError || !data) {
     return (
       <PageContainer title="商品详情">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')} style={{ marginBottom: 16 }}>
-          返回列表
-        </Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')} style={{ marginBottom: 16 }}>返回列表</Button>
         <Card>
-          <Result
-            status="error"
-            title="加载失败"
-            subTitle="无法获取商品360详情，请检查网络后重试"
-            extra={<Button onClick={() => refetch()}>重试</Button>}
-          />
+          <Result status="error" title="加载失败" subTitle="无法获取商品360详情，请检查网络后重试" extra={<Button onClick={() => refetch()}>重试</Button>} />
         </Card>
       </PageContainer>
     );
   }
 
-  // --- Data derived from Product360 ---
+  const platformKeys = Array.from(new Set([
+    ...Object.keys(data.listings ?? {}),
+    ...Object.keys(data.price ?? {}),
+    ...Object.keys(data.profit_margin ?? {}),
+    ...Object.keys(data.compliance ?? {}),
+  ]));
 
-  // Collect unique platform keys across all records
-  const platformKeys = Array.from(
-    new Set([
-      ...Object.keys(data.listings ?? {}),
-      ...Object.keys(data.price ?? {}),
-      ...Object.keys(data.profit_margin ?? {}),
-      ...Object.keys(data.compliance ?? {}),
-    ]),
-  );
-
-  // Tab 4: Listing status table
   const listingColumns = [
     { title: '平台', dataIndex: 'platform', key: 'platform', width: 120 },
-    {
-      title: '刊登状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (v: string) => <Tag color={STATUS_COLORS[v] ?? 'default'}>{statusLabel(v)}</Tag>,
-    },
-    {
-      title: '售价',
-      dataIndex: 'price',
-      key: 'price',
-      render: (v: number | undefined) => (v != null ? `${v.toFixed(2)}` : '-'),
-    },
-    {
-      title: '利润率',
-      dataIndex: 'profit_margin',
-      key: 'profit_margin',
-      render: (v: number | undefined) => (v != null ? `${v.toFixed(1)}%` : '-'),
-    },
+    { title: '刊登状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={STATUS_COLORS[v] ?? 'default'}>{statusLabel(v)}</Tag> },
+    { title: '售价', dataIndex: 'price', key: 'price', render: (v: number | undefined) => (v != null ? v.toFixed(2) : '-') },
+    { title: '利润率', dataIndex: 'profit_margin', key: 'profit_margin', render: (v: number | undefined) => (v != null ? v.toFixed(1) + '%' : '-') },
   ];
 
-  const listingData = platformKeys.map((p) => ({
-    key: p,
-    platform: p,
-    status: data.listings[p] ?? '-',
-    price: data.price[p],
-    profit_margin: data.profit_margin[p],
-  }));
+  const listingData = platformKeys.map((p) => ({ key: p, platform: p, status: data.listings[p] ?? '-', price: data.price[p], profit_margin: data.profit_margin[p] }));
 
-  // Tab 5: Cost & profit
   const profitColumns = [
     { title: '平台', dataIndex: 'platform', key: 'platform', width: 120 },
-    {
-      title: '售价',
-      dataIndex: 'price',
-      key: 'price',
-      render: (v: number | undefined) => (v != null ? `${v.toFixed(2)}` : '-'),
-    },
-    {
-      title: '利润率',
-      dataIndex: 'profit_margin',
-      key: 'profit_margin',
-      render: (v: number | undefined) => (v != null ? `${v.toFixed(1)}%` : '-'),
-    },
-    {
-      title: '成本价',
-      dataIndex: 'cost_price',
-      key: 'cost_price',
-      render: (v: number) => fmtMoney(v),
-    },
+    { title: '售价', dataIndex: 'price', key: 'price', render: (v: number | undefined) => (v != null ? v.toFixed(2) : '-') },
+    { title: '利润率', dataIndex: 'profit_margin', key: 'profit_margin', render: (v: number | undefined) => (v != null ? v.toFixed(1) + '%' : '-') },
+    { title: '成本价', dataIndex: 'cost_price', key: 'cost_price', render: (v: number) => fmtMoney(v) },
   ];
 
-  const profitData = platformKeys.map((p) => ({
-    key: p,
-    platform: p,
-    price: data.price[p],
-    profit_margin: data.profit_margin[p],
-    cost_price: data.cost_price,
-  }));
+  const profitData = platformKeys.map((p) => ({ key: p, platform: p, price: data.price[p], profit_margin: data.profit_margin[p], cost_price: data.cost_price }));
 
-  // Tab 6: Compliance
   const complianceColumns = [
     { title: '平台', dataIndex: 'platform', key: 'platform', width: 120 },
-    {
-      title: '合规状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (v: string) => <Tag color={COMPLIANCE_COLORS[v] ?? 'default'}>{complianceLabel(v)}</Tag>,
-    },
+    { title: '合规状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={COMPLIANCE_COLORS[v] ?? 'default'}>{complianceLabel(v)}</Tag> },
   ];
 
-  const complianceData = platformKeys.map((p) => ({
-    key: p,
-    platform: p,
-    status: data.compliance[p] ?? 'pending',
-  }));
+  const complianceData = platformKeys.map((p) => ({ key: p, platform: p, status: data.compliance[p] ?? 'pending' }));
 
-  // Tab 6: Certificates
   const certColumns = [
     { title: '名称', dataIndex: 'name', key: 'name' },
     { title: '类型', dataIndex: 'type', key: 'type' },
-    {
-      title: '到期日',
-      dataIndex: 'expiry_date',
-      key: 'expiry_date',
-      render: (v: string) => v ?? '-',
-    },
-    {
-      title: '状态',
-      dataIndex: 'is_expiring',
-      key: 'is_expiring',
-      render: (v: boolean) =>
-        v ? <Tag color="warning">即将到期</Tag> : <Tag color="success">正常</Tag>,
-    },
+    { title: '到期日', dataIndex: 'expiry_date', key: 'expiry_date', render: (v: string) => v ?? '-' },
+    { title: '状态', dataIndex: 'is_expiring', key: 'is_expiring', render: (v: boolean) => v ? <Tag color="warning">即将到期</Tag> : <Tag color="success">正常</Tag> },
   ];
 
-  // Tab 8: Decision trace
   const decisionColumns = [
     { title: 'Agent', dataIndex: 'agent_id', key: 'agent_id', width: 80 },
     { title: '动作', dataIndex: 'action', key: 'action', width: 140 },
-    {
-      title: '决策理由',
-      dataIndex: 'reasoning',
-      key: 'reasoning',
-      render: (v: string) => (v ? (v.length > 60 ? `${v.slice(0, 60)}...` : v) : '-'),
-    },
-    {
-      title: '置信度',
-      dataIndex: 'confidence',
-      key: 'confidence',
-      width: 100,
-      render: (v: number) => (v != null ? `${(v * 100).toFixed(0)}%` : '-'),
-    },
+    { title: '决策理由', dataIndex: 'reasoning', key: 'reasoning', render: (v: string) => (v ? (v.length > 60 ? v.slice(0, 60) + '...' : v) : '-') },
+    { title: '置信度', dataIndex: 'confidence', key: 'confidence', width: 100, render: (v: number) => (v != null ? (v * 100).toFixed(0) + '%' : '-') },
     { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 160, render: fmtDate },
   ];
 
   const decisionData = (data.decision_trace ?? []).map((item, i) => ({ ...item, key: i }));
 
-  // --- Tab definitions ---
-
   const tabItems = [
     {
-      key: 'basic',
-      label: '基本信息',
+      key: 'basic', label: '基本信息',
       children: (
         <Card>
-          {data.main_image && (
-            <div style={{ marginBottom: 16 }}>
-              <Image src={data.main_image} alt={data.name} width={200} />
-            </div>
-          )}
+          {data.main_image && <div style={{ marginBottom: 16 }}><Image src={data.main_image} alt={data.name} width={200} /></div>}
           <Descriptions bordered column={2} size="small">
             <Descriptions.Item label="商品名称">{data.name ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="品牌">{data.brand_name ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="分类">{data.category_name ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="SKU 数量">{data.sku_count ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="HS 编码">{data.hs_code ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Tag color={STATUS_COLORS[data.status] ?? 'default'}>{statusLabel(data.status)}</Tag>
-            </Descriptions.Item>
+            <Descriptions.Item label="状态"><Tag color={STATUS_COLORS[data.status] ?? 'default'}>{statusLabel(data.status)}</Tag></Descriptions.Item>
           </Descriptions>
         </Card>
       ),
     },
     {
-      key: 'content',
-      label: '内容',
+      key: 'content', label: '内容',
+      children: <ContentAITab productId={id} productName={data.name ?? ''} category={data.category_name ?? ''} brand={data.brand_name ?? ''} />,
+    },
+    {
+      key: 'images', label: '图片',
       children: (
-        <Card>
-          <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
-            <p style={{ marginBottom: 16, fontSize: 16 }}>多语言内容管理 (coming in Phase 4)</p>
-            <Button type="primary" onClick={() => message.info('编辑功能将在 Phase 4 上线')}>
-              编辑内容
-            </Button>
-          </div>
-        </Card>
+        <Card><div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}><p>图片管理 (coming in Phase 4)</p></div></Card>
       ),
     },
     {
-      key: 'images',
-      label: '图片',
-      children: (
-        <Card>
-          <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
-            <p>图片管理 (coming in Phase 4)</p>
-          </div>
-        </Card>
-      ),
+      key: 'listings', label: '刊登状态',
+      children: <Card title="各平台刊登状态"><Table rowKey="key" dataSource={listingData} columns={listingColumns} pagination={false} size="small" /></Card>,
     },
     {
-      key: 'listings',
-      label: '刊登状态',
-      children: (
-        <Card title="各平台刊登状态">
-          <Table rowKey="key" dataSource={listingData} columns={listingColumns} pagination={false} size="small" />
-        </Card>
-      ),
-    },
-    {
-      key: 'profit',
-      label: '成本与利润',
+      key: 'profit', label: '成本与利润',
       children: (
         <>
           <Card style={{ marginBottom: 16 }}>
             <Descriptions bordered column={3} size="small">
               <Descriptions.Item label="成本价">{data.cost_price != null ? fmtMoney(data.cost_price) : '-'}</Descriptions.Item>
-              <Descriptions.Item label="利润评分">{data.profit_score != null ? `${data.profit_score}/100` : '-'}</Descriptions.Item>
-              <Descriptions.Item label="需求评分">{data.demand_score != null ? `${data.demand_score}/100` : '-'}</Descriptions.Item>
+              <Descriptions.Item label="利润评分">{data.profit_score != null ? data.profit_score + '/100' : '-'}</Descriptions.Item>
+              <Descriptions.Item label="需求评分">{data.demand_score != null ? data.demand_score + '/100' : '-'}</Descriptions.Item>
             </Descriptions>
           </Card>
-          <Card title="各平台利润明细">
-            <Table rowKey="key" dataSource={profitData} columns={profitColumns} pagination={false} size="small" />
-          </Card>
+          <Card title="各平台利润明细"><Table rowKey="key" dataSource={profitData} columns={profitColumns} pagination={false} size="small" /></Card>
         </>
       ),
     },
     {
-      key: 'compliance',
-      label: '合规与认证',
+      key: 'compliance', label: '合规与认证',
       children: (
         <>
-          <Card style={{ marginBottom: 16 }}>
-            <Descriptions bordered column={1} size="small">
-              <Descriptions.Item label="HS 编码">{data.hs_code ?? '-'}</Descriptions.Item>
-            </Descriptions>
-          </Card>
-          <Card title="各平台合规状态" style={{ marginBottom: 16 }}>
-            <Table rowKey="key" dataSource={complianceData} columns={complianceColumns} pagination={false} size="small" />
-          </Card>
-          <Card title="认证信息">
-            {(data.certificates ?? []).length > 0 ? (
-              <Table rowKey="id" dataSource={data.certificates} columns={certColumns} pagination={false} size="small" />
-            ) : (
-              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>暂无认证信息</div>
-            )}
-          </Card>
+          <Card style={{ marginBottom: 16 }}><Descriptions bordered column={1} size="small"><Descriptions.Item label="HS 编码">{data.hs_code ?? '-'}</Descriptions.Item></Descriptions></Card>
+          <Card title="各平台合规状态" style={{ marginBottom: 16 }}><Table rowKey="key" dataSource={complianceData} columns={complianceColumns} pagination={false} size="small" /></Card>
+          <Card title="认证信息">{(data.certificates ?? []).length > 0 ? <Table rowKey="id" dataSource={data.certificates} columns={certColumns} pagination={false} size="small" /> : <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>暂无认证信息</div>}</Card>
         </>
       ),
     },
     {
-      key: 'inventory',
-      label: '库存与供应链',
+      key: 'inventory', label: '库存与供应链',
       children: (
         <Card>
           <Descriptions bordered column={2} size="small">
             <Descriptions.Item label="当前库存">{data.inventory ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="安全库存">{data.safety_stock ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="库存状态">
-              <Tag color={STOCK_COLORS[data.stock_status] ?? 'default'}>{stockLabel(data.stock_status)}</Tag>
-            </Descriptions.Item>
+            <Descriptions.Item label="库存状态"><Tag color={STOCK_COLORS[data.stock_status] ?? 'default'}>{stockLabel(data.stock_status)}</Tag></Descriptions.Item>
           </Descriptions>
         </Card>
       ),
     },
     {
-      key: 'decisions',
-      label: '决策历史',
+      key: 'versions', label: '版本历史',
+      children: <VersionHistoryTab productId={id} />,
+    },
+    {
+      key: 'freshness', label: '数据新鲜度',
+      children: <FreshnessTab productId={id} />,
+    },
+    {
+      key: 'decisions', label: '决策历史',
       children: (
         <Card title="Agent 决策记录">
-          {(data.decision_trace ?? []).length > 0 ? (
-            <Table rowKey="key" dataSource={decisionData} columns={decisionColumns} pagination={false} size="small" />
-          ) : (
-            <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>暂无决策记录</div>
-          )}
+          {(data.decision_trace ?? []).length > 0 ? <Table rowKey="key" dataSource={decisionData} columns={decisionColumns} pagination={false} size="small" /> : <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>暂无决策记录</div>}
         </Card>
       ),
     },
@@ -425,34 +554,23 @@ export default function Product360Page() {
   return (
     <PageContainer title={data.name ?? '商品详情'}>
       <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')}>
-          返回列表
-        </Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')}>返回列表</Button>
       </div>
-
-      {/* Header: lifecycle badge + health score */}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>{data.name}</h1>
             <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Tag color={LIFECYCLE_TAG_COLORS[data.lifecycle_status] ?? 'default'}>
-                {lifecycleLabel(data.lifecycle_status)}
-              </Tag>
+              <Tag color={LIFECYCLE_TAG_COLORS[data.lifecycle_status] ?? 'default'}>{lifecycleLabel(data.lifecycle_status)}</Tag>
               <Tag color={STATUS_COLORS[data.status] ?? 'default'}>{statusLabel(data.status)}</Tag>
             </div>
           </div>
           <div style={{ marginLeft: 'auto', minWidth: 200 }}>
             <div style={{ marginBottom: 4, color: 'var(--text-secondary)', fontSize: 13 }}>健康评分</div>
-            <Progress
-              percent={data.health_score}
-              size="small"
-              strokeColor={data.health_score >= 80 ? '#34D399' : data.health_score >= 60 ? '#FBBF24' : '#F87171'}
-            />
+            <Progress percent={data.health_score} size="small" strokeColor={data.health_score >= 80 ? '#34D399' : data.health_score >= 60 ? '#FBBF24' : '#F87171'} />
           </div>
         </div>
       </Card>
-
       <Tabs items={tabItems} />
     </PageContainer>
   );

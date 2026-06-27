@@ -226,5 +226,3 @@ func computeFreshnessLabel(f DataFreshness, now time.Time) string {
 	}
 }
 
-// nowFunc is a package-level variable for testability.
-var nowFunc = time.Now

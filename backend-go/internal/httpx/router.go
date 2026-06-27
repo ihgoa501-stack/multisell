@@ -17,6 +17,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/agentlearning"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
@@ -252,6 +253,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 
 	// -------------------------------------------------------
+	// Approval: auto-create when agent confidence < 0.7
+	bus.Subscribe("agent.decided.*", approval.NewAgentDecisionSubscriber(db, logger))
+		
 	// Pipeline chain rules (via event bus)
 	// -------------------------------------------------------
 
@@ -527,6 +531,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	operationlog.RegisterRoutes(protected, db, logger)
 	integrations.RegisterRoutes(protected, db, logger)
 	integrations.RegisterWebhookAdminRoutes(protected, db, logger)
+	approval.RegisterRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))

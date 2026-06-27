@@ -76,6 +76,8 @@ export const menuGroups: MenuGroup[] = [
       { key: '/agents/entropy', label: '熵监控' },
       { key: '/agentos/work-items', label: '工作队列' },
       { key: '/agents/trust', label: '信任与自主度' },
+      { key: '/agent-learning', label: '学习与准确率' },
+      { key: '/orchestration', label: '生命周期编排' },
     ],
   },
   {

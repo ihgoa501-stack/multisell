@@ -12,9 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// nowFunc is a package-level variable for time.Now, overridable in tests.
-var nowFunc = time.Now
-
 // Handler handles product version HTTP requests.
 type Handler struct {
 	service   *Service
@@ -157,7 +154,7 @@ func (h *Handler) ListStaleProducts(c *gin.Context) {
 		return
 	}
 
-	now := nowFunc()
+	now := time.Now()
 	summaries := make([]FreshnessSummary, 0, len(records))
 	for _, r := range records {
 		label := computeFreshnessLabel(r, now)
