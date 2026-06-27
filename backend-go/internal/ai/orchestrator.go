@@ -13,7 +13,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
-	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -26,12 +25,6 @@ type Orchestrator struct {
 	traces     *TraceWriter
 	provider   LLMProvider
 	agentImpls map[string]impl.Agent
-	hub        *realtime.Hub
-
-	// trustScoreSync forces synchronous trust score recalculation after each Run().
-	// In production this runs in a goroutine; tests with SQLite can set this to
-	// true to avoid table-lock races during cleanup.
-	trustScoreSync bool
 }
 
 // NewOrchestrator creates a new AI orchestrator.
@@ -49,20 +42,6 @@ func NewOrchestrator(db *gorm.DB, logger *zap.Logger) *Orchestrator {
 // WithProvider overrides the LLM provider (useful for tests).
 func (o *Orchestrator) WithProvider(p LLMProvider) *Orchestrator {
 	o.provider = p
-	return o
-}
-
-// WithSyncTrustScore forces synchronous trust score recalculation after Run().
-// In production the recalculation runs in a goroutine; tests using shared SQLite
-// should set this to true to avoid table-lock races during cleanup.
-func (o *Orchestrator) WithSyncTrustScore() *Orchestrator {
-	o.trustScoreSync = true
-	return o
-}
-
-// WithHub sets the WebSocket hub for real-time notifications.
-func (o *Orchestrator) WithHub(hub *realtime.Hub) *Orchestrator {
-	o.hub = hub
 	return o
 }
 
@@ -86,13 +65,13 @@ type RunAgentRequest struct {
 
 // RunAgentResult is the output of an agent run.
 type RunAgentResult struct {
-	TraceID       string                 `json:"trace_id"`
-	AgentID       string                 `json:"agent_id"`
-	DecisionPoint string                 `json:"decision_point"`
-	Output        map[string]interface{} `json:"output"`
-	Confidence    float64                `json:"confidence"`
-	RiskLevel     string                 `json:"risk_level"`
-	Action        *UnifiedAction         `json:"action,omitempty"`
+	TraceID    string                 `json:"trace_id"`
+	AgentID    string                 `json:"agent_id"`
+	DecisionPoint string               `json:"decision_point"`
+	Output     map[string]interface{} `json:"output"`
+	Confidence float64                `json:"confidence"`
+	RiskLevel  string                 `json:"risk_level"`
+	Action     *UnifiedAction         `json:"action,omitempty"`
 }
 
 // Run executes an agent decision end-to-end:
@@ -100,10 +79,11 @@ type RunAgentResult struct {
 // 2. Start a trace
 // 3. Emit prompt_start + tool_call events (stubbed)
 // 4. Produce a synthesized final output
-// 5. Apply personal rules
-// 6. Check approval gate (approval policy + trust score)
-// 7. Optionally create a unified action
-// 8. Complete the trace
+// 5. Optionally create a unified action
+// 6. Complete the trace
+//
+// In production this would proxy to an LLM provider and real tool calls.
+// For now it produces deterministic stub output so the full UI flow works.
 func (o *Orchestrator) Run(req *RunAgentRequest) (*RunAgentResult, error) {
 	return o.runWithTimeout(req, 0)
 }
@@ -157,21 +137,6 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		return nil, err
 	}
 
-	// On any early return, mark the trace as failed so it does not
-	// remain in 'running' status forever.
-	var runErr error
-	defer func() {
-		if runErr != nil {
-			finalBytes, _ := json.Marshal(map[string]string{"error": runErr.Error()})
-			_, _ = o.traces.Complete(traceID, &CompleteTraceInput{
-				FinalOutput: finalBytes,
-				Confidence:  nil,
-				RiskLevel:   "high",
-				Status:      "failed",
-			})
-		}
-	}()
-
 	// Emit prompt_start.
 	_, _ = o.traces.AppendEvent(traceID, &AppendEventInput{
 		EventType: "prompt_start",
@@ -197,7 +162,6 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	// otherwise fall back to the deterministic stub.
 	output, confidence, riskLevel, err := o.synthesizeOutput(agent, req.DecisionPoint, req.Context)
 	if err != nil {
-		runErr = err
 		return nil, err
 	}
 
@@ -227,77 +191,6 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			}, nil
 		}
 		output = ruleResult.Output
-	}
-
-	// ──────────────────────────────────────────────────────────────
-	// Approval Gate: check ApprovalPolicy for this agent+decision
-	// ──────────────────────────────────────────────────────────────
-	policySvc := actionpolicy.NewService(o.db, o.logger)
-	approvalPolicy, polErr := policySvc.GetMatchingPolicy(agent.ID, req.DecisionPoint)
-	if polErr != nil {
-		o.logger.Warn("approval policy lookup failed", zap.String("agent_id", agent.ID), zap.Error(polErr))
-	} else if approvalPolicy != nil && approvalPolicy.RequiresApproval {
-		// Check the agent's current trust score.
-		trustSvc := trustscore.NewService(o.db, o.logger)
-		ts, tsErr := trustSvc.GetByAgent(agent.ID)
-		if tsErr != nil {
-			o.logger.Warn("trust score lookup failed for approval gate", zap.String("agent_id", agent.ID), zap.Error(tsErr))
-		} else {
-			tsVal := 0.0
-			if ts != nil {
-				tsVal = ts.TrustScore
-			}
-			if tsVal < approvalPolicy.MinTrustScore {
-				// Trust score too low — gate this decision.
-				o.logger.Info("approval gate triggered",
-					zap.String("agent_id", agent.ID),
-					zap.String("decision_point", req.DecisionPoint),
-					zap.Float64("trust_score", tsVal),
-					zap.Float64("min_trust_score", approvalPolicy.MinTrustScore),
-				)
-
-				payloadBytes, _ := json.Marshal(output)
-				req, createErr := policySvc.SubmitApproval(
-					approvalPolicy.ID,
-					agent.ID,
-					req.DecisionPoint,
-					payloadBytes,
-					"agent:"+agent.ID,
-				)
-				if createErr != nil {
-					o.logger.Warn("failed to create approval request", zap.Error(createErr))
-				} else {
-					// Broadcast WebSocket notification.
-					if o.hub != nil && req != nil {
-						notif, _ := json.Marshal(map[string]interface{}{
-							"type": "approval:new_request",
-							"data": req,
-						})
-						o.hub.Broadcast(notif)
-					}
-				}
-
-				// Complete trace with gated status.
-				finalBytes, _ := json.Marshal(output)
-				_, _ = o.traces.Complete(traceID, &CompleteTraceInput{
-					FinalOutput: finalBytes,
-					Confidence:  &confidence,
-					RiskLevel:   riskLevel,
-					TokenCount:  380 + len(toolCalls)*120,
-					Status:      "gated",
-				})
-				return &RunAgentResult{
-					TraceID:       traceID,
-					AgentID:       agent.ID,
-					DecisionPoint: req.DecisionPoint,
-					Output:        output,
-					Confidence:    confidence,
-					RiskLevel:     riskLevel,
-				}, nil
-			}
-			// Trust score sufficient — auto-approve and continue.
-			// (Proceed to normal action creation below.)
-		}
 	}
 
 	// Emit reasoning event.
@@ -384,30 +277,25 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	// Trigger trust score recalculation asynchronously — must not block the
 	// agent run response. Recalculation iterates all agents and can be expensive
 	// when the trace or action tables are large.
-	recalcTrustScores := func() {
-		tsSvc := trustscore.NewService(o.db, o.logger)
+	go func(db *gorm.DB, logger *zap.Logger) {
+		tsSvc := trustscore.NewService(db, logger)
 		if err := tsSvc.Recalculate(); err != nil {
-			o.logger.Warn("trust score recalculation failed", zap.Error(err))
+			logger.Warn("trust score recalculation failed", zap.Error(err))
 			return
 		}
-		ug := trustscore.NewUpgrader(o.db, o.logger)
+		ug := trustscore.NewUpgrader(db, logger)
 		if upgraded, err := ug.UpgradeEligible(); err != nil {
-			o.logger.Warn("autonomy upgrade failed", zap.Error(err))
+			logger.Warn("autonomy upgrade failed", zap.Error(err))
 		} else if len(upgraded) > 0 {
 			for _, u := range upgraded {
-				o.logger.Info("agent autonomy upgraded via trust score",
+				logger.Info("agent autonomy upgraded via trust score",
 					zap.String("agent", u.AgentID),
 					zap.String("from", u.FromLevel),
 					zap.String("to", u.ToLevel),
 				)
 			}
 		}
-	}
-	if o.trustScoreSync {
-		recalcTrustScores()
-	} else {
-		go recalcTrustScores()
-	}
+	}(o.db, o.logger)
 
 	return &RunAgentResult{
 		TraceID:       traceID,

@@ -400,8 +400,6 @@ class ShopeeListingAdapter:
 
     async def validate_credentials(self, *, platform: Platform) -> bool:
         """用 Shopee GetShopInfo API 校验凭证。"""
-        if platform.status != 1:
-            return False
         if not platform.client_id or not platform.api_key:
             return False
         extra = platform.extra_config or {}

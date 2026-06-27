@@ -231,12 +231,7 @@ class ActionCenterService:
         user_id: int,
         comment: str | None,
     ) -> dict[str, Any] | None:
-        stmt = (
-            select(ActionProposal)
-            .where(ActionProposal.id == proposal_id)
-            .with_for_update()
-        )
-        proposal = (await db.execute(stmt)).scalars().first()
+        proposal = await db.get(ActionProposal, proposal_id)
         if proposal is None:
             return None
         ActionCenterService._ensure_transition(proposal.status, "approved")
@@ -286,12 +281,7 @@ class ActionCenterService:
         user_id: int,
         comment: str | None,
     ) -> dict[str, Any] | None:
-        stmt = (
-            select(ActionProposal)
-            .where(ActionProposal.id == proposal_id)
-            .with_for_update()
-        )
-        proposal = (await db.execute(stmt)).scalars().first()
+        proposal = await db.get(ActionProposal, proposal_id)
         if proposal is None:
             return None
         ActionCenterService._ensure_transition(proposal.status, "rejected")
@@ -342,12 +332,7 @@ class ActionCenterService:
         user_id: int,
         executor: str | None,
     ) -> dict[str, Any] | None:
-        stmt = (
-            select(ActionProposal)
-            .where(ActionProposal.id == proposal_id)
-            .with_for_update()
-        )
-        proposal = (await db.execute(stmt)).scalars().first()
+        proposal = await db.get(ActionProposal, proposal_id)
         if proposal is None:
             return None
         if proposal.requires_approval and proposal.status != "approved":
@@ -433,12 +418,7 @@ class ActionCenterService:
         metric_delta: float | None,
         notes: str | None,
     ) -> dict[str, Any] | None:
-        stmt = (
-            select(ActionProposal)
-            .where(ActionProposal.id == proposal_id)
-            .with_for_update()
-        )
-        proposal = (await db.execute(stmt)).scalars().first()
+        proposal = await db.get(ActionProposal, proposal_id)
         if proposal is None:
             return None
         ActionCenterService._ensure_transition(proposal.status, "reviewed")

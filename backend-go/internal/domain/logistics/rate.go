@@ -15,7 +15,7 @@ type RateTableEntry struct {
 	ID                 int64   `yaml:"id"`
 	ChannelName        string  `yaml:"channel_name"`
 	ProviderName       string  `yaml:"provider_name"`
-	RuleType           string  `yaml:"rule_type"` // "base_plus_per_kg" | "first_additional" | "tiered" | "fixed" | "per_kg"
+	RuleType           string  `yaml:"rule_type"` // "first_additional" | "tiered" | "fixed" | "per_kg"
 	Priority           int     `yaml:"priority"`
 	MinWeightKg        float64 `yaml:"min_weight_kg"`
 	MaxWeightKg        float64 `yaml:"max_weight_kg"`
@@ -154,8 +154,6 @@ func (e *RateEngine) calculateForEntry(entry RateTableEntry, chargeableWeight fl
 		baseFee = applyFixed(entry)
 	case "per_kg":
 		baseFee = applyPerKg(entry, chargeableWeight)
-	case "base_plus_per_kg":
-		baseFee = entry.FixedFee + (chargeableWeight * entry.PerKgPrice)
 	}
 
 	// Surcharges (step 5)

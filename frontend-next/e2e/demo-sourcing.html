@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>凌镜 LingMirror — 1688 选品采集 Demo</title>
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .app-shell {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .sidebar {
+      display: none;
+    }
+
+    .main-content {
+      width: 100%;
+    }
+
+    h1 {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      color: #333;
+      margin: 0 0 16px 0;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+      margin-bottom: 16px;
+    }
+
+    .card-small {
+      font-size: 14px;
+    }
+
+    .card-body {
+      padding: 16px 20px;
+    }
+
+    .card-header {
+      padding: 12px 20px;
+      border-bottom: 1px solid #f0f0f0;
+      font-weight: 600;
+      font-size: 14px;
+      color: #1a1a2e;
+    }
+
+    .card-padded {
+      padding: 0;
+    }
+
+    .search-compact {
+      display: flex;
+      width: 100%;
+    }
+
+    .search-compact input {
+      flex: 1;
+      height: 40px;
+      padding: 4px 11px;
+      border: 1px solid #d9d9d9;
+      border-right: none;
+      border-radius: 6px 0 0 6px;
+      font-size: 16px;
+      color: #333;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-compact input:focus {
+      border-color: #1677ff;
+    }
+
+    .search-compact input::placeholder {
+      color: #bfbfbf;
+    }
+
+    .search-compact button {
+      height: 40px;
+      padding: 4px 16px;
+      border: 1px solid #1677ff;
+      background: #1677ff;
+      color: #fff;
+      font-size: 16px;
+      border-radius: 0 6px 6px 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+
+    .search-compact button:hover {
+      background: #4096ff;
+    }
+
+    .search-compact button:disabled {
+      background: #a0c4ff;
+      border-color: #a0c4ff;
+      cursor: not-allowed;
+    }
+
+    .search-compact button i {
+      font-size: 14px;
+    }
+
+    .input-icon {
+      display: flex;
+      align-items: center;
+      padding: 0 0 0 12px;
+      border: 1px solid #d9d9d9;
+      border-right: none;
+      border-radius: 6px 0 0 6px;
+      background: #fff;
+      color: #bfbfbf;
+    }
+
+    .input-icon input {
+      border: none;
+      outline: none;
+      padding-left: 8px;
+      flex: 1;
+      height: 40px;
+      font-size: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    thead th {
+      background: #fafafa;
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 600;
+      color: #333;
+      border-bottom: 1px solid #f0f0f0;
+      white-space: nowrap;
+    }
+
+    tbody td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      color: #333;
+      vertical-align: middle;
+    }
+
+    tbody tr:hover {
+      background: #fafafa;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .badge-green { background: #52c41a; }
+    .badge-gold { background: #faad14; color: #333; }
+    .badge-red { background: #ff4d4f; }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      border: 1px solid;
+    }
+
+    .tag-green { color: #52c41a; border-color: #52c41a; background: #f6ffed; }
+    .tag-gold { color: #faad14; border-color: #faad14; background: #fffbe6; }
+    .tag-red { color: #ff4d4f; border-color: #ff4d4f; background: #fff2f0; }
+    .tag-blue { color: #1677ff; border-color: #1677ff; background: #e6f4ff; }
+    .tag-default { color: #999; border-color: #d9d9d9; background: #fafafa; }
+
+    .btn-link {
+      background: none;
+      border: none;
+      color: #1677ff;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px 8px;
+      text-decoration: none;
+    }
+
+    .btn-link:hover {
+      color: #4096ff;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 0;
+      color: #999;
+    }
+
+    .empty-state i {
+      font-size: 48px;
+      color: #d9d9d9;
+      margin-bottom: 12px;
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #fff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    .loading-overlay {
+      display: none;
+      text-align: center;
+      padding: 32px;
+    }
+
+    .loading-overlay.active {
+      display: block;
+    }
+
+    .loading-overlay .spinner {
+      display: inline-block;
+      width: 32px;
+      height: 32px;
+      border: 3px solid #e8e8e8;
+      border-top-color: #1677ff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .toast {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #fff;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      opacity: 1;
+    }
+
+    .toast.success {
+      background: #52c41a;
+    }
+
+    .toast.error {
+      background: #ff4d4f;
+    }
+
+    /* Pipeline simulation controls */
+    .sim-controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      background: #f6ffed;
+      border: 1px solid #b7eb8f;
+      border-radius: 8px;
+    }
+
+    .sim-controls label {
+      font-size: 13px;
+      color: #389e0d;
+      font-weight: 500;
+    }
+
+    .sim-controls select, .sim-controls input {
+      padding: 4px 8px;
+      border: 1px solid #d9d9d9;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .sim-controls button {
+      padding: 4px 12px;
+      border: 1px solid #52c41a;
+      background: #52c41a;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .sim-controls button:hover {
+      background: #73d13d;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      font-size: 13px;
+      color: #666;
+    }
+
+    .pagination button {
+      padding: 4px 10px;
+      border: 1px solid #d9d9d9;
+      background: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .pagination button:hover {
+      border-color: #1677ff;
+      color: #1677ff;
+    }
+
+    .pagination button:disabled {
+      color: #ccc;
+      border-color: #d9d9d9;
+      cursor: not-allowed;
+    }
+
+    .total-count {
+      color: #1677ff;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+
+<div class="app-shell">
+  <div class="main-content">
+
+    <h1>1688 选品采集</h1>
+
+    <!-- Simulation controls (visible only in demo mode) -->
+    <div class="sim-controls" id="simControls">
+      <label><i class="fas fa-flask"></i> 模拟控制</label>
+      <select id="simMode">
+        <option value="success" selected>采集成功 (评分 8)</option>
+        <option value="success-low">采集成功 (低分 2)</option>
+        <option value="delayed">延迟加载 (1.5s)</option>
+        <option value="error">采集失败</option>
+      </select>
+      <button id="simResetBtn"><i class="fas fa-undo"></i> 重置</button>
+    </div>
+
+    <!-- URL input card -->
+    <div class="card card-small">
+      <div class="card-body">
+        <div class="search-compact">
+          <div class="input-icon">
+            <i class="fas fa-link" style="color: #bfbfbf;"></i>
+            <input
+              type="text"
+              id="urlInput"
+              placeholder="粘贴 1688 商品链接，例如 https://detail.1688.com/offer/xxx.html"
+            />
+          </div>
+          <button id="fetchBtn">
+            <i class="fas fa-search"></i>
+            <span id="fetchBtnText">采集分析</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recommendations table card -->
+    <div class="card card-small">
+      <div class="card-header">
+        <span>推荐列表 (<span id="totalCount">0</span>)</span>
+      </div>
+      <div class="card-body card-padded" id="tableContainer">
+        <div class="empty-state" id="emptyState">
+          <i class="fas fa-inbox"></i>
+          <p>暂无数据</p>
+        </div>
+        <div class="loading-overlay" id="loadingOverlay">
+          <div class="spinner"></div>
+          <p style="margin-top: 8px; color: #999;">正在加载...</p>
+        </div>
+        <div id="tableWrapper" style="display: none;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 70px;">ID</th>
+                <th>商品标题</th>
+                <th style="width: 160px;">供应商</th>
+                <th style="width: 120px;">价格 (CNY)</th>
+                <th style="width: 80px;">评分</th>
+                <th style="width: 100px;">状态</th>
+                <th style="width: 160px;">采集时间</th>
+                <th style="width: 80px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+          <div class="pagination" id="pagination">
+            <span>共 <span id="paginationTotal">0</span> 条</span>
+            <button id="prevPage" disabled><i class="fas fa-chevron-left"></i> 上一页</button>
+            <span id="pageInfo">第 1 页</span>
+            <button id="nextPage" disabled>下一页 <i class="fas fa-chevron-right"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p style="text-align: center; color: #999; font-size: 13px; margin-top: 24px;">
+      <i class="fas fa-robot"></i>
+      凌镜 LingMirror A8 选品 Agent &mdash; 完整 Pipeline Demo
+    </p>
+  </div>
+</div>
+
+<script>
+// -----------------------------------------------------------------------
+// Demo data
+// -----------------------------------------------------------------------
+
+const SCORE_COLORS = ['red', 'red', 'red', 'gold', 'gold', 'gold', 'green', 'green', 'green', 'green'];
+const STATUS_CONFIG = {
+  recommended: { label: '推荐', cls: 'tag-green' },
+  pending:     { label: '待处理', cls: 'tag-gold' },
+  low_quality: { label: '低质量', cls: 'tag-red' },
+  imported:    { label: '已导入', cls: 'tag-blue' },
+  rejected:    { label: '已拒绝', cls: 'tag-default' },
+};
+
+const SAMPLE_PRODUCTS = [
+  { id: 1, title: '2026新款女士真丝连衣裙夏季中长款收腰显瘦', supplier: '杭州丝绸服饰有限公司', price: 128.00, score: 9, status: 'recommended', url: 'https://detail.1688.com/offer/456.html' },
+  { id: 2, title: '男士商务休闲皮鞋头层牛皮软底', supplier: '温州鞋业工厂店', price: 89.50, score: 5, status: 'pending', url: 'https://detail.1688.com/offer/789.html' },
+  { id: 3, title: '便携式蓝牙音箱低音炮户外防水', supplier: '深圳数码科技有限公司', price: 45.00, score: 2, status: 'low_quality', url: 'https://detail.1688.com/offer/012.html' },
+  { id: 4, title: '儿童益智早教积木拼装玩具100粒', supplier: '汕头玩具厂', price: 32.80, score: 6, status: 'pending', url: 'https://detail.1688.com/offer/345.html' },
+  { id: 5, title: '不锈钢保温杯大容量500ml真空', supplier: '永康杯业有限公司', price: 28.00, score: 8, status: 'recommended', url: 'https://detail.1688.com/offer/678.html' },
+];
+
+// -----------------------------------------------------------------------
+// App state
+// -----------------------------------------------------------------------
+
+let items = [];
+let currentPage = 1;
+const PAGE_SIZE = 5;
+
+// -----------------------------------------------------------------------
+// DOM refs
+// -----------------------------------------------------------------------
+
+const urlInput = document.getElementById('urlInput');
+const fetchBtn = document.getElementById('fetchBtn');
+const fetchBtnText = document.getElementById('fetchBtnText');
+const totalCount = document.getElementById('totalCount');
+const emptyState = document.getElementById('emptyState');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const tableWrapper = document.getElementById('tableWrapper');
+const tableBody = document.getElementById('tableBody');
+const paginationTotal = document.getElementById('paginationTotal');
+const prevPage = document.getElementById('prevPage');
+const nextPage = document.getElementById('nextPage');
+const pageInfo = document.getElementById('pageInfo');
+const simMode = document.getElementById('simMode');
+const toast = document.getElementById('toast');
+
+// -----------------------------------------------------------------------
+// Toast helper
+// -----------------------------------------------------------------------
+
+function showToast(message, type = 'success') {
+  toast.textContent = message;
+  toast.className = `toast ${type} show`;
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// -----------------------------------------------------------------------
+// Table rendering
+// -----------------------------------------------------------------------
+
+function renderTable() {
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = items.slice(start, start + PAGE_SIZE);
+  const totalPages = Math.ceil(items.length / PAGE_SIZE) || 1;
+
+  if (items.length === 0) {
+    emptyState.style.display = 'block';
+    tableWrapper.style.display = 'none';
+    loadingOverlay.classList.remove('active');
+    totalCount.textContent = '0';
+    return;
+  }
+
+  emptyState.style.display = 'none';
+  tableWrapper.style.display = 'block';
+  loadingOverlay.classList.remove('active');
+  totalCount.textContent = items.length;
+  paginationTotal.textContent = items.length;
+  pageInfo.textContent = `第 ${currentPage} 页`;
+
+  prevPage.disabled = currentPage <= 1;
+  nextPage.disabled = currentPage >= totalPages;
+
+  const rows = pageItems.map(item => {
+    const scoreColorClass = SCORE_COLORS[item.score - 1] || 'gold';
+    const status = STATUS_CONFIG[item.status] || { label: item.status, cls: 'tag-default' };
+
+    return `<tr>
+      <td>${item.id}</td>
+      <td><a href="${item.url}" target="_blank" style="color: #1677ff; text-decoration: none;">${item.title}</a></td>
+      <td>${item.supplier}</td>
+      <td>¥${item.price.toFixed(2)}</td>
+      <td><span class="badge badge-${scoreColorClass}">${item.score}</span></td>
+      <td><span class="tag ${status.cls}">${status.label}</span></td>
+      <td>${new Date().toLocaleDateString('zh-CN')} ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</td>
+      <td><button class="btn-link" onclick="alert('跳转到: ${item.url}')"><i class="fas fa-external-link-alt"></i> 查看</button></td>
+    </tr>`;
+  }).join('');
+
+  tableBody.innerHTML = rows;
+}
+
+// -----------------------------------------------------------------------
+// Fetch simulation
+// -----------------------------------------------------------------------
+
+async function handleFetch() {
+  const url = urlInput.value.trim();
+  if (!url) {
+    showToast('请输入 1688 商品链接', 'error');
+    return;
+  }
+
+  // Show loading state
+  fetchBtn.disabled = true;
+  fetchBtnText.innerHTML = '<span class="loading-spinner"></span>';
+  loadingOverlay.classList.add('active');
+  emptyState.style.display = 'none';
+
+  const mode = simMode.value;
+  let delayMs = 300;
+  let score = 8;
+
+  if (mode === 'delayed') {
+    delayMs = 1500;
+    score = 8;
+  } else if (mode === 'success-low') {
+    score = 2;
+  } else if (mode === 'error') {
+    await new Promise(r => setTimeout(r, 500));
+    fetchBtn.disabled = false;
+    fetchBtnText.textContent = '采集分析';
+    loadingOverlay.classList.remove('active');
+    showToast('采集请求失败，远程服务连接超时', 'error');
+    return;
+  }
+
+  // Simulate network delay + agent analysis
+  await new Promise(r => setTimeout(r, delayMs));
+
+  // Create a new product from the submitted URL
+  const newProduct = {
+    id: items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1,
+    title: url.includes('jacket') ? '防水防风冲锋衣男女通用三合一' :
+           url.includes('shoe') ? '运动跑步鞋网面透气减震' :
+           url.includes('bag') ? '大容量旅行背包防水牛津布' :
+           '采集商品 (1688)',
+    supplier: 'Demo 供应商',
+    price: 15.0 + Math.round(Math.random() * 200 * 100) / 100,
+    score: score,
+    status: score >= 7 ? 'recommended' : score <= 3 ? 'low_quality' : 'pending',
+    url: url,
+  };
+
+  // Add to front of list
+  items.unshift(newProduct);
+  currentPage = 1;
+  renderTable();
+
+  fetchBtn.disabled = false;
+  fetchBtnText.textContent = '采集分析';
+  showToast(`采集成功！评分：${score}/10`, 'success');
+}
+
+// -----------------------------------------------------------------------
+// Reset
+// -----------------------------------------------------------------------
+
+function resetData() {
+  items = SAMPLE_PRODUCTS.map(p => ({ ...p }));
+  currentPage = 1;
+  renderTable();
+  urlInput.value = '';
+  fetchBtn.disabled = false;
+  fetchBtnText.textContent = '采集分析';
+  loadingOverlay.classList.remove('active');
+
+  // Show success toast
+  showToast('演示数据已重置', 'success');
+}
+
+// -----------------------------------------------------------------------
+// Pagination
+// -----------------------------------------------------------------------
+
+function goToPrevPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    renderTable();
+  }
+}
+
+function goToNextPage() {
+  const totalPages = Math.ceil(items.length / PAGE_SIZE) || 1;
+  if (currentPage < totalPages) {
+    currentPage++;
+    renderTable();
+  }
+}
+
+// -----------------------------------------------------------------------
+// Init
+// -----------------------------------------------------------------------
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Bind events
+  fetchBtn.addEventListener('click', handleFetch);
+  urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleFetch();
+  });
+  simResetBtn.addEventListener('click', resetData);
+  prevPage.addEventListener('click', goToPrevPage);
+  nextPage.addEventListener('click', goToNextPage);
+
+  // Initialize with sample data
+  resetData();
+
+  // Auto-fill sample URL
+  urlInput.value = 'https://detail.1688.com/offer/sample-jacket-test.html';
+});
+</script>
+</body>
+</html>

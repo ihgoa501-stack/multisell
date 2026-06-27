@@ -1,28 +1,19 @@
 package imagegen
 
 import (
-	"context"
-	"encoding/json"
-
-	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides imagegen business logic.
 type Service struct {
-	db          *gorm.DB
-	logger      *zap.Logger
-	prismClient *prismadapter.Client
+	db     *gorm.DB
+	logger *zap.Logger
 }
 
 // NewService creates a new imagegen service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{
-		db:          db,
-		logger:      logger,
-		prismClient: prismadapter.New(),
-	}
+	return &Service{db: db, logger: logger}
 }
 
 // ===================== ProductImageGen =====================
@@ -63,51 +54,9 @@ func (s *Service) GetImageGen(id int64) (*ProductImageGen, error) {
 	return &g, nil
 }
 
-// CreateImageGen inserts a new image-gen request, calls Prism to generate,
-// and updates the record with the result.
+// CreateImageGen inserts a new image-gen request (status defaults to pending).
 func (s *Service) CreateImageGen(g *ProductImageGen) error {
-	if err := s.db.Create(g).Error; err != nil {
-		return err
-	}
-
-	// Call Prism asynchronously to generate the image
-	go s.generateWithPrism(g)
-
-	return nil
-}
-
-// generateWithPrism calls the Prism pipeline and updates the record.
-func (s *Service) generateWithPrism(g *ProductImageGen) {
-	ctx := context.Background()
-
-	// Use the prompt as the product name for Prism context, and style as mode
-	mode := "scene"
-	if g.Style == "product_white" || g.Style == "white_bg" {
-		mode = "white_bg"
-	}
-
-	url, err := s.prismClient.GenerateProductImage(ctx, &prismadapter.Request{
-		ImageURL: "",    // TODO: link to actual product image URL
-		Template: mode,
-		Platform: "",    // TODO: derive from product's target platform
-		Product:  g.Prompt,
-	})
-	if err != nil {
-		s.logger.Warn("prism generation failed", zap.Int64("id", g.ID), zap.Error(err))
-		s.db.Model(&ProductImageGen{}).Where("id = ?", g.ID).
-			Updates(map[string]interface{}{
-				"status":        "failed",
-				"error_message": err.Error(),
-			})
-		return
-	}
-
-	urls, _ := json.Marshal([]string{url})
-	s.db.Model(&ProductImageGen{}).Where("id = ?", g.ID).
-		Updates(map[string]interface{}{
-			"status":     "completed",
-			"image_urls": urls,
-		})
+	return s.db.Create(g).Error
 }
 
 // UpdateImageGenStatus updates the status and result fields of an image-gen record.

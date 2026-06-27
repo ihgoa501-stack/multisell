@@ -67,11 +67,11 @@ func DefaultRegistry() *AgentRegistry {
 			DecisionPoints: []string{"system_health", "anomaly_escalation", "cross_squad_coordinate", "agent_audit"},
 			Description:    "协调仲裁：系统健康、异常升级、跨Agent协作、Agent审计",
 			ModelHint: "gpt-4o", RiskFloor: "high"},
-		// A8 — Settlement Reconciliation (Phase 2)
-		{ID: "A8", Name: "Settlement Recon", Squad: "settle", Autonomy: "supervised",
-			DecisionPoints: []string{"settlement_import", "reconciliation_check", "discrepancy_resolve", "cash_flow_watch"},
-			Description:    "结算对账：settlement导入、三方对账、差异处理、资金监控",
-			ModelHint: "gpt-4o", RiskFloor: "critical"},
+		// A8 — Sourcing Agent (Phase 2)
+		{ID: "A8", Name: "Sourcing Agent", Squad: "growth", Autonomy: "supervised",
+			DecisionPoints: []string{"sourcing_recommend"},
+			Description:    "AI 选品分析：1688 商品利润分析、采购推荐、选品到刊登全链路触发",
+			ModelHint: "gpt-4o", RiskFloor: "medium"},
 		// A10 — Logistics Optimization (Phase 2)
 		{ID: "A10", Name: "Logistics Ops", Squad: "fulfillment", Autonomy: "supervised",
 			DecisionPoints: []string{"carrier_compare", "shipping_bill_audit", "carrier_performance", "logistics_route_opt"},

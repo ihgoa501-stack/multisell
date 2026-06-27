@@ -91,7 +91,8 @@ func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 		go func(e *operationlog.OperationLog) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			if err := svc.DB().WithContext(ctx).Create(e).Error; err != nil {
+			_ = ctx // operationlog.Service.Create does not accept a context yet; keep for future.
+			if err := svc.Create(e); err != nil {
 				logger.Warn("audit log write failed", zap.Error(err), zap.String("path", path))
 			}
 		}(entry)

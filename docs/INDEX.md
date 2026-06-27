@@ -60,6 +60,10 @@
 | [物流与运费技术规格](LOGISTICS_SHIPPING_TECH_SPEC.md) | 物流技术实现 |
 | [报价规则示例](LOGISTICS_QUOTE_RULE_EXAMPLES.md) | 运费报价案例 |
 | [平台费用规则方案](platform-fee-rules-plan.md) | 平台费用设计 |
+| [AI 选品使用指南](sourcing-guide.md) | A8 选品引擎：利润计算、质量评分、API 参考 |
+| [物流费率引擎指南](logistics-guide.md) | Logistics Rate Engine：四种定价模式、YAML 配置、A10 接线 |
+| [ToolBridge 工具桥接](toolbridge-guide.md) | 插件驱动工具执行、添加 Driver、降级策略 |
+| [Chrome 扩展指南](chrome-extension-guide.md) | 凌镜选品助手扩展：安装、WebSocket 协议、内容脚本 |
 | [测试说明](TEST_SUMMARY.md) | 当前新栈测试状态、已知问题和覆盖面 |
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | `frontend-next` build/test/lint 状态 |
 

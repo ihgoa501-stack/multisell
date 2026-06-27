@@ -3,10 +3,16 @@
 This file gives Claude Code-specific guidance for working in this repository.
 Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.
 
+## Onboarding
+
+Before working, read [Agent Capabilities](./docs/AGENT_CAPABILITIES.md) — it lists
+all MCP servers, API endpoints, CLI tools, database schemas, and development
+commands available to you.
+
 ## Project
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
-Version `v0.2.0` in `VERSION`, tracked on `main`.
+Version `v0.2.1` in `VERSION`, tracked on `main`.
 
 | Stack | Dir | Entry |
 |-------|-----|-------|
@@ -85,11 +91,12 @@ Pagination: `common.ParsePagination(c)`, `common.ParseSort(c)` from `internal/co
 
 ### Platform Infrastructure (`internal/platform/`)
 
-Three in-process coordination primitives for agent-to-agent and agent-to-system communication:
+Four in-process coordination primitives for agent-to-agent and agent-to-system communication:
 
 - **Event Bus** (`eventbus/bus.go`) — pub/sub with glob topic matching (`order.*`). Used for agent pipeline chains, scheduler ticks, and cross-module async events. ~15 subscriptions in `router.go`.
 - **Command Dispatcher** (`command/command.go`) — typed handler registry bridging agent decisions to domain services: `stock_alert`, `replenish`, `price_review`, `listing_optimize`, `compliance_check`.
 - **Scheduler** (`scheduler/`) — periodic task runner (5 min to 6 hr intervals). Publishes `scheduler.tick.{agent_id}` events.
+- **ToolBridge** (`toolbridge/bridge.go`) — plugin-driver-based tool execution bridge that lets agents run external tools via registered plugins.
 
 ### Agent Pipeline Chain
 
@@ -101,7 +108,7 @@ G3 discount_risk_check (block)     → A6 profit_watch
 A6 profit_watch (loss/threshold)   → A2 listing_optimize
 G0 system_health (anomaly > 3)    → G1 dashboard_overview
 
-All scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/trustscore/entropy
+All scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/M1/trustscore/entropy
 ```
 
 ### WebSocket
@@ -200,6 +207,8 @@ E2E tests: `frontend-next/e2e/` (Playwright, separate sub-project).
 | `domain/agentrule/` | Agent behavior rules |
 | `domain/entropy/` | Self-cleansing: SPC control, health scoring, defenses |
 | `domain/evolution/` | Agent evolution nudges |
+| `domain/logistics/` | Cross-border shipping rate engine (A10) |
+| `domain/sourcing/` | Sourcing profit formula engine (A8) |
 | `domain/trustscore/` | Trust score calculation, autonomy gating |
 | `domain/actionpolicy/` | Action approval policy |
 
