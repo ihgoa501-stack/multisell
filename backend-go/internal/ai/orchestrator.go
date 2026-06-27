@@ -375,25 +375,20 @@ func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[stri
 	userMsg := fmt.Sprintf("Agent %s @ %s — please decide.", agent.ID, dp)
 	if ctx != nil {
 		if m, ok := ctx["message"].(string); ok && m != "" {
-			// Run user input through guardrails chain before sending to LLM.
-			if o.guardrails != nil {
-				inp := &guardrails.GuardInput{RawInput: m}
-				res, err := o.guardrails.Check(context.Background(), inp)
-				if err != nil {
-					o.logger.Warn("guardrails check failed", zap.Error(err))
-				} else if res.Blocked {
-					o.logger.Warn("guardrails blocked user input", zap.String("reason", res.Reason))
-					// ponytail: blocked input falls back to safe default.
-					// Upgrade to full HTTP 400 rejection when the caller
-					// surfaces guardrails results to the API layer.
-					userMsg = fmt.Sprintf("[input blocked: %s] %s", res.Reason, userMsg)
-					goto afterMessageCheck
-				}
-			}
 			userMsg = m
 		}
 	}
-afterMessageCheck:
+	// Run guardrails on input before sending to LLM.
+	if o.guardrails != nil {
+		inp := &guardrails.GuardInput{RawInput: userMsg}
+		res, err := o.guardrails.Check(context.Background(), inp)
+		if err != nil {
+			o.logger.Warn("guardrails input check failed", zap.Error(err))
+		} else if res.Blocked {
+			o.logger.Warn("guardrails blocked LLM input", zap.String("reason", res.Reason))
+			userMsg = fmt.Sprintf("[input blocked: %s] %s", res.Reason, userMsg)
+		}
+	}
 	req := &LLMRequest{
 		Model:    agent.ModelHint,
 		System:   system,
@@ -462,6 +457,34 @@ afterMessageCheck:
 			confidence := 0.82
 			if resp.TokensOut > 0 {
 				confidence = clampConfidence(0.65 + float64(resp.TokensOut)/600.0)
+			}
+
+			// Validate LLM output through guardrails chain.
+			if o.guardrails != nil {
+				inp := &guardrails.GuardInput{RawOutput: resp.Answer}
+				res, err := o.guardrails.Check(context.Background(), inp)
+				if err != nil {
+					o.logger.Warn("guardrails output check failed", zap.Error(err))
+				} else if res.Blocked {
+					o.logger.Warn("guardrails blocked LLM output",
+						zap.String("reason", res.Reason),
+						zap.String("risk", res.Risk),
+					)
+					envVal := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
+					ginVal := strings.ToLower(strings.TrimSpace(os.Getenv("GIN_MODE")))
+					if envVal == "production" || ginVal == "release" {
+						return nil, 0, "", fmt.Errorf("LLM output blocked by guardrails: %s", res.Reason)
+					}
+					// In non-production, fall back to stub output.
+					out, conf, risk := stubFinalOutput(agent, dp, ctx)
+					return out, conf, risk, nil
+				}
+				if !res.Pass {
+					o.logger.Warn("guardrails warning on LLM output",
+						zap.String("reason", res.Reason),
+						zap.String("risk", res.Risk),
+					)
+				}
 			}
 			return out, confidence, agent.RiskFloor, nil
 		}
