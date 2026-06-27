@@ -108,7 +108,7 @@ Reply with JSON: {"has_issues": true/false, "issues": ["issue1"], "adjusted_conf
 	if raw, err := json.Marshal(resp.Output); err == nil {
 		var llmReview ContentReview
 		if json.Unmarshal(raw, &llmReview) == nil {
-			if llmReview.Passed == false || len(llmReview.Issues) > 0 {
+			if !llmReview.Passed || len(llmReview.Issues) > 0 {
 				review.Passed = llmReview.Passed
 				review.Issues = append(review.Issues, llmReview.Issues...)
 				if llmReview.AdjustedConfidence > 0 {
