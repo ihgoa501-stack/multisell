@@ -31,7 +31,15 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
+	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/domain/mock"
+	"github.com/lingmirror/backend-go/internal/domain/owner"
+
+	"github.com/lingmirror/backend-go/internal/domain/completeness"
+	"github.com/lingmirror/backend-go/internal/domain/profit"
+	"github.com/lingmirror/backend-go/internal/domain/loop"
+
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
 	"github.com/lingmirror/backend-go/internal/domain/metabolism"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
@@ -514,6 +522,22 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
 	listingtask.RegisterRoutes(protected, db, logger)
+	candidate.RegisterRoutes(protected, db, logger)
+	completeness.RegisterRoutes(protected, db, logger)
+	profit.RegisterRoutes(protected, db, logger)
+	loop.RegisterRoutes(protected, db, logger)
+	mock.RegisterRoutes(protected, db, logger)
+	// Auto-seed mock demo data on startup
+	func() {
+		ms := mock.NewService(db, logger.Named("mock"))
+		if err := ms.SeedMockData(); err != nil {
+			logger.Warn("mock data seed failed", zap.Error(err))
+		}
+	}()
+
+	owner.RegisterRoutes(protected, db, logger)
+
+
 	shipping.RegisterRoutes(protected, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
 	order.RegisterRoutes(protected, db, logger)

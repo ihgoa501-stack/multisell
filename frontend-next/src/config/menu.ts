@@ -20,11 +20,18 @@ export const menuGroups: MenuGroup[] = [
     ],
   },
   {
+    label: '经营闭环',
+    items: [
+      { key: '/owner', icon: 'DashboardOutlined', label: '经营总控台' },
+    ],
+  },
+  {
     label: '采购管理',
     items: [
       { key: '/purchase', icon: 'ShoppingCartOutlined', label: '采购订单' },
       { key: '/purchase/suggestions', label: '采购建议' },
       { key: '/sourcing', icon: 'SearchOutlined', label: 'AI 选品' },
+      { key: '/candidates', label: '候选商品' },
     ],
   },
   {
