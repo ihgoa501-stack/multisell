@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import WidgetButton from './WidgetButton';
 import apiClient from '@/lib/api-client';
+import type { FeedbackProject } from '@/types/feedback';
 
 interface WidgetConfig {
   projectSlug?: string;
@@ -20,7 +21,7 @@ declare global {
 
 export default function Widget() {
   const [open, setOpen] = useState(false);
-  const [config, setConfig] = useState<WidgetConfig>({});
+  const [config] = useState<WidgetConfig>(() => window.__feedbackWidgetConfig || {});
   const [projectId, setProjectId] = useState<number | null>(null);
 
   // Form state
@@ -31,19 +32,17 @@ export default function Widget() {
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    // Read config from global or data-* attributes
     const cfg = window.__feedbackWidgetConfig || {};
-    setConfig(cfg);
 
     // Auto-detect project
     async function init() {
       try {
-        const res = await apiClient.get<any[]>('/v1/feedback/projects');
+        const res = await apiClient.get<FeedbackProject[]>('/v1/feedback/projects');
         if (res.code === 0 && res.data && res.data.length > 0) {
           const p = cfg.projectId
-            ? res.data.find((p: any) => p.id === cfg.projectId)
+            ? res.data.find((p: FeedbackProject) => p.id === cfg.projectId)
             : cfg.projectSlug
-              ? res.data.find((p: any) => p.slug === cfg.projectSlug)
+              ? res.data.find((p: FeedbackProject) => p.slug === cfg.projectSlug)
               : res.data[0];
           if (p) setProjectId(p.id);
         }

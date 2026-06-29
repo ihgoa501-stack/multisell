@@ -91,7 +91,7 @@ export default function FeedbackDetailPage() {
     return <Result status="404" title="反馈不存在" extra={<Button onClick={() => router.push('/feedback')}>返回</Button>} />;
   }
 
-  const submission = data;
+  const submission = data!;
   const attachments = useMemo<FeedbackAttachment[]>(() => {
     if (!submission?.attachments || submission.attachments === '[]') return [];
     try {

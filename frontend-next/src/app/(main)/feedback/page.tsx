@@ -41,7 +41,6 @@ export default function FeedbackPortalPage() {
 
     void fetchData();
   }, [tab]);
-  }, []);
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: 24 }}>

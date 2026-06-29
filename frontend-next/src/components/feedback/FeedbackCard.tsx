@@ -18,10 +18,10 @@ interface FeedbackCardProps {
     severity?: string;
     priority: number;
     vote_count: number;
-    comment_count: number;
+    comment_count?: number;
     created_at: string;
     category?: { name: string };
-    tags?: { name: string; color: string }[];
+    tags?: { name: string; color?: string }[];
   };
 }
 

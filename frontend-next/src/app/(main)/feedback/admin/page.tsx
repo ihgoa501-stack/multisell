@@ -61,7 +61,7 @@ export default function FeedbackAdminPage() {
     async function fetchStats(currentProjectId: number) {
       try {
         const res = await apiClient.get<FeedbackStats>(`/v1/feedback/projects/${currentProjectId}/stats`);
-        if (res.code === 0) setStats(res.data);
+        if (res.code === 0) setStats(res.data ?? null);
       } catch { /* ignore */ }
     }
 
@@ -84,7 +84,7 @@ export default function FeedbackAdminPage() {
         await reloadList();
         if (projectId) {
           const statsRes = await apiClient.get<FeedbackStats>(`/v1/feedback/projects/${projectId}/stats`);
-          if (statsRes.code === 0) setStats(statsRes.data);
+          if (statsRes.code === 0) setStats(statsRes.data ?? null);
         }
       }
     } catch (err) {
