@@ -56,6 +56,7 @@ interface Suggestion {
   confidence: number;
   risk_level: string;
   created_at: string;
+  listing_task_id?: number | null;
 }
 
 interface PlatformSync {
@@ -154,14 +155,7 @@ export default function OwnerPage() {
 
   // Listing task approval
   const approveListingTask = useMutation({
-    mutationFn: async (params: { taskId: number; productId: number }) => {
-      // Find the listing task for this product
-      const res = await apiClient.get<{ task: { id: number; status: string }; items: unknown[] }>(
-        `/v1/listing-tasks/${params.taskId}`
-      );
-      const task = res.data?.task;
-      if (!task) throw new Error('listing task not found');
-      // Update status to approved
+    mutationFn: async (params: { taskId: number }) => {
       await apiClient.put(`/v1/listing-tasks/${params.taskId}`, {
         status: 'approved',
         updated_by: getCurrentOperator(),
@@ -225,10 +219,16 @@ export default function OwnerPage() {
 
   const confirmApproval = async () => {
     if (!approvalModal) return;
+    const taskId = approvalModal.listing_task_id;
+    if (!taskId) {
+      message.error('该建议没有对应的刊登任务，无法审批');
+      setApprovalModal(null);
+      return;
+    }
     if (approvalAction === 'approve') {
-      approveListingTask.mutate({ taskId: approvalModal.id, productId: approvalModal.product_id });
+      approveListingTask.mutate({ taskId });
     } else {
-      rejectListingTask.mutate({ taskId: approvalModal.id });
+      rejectListingTask.mutate({ taskId });
     }
   };
 

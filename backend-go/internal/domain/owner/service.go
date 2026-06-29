@@ -30,19 +30,16 @@ func (s *Service) RiskSummary() (map[string]interface{}, error) {
 		"list_ready_products":   0,
 	}
 
-	// Count total candidates
 	var totalCandidates int64
 	s.db.Raw("SELECT COUNT(*) FROM candidate_product").Scan(&totalCandidates)
 	result["total_candidates"] = totalCandidates
 
-	// Count missing data products (completeness status = incomplete)
 	var missingCount int64
 	s.db.Model(&struct{}{}).Table("completeness_check").
 		Where("status = ?", "incomplete").
 		Distinct("product_id").Count(&missingCount)
 	result["missing_data_products"] = missingCount
 
-	// Count low profit products
 	var lowProfit int64
 	s.db.Raw(`
 		SELECT COUNT(DISTINCT product_id) FROM profit_summary
@@ -50,24 +47,20 @@ func (s *Service) RiskSummary() (map[string]interface{}, error) {
 	`).Scan(&lowProfit)
 	result["low_profit_products"] = lowProfit
 
-	// Count pending approvals (listing_task with status = blocked)
 	var pendingApp int64
 	s.db.Model(&struct{}{}).Table("listing_task").
 		Where("status = ?", "blocked").Count(&pendingApp)
 	result["pending_approvals"] = pendingApp
 
-	// Count sync errors
 	var syncErr int64
 	s.db.Model(&struct{}{}).Table("mock_sync_status").
 		Where("status = ?", "failed").Count(&syncErr)
 	result["sync_errors"] = syncErr
 
-	// Count listing recommendations
 	var totalRec int64
 	s.db.Model(&struct{}{}).Table("listing_recommendation").Count(&totalRec)
 	result["total_recommendations"] = totalRec
 
-	// Count list-ready products (candidates with recommendation = list)
 	var listReady int64
 	s.db.Raw(`
 		SELECT COUNT(DISTINCT product_id) FROM listing_recommendation
@@ -84,13 +77,14 @@ func (s *Service) Suggestions(limit int) ([]map[string]interface{}, error) {
 		limit = 20
 	}
 	type Rec struct {
-		ID            int64
-		ProductID     int64
-		Decision      string
-		Confidence    float64
-		Reason        string
-		RiskFlags     string
-		CreatedAt     time.Time
+		ID                  int64
+		ProductID           int64
+		Decision            string
+		Confidence          float64
+		Reason              string
+		RiskFlags           string
+		CreatedListingTaskID *int64
+		CreatedAt           time.Time
 	}
 	var recs []Rec
 	if err := s.db.Table("listing_recommendation").
@@ -98,11 +92,27 @@ func (s *Service) Suggestions(limit int) ([]map[string]interface{}, error) {
 		return nil, err
 	}
 
+	// Batch load product titles
+	productIDs := make([]int64, 0, len(recs))
+	for _, r := range recs {
+		productIDs = append(productIDs, r.ProductID)
+	}
+	type ProdInfo struct {
+		ID    int64
+		Title string
+	}
+	var prodInfos []ProdInfo
+	if len(productIDs) > 0 {
+		s.db.Table("candidate_product").Select("id, title").Where("id IN ?", productIDs).Scan(&prodInfos)
+	}
+	titleMap := make(map[int64]string, len(prodInfos))
+	for _, p := range prodInfos {
+		titleMap[p.ID] = p.Title
+	}
+
 	var result []map[string]interface{}
 	for _, r := range recs {
-		// Get product title
-		var title string
-		s.db.Table("candidate_product").Select("title").Where("id = ?", r.ProductID).Scan(&title)
+		title := titleMap[r.ProductID]
 
 		riskLevel := "low"
 		if r.Decision == "skip" {
@@ -119,17 +129,18 @@ func (s *Service) Suggestions(limit int) ([]map[string]interface{}, error) {
 		}
 
 		result = append(result, map[string]interface{}{
-			"id":             r.ID,
-			"product_id":     r.ProductID,
-			"product_title":  title,
-			"agent_source":   "商品评估 Agent",
-			"suggestion":     suggestion,
-			"decision":       r.Decision,
-			"reason":         r.Reason,
-			"confidence":     r.Confidence,
-			"risk_flags":     r.RiskFlags,
-			"risk_level":     riskLevel,
-			"created_at":     r.CreatedAt.Format("2006-01-02 15:04:05"),
+			"id":              r.ID,
+			"product_id":      r.ProductID,
+			"product_title":   title,
+			"listing_task_id": r.CreatedListingTaskID,
+			"agent_source":    "商品评估 Agent",
+			"suggestion":      suggestion,
+			"decision":        r.Decision,
+			"reason":          r.Reason,
+			"confidence":      r.Confidence,
+			"risk_flags":      r.RiskFlags,
+			"risk_level":      riskLevel,
+			"created_at":      r.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 	return result, nil
