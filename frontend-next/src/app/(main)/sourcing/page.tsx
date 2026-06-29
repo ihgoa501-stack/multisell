@@ -70,7 +70,7 @@ export default function SourcingPage() {
         setData(res.data.data || []);
         setTotal(res.data.total || 0);
       }
-    } catch (err) {
+    } catch {
       message.error('加载推荐列表失败');
     } finally {
       setLoading(false);
@@ -78,6 +78,7 @@ export default function SourcingPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadRecommendations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
@@ -104,7 +105,7 @@ export default function SourcingPage() {
       } else {
         message.error(res.message || '采集失败');
       }
-    } catch (err) {
+    } catch {
       message.error('采集请求失败，请检查链接是否正确');
     } finally {
       setFetching(false);
