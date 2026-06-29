@@ -88,6 +88,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/notifications', label: '通知' },
       { key: '/image-gen', label: '图片生成' },
       { key: '/import-batches', label: '批量导入' },
+      { key: '/batch-ops', icon: 'UploadOutlined', label: '批量运营' },
       { key: '/operation-logs', label: '操作日志' },
       { key: '/search', label: '搜索' },
       { key: '/reports', label: '报表' },
