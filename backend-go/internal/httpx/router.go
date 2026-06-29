@@ -51,7 +51,9 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
+	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
+		"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
@@ -126,6 +128,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// ToolBridge for sourcing data collection
 	_ = toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
+
+	// Reverse logistics return rate tracker (DB-backed).
+	returnRateTracker := aftersales.NewReturnRateTracker(db, logger)
+
+	// Supply chain orchestrator (bridges A8 sourcing with A10 logistics quoting,
+	// and handles reverse logistics via HandleAftersaleReturn).
+	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker)
 
 	// ==========================================================
 	// Event Bus Subscriptions: agent triggers + pipeline chains
@@ -454,6 +463,15 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return nil
 	})
 
+	// sourcing.recommend → orchestrator triggers A10 shipping quoting
+	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
+		return supplyChainOrch.HandleRecommendEvent(ctx, evt)
+	})
+	// scheduler.tick.orch → supply chain orchestrator heartbeat (no-op)
+	bus.Subscribe("scheduler.tick.orch", func(ctx context.Context, evt eventbus.Event) error {
+		return supplyChainOrch.HandleTick(ctx, evt)
+	})
+
 	// Supply chain event: after-sale completed → auto-adjust inventory
 	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
@@ -469,6 +487,30 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "售后入库")
 		return nil
 	})
+
+	// Supply chain event: after-sale return initiated -> create reverse logistics flow
+	bus.Subscribe("supplychain.aftersale.returned", func(ctx context.Context, evt eventbus.Event) error {
+		return supplyChainOrch.HandleAftersaleReturn(ctx, evt)
+	})
+
+	// -------------------------------------------------------
+	// Data flywheel: fulfillment data backflow (Issue #5)
+	// -------------------------------------------------------
+
+	// Shared logistics service for in-memory performance stats.
+	flywheelLogSvc := logistics.NewService(nil)
+
+	// supplychain.flywheel → A10: update carrier_performance
+	bus.Subscribe("supplychain.flywheel", flywheelLogSvc.HandleFlywheelEvent())
+
+	// supplychain.flywheel → A8: update category_performance
+	bus.Subscribe("supplychain.flywheel", flywheelLogSvc.HandleCategoryFlywheelEvent())
+
+	// Supply chain event: stock critical (A5) → orchestrator triggers A8 sourcing rescan
+	bus.Subscribe("supplychain.stock.critical", func(ctx context.Context, evt eventbus.Event) error {
+		return supplyChainOrch.HandleStockCritical(ctx, evt)
+	})
+
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
 	listingtask.RegisterRoutes(protected, db, logger)
@@ -493,7 +535,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
 	sourcing1688.RegisterRoutes(protected, db, logger)
+	tariff.RegisterRoutes(protected, db, logger)
 	logistics.RegisterRoutes(protected, db, logger)
+	supplychain.RegisterRoutes(protected, db, logger, bus)
 	productanalysis.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
 	report.RegisterRoutes(protected, db, logger)
