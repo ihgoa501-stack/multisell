@@ -78,3 +78,26 @@ CREATE TABLE IF NOT EXISTS supplier_offer (
 
 CREATE INDEX IF NOT EXISTS idx_supplier_offer_master ON supplier_offer(product_master_id);
 CREATE INDEX IF NOT EXISTS idx_supplier_offer_supplier ON supplier_offer(supplier_id);
+
+CREATE TABLE IF NOT EXISTS sample_request (
+    id BIGSERIAL PRIMARY KEY,
+    product_master_id BIGINT NOT NULL REFERENCES product_master(id) ON DELETE CASCADE,
+    supplier_offer_id BIGINT,
+    supplier_id BIGINT NOT NULL,
+    quantity INT,
+    requirements TEXT,
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    due_at TIMESTAMPTZ,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    iteration_no INT NOT NULL DEFAULT 0,
+    received_at TIMESTAMPTZ,
+    evaluation TEXT,
+    quality_score DOUBLE PRECISION,
+    decision VARCHAR(32),
+    image_urls JSONB DEFAULT '[]',
+    created_by BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sample_request_master ON sample_request(product_master_id);
