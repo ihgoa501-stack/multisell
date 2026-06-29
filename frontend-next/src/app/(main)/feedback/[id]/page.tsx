@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Typography, Card, Spin, Tag, Descriptions, Space, Button, Divider,
   Input, List, Form, message, Row, Col, Timeline, Progress, Result,
 } from 'antd';
 import {
   ArrowLeftOutlined, LikeOutlined, DislikeOutlined,
-  SendOutlined, MinusCircleOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import { StatusBadge, TypeBadge, SeverityBadge } from '@/components/feedback/FeedbackStatusBadge';
+import type { FeedbackAttachment, FeedbackSubmission } from '@/types/feedback';
 import dayjs from 'dayjs';
 
 const { Title, Text, Paragraph } = Typography;
@@ -21,17 +22,17 @@ export default function FeedbackDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<FeedbackSubmission | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [commentForm] = Form.useForm();
   const [commentLoading, setCommentLoading] = useState(false);
   const [voting, setVoting] = useState(false);
 
-  const fetchDetail = async () => {
+  const fetchDetail = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiClient.get<any>(`/v1/feedback/submissions/${id}`);
+      const res = await apiClient.get<FeedbackSubmission>(`/v1/feedback/submissions/${id}`);
       if (res.code === 0 && res.data) {
         setData(res.data);
       } else {
@@ -42,21 +43,22 @@ export default function FeedbackDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    if (id) fetchDetail();
-  }, [id]);
+    if (!id) return;
+    void fetchDetail();
+  }, [fetchDetail, id]);
 
   const handleVote = async (voteType: string) => {
     setVoting(true);
     try {
-      const res = await apiClient.post<any>(`/v1/feedback/submissions/${id}/vote`, { vote_type: voteType });
+      const res = await apiClient.post<unknown>(`/v1/feedback/submissions/${id}/vote`, { vote_type: voteType });
       if (res.code === 0) {
-        fetchDetail();
+        void fetchDetail();
       }
-    } catch (err: any) {
-      message.error(err.message || '投票失败');
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '投票失败');
     } finally {
       setVoting(false);
     }
@@ -65,17 +67,17 @@ export default function FeedbackDetailPage() {
   const handleComment = async (values: { body: string }) => {
     setCommentLoading(true);
     try {
-      const res = await apiClient.post<any>(`/v1/feedback/submissions/${id}/comments`, {
+      const res = await apiClient.post<unknown>(`/v1/feedback/submissions/${id}/comments`, {
         body: values.body,
         is_internal: false,
       });
       if (res.code === 0) {
         message.success('评论成功');
         commentForm.resetFields();
-        fetchDetail();
+        void fetchDetail();
       }
-    } catch (err: any) {
-      message.error(err.message || '评论失败');
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '评论失败');
     } finally {
       setCommentLoading(false);
     }
@@ -90,6 +92,15 @@ export default function FeedbackDetailPage() {
   }
 
   const submission = data;
+  const attachments = useMemo<FeedbackAttachment[]>(() => {
+    if (!submission?.attachments || submission.attachments === '[]') return [];
+    try {
+      const parsed = JSON.parse(submission.attachments) as unknown;
+      return Array.isArray(parsed) ? parsed as FeedbackAttachment[] : [];
+    } catch {
+      return [];
+    }
+  }, [submission?.attachments]);
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
@@ -108,11 +119,11 @@ export default function FeedbackDetailPage() {
             <Title level={4}>{submission.title}</Title>
             <Paragraph style={{ fontSize: 15, whiteSpace: 'pre-wrap' }}>{submission.description}</Paragraph>
 
-            {submission.attachments && submission.attachments !== '[]' && (
+            {attachments.length > 0 && (
               <div style={{ marginTop: 16 }}>
                 <Text strong>附件：</Text>
                 <Space>
-                  {(JSON.parse(submission.attachments) || []).map((att: any, i: number) => (
+                  {attachments.map((att, i) => (
                     <Tag key={i}>{att.name || `附件 ${i + 1}`}</Tag>
                   ))}
                 </Space>
@@ -124,7 +135,7 @@ export default function FeedbackDetailPage() {
             <List
               dataSource={submission.comments || []}
               locale={{ emptyText: '暂无评论' }}
-              renderItem={(c: any) => (
+              renderItem={(c) => (
                 <List.Item>
                   <List.Item.Meta
                     title={<Text strong>用户 #{c.user_id}</Text>}
@@ -190,7 +201,7 @@ export default function FeedbackDetailPage() {
           {submission.status_logs && submission.status_logs.length > 0 && (
             <Card size="small" title="状态历程">
               <Timeline
-                items={submission.status_logs.map((sl: any) => ({
+                items={submission.status_logs.map((sl) => ({
                   children: (
                     <>
                       <Text strong>{sl.to_status === 'pending' ? '已提交' : sl.to_status}</Text>

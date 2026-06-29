@@ -1,26 +1,23 @@
 'use client';
 
-'use client';
-
 import { useEffect, useState } from 'react';
-import { Card, Spin, Result, Typography, Button, Select, Space, message } from 'antd';
+import { Card, Spin, Result, Button, Select, Space, message } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import FeedbackForm from '@/components/feedback/FeedbackForm';
-
-const { Title } = Typography;
+import type { FeedbackProject } from '@/types/feedback';
 
 export default function FeedbackSubmitPage() {
   const router = useRouter();
   const [projectId, setProjectId] = useState<number | null>(null);
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<FeedbackProject[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const init = async () => {
       try {
-        const res = await apiClient.get<any[]>('/v1/feedback/projects');
+        const res = await apiClient.get<FeedbackProject[]>('/v1/feedback/projects');
         if (res.code === 0 && res.data && res.data.length > 0) {
           setProjects(res.data);
           setProjectId(res.data[0].id);
@@ -64,7 +61,7 @@ export default function FeedbackSubmitPage() {
             <Select
               value={projectId}
               onChange={setProjectId}
-              options={projects.map((p: any) => ({ value: p.id, label: p.name }))}
+              options={projects.map((p) => ({ value: p.id, label: p.name }))}
               style={{ width: 200 }}
             />
           </Space>

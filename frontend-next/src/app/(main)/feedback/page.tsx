@@ -1,48 +1,46 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Typography, Button, Tabs, Empty, Spin, Row, Col } from 'antd';
+import { Typography, Button, Tabs, Empty, Spin, Row } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import FeedbackCard from '@/components/feedback/FeedbackCard';
-import { StatusBadge } from '@/components/feedback/FeedbackStatusBadge';
+import type { FeedbackProject, FeedbackSubmission } from '@/types/feedback';
 
 const { Title } = Typography;
 
 export default function FeedbackPortalPage() {
   const router = useRouter();
-  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [submissions, setSubmissions] = useState<FeedbackSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('mine');
 
-  const fetchData = async (status?: string) => {
-    setLoading(true);
-    try {
-      // Try to get my submissions first; fall back to public list
-      const params: any = { page: 1, size: 20 };
-      if (status) params.status = status;
-
-      // First get default project
-      const projRes = await apiClient.get<any[]>('/v1/feedback/projects');
-      if (projRes.code === 0 && projRes.data && projRes.data.length > 0) {
-        params.project_id = projRes.data[0].id;
-      }
-
-      const res = await apiClient.getPage('/v1/feedback/mine', params);
-      if (res.code === 0) {
-        setSubmissions(res.data || []);
-      }
-    } catch {
-      // Not logged in or no data - show empty
-      setSubmissions([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
+    async function fetchData() {
+      setLoading(true);
+      try {
+        const params: Record<string, string> = { page: '1', size: '20' };
+        if (tab !== 'mine') params.status = tab;
+
+        const projRes = await apiClient.get<FeedbackProject[]>('/v1/feedback/projects');
+        if (projRes.code === 0 && projRes.data && projRes.data.length > 0) {
+          params.project_id = String(projRes.data[0].id);
+        }
+
+        const res = await apiClient.getPage<FeedbackSubmission>('/v1/feedback/mine', params);
+        if (res.code === 0) {
+          setSubmissions(res.data || []);
+        }
+      } catch {
+        setSubmissions([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void fetchData();
+  }, [tab]);
   }, []);
 
   return (
@@ -56,7 +54,7 @@ export default function FeedbackPortalPage() {
 
       <Tabs
         activeKey={tab}
-        onChange={(k) => setTab(k)}
+        onChange={setTab}
         items={[
           { key: 'mine', label: '我的反馈' },
           { key: 'pending', label: '待审核' },
@@ -71,7 +69,7 @@ export default function FeedbackPortalPage() {
       ) : submissions.length === 0 ? (
         <Empty description="暂无反馈" />
       ) : (
-        submissions.map((item: any) => (
+        submissions.map((item) => (
           <FeedbackCard key={item.id} item={item} />
         ))
       )}

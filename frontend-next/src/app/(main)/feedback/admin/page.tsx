@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import {
   Typography, Card, Row, Col, Statistic, Table, Tag, Space, Button,
-  Spin, Select, Modal, Form, Input, InputNumber, message, Tabs,
+  Select, Modal, Form, Input, message, Tabs,
 } from 'antd';
+import type { TableColumnsType } from 'antd';
 import {
   CheckCircleOutlined, ClockCircleOutlined, SendOutlined, RiseOutlined,
 } from '@ant-design/icons';
@@ -12,15 +13,21 @@ import { useRouter } from 'next/navigation';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
 import { StatusBadge, TypeBadge, feedbackStatusList } from '@/components/feedback/FeedbackStatusBadge';
+import type {
+  FeedbackProject,
+  FeedbackStats,
+  FeedbackStatusUpdate,
+  FeedbackSubmission,
+} from '@/types/feedback';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 export default function FeedbackAdminPage() {
   const router = useRouter();
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<FeedbackProject[]>([]);
   const [projectId, setProjectId] = useState<number | null>(null);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<FeedbackStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Status update modal
@@ -28,80 +35,104 @@ export default function FeedbackAdminPage() {
   const [updateForm] = Form.useForm();
   const [updating, setUpdating] = useState(false);
 
-  const init = async () => {
-    setLoading(true);
-    try {
-      const res = await apiClient.get<any[]>('/v1/feedback/projects');
-      if (res.code === 0 && res.data) {
-        setProjects(res.data);
-        if (res.data.length > 0) {
-          setProjectId(res.data[0].id);
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      try {
+        const res = await apiClient.get<FeedbackProject[]>('/v1/feedback/projects');
+        if (res.code === 0 && res.data) {
+          setProjects(res.data);
+          if (res.data.length > 0) {
+            setProjectId(res.data[0].id);
+          }
         }
+      } catch {
+        message.error('无法加载项目');
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      message.error('无法加载项目');
-    } finally {
-      setLoading(false);
     }
-  };
 
-  useEffect(() => { init(); }, []);
+    void init();
+  }, []);
 
-  const fetchStats = async () => {
+  useEffect(() => {
     if (!projectId) return;
-    try {
-      const res = await apiClient.get<any>(`/v1/feedback/projects/${projectId}/stats`);
-      if (res.code === 0) setStats(res.data);
-    } catch { /* ignore */ }
-  };
+    async function fetchStats(currentProjectId: number) {
+      try {
+        const res = await apiClient.get<FeedbackStats>(`/v1/feedback/projects/${currentProjectId}/stats`);
+        if (res.code === 0) setStats(res.data);
+      } catch { /* ignore */ }
+    }
 
-  useEffect(() => { fetchStats(); }, [projectId]);
+    void fetchStats(projectId);
+  }, [projectId]);
 
   const handleUpdateStatus = async () => {
     if (!statusModal) return;
     setUpdating(true);
     try {
       const values = await updateForm.validateFields();
-      const res = await apiClient.put<any>(`/v1/feedback/submissions/${statusModal.id}/status`, values);
+      const res = await apiClient.put<unknown>(
+        `/v1/feedback/submissions/${statusModal.id}/status`,
+        values as FeedbackStatusUpdate,
+      );
       if (res.code === 0) {
         message.success('状态已更新');
         setStatusModal(null);
         updateForm.resetFields();
-        fetchList();
-        fetchStats();
+        await reloadList();
+        if (projectId) {
+          const statsRes = await apiClient.get<FeedbackStats>(`/v1/feedback/projects/${projectId}/stats`);
+          if (statsRes.code === 0) setStats(statsRes.data);
+        }
       }
-    } catch (err: any) {
-      if (err.errorFields) return; // validation error
-      message.error(err.message || '更新失败');
+    } catch (err) {
+      if (typeof err === 'object' && err !== null && 'errorFields' in err) return;
+      message.error(err instanceof Error ? err.message : '更新失败');
     } finally {
       setUpdating(false);
     }
   };
 
   // We'll use a simple approach with state-managed list
-  const [listData, setListData] = useState<any[]>([]);
+  const [listData, setListData] = useState<FeedbackSubmission[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [listTab, setListTab] = useState('pending');
 
-  const fetchList = async () => {
+  const reloadList = async () => {
     if (!projectId) return;
     setListLoading(true);
     try {
       const status = listTab === 'all' ? '' : listTab;
-      const res = await apiClient.getPage<any>(`/v1/feedback/projects/${projectId}/submissions`, {
+      const res = await apiClient.getPage<FeedbackSubmission>(`/v1/feedback/projects/${projectId}/submissions`, {
         page: '1', size: '50', status,
       });
       if (res.code === 0) setListData(res.data || []);
     } catch { setListData([]); } finally { setListLoading(false); }
   };
 
-  useEffect(() => { fetchList(); }, [projectId, listTab]);
+  useEffect(() => {
+    if (!projectId) return;
+    async function fetchList(currentProjectId: number, currentTab: string) {
+      setListLoading(true);
+      try {
+        const status = currentTab === 'all' ? '' : currentTab;
+        const res = await apiClient.getPage<FeedbackSubmission>(`/v1/feedback/projects/${currentProjectId}/submissions`, {
+          page: '1', size: '50', status,
+        });
+        if (res.code === 0) setListData(res.data || []);
+      } catch { setListData([]); } finally { setListLoading(false); }
+    }
 
-  const columns = [
+    void fetchList(projectId, listTab);
+  }, [projectId, listTab]);
+
+  const columns: TableColumnsType<FeedbackSubmission> = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     {
       title: '标题', dataIndex: 'title', ellipsis: true,
-      render: (v: string, r: any) => <a onClick={() => router.push(`/feedback/${r.id}`)}>{v}</a>,
+      render: (v: string, r) => <a onClick={() => router.push(`/feedback/${r.id}`)}>{v}</a>,
     },
     {
       title: '类型', dataIndex: 'feedback_type', width: 90,
@@ -121,7 +152,7 @@ export default function FeedbackAdminPage() {
     { title: '提交时间', dataIndex: 'created_at', width: 160, render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm') },
     {
       title: '操作', width: 150,
-      render: (_: any, r: any) => (
+      render: (_: unknown, r) => (
         <Button
           type="link"
           size="small"

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import { feedbackTypeList, feedbackSeverityList } from './FeedbackStatusBadge';
+import type { FeedbackSubmissionRequest, FeedbackSubmissionResponse } from '@/types/feedback';
 
 const { TextArea } = Input;
 const { Title } = Typography;
@@ -14,15 +15,23 @@ interface FeedbackFormProps {
   onSuccess?: () => void;
 }
 
+interface FeedbackFormValues {
+  title: string;
+  description: string;
+  feedback_type: string;
+  severity?: string;
+  url?: string;
+}
+
 export default function FeedbackForm({ projectId, onSuccess }: FeedbackFormProps) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleSubmit = async (values: any) => {
+  const handleSubmit = async (values: FeedbackFormValues) => {
     setLoading(true);
     try {
-      const res = await apiClient.post<any>('/v1/feedback/submissions', {
+      const payload: FeedbackSubmissionRequest = {
         project_id: projectId,
         title: values.title,
         description: values.description,
@@ -30,7 +39,8 @@ export default function FeedbackForm({ projectId, onSuccess }: FeedbackFormProps
         severity: values.severity,
         url: values.url || window.location.href,
         user_agent: navigator.userAgent,
-      });
+      };
+      const res = await apiClient.post<FeedbackSubmissionResponse>('/v1/feedback/submissions', payload);
       if (res.code === 0) {
         message.success('反馈提交成功！感谢你的建议 🙏');
         form.resetFields();
@@ -41,8 +51,8 @@ export default function FeedbackForm({ projectId, onSuccess }: FeedbackFormProps
       } else {
         message.error(res.message || '提交失败');
       }
-    } catch (err: any) {
-      message.error('提交失败: ' + (err.message || '未知错误'));
+    } catch (err) {
+      message.error('提交失败: ' + (err instanceof Error ? err.message : '未知错误'));
     } finally {
       setLoading(false);
     }
