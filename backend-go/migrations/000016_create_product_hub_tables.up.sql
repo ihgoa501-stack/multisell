@@ -12,11 +12,11 @@ CREATE TABLE IF NOT EXISTS product_master (
     team_id BIGINT,
     description TEXT,
     target_market VARCHAR(128),
-    target_price DOUBLE PRECISION,
-    target_margin DOUBLE PRECISION,
+    target_price NUMERIC(12,2),
+    target_margin NUMERIC(12,2),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_product_master_lifecycle ON product_master(lifecycle_status);
-CREATE INDEX idx_product_master_owner ON product_master(owner_id);
+CREATE INDEX IF NOT EXISTS idx_product_master_lifecycle ON product_master(lifecycle_status);
+CREATE INDEX IF NOT EXISTS idx_product_master_owner ON product_master(owner_id);
