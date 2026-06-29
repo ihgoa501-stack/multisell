@@ -101,3 +101,28 @@ CREATE TABLE IF NOT EXISTS sample_request (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sample_request_master ON sample_request(product_master_id);
+
+CREATE TABLE IF NOT EXISTS cost_version (
+    id BIGSERIAL PRIMARY KEY,
+    product_master_id BIGINT NOT NULL REFERENCES product_master(id) ON DELETE CASCADE,
+    version VARCHAR(16),
+    base_cost DOUBLE PRECISION DEFAULT 0,
+    material_cost DOUBLE PRECISION DEFAULT 0,
+    packaging_cost DOUBLE PRECISION DEFAULT 0,
+    freight_cost DOUBLE PRECISION DEFAULT 0,
+    duty_cost DOUBLE PRECISION DEFAULT 0,
+    platform_fee_rate DOUBLE PRECISION DEFAULT 0,
+    ad_cost_estimate DOUBLE PRECISION DEFAULT 0,
+    fx_rate DOUBLE PRECISION DEFAULT 1,
+    fx_rate_date TIMESTAMPTZ,
+    landed_cost DOUBLE PRECISION DEFAULT 0,
+    recommended_price DOUBLE PRECISION DEFAULT 0,
+    gross_margin DOUBLE PRECISION DEFAULT 0,
+    effective_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    status VARCHAR(16) NOT NULL DEFAULT 'draft',
+    notes TEXT,
+    created_by BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cost_version_master ON cost_version(product_master_id);
