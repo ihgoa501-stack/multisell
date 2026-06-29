@@ -57,3 +57,24 @@ CREATE TABLE IF NOT EXISTS product_concept (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_product_concept_master ON product_concept(product_master_id);
+
+CREATE TABLE IF NOT EXISTS supplier_offer (
+    id BIGSERIAL PRIMARY KEY,
+    supplier_id BIGINT NOT NULL,
+    product_master_id BIGINT NOT NULL REFERENCES product_master(id) ON DELETE CASCADE,
+    offer_type VARCHAR(32),
+    unit_cost DOUBLE PRECISION,
+    currency VARCHAR(8) NOT NULL DEFAULT 'CNY',
+    moq INT,
+    lead_time_days INT,
+    incoterm VARCHAR(32),
+    is_preferred BOOLEAN NOT NULL DEFAULT FALSE,
+    valid_from TIMESTAMPTZ,
+    valid_to TIMESTAMPTZ,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_supplier_offer_master ON supplier_offer(product_master_id);
+CREATE INDEX IF NOT EXISTS idx_supplier_offer_supplier ON supplier_offer(supplier_id);
