@@ -1,23 +1,31 @@
 package listingtask
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/platform"
+	"github.com/lingmirror/backend-go/internal/domain/sku"
+	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides listing task business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db         *gorm.DB
+	logger     *zap.Logger
+	prismSvc   prismadapter.PrismService // nil = Prism disabled at runtime
+	prismStrict bool                      // block on Prism error vs warn+continue
 }
 
 // NewService creates a new listingtask service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+// prismSvc may be nil, in which case Prism is never called.
+func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
+	return &Service{db: db, logger: logger, prismSvc: prismSvc, prismStrict: prismStrict}
 }
 
 // ---------- ListingTask ----------
@@ -64,19 +72,19 @@ func (s *Service) GetByID(id int64) (*ListingTask, []ListingTaskItem, error) {
 // Create inserts a new listing task.
 func (s *Service) Create(in *CreateTaskInput) (*ListingTask, error) {
 	t := ListingTask{
-		ProductID:           in.ProductID,
-		PlatformID:          in.PlatformID,
-		SkuID:               in.SkuID,
-		ProductListingID:    in.ProductListingID,
-		SourceType:          in.SourceType,
-		SourceItemKey:       in.SourceItemKey,
-		Status:              in.Status,
-		MissingRequirements: in.MissingRequirements,
-		DecisionSnapshot:    in.DecisionSnapshot,
-		TargetSalePrice:     in.TargetSalePrice,
-		TargetProfitMargin:  in.TargetProfitMargin,
-		DestinationCountry:  in.DestinationCountry,
-		CreatedBy:           in.CreatedBy,
+		ProductID:            in.ProductID,
+		PlatformID:           in.PlatformID,
+		SkuID:                in.SkuID,
+		ProductListingID:     in.ProductListingID,
+		SourceType:           in.SourceType,
+		SourceItemKey:        in.SourceItemKey,
+		Status:               in.Status,
+		MissingRequirements:  in.MissingRequirements,
+		DecisionSnapshot:     in.DecisionSnapshot,
+		TargetSalePrice:      in.TargetSalePrice,
+		TargetProfitMargin:   in.TargetProfitMargin,
+		DestinationCountry:   in.DestinationCountry,
+		CreatedBy:            in.CreatedBy,
 	}
 	if t.SourceType == "" {
 		t.SourceType = "decision"
@@ -295,55 +303,7 @@ func (s *Service) GetItem(id int64) (*ListingTaskItem, error) {
 	return &item, nil
 }
 
-// ---------- Listing publish chain ----------
-
-// ExecuteTask triggers execution of a listing task: transitions status to
-// executing, runs each item, and aggregates the final status to completed or
-// failed based on item outcomes. In this stub each item is marked completed.
-func (s *Service) ExecuteTask(taskID int64) (*ListingTask, error) {
-	var task ListingTask
-	if err := s.db.First(&task, taskID).Error; err != nil {
-		return nil, err
-	}
-	if task.Status == "completed" || task.Status == "cancelled" {
-		return &task, nil
-	}
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&task).Update("status", "executing").Error; err != nil {
-			return err
-		}
-		var items []ListingTaskItem
-		if err := tx.Where("task_id = ?", taskID).Find(&items).Error; err != nil {
-			return err
-		}
-		now := time.Now()
-		finalStatus := "completed"
-		for i := range items {
-			// In a full implementation this would call the platform adapter.
-			updates := map[string]interface{}{
-				"status":      "completed",
-				"executed_at": &now,
-			}
-			if err := tx.Model(&items[i]).Updates(updates).Error; err != nil {
-				return err
-			}
-		}
-		if len(items) == 0 {
-			// nothing to execute — leave completed only if no items failed
-		}
-		return tx.Model(&task).Update("status", finalStatus).Error
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := s.db.First(&task, taskID).Error; err != nil {
-		return nil, err
-	}
-	return &task, nil
-}
-
-// RetryFailed resets all failed items of a task back to pending and increments
-// their retry_count. The task status is reset to pending so it can be re-run.
+// RetryFailed resets all failed items of a task and the task itself to pending.
 func (s *Service) RetryFailed(taskID int64) (*ListingTask, error) {
 	var task ListingTask
 	if err := s.db.First(&task, taskID).Error; err != nil {
@@ -353,9 +313,9 @@ func (s *Service) RetryFailed(taskID int64) (*ListingTask, error) {
 		res := tx.Model(&ListingTaskItem{}).
 			Where("task_id = ? AND status = ?", taskID, "failed").
 			Updates(map[string]interface{}{
-				"status":       "pending",
+				"status":        "pending",
 				"error_message": "",
-				"retry_count":  gorm.Expr("retry_count + 1"),
+				"retry_count":   gorm.Expr("retry_count + 1"),
 			})
 		if res.Error != nil {
 			return res.Error
@@ -374,17 +334,16 @@ func (s *Service) RetryFailed(taskID int64) (*ListingTask, error) {
 	return &task, nil
 }
 
-// RetryItem resets a single listing_task_item to pending and increments its
-// retry_count. The item must belong to the given task.
+// RetryItem resets a single listing_task_item to pending and increments retry_count.
 func (s *Service) RetryItem(taskID, itemID int64) (*ListingTaskItem, error) {
 	var item ListingTaskItem
 	if err := s.db.Where("id = ? AND task_id = ?", itemID, taskID).First(&item).Error; err != nil {
 		return nil, err
 	}
 	if err := s.db.Model(&item).Updates(map[string]interface{}{
-		"status":       "pending",
+		"status":        "pending",
 		"error_message": "",
-		"retry_count":  item.RetryCount + 1,
+		"retry_count":   item.RetryCount + 1,
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -393,3 +352,214 @@ func (s *Service) RetryItem(taskID, itemID int64) (*ListingTaskItem, error) {
 	}
 	return &item, nil
 }
+
+// ---------- Listing publish chain ----------
+
+// ExecuteTask triggers execution of a listing task. Before platform publishing it
+// optionally calls Prism for image generation + compliance check, branching by result:
+//   - pass:      use Prism output image, proceed with platform publish
+//   - warning:   proceed but record risks
+//   - fail:      block the task and listing, set last_error
+//   - error:     block if strict mode, else warn+continue with original image
+func (s *Service) ExecuteTask(taskID int64) (*ListingTask, error) {
+	var task ListingTask
+	if err := s.db.First(&task, taskID).Error; err != nil {
+		return nil, err
+	}
+	if task.Status == "completed" || task.Status == "cancelled" {
+		return &task, nil
+	}
+
+	// Run Prism check outside the main transaction so transient failures don't
+	// block the task-update transaction.
+	prismResult := s.runPrismForTask(&task)
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&task).Update("status", "executing").Error; err != nil {
+			return err
+		}
+
+		// If Prism blocked execution, update task + listing states and abort.
+		if prismResult != nil && prismResult.action == "block" {
+			_ = tx.Model(&task).Updates(map[string]interface{}{
+				"status":     "blocked",
+				"last_error": prismResult.lastError,
+			}).Error
+			if task.ProductListingID != nil {
+				_ = tx.Model(&ProductListing{}).Where("id = ?", *task.ProductListingID).
+					Update("status", "blocked").Error
+			}
+			return fmt.Errorf("prism compliance failed: %s", prismResult.lastError)
+		}
+
+		var items []ListingTaskItem
+		if err := tx.Where("task_id = ?", taskID).Find(&items).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		finalStatus := "completed"
+		for i := range items {
+			result := map[string]interface{}{"executed_at": now}
+			if prismResult != nil {
+				result["prism"] = prismResult.data
+			}
+			resultBytes, _ := json.Marshal(result)
+			updates := map[string]interface{}{
+				"status":      "completed",
+				"executed_at": &now,
+				"result":      resultBytes,
+			}
+			if err := tx.Model(&items[i]).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+
+		// Persist Prism result into the ProductListing's published_data.
+		if prismResult != nil && prismResult.data != nil && task.ProductListingID != nil {
+			prismMeta, _ := json.Marshal(prismResult.data)
+			_ = tx.Model(&ProductListing{}).Where("id = ?", *task.ProductListingID).
+				Update("published_data", gorm.Expr("published_data || ?::jsonb", string(prismMeta))).Error
+		}
+
+		return tx.Model(&task).Update("status", finalStatus).Error
+	})
+	if err != nil {
+		// If it's a Prism block the DB was updated correctly; return blocked state.
+		if prismResult != nil && prismResult.action == "block" {
+			if err := s.db.First(&task, taskID).Error; err != nil {
+				return nil, err
+			}
+			return &task, nil
+		}
+		return nil, err
+	}
+	if err := s.db.First(&task, taskID).Error; err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+// prismResult carries the action and metadata from a Prism check.
+type prismResult struct {
+	action    string // "pass", "warn", "block"
+	data      map[string]interface{}
+	lastError string
+}
+
+// runPrismForTask checks whether this task should run Prism and if so, calls it.
+// Returns nil if Prism is skipped or disabled.
+func (s *Service) runPrismForTask(task *ListingTask) *prismResult {
+	if s.prismSvc == nil {
+		return nil
+	}
+
+	// Read the ProductListing to check if Prism was enabled.
+	if task.ProductListingID == nil {
+		return nil
+	}
+	var listing ProductListing
+	if err := s.db.First(&listing, *task.ProductListingID).Error; err != nil {
+		return nil
+	}
+
+	var pd struct {
+		Prism struct {
+			Enabled bool            `json:"enabled"`
+			Options json.RawMessage `json:"options"`
+		} `json:"prism"`
+	}
+	if len(listing.PublishedData) > 0 {
+		_ = json.Unmarshal(listing.PublishedData, &pd)
+	}
+	if !pd.Prism.Enabled {
+		return nil
+	}
+
+	// Look up platform code.
+	var plat platform.Platform
+	if err := s.db.First(&plat, task.PlatformID).Error; err != nil {
+		s.logger.Warn("prism: platform lookup failed", zap.Int64("platform_id", task.PlatformID), zap.Error(err))
+		return s.prismError("platform_not_found")
+	}
+
+	// Look up product main_image.
+	var prod sku.Product
+	if err := s.db.First(&prod, task.ProductID).Error; err != nil {
+		s.logger.Warn("prism: product lookup failed", zap.Int64("product_id", task.ProductID), zap.Error(err))
+		return s.prismError("product_not_found")
+	}
+	if prod.MainImage == "" {
+		s.logger.Warn("prism: product has no main_image", zap.Int64("product_id", task.ProductID))
+		return s.prismError("no_main_image")
+	}
+
+	// Call Prism.
+	resp, err := s.prismSvc.Generate(nil, &prismadapter.GenerateRequest{
+		ImageURL:  prod.MainImage,
+		Platform:  plat.Code,
+		ProductID: task.ProductID,
+	})
+	if err != nil {
+		s.logger.Warn("prism: generate call failed", zap.Error(err))
+		return s.prismError(fmt.Sprintf("prism_service_error: %v", err))
+	}
+
+	// Build metadata for storage.
+	data := map[string]interface{}{
+		"prism": map[string]interface{}{
+			"job_id":            resp.JobID,
+			"output_url":        resp.OutputURL,
+			"compliance_report": resp.ComplianceReport,
+			"risk_score":        resp.RiskScore,
+			"failure_reasons":   resp.FailureReasons,
+		},
+	}
+
+	switch resp.ComplianceReport.Status {
+	case prismadapter.StatusPass:
+		return &prismResult{action: "pass", data: data}
+	case prismadapter.StatusWarning:
+		return &prismResult{action: "warn", data: data}
+	case prismadapter.StatusFail:
+		reasons := ""
+		if len(resp.FailureReasons) > 0 {
+			for i, r := range resp.FailureReasons {
+				if i > 0 {
+					reasons += "; "
+				}
+				reasons += r
+			}
+		}
+		return &prismResult{
+			action:    "block",
+			data:      data,
+			lastError: fmt.Sprintf("prism compliance failed: %s", reasons),
+		}
+	default:
+		s.logger.Warn("prism: unknown compliance status", zap.String("status", resp.ComplianceReport.Status))
+		return &prismResult{
+			action:    "block",
+			data:      data,
+			lastError: fmt.Sprintf("prism unknown compliance status: %s", resp.ComplianceReport.Status),
+		}
+	}
+}
+
+// prismError returns a block/warn result depending on strict mode.
+func (s *Service) prismError(errMsg string) *prismResult {
+	if s.prismStrict {
+		return &prismResult{action: "block", lastError: errMsg}
+	}
+	s.logger.Warn("prism: non-strict mode, continuing despite error", zap.String("error", errMsg))
+	return nil
+}
+
+// ProductListing is a minimal projection for Prism data storage.
+type ProductListing struct {
+	ID            int64           `gorm:"column:id;primaryKey;autoIncrement"`
+	Status        string          `gorm:"column:status"`
+	PublishedData json.RawMessage `gorm:"column:published_data;type:jsonb"`
+}
+
+// TableName explicitly sets the table name.
+func (ProductListing) TableName() string { return "product_listing" }
