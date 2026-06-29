@@ -124,7 +124,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI orchestrator (shared by /ai and /agents routes).
 	aiosCfg := setup.Initialize(db, bus, logger)
 	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
-	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget)
+	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget).WithBus(bus)
 
 	// ToolBridge for sourcing data collection
 	_ = toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
@@ -240,10 +240,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		if status, ok := payload["stock_status"].(string); ok && status == "red" {
 			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
 			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "G3",
 				DecisionPoint: "discount_risk_check",
 				Context:       payload,
+				ParentTraceID: traceID,
 			})
 			return err
 		}
@@ -256,10 +258,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		if action, ok := payload["action"].(string); ok && action == "block" {
 			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
 			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "A6",
 				DecisionPoint: "profit_watch",
 				Context:       payload,
+				ParentTraceID: traceID,
 			})
 			return err
 		}
@@ -274,10 +278,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		if isLoss || belowThreshold {
 			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
 			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "A2",
 				DecisionPoint: "listing_optimize",
 				Context:       payload,
+				ParentTraceID: traceID,
 			})
 			return err
 		}
@@ -290,10 +296,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		if count, ok := payload["anomaly_count"].(int); ok && count > 3 {
 			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
 			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "G1",
 				DecisionPoint: "dashboard_overview",
 				Context:       payload,
+				ParentTraceID: traceID,
 			})
 			return err
 		}
@@ -301,10 +309,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		if count, ok := payload["anomaly_count"].(float64); ok && count > 3 {
 			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
 			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
 				AgentID:       "G1",
 				DecisionPoint: "dashboard_overview",
 				Context:       payload,
+				ParentTraceID: traceID,
 			})
 			return err
 		}

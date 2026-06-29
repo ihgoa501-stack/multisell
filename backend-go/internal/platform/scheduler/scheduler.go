@@ -32,6 +32,7 @@ type Scheduler struct {
 	cancels []context.CancelFunc
 	mu      sync.Mutex
 	running bool
+	guards  sync.Map
 }
 
 // New creates a new scheduler. The bus is used to publish tick events.
@@ -48,6 +49,7 @@ func (s *Scheduler) Register(task Task) {
 	s.mu.Lock()
 	s.tasks = append(s.tasks, task)
 	s.mu.Unlock()
+	s.guards.Store(task.ID, &sync.Mutex{})
 	s.logger.Info("scheduler task registered",
 		zap.String("agent_id", task.AgentID),
 		zap.String("decision_point", task.DecisionPoint),
@@ -113,7 +115,18 @@ func (s *Scheduler) runTask(ctx context.Context, task Task) {
 	for {
 		select {
 		case <-ticker.C:
-			s.emitTick(task)
+			if mu, ok := s.guards.Load(task.ID); ok {
+				m := mu.(*sync.Mutex)
+				if m.TryLock() {
+					s.emitTick(task)
+					m.Unlock()
+				} else {
+					s.logger.Debug("skipping tick - previous run still in progress",
+						zap.String("agent_id", task.AgentID))
+				}
+			} else {
+				s.emitTick(task)
+			}
 		case <-ctx.Done():
 			s.logger.Debug("task loop stopped",
 				zap.String("agent_id", task.AgentID))

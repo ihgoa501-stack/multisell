@@ -86,13 +86,65 @@ func (pq *priorityQueue) Pop() interface{} {
 	return item
 }
 
+// Backend is the pluggable storage backend for the event bus.
+type Backend interface {
+	Enqueue(event Event) error
+	Dequeue() (Event, bool)
+	Len() int
+	Close()
+}
+
+// InProcessBackend implements Backend with an in-memory priority queue.
+type InProcessBackend struct {
+	mu    sync.Mutex
+	queue priorityQueue
+	cond  *sync.Cond
+}
+
+func NewInProcessBackend() *InProcessBackend {
+	b := &InProcessBackend{queue: make(priorityQueue, 0)}
+	b.cond = sync.NewCond(&b.mu)
+	return b
+}
+
+func (b *InProcessBackend) Enqueue(event Event) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	heap.Push(&b.queue, &priorityQueueItem{event: event})
+	b.cond.Signal()
+	return nil
+}
+
+func (b *InProcessBackend) Dequeue() (Event, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for b.queue.Len() == 0 {
+		b.cond.Wait()
+	}
+	if b.queue.Len() == 0 {
+		return Event{}, false
+	}
+	item := heap.Pop(&b.queue).(*priorityQueueItem)
+	return item.event, true
+}
+
+func (b *InProcessBackend) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.queue.Len()
+}
+
+func (b *InProcessBackend) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cond.Broadcast()
+}
+
 // Bus is the central event bus.
 type Bus struct {
 	mu             sync.RWMutex
 	subs           []*subscription
-	queueMu        sync.Mutex
-	queue          priorityQueue
-	queueCond      *sync.Cond
+	backend        Backend
 	db             *gorm.DB
 	logger         *zap.Logger
 	bufferSize     int
@@ -110,6 +162,11 @@ func WithDB(db *gorm.DB) BusOption {
 }
 
 // WithBufferSize sets the channel buffer size (default 256).
+// WithBackend replaces the default in-process event queue with a custom backend.
+func WithBackend(b Backend) BusOption {
+	return func(bus *Bus) { bus.backend = b }
+}
+
 func WithBufferSize(n int) BusOption {
 	return func(b *Bus) { b.bufferSize = n }
 }
@@ -125,10 +182,9 @@ func New(logger *zap.Logger, opts ...BusOption) *Bus {
 		logger:      logger,
 		bufferSize:  256,
 		workerCount: 4,
-		queue:       make(priorityQueue, 0),
+		backend:     NewInProcessBackend(),
 		done:        make(chan struct{}),
 	}
-	b.queueCond = sync.NewCond(&b.queueMu)
 	for _, opt := range opts {
 		opt(b)
 	}
@@ -148,7 +204,7 @@ func (b *Bus) Start(ctx context.Context) {
 // Stop shuts down the event bus gracefully.
 func (b *Bus) Stop() {
 	close(b.done)
-	b.queueCond.Broadcast() // wake all workers so they see done
+	b.backend.Close()
 	b.logger.Info("event bus stopped")
 }
 
@@ -187,19 +243,15 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 		}
 	}
 
-	item := &priorityQueueItem{event: evt}
-
 	// Enqueue to the priority queue with backpressure.
 	// If the queue is at capacity the event is dropped immediately and
 	// ErrQueueFull is returned to the caller.
-	b.queueMu.Lock()
-	if b.bufferSize > 0 && b.queue.Len() >= b.bufferSize {
-		b.queueMu.Unlock()
+	if b.bufferSize > 0 && b.backend.Len() >= b.bufferSize {
 		return "", ErrQueueFull
 	}
-	heap.Push(&b.queue, item)
-	b.queueCond.Signal()
-	b.queueMu.Unlock()
+	if err := b.backend.Enqueue(evt); err != nil {
+		return "", err
+	}
 
 	return evt.ID, nil
 }
@@ -260,36 +312,18 @@ func (b *Bus) workerLoop(ctx context.Context, id int) {
 		default:
 		}
 
-		// Wait for an item on the priority queue.
-		b.queueMu.Lock()
-		for b.queue.Len() == 0 {
-			b.queueCond.Wait()
-			// Re-check shutdown signals after Cond.Wait returns (woken by
-			// Broadcast on Stop or Signal from a new enqueue).
-			select {
-			case <-b.done:
-				b.queueMu.Unlock()
-				b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
-				return
-			case <-ctx.Done():
-				b.queueMu.Unlock()
-				b.logger.Debug("event bus worker stopped (context cancelled)", zap.Int("worker_id", id))
-				return
-			default:
-			}
+		// Wait for an item on the backend.
+		event, ok := b.backend.Dequeue()
+		if !ok {
+			return
 		}
-		item := heap.Pop(&b.queue).(*priorityQueueItem)
-		b.queueMu.Unlock()
-
-		// Dispatch to all matching subscribers sequentially within this worker.
-		evt := item.event
 		b.mu.RLock()
 		for _, sub := range b.subs {
-			if matchTopic(sub.topic, evt.Topic) {
-				if err := sub.handler(ctx, evt); err != nil {
+			if matchTopic(sub.topic, event.Topic) {
+				if err := sub.handler(ctx, event); err != nil {
 					b.logger.Warn("handler error",
-						zap.String("event_id", evt.ID),
-						zap.String("topic", evt.Topic),
+						zap.String("event_id", event.ID),
+						zap.String("topic", event.Topic),
 						zap.String("subscription_id", sub.id),
 						zap.Error(err))
 				}
