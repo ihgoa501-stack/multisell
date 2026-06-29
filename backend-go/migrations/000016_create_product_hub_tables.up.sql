@@ -39,3 +39,21 @@ CREATE TABLE IF NOT EXISTS product_variant (
 
 CREATE INDEX IF NOT EXISTS idx_product_variant_master ON product_variant(product_master_id);
 CREATE INDEX IF NOT EXISTS idx_product_variant_sku ON product_variant(sku_product_id);
+
+CREATE TABLE IF NOT EXISTS product_concept (
+    id BIGSERIAL PRIMARY KEY,
+    product_master_id BIGINT NOT NULL REFERENCES product_master(id) ON DELETE CASCADE,
+    brief TEXT,
+    target_customer TEXT,
+    pain_point TEXT,
+    market_research TEXT,
+    competitor_info TEXT,
+    design_source VARCHAR(32),
+    attachment_urls JSONB DEFAULT '[]',
+    status VARCHAR(32) NOT NULL DEFAULT 'draft',
+    created_by BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_concept_master ON product_concept(product_master_id);
