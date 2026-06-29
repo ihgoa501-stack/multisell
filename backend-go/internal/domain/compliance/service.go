@@ -102,8 +102,12 @@ func (s *Service) CheckProduct(input *CheckInput, platformID *int64) (*CheckResu
 	}
 
 	// Include confidence as custom evidence field
+	evidenceRule := "confidence"
+	if confidence < 0.7 {
+		evidenceRule = "low_confidence"
+	}
 	evidence = append(evidence, EvidenceItem{
-		Rule:      "confidence",
+		Rule:      evidenceRule,
 		Field:     "confidence",
 		Value:     fmt.Sprintf("%.2f", confidence),
 		Source:    "A7ComplianceGuard",
@@ -134,12 +138,22 @@ func (s *Service) CheckProduct(input *CheckInput, platformID *int64) (*CheckResu
 	return result, nil
 }
 
-// SaveResult persists a compliance check result idempotently.
-// If the result has a non-zero ID it updates the existing record;
-// otherwise it creates a new one.
+// SaveResult persists a compliance check result with idempotency.
+// Deletes any existing result for the same (product_id, platform_id, check_type, scanned_at::date)
+// before creating, ensuring one result per product per platform per day.
 func (s *Service) SaveResult(result *CheckResult) error {
-	if result.ID > 0 {
-		return s.db.Save(result).Error
+	platformVal := 0
+	if result.PlatformID != nil {
+		platformVal = int(*result.PlatformID)
+	}
+	err := s.db.Exec(
+		`DELETE FROM compliance_check_result
+		 WHERE product_id = ? AND COALESCE(platform_id, 0) = ?
+		   AND check_type = ? AND scanned_at::date = ?::date`,
+		result.ProductID, platformVal, result.CheckType, result.ScannedAt,
+	).Error
+	if err != nil {
+		return err
 	}
 	return s.db.Create(result).Error
 }
