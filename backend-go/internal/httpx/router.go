@@ -42,6 +42,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
+	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
@@ -539,6 +540,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	logistics.RegisterRoutes(protected, db, logger)
 	supplychain.RegisterRoutes(protected, db, logger, bus)
 	productanalysis.RegisterRoutes(protected, db, logger)
+	producthub.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
 	report.RegisterRoutes(protected, db, logger)
 	exchangerate.RegisterRoutes(protected, db, logger)
