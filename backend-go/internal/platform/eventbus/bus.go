@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -21,16 +22,38 @@ import (
 
 // Event represents a message on the bus.
 type Event struct {
-	ID        string                 `json:"id"`
-	Topic     string                 `json:"topic"`
-	Source    string                 `json:"source"`
-	Payload   map[string]interface{} `json:"payload"`
-	Priority  int                    `json:"priority"`   // 0=normal, 1=high, 2=critical
-	CreatedAt time.Time              `json:"created_at"`
+	ID            string                 `json:"id"`
+	Topic         string                 `json:"topic"`
+	Source        string                 `json:"source"`
+	Payload       map[string]interface{} `json:"payload"`
+	Priority      int                    `json:"priority"`   // 0=normal, 1=high, 2=critical
+	CreatedAt     time.Time              `json:"created_at"`
+	CorrelationID string                 `json:"correlation_id"`
 }
 
 // Handler processes a single event. Return an error to signal delivery failure.
 type Handler func(ctx context.Context, event Event) error
+
+// contextKey is used for context-scoped values to avoid collisions.
+type contextKey string
+
+const correlationContextKey contextKey = "eventbus_correlation_id"
+
+// WithCorrelationID attaches a correlation ID to the context for event bus
+// operations. The correlation ID is propagated to published events and can
+// be used for distributed tracing across event handlers.
+func WithCorrelationID(ctx context.Context, correlationID string) context.Context {
+	return context.WithValue(ctx, correlationContextKey, correlationID)
+}
+
+// CorrelationIDFromContext extracts the correlation ID from the context.
+// Returns empty string if not set.
+func CorrelationIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(correlationContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
 
 // subscription binds a handler to a topic pattern.
 type subscription struct {
@@ -230,12 +253,13 @@ func (b *Bus) Publish(ctx context.Context, topic string, source string, payload 
 // PublishWithPriority delivers an event with a given priority level.
 func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, payload map[string]interface{}, priority int) (string, error) {
 	evt := Event{
-		ID:        uuid.New().String(),
-		Topic:     topic,
-		Source:    source,
-		Payload:   payload,
-		Priority:  priority,
-		CreatedAt: time.Now(),
+		ID:            uuid.New().String(),
+		Topic:         topic,
+		Source:        source,
+		Payload:       payload,
+		Priority:      priority,
+		CreatedAt:     time.Now(),
+		CorrelationID: CorrelationIDFromContext(ctx),
 	}
 
 	// Validate against schema registry if configured.
@@ -262,9 +286,12 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 	if b.bufferSize > 0 && b.backend.Len() >= b.bufferSize {
 		return "", ErrQueueFull
 	}
-	if err := b.backend.Enqueue(evt); err != nil {
-		return "", err
-	}
+		heap.Push(&b.queue, item)
+		eventsQueueDepth.Set(float64(b.queue.Len()))
+		b.queueCond.Signal()
+		b.queueMu.Unlock()
+
+	eventsPublished.WithLabelValues(topic, "published").Inc()
 
 	return evt.ID, nil
 }
@@ -331,21 +358,60 @@ func (b *Bus) workerLoop(ctx context.Context, id int) {
 			b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
 			return
 		}
+		item := heap.Pop(&b.queue).(*priorityQueueItem)
+		eventsQueueDepth.Set(float64(b.queue.Len()))
+		b.queueMu.Unlock()
 
-		// Dispatch to all matching subscribers sequentially within this worker.
+		// Dispatch to all matching subscribers with panic recovery per handler.
+		evt := item.event
+		var panicked bool
+		var lastErr string
 		b.mu.RLock()
 		for _, sub := range b.subs {
 			if matchTopic(sub.topic, evt.Topic) {
-				if err := sub.handler(ctx, evt); err != nil {
-					b.logger.Warn("handler error",
-						zap.String("event_id", evt.ID),
-						zap.String("topic", evt.Topic),
-						zap.String("subscription_id", sub.id),
-						zap.Error(err))
-				}
+				func(s *subscription) {
+					defer func() {
+						if r := recover(); r != nil {
+							panicked = true
+							lastErr = fmt.Sprintf("%v", r)
+							b.logger.Error("handler panic recovered",
+								zap.String("event_id", evt.ID),
+								zap.String("topic", evt.Topic),
+								zap.String("subscription_id", s.id),
+								zap.Any("panic", r))
+							eventsHandlerErrors.WithLabelValues(evt.Topic).Inc()
+						}
+					}()
+					if err := s.handler(ctx, evt); err != nil {
+						lastErr = err.Error()
+						b.logger.Warn("handler error",
+							zap.String("event_id", evt.ID),
+							zap.String("topic", evt.Topic),
+							zap.String("subscription_id", s.id),
+							zap.Error(err))
+						eventsHandlerErrors.WithLabelValues(evt.Topic).Inc()
+					}
+				}(sub)
 			}
 		}
 		b.mu.RUnlock()
+
+		// Update outbox status after all handlers have run.
+		if b.db != nil {
+			if panicked || lastErr != "" {
+				b.db.WithContext(ctx).Exec(
+					`UPDATE event_outbox SET status='failed', last_error=?, delivery_attempts=delivery_attempts+1 WHERE event_id=? AND status='pending'`,
+					lastErr, evt.ID,
+				)
+				eventsPublished.WithLabelValues(evt.Topic, "failed").Inc()
+			} else {
+				b.db.WithContext(ctx).Exec(
+					`UPDATE event_outbox SET status='delivered', delivered_at=NOW(), delivery_attempts=delivery_attempts+1 WHERE event_id=? AND status='pending'`,
+					evt.ID,
+				)
+				eventsPublished.WithLabelValues(evt.Topic, "delivered").Inc()
+			}
+		}
 	}
 }
 
@@ -376,15 +442,17 @@ func matchTopic(pattern, topic string) bool {
 	return len(parts) == len(subj)
 }
 
-// persistOutbox writes the event to the event_outbox table for durability.
+// persistOutbox writes the event to the event_outbox table with 'pending'
+// status. The workerLoop updates the status to 'delivered' or 'failed' after
+// all handlers have run.
 func (b *Bus) persistOutbox(ctx context.Context, evt *Event) error {
 	payloadBytes, err := json.Marshal(evt.Payload)
 	if err != nil {
 		return err
 	}
 	return b.db.WithContext(ctx).Exec(
-		`INSERT INTO event_outbox (topic, source, payload, priority, status, created_at)
-		 VALUES (?, ?, ?, ?, 'delivered', ?)`,
-		evt.Topic, evt.Source, payloadBytes, evt.Priority, evt.CreatedAt,
+		`INSERT INTO event_outbox (topic, source, payload, priority, status, created_at, event_id)
+		 VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+		evt.Topic, evt.Source, payloadBytes, evt.Priority, evt.CreatedAt, evt.ID,
 	).Error
 }

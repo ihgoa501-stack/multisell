@@ -10,8 +10,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
+)
+
+var (
+	schedulerTicksTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "multisell_scheduler_ticks_total",
+			Help: "Total number of scheduler ticks by agent and decision point.",
+		},
+		[]string{"agent_id", "decision_point"},
+	)
 )
 
 // Task describes a scheduled agent run.
@@ -152,6 +165,8 @@ func (s *Scheduler) emitTick(task Task) {
 			zap.String("agent_id", task.AgentID),
 			zap.Error(err))
 	}
+
+	schedulerTicksTotal.WithLabelValues(task.AgentID, task.DecisionPoint).Inc()
 }
 
 // Shutdown stops all running tasks gracefully.
