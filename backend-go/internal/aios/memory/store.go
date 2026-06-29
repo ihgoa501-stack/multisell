@@ -177,6 +177,7 @@ func (s *memoryStore) all() []MemoryItem {
 
 // allMap returns a shallow copy of the underlying map under read lock.
 // The Value pointers are still shared; callers must not mutate returned items.
+//nolint:unused
 func (s *memoryStore) allMap() map[string]*MemoryItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -18,6 +18,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
+	"github.com/lingmirror/backend-go/internal/domain/content"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
@@ -50,6 +51,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
+	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
@@ -68,6 +70,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
+	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
@@ -105,10 +108,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
-	// ==========================================================
-	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
-	// ==========================================================
-
+	// ===================================================	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
+	// ===================================================
 	// Create event bus (with optional outbox persistence).
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
 	busCtx, busCancel := context.WithCancel(context.Background())
@@ -144,10 +145,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// and handles reverse logistics via HandleAftersaleReturn).
 	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker)
 
-	// ==========================================================
-	// Event Bus Subscriptions: agent triggers + pipeline chains
-	// ==========================================================
-
+	// ===================================================	// Event Bus Subscriptions: agent triggers + pipeline chains
+	// ===================================================
 	// scheduler.tick.A5 → orchestrator runs A5 stock_alert
 	bus.Subscribe("scheduler.tick.A5", func(ctx context.Context, evt eventbus.Event) error {
 		_, err := aiOrch.Run(&ai.RunAgentRequest{
@@ -231,6 +230,21 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		svc := entropy.NewService(db, logger)
 		_, err := svc.RunDefenses(0)
 		return err
+	})
+
+	// scheduler.tick.freshness -> check for stale product data
+	bus.Subscribe("scheduler.tick.freshness", func(ctx context.Context, evt eventbus.Event) error {
+		fSvc := producthub.NewFreshnessService(db, logger)
+		stale, err := fSvc.CheckFreshness(ctx)
+		if err != nil {
+			return err
+		}
+		if len(stale) > 0 {
+			logger.Warn("stale product data detected",
+				zap.Int("count", len(stale)),
+			)
+		}
+		return nil
 	})
 
 	// scheduler.tick.A8 → sourcing batch scan
@@ -319,10 +333,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return nil
 	})
 
-	// ==========================================================
-	// Schedule all agent periodic tasks
-	// ==========================================================
-
+	// ===================================================	// Schedule all agent periodic tasks
+	// ===================================================
 	sched.Register(scheduler.Task{
 		ID: "tick-g0", AgentID: "G0", DecisionPoint: "system_health",
 		Interval: time.Minute * 5, Description: "协调仲裁健康检查",
@@ -367,6 +379,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
+	sched.Register(scheduler.Task{
+		ID: "tick-freshness", AgentID: "freshness", DecisionPoint: "freshness_check",
+		Interval: time.Hour * 2, Description: "数据新鲜度扫描",
+	})
 		sched.Register(scheduler.Task{
 			ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
 			Interval: time.Minute * 15, Description: "Ozon 订单同步",
@@ -394,10 +410,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
 
-	// ==========================================================
-	// HTTP routes
-	// ==========================================================
-
+	// ===================================================	// HTTP routes
+	// ===================================================
 	// API v1 routes
 	api := r.Group("/api/v1")
 
@@ -521,11 +535,26 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
-	listingtask.RegisterRoutes(protected, db, logger)
+
+	// Initialize Prism client (config-driven; nil if disabled).
+	var prismSvc prismadapter.PrismService
+	prismStrict := cfg.Prism.Strict
+	if cfg.Prism.Enabled && cfg.Prism.BaseURL != "" {
+			timeout := time.Duration(cfg.Prism.Timeout) * time.Second
+			if timeout <= 0 {
+				timeout = 30 * time.Second
+		}
+		prismSvc = prismadapter.NewClient(cfg.Prism.BaseURL, cfg.Prism.APIKey, timeout)
+		logger.Info("Prism client initialized", zap.String("base_url", cfg.Prism.BaseURL), zap.Bool("strict", prismStrict))
+	} else {
+		logger.Info("Prism client disabled")
+	}
+	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
 	profit.RegisterRoutes(protected, db, logger)
-	loop.RegisterRoutes(protected, db, logger)
+	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
 	mock.RegisterRoutes(protected, db, logger)
 	// Auto-seed mock demo data on startup
 	func() {
@@ -538,6 +567,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	owner.RegisterRoutes(protected, db, logger)
 
 
+
 	shipping.RegisterRoutes(protected, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
 	order.RegisterRoutes(protected, db, logger)
@@ -548,6 +578,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	allocation.RegisterRoutes(protected, db, logger)
 	exceptions.RegisterRoutes(protected, db, logger)
 	notification.RegisterRoutes(protected, db, logger)
+		content.RegisterRoutes(protected, db, logger, aiOrch)
 	dashboard.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
 	settings.RegisterRoutes(protected, db, logger)
@@ -581,8 +612,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
 		logger.Info("metabolism: M1 tick received")
-			_, err := m1Svc.ScoreAndExcreteEntities(false)
-			return err
+		err := m1Svc.Execute(false)
+		return err
 	})
 	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 

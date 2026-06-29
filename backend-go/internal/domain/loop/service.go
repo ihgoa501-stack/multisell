@@ -10,6 +10,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
+	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -24,13 +25,14 @@ type Service struct {
 }
 
 // NewService creates a new evaluation loop service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
+// prismSvc and prismStrict are forwarded to listingtask service.
+func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
 	return &Service{
 		db:              db,
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
 		profitSvc:       profit.NewService(db, logger),
-		listingtaskSvc:  listingtask.NewService(db, logger),
+		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict),
 	}
 }
 

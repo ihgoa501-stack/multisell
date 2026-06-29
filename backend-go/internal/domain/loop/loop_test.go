@@ -9,7 +9,7 @@ import (
 func TestService_GetRecommendations(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	db.Create(&ListingRecommendation{ProductID: 1, Decision: "list", Confidence: 0.85, Reason: "good product"})
 	db.Create(&ListingRecommendation{ProductID: 2, Decision: "skip", Confidence: 0.3, Reason: "bad product"})
@@ -29,7 +29,7 @@ func TestService_GetRecommendations(t *testing.T) {
 func TestService_GetRecommendations_Filtered(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	db.Create(&ListingRecommendation{ProductID: 1, Decision: "list"})
 	db.Create(&ListingRecommendation{ProductID: 2, Decision: "skip"})

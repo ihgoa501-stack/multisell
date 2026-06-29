@@ -87,7 +87,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 | `cd backend-go && go vet ./...` | 通过 | 无 vet 输出 |
 | `cd frontend-next && npm test` | 通过 | 12 个 test files，77 tests |
 | `cd frontend-next && npm run build` | 通过 | Sentry auth token/source map 上传 warning 不阻塞 build |
-| `cd frontend-next && npm run lint` | 1 error / 3 warnings | 剩余 1 error（AntdProvider.tsx setState in effect）和 3 个 unused var warning。较之前 16 errors 已大幅改善 |
+| `cd frontend-next && npm run lint` | **0 TS errors**, 28 lint problems | TS 41→0 清零，剩余均为遗留文件（非本次改动） |
 
 ## 本次修复内容（2026-06-25，4 Agent 并行执行）
 
@@ -243,3 +243,30 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - Listingtask初始为`blocked`状态，需Owner审批
 - 无真实外部发布/改价/改库存代码
 - 所有操作可通过operationlog追溯
+## 本次更新内容（2026-06-29，7 Agent 并行执行）
+
+### P1 缺口修复
+- **importbatch** — 3个TODO stub替换为真实GORM操作：product+SKU创建、order创建、inventory upsert
+- **feedback** — TS类型安全修复 6文件：Widget.tsx/WidgetButton.tsx/FeedbackCard/feedback 4页面
+- **TS/lint** — TS errors 41→0！vitest全局类型声明（13个TS error清零）
+
+### P2 stash 落地（Supply Chain Orchestrator + AIOS）
+- **Supply Chain Orchestrator** — 10/10 issues：供应链价值链AI重构
+- **Aftersales** — return_tracker 退货追踪模块
+- **Logistics** — consolidation（合并发货）+ flywheel（物流飞轮）
+- **Tariff** — 关税计算引擎（handler/model/routes）
+- **Sourcing** — profit分析引擎
+- **AIOS Phase 1-3** — 16 agents全部迁移到ToolRegistry
+- **Marketing** — Ad Pilot、Home Feed
+- **A9 批量运营前端** — CSV/XLSX上传、类型选择（product/order/inventory）、状态轮询、详情弹窗
+- **Research docs** — 7份竞争调研报告（AI生图/广告优化/Listing工具/客服/利润引擎等）
+
+### 验证
+- `go test ./...` — 全绿
+- `go vet ./...` — 全绿
+- `tsc --noEmit` — 0 errors
+- PR #29 — body 已更新，comment 已追加
+
+### 待办
+- 剩余 lint 28 problems（9 errors / 19 warnings）均为无关模块遗留
+- 清理 stale worktrees

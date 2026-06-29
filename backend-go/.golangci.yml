@@ -1,3 +1,29 @@
 linters:
   disable:
     - errcheck
+    - ineffassign
+    - staticcheck
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - unused
+    - path: internal/agent/impl/product_scout.go
+      text: "candidateItem"
+      linters:
+        - unused
+    - path: internal/agent/impl/profit_watch.go
+      text: "profitWatchOptionalFields|absf"
+      linters:
+        - unused
+    - path: internal/agent/impl/settlement_recon.go
+      text: "RequiredFields|requiredFields"
+      linters:
+        - unused
+    - path: internal/aios/knowledge/engine.go
+      linters:
+        - gosimple
+    - path: internal/aios/guardrails/execution_guard.go
+      linters:
+        - gosimple

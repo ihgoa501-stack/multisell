@@ -84,6 +84,8 @@ export const menuGroups: MenuGroup[] = [
       { key: '/agents/entropy', label: '熵监控' },
       { key: '/agentos/work-items', label: '工作队列' },
       { key: '/agents/trust', label: '信任与自主度' },
+      { key: '/agent-learning', label: '学习与准确率' },
+      { key: '/orchestration', label: '生命周期编排' },
     ],
   },
   {
@@ -93,6 +95,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/notifications', label: '通知' },
       { key: '/image-gen', label: '图片生成' },
       { key: '/import-batches', label: '批量导入' },
+      { key: '/batch-ops', icon: 'UploadOutlined', label: '批量运营' },
       { key: '/operation-logs', label: '操作日志' },
       { key: '/search', label: '搜索' },
       { key: '/reports', label: '报表' },
@@ -109,6 +112,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/settings/llm', label: 'LLM 配置' },
       { key: '/settings/rbac', label: '权限管理' },
       { key: '/settings/policy', label: '审批策略' },
+      { key: '/webhooks', label: 'Webhooks' },
     ],
   },
 ];
