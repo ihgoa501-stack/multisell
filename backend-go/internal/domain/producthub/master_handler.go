@@ -26,7 +26,7 @@ func (h *MasterHandler) List(c *gin.Context) {
 	status := c.Query("lifecycle_status")
 	items, total, err := h.service.List(c.Request.Context(), p.Page, p.Size, status)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.InternalError(c, err)
 		return
 	}
 	response.Paginated(c, items, total, p.Page, p.Size)
@@ -45,7 +45,7 @@ func (h *MasterHandler) Get(c *gin.Context) {
 			response.Error(c, http.StatusNotFound, "product not found")
 			return
 		}
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.InternalError(c, err)
 		return
 	}
 	response.Success(c, item)
@@ -59,7 +59,7 @@ func (h *MasterHandler) Create(c *gin.Context) {
 		return
 	}
 	if err := h.service.Create(c.Request.Context(), &p); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.InternalError(c, err)
 		return
 	}
 	response.Success(c, p)
@@ -79,7 +79,7 @@ func (h *MasterHandler) Update(c *gin.Context) {
 	}
 	p.ID = id
 	if err := h.service.Update(c.Request.Context(), &p); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.InternalError(c, err)
 		return
 	}
 	response.Success(c, p)
@@ -93,7 +93,7 @@ func (h *MasterHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.InternalError(c, err)
 		return
 	}
 	response.Success(c, gin.H{"id": id})

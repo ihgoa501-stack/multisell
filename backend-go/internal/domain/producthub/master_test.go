@@ -2,6 +2,7 @@ package producthub
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,14 +73,24 @@ func TestMasterLifecycleTransition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"status":"sampling"}`
+	// Transition idea -> researching
+	body := `{"status":"researching"}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/product-hub/1/transition", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/v1/product-hub/%d/transition", p.ID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 200 for idea->researching, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Transition researching -> sampling
+	body = `{"status":"sampling"}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", fmt.Sprintf("/api/v1/product-hub/%d/transition", p.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for researching->sampling, got %d: %s", w.Code, w.Body.String())
 	}
 
 	p2, _ := svc.GetByID(ctx, p.ID)
