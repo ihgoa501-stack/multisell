@@ -1,7 +1,7 @@
 # 凌镜 LingMirror — 文档索引
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 最后更新：2026-06-24
+> 最后更新：2026-06-29
 
 ---
 
@@ -11,12 +11,18 @@
 |------|------|
 | [项目状态](PROJECT_STATUS.md) | 当前完成进度、功能清单 |
 | [全站功能清单](FUNCTION_INVENTORY.md) | 当前页面、操作和 API 功能梳理 |
+| [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | 长期方向、阶段路线、Owner 控制规则和 Agent 提案检查表 |
+| [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | Day 1-7 完整开发计划，5 条并行线 |
+| [每日战情板](7_DAY_BATTLE_BOARD.md) | 7 天每日进度追踪 |
 | [Agent Commerce OS 完整蓝图](LINGMIRROR_AGENT_COMMERCE_OS_BLUEPRINT.md) | 完整产品定位、系统分层、开发路径 |
 | [产品愿景与 MVP](PRODUCT_VISION_AND_MVP.md) | 产品定位、第一可用版本定义 |
 | [路线图](ROADMAP.md) | Phase 0–8 详细阶段规划 |
 | [项目治理与 Agent 协作规范](PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | 协作规则、验收标准 |
 | [Active Stack Policy](ACTIVE_STACK_POLICY.md) | Go + Next 活跃技术栈和旧栈边界 |
 | [AIOS 基础设施架构](aios-architecture.md) | AIOS 内核层 11 个基础设施模块的接口契约与实现路径 |
+| [经营闭环审计](ONE_PERSON_AGENT_COMPANY_LOOP_AUDIT.md) | 8 环节经营闭环当前可用性评估 |
+| [每日验收日志](DAILY_ACCEPTANCE_LOG.md) | Day 0-7 每日交付验收记录 |
+| [Claude Code 工作流](CLAUDE_CODE_AGENT_WORKFLOW.md) | Subagent 定义、并行策略、日终验证 |
 
 ## 🧠 知识库 (Knowledge Base)
 

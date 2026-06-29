@@ -86,13 +86,78 @@ func (pq *priorityQueue) Pop() interface{} {
 	return item
 }
 
+// Backend is the pluggable storage backend for the event bus.
+type Backend interface {
+	Enqueue(event Event) error
+	Dequeue() (Event, bool)
+	Len() int
+	Close()
+}
+
+// InProcessBackend is the default in-process priority queue backend. It
+// implements the Backend interface using a heap-based priority queue with
+// sync.Cond for blocking dequeue operations.
+type InProcessBackend struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	queue  priorityQueue
+	closed bool
+}
+
+// NewInProcessBackend creates a new InProcessBackend.
+func NewInProcessBackend() *InProcessBackend {
+	b := &InProcessBackend{
+		queue: make(priorityQueue, 0),
+	}
+	b.cond = sync.NewCond(&b.mu)
+	return b
+}
+
+// Enqueue adds an event to the priority queue and signals a waiting dequeue.
+func (b *InProcessBackend) Enqueue(event Event) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	item := &priorityQueueItem{event: event}
+	heap.Push(&b.queue, item)
+	b.cond.Signal()
+	return nil
+}
+
+// Dequeue removes and returns the highest-priority event, blocking until one
+// is available. Returns false if the backend has been closed.
+func (b *InProcessBackend) Dequeue() (Event, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for b.queue.Len() == 0 {
+		if b.closed {
+			return Event{}, false
+		}
+		b.cond.Wait()
+	}
+	item := heap.Pop(&b.queue).(*priorityQueueItem)
+	return item.event, true
+}
+
+// Len returns the number of events currently in the queue.
+func (b *InProcessBackend) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.queue.Len()
+}
+
+// Close marks the backend as closed and wakes all waiting goroutines.
+func (b *InProcessBackend) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
+	b.cond.Broadcast()
+}
+
 // Bus is the central event bus.
 type Bus struct {
 	mu             sync.RWMutex
 	subs           []*subscription
-	queueMu        sync.Mutex
-	queue          priorityQueue
-	queueCond      *sync.Cond
+	backend        Backend
 	db             *gorm.DB
 	logger         *zap.Logger
 	bufferSize     int
@@ -119,16 +184,20 @@ func WithWorkers(n int) BusOption {
 	return func(b *Bus) { b.workerCount = n }
 }
 
+// WithBackend sets a custom Backend implementation.
+func WithBackend(b Backend) BusOption {
+	return func(bus *Bus) { bus.backend = b }
+}
+
 // New creates a new event bus.
 func New(logger *zap.Logger, opts ...BusOption) *Bus {
 	b := &Bus{
 		logger:      logger,
 		bufferSize:  256,
 		workerCount: 4,
-		queue:       make(priorityQueue, 0),
+		backend:     NewInProcessBackend(),
 		done:        make(chan struct{}),
 	}
-	b.queueCond = sync.NewCond(&b.queueMu)
 	for _, opt := range opts {
 		opt(b)
 	}
@@ -148,7 +217,7 @@ func (b *Bus) Start(ctx context.Context) {
 // Stop shuts down the event bus gracefully.
 func (b *Bus) Stop() {
 	close(b.done)
-	b.queueCond.Broadcast() // wake all workers so they see done
+	b.backend.Close()
 	b.logger.Info("event bus stopped")
 }
 
@@ -187,19 +256,15 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 		}
 	}
 
-	item := &priorityQueueItem{event: evt}
-
-	// Enqueue to the priority queue with backpressure.
+	// Enqueue to the backend with backpressure.
 	// If the queue is at capacity the event is dropped immediately and
 	// ErrQueueFull is returned to the caller.
-	b.queueMu.Lock()
-	if b.bufferSize > 0 && b.queue.Len() >= b.bufferSize {
-		b.queueMu.Unlock()
+	if b.bufferSize > 0 && b.backend.Len() >= b.bufferSize {
 		return "", ErrQueueFull
 	}
-	heap.Push(&b.queue, item)
-	b.queueCond.Signal()
-	b.queueMu.Unlock()
+	if err := b.backend.Enqueue(evt); err != nil {
+		return "", err
+	}
 
 	return evt.ID, nil
 }
@@ -260,29 +325,14 @@ func (b *Bus) workerLoop(ctx context.Context, id int) {
 		default:
 		}
 
-		// Wait for an item on the priority queue.
-		b.queueMu.Lock()
-		for b.queue.Len() == 0 {
-			b.queueCond.Wait()
-			// Re-check shutdown signals after Cond.Wait returns (woken by
-			// Broadcast on Stop or Signal from a new enqueue).
-			select {
-			case <-b.done:
-				b.queueMu.Unlock()
-				b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
-				return
-			case <-ctx.Done():
-				b.queueMu.Unlock()
-				b.logger.Debug("event bus worker stopped (context cancelled)", zap.Int("worker_id", id))
-				return
-			default:
-			}
+		// Dequeue blocks until an event is available or the backend is closed.
+		evt, ok := b.backend.Dequeue()
+		if !ok {
+			b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
+			return
 		}
-		item := heap.Pop(&b.queue).(*priorityQueueItem)
-		b.queueMu.Unlock()
 
 		// Dispatch to all matching subscribers sequentially within this worker.
-		evt := item.event
 		b.mu.RLock()
 		for _, sub := range b.subs {
 			if matchTopic(sub.topic, evt.Topic) {

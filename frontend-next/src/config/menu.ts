@@ -25,6 +25,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/purchase', icon: 'ShoppingCartOutlined', label: '采购订单' },
       { key: '/purchase/suggestions', label: '采购建议' },
       { key: '/sourcing', icon: 'SearchOutlined', label: 'AI 选品' },
+      { key: '/candidates', label: '候选商品' },
     ],
   },
   {
