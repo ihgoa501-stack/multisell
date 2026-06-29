@@ -32,7 +32,15 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
+	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/domain/mock"
+	"github.com/lingmirror/backend-go/internal/domain/owner"
+
+	"github.com/lingmirror/backend-go/internal/domain/completeness"
+	"github.com/lingmirror/backend-go/internal/domain/profit"
+	"github.com/lingmirror/backend-go/internal/domain/loop"
+
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
 	"github.com/lingmirror/backend-go/internal/domain/metabolism"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
@@ -100,10 +108,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
-	// ==========================================================
-	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
-	// ==========================================================
-
+	// ===================================================	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
+	// ===================================================
 	// Create event bus (with optional outbox persistence).
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
 	busCtx, busCancel := context.WithCancel(context.Background())
@@ -139,10 +145,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// and handles reverse logistics via HandleAftersaleReturn).
 	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker)
 
-	// ==========================================================
-	// Event Bus Subscriptions: agent triggers + pipeline chains
-	// ==========================================================
-
+	// ===================================================	// Event Bus Subscriptions: agent triggers + pipeline chains
+	// ===================================================
 	// scheduler.tick.A5 → orchestrator runs A5 stock_alert
 	bus.Subscribe("scheduler.tick.A5", func(ctx context.Context, evt eventbus.Event) error {
 		_, err := aiOrch.Run(&ai.RunAgentRequest{
@@ -329,10 +333,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return nil
 	})
 
-	// ==========================================================
-	// Schedule all agent periodic tasks
-	// ==========================================================
-
+	// ===================================================	// Schedule all agent periodic tasks
+	// ===================================================
 	sched.Register(scheduler.Task{
 		ID: "tick-g0", AgentID: "G0", DecisionPoint: "system_health",
 		Interval: time.Minute * 5, Description: "协调仲裁健康检查",
@@ -408,10 +410,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
 
-	// ==========================================================
-	// HTTP routes
-	// ==========================================================
-
+	// ===================================================	// HTTP routes
+	// ===================================================
 	// API v1 routes
 	api := r.Group("/api/v1")
 
@@ -540,9 +540,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	var prismSvc prismadapter.PrismService
 	prismStrict := cfg.Prism.Strict
 	if cfg.Prism.Enabled && cfg.Prism.BaseURL != "" {
-		timeout := time.Duration(cfg.Prism.Timeout) * time.Second
-		if timeout <= 0 {
-			timeout = 30 * time.Second
+			timeout := time.Duration(cfg.Prism.Timeout) * time.Second
+			if timeout <= 0 {
+				timeout = 30 * time.Second
 		}
 		prismSvc = prismadapter.NewClient(cfg.Prism.BaseURL, cfg.Prism.APIKey, timeout)
 		logger.Info("Prism client initialized", zap.String("base_url", cfg.Prism.BaseURL), zap.Bool("strict", prismStrict))
@@ -550,6 +550,24 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		logger.Info("Prism client disabled")
 	}
 	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+
+	candidate.RegisterRoutes(protected, db, logger)
+	completeness.RegisterRoutes(protected, db, logger)
+	profit.RegisterRoutes(protected, db, logger)
+	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+	mock.RegisterRoutes(protected, db, logger)
+	// Auto-seed mock demo data on startup
+	func() {
+		ms := mock.NewService(db, logger.Named("mock"))
+		if err := ms.SeedMockData(); err != nil {
+			logger.Warn("mock data seed failed", zap.Error(err))
+		}
+	}()
+
+	owner.RegisterRoutes(protected, db, logger)
+
+
+
 	shipping.RegisterRoutes(protected, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
 	order.RegisterRoutes(protected, db, logger)

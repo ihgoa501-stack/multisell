@@ -6,7 +6,9 @@
 
 ## 当前结论
 
-凌镜已完成全站新技术栈迁移。当前唯一活跃开发线是：
+凌镜已完成全站新技术栈迁移，并完成一人Agent公司7天MVP最小经营闭环的核心接线。
+
+当前唯一活跃开发线是：
 
 - Backend: `backend-go/`，Go / Gin / GORM / PostgreSQL
 - Frontend: `frontend-next/`，Next.js / React / TypeScript / Ant Design
@@ -188,6 +190,59 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - `docs/FRONTEND_PAGES_AND_ROUTING.md` — 新增 `/sourcing`、`/metabolism` 路由
 - `docs/PROJECT_STATUS.md` — 本次更新
 
+## 本次新增内容（2026-06-29，One-Person Agent Company MVP）
+
+### 新领域模块
+
+| 模块 | 位置 | Issues | 说明 |
+|------|------|--------|------|
+| **candidate** | `internal/domain/candidate/` | #57 | 候选商品CRUD管理 |
+| **completeness** | `internal/domain/completeness/` | #58 | 12维资料完整度评分引擎 |
+| **profit** | `internal/domain/profit/` | #59 | 利润汇总（采购+物流+平台费+关税） |
+| **loop** | `internal/domain/loop/` | #60 | 评估链路：完整度→利润→建议→listingtask |
+| **mock** | `internal/domain/mock/` | #62 | Mock订单/结算/同步状态数据 |
+| **owner** | `internal/domain/owner/` | #61 | Owner总控台聚合数据API |
+
+### 新增迁移与种子数据
+
+- `migrations/000006_candidate_tables.up.sql` — candidate_product/completeness_check/profit_summary/listing_recommendation 表 + 20条种子商品
+- `migrations/000007_mock_tables.up.sql` — mock_order/mock_settlement/mock_sync_status 表
+- Mock数据在服务启动时自动注入
+
+### 新增前端页面
+
+- `/owner` — Owner经营总控台（风险摘要/Agent建议/审批操作/平台同步状态）
+- 菜单新增"经营闭环"组
+- `/candidates` 已接入后端API
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./...` | ✅ 通过（含新包测试） |
+| `go vet ./...` | ✅ 通过 |
+| `npm test` | ✅ 77 tests 通过 |
+| `npm run build` | ✅ 通过 |
+| `npm run lint` | 1 error / 8 warnings（均为遗留文件） |
+
+### 关键API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/candidates | 候选商品列表 |
+| POST | /api/v1/completeness/check/:productId | 完整度检查 |
+| GET | /api/v1/profit/summary/:productId | 利润汇总 |
+| POST | /api/v1/loop/evaluate/:productId | 全链路评估 |
+| GET | /api/v1/owner/risk-summary | 风险汇总 |
+| GET | /api/v1/owner/suggestions | Agent建议 |
+| POST | /api/v1/mock/seed | Mock数据注入 |
+
+### 安全边界
+
+- 所有新API受JWT保护
+- Listingtask初始为`blocked`状态，需Owner审批
+- 无真实外部发布/改价/改库存代码
+- 所有操作可通过operationlog追溯
 ## 本次更新内容（2026-06-29，7 Agent 并行执行）
 
 ### P1 缺口修复
