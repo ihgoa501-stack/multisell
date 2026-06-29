@@ -12,17 +12,19 @@ import (
 
 // Service provides compliance domain business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
-	adapter *A7Adapter
+	db              *gorm.DB
+	logger          *zap.Logger
+	adapter         *A7Adapter
+	freshnessWriter *FreshnessWriter
 }
 
 // NewService creates a new compliance Service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{
-		db:      db,
-		logger:  logger.Named("compliance"),
-		adapter: NewA7Adapter(),
+		db:              db,
+		logger:          logger.Named("compliance"),
+		adapter:         NewA7Adapter(),
+		freshnessWriter: NewFreshnessWriter(db),
 	}
 }
 
@@ -155,7 +157,15 @@ func (s *Service) SaveResult(result *CheckResult) error {
 	if err != nil {
 		return err
 	}
-	return s.db.Create(result).Error
+	if err := s.db.Create(result).Error; err != nil {
+		return err
+	}
+
+	// Non-fatal: freshness is advisory.
+	if err := s.freshnessWriter.RecordVerification(result.ProductID, result.Status); err != nil {
+		s.logger.Warn("failed to update freshness", zap.Int64("product_id", result.ProductID), zap.Error(err))
+	}
+	return nil
 }
 
 // ListResults returns a paginated, filtered list of compliance check results.
