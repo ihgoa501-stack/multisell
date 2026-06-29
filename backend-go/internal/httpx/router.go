@@ -430,8 +430,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	protected := api.Group("")
 	protected.Use(middleware.Auth(cfg))
 
-	// RBAC routes
-	rbac.RegisterRoutes(protected, db, logger)
+	// RBAC: current user permissions (accessible to all authenticated users)
+	rbac.RegisterPublicRoutes(protected, db, logger)
+
+	// RBAC: admin routes (requires rbac.manage permission)
+	rbacAdminGroup := protected.Group("")
+	rbacAdminGroup.Use(middleware.RequirePermission(db, "rbac.manage"))
+	rbac.RegisterRoutes(rbacAdminGroup, db, logger)
 
 	// Agent routes (wired through the AI orchestrator)
 	agent.RegisterRoutes(protected, db, logger, aiOrch)
@@ -570,10 +575,22 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	shipping.RegisterRoutes(protected, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
-	order.RegisterRoutes(protected, db, logger)
-	orderimport.RegisterRoutes(protected, db, logger)
-	settlement.RegisterRoutes(protected, db, logger)
-	finance.RegisterRoutes(protected, db, logger)
+
+	// Order routes (requires order.read permission)
+	orderGroup := protected.Group("")
+	orderGroup.Use(middleware.RequirePermission(db, "order.read"))
+	order.RegisterRoutes(orderGroup, db, logger)
+	orderimport.RegisterRoutes(orderGroup, db, logger)
+
+	// Settlement routes (requires finance.read permission)
+	settlementGroup := protected.Group("")
+	settlementGroup.Use(middleware.RequirePermission(db, "finance.read"))
+	settlement.RegisterRoutes(settlementGroup, db, logger)
+
+	// Finance routes (requires finance.read permission)
+	financeGroup := protected.Group("")
+	financeGroup.Use(middleware.RequirePermission(db, "finance.read"))
+	finance.RegisterRoutes(financeGroup, db, logger)
 	decision.RegisterRoutes(protected, db, logger)
 	allocation.RegisterRoutes(protected, db, logger)
 	exceptions.RegisterRoutes(protected, db, logger)
