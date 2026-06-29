@@ -95,7 +95,7 @@ export default function MetabolismPage() {
     refetchInterval: 30_000,
   });
 
-  const logs = listData?.data ?? [];
+  const logs = useMemo(() => listData?.data ?? [], [listData]);
   const total = listData?.total ?? 0;
 
   // ── Stats computed from the first page of logs ──

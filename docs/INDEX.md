@@ -58,6 +58,7 @@
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
+| [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [AgentOS Phase 1 实现计划](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) | 第一版工程骨架总控台 |
 | [Agent Commerce 动作中枢计划](superpowers/plans/2026-06-22-agent-commerce-action-center.md) | Phase 2 动作提案、审批、执行、复盘 |
 | [核心模块架构](PERMISSIONS_AND_AUDIT.md) | 权限系统 + 审计日志设计 |
