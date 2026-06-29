@@ -20,6 +20,7 @@ type Config struct {
 	Log      LogConfig      `mapstructure:"log"`
 	Sentry   SentryConfig   `mapstructure:"sentry"`
 	LLM      LLMConfig      `mapstructure:"llm"`
+	Prism    PrismConfig    `mapstructure:"prism"`
 	EncryptionKey string         `mapstructure:"encryption_key"`
 }
 
@@ -83,6 +84,15 @@ type SentryConfig struct {
 	DSN string `mapstructure:"dsn"`
 }
 
+// PrismConfig holds Prism image generation engine settings.
+type PrismConfig struct {
+	BaseURL string `mapstructure:"base_url"`
+	APIKey  string `mapstructure:"api_key"`
+	Timeout int    `mapstructure:"timeout"` // seconds
+	Enabled bool   `mapstructure:"enabled"`
+	Strict  bool   `mapstructure:"strict"` // block on service error vs warn+continue
+}
+
 // DSN returns the PostgreSQL connection string.
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf(
@@ -118,6 +128,11 @@ func Load() (*Config, error) {
 	v.BindEnv("sentry.dsn", "SENTRY_DSN")
 	v.BindEnv("cors.allowed_origins", "CORS_ALLOWED_ORIGINS")
 	v.BindEnv("metrics.enabled", "METRICS_ENABLED")
+	v.BindEnv("prism.base_url", "PRISM_BASE_URL")
+	v.BindEnv("prism.api_key", "PRISM_API_KEY")
+	v.BindEnv("prism.timeout", "PRISM_TIMEOUT")
+	v.BindEnv("prism.enabled", "PRISM_ENABLED")
+	v.BindEnv("prism.strict", "PRISM_STRICT")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

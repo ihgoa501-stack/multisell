@@ -62,6 +62,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
+	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
@@ -534,7 +535,21 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
-	listingtask.RegisterRoutes(protected, db, logger)
+
+	// Initialize Prism client (config-driven; nil if disabled).
+	var prismSvc prismadapter.PrismService
+	prismStrict := cfg.Prism.Strict
+	if cfg.Prism.Enabled && cfg.Prism.BaseURL != "" {
+		timeout := time.Duration(cfg.Prism.Timeout) * time.Second
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
+		prismSvc = prismadapter.NewClient(cfg.Prism.BaseURL, cfg.Prism.APIKey, timeout)
+		logger.Info("Prism client initialized", zap.String("base_url", cfg.Prism.BaseURL), zap.Bool("strict", prismStrict))
+	} else {
+		logger.Info("Prism client disabled")
+	}
+	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
 	shipping.RegisterRoutes(protected, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
 	order.RegisterRoutes(protected, db, logger)
