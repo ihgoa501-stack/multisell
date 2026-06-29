@@ -151,7 +151,7 @@ func (s *Service) SaveResult(result *CheckResult) error {
 	err := s.db.Exec(
 		`DELETE FROM compliance_check_result
 		 WHERE product_id = ? AND COALESCE(platform_id, 0) = ?
-		   AND check_type = ? AND scanned_at::date = ?::date`,
+		   AND check_type = ? AND DATE(scanned_at) = DATE(?)`,
 		result.ProductID, platformVal, result.CheckType, result.ScannedAt,
 	).Error
 	if err != nil {

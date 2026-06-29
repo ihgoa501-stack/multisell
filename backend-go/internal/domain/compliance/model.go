@@ -40,7 +40,7 @@ type CheckResult struct {
 	RiskLevel        *string          `json:"risk_level,omitempty"`
 	RuleVersion      int              `json:"rule_version" gorm:"default:1"`
 	Evidence         []EvidenceItem   `json:"evidence,omitempty" gorm:"serializer:json"`
-	ScannedAt        time.Time        `json:"scanned_at" gorm:"default:NOW();not null"`
+	ScannedAt        time.Time        `json:"scanned_at" gorm:"column:scanned_at;not null"`
 	NextScanAt       *time.Time       `json:"next_scan_at,omitempty"`
 	IsSuppressed     bool             `json:"is_suppressed" gorm:"default:false"`
 	SuppressedReason *string          `json:"suppressed_reason,omitempty"`
