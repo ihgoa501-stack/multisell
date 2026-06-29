@@ -63,9 +63,10 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
-		"github.com/lingmirror/backend-go/internal/domain/tariff"
+	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
+	"github.com/lingmirror/backend-go/internal/migration"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
@@ -97,9 +98,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Health check
 	r.GET("/api/health", func(c *gin.Context) {
+		mc := migration.NewChecker(db, logger)
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"version": "0.1.0",
+			"status":             "ok",
+			"version":            cfg.Server.Version,
+			"migration_version":  mc.CurrentVersion(),
+			"migration_expected": mc.ExpectedVersion(),
+			"db_reachable":       true,
 		})
 	})
 
@@ -417,9 +422,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// API v1 Health check (public)
 	api.GET("/health", func(c *gin.Context) {
+		mc := migration.NewChecker(db, logger)
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"version": "0.1.0",
+			"status":             "ok",
+			"version":            cfg.Server.Version,
+			"migration_version":  mc.CurrentVersion(),
+			"migration_expected": mc.ExpectedVersion(),
+			"db_reachable":       true,
 		})
 	})
 

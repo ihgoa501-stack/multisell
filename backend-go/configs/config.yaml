@@ -1,6 +1,7 @@
 server:
   port: 8080
   mode: debug  # debug | release | test
+  version: "0.2.1"
 
 database:
   host: localhost
@@ -50,3 +51,7 @@ prism:
 log:
   level: debug
   format: console  # console | json
+
+schemadrift:
+  enabled: true
+  on_drift: "warn"

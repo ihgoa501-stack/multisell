@@ -11,6 +11,7 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
+<<<<<<< HEAD
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
@@ -22,6 +23,19 @@ type Config struct {
 	LLM      LLMConfig      `mapstructure:"llm"`
 	Prism    PrismConfig    `mapstructure:"prism"`
 	EncryptionKey string         `mapstructure:"encryption_key"`
+=======
+	Server      ServerConfig      `mapstructure:"server"`
+	Database    DatabaseConfig    `mapstructure:"database"`
+	Redis       RedisConfig       `mapstructure:"redis"`
+	CORS        CORSConfig        `mapstructure:"cors"`
+	Metrics     MetricsConfig     `mapstructure:"metrics"`
+	JWT         JWTConfig         `mapstructure:"jwt"`
+	Log         LogConfig         `mapstructure:"log"`
+	Sentry      SentryConfig      `mapstructure:"sentry"`
+	LLM         LLMConfig         `mapstructure:"llm"`
+	SchemaDrift SchemaDriftConfig `mapstructure:"schemadrift"`
+	EncryptionKey string          `mapstructure:"encryption_key"`
+>>>>>>> dd01bb69 (feat: add schema drift detection and migration version health check)
 }
 
 // LLMConfig holds LLM-related settings.
@@ -33,8 +47,15 @@ type LLMConfig struct {
 
 // ServerConfig holds server-specific settings.
 type ServerConfig struct {
-	Port int    `mapstructure:"port"`
-	Mode string `mapstructure:"mode"`
+	Port    int    `mapstructure:"port"`
+	Mode    string `mapstructure:"mode"`
+	Version string `mapstructure:"version"`
+}
+
+// SchemaDriftConfig holds schema drift detection settings.
+type SchemaDriftConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	OnDrift string `mapstructure:"on_drift"` // "warn" | "panic" | "log_only"
 }
 
 // DatabaseConfig holds database connection settings.
