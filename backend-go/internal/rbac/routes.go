@@ -6,7 +6,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// RegisterRoutes registers RBAC routes on the given router group.
+// RegisterRoutes registers RBAC admin routes on the given router group.
+// These routes require the rbac.manage permission (applied by caller).
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	svc := NewService(db, logger)
 	h := NewHandler(svc)
@@ -29,11 +30,16 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		rbac.PUT("/permissions/:id", h.UpdatePermission)
 		rbac.DELETE("/permissions/:id", h.DeletePermission)
 
-		// Current user permissions
-		rbac.GET("/current/permissions", h.GetCurrentUserPermissions)
-
 		// User-Role assignment (placeholder auth to keep routes functional)
 		rbac.GET("/users/:id/roles", h.GetUserRoles)
 		rbac.POST("/users/:id/roles", h.AssignUserRoles)
 	}
+}
+
+// RegisterPublicRoutes registers RBAC routes accessible to all authenticated users
+// without requiring the rbac.manage permission.
+func RegisterPublicRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+	svc := NewService(db, logger)
+	h := NewHandler(svc)
+	rg.GET("/rbac/current/permissions", h.GetCurrentUserPermissions)
 }

@@ -3,13 +3,15 @@
 package impl
 
 import (
+	"context"
+
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Agent is the interface that all agent implementations must satisfy.
 type Agent interface {
-	Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error)
+	Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error)
 }
 
 // All returns all registered agent implementations keyed by agent ID.
