@@ -80,7 +80,8 @@ func TestOrchestrator_HandleRecommendEvent(t *testing.T) {
 		return nil
 	})
 
-	orch := NewOrchestrator(bus, nil, nil, nil)
+	// nil DB — orchestrator should still publish the event with a generated flow_id.
+	orch := NewOrchestrator(bus, nil, logger, nil)
 
 	payload := map[string]interface{}{
 		"id":         int64(42),
@@ -118,6 +119,81 @@ func TestOrchestrator_HandleRecommendEvent(t *testing.T) {
 		src, ok := published.Payload["source_url"].(string)
 		if !ok || src != "https://detail.1688.com/offer/123.html" {
 			t.Errorf("expected source_url in payload, got %v", published.Payload["source_url"])
+		}
+		// flow_id must always be present so downstream events can correlate.
+		flowID, ok := published.Payload["flow_id"].(string)
+		if !ok || flowID == "" {
+			t.Errorf("expected non-empty flow_id in payload, got %v (type %T)",
+				published.Payload["flow_id"], published.Payload["flow_id"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for supplychain.quote_requested event")
+	}
+}
+
+// TestOrchestrator_HandleRecommendEvent_CreatesFlow verifies that when a DB is
+// configured, HandleRecommendEvent persists a supply_chain_flow record with
+// source_type="sourcing_recommend" and uses its ID as the flow_id in the
+// published event payload.
+func TestOrchestrator_HandleRecommendEvent_CreatesFlow(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger, eventbus.WithWorkers(1), eventbus.WithBufferSize(10))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus.Start(ctx)
+
+	received := make(chan eventbus.Event, 1)
+	bus.Subscribe("supplychain.quote_requested", func(ctx context.Context, evt eventbus.Event) error {
+		received <- evt
+		return nil
+	})
+
+	db := newTestFlowDB(t)
+	orch := NewOrchestrator(bus, db, logger, nil)
+
+	payload := map[string]interface{}{
+		"id":         float64(77),
+		"source_url": "https://detail.1688.com/offer/77.html",
+		"title":      "DB-backed Product",
+		"score":      float64(9),
+	}
+
+	evt := eventbus.Event{
+		Topic:   "sourcing.recommend",
+		Source:  "A8",
+		Payload: payload,
+	}
+
+	if err := orch.HandleRecommendEvent(ctx, evt); err != nil {
+		t.Fatalf("HandleRecommendEvent returned error: %v", err)
+	}
+
+	// Verify the flow record was persisted.
+	var flows []SupplyChainFlow
+	if err := db.Where("source_type = ?", "sourcing_recommend").Find(&flows).Error; err != nil {
+		t.Fatalf("query flows: %v", err)
+	}
+	if len(flows) != 1 {
+		t.Fatalf("expected 1 sourcing_recommend flow, got %d", len(flows))
+	}
+	if flows[0].SourceID != "77" {
+		t.Errorf("expected source_id '77', got %s", flows[0].SourceID)
+	}
+	if flows[0].Status != "pending" {
+		t.Errorf("expected status 'pending', got %s", flows[0].Status)
+	}
+
+	// Verify the published event's flow_id matches the persisted flow's ID.
+	select {
+	case published := <-received:
+		flowID, ok := published.Payload["flow_id"].(string)
+		if !ok {
+			t.Fatalf("expected flow_id string in payload, got %v (type %T)",
+				published.Payload["flow_id"], published.Payload["flow_id"])
+		}
+		if flowID != flows[0].ID {
+			t.Errorf("flow_id mismatch: payload=%s, db=%s", flowID, flows[0].ID)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for supplychain.quote_requested event")
@@ -459,5 +535,68 @@ func TestOrchestrator_HandleStockCritical_MissingSkuID(t *testing.T) {
 	db.Model(&SupplyChainFlow{}).Count(&count)
 	if count != 0 {
 		t.Errorf("expected 0 flows for missing sku_id, got %d", count)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrator <-> EscalationManager integration (Issue #35)
+// ---------------------------------------------------------------------------
+
+func TestOrchestrator_Escalate_WithManager(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	orch := NewOrchestrator(bus, nil, logger, nil)
+
+	em := NewEscalationManager(logger, nil)
+	orch.SetEscalationManager(em)
+
+	// Level 1 (skip_and_switch) returns nil without needing a hub.
+	evt := EscalationEvent{
+		FlowID:      "flow-esc-1",
+		Level:       EscalationLevel1,
+		Error:       "carrier API timeout",
+		ChannelName: "CNAIR",
+	}
+
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate with manager should return nil for L1, got: %v", err)
+	}
+}
+
+func TestOrchestrator_Escalate_WithoutManager(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	// No escalation manager wired.
+	orch := NewOrchestrator(bus, nil, logger, nil)
+
+	evt := EscalationEvent{
+		FlowID: "flow-esc-2",
+		Level:  EscalationLevel3,
+		Error:  "system-wide failure",
+	}
+
+	// Should be a no-op (nil) rather than panicking.
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate without manager should return nil, got: %v", err)
+	}
+}
+
+func TestOrchestrator_Escalate_Level0PromotionChain(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	orch := NewOrchestrator(bus, nil, logger, nil)
+	orch.SetEscalationManager(NewEscalationManager(logger, nil))
+
+	// Level 0 with attempts exhausted should auto-promote to Level 1 and
+	// ultimately return nil (the skip_and_switch handler returns nil).
+	evt := EscalationEvent{
+		FlowID:  "flow-esc-3",
+		Level:   EscalationLevel0,
+		Error:   "transient carrier error",
+		Attempt: 3,
+	}
+
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate L0→L1 promotion should return nil, got: %v", err)
 	}
 }

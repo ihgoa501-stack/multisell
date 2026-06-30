@@ -3,6 +3,7 @@ package supplier
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
@@ -91,7 +92,210 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.db.WithContext(ctx).Delete(&Supplier{}, id).Error
 }
 
-// ── ProductSupplier ──────────────────────────────────────────────
+// ── Supplier Score ─────────────────────────────────────────────────
+
+// purchaseOrderRow is a minimal projection of purchase_order for scoring.
+type purchaseOrderRow struct {
+	ID               int64
+	Status           string
+	ExpectedDelivery *string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// purchaseOrderItemRow is a minimal projection of purchase_order_item for scoring.
+type purchaseOrderItemRow struct {
+	PurchaseOrderID int64
+	Quantity        int
+	ReceivedQty     int
+}
+
+// GetScore returns the current supplier score.
+func (s *Service) GetScore(ctx context.Context, supplierID int64) (*SupplierScore, error) {
+	var score SupplierScore
+	if err := s.db.WithContext(ctx).Where("supplier_id = ?", supplierID).First(&score).Error; err != nil {
+		return nil, err
+	}
+	return &score, nil
+}
+
+// RecalculateScore computes all sub-scores from purchase order history and upserts the result.
+func (s *Service) RecalculateScore(ctx context.Context, supplierID int64) (*SupplierScore, error) {
+	now := time.Now()
+
+	// 1. Fetch all purchase orders for this supplier
+	var orders []purchaseOrderRow
+	if err := s.db.WithContext(ctx).Table("purchase_order").
+		Where("supplier_id = ?", supplierID).
+		Order("created_at ASC").
+		Find(&orders).Error; err != nil {
+		return nil, err
+	}
+
+	totalOrders := len(orders)
+	if totalOrders == 0 {
+		score := &SupplierScore{
+			SupplierID: supplierID,
+			DataFreshness: 0,
+		}
+		return s.upsertScore(ctx, score)
+	}
+
+	// 2. Fetch all items for these orders
+	orderIDs := make([]int64, 0, totalOrders)
+	var lastOrderDate time.Time
+	for _, o := range orders {
+		orderIDs = append(orderIDs, o.ID)
+		if o.CreatedAt.After(lastOrderDate) {
+			lastOrderDate = o.CreatedAt
+		}
+	}
+
+	var items []purchaseOrderItemRow
+	if err := s.db.WithContext(ctx).Table("purchase_order_item").
+		Where("purchase_order_id IN ?", orderIDs).
+		Find(&items).Error; err != nil {
+		return nil, err
+	}
+
+	// 3. Calculate on-time delivery rate
+	var completedCount int
+	var onTimeCount int
+	var totalLeadTimeDays float64
+	var completedWithLeadTime int
+
+	for _, o := range orders {
+		if o.Status == "completed" || o.Status == "partially_received" {
+			completedCount++
+
+			// On-time: expected_delivery exists and completed (updated_at) <= expected
+			if o.ExpectedDelivery != nil && *o.ExpectedDelivery != "" {
+				expectedDate, err := time.Parse("2006-01-02", *o.ExpectedDelivery)
+				if err == nil {
+					if !o.UpdatedAt.After(expectedDate) {
+						onTimeCount++
+					}
+				}
+			}
+
+			// Lead time days for completed orders
+			leadDays := o.UpdatedAt.Sub(o.CreatedAt).Hours() / 24
+			if leadDays > 0 {
+				totalLeadTimeDays += leadDays
+				completedWithLeadTime++
+			}
+		}
+	}
+
+	var onTimeDeliveryRate float64
+	if completedCount > 0 {
+		onTimeDeliveryRate = float64(onTimeCount) / float64(completedCount) * 100
+	}
+
+	// 4. Calculate order fulfillment %
+	itemFulfillmentSum := 0.0
+	itemCount := 0
+	itemByOrder := make(map[int64][]purchaseOrderItemRow)
+	for _, it := range items {
+		itemByOrder[it.PurchaseOrderID] = append(itemByOrder[it.PurchaseOrderID], it)
+	}
+	// Consider only orders with items
+	for _, oid := range orderIDs {
+		its, ok := itemByOrder[oid]
+		if !ok || len(its) == 0 {
+			continue
+		}
+		var totalQty, totalReceived int
+		for _, it := range its {
+			totalQty += it.Quantity
+			totalReceived += it.ReceivedQty
+		}
+		if totalQty > 0 {
+			itemFulfillmentSum += float64(totalReceived) / float64(totalQty) * 100
+			itemCount++
+		}
+	}
+
+	var orderFulfillmentPct float64
+	if itemCount > 0 {
+		orderFulfillmentPct = itemFulfillmentSum / float64(itemCount)
+	}
+
+	// 5. Average lead time days
+	var avgLeadTimeDays float64
+	if completedWithLeadTime > 0 {
+		avgLeadTimeDays = totalLeadTimeDays / float64(completedWithLeadTime)
+	}
+
+	// 6. Composite reliability score (weighted average)
+	// Weights: on_time=35%, fulfillment=25%, lead_time=20%, quality=10%, communication=10%
+	qualityPassRate := 0.0       // No quality data from purchase orders — defaults to 0
+	communicationScore := 0.0    // No communication tracking — defaults to 0
+
+	// Lead time score: inverse — shorter is better, cap at 100
+	// Map avg_lead_time_days to a score: 30 days → 0, 0 days → 100
+	var leadTimeScore float64
+	if avgLeadTimeDays <= 0 {
+		leadTimeScore = 100
+	} else if avgLeadTimeDays >= 30 {
+		leadTimeScore = 0
+	} else {
+		leadTimeScore = (1 - avgLeadTimeDays/30) * 100
+	}
+
+	reliabilityScore := onTimeDeliveryRate*0.35 +
+		orderFulfillmentPct*0.25 +
+		leadTimeScore*0.20 +
+		qualityPassRate*0.10 +
+		communicationScore*0.10
+
+	// 7. Data freshness (days since last order)
+	dataFreshness := int(now.Sub(lastOrderDate).Hours() / 24)
+
+	score := &SupplierScore{
+		SupplierID:          supplierID,
+		OnTimeDeliveryRate:  onTimeDeliveryRate,
+		QualityPassRate:     qualityPassRate,
+		CommunicationScore:  communicationScore,
+		OrderFulfillmentPct: orderFulfillmentPct,
+		AvgLeadTimeDays:     avgLeadTimeDays,
+		ReliabilityScore:    reliabilityScore,
+		DataFreshness:       dataFreshness,
+		LastOrderDate:       &lastOrderDate,
+	}
+
+	return s.upsertScore(ctx, score)
+}
+
+func (s *Service) upsertScore(ctx context.Context, score *SupplierScore) (*SupplierScore, error) {
+	var existing SupplierScore
+	result := s.db.WithContext(ctx).Where("supplier_id = ?", score.SupplierID).First(&existing)
+	if result.Error != nil {
+		// Insert new
+		if err := s.db.WithContext(ctx).Create(score).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		// Update existing
+		score.ID = existing.ID
+		score.CreatedAt = existing.CreatedAt
+		if err := s.db.WithContext(ctx).Save(score).Error; err != nil {
+			return nil, err
+		}
+	}
+	return score, nil
+}
+
+// ListScoreboard returns all supplier scores ordered by reliability_score descending.
+func (s *Service) ListScoreboard(ctx context.Context) ([]SupplierScore, error) {
+	var scores []SupplierScore
+	if err := s.db.WithContext(ctx).
+		Order("reliability_score DESC, on_time_delivery_rate DESC").
+		Find(&scores).Error; err != nil {
+		return nil, err
+	}
+	return scores, nil
+}
 
 // ListProductSuppliers returns product-supplier associations for a product.
 func (s *Service) ListProductSuppliers(ctx context.Context, productID int64) ([]ProductSupplier, error) {

@@ -123,7 +123,27 @@ func (p *ProcessBatchDispatcher) handleProductRow(row map[string]string) error {
 	if row["sku"] == "" {
 		return fmt.Errorf("missing required field: sku")
 	}
-	// TODO: actual product creation/update logic
+
+	// Create product with name only — other fields deferred to product UI.
+	type productRow struct {
+		ID   int64  `gorm:"column:id;primaryKey;autoIncrement"`
+		Name string `gorm:"column:name;not null"`
+	}
+	prod := productRow{Name: row["name"]}
+	if err := p.db.Table("product").Create(&prod).Error; err != nil {
+		return fmt.Errorf("create product: %w", err)
+	}
+
+	// Create SKU linked to the new product.
+	type skuRow struct {
+		ProductID int64  `gorm:"column:product_id;not null"`
+		Code      string `gorm:"column:code"`
+	}
+	sku := skuRow{ProductID: prod.ID, Code: row["sku"]}
+	if err := p.db.Table("sku").Create(&sku).Error; err != nil {
+		return fmt.Errorf("create sku: %w", err)
+	}
+
 	p.logger.Debug("product row processed", zap.String("sku", row["sku"]), zap.String("name", row["name"]))
 	return nil
 }
@@ -133,7 +153,17 @@ func (p *ProcessBatchDispatcher) handleOrderRow(row map[string]string) error {
 	if row["order_no"] == "" {
 		return fmt.Errorf("missing required field: order_no")
 	}
-	// TODO: actual order creation/update logic
+
+	// Create order with order_no only — other fields come from platform sync.
+	type orderRow struct {
+		OrderNo string `gorm:"column:order_no;uniqueIndex"`
+		Status  string `gorm:"column:status;default:pending"`
+	}
+	ord := orderRow{OrderNo: row["order_no"], Status: "pending"}
+	if err := p.db.Table("sales_order").Create(&ord).Error; err != nil {
+		return fmt.Errorf("create order: %w", err)
+	}
+
 	p.logger.Debug("order row processed", zap.String("order_no", row["order_no"]))
 	return nil
 }
@@ -143,7 +173,34 @@ func (p *ProcessBatchDispatcher) handleInventoryRow(row map[string]string) error
 	if row["sku"] == "" {
 		return fmt.Errorf("missing required field: sku")
 	}
-	// TODO: actual inventory update logic
+
+	// Look up SKU by code.
+	type skuLookup struct {
+		ID  int64  `gorm:"column:id"`
+		Code string `gorm:"column:code"`
+	}
+	var found skuLookup
+	if err := p.db.Table("sku").Where("code = ?", row["sku"]).First(&found).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("sku not found: %s", row["sku"])
+		}
+		return fmt.Errorf("lookup sku: %w", err)
+	}
+
+	// Upsert inventory record for this SKU.
+	type inventoryRow struct {
+		SkuID    int64  `gorm:"column:sku_id;not null;unique"`
+		Quantity int    `gorm:"column:quantity;default:0"`
+	}
+	qty := 0
+	if v := row["quantity"]; v != "" {
+		fmt.Sscanf(v, "%d", &qty)
+	}
+	inv := inventoryRow{SkuID: found.ID, Quantity: qty}
+	if err := p.db.Table("inventory").Where("sku_id = ?", found.ID).Assign(inv).FirstOrCreate(&inv).Error; err != nil {
+		return fmt.Errorf("update inventory: %w", err)
+	}
+
 	p.logger.Debug("inventory row processed", zap.String("sku", row["sku"]))
 	return nil
 }

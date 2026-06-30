@@ -1,4 +1,4 @@
-CREATE TABLE tariff_rule (
+CREATE TABLE IF NOT EXISTS tariff_rule (
     id BIGSERIAL PRIMARY KEY,
     country_code VARCHAR(10) NOT NULL,
     hs_code VARCHAR(20),
@@ -18,6 +18,6 @@ CREATE TABLE tariff_rule (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_tariff_rule_country ON tariff_rule(country_code);
-CREATE INDEX idx_tariff_rule_status ON tariff_rule(status);
-CREATE INDEX idx_tariff_rule_country_status ON tariff_rule(country_code, status);
+CREATE INDEX IF NOT EXISTS idx_tariff_rule_country ON tariff_rule(country_code);
+CREATE INDEX IF NOT EXISTS idx_tariff_rule_status ON tariff_rule(status);
+CREATE INDEX IF NOT EXISTS idx_tariff_rule_country_status ON tariff_rule(country_code, status);

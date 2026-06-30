@@ -1,6 +1,10 @@
 /* === 凌镜 LingMirror — Design System Tokens === */
 /* Source: DESIGN.md — Do not edit without updating DESIGN.md */
 
+/* Load DM Sans (body) from Google Fonts + Cabinet Grotesk (headings) from Fontshare */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700&display=swap');
+
 /* ===== Color Tokens ===== */
 :root {
   /* Brand */
