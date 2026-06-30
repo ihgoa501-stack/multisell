@@ -39,5 +39,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 
 		// Inventory transfers
 		group.GET("/transfers", h.ListTransfers)
+
+		// Cross-platform inventory sync (oversell prevention)
+		group.POST("/sync-cross-platform/:productId", h.SyncCrossPlatform)
+		group.GET("/oversell-report", h.OversellReport)
 	}
 }

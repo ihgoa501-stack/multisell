@@ -12,7 +12,7 @@ func int64Ptr(v int64) *int64 { return &v }
 func TestService_Task_CreateAndGetByID(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	task, err := svc.Create(&CreateTaskInput{
 		ProductID:         1,
@@ -49,7 +49,7 @@ func TestService_Task_CreateAndGetByID(t *testing.T) {
 func TestService_Task_Update(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10})
 	updated, err := svc.Update(task.ID, &UpdateTaskInput{
@@ -67,7 +67,7 @@ func TestService_Task_Update(t *testing.T) {
 func TestService_Task_List(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "blocked"})
 	svc.Create(&CreateTaskInput{ProductID: 2, PlatformID: 10, Status: "ready"})
@@ -96,7 +96,7 @@ func TestService_Task_List(t *testing.T) {
 func TestService_Task_Delete(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10})
 	if err := svc.Delete(task.ID); err != nil {
@@ -111,7 +111,7 @@ func TestService_Task_Delete(t *testing.T) {
 func TestService_Task_Execute(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "pending"})
 	svc.CreateItem(&CreateTaskItemInput{TaskID: task.ID, ProductID: 1, PlatformID: 10})
@@ -129,7 +129,7 @@ func TestService_Task_Execute(t *testing.T) {
 func TestService_Task_RetryFailed(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "failed"})
 	errMsg := "timeout"
@@ -155,7 +155,7 @@ func TestService_Task_RetryFailed(t *testing.T) {
 func TestService_Item_CreateGetUpdateDelete(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10})
 
@@ -203,7 +203,7 @@ func TestService_Item_CreateGetUpdateDelete(t *testing.T) {
 func TestService_Item_ListItems(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10})
 	svc.CreateItem(&CreateTaskItemInput{TaskID: task.ID, ProductID: 1, PlatformID: 10})

@@ -11,16 +11,18 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	CORS     CORSConfig     `mapstructure:"cors"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
-	Log      LogConfig      `mapstructure:"log"`
-	Sentry   SentryConfig   `mapstructure:"sentry"`
-	LLM      LLMConfig      `mapstructure:"llm"`
-	EncryptionKey string         `mapstructure:"encryption_key"`
+	Server      ServerConfig      `mapstructure:"server"`
+	Database    DatabaseConfig    `mapstructure:"database"`
+	Redis       RedisConfig       `mapstructure:"redis"`
+	CORS        CORSConfig        `mapstructure:"cors"`
+	Metrics     MetricsConfig     `mapstructure:"metrics"`
+	JWT         JWTConfig         `mapstructure:"jwt"`
+	Log         LogConfig         `mapstructure:"log"`
+	Sentry      SentryConfig      `mapstructure:"sentry"`
+	LLM         LLMConfig         `mapstructure:"llm"`
+	SchemaDrift SchemaDriftConfig `mapstructure:"schemadrift"`
+	Prism       PrismConfig       `mapstructure:"prism"`
+	EncryptionKey string          `mapstructure:"encryption_key"`
 }
 
 // LLMConfig holds LLM-related settings.
@@ -32,8 +34,15 @@ type LLMConfig struct {
 
 // ServerConfig holds server-specific settings.
 type ServerConfig struct {
-	Port int    `mapstructure:"port"`
-	Mode string `mapstructure:"mode"`
+	Port    int    `mapstructure:"port"`
+	Mode    string `mapstructure:"mode"`
+	Version string `mapstructure:"version"`
+}
+
+// SchemaDriftConfig holds schema drift detection settings.
+type SchemaDriftConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	OnDrift string `mapstructure:"on_drift"` // "warn" | "panic" | "log_only"
 }
 
 // DatabaseConfig holds database connection settings.
@@ -83,6 +92,15 @@ type SentryConfig struct {
 	DSN string `mapstructure:"dsn"`
 }
 
+// PrismConfig holds Prism image generation engine settings.
+type PrismConfig struct {
+	BaseURL string `mapstructure:"base_url"`
+	APIKey  string `mapstructure:"api_key"`
+	Timeout int    `mapstructure:"timeout"` // seconds
+	Enabled bool   `mapstructure:"enabled"`
+	Strict  bool   `mapstructure:"strict"` // block on service error vs warn+continue
+}
+
 // DSN returns the PostgreSQL connection string.
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf(
@@ -118,6 +136,11 @@ func Load() (*Config, error) {
 	v.BindEnv("sentry.dsn", "SENTRY_DSN")
 	v.BindEnv("cors.allowed_origins", "CORS_ALLOWED_ORIGINS")
 	v.BindEnv("metrics.enabled", "METRICS_ENABLED")
+	v.BindEnv("prism.base_url", "PRISM_BASE_URL")
+	v.BindEnv("prism.api_key", "PRISM_API_KEY")
+	v.BindEnv("prism.timeout", "PRISM_TIMEOUT")
+	v.BindEnv("prism.enabled", "PRISM_ENABLED")
+	v.BindEnv("prism.strict", "PRISM_STRICT")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

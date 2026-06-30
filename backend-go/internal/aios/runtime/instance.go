@@ -62,17 +62,6 @@ func (s AgentInstanceState) String() string {
 	}
 }
 
-// validTransitions maps each state to the set of states it may transition to.
-var validTransitions = map[AgentInstanceState][]AgentInstanceState{
-	StateInit:      {StateReady},
-	StateReady:     {StateActive, StateSuspended, StateDegraded, StateCrashed, StateStopped},
-	StateActive:    {StateIdle, StateDegraded, StateCrashed, StateStopped},
-	StateIdle:      {StateReady, StateSuspended, StateDegraded, StateCrashed, StateStopped},
-	StateSuspended: {StateReady, StateStopped},
-	StateDegraded:  {StateReady, StateCrashed, StateStopped},
-	StateCrashed:   {StateReady, StateStopped},
-	StateStopped:   {},
-}
 
 // AgentInstance is a running agent with full lifecycle tracking.
 // Each instance wraps an AgentManifest and tracks runtime state, resource
@@ -108,19 +97,4 @@ type AgentInstance struct {
 	LastRecoveryAttempt time.Time `json:"last_recovery_attempt"`
 
 	mu sync.RWMutex
-}
-
-// isValidTransition checks whether moving from 'from' to 'to' is allowed
-// by the state machine rules.
-func isValidTransition(from, to AgentInstanceState) bool {
-	allowed, ok := validTransitions[from]
-	if !ok {
-		return false
-	}
-	for _, s := range allowed {
-		if s == to {
-			return true
-		}
-	}
-	return false
 }

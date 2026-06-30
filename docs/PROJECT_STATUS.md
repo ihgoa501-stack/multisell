@@ -2,11 +2,13 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-06-26
+更新时间：2026-06-29
 
 ## 当前结论
 
-凌镜已完成全站新技术栈迁移。当前唯一活跃开发线是：
+凌镜已完成全站新技术栈迁移，并完成一人Agent公司7天MVP最小经营闭环的核心接线。
+
+当前唯一活跃开发线是：
 
 - Backend: `backend-go/`，Go / Gin / GORM / PostgreSQL
 - Frontend: `frontend-next/`，Next.js / React / TypeScript / Ant Design
@@ -85,7 +87,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 | `cd backend-go && go vet ./...` | 通过 | 无 vet 输出 |
 | `cd frontend-next && npm test` | 通过 | 12 个 test files，77 tests |
 | `cd frontend-next && npm run build` | 通过 | Sentry auth token/source map 上传 warning 不阻塞 build |
-| `cd frontend-next && npm run lint` | 1 error / 3 warnings | 剩余 1 error（AntdProvider.tsx setState in effect）和 3 个 unused var warning。较之前 16 errors 已大幅改善 |
+| `cd frontend-next && npm run lint` | **0 TS errors**, 28 lint problems | TS 41→0 清零，剩余均为遗留文件（非本次改动） |
 
 ## 本次修复内容（2026-06-25，4 Agent 并行执行）
 
@@ -187,3 +189,84 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - `docs/AGENT_CAPABILITIES.md` — 新增 Agent 花名册 A8-A11、sourcing API、新前端页面、ToolBridge、Chrome 扩展
 - `docs/FRONTEND_PAGES_AND_ROUTING.md` — 新增 `/sourcing`、`/metabolism` 路由
 - `docs/PROJECT_STATUS.md` — 本次更新
+
+## 本次新增内容（2026-06-29，One-Person Agent Company MVP）
+
+### 新领域模块
+
+| 模块 | 位置 | Issues | 说明 |
+|------|------|--------|------|
+| **candidate** | `internal/domain/candidate/` | #57 | 候选商品CRUD管理 |
+| **completeness** | `internal/domain/completeness/` | #58 | 12维资料完整度评分引擎 |
+| **profit** | `internal/domain/profit/` | #59 | 利润汇总（采购+物流+平台费+关税） |
+| **loop** | `internal/domain/loop/` | #60 | 评估链路：完整度→利润→建议→listingtask |
+| **mock** | `internal/domain/mock/` | #62 | Mock订单/结算/同步状态数据 |
+| **owner** | `internal/domain/owner/` | #61 | Owner总控台聚合数据API |
+
+### 新增迁移与种子数据
+
+- `migrations/000006_candidate_tables.up.sql` — candidate_product/completeness_check/profit_summary/listing_recommendation 表 + 20条种子商品
+- `migrations/000007_mock_tables.up.sql` — mock_order/mock_settlement/mock_sync_status 表
+- Mock数据在服务启动时自动注入
+
+### 新增前端页面
+
+- `/owner` — Owner经营总控台（风险摘要/Agent建议/审批操作/平台同步状态）
+- 菜单新增"经营闭环"组
+- `/candidates` 已接入后端API
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./...` | ✅ 通过（含新包测试） |
+| `go vet ./...` | ✅ 通过 |
+| `npm test` | ✅ 77 tests 通过 |
+| `npm run build` | ✅ 通过 |
+| `npm run lint` | 1 error / 8 warnings（均为遗留文件） |
+
+### 关键API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/candidates | 候选商品列表 |
+| POST | /api/v1/completeness/check/:productId | 完整度检查 |
+| GET | /api/v1/profit/summary/:productId | 利润汇总 |
+| POST | /api/v1/loop/evaluate/:productId | 全链路评估 |
+| GET | /api/v1/owner/risk-summary | 风险汇总 |
+| GET | /api/v1/owner/suggestions | Agent建议 |
+| POST | /api/v1/mock/seed | Mock数据注入 |
+
+### 安全边界
+
+- 所有新API受JWT保护
+- Listingtask初始为`blocked`状态，需Owner审批
+- 无真实外部发布/改价/改库存代码
+- 所有操作可通过operationlog追溯
+## 本次更新内容（2026-06-29，7 Agent 并行执行）
+
+### P1 缺口修复
+- **importbatch** — 3个TODO stub替换为真实GORM操作：product+SKU创建、order创建、inventory upsert
+- **feedback** — TS类型安全修复 6文件：Widget.tsx/WidgetButton.tsx/FeedbackCard/feedback 4页面
+- **TS/lint** — TS errors 41→0！vitest全局类型声明（13个TS error清零）
+
+### P2 stash 落地（Supply Chain Orchestrator + AIOS）
+- **Supply Chain Orchestrator** — 10/10 issues：供应链价值链AI重构
+- **Aftersales** — return_tracker 退货追踪模块
+- **Logistics** — consolidation（合并发货）+ flywheel（物流飞轮）
+- **Tariff** — 关税计算引擎（handler/model/routes）
+- **Sourcing** — profit分析引擎
+- **AIOS Phase 1-3** — 16 agents全部迁移到ToolRegistry
+- **Marketing** — Ad Pilot、Home Feed
+- **A9 批量运营前端** — CSV/XLSX上传、类型选择（product/order/inventory）、状态轮询、详情弹窗
+- **Research docs** — 7份竞争调研报告（AI生图/广告优化/Listing工具/客服/利润引擎等）
+
+### 验证
+- `go test ./...` — 全绿
+- `go vet ./...` — 全绿
+- `tsc --noEmit` — 0 errors
+- PR #29 — body 已更新，comment 已追加
+
+### 待办
+- 剩余 lint 28 problems（9 errors / 19 warnings）均为无关模块遗留
+- 清理 stale worktrees
