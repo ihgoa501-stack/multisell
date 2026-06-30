@@ -22,6 +22,7 @@ type ListingTask struct {
 	DestinationCountry  string           `gorm:"column:destination_country" json:"destination_country"`
 	ApprovalID          *int64           `gorm:"column:approval_id" json:"approval_id,omitempty"`
 	LastError           string           `gorm:"column:last_error" json:"last_error"`
+	DryRun              bool             `gorm:"column:dry_run" json:"dry_run"`
 	CreatedBy           string           `gorm:"column:created_by" json:"created_by"`
 	UpdatedBy           string           `gorm:"column:updated_by" json:"updated_by"`
 	CreatedAt           time.Time        `gorm:"column:created_at;autoCreateTime" json:"created_at"`
@@ -62,6 +63,7 @@ type CreateTaskInput struct {
 	TargetProfitMargin  *float64         `json:"target_profit_margin"`
 	DestinationCountry  string           `json:"destination_country"`
 	ApprovalID          *int64           `json:"approval_id"`
+	DryRun              *bool            `json:"dry_run"`
 	CreatedBy           string           `json:"created_by"`
 }
 

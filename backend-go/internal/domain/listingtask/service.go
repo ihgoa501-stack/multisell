@@ -426,6 +426,21 @@ func (s *Service) validateExecutePreconditions(task *ListingTask) error {
 	if approvalRec.EntityID != task.ID {
 		return fmt.Errorf("approval %d entity_id is %d, expected listing task %d", *task.ApprovalID, approvalRec.EntityID, task.ID)
 	}
+	// 7. Sandbox/dry-run mode — check DecisionSnapshot for mode flag
+	if len(task.DecisionSnapshot) > 0 {
+		var snapshot struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.Unmarshal(task.DecisionSnapshot, &snapshot); err == nil {
+			if snapshot.Mode == "sandbox" || snapshot.Mode == "dry_run" {
+				task.DryRun = true
+				s.logger.Warn("listing task in sandbox/dry-run mode, skipping real publish",
+					zap.Int64("task_id", task.ID),
+					zap.String("mode", snapshot.Mode),
+				)
+			}
+		}
+	}
 	return nil
 }
 
@@ -472,6 +487,45 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 	// Validation gate
 	if err := s.validateExecutePreconditions(&task); err != nil {
 		return nil, err
+	}
+
+	// Dry-run mode: validate and audit only, skip Prism and platform publish.
+	if task.DryRun {
+		s.logger.Info("listing task dry-run: skipping Prism and platform publish",
+			zap.Int64("task_id", task.ID),
+		)
+		// Audit: dry-run execution
+		s.writeAudit("listing_task.execute", "dry_run", fmt.Sprintf("%d", taskID), operator,
+			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d dry_run=true", task.ID, task.ProductID, task.PlatformID))
+
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			var items []ListingTaskItem
+			if err := tx.Where("task_id = ?", taskID).Find(&items).Error; err != nil {
+				return err
+			}
+			now := time.Now()
+			for i := range items {
+				result := map[string]interface{}{"dry_run": true, "executed_at": now}
+				resultBytes, _ := json.Marshal(result)
+				if err := tx.Model(&items[i]).Updates(map[string]interface{}{
+					"status":      "completed",
+					"executed_at": &now,
+					"result":      resultBytes,
+				}).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Model(&task).Update("status", "completed").Error
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := s.db.First(&task, taskID).Error; err != nil {
+			return nil, err
+		}
+		s.writeAudit("listing_task.execute", "success", fmt.Sprintf("%d", taskID), operator,
+			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d dry_run=true", task.ID, task.ProductID, task.PlatformID))
+		return &task, nil
 	}
 
 	// Audit: execution started

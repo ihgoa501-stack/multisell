@@ -6,19 +6,22 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides Owner cockpit aggregated data.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db            *gorm.DB
+	logger        *zap.Logger
+	trustscoreSvc *trustscore.Service // optional, may be nil
 }
 
 // NewService creates a new Owner cockpit service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+// trustscoreSvc may be nil (TrustScore integration disabled).
+func NewService(db *gorm.DB, logger *zap.Logger, trustscoreSvc *trustscore.Service) *Service {
+	return &Service{db: db, logger: logger, trustscoreSvc: trustscoreSvc}
 }
 
 // RiskSummary returns aggregated risk metrics for the Owner cockpit.
@@ -236,6 +239,18 @@ type FeedbackInput struct {
 	Note   string `json:"note"`
 }
 
+// recordTrustScoreFeedback notifies TrustScore when feedback is recorded.
+func (s *Service) recordTrustScoreFeedback(agentID string) {
+	if s.trustscoreSvc == nil || agentID == "" {
+		return
+	}
+	if err := s.trustscoreSvc.RecordAgentFeedback(agentID); err != nil {
+		s.logger.Warn("failed to record trust score feedback",
+			zap.String("agent_id", agentID),
+			zap.Error(err))
+	}
+}
+
 // RecordFeedback records Owner feedback on a listing recommendation.
 // - adopt: updates listing task status to pending_approval, creates approval request
 // - reject: updates listing task status to rejected, sets feedback note
@@ -246,6 +261,7 @@ func (s *Service) RecordFeedback(recommendationID int64, input *FeedbackInput) e
 		ProductID           int64
 		Decision            string
 		CreatedListingTaskID *int64
+		TriggeredBy         string
 	}
 	var rec Rec
 	if err := s.db.Table("listing_recommendation").First(&rec, recommendationID).Error; err != nil {
@@ -330,6 +346,9 @@ func (s *Service) RecordFeedback(recommendationID int64, input *FeedbackInput) e
 			}
 		}
 	}
+
+	// Notify TrustScore about this feedback for agent evaluation
+	s.recordTrustScoreFeedback(rec.TriggeredBy)
 
 	return nil
 }
