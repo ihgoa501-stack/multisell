@@ -445,21 +445,44 @@ func (s *Service) validateExecutePreconditions(task *ListingTask) error {
 	return nil
 }
 
-// writeAudit is a helper to write operation log entries.
-func (s *Service) writeAudit(action, result, resourceID, operator, content string) {
+// writeAudit writes a structured operation log entry using LogStructured.
+func (s *Service) writeAudit(action, result, resourceID, operator, content string, task *ListingTask) {
 	if s.oplogSvc == nil {
 		return
 	}
-	_ = s.oplogSvc.Log("listing_task", action, resourceID, operator, content)
+	input := &operationlog.StructuredLogInput{
+		Module:     "listing_task",
+		Action:     action,
+		ResourceID: resourceID,
+		Operator:   operator,
+		Content:    content,
+		Result:     result,
+		TriggerType: "system",
+	}
+	if task != nil {
+		input.EntityType = "listing_task"
+		input.EntityID = task.ID
+		input.ApprovalID = task.ApprovalID
+	}
+	_ = s.oplogSvc.LogStructured(input)
 }
 
-// statusChangeAudit writes an audit entry for a listing task status transition.
+// statusChangeAudit writes a structured audit entry for a listing task status transition.
 func (s *Service) statusChangeAudit(taskID int64, oldStatus, newStatus, operator string) {
 	if s.oplogSvc == nil {
 		return
 	}
 	content := fmt.Sprintf("listing_task_id=%d status_change %s → %s operator=%s", taskID, oldStatus, newStatus, operator)
-	_ = s.oplogSvc.Log("listing_task", "listing_task.status_change", fmt.Sprintf("%d", taskID), operator, content)
+	_ = s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
+		Module:      "listing_task",
+		Action:      "listing_task.status_change",
+		ResourceID:  fmt.Sprintf("%d", taskID),
+		Operator:    operator,
+		Content:     content,
+		TriggerType: "system",
+		EntityType:  "listing_task",
+		EntityID:    taskID,
+	})
 }
 
 // ---------- Listing publish chain ----------
@@ -513,7 +536,8 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		)
 		// Audit: dry-run execution
 		s.writeAudit("listing_task.execute", "dry_run", fmt.Sprintf("%d", taskID), operator,
-			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d dry_run=true", task.ID, task.ProductID, task.PlatformID))
+			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d dry_run=true", task.ID, task.ProductID, task.PlatformID),
+			&task)
 
 		err := s.db.Transaction(func(tx *gorm.DB) error {
 			var items []ListingTaskItem
@@ -541,13 +565,15 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 			return nil, err
 		}
 		s.writeAudit("listing_task.execute", "success", fmt.Sprintf("%d", taskID), operator,
-			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d dry_run=true", task.ID, task.ProductID, task.PlatformID))
+			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d dry_run=true", task.ID, task.ProductID, task.PlatformID),
+			&task)
 		return &task, nil
 	}
 
 	// Audit: execution started
 	s.writeAudit("listing_task.execute", "started", fmt.Sprintf("%d", taskID), operator,
-		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID))
+		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID),
+		&task)
 
 	oldStatus := task.Status
 
@@ -612,7 +638,8 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 			}
 			// Audit: blocked by Prism
 			s.writeAudit("listing_task.execute", "blocked", fmt.Sprintf("%d", taskID), operator,
-				fmt.Sprintf("listing_task_id=%d prism_blocked error=%s", taskID, task.LastError))
+				fmt.Sprintf("listing_task_id=%d prism_blocked error=%s", taskID, task.LastError),
+				&task)
 			s.statusChangeAudit(taskID, oldStatus, task.Status, operator)
 			if s.loopRec != nil {
 				_ = s.loopRec.RecordExecutionResult(task.ProductID, task.ID, false, "prism_blocked: "+task.LastError)
@@ -621,7 +648,8 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		}
 		// Audit: execution failed (non-Prism error)
 		s.writeAudit("listing_task.execute", "failure", fmt.Sprintf("%d", taskID), operator,
-			fmt.Sprintf("listing_task_id=%d error=%v", taskID, err))
+			fmt.Sprintf("listing_task_id=%d error=%v", taskID, err),
+			&task)
 		if s.loopRec != nil {
 			_ = s.loopRec.RecordExecutionResult(task.ProductID, taskID, false, err.Error())
 		}
@@ -632,7 +660,8 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 	}
 	// Audit: execution succeeded
 	s.writeAudit("listing_task.execute", "success", fmt.Sprintf("%d", taskID), operator,
-		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID))
+		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID),
+		&task)
 	s.statusChangeAudit(taskID, oldStatus, task.Status, operator)
 	if s.loopRec != nil {
 		_ = s.loopRec.RecordExecutionResult(task.ProductID, task.ID, true, "")

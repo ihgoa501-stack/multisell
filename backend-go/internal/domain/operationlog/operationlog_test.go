@@ -7,6 +7,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/dbtest"
 )
 
+func int64Ptr(v int64) *int64 { return &v }
+
 func TestService_CRUD(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &OperationLog{})
@@ -67,5 +69,87 @@ func TestService_CRUD(t *testing.T) {
 	}
 	if total != 2 {
 		t.Fatalf("time filtered total = %d (expected 2)", total)
+	}
+}
+
+func TestService_LogStructured(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &OperationLog{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Create a structured log with all fields
+	err := svc.LogStructured(&StructuredLogInput{
+		Module:            "listing_task",
+		Action:            "listing_task.execute",
+		ResourceID:        "42",
+		Operator:          "system",
+		Content:           "listing_task_id=42 product_id=1 platform_id=10",
+		Result:            "success",
+		TriggerType:       "system",
+		AgentSuggestionID: int64Ptr(7),
+		ApprovalID:        int64Ptr(99),
+		EntityType:        "listing_task",
+		EntityID:          42,
+	})
+	if err != nil {
+		t.Fatalf("LogStructured: %v", err)
+	}
+
+	// Verify it was persisted
+	var all []OperationLog
+	db.Find(&all)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(all))
+	}
+	l := all[0]
+	if l.TriggerType != "system" {
+		t.Errorf("TriggerType = %q", l.TriggerType)
+	}
+	if l.EntityType != "listing_task" {
+		t.Errorf("EntityType = %q", l.EntityType)
+	}
+	if l.EntityID != 42 {
+		t.Errorf("EntityID = %d", l.EntityID)
+	}
+	if l.ApprovalID == nil || *l.ApprovalID != 99 {
+		t.Errorf("ApprovalID = %v", l.ApprovalID)
+	}
+	if l.AgentSuggestionID == nil || *l.AgentSuggestionID != 7 {
+		t.Errorf("AgentSuggestionID = %v", l.AgentSuggestionID)
+	}
+	if l.Result != "success" {
+		t.Errorf("Result = %q", l.Result)
+	}
+}
+
+func TestService_LogStructured_Minimal(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &OperationLog{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// LogStructured with only required fields (optional fields omitted)
+	err := svc.LogStructured(&StructuredLogInput{
+		Module:     "approval",
+		Action:     "approval.review",
+		ResourceID: "10",
+		Operator:   "owner",
+		Content:    "approved listing task",
+		Result:     "approved",
+	})
+	if err != nil {
+		t.Fatalf("LogStructured minimal: %v", err)
+	}
+
+	var all []OperationLog
+	db.Find(&all)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(all))
+	}
+	l := all[0]
+	if l.TriggerType != "" {
+		t.Errorf("expected empty TriggerType, got %q", l.TriggerType)
+	}
+	if l.ApprovalID != nil {
+		t.Errorf("expected nil ApprovalID, got %v", l.ApprovalID)
 	}
 }

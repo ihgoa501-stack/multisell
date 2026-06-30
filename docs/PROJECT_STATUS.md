@@ -410,3 +410,27 @@ ListingTask 的 `ExecuteTask` 方法实现了 6 层执行门禁检查：
 - Prism 图像合规检查可选（通过 config 控制），集成测试中默认禁用
 - Approval 自动升级（AutoEscalate）功能已实现但仅记录日志，不发送通知
 - RBAC 权限检查在集成测试中默认跳过（rbacSvc=nil）
+- 前端 lint（eslint）存在预先存在的问题（eslint-config-next 内部错误），非本次引入
+
+## 后续补充（2026-06-30，P1 收尾）
+
+### 结构化审计字段
+- `operation_log` 表新增 `trigger_type`、`agent_suggestion_id`、`approval_id`、`entity_type`、`entity_id` 字段
+- 新增 `000046_audit_structured_fields` migration
+- 所有闭环审计写入点已改用 `LogStructured` 方法
+- 审计现在可以直接 SQL 查询：按 trigger_type 过滤、按 approval_id 关联、按 entity 范围搜索
+
+### 状态机完备
+- 新增 Candidate Evaluation 状态机（candidate/statemachine.go）
+- 新增平台同步任务状态机（integrations/statemachine.go）
+- 5 个状态机全部就位：ListingTask、Approval、Recommendation、Candidate、PlatformSync
+
+### TrustScore 集成
+- `trustscore/service.go` 新增 `RecordAgentFeedback` 方法
+- Owner 反馈时自动调用 TrustScore 更新
+- 计算维度包含：采纳率 35% + 执行成功率 25% + 平均置信度 20% + listing 反馈率 20%
+
+### Owner 工作台增强
+- 新增 Tab 切换：决策队列、审批历史、Agent 评估
+- 审批历史展示已处理的 Agent 建议
+- Agent 评估展示各 Agent 信任分、采纳数、采纳率
