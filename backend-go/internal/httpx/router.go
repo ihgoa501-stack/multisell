@@ -61,7 +61,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
-	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
@@ -504,8 +503,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	protected := api.Group("")
 	protected.Use(middleware.Auth(cfg))
 
-	// RBAC routes
-	rbac.RegisterRoutes(protected, db, logger)
+	// RBAC routes — require rbac.manage permission
+	rbacRoutes := protected.Group("", middleware.RequirePermission(db, "rbac.manage"))
+	rbac.RegisterRoutes(rbacRoutes, db, logger)
 
 	// Agent routes (wired through the AI orchestrator)
 	agent.RegisterRoutes(protected, db, logger, aiOrch)
@@ -652,7 +652,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	order.RegisterRoutes(protected, db, logger)
 	orderimport.RegisterRoutes(protected, db, logger)
 	settlement.RegisterRoutes(protected, db, logger)
-	finance.RegisterRoutes(protected, db, logger)
+	financeRoutes := protected.Group("", middleware.RequirePermission(db, "finance.read"))
+	finance.RegisterRoutes(financeRoutes, db, logger)
 	decision.RegisterRoutes(protected, db, logger)
 	allocation.RegisterRoutes(protected, db, logger)
 	exceptions.RegisterRoutes(protected, db, logger)
@@ -676,9 +677,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	tools.SetSourcingEngine(logistics.DefaultEngine)
 	supplychain.RegisterRoutes(protected, db, logger, bus)
 	productanalysis.RegisterRoutes(protected, db, logger)
-	producthub.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
-	report.RegisterRoutes(protected, db, logger)
+	reportRoutes := protected.Group("", middleware.RequirePermission(db, "report.read"))
+	report.RegisterRoutes(reportRoutes, db, logger)
 	exchangerate.RegisterRoutes(protected, db, logger)
 	agentrule.RegisterRoutes(protected, db, logger)
 	evolution.RegisterRoutes(protected, db, logger)
