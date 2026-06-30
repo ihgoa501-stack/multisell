@@ -20,6 +20,10 @@ type Engine struct {
 	runAgent RunAgentFunc
 	edges    []PipelineEdge
 	logger   *zap.Logger
+
+	// breakers is the per-agent circuit breaker registry.
+	// Each target agent gets its own breaker, keyed by agent ID.
+	breakers *CircuitBreakerRegistry
 }
 
 // NewEngine creates a pipeline engine with the given runner function and edges.
@@ -29,18 +33,46 @@ func NewEngine(runAgent RunAgentFunc, edges []PipelineEdge, logger *zap.Logger) 
 		runAgent: runAgent,
 		edges:    edges,
 		logger:   logger,
+		breakers: NewCircuitBreakerRegistry(),
 	}
+}
+
+// Breakers returns the circuit breaker registry, allowing callers to
+// configure per-agent breakers or check state.
+func (e *Engine) Breakers() *CircuitBreakerRegistry {
+	return e.breakers
+}
+
+// ConfigureBreaker sets a custom circuit breaker config for an agent.
+// If no breaker exists yet for this agent, it is created with the given config.
+func (e *Engine) ConfigureBreaker(agentID string, config CircuitBreakerConfig) {
+	e.breakers.GetOrCreateWithConfig(agentID, config)
 }
 
 // Dispatch evaluates all registered edges against an event and triggers
 // matching target agents. Each edge whose SourceTopic matches the event topic
 // AND whose Condition is satisfied triggers a RunAgentFunc call.
+//
+// Before dispatching, the circuit breaker for the target agent is checked.
+// If the breaker is OPEN, the dispatch is skipped with a warning log (degraded
+// response). After the call completes, the breaker records success or failure.
 func (e *Engine) Dispatch(ctx context.Context, evt eventbus.Event) error {
 	for _, edge := range e.edges {
 		if !matchTopic(evt.Topic, edge.SourceTopic) {
 			continue
 		}
 		if !evaluateCondition(evt.Payload, edge.Condition) {
+			continue
+		}
+
+		// --- Circuit breaker check ---
+		if !e.breakers.Allow(edge.TargetAgent) {
+			e.logger.Warn("circuit breaker open, dispatch degraded",
+				zap.String("source_topic", evt.Topic),
+				zap.String("target_agent", edge.TargetAgent),
+				zap.String("target_dp", edge.TargetDP),
+			)
+			// Degraded — skip this edge, but continue evaluating others.
 			continue
 		}
 
@@ -58,6 +90,9 @@ func (e *Engine) Dispatch(ctx context.Context, evt eventbus.Event) error {
 		runCtx, cancel := context.WithTimeout(ctx, timeout)
 		err := e.runAgent(runCtx, edge.TargetAgent, edge.TargetDP, evt.Payload)
 		cancel()
+
+		// --- Record breaker result ---
+		e.breakers.Record(edge.TargetAgent, err == nil)
 
 		if err != nil {
 			e.logger.Error("pipeline edge dispatch failed",

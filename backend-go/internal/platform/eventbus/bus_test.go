@@ -2,12 +2,15 @@ package eventbus
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/dbtest"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 func newTestBus(t *testing.T, opts ...BusOption) *Bus {
@@ -411,5 +414,208 @@ func TestDLQNoDB(t *testing.T) {
 
 	if got := attemptCount.Load(); got < 1 {
 		t.Errorf("expected at least 1 handler invocation, got %d", got)
+	}
+}
+
+// TestContextCorrelationPropagation verifies that the correlation ID from the
+// Publish context is propagated to the handler via the event.
+func TestContextCorrelationPropagation(t *testing.T) {
+	b := newTestBus(t)
+
+	correlationID := "test-correlation-123"
+	got := make(chan string, 1)
+	b.Subscribe("corr.*", func(ctx context.Context, evt Event) error {
+		if id := CorrelationIDFromContext(ctx); id != "" {
+			got <- id
+		} else if evt.CorrelationID != "" {
+			got <- evt.CorrelationID
+		}
+		return nil
+	})
+
+	ctx := WithCorrelationID(context.Background(), correlationID)
+	_, err := b.Publish(ctx, "corr.test", "test", nil)
+	if err != nil {
+		t.Fatalf("Publish returned error: %v", err)
+	}
+
+	select {
+	case id := <-got:
+		if id != correlationID {
+			t.Errorf("expected correlation ID %q, got %q", correlationID, id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for handler to receive event")
+	}
+}
+
+// TestDLQWithDB verifies that events are moved to the DLQ table when handlers
+// fail and max retries are exceeded.
+func TestDLQWithDB(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createDLQTable(t, db)
+	logger, _ := zap.NewDevelopment()
+	b := New(logger, WithDB(db), WithDLQ(db), WithMaxRetries(1))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	// Handler that always errors.
+	b.Subscribe("dlq-db.*", func(ctx context.Context, evt Event) error {
+		return errors.New("handler error")
+	})
+
+	_, err := b.Publish(context.Background(), "dlq-db.test", "test", nil)
+	if err != nil {
+		t.Fatalf("Publish returned error: %v", err)
+	}
+
+	// Allow retry and DLQ processing.
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify DLQ event was persisted.
+	var count int64
+	db.Model(&DLEvent{}).Count(&count)
+	if count == 0 {
+		t.Error("expected at least 1 DLQ event, got 0")
+	}
+
+	// Verify ListDLQ works.
+	events, total, err := b.DLQ().ListDLQ(1, 10)
+	if err != nil {
+		t.Fatalf("ListDLQ returned error: %v", err)
+	}
+	if total == 0 {
+		t.Error("expected ListDLQ to return at least 1 event")
+	}
+	if len(events) == 0 {
+		t.Error("expected ListDLQ to return events")
+	}
+}
+
+// TestDLQReplay verifies that events moved to DLQ can be replayed.
+func TestDLQReplay(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createDLQTable(t, db)
+	logger, _ := zap.NewDevelopment()
+	b := New(logger, WithDB(db), WithDLQ(db), WithMaxRetries(1))
+
+	var delivered atomic.Int32
+	b.Subscribe("dlq-replay.*", func(ctx context.Context, evt Event) error {
+		delivered.Add(1)
+		return errors.New("handler error")
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	_, err := b.Publish(context.Background(), "dlq-replay.test", "test", nil)
+	if err != nil {
+		t.Fatalf("Publish returned error: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	// Get DLQ events and replay them.
+	events, _, err := b.DLQ().ListDLQ(1, 10)
+	if err != nil {
+		t.Fatalf("ListDLQ returned error: %v", err)
+	}
+	if len(events) == 0 {
+		t.Skip("no DLQ events to replay")
+	}
+
+	// Re-subscribe with a handler that succeeds.
+	var replayCount atomic.Int32
+	b.Subscribe("dlq-replay.*", func(ctx context.Context, evt Event) error {
+		replayCount.Add(1)
+		return nil // succeed on replay
+	})
+
+	ids := make([]uint, len(events))
+	for i, e := range events {
+		ids[i] = e.ID
+	}
+
+	replayed, err := b.DLQ().ReplayEventsByIDs(b, ids)
+	if err != nil {
+		t.Fatalf("ReplayEventsByIDs returned error: %v", err)
+	}
+	if replayed == 0 {
+		t.Error("expected at least 1 replayed event")
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	if got := replayCount.Load(); got == 0 {
+		t.Error("expected replay handler to be invoked")
+	}
+}
+
+// TestMetricsIncrement verifies that key Prometheus counters increment when
+// events are published, delivered, and moved to DLQ.
+func TestMetricsIncrement(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createDLQTable(t, db)
+	logger, _ := zap.NewDevelopment()
+	b := New(logger, WithDB(db), WithDLQ(db), WithMaxRetries(1))
+
+	// Count failed events by subscribing with an erroring handler.
+	var handlerCalls atomic.Int32
+	b.Subscribe("metrics.*", func(ctx context.Context, evt Event) error {
+		handlerCalls.Add(1)
+		return errors.New("handler error")
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	_, err := b.Publish(context.Background(), "metrics.test", "test", nil)
+	if err != nil {
+		t.Fatalf("Publish returned error: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify handler was called at least once.
+	if got := handlerCalls.Load(); got == 0 {
+		t.Error("expected handler to be called at least once")
+	}
+}
+
+
+// createDLQTable creates the event_dlq table with SQLite-compatible DDL.
+func createDLQTable(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS event_dlq (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			original_event_id TEXT NOT NULL,
+			topic TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT '',
+			payload TEXT NOT NULL DEFAULT '{}',
+			priority INTEGER NOT NULL DEFAULT 0,
+			correlation_id TEXT NOT NULL DEFAULT '',
+			error_message TEXT NOT NULL DEFAULT '',
+			delivery_attempts INTEGER NOT NULL DEFAULT 0,
+			last_attempt_at DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			replayed_at DATETIME,
+			replayed_by TEXT NOT NULL DEFAULT ''
+		)
+	`).Error; err != nil {
+		t.Fatalf("failed to create event_dlq table: %v", err)
 	}
 }

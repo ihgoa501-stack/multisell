@@ -167,18 +167,25 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	}
 
 	// Product details sub-routes (version history, freshness, relations)
-	pgroup := rg.Group("/products")
+	productsGroup := rg.Group("/products")
 	{
-		pgroup.GET("/:id/versions", h.ListVersions)
-		pgroup.GET("/:id/versions/:versionId", h.GetVersion)
-		pgroup.POST("/:id/versions/:versionId/rollback", h.Rollback)
-		pgroup.POST("/:id/decisions", h.RecordDecision)
-		pgroup.GET("/:id/freshness", h.GetProductFreshness)
-		pgroup.GET("/freshness/stale", h.ListStaleProducts)
-		pgroup.POST("/:id/freshness/verify", h.VerifyDimension)
-		pgroup.GET("/:id/relations", h.GetRelatedProducts)
-		pgroup.POST("/:id/discover-relations", h.AutoDiscoverRelations)
+		// Version history endpoints
+		productsGroup.GET("/:id/versions", h.ListVersions)
+		productsGroup.GET("/:id/versions/:versionId", h.GetVersion)
+		productsGroup.POST("/:id/versions/:versionId/rollback", h.Rollback)
+
+		// Decision recording with automatic snapshot
+		productsGroup.POST("/:id/decisions", h.RecordDecision)
+
+		// Freshness endpoints
+		productsGroup.GET("/:id/freshness", h.GetProductFreshness)
+		productsGroup.GET("/freshness/stale", h.ListStaleProducts)
+		productsGroup.POST("/:id/freshness/verify", h.VerifyDimension)
+
+		// Product relation endpoints
+		productsGroup.GET("/:id/relations", h.GetRelatedProducts)
+		productsGroup.POST("/:id/discover-relations", h.AutoDiscoverRelations)
 	}
-	rg.POST("/products/relations", h.CreateRelation)
-	rg.DELETE("/products/relations/:id", h.DeleteRelation)
+	productsGroup.POST("/relations", h.CreateRelation)
+	productsGroup.DELETE("/relations/:id", h.DeleteRelation)
 }
