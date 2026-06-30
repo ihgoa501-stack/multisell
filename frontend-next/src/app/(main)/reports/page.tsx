@@ -129,7 +129,7 @@ export default function ReportsPage() {
 
   return (
     <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
-      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>报表</h1>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)' }}>报表</h1>
 
       <Tabs
         activeKey={activeTab}

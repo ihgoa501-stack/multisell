@@ -318,7 +318,7 @@ export default function AgentOSPage() {
           marginBottom: 16,
         }}
       >
-        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: 0 }}>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', margin: 0 }}>
           AgentOS 驾驶舱
         </h1>
         <Button icon={<ReloadOutlined />} onClick={refreshAll}>

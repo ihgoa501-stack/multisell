@@ -1,0 +1,23 @@
+package candidate
+
+import (
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+)
+
+// RegisterRoutes registers candidate routes on the given router group.
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+	svc := NewService(db, logger)
+	h := NewHandler(svc)
+
+	r := rg.Group("/candidates")
+	{
+		r.GET("", h.List)
+		r.GET("/:id", h.Get)
+		r.POST("", h.Create)
+		r.PUT("/:id", h.Update)
+		r.DELETE("/:id", h.Delete)
+		r.GET("/count", h.Count)
+	}
+}

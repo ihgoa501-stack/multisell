@@ -191,6 +191,64 @@ func (h *Handler) DeleteProductSupplier(c *gin.Context) {
 	response.Success(c, gin.H{"id": id})
 }
 
+// ── Supplier Score handlers ───────────────────────────────────────
+
+// GetScore returns the supplier's credibility score.
+// GET /api/v1/suppliers/:id/score
+func (h *Handler) GetScore(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	score, err := h.service.GetScore(c.Request.Context(), id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			response.Error(c, http.StatusNotFound, "score not found, run recalculate first")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, "failed to get score: "+err.Error())
+		return
+	}
+
+	response.Success(c, score)
+}
+
+// RecalculateScore triggers score recalculation from purchase order history.
+// POST /api/v1/suppliers/:id/recalculate
+func (h *Handler) RecalculateScore(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	score, err := h.service.RecalculateScore(c.Request.Context(), id)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to recalculate score: "+err.Error())
+		return
+	}
+
+	response.Success(c, score)
+}
+
+// ListScoreboard returns all supplier scores sorted by reliability.
+// GET /api/v1/suppliers/scoreboard
+func (h *Handler) ListScoreboard(c *gin.Context) {
+	scores, err := h.service.ListScoreboard(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to list scoreboard: "+err.Error())
+		return
+	}
+
+	if scores == nil {
+		scores = []SupplierScore{}
+	}
+
+	response.Success(c, scores)
+}
+
 // GetSupplierComparison returns a product vs its suppliers side-by-side.
 // GET /api/v1/products/:id/supplier-comparison
 func (h *Handler) GetSupplierComparison(c *gin.Context) {

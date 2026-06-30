@@ -7,9 +7,9 @@ import (
 )
 
 // RegisterRoutes registers sourcing routes on the given router group.
-// events is an optional EventPublisher; if nil, events will not be published.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, events EventPublisher) {
-	svc := NewService(db, logger, nil, events)
+// bridge is the ToolBridge for fetching product data; events is an optional EventPublisher.
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bridge ToolBridge, events EventPublisher) {
+	svc := NewService(db, logger, bridge, events)
 	h := NewHandler(svc)
 
 	group := rg.Group("/sourcing")

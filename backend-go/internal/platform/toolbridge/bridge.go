@@ -108,5 +108,11 @@ func (b *ToolBridge) AddDriver(entry DriverEntry) {
 	})
 }
 
+// Route is an alias for FetchPage provided to satisfy the sourcing.ToolBridge
+// interface. It delegates to FetchPage with the same arguments.
+func (b *ToolBridge) Route(ctx context.Context, url string) (*PageData, error) {
+	return b.FetchPage(ctx, url)
+}
+
 // ErrNoDrivers is returned when FetchPage is called with no registered drivers.
 var ErrNoDrivers = errors.New("toolbridge: no drivers registered")
