@@ -65,7 +65,6 @@ type EvaluateResult = {
 
 export default function CandidatesPage() {
   const router = useRouter();
-  const [data, setData] = useState<Candidate[]>([]);
   const [data, setData] = useState<CandidateProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState<number | null>(null);
@@ -95,9 +94,21 @@ export default function CandidatesPage() {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadCandidates();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<CandidateProduct[]>('/v1/candidates', {
+          page: String(page),
+          size: String(pageSize),
+        });
+        const body = res as unknown as { data: CandidateProduct[]; total: number };
+        if (!cancelled) setData(body.data || []);
+        if (!cancelled) setTotal(body.total || 0);
+      } catch {
+        if (!cancelled) message.error('加载候选商品列表失败');
+      }
+    })();
+    return () => { cancelled = true; };
   }, [page, pageSize]);
 
   const handleEvaluate = async (productId: number) => {
@@ -190,7 +201,6 @@ export default function CandidatesPage() {
     {
       title: '操作',
       width: 140,
-      render: (_: unknown, record: Candidate) => (
       render: (_: unknown, record: CandidateProduct) => (
         <Space size="small">
           <Button

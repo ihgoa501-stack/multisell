@@ -93,7 +93,6 @@ export default function ListingTaskDetailPage() {
   const publishApproval = approvalsData?.[0];
   const isApproved = publishApproval?.status === 'approved';
   const isRejected = publishApproval?.status === 'rejected';
-  const isPendingApproval = task?.status === 'blocked' && publishApproval?.status === 'pending';
 
   const executeMutation = useMutation({
     mutationFn: async () => {

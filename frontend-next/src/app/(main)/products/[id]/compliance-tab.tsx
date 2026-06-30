@@ -71,7 +71,16 @@ export default function ComplianceTab({ productId }: { productId: string }) {
   };
 
   useEffect(() => {
-    fetchResults();
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<{ data: CheckResult[] }>(`/v1/compliance/results?product_id=${productId}&page=1&size=10`);
+        if (!cancelled) setResults(res.data?.data ?? []);
+      } catch {
+        // Silent — listing may not have compliance data yet.
+      }
+    })();
+    return () => { cancelled = true; };
   }, [productId]);
 
   const statusTag = (status: string) => {
