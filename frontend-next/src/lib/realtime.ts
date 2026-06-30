@@ -2,11 +2,12 @@
  * WebSocket realtime client for AI command center.
  *
  * Connects to the backend WS hub (ws://localhost:8080/ws) with the stored JWT
- * token and dispatches SSEEvent messages to a callback. Auto-reconnects on
- * disconnect with a 3s delay.
+ * token and dispatches SSEEvent messages to a callback. Auto-reconnects with
+ * exponential backoff (1s -> 2s -> 4s -> 8s -> 16s -> 30s max), random jitter,
+ * 25s heartbeat ping, and a max of 10 retry attempts.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback, startTransition } from 'react';
 import { getToken } from '@/lib/auth';
 
 /** Wire format from backend (SSEEvent). */
@@ -19,6 +20,30 @@ export interface SSEEventData {
   ts?: string;
 }
 
+/** Connection status exposed to consumers. */
+export type WSConnectionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'reconnecting';
+
+/** Heartbeat interval in milliseconds. */
+const HEARTBEAT_MS = 25_000;
+
+/** Maximum reconnection attempts before giving up entirely. */
+const MAX_RETRIES = 10;
+
+/**
+ * Compute the delay (ms) for the n-th reconnection attempt.
+ * Exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 30s.
+ * Each delay includes 50% random jitter to prevent thundering herd.
+ */
+function getBackoffDelay(attempt: number): number {
+  const base = Math.min(1000 * Math.pow(2, attempt), 30000);
+  // Random jitter: 50%-100% of the base delay
+  return base * (0.5 + Math.random() * 0.5);
+}
+
 /** Derive WS base from the same env var the API client uses. */
 function getWSBase(): string {
   const apiBase =
@@ -26,20 +51,31 @@ function getWSBase(): string {
   return apiBase.replace(/^http/, 'ws').replace(/\/api\/?$/, '');
 }
 
+export interface UseAIWebSocketReturn {
+  status: WSConnectionStatus;
+  close: () => void;
+}
+
 /**
  * Hook that maintains a persistent WebSocket connection to the realtime hub.
- * @param onEvent — called for every parsed JSON message from the server.
- * @param enabled — set to false to skip connecting (e.g. user not authed).
+ * @param onEvent - called for every parsed JSON message from the server.
+ * @param enabled - set to false to skip connecting (e.g. user not authed).
  */
 export function useAIWebSocket(
   onEvent: (event: SSEEventData) => void,
   enabled = true,
-) {
+): UseAIWebSocketReturn {
   const onEventRef = useRef(onEvent);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const wsRef = useRef<WebSocket | null>(null);
-  const mounted = useRef(true);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const mountedRef = useRef(true);
+  const attemptRef = useRef(0);
   const enabledRef = useRef(enabled);
+
+  const [status, setStatus] = useState<WSConnectionStatus>('disconnected');
+  // Incrementing this key triggers a fresh connection attempt
+  const [connectKey, setConnectKey] = useState(0);
 
   // Keep refs in sync via effects (safer than render-time assignment)
   useEffect(() => {
@@ -49,21 +85,41 @@ export function useAIWebSocket(
     enabledRef.current = enabled;
   }, [enabled]);
 
-  // Reconnect counter — incrementing triggers a fresh connection
-  const [reconnectKey, setReconnectKey] = useState(0);
-
   // Connect effect
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      startTransition(() => {
+        setStatus('disconnected');
+      });
+      return;
+    }
+
+    const isReconnect = attemptRef.current > 0;
+    setStatus(isReconnect ? 'reconnecting' : 'connecting');
 
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      setStatus('disconnected');
+      return;
+    }
 
     const base = getWSBase();
     const url = `${base}/ws?token=${encodeURIComponent(token)}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
+
+    ws.onopen = () => {
+      attemptRef.current = 0;
+      setStatus('connected');
+
+      // Start 25s heartbeat ping
+      heartbeatRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, HEARTBEAT_MS);
+    };
 
     ws.onmessage = (e: MessageEvent) => {
       try {
@@ -75,13 +131,22 @@ export function useAIWebSocket(
     };
 
     ws.onclose = () => {
+      clearInterval(heartbeatRef.current);
       wsRef.current = null;
-      if (mounted.current) {
-        reconnectTimer.current = setTimeout(() => {
-          if (mounted.current && enabledRef.current) {
-            setReconnectKey((k) => k + 1);
-          }
-        }, 3000);
+
+      if (mountedRef.current) {
+        attemptRef.current++;
+        if (attemptRef.current <= MAX_RETRIES) {
+          setStatus('reconnecting');
+          const delay = getBackoffDelay(attemptRef.current - 1);
+          reconnectTimerRef.current = setTimeout(() => {
+            if (mountedRef.current && enabledRef.current) {
+              setConnectKey((k) => k + 1);
+            }
+          }, delay);
+        } else {
+          setStatus('disconnected');
+        }
       }
     };
 
@@ -89,13 +154,25 @@ export function useAIWebSocket(
       ws.close();
     };
 
-    mounted.current = true;
+    mountedRef.current = true;
 
     return () => {
-      mounted.current = false;
-      clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
+      mountedRef.current = false;
+      clearInterval(heartbeatRef.current);
+      clearTimeout(reconnectTimerRef.current);
+      ws.close();
       wsRef.current = null;
     };
-  }, [enabled, reconnectKey]);
+  }, [enabled, connectKey]);
+
+  const close = useCallback(() => {
+    clearInterval(heartbeatRef.current);
+    clearTimeout(reconnectTimerRef.current);
+    wsRef.current?.close();
+    wsRef.current = null;
+    attemptRef.current = 0;
+    setStatus('disconnected');
+  }, []);
+
+  return { status, close };
 }

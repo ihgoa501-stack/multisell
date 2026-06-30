@@ -164,25 +164,25 @@ func (a *WarehouseCustomsAgent) registerTools() {
 // Supported decision points:
 //   - "customs_clearance"
 //   - "warehouse_advice"
-func (a *WarehouseCustomsAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *WarehouseCustomsAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	if a.registry != nil {
-		return a.decideViaRegistry(decisionPoint, ctx)
+		return a.decideViaRegistry(ctx, decisionPoint, params)
 	}
-	return a.decideDirect(decisionPoint, ctx)
+	return a.decideDirect(decisionPoint, params)
 }
 
 // decideViaRegistry delegates the decision through the ToolRegistry's hook chain,
 // mapping the decision point to its corresponding registered tool name.
-func (a *WarehouseCustomsAgent) decideViaRegistry(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *WarehouseCustomsAgent) decideViaRegistry(callCtx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	toolName, ok := decisionPointToTool[decisionPoint]
 	if !ok {
-		return a.decideDirect(decisionPoint, ctx)
+		return a.decideDirect(decisionPoint, params)
 	}
 
-	result, callErr := a.registry.Call(context.Background(), toolName, ctx)
+	result, callErr := a.registry.Call(callCtx, toolName, params)
 	if callErr != nil {
 		// Tool not found or hook rejected; fall through to the direct dispatch table.
-		return a.decideDirect(decisionPoint, ctx)
+		return a.decideDirect(decisionPoint, params)
 	}
 
 	// Unwrap the tool output envelope.

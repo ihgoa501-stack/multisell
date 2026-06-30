@@ -19,11 +19,17 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	sampleSvc := NewSampleService(db, logger)
 	costSvc := NewCostVersionService(db, logger)
 	aggrSvc := NewAggregationService(db, logger)
+	svc := NewService(db, logger)
+	versionSvc := NewVersionService(db, logger)
+	freshnessSvc := NewFreshnessService(db, logger)
+	relationSvc := NewRelationService(db, logger)
+	h := NewHandler(svc, versionSvc, freshnessSvc, relationSvc)
 
 	// Handlers
 	masterH := NewMasterHandler(masterSvc)
 	hubH := NewHubHandler(aggrSvc)
 
+	// Product Hub master CRUD and sub-resources
 	group := rg.Group("/product-hub")
 	{
 		// Master CRUD
@@ -159,4 +165,20 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 			response.Success(c, gin.H{"id": costID, "status": "confirmed"})
 		})
 	}
+
+	// Product details sub-routes (version history, freshness, relations)
+	pgroup := rg.Group("/products")
+	{
+		pgroup.GET("/:id/versions", h.ListVersions)
+		pgroup.GET("/:id/versions/:versionId", h.GetVersion)
+		pgroup.POST("/:id/versions/:versionId/rollback", h.Rollback)
+		pgroup.POST("/:id/decisions", h.RecordDecision)
+		pgroup.GET("/:id/freshness", h.GetProductFreshness)
+		pgroup.GET("/freshness/stale", h.ListStaleProducts)
+		pgroup.POST("/:id/freshness/verify", h.VerifyDimension)
+		pgroup.GET("/:id/relations", h.GetRelatedProducts)
+		pgroup.POST("/:id/discover-relations", h.AutoDiscoverRelations)
+	}
+	rg.POST("/products/relations", h.CreateRelation)
+	rg.DELETE("/products/relations/:id", h.DeleteRelation)
 }

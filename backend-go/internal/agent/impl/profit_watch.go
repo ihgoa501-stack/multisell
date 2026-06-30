@@ -13,6 +13,7 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -60,12 +61,12 @@ func NewProfitWatchAgent(db *gorm.DB, logger *zap.Logger) *ProfitWatchAgent {
 //   - "cost_optimization" — cost structure analysis with price/cost suggestions
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
-func (a *ProfitWatchAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *ProfitWatchAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "profit_check", "profit_watch":
-		return a.checkProfit(decisionPoint, ctx)
+		return a.checkProfit(ctx, decisionPoint, params)
 	case "cost_optimization":
-		return a.suggestCostOptimization(ctx)
+		return a.suggestCostOptimization(ctx, params)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",
@@ -247,22 +248,22 @@ func (a *ProfitWatchAgent) fillPlatformFeeFromDB(ctx map[string]interface{}) {
 //   - Loss / below-threshold detection
 //   - Optimization suggestions
 //   - Fee-ratio warnings
-func (a *ProfitWatchAgent) checkProfit(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *ProfitWatchAgent) checkProfit(callCtx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	// Enrich context from DB if possible.
-	a.fillSkuFromDB(ctx)
-	a.fillPlatformFeeFromDB(ctx)
+	a.fillSkuFromDB(params)
+	a.fillPlatformFeeFromDB(params)
 
 	// Validate required fields.
-	if missing := missingFields(ctx, profitWatchRequiredFields); len(missing) > 0 {
+	if missing := missingFields(params, profitWatchRequiredFields); len(missing) > 0 {
 		return insufficientData(decisionPoint, missing), 0.0, "low", nil
 	}
 
-		sellingPrice := safeFloat(ctx["selling_price"])
+		sellingPrice := safeFloat(params["selling_price"])
 
 	// Compute discount_rate from discounts array if present (tools cannot
 	// handle the complex discounts structure; we flatten it here).
 	discountRate := 0.0
-	if discounts, ok := ctx["discounts"]; ok {
+	if discounts, ok := params["discounts"]; ok {
 		if discountList, ok := discounts.([]interface{}); ok && len(discountList) > 0 {
 			for _, d := range discountList {
 				if dMap, ok := d.(map[string]interface{}); ok {
@@ -281,29 +282,29 @@ func (a *ProfitWatchAgent) checkProfit(decisionPoint string, ctx map[string]inte
 			if discountRate > 100 {
 				discountRate = 100
 			}
-			ctx["discount_rate"] = discountRate
+			params["discount_rate"] = discountRate
 		}
 	}
 
 	// Build the tool input from the enriched context.
 	toolInput := map[string]interface{}{
-		"sku_code":             ctx["sku_code"],
-		"selling_price":        ctx["selling_price"],
-		"cost_price":           ctx["cost_price"],
-		"platform":             ctx["platform"],
-		"country":              ctx["country"],
-		"platform_fee_rate":    ctx["platform_fee_rate"],
-		"platform_fee":         ctx["platform_fee"],
-		"fixed_fee":            ctx["fixed_fee"],
-		"shipping_fee":         ctx["shipping_fee"],
-		"discount_rate":        ctx["discount_rate"],
-		"ad_cost_per_unit":     ctx["ad_cost_per_unit"],
-		"refund_rate":          ctx["refund_rate"],
-		"min_margin_threshold": ctx["min_margin_threshold"],
+		"sku_code":             params["sku_code"],
+		"selling_price":        params["selling_price"],
+		"cost_price":           params["cost_price"],
+		"platform":             params["platform"],
+		"country":              params["country"],
+		"platform_fee_rate":    params["platform_fee_rate"],
+		"platform_fee":         params["platform_fee"],
+		"fixed_fee":            params["fixed_fee"],
+		"shipping_fee":         params["shipping_fee"],
+		"discount_rate":        params["discount_rate"],
+		"ad_cost_per_unit":     params["ad_cost_per_unit"],
+		"refund_rate":          params["refund_rate"],
+		"min_margin_threshold": params["min_margin_threshold"],
 	}
 
 	// Delegate computation to the tool.
-	rawResult, invokeErr := toolregistry.DefaultRegistry.Invoke("profit_watch.check_profit", toolInput)
+	rawResult, invokeErr := toolregistry.DefaultRegistry.Invoke("profit_watch.check_profit", toolInput, callCtx)
 	if invokeErr != nil {
 		a.logger.Error("profit_watch.check_profit tool invocation failed", zap.Error(invokeErr))
 		return map[string]interface{}{
@@ -358,25 +359,25 @@ func (a *ProfitWatchAgent) checkProfit(decisionPoint string, ctx map[string]inte
 // suggestCostOptimization analyzes the cost structure for a SKU and generates
 // price-increase and/or cost-reduction suggestions by delegating to the
 // profit_watch.cost_optimization tool.
-func (a *ProfitWatchAgent) suggestCostOptimization(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *ProfitWatchAgent) suggestCostOptimization(callCtx context.Context, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	// Enrich context from DB if possible.
-	a.fillSkuFromDB(ctx)
+	a.fillSkuFromDB(params)
 
 	// Validate required fields.
-	if missing := missingFields(ctx, profitWatchRequiredFields); len(missing) > 0 {
+	if missing := missingFields(params, profitWatchRequiredFields); len(missing) > 0 {
 		return insufficientData("cost_optimization", missing), 0.0, "low", nil
 	}
 
 	// Build the tool input from the enriched context.
 	toolInput := map[string]interface{}{
-		"sku_code":      ctx["sku_code"],
-		"selling_price": ctx["selling_price"],
-		"cost_price":    ctx["cost_price"],
-		"target_margin": ctx["target_margin"],
+		"sku_code":      params["sku_code"],
+		"selling_price": params["selling_price"],
+		"cost_price":    params["cost_price"],
+		"target_margin": params["target_margin"],
 	}
 
 	// Delegate computation to the tool.
-	rawResult, invokeErr := toolregistry.DefaultRegistry.Invoke("profit_watch.cost_optimization", toolInput)
+	rawResult, invokeErr := toolregistry.DefaultRegistry.Invoke("profit_watch.cost_optimization", toolInput, callCtx)
 	if invokeErr != nil {
 		a.logger.Error("profit_watch.cost_optimization tool invocation failed", zap.Error(invokeErr))
 		return map[string]interface{}{

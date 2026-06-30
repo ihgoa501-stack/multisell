@@ -11,6 +11,7 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -90,9 +91,9 @@ func NewCustomerServiceAgent() *CustomerServiceAgent {
 //   - "intent_classify"
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
-func (a *CustomerServiceAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *CustomerServiceAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	// Try tool first.
-	raw, toolErr := toolregistry.DefaultRegistry.Invoke("customer_service."+decisionPoint, ctx)
+	raw, toolErr := toolregistry.DefaultRegistry.Invoke("customer_service."+decisionPoint, params, ctx)
 	if toolErr == nil {
 		if result, ok := raw.(map[string]interface{}); ok {
 			if c, ok := result["confidence"].(float64); ok {
@@ -109,9 +110,9 @@ func (a *CustomerServiceAgent) Decide(decisionPoint string, ctx map[string]inter
 	// Fallback to built-in logic.
 	switch decisionPoint {
 	case "auto_reply":
-		return a.autoReply(ctx)
+		return a.autoReply(params)
 	case "intent_classify":
-		return a.classify(ctx)
+		return a.classify(params)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",

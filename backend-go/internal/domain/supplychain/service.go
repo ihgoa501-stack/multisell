@@ -63,14 +63,62 @@ func (s *Service) GetByID(ctx context.Context, id string) (*SupplyChainFlow, err
 	return &flow, nil
 }
 
-// GetEvents retrieves the timeline events for a flow.
-// Returns the flow record's JSONB fields as a combined event list.
-func (s *Service) GetEvents(ctx context.Context, id string) (*SupplyChainFlow, error) {
+// FlowEventsResponse is the payload returned by GetEvents. It bundles the
+// flow record with the ordered list of event_outbox rows that reference it.
+type FlowEventsResponse struct {
+	Flow   *SupplyChainFlow `json:"flow"`
+	Events []EventOutboxRow `json:"events"`
+}
+
+// EventOutboxRow is a read-only projection of the event_outbox table for the
+// supply chain flow timeline. The table is created by migration 000007 and
+// written to by the event bus whenever an event is published.
+type EventOutboxRow struct {
+	ID        int64                  `gorm:"column:id" json:"id"`
+	Topic     string                 `gorm:"column:topic" json:"topic"`
+	Source    string                 `gorm:"column:source" json:"source"`
+	Payload   map[string]interface{} `gorm:"column:payload;serializer:json" json:"payload"`
+	Priority  int                    `gorm:"column:priority" json:"priority"`
+	Status    string                 `gorm:"column:status" json:"status"`
+	CreatedAt time.Time              `gorm:"column:created_at" json:"created_at"`
+}
+
+// TableName pins EventOutboxRow to the event_outbox table created by migration 000007.
+func (EventOutboxRow) TableName() string { return "event_outbox" }
+
+// GetEvents retrieves the flow plus its event timeline from event_outbox.
+//
+// Events are matched to the flow via the "flow_id" key in the payload JSON.
+// The orchestrator attaches flow_id when publishing supplychain.* events
+// (e.g. supplychain.quote_requested, supplychain.flywheel), so each event
+// tied to this flow appears in the timeline ordered by created_at.
+//
+// The JSON-path filter is dialect-aware: PostgreSQL uses payload->>'flow_id'
+// while SQLite uses json_extract(payload, '$.flow_id') for in-memory tests.
+func (s *Service) GetEvents(ctx context.Context, id string) (*FlowEventsResponse, error) {
 	var flow SupplyChainFlow
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&flow).Error; err != nil {
 		return nil, err
 	}
-	return &flow, nil
+
+	var events []EventOutboxRow
+	q := s.db.WithContext(ctx).Model(&EventOutboxRow{}).Order("created_at ASC")
+	switch s.db.Dialector.Name() {
+	case "postgres":
+		q = q.Where("payload->>'flow_id' = ?", id)
+	default:
+		// SQLite (in-memory tests) and any other dialect: use json_extract.
+		q = q.Where("json_extract(payload, '$.flow_id') = ?", id)
+	}
+	// Ignore table-missing errors so the endpoint degrades gracefully when
+	// event_outbox has not been provisioned (e.g. legacy test fixtures).
+	if err := q.Find(&events).Error; err != nil {
+		s.logger.Warn("supplychain: failed to query event_outbox for flow timeline",
+			zap.String("flow_id", id), zap.Error(err))
+		events = nil
+	}
+
+	return &FlowEventsResponse{Flow: &flow, Events: events}, nil
 }
 
 // Create inserts a new supply chain flow.
