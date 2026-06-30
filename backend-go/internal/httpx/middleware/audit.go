@@ -16,27 +16,44 @@ import (
 )
 
 // Audit returns a middleware that records operation logs for mutating requests
-// (POST/PUT/PATCH/DELETE). It runs after the handler completes and does not
-// block the response — logging happens on a background goroutine so request
-// latency is unaffected.
+// (POST/PUT/PATCH/DELETE) and GET requests to sensitive paths. It runs after
+// the handler completes and does not block the response — logging happens on a
+// background goroutine so request latency is unaffected.
 //
 // Reads: request method, path, :id param, operator from JWT context (user_id
 // or username), client IP, request body (truncated to 2KB, never secrets).
-// Writes: a single row into operation_log per mutating request.
+// Writes: a single row into operation_log per audited request.
 //
-// GET/HEAD/OPTIONS and /api/health are skipped.
+// GET/HEAD/OPTIONS and /api/health are skipped unless the path matches
+// sensitiveReadPaths.
 func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 	svc := operationlog.NewService(db, logger)
 	return func(c *gin.Context) {
 		method := c.Request.Method
-		// Skip read-only methods.
-		if method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions {
+		path := c.Request.URL.Path
+
+		// Sensitive read paths that trigger audit even for GET requests.
+		sensitiveReadPaths := []string{
+			"/api/v1/finance",
+			"/api/v1/orders",
+			"/api/v1/settlement",
+			"/api/v1/user",
+			"/api/v1/rbac",
+		}
+
+		// Skip health checks unconditionally.
+		if strings.HasSuffix(path, "/health") || strings.HasSuffix(path, "/healthz") {
 			c.Next()
 			return
 		}
-		// Skip health checks.
-		path := c.Request.URL.Path
-		if strings.HasSuffix(path, "/health") || strings.HasSuffix(path, "/healthz") {
+
+		// Determine if this request should be audited.
+		isMutation := method == http.MethodPost || method == http.MethodPut ||
+			method == http.MethodPatch || method == http.MethodDelete
+		isSensitiveRead := method == http.MethodGet &&
+			isSensitivePath(path, sensitiveReadPaths)
+
+		if !isMutation && !isSensitiveRead {
 			c.Next()
 			return
 		}
@@ -76,12 +93,31 @@ func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			}
 		}
 
+		// Extract user_id as int64 for structured audit.
+		var userID int64
+		if v, ok := c.Get("user_id"); ok {
+			switch x := v.(type) {
+			case int64:
+				userID = x
+			case float64:
+				userID = int64(x)
+			}
+		}
+
+		status := c.Writer.Status()
+		result := "success"
+		if status >= 400 {
+			result = "failure"
+		}
+
 		entry := &operationlog.OperationLog{
 			Module:     moduleFromPath(path),
 			Action:     actionFromMethod(method, c.FullPath()),
 			ResourceID: resourceIDFromCtx(c),
-			Content:    composeAuditContent(c, bodySnippet, c.Writer.Status()),
+			Content:    composeAuditContent(c, bodySnippet, status),
 			Operator:   operator,
+			UserID:     userID,
+			Result:     result,
 			IP:         c.ClientIP(),
 			Duration:   int(latency.Milliseconds()),
 		}
@@ -210,4 +246,14 @@ func itoa(n int64) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
+}
+
+// isSensitivePath checks if the given path matches any sensitive read path prefix.
+func isSensitivePath(path string, sensitivePaths []string) bool {
+	for _, p := range sensitivePaths {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
 }

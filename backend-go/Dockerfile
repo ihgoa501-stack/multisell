@@ -33,6 +33,10 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 COPY --from=builder --chown=appuser:appgroup /app/server .
+# Ship the synthetic carrier-rate YAML files so the logistics module can
+# load shipping rates at startup. Override the path at runtime via
+# CARRIER_RATES_DIR env var if mounting a different volume.
+COPY --chown=appuser:appgroup carrier-rates ./carrier-rates
 
 USER appuser
 EXPOSE 8080

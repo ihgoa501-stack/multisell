@@ -155,19 +155,19 @@ func (a *ProductScoutAgent) registerTools() {
 // Supported decision points:
 //   - "product_scout"
 //   - "market_analysis"
-func (a *ProductScoutAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *ProductScoutAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	if a.registry != nil {
-		return a.decideViaRegistry(decisionPoint, ctx)
+		return a.decideViaRegistry(ctx, decisionPoint, params)
 	}
-	return a.decideDirect(decisionPoint, ctx)
+	return a.decideDirect(decisionPoint, params)
 }
 
 // decideViaRegistry delegates the decision through the ToolRegistry's hook chain.
-func (a *ProductScoutAgent) decideViaRegistry(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	result, callErr := a.registry.Call(context.Background(), decisionPoint, ctx)
+func (a *ProductScoutAgent) decideViaRegistry(callCtx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	result, callErr := a.registry.Call(callCtx, decisionPoint, params)
 	if callErr != nil {
 		// Tool not found or hook rejected; fall through to the direct dispatch table.
-		return a.decideDirect(decisionPoint, ctx)
+		return a.decideDirect(decisionPoint, params)
 	}
 
 	// Unwrap the tool output envelope.

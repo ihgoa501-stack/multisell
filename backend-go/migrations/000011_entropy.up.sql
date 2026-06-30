@@ -11,6 +11,7 @@ ALTER TABLE rule_conflict ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
 -- The 000011 version uses: agent_id, decision_point, metric, mean, std_dev, etc.
 -- Use ALTER TABLE to add new columns from the 000011 schema.
 ALTER TABLE spc_control_limit ADD COLUMN IF NOT EXISTS decision_point VARCHAR(80);
+ALTER TABLE spc_control_limit RENAME COLUMN metric_name TO metric;
 ALTER TABLE spc_control_limit ADD COLUMN IF NOT EXISTS mean NUMERIC(6,4) NOT NULL DEFAULT 0;
 ALTER TABLE spc_control_limit ADD COLUMN IF NOT EXISTS std_dev NUMERIC(6,4) NOT NULL DEFAULT 0;
 ALTER TABLE spc_control_limit ADD COLUMN IF NOT EXISTS upper_control NUMERIC(6,4);

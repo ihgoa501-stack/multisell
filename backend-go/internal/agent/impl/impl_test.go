@@ -1,6 +1,7 @@
 package impl
 
 import (
+	"context"
 	"testing"
 
 	"go.uber.org/zap"
@@ -22,7 +23,7 @@ func TestAdAdviceAgent_Decide(t *testing.T) {
 	points := []string{"acos_analysis", "ad_optimization", "bogus"}
 	for _, dp := range points {
 		t.Run(dp, func(t *testing.T) {
-			out, conf, risk, err := a.Decide(dp, map[string]interface{}{"campaign_id": "c1", "spend": 100.0, "sales": 500.0})
+			out, conf, risk, err := a.Decide(context.Background(), dp, map[string]interface{}{"campaign_id": "c1", "spend": 100.0, "sales": 500.0})
 			if err != nil {
 				t.Fatalf("Decide(%q): %v", dp, err)
 			}
@@ -49,7 +50,7 @@ func TestCustomerServiceAgent_Classify(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.msg, func(t *testing.T) {
-			out, _, _, _ := a.Decide("auto_reply", map[string]interface{}{"message": tc.msg, "language": "en"})
+			out, _, _, _ := a.Decide(context.Background(), "auto_reply", map[string]interface{}{"message": tc.msg, "language": "en"})
 			if out == nil {
 				t.Fatalf("nil output for %q", tc.msg)
 			}
@@ -62,7 +63,7 @@ func TestCustomerServiceAgent_Classify(t *testing.T) {
 
 func TestBatchOpsAgent_Decide(t *testing.T) {
 	a := NewBatchOpsAgent()
-	out, conf, risk, err := a.Decide("batch_prelisting", map[string]interface{}{"skus": []string{"s1", "s2"}})
+	out, conf, risk, err := a.Decide(context.Background(), "batch_prelisting", map[string]interface{}{"skus": []string{"s1", "s2"}})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestBatchOpsAgent_Decide(t *testing.T) {
 
 func TestComplianceGuardAgent_Decide(t *testing.T) {
 	a := NewComplianceGuardAgent()
-	out, conf, risk, err := a.Decide("compliance_check", map[string]interface{}{"sku_code": "s1", "title": "test"})
+	out, conf, risk, err := a.Decide(context.Background(), "compliance_check", map[string]interface{}{"sku_code": "s1", "title": "test"})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestComplianceGuardAgent_Decide(t *testing.T) {
 
 func TestCoordinatorAgent_Decide(t *testing.T) {
 	a := NewCoordinatorAgent(nil, zap.NewNop())
-	out, conf, risk, err := a.Decide("system_health", nil)
+	out, conf, risk, err := a.Decide(context.Background(), "system_health", nil)
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -103,7 +104,7 @@ func TestCoordinatorAgent_Decide(t *testing.T) {
 
 func TestDiscountRiskAgent_Decide(t *testing.T) {
 	a := NewDiscountRiskAgent(nil, zap.NewNop())
-	out, conf, risk, err := a.Decide("discount_risk_check", map[string]interface{}{"sku_code": "s1", "price": 100.0, "discount": 0.2})
+	out, conf, risk, err := a.Decide(context.Background(), "discount_risk_check", map[string]interface{}{"sku_code": "s1", "price": 100.0, "discount": 0.2})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestDiscountRiskAgent_Decide(t *testing.T) {
 
 func TestInventoryAlertAgent_Decide(t *testing.T) {
 	a := NewInventoryAlertAgent(nil, zap.NewNop())
-	out, conf, risk, err := a.Decide("stock_alert", map[string]interface{}{"sku_code": "s1", "current_stock": 10, "safety_stock": 50})
+	out, conf, risk, err := a.Decide(context.Background(), "stock_alert", map[string]interface{}{"sku_code": "s1", "current_stock": 10, "safety_stock": 50})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestInventoryAlertAgent_Decide(t *testing.T) {
 
 func TestListingOptimizerAgent_Decide(t *testing.T) {
 	a := NewListingOptimizerAgent()
-	out, conf, risk, err := a.Decide("listing_optimize", map[string]interface{}{"sku_code": "s1", "title": "test product", "marketplace": "US"})
+	out, conf, risk, err := a.Decide(context.Background(), "listing_optimize", map[string]interface{}{"sku_code": "s1", "title": "test product", "marketplace": "US"})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestListingOptimizerAgent_Decide(t *testing.T) {
 
 func TestProfitWatchAgent_Decide(t *testing.T) {
 	a := NewProfitWatchAgent(nil, zap.NewNop())
-	out, conf, risk, err := a.Decide("profit_watch", map[string]interface{}{"sku_code": "s1", "cost": 50.0, "price": 100.0, "sales_volume": 100})
+	out, conf, risk, err := a.Decide(context.Background(), "profit_watch", map[string]interface{}{"sku_code": "s1", "cost": 50.0, "price": 100.0, "sales_volume": 100})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestProfitWatchAgent_Decide(t *testing.T) {
 
 func TestSettlementReconAgent_Decide(t *testing.T) {
 	a := NewSettlementReconAgent(nil, zap.NewNop())
-	out, conf, risk, err := a.Decide("settlement_import", map[string]interface{}{"platform_id": 1, "period": "2026-06"})
+	out, conf, risk, err := a.Decide(context.Background(), "settlement_import", map[string]interface{}{"platform_id": 1, "period": "2026-06"})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestSettlementReconAgent_Decide(t *testing.T) {
 
 func TestLogisticsOpsAgent_Decide(t *testing.T) {
 	a := NewLogisticsOpsAgent(nil, zap.NewNop())
-	out, conf, risk, err := a.Decide("carrier_compare", map[string]interface{}{"weight_kg": 5.0, "destination": "US"})
+	out, conf, risk, err := a.Decide(context.Background(), "carrier_compare", map[string]interface{}{"weight_kg": 5.0, "destination": "US"})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestLogisticsOpsAgent_Decide(t *testing.T) {
 
 func TestProductScoutAgent_Decide(t *testing.T) {
 	a := NewProductScoutAgent()
-	out, conf, risk, err := a.Decide("product_scout", map[string]interface{}{"category": "electronics", "marketplace": "US"})
+	out, conf, risk, err := a.Decide(context.Background(), "product_scout", map[string]interface{}{"category": "electronics", "marketplace": "US"})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -194,7 +195,7 @@ func TestProductScoutAgent_Decide(t *testing.T) {
 
 func TestDashboardAgent_Decide(t *testing.T) {
 	a := NewDashboardAgent()
-	out, conf, risk, err := a.Decide("dashboard_overview", nil)
+	out, conf, risk, err := a.Decide(context.Background(), "dashboard_overview", nil)
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
@@ -208,7 +209,7 @@ func TestDashboardAgent_Decide(t *testing.T) {
 func TestSourcingAgent_Decide(t *testing.T) {
 	a := NewSourcingAgent()
 	// Viable product.
-	out, conf, risk, err := a.Decide("sourcing_recommend", map[string]interface{}{
+	out, conf, risk, err := a.Decide(context.Background(), "sourcing_recommend", map[string]interface{}{
 		"source_url": "https://detail.1688.com/offer/xxx.html",
 		"price_1688": 50.0,
 		"weight_kg":  0.5,
@@ -230,7 +231,7 @@ func TestSourcingAgent_Decide(t *testing.T) {
 	_ = risk
 
 	// Missing required fields.
-	out2, conf2, _, _ := a.Decide("sourcing_recommend", map[string]interface{}{})
+	out2, conf2, _, _ := a.Decide(context.Background(), "sourcing_recommend", map[string]interface{}{})
 	if out2 == nil {
 		t.Fatal("nil output for missing fields")
 	}
@@ -242,7 +243,7 @@ func TestSourcingAgent_Decide(t *testing.T) {
 	}
 
 	// Unknown decision point.
-	out3, conf3, _, _ := a.Decide("unknown_dp", nil)
+	out3, conf3, _, _ := a.Decide(context.Background(), "unknown_dp", nil)
 	if out3 == nil {
 		t.Fatal("nil output for unknown dp")
 	}
@@ -271,7 +272,7 @@ func TestAftersalesMgmtAgent_Decide(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, conf, risk, err := a.Decide(tt.dp, tt.ctx)
+			out, conf, risk, err := a.Decide(context.Background(), tt.dp, tt.ctx)
 			if err != nil {
 				t.Fatalf("Decide(%q): %v", tt.dp, err)
 			}

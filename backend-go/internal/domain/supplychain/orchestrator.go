@@ -28,6 +28,7 @@ type Orchestrator struct {
 	db            *gorm.DB
 	logger        *zap.Logger
 	returnTracker *aftersales.ReturnRateTracker
+	escalation    *EscalationManager
 }
 
 // NewOrchestrator creates a new supply chain orchestrator.
@@ -40,9 +41,34 @@ func NewOrchestrator(bus *eventbus.Bus, db *gorm.DB, logger *zap.Logger, returnT
 	}
 }
 
+// SetEscalationManager injects a 4-level EscalationManager (Issue #35) into the
+// orchestrator state machine. When set, the orchestrator can route operational
+// errors through Escalate(...) to apply the standard auto-retry → skip →
+// manual-review → global-alert progression. When nil, Escalate is a no-op.
+func (o *Orchestrator) SetEscalationManager(em *EscalationManager) *Orchestrator {
+	o.escalation = em
+	return o
+}
+
+// Escalate routes an escalation event through the configured EscalationManager.
+// Returns nil when no manager is wired (the orchestrator logs and continues) so
+// callers can invoke Escalate unconditionally without guarding for nil.
+func (o *Orchestrator) Escalate(ctx context.Context, evt EscalationEvent) error {
+	if o.escalation == nil {
+		o.logger.Warn("orchestrator: escalation manager not configured, dropping event",
+			zap.String("flow_id", evt.FlowID),
+			zap.Int("level", int(evt.Level)),
+			zap.String("error", evt.Error),
+		)
+		return nil
+	}
+	return o.escalation.Handle(ctx, evt)
+}
+
 // HandleRecommendEvent processes sourcing.recommend events.
-// It extracts product info from the event payload and publishes
-// a supplychain.quote_requested event to trigger A10 quoting.
+// It creates a supply_chain_flow record (source_type="sourcing_recommend"),
+// then publishes a supplychain.quote_requested event carrying the flow_id
+// so downstream events can be correlated on the flow timeline.
 func (o *Orchestrator) HandleRecommendEvent(ctx context.Context, evt eventbus.Event) error {
 	payload := evt.Payload
 
@@ -57,6 +83,40 @@ func (o *Orchestrator) HandleRecommendEvent(ctx context.Context, evt eventbus.Ev
 
 	sourceURL, _ := payload["source_url"].(string)
 
+	// Persist a supply_chain_flow record so the recommendation enters the
+	// auditable flow timeline. The DB is optional — if absent (e.g. in
+	// lightweight unit tests without a DB), we still publish the event
+	// with a generated flow_id so downstream consumers can correlate.
+	flowID := uuid.New().String()
+	if o.db != nil {
+		ctxData := map[string]interface{}{
+			"product_id": productID,
+			"source_url": sourceURL,
+		}
+		rawCtx, err := json.Marshal(ctxData)
+		if err != nil {
+			o.logger.Error("HandleRecommendEvent: failed to marshal context",
+				zap.Int64("product_id", productID), zap.Error(err))
+			return err
+		}
+		contextRaw := json.RawMessage(rawCtx)
+		flow := &SupplyChainFlow{
+			ID:         flowID,
+			SourceType: "sourcing_recommend",
+			SourceID:   strconv.FormatInt(productID, 10),
+			Status:     "pending",
+			Context:    &contextRaw,
+		}
+		if err := o.db.WithContext(ctx).Create(flow).Error; err != nil {
+			o.logger.Error("HandleRecommendEvent: failed to create supply chain flow",
+				zap.Int64("product_id", productID), zap.Error(err))
+			return err
+		}
+		o.logger.Info("sourcing recommend flow created",
+			zap.String("flow_id", flowID),
+			zap.Int64("product_id", productID))
+	}
+
 	quotePayload, err := supplyevent.ToPayload(supplyevent.QuoteRequested{
 		ProductID:   productID,
 		SourceURL:   sourceURL,
@@ -67,6 +127,8 @@ func (o *Orchestrator) HandleRecommendEvent(ctx context.Context, evt eventbus.Ev
 	if err != nil {
 		return err
 	}
+	// Attach flow_id so the event can be linked back to the flow timeline.
+	quotePayload["flow_id"] = flowID
 
 	_, err = o.bus.Publish(ctx, "supplychain.quote_requested", "supplychain", quotePayload)
 	return err
