@@ -17,6 +17,7 @@ type AITrace struct {
 	ModelName     string          `gorm:"column:model_name" json:"model_name"`
 	PromptVersion string          `gorm:"column:prompt_version" json:"prompt_version"`
 	InputContext  json.RawMessage `gorm:"column:input_context;type:jsonb" json:"input_context"`
+	ParentTraceID string          `json:"parent_trace_id,omitempty"`
 	FinalOutput   json.RawMessage `gorm:"column:final_output;type:jsonb" json:"final_output,omitempty"`
 	Confidence    *float64        `gorm:"column:confidence" json:"confidence,omitempty"`
 	RiskLevel     string          `gorm:"column:risk_level" json:"risk_level"`

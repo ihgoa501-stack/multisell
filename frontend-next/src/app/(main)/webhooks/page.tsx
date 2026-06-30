@@ -4,7 +4,6 @@ import {
   Badge,
   Button,
   Card,
-  DatePicker,
   Form,
   Input,
   message,
@@ -16,7 +15,6 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import apiClient from '@/lib/api-client';
-import type { Result } from '@/types/api';
 
 interface WebhookConfig {
   platform: string;

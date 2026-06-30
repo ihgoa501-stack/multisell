@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { Typography, Card, Row, Col, Spin, Select, Space, Statistic } from 'antd';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
@@ -14,6 +14,10 @@ interface Analytics {
   by_status: Record<string, number>;
   avg_process_hours: number;
   by_agent: Record<string, number>;
+}
+interface Project {
+  id: number;
+  name: string;
 }
 
 const statusLabels: Record<string, string> = {
@@ -29,12 +33,12 @@ const typeLabels: Record<string, string> = {
 
 export default function FeedbackAnalyticsPage() {
   const [projectId, setProjectId] = useState<number | null>(null);
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiClient.get<any[]>('/v1/feedback/projects').then((res) => {
+    apiClient.get<Project[]>('/v1/feedback/projects').then((res) => {
       if (res.code === 0 && res.data && res.data.length > 0) {
         setProjects(res.data);
         setProjectId(res.data[0].id);
@@ -44,9 +48,11 @@ export default function FeedbackAnalyticsPage() {
 
   useEffect(() => {
     if (!projectId) return;
-    setLoading(true);
-    apiClient.get<any>(`/v1/feedback/projects/${projectId}/analytics`).then((res) => {
-      if (res.code === 0) setData(res.data);
+    startTransition(() => {
+      setLoading(true);
+    });
+    apiClient.get<Analytics>(`/v1/feedback/projects/${projectId}/analytics`).then((res) => {
+      if (res.code === 0) setData(res.data ?? null);
     }).finally(() => setLoading(false));
   }, [projectId]);
 

@@ -30,8 +30,8 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '商品管理',
     items: [
-	      { key: '/product-hub', icon: 'DatabaseOutlined', label: '产品档案' },
-	      { key: '/products', icon: 'ShoppingOutlined', label: '商品', permission: 'product.read' },
+      { key: "/product-hub", icon: "DatabaseOutlined", label: "产品档案" },
+      { key: '/products', icon: 'ShoppingOutlined', label: '商品', permission: 'product.read' },
       { key: '/categories', label: '类目' },
       { key: '/brands', label: '品牌' },
       { key: '/sku', label: 'SKU' },

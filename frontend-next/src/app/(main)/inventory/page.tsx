@@ -1,9 +1,8 @@
 'use client';
 
 import CrudListPage, { fmtDate } from '@/components/crud/CrudListPage';
-import { message, Table, Tag, Tabs } from 'antd';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Table, Tag, Tabs } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 
 // --- Types ---

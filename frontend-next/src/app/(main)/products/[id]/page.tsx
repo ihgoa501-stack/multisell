@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Button, Card, Descriptions, Image, Input, message, Modal, Progress, Select, Skeleton, Space, Table, Tabs, Tag, Result, Tooltip, Typography } from 'antd';
+import { Alert, Button, Card, Descriptions, Image, message, Modal, Progress, Result, Select, Skeleton, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { AlertOutlined, ArrowLeftOutlined, CheckCircleOutlined, ExclamationCircleOutlined, ReloadOutlined, RollbackOutlined, WarningOutlined } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -249,12 +249,10 @@ function VersionHistoryTab({ productId }: { productId: string }) {
 // ----- Content AI Tab Component -----
 
 function ContentAITab({
-  productId,
   productName,
   category,
   brand,
 }: {
-  productId: string;
   productName: string;
   category: string;
   brand: string;
@@ -454,7 +452,7 @@ function FreshnessTab({ productId }: { productId: string }) {
       {isLoading ? <Skeleton active paragraph={{ rows: 4 }} /> : freshnessList && freshnessList.length > 0 ? (
         <Table rowKey="id" dataSource={freshnessList} columns={cols} pagination={false} size="small" />
       ) : (
-        <div style={{ textAlign: "center", padding: 24, color: "var(--text-secondary)" }}>暂无数据新鲜度记录。点击"验证"按钮开始追踪。</div>
+        <div style={{ textAlign: "center", padding: 24, color: "var(--text-secondary)" }}>暂无数据新鲜度记录。点击&ldquo;验证&rdquo;按钮开始追踪。</div>
       )}
     </Card>
   );
@@ -563,7 +561,7 @@ export default function Product360Page() {
     },
     {
       key: 'content', label: '内容',
-      children: <ContentAITab productId={id} productName={data.name ?? ''} category={data.category_name ?? ''} brand={data.brand_name ?? ''} />,
+      children: <ContentAITab productName={data.name ?? ''} category={data.category_name ?? ''} brand={data.brand_name ?? ''} />,
     },
     {
       key: 'images', label: '图片',

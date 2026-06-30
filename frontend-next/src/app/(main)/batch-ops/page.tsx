@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import {
   Card,
   Table,
@@ -23,7 +23,7 @@ import {
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
 import { getToken } from '@/lib/auth';
-import type { Result, PageResult } from '@/types/api';
+import type { Result } from '@/types/api';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -121,7 +121,9 @@ export default function BatchOpsPage() {
   }, [page, pageSize]);
 
   useEffect(() => {
-    loadBatches();
+    startTransition(() => {
+      loadBatches();
+    });
   }, [loadBatches]);
 
   // ── Poll processing batches every 5s ──

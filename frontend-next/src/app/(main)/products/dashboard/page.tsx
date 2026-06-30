@@ -3,7 +3,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
-  Statistic,
   Table,
   Tag,
   Typography,
@@ -22,7 +21,6 @@ import {
 } from '@ant-design/icons';
 import Link from 'next/link';
 import apiClient from '@/lib/api-client';
-import type { Result } from '@/types/api';
 import StatCard from '@/components/ui/StatCard';
 
 const { Title } = Typography;

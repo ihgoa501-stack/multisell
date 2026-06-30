@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, Col, Row, Spin, Statistic, Tag, Typography, Space, Alert } from 'antd';
-import { ArrowUpOutlined, ArrowDownOutlined, MinusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowUpOutlined, ArrowDownOutlined, MinusOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import type { Result } from '@/types/api';

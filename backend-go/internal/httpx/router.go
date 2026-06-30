@@ -28,7 +28,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
-	"github.com/lingmirror/backend-go/internal/domain/compliance"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/orchestration"
@@ -73,7 +72,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
-	"github.com/lingmirror/backend-go/internal/domain/supplyevent"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
@@ -118,7 +116,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
+	// ==========================================================
 	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
+	// ==========================================================
 
 	// Create event bus (with optional outbox persistence).
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
@@ -143,7 +143,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI orchestrator (shared by /ai and /agents routes).
 	aiosCfg := setup.Initialize(db, bus, logger)
 	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
-	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget)
+	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget).WithBus(bus)
 
 	// Pipeline engine for declarative decision DAG (replaces inline chain handlers).
 	pipelineEng := pipeline.NewEngine(func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
@@ -167,7 +167,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// and handles reverse logistics via HandleAftersaleReturn).
 	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker)
 
+	// ==========================================================
 	// Event Bus Subscriptions: agent triggers + pipeline chains
+	// ==========================================================
 
 	// scheduler.tick.A5 → orchestrator runs A5 stock_alert
 	bus.Subscribe("scheduler.tick.A5", func(ctx context.Context, evt eventbus.Event) error {
@@ -205,9 +207,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		})
 		return err
 	})
-	// scheduler.tick.compliance-scan → compliance scanner batch scan
-	bus.Subscribe("scheduler.tick.compliance-scan", func(ctx context.Context, evt eventbus.Event) error {
-		return compliance.HandleTick(db, logger)(ctx, evt)
+	// scheduler.tick.A7 → A7 compliance_check
+	bus.Subscribe("scheduler.tick.A7", func(ctx context.Context, evt eventbus.Event) error {
+		_, err := aiOrch.Run(&ai.RunAgentRequest{
+			AgentID:       "A7",
+			DecisionPoint: "compliance_check",
+			Context:       evt.Payload,
+		})
+		return err
 	})
 	// scheduler.tick.A4 → A4 auto_reply
 	bus.Subscribe("scheduler.tick.A4", func(ctx context.Context, evt eventbus.Event) error {
@@ -278,48 +285,77 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// by pipelineEng.Dispatch. This wildcard subscription catches all
 	// agent.decided.* events and routes them through the DAG engine.
 	// -------------------------------------------------------
+
+	// Wildcard DAG subscription — routes all agent decisions through the pipeline engine.
 	bus.Subscribe("agent.decided.*", func(ctx context.Context, evt eventbus.Event) error {
 		return pipelineEng.Dispatch(ctx, evt)
 	})
 
-	// A5 stock_alert (red) publishes supplychain.stock.critical for approval-gated replenishment.
+	// A5 stock_alert (red) → G3 discount_risk_check
 	bus.Subscribe("agent.decided.A5.stock_alert", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
-		status, _ := payload["stock_status"].(string)
-		if status != "red" {
-			return nil
+		if status, ok := payload["stock_status"].(string); ok && status == "red" {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "G3",
+				DecisionPoint: "discount_risk_check",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			return err
 		}
+		return nil
+	})
 
-		skuCode, _ := payload["sku_code"].(string)
-		var skuID int64
-		if skuCode != "" {
-			var s sku.Sku
-			if err := db.WithContext(ctx).Where("code = ?", skuCode).First(&s).Error; err == nil {
-				skuID = s.ID
-			} else {
-				logger.Warn("A5 red stock bridge: sku_code lookup failed",
-					zap.String("sku_code", skuCode), zap.Error(err))
-			}
+	// A6 profit_watch (loss) → A2 listing_optimize
+	bus.Subscribe("agent.decided.A6.profit_watch", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		isLoss, _ := payload["is_loss"].(bool)
+		belowThreshold, _ := payload["below_threshold"].(bool)
+		if isLoss || belowThreshold {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "A2",
+				DecisionPoint: "listing_optimize",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			return err
 		}
-		if skuID == 0 {
-			return nil
-		}
+		return nil
+	})
 
-		stockCritical := supplyevent.StockCritical{
-			SkuID:        skuID,
-			CurrentStock: int(toInt(payload["sellable_stock"])),
-			SafetyStock:  int(toInt(payload["safety_stock_days"])),
-			SellableDays: toFloat64(payload["sellable_days"]),
-			ReportedAt:   time.Now(),
+	// G0 system_health (anomaly_count > 3) → G1 dashboard_overview
+	bus.Subscribe("agent.decided.G0.system_health", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		if count, ok := payload["anomaly_count"].(int); ok && count > 3 {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "G1",
+				DecisionPoint: "dashboard_overview",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			return err
 		}
-		scPayload, err := supplyevent.ToPayload(stockCritical)
-		if err != nil {
-			logger.Warn("A5 red stock bridge: marshal failed", zap.Error(err))
-			return nil
-		}
-		if _, err := bus.Publish(ctx, "supplychain.stock.critical", "A5", scPayload); err != nil {
-			logger.Warn("A5 red stock bridge: publish failed",
-				zap.Int64("sku_id", skuID), zap.Error(err))
+		// Also check for float64 (JSON unmarshal from scheduler)
+		if count, ok := payload["anomaly_count"].(float64); ok && count > 3 {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "G1",
+				DecisionPoint: "dashboard_overview",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			return err
 		}
 		return nil
 	})
@@ -331,10 +367,28 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	auditSvc := operationlog.NewService(db, logger)
 	bus.Subscribe("agent.decided.**", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
+
 		if len(payload) == 0 {
 			logger.Warn("agent.decided event with empty payload, skipping audit",
 				zap.String("topic", evt.Topic))
 			return nil
+		}
+
+		// Chain: if action is "block", trigger A6 profit_watch proactively.
+		if action, ok := payload["action"].(string); ok && action == "block" {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "A6",
+				DecisionPoint: "profit_watch",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			if err != nil {
+				logger.Warn("agent decision chain: A6 profit_watch triggered via block action",
+					zap.Error(err))
+			}
 		}
 
 		// Extract agent_id and decision_point from payload or topic.
@@ -410,7 +464,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return nil
 	})
 
+	// ==========================================================
 	// Schedule all agent periodic tasks
+	// ==========================================================
 
 	sched.Register(scheduler.Task{
 		ID: "tick-g0", AgentID: "G0", DecisionPoint: "system_health",
@@ -445,8 +501,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Interval: time.Hour * 1, Description: "仓储报关",
 	})
 	sched.Register(scheduler.Task{
-		ID: "tick-compliance-scan", AgentID: "compliance-scan", DecisionPoint: "batch_scan",
-		Interval: time.Hour * 6, Description: "合规批量扫描",
+		ID: "tick-a7", AgentID: "A7", DecisionPoint: "compliance_check",
+		Interval: time.Hour * 2, Description: "合规检测",
 	})
 	sched.Register(scheduler.Task{
 		ID: "tick-trustscore", AgentID: "trustscore", DecisionPoint: "recalculate",
@@ -483,7 +539,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
 
+	// ==========================================================
 	// HTTP routes
+	// ==========================================================
 
 	// API v1 routes
 	api := r.Group("/api/v1")
@@ -686,9 +744,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	entropy.RegisterRoutes(protected, db, logger)
 	cost.RegisterRoutes(protected, db, logger, cfg.LLM.DailyBudgetUSD)
 
-	// Compliance risk engine.
-	compliance.RegisterRoutes(protected, db, logger)
-
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
 	// scheduler.tick.agentos -> SLA escalation for overdue pending actions
@@ -732,28 +787,4 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 		Context:       ctx,
 	})
 	return err
-}
-
-func toInt(v interface{}) int64 {
-	switch n := v.(type) {
-	case int:
-		return int64(n)
-	case int64:
-		return n
-	case float64:
-		return int64(n)
-	}
-	return 0
-}
-
-func toFloat64(v interface{}) float64 {
-	switch n := v.(type) {
-	case int:
-		return float64(n)
-	case int64:
-		return float64(n)
-	case float64:
-		return n
-	}
-	return 0
 }

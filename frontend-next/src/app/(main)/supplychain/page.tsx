@@ -1,8 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
 import { Tag } from 'antd';
-import apiClient from '@/lib/api-client';
 import CrudListPage, { fmtDate } from '@/components/crud/CrudListPage';
 import type { CrudColumn } from '@/components/crud/CrudListPage';
 
@@ -38,9 +36,6 @@ const fields = [
 ];
 
 export default function SupplyChainPage() {
-  const handleRowClick = useCallback((record: Record<string, unknown>) => {
-    window.location.href = `/supplychain/${record.id}`;
-  }, []);
 
   return (
     <CrudListPage
