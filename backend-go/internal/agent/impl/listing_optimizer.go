@@ -39,10 +39,10 @@ func NewListingOptimizerAgent() *ListingOptimizerAgent {
 //   - "keyword_research"
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
-func (a *ListingOptimizerAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *ListingOptimizerAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "listing_optimize":
-		result, callErr := toolregistry.DefaultRegistry.Call(context.Background(), "listing.optimize", ctx)
+		result, callErr := toolregistry.DefaultRegistry.Call(ctx, "listing.optimize", params)
 		if callErr != nil {
 			return map[string]interface{}{
 				"status":         "error",
@@ -60,7 +60,7 @@ func (a *ListingOptimizerAgent) Decide(decisionPoint string, ctx map[string]inte
 		}
 		return output, 0.0, "low", nil
 	case "keyword_research":
-		return a.researchKeywords(ctx)
+		return a.researchKeywords(params)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",

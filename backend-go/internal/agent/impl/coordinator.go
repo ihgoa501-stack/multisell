@@ -39,16 +39,16 @@ func NewCoordinatorAgent(db *gorm.DB, logger *zap.Logger) *CoordinatorAgent {
 }
 
 // Decide dispatches to the correct decision handler based on decisionPoint.
-func (a *CoordinatorAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *CoordinatorAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "system_health":
-		return a.systemHealth(ctx)
+		return a.systemHealth(ctx, params)
 	case "anomaly_escalation":
-		return a.anomalyEscalation(ctx)
+		return a.anomalyEscalation(ctx, params)
 	case "cross_squad_coordinate":
-		return a.crossSquadCoordinate(ctx)
+		return a.crossSquadCoordinate(ctx, params)
 	case "agent_audit":
-		return a.agentAudit(ctx)
+		return a.agentAudit(ctx, params)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",
@@ -62,12 +62,13 @@ func (a *CoordinatorAgent) Decide(decisionPoint string, ctx map[string]interface
 
 // systemHealth assesses the overall health of the AgentOS by aggregating
 // trust scores, pending actions, recent traces, and SLA compliance.
-func (a *CoordinatorAgent) systemHealth(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *CoordinatorAgent) systemHealth(callerCtx context.Context, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	health := "healthy"
 	var warnings []string
 	var criticals []string
 
-	ctxGo := context.Background()
+	ctxGo, cancel := context.WithTimeout(callerCtx, 30*time.Second)
+	defer cancel()
 
 	// Aggregate agent stats via tool registry or DB fallback.
 	var stalePending int64
@@ -147,10 +148,10 @@ func (a *CoordinatorAgent) systemHealth(ctx map[string]interface{}) (output map[
 
 // anomalyEscalation receives an anomaly event and determines the appropriate
 // escalation action. Expected context: anomaly_type, severity, details.
-func (a *CoordinatorAgent) anomalyEscalation(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	anomalyType := stringFromCtx(ctx, "anomaly_type", "unknown")
-	severity := stringFromCtx(ctx, "severity", "low")
-	details := stringFromCtx(ctx, "details", "")
+func (a *CoordinatorAgent) anomalyEscalation(ctx context.Context, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	anomalyType := stringFromCtx(params, "anomaly_type", "unknown")
+	severity := stringFromCtx(params, "severity", "low")
+	details := stringFromCtx(params, "details", "")
 
 	var suggestedActions []string
 	var escalateTo string
@@ -201,8 +202,8 @@ func (a *CoordinatorAgent) anomalyEscalation(ctx map[string]interface{}) (output
 
 // crossSquadCoordinate handles resource contention and priority conflicts
 // across squads. Expected context: conflicts (list of conflict objects).
-func (a *CoordinatorAgent) crossSquadCoordinate(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	conflicts := ctx["conflicts"]
+func (a *CoordinatorAgent) crossSquadCoordinate(ctx context.Context, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	conflicts := params["conflicts"]
 	var resolutions []map[string]interface{}
 
 	// If we have specific conflicts, resolve them.
@@ -265,10 +266,11 @@ func resolveConflict(conflict map[string]interface{}, idx int) map[string]interf
 
 // agentAudit performs a periodic audit of agent decision quality.
 // It reviews trust score trends, rejection patterns, and user feedback.
-func (a *CoordinatorAgent) agentAudit(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *CoordinatorAgent) agentAudit(callerCtx context.Context, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	var auditResults []map[string]interface{}
 
-	ctxGo := context.Background()
+	ctxGo, cancel := context.WithTimeout(callerCtx, 30*time.Second)
+	defer cancel()
 
 	// Try to fetch trust scores via tool registry first.
 	var scores []agentTrust
@@ -348,7 +350,7 @@ func (a *CoordinatorAgent) invokeToolInt64(ctx context.Context, name string, inp
 	if toolregistry.DefaultRegistry == nil {
 		return false, nil
 	}
-	result, err := toolregistry.DefaultRegistry.Invoke(name, input)
+	result, err := toolregistry.DefaultRegistry.Invoke(name, input, ctx)
 	if err != nil {
 		return false, err
 	}
@@ -380,7 +382,7 @@ func (a *CoordinatorAgent) invokeToolJSON(ctx context.Context, name string, inpu
 	if toolregistry.DefaultRegistry == nil {
 		return false, nil
 	}
-	result, err := toolregistry.DefaultRegistry.Invoke(name, input)
+	result, err := toolregistry.DefaultRegistry.Invoke(name, input, ctx)
 	if err != nil {
 		return false, err
 	}

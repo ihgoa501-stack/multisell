@@ -15,7 +15,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	suppliers := rg.Group("/suppliers")
 	{
 		suppliers.GET("", h.List)
+		suppliers.GET("/scoreboard", h.ListScoreboard) // must be before /:id
 		suppliers.GET("/:id", h.Get)
+		suppliers.GET("/:id/score", h.GetScore)
+		suppliers.POST("/:id/recalculate", h.RecalculateScore)
 		suppliers.POST("", h.Create)
 		suppliers.PUT("/:id", h.Update)
 		suppliers.DELETE("/:id", h.Delete)
