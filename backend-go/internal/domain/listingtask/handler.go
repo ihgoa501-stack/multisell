@@ -2,11 +2,13 @@ package listingtask
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
@@ -14,11 +16,12 @@ import (
 // Handler handles listing task HTTP requests.
 type Handler struct {
 	service *Service
+	rbacSvc *rbac.Service // may be nil (RBAC check disabled)
 }
 
 // NewHandler creates a new listingtask handler.
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, rbacSvc *rbac.Service) *Handler {
+	return &Handler{service: service, rbacSvc: rbacSvc}
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -45,6 +48,54 @@ func parseOptionalInt64(c *gin.Context, key string) *int64 {
 		return nil
 	}
 	return &n
+}
+
+// getUserIDFromContext extracts the user_id from the gin context set by the auth middleware.
+func getUserIDFromContext(c *gin.Context) (int64, string, bool) {
+	uid, exists := c.Get("user_id")
+	if !exists {
+		return 0, "", false
+	}
+	var userID int64
+	switch v := uid.(type) {
+	case float64:
+		userID = int64(v)
+	case int64:
+		userID = v
+	case int:
+		userID = int64(v)
+	default:
+		return 0, "", false
+	}
+	// Also try to get username/operator from context
+	operator := fmt.Sprintf("user:%d", userID)
+	if uname, exists := c.Get("username"); exists {
+		if s, ok := uname.(string); ok {
+			operator = s
+		}
+	}
+	return userID, operator, true
+}
+
+// checkPermission checks if the authenticated user has the specified permission code.
+func (h *Handler) checkPermission(c *gin.Context, permissionCode string) bool {
+	if h.rbacSvc == nil {
+		return true // RBAC disabled
+	}
+	userID, _, ok := getUserIDFromContext(c)
+	if !ok {
+		return false
+	}
+	perms, err := h.rbacSvc.GetUserPermissions(userID)
+	if err != nil {
+		return false
+	}
+	for _, p := range perms {
+		if p == permissionCode {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------- ListingTask handlers ----------
@@ -222,13 +273,28 @@ func (h *Handler) Execute(c *gin.Context) {
 	if !ok {
 		return
 	}
-	task, err := h.service.ExecuteTask(taskID)
+
+	// RBAC: check listing_task:execute permission
+	if !h.checkPermission(c, "listing_task:execute") {
+		response.Error(c, http.StatusForbidden, "insufficient permissions: listing_task:execute required")
+		return
+	}
+
+	// Get operator info from context
+	_, operator, ok := getUserIDFromContext(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	task, err := h.service.ExecuteTask(taskID, operator)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "listing task not found")
 			return
 		}
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		// Return 403 for gate/precondition violations that are permission-related
+		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	response.Success(c, task)

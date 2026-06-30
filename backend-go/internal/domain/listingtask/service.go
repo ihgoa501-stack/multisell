@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
@@ -17,16 +19,35 @@ import (
 
 // Service provides listing task business logic.
 type Service struct {
-	db         *gorm.DB
-	logger     *zap.Logger
-	prismSvc   prismadapter.PrismService // nil = Prism disabled at runtime
+	db          *gorm.DB
+	logger      *zap.Logger
+	prismSvc    prismadapter.PrismService // nil = Prism disabled at runtime
 	prismStrict bool                      // block on Prism error vs warn+continue
+	approvalSvc *approval.Service
+	oplogSvc    *operationlog.Service
+	loopRec     LoopRecorder
+}
+
+// LoopRecorder is the interface for recording feedback back to the evaluation loop.
+// Defined here to avoid circular import with the loop package.
+type LoopRecorder interface {
+	RecordExecutionResult(productID int64, listingTaskID int64, success bool, errorMsg string) error
 }
 
 // NewService creates a new listingtask service.
 // prismSvc may be nil, in which case Prism is never called.
-func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
-	return &Service{db: db, logger: logger, prismSvc: prismSvc, prismStrict: prismStrict}
+// oplogSvc may be nil (audit logging disabled).
+// loopRec may be nil (feedback recording disabled).
+func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool, approvalSvc *approval.Service, oplogSvc *operationlog.Service, loopRec LoopRecorder) *Service {
+	return &Service{
+		db:          db,
+		logger:      logger,
+		prismSvc:    prismSvc,
+		prismStrict: prismStrict,
+		approvalSvc: approvalSvc,
+		oplogSvc:    oplogSvc,
+		loopRec:     loopRec,
+	}
 }
 
 // ---------- ListingTask ----------
@@ -85,6 +106,7 @@ func (s *Service) Create(in *CreateTaskInput) (*ListingTask, error) {
 		TargetSalePrice:      in.TargetSalePrice,
 		TargetProfitMargin:   in.TargetProfitMargin,
 		DestinationCountry:   in.DestinationCountry,
+		ApprovalID:           in.ApprovalID,
 		CreatedBy:            in.CreatedBy,
 	}
 	if t.SourceType == "" {
@@ -126,6 +148,9 @@ func (s *Service) Update(id int64, in *UpdateTaskInput) (*ListingTask, error) {
 	}
 	if in.DestinationCountry != nil {
 		updates["destination_country"] = *in.DestinationCountry
+	}
+	if in.ApprovalID != nil {
+		updates["approval_id"] = *in.ApprovalID
 	}
 	if in.LastError != nil {
 		updates["last_error"] = *in.LastError
@@ -354,30 +379,108 @@ func (s *Service) RetryItem(taskID, itemID int64) (*ListingTaskItem, error) {
 	return &item, nil
 }
 
+// ---------- Execution Gate / State Machine ----------
+
+// validateExecutePreconditions checks all preconditions before executing a listing task.
+// Order of checks:
+//  1. Task exists (caller responsibility — task is already loaded)
+//  2. Idempotency: completed → return success without error
+//  3. Idempotency: executing → return error
+//  4. State machine: status must allow transition to "executing"
+//  5. ApprovalID must be set
+//  6. Approval record must exist, be approved, and match EntityType/EntityID
+func (s *Service) validateExecutePreconditions(task *ListingTask) error {
+	// Idempotency: already completed
+	if task.Status == "completed" {
+		return nil // not an error — caller treats as success
+	}
+	// Idempotency: already executing
+	if task.Status == "executing" {
+		return fmt.Errorf("task %d is already being executed", task.ID)
+	}
+	// State machine: only approved → executing is valid
+	sm := NewListingTaskStateMachine()
+	if !sm.CanTransition(task.Status, "executing") {
+		return fmt.Errorf("listing task %d cannot be executed from status %s (must be approved)", task.ID, task.Status)
+	}
+	// ApprovalID must be set
+	if task.ApprovalID == nil {
+		return fmt.Errorf("listing task %d has no approval_id — must be approved before execution", task.ID)
+	}
+	// Approval record must exist and be approved
+	if s.approvalSvc == nil {
+		return fmt.Errorf("approval service is not available")
+	}
+	approvalRec, err := s.approvalSvc.Get(*task.ApprovalID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("approval %d for listing task %d not found", *task.ApprovalID, task.ID)
+		}
+		return fmt.Errorf("failed to load approval %d: %w", *task.ApprovalID, err)
+	}
+	if approvalRec.Status != "approved" {
+		return fmt.Errorf("approval %d for listing task %d is not approved (status: %s)", *task.ApprovalID, task.ID, approvalRec.Status)
+	}
+	if approvalRec.EntityType != "listing_task" {
+		return fmt.Errorf("approval %d entity_type is %q, expected listing_task", *task.ApprovalID, approvalRec.EntityType)
+	}
+	if approvalRec.EntityID != task.ID {
+		return fmt.Errorf("approval %d entity_id is %d, expected listing task %d", *task.ApprovalID, approvalRec.EntityID, task.ID)
+	}
+	return nil
+}
+
+// writeAudit is a helper to write operation log entries.
+func (s *Service) writeAudit(action, result, resourceID, operator, content string) {
+	if s.oplogSvc == nil {
+		return
+	}
+	_ = s.oplogSvc.Log("listing_task", action, resourceID, operator, content)
+}
+
+// statusChangeAudit writes an audit entry for a listing task status transition.
+func (s *Service) statusChangeAudit(taskID int64, oldStatus, newStatus, operator string) {
+	if s.oplogSvc == nil {
+		return
+	}
+	content := fmt.Sprintf("listing_task_id=%d status_change %s → %s operator=%s", taskID, oldStatus, newStatus, operator)
+	_ = s.oplogSvc.Log("listing_task", "listing_task.status_change", fmt.Sprintf("%d", taskID), operator, content)
+}
+
 // ---------- Listing publish chain ----------
 
-// ExecuteTask triggers execution of a listing task. Before platform publishing it
-// optionally calls Prism for image generation + compliance check, branching by result:
-//   - pass:      use Prism output image, proceed with platform publish
-//   - warning:   proceed but record risks
-//   - fail:      block the task and listing, set last_error
-//   - error:     block if strict mode, else warn+continue with original image
-func (s *Service) ExecuteTask(taskID int64) (*ListingTask, error) {
+// ExecuteTask triggers execution of a listing task after passing the execution gate.
+//
+// The execution gate enforces (in order):
+//  1. Task exists
+//  2. Idempotency: completed → return success, executing → error
+//  3. Status must be "approved"
+//  4. ApprovalID must be set
+//  5. Approval record exists, approved, EntityType=listing_task, EntityID=task.ID
+//
+// After passing the gate, it runs Prism (if enabled) followed by platform publishing.
+func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, error) {
 	var task ListingTask
 	if err := s.db.First(&task, taskID).Error; err != nil {
 		return nil, err
 	}
-	if task.Status == "completed" || task.Status == "cancelled" {
+
+	// Idempotency: already completed — return success
+	if task.Status == "completed" {
 		return &task, nil
 	}
 
-	// Blocked tasks require an approved approval before execution.
-	if task.Status == "blocked" {
-		approvalSvc := approval.NewService(s.db, s.logger)
-		if _, err := approvalSvc.FindApprovedByTarget("listing_task", task.ID, "publish"); err != nil {
-			return nil, fmt.Errorf("approval required for listing task %d: %w", task.ID, err)
-		}
-		task.Status = "pending"
+	// Validation gate
+	if err := s.validateExecutePreconditions(&task); err != nil {
+		return nil, err
+	}
+
+	// Audit: execution started
+	s.writeAudit("listing_task.execute", "started", fmt.Sprintf("%d", taskID), operator,
+		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID))
+
+	oldStatus := task.Status
+
 		if err := s.db.Model(&task).Update("status", "pending").Error; err != nil {
 			return nil, err
 		}
@@ -442,12 +545,32 @@ func (s *Service) ExecuteTask(taskID int64) (*ListingTask, error) {
 			if err := s.db.First(&task, taskID).Error; err != nil {
 				return nil, err
 			}
+			// Audit: blocked by Prism
+			s.writeAudit("listing_task.execute", "blocked", fmt.Sprintf("%d", taskID), operator,
+				fmt.Sprintf("listing_task_id=%d prism_blocked error=%s", taskID, task.LastError))
+			s.statusChangeAudit(taskID, oldStatus, task.Status, operator)
+			if s.loopRec != nil {
+				_ = s.loopRec.RecordExecutionResult(task.ProductID, task.ID, false, "prism_blocked: "+task.LastError)
+			}
 			return &task, nil
+		}
+		// Audit: execution failed (non-Prism error)
+		s.writeAudit("listing_task.execute", "failure", fmt.Sprintf("%d", taskID), operator,
+			fmt.Sprintf("listing_task_id=%d error=%v", taskID, err))
+		if s.loopRec != nil {
+			_ = s.loopRec.RecordExecutionResult(task.ProductID, taskID, false, err.Error())
 		}
 		return nil, err
 	}
 	if err := s.db.First(&task, taskID).Error; err != nil {
 		return nil, err
+	}
+	// Audit: execution succeeded
+	s.writeAudit("listing_task.execute", "success", fmt.Sprintf("%d", taskID), operator,
+		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID))
+	s.statusChangeAudit(taskID, oldStatus, task.Status, operator)
+	if s.loopRec != nil {
+		_ = s.loopRec.RecordExecutionResult(task.ProductID, task.ID, true, "")
 	}
 	return &task, nil
 }

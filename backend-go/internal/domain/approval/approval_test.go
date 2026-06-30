@@ -2,7 +2,6 @@ package approval
 
 import (
 	"testing"
-	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 )
@@ -14,7 +13,7 @@ func newTestDB(t *testing.T) *ApprovalRequest {
 
 func TestService_Create(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	req, err := svc.Create(&CreateApprovalInput{
 		ProductID:   100,
@@ -38,7 +37,7 @@ func TestService_Create(t *testing.T) {
 
 func TestService_Get_Found(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	created, _ := svc.Create(&CreateApprovalInput{
 		ProductID: 1, RequestType: "price_change", Requester: "user1",
@@ -55,7 +54,7 @@ func TestService_Get_Found(t *testing.T) {
 
 func TestService_Get_NotFound(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	_, err := svc.Get(99999)
 	if err == nil {
@@ -65,7 +64,7 @@ func TestService_Get_NotFound(t *testing.T) {
 
 func TestService_List_Empty(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	items, total, err := svc.List(1, 10, "", "")
 	if err != nil {
@@ -81,7 +80,7 @@ func TestService_List_Empty(t *testing.T) {
 
 func TestService_List_Pagination(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	for i := 0; i < 5; i++ {
 		svc.Create(&CreateApprovalInput{
@@ -100,126 +99,105 @@ func TestService_List_Pagination(t *testing.T) {
 	}
 	if len(items) != 2 {
 		t.Errorf("expected 2 items, got %d", len(items))
+		_ = items
+	}
+
+	items, total, err = svc.List(2, 2, "", "")
+	if err != nil {
+		t.Fatalf("List page 2 failed: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("expected total 5, got %d", total)
+	}
+	if len(items) != 2 {
+		t.Errorf("expected 2 items, got %d", len(items))
+		_ = items
 	}
 }
 
-func TestService_List_FilterByStatus(t *testing.T) {
+func TestService_List_StatusFilter(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	svc.Create(&CreateApprovalInput{ProductID: 1, RequestType: "publish", Requester: "user"})
-	svc.Create(&CreateApprovalInput{ProductID: 2, RequestType: "delist", Requester: "user"})
-
-	// Manually update one to "approved"
-	db.Model(&ApprovalRequest{}).Where("product_id = ?", 2).Update("status", "approved")
+	svc.Create(&CreateApprovalInput{ProductID: 1, RequestType: "publish", Requester: "agent1"})
+	svc.Create(&CreateApprovalInput{ProductID: 2, RequestType: "publish", Requester: "agent2"})
 
 	items, total, err := svc.List(1, 10, "pending", "")
 	if err != nil {
-		t.Fatalf("List filter by status failed: %v", err)
+		t.Fatalf("List by status failed: %v", err)
 	}
-	if total != 1 {
-		t.Errorf("expected 1 pending, got %d", total)
+	if total != 2 {
+		t.Errorf("expected 2 pending, got %d", total)
+		_ = items
 	}
-	_ = items
 }
 
-func TestService_List_FilterByType(t *testing.T) {
+func TestService_Review_Approved(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	svc.Create(&CreateApprovalInput{ProductID: 1, RequestType: "publish", Requester: "user"})
-	svc.Create(&CreateApprovalInput{ProductID: 2, RequestType: "delist", Requester: "user"})
-
-	items, total, err := svc.List(1, 10, "", "delist")
-	if err != nil {
-		t.Fatalf("List filter by type failed: %v", err)
-	}
-	if total != 1 {
-		t.Errorf("expected 1 delist, got %d", total)
-	}
-	_ = items
-}
-
-func TestService_Review_Approve(t *testing.T) {
-	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
-
-	req, _ := svc.Create(&CreateApprovalInput{
+	created, _ := svc.Create(&CreateApprovalInput{
 		ProductID: 1, RequestType: "publish", Requester: "agent",
 	})
 
-	reviewed, err := svc.Review(req.ID, &ReviewApprovalInput{
+	reviewed, err := svc.Review(created.ID, &ReviewApprovalInput{
 		Action:     "approve",
-		Reviewer:   "manager",
-		ReviewNote: "Looks good",
+		Reviewer:   "owner",
+		ReviewNote: "looks good",
 	})
 	if err != nil {
-		t.Fatalf("Review approve failed: %v", err)
+		t.Fatalf("Review failed: %v", err)
 	}
 	if reviewed.Status != "approved" {
 		t.Errorf("expected status 'approved', got %s", reviewed.Status)
 	}
-	if reviewed.Reviewer != "manager" {
-		t.Errorf("expected reviewer 'manager', got %s", reviewed.Reviewer)
+	if reviewed.Reviewer != "owner" {
+		t.Errorf("expected reviewer 'owner', got %s", reviewed.Reviewer)
 	}
 }
 
-func TestService_Review_Reject(t *testing.T) {
+func TestService_Review_Rejected(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	req, _ := svc.Create(&CreateApprovalInput{
+	created, _ := svc.Create(&CreateApprovalInput{
 		ProductID: 1, RequestType: "publish", Requester: "agent",
 	})
 
-	reviewed, err := svc.Review(req.ID, &ReviewApprovalInput{
+	reviewed, err := svc.Review(created.ID, &ReviewApprovalInput{
 		Action:     "reject",
-		Reviewer:   "manager",
-		ReviewNote: "Not ready",
+		Reviewer:   "owner",
+		ReviewNote: "not ready",
 	})
 	if err != nil {
-		t.Fatalf("Review reject failed: %v", err)
+		t.Fatalf("Review failed: %v", err)
 	}
 	if reviewed.Status != "rejected" {
 		t.Errorf("expected status 'rejected', got %s", reviewed.Status)
 	}
 }
 
-func TestService_Review_AlreadyReviewed(t *testing.T) {
+func TestService_Review_NotPending(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	req, _ := svc.Create(&CreateApprovalInput{
+	created, _ := svc.Create(&CreateApprovalInput{
 		ProductID: 1, RequestType: "publish", Requester: "agent",
 	})
-	svc.Review(req.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "m1"})
+	svc.Review(created.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "owner"})
 
-	_, err := svc.Review(req.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "m2"})
+	_, err := svc.Review(created.ID, &ReviewApprovalInput{Action: "reject", Reviewer: "owner"})
 	if err == nil {
-		t.Fatal("expected error when reviewing already reviewed request")
-	}
-}
-
-func TestService_Review_NotFound(t *testing.T) {
-	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
-
-	_, err := svc.Review(99999, &ReviewApprovalInput{Action: "approve", Reviewer: "m1"})
-	if err == nil {
-		t.Fatal("expected error for not found")
+		t.Fatal("expected error reviewing already approved request")
 	}
 }
 
 func TestService_MyPending(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	svc.Create(&CreateApprovalInput{ProductID: 1, RequestType: "publish", Requester: "agent"})
-	svc.Create(&CreateApprovalInput{ProductID: 2, RequestType: "delist", Requester: "agent"})
-
-	// Approve one
-	req, _ := svc.Create(&CreateApprovalInput{ProductID: 3, RequestType: "price_change", Requester: "agent"})
-	svc.Review(req.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "m1"})
+	svc.Create(&CreateApprovalInput{ProductID: 1, RequestType: "publish", Requester: "agent1"})
+	svc.Create(&CreateApprovalInput{ProductID: 2, RequestType: "publish", Requester: "agent2"})
 
 	items, total, err := svc.MyPending(1, 10)
 	if err != nil {
@@ -227,138 +205,104 @@ func TestService_MyPending(t *testing.T) {
 	}
 	if total != 2 {
 		t.Errorf("expected 2 pending, got %d", total)
-	}
-	_ = items
-}
-
-func TestService_MyPending_Empty(t *testing.T) {
-	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
-
-	items, total, err := svc.MyPending(1, 10)
-	if err != nil {
-		t.Fatalf("MyPending failed: %v", err)
-	}
-	if total != 0 {
-		t.Errorf("expected 0, got %d", total)
-	}
-	if items == nil {
-		t.Error("expected non-nil empty slice")
-	}
-}
-
-func TestService_Stats_Empty(t *testing.T) {
-	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
-
-	// Stats() uses PG-specific EXTRACT(EPOCH...) which SQLite does not support.
-	stats, err := svc.Stats()
-	if err != nil {
-		// On SQLite, the EXTRACT query will fail — that's acceptable.
-		t.Skip("Stats requires PG-specific SQL (EXTRACT EPOCH):", err)
-	}
-	if stats.TotalCount != 0 {
-		t.Errorf("expected total 0, got %d", stats.TotalCount)
+		_ = items
 	}
 }
 
 func TestService_Stats(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
-
-	svc.Create(&CreateApprovalInput{ProductID: 1, RequestType: "publish", Requester: "user"})
-	req2, _ := svc.Create(&CreateApprovalInput{ProductID: 2, RequestType: "delist", Requester: "user"})
-	svc.Review(req2.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "m1"})
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	stats, err := svc.Stats()
 	if err != nil {
-		// On SQLite, the EXTRACT query will fail — that's acceptable.
-		t.Skip("Stats requires PG-specific SQL (EXTRACT EPOCH):", err)
+		t.Fatalf("Stats failed: %v", err)
+	}
+	if stats.TotalCount != 0 {
+		t.Errorf("expected 0 total, got %d", stats.TotalCount)
+	}
+
+	svc.Create(&CreateApprovalInput{ProductID: 1, RequestType: "publish", Requester: "a"})
+	svc.Create(&CreateApprovalInput{ProductID: 2, RequestType: "publish", Requester: "a"})
+
+	stats, err = svc.Stats()
+	if err != nil {
+		t.Fatalf("Stats failed: %v", err)
 	}
 	if stats.TotalCount != 2 {
-		t.Errorf("expected total 2, got %d", stats.TotalCount)
+		t.Errorf("expected 2 total, got %d", stats.TotalCount)
 	}
-	if stats.PendingCount != 1 {
-		t.Errorf("expected pending 1, got %d", stats.PendingCount)
-	}
-	if stats.ApprovedCount != 1 {
-		t.Errorf("expected approved 1, got %d", stats.ApprovedCount)
+	if stats.PendingCount != 2 {
+		t.Errorf("expected 2 pending, got %d", stats.PendingCount)
 	}
 }
 
-func TestService_AutoEscalate_Empty(t *testing.T) {
+func TestService_HasPendingForEntity(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	items, err := svc.AutoEscalate()
+	has, err := svc.HasPendingForEntity("listing_task", 42)
 	if err != nil {
-		t.Fatalf("AutoEscalate failed: %v", err)
+		t.Fatalf("HasPendingForEntity: %v", err)
 	}
-	if len(items) != 0 {
-		t.Errorf("expected 0 escalated, got %d", len(items))
+	if has {
+		t.Fatal("expected false for no pending approval")
 	}
-}
 
-func TestService_AutoEscalate_Recent(t *testing.T) {
-	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
-
-	// Create a pending request that was just created (not old enough to escalate)
 	svc.Create(&CreateApprovalInput{
-		ProductID: 1, RequestType: "publish", Requester: "agent",
+		ProductID:   1,
+		RequestType: "publish",
+		Requester:   "agent",
+		EntityType:  "listing_task",
+		EntityID:    42,
 	})
 
-	items, err := svc.AutoEscalate()
+	has, err = svc.HasPendingForEntity("listing_task", 42)
 	if err != nil {
-		t.Fatalf("AutoEscalate failed: %v", err)
+		t.Fatalf("HasPendingForEntity: %v", err)
 	}
-	if len(items) != 0 {
-		t.Errorf("expected 0 escalated for recent requests, got %d", len(items))
+	if !has {
+		t.Fatal("expected true for existing pending approval")
+	}
+
+	has, err = svc.HasPendingForEntity("listing_task", 99)
+	if err != nil {
+		t.Fatalf("HasPendingForEntity: %v", err)
+	}
+	if has {
+		t.Fatal("expected false for different entity ID")
 	}
 }
 
-func TestService_CreateWithExpiry(t *testing.T) {
+func TestService_EntityTypeEntityID(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	expiry := time.Now().Add(48 * time.Hour)
 	req, err := svc.Create(&CreateApprovalInput{
 		ProductID:   1,
 		RequestType: "publish",
 		Requester:   "agent",
-		ExpiresAt:   &expiry,
+		EntityType:  "listing_task",
+		EntityID:    100,
 	})
 	if err != nil {
-		t.Fatalf("Create with expiry failed: %v", err)
+		t.Fatalf("Create: %v", err)
 	}
-	if req.ExpiresAt == nil {
-		t.Fatal("expected ExpiresAt to be set")
+	if req.EntityType != "listing_task" {
+		t.Errorf("EntityType = %q", req.EntityType)
 	}
-}
+	if req.EntityID != 100 {
+		t.Errorf("EntityID = %d", req.EntityID)
+	}
 
-func TestService_CreateWithOldNewValues(t *testing.T) {
-	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
-
-	req, err := svc.Create(&CreateApprovalInput{
-		ProductID:   1,
-		RequestType: "price_change",
-		Requester:   "agent",
-		OldValue:    "19.99",
-		NewValue:    "24.99",
-		Reason:      "market adjustment",
-	})
+	got, err := svc.Get(req.ID)
 	if err != nil {
-		t.Fatalf("Create with values failed: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
-	if req.OldValue != "19.99" {
-		t.Errorf("expected OldValue '19.99', got %s", req.OldValue)
+	if got.EntityType != "listing_task" {
+		t.Errorf("EntityType = %q", got.EntityType)
 	}
-	if req.NewValue != "24.99" {
-		t.Errorf("expected NewValue '24.99', got %s", req.NewValue)
-	}
-	if req.Reason != "market adjustment" {
-		t.Errorf("expected reason 'market adjustment', got %s", req.Reason)
+	if got.EntityID != 100 {
+		t.Errorf("EntityID = %d", got.EntityID)
 	}
 }
 

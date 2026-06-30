@@ -34,8 +34,8 @@ func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismServ
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
 		profitSvc:       profit.NewService(db, logger),
-		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict),
-		approvalSvc:  approval.NewService(db, logger),
+		listingtaskSvc: listingtask.NewService(db, logger, prismSvc, prismStrict, nil, nil, nil),
+		approvalSvc:    approval.NewService(db, logger),
 	}
 }
 
@@ -112,6 +112,7 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 		RiskFlags:         string(riskJSON),
 		CreatedListingTaskID: listingTaskID,
 		TriggeredBy:       triggeredBy,
+		FeedbackStatus:    "pending",
 	}
 	s.db.Create(&rec)
 
@@ -265,4 +266,29 @@ func (s *Service) GetRecommendations(page, size int, decision string) ([]Listing
 		return nil, 0, err
 	}
 	return items, total, nil
+}
+
+// RecordExecutionResult updates the feedback status based on execution outcome.
+// Called by listingtask service after ExecuteTask completes.
+func (s *Service) RecordExecutionResult(productID int64, listingTaskID int64, success bool, errorMsg string) error {
+	updates := map[string]interface{}{
+		"feedback_status": "executed",
+	}
+	if !success {
+		updates["feedback_status"] = "execution_failed"
+		updates["feedback_note"] = errorMsg
+	}
+
+	res := s.db.Model(&ListingRecommendation{}).
+		Where("product_id = ? AND created_listing_task_id = ?", productID, listingTaskID).
+		Updates(updates)
+	if res.Error != nil {
+		return fmt.Errorf("record execution result: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		s.logger.Warn("RecordExecutionResult: no recommendation found",
+			zap.Int64("product_id", productID),
+			zap.Int64("listing_task_id", listingTaskID))
+	}
+	return nil
 }

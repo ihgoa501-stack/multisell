@@ -6,6 +6,7 @@ import CrudListPage, { fmtDate } from '@/components/crud/CrudListPage';
 const statusColorMap: Record<string, string> = {
   blocked: 'red',
   pending: 'blue',
+  pending_approval: 'blue',
   executing: 'orange',
   completed: 'green',
   failed: 'red',
@@ -17,6 +18,7 @@ const statusColorMap: Record<string, string> = {
 const statusLabelMap: Record<string, string> = {
   blocked: '待审批',
   pending: '待处理',
+  pending_approval: '待审批',
   executing: '执行中',
   completed: '已完成',
   failed: '失败',
@@ -51,6 +53,18 @@ export default function ListingTasksPage() {
         { title: '错误信息', dataIndex: 'last_error', width: 280 },
         { title: '创建时间', dataIndex: 'created_at', width: 160, render: fmtDate },
         { title: '更新时间', dataIndex: 'updated_at', width: 160, render: fmtDate },
+        { title: '审批ID', dataIndex: 'approval_id', width: 90 },
+        {
+          title: '审批状态',
+          dataIndex: 'approval_status',
+          width: 110,
+          render: (v: unknown) => {
+            if (!v) return '-';
+            const apprColors: Record<string, string> = { pending: 'blue', approved: 'green', rejected: 'red' };
+            const apprLabels: Record<string, string> = { pending: '审批中', approved: '已批准', rejected: '已拒绝' };
+            return <Tag color={apprColors[String(v)] || 'default'}>{apprLabels[String(v)] || String(v)}</Tag>;
+          },
+        },
       ]}
       fields={[
         { name: 'product_id', label: '商品ID', type: 'number', required: true },

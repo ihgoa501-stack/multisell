@@ -5,6 +5,9 @@ import {
   Button,
   Col,
   Empty,
+  Input,
+  message,
+  Modal,
   Row,
   Space,
   Spin,
@@ -24,10 +27,13 @@ import {
   ThunderboltOutlined,
   ApiOutlined,
   ArrowRightOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
+import type { SuggestionResponse } from '@/types/api';
 
 const { Text } = Typography;
 
@@ -43,20 +49,6 @@ interface RiskSummary {
   total_candidates: number;
   total_recommendations: number;
   list_ready_products: number;
-}
-
-interface Suggestion {
-  id: number;
-  product_id: number;
-  product_title: string;
-  agent_source: string;
-  suggestion: string;
-  decision: string;
-  reason: string;
-  confidence: number;
-  risk_level: string;
-  created_at: string;
-  listing_task_id?: number | null;
 }
 
 interface PlatformSync {
@@ -84,6 +76,27 @@ interface ApprovalRequest {
 }
 
 // ---------- Color helpers ----------
+const riskColor = (level: string): string => {
+  if (level === 'high') return 'red';
+  if (level === 'medium') return 'orange';
+  if (level === 'low') return 'green';
+  return 'blue';
+};
+
+const modeColor = (mode: string): string => {
+  if (mode === 'mock') return 'orange';
+  if (mode === 'sandbox') return 'blue';
+  if (mode === 'production') return 'red';
+  return 'default';
+};
+
+const modeLabel = (mode: string): string => {
+  if (mode === 'mock') return '模拟';
+  if (mode === 'sandbox') return '沙箱';
+  if (mode === 'production') return '生产';
+  return mode;
+};
+
 const suggestionColor = (s: string): string => {
   if (s === '建议上架') return 'green';
   if (s === '谨慎上架') return 'orange';
@@ -111,6 +124,70 @@ const confidenceColor = (v: number): string => {
   return 'red';
 };
 
+// ---------- Helpers for new columns ----------
+
+/** Color for completeness_score Tag */
+const completenessColor = (v: number): string => {
+  if (v >= 80) return 'green';
+  if (v >= 50) return 'orange';
+  return 'red';
+};
+
+/** Color for profit_margin Tag */
+const profitColor = (v: number): string => {
+  if (v >= 15) return 'green';
+  if (v >= 0) return 'orange';
+  return 'red';
+};
+
+/** Format a number as USD */
+const formatUSD = (v: number): string => {
+  if (v == null || isNaN(v)) return '-';
+  return `$${v.toFixed(2)}`;
+};
+
+/** Icon and label config for feedback_status */
+interface FeedbackStatusConfig {
+  icon: React.ReactNode;
+  label: string;
+  color: string;
+}
+
+const feedbackStatusConfig = (status: string): FeedbackStatusConfig => {
+  switch (status) {
+    case 'pending':
+      return { icon: <ClockCircleOutlined style={{ fontSize: 14 }} />, label: '待处理', color: 'default' };
+    case 'adopted':
+      return { icon: <CheckCircleOutlined style={{ color: 'var(--g4)', fontSize: 14 }} />, label: '已采纳', color: 'green' };
+    case 'rejected':
+      return { icon: <CloseCircleOutlined style={{ color: 'var(--r4)', fontSize: 14 }} />, label: '已拒绝', color: 'red' };
+    case 'executed':
+      return { icon: <ThunderboltOutlined style={{ color: 'var(--g4)', fontSize: 14 }} />, label: '已执行', color: 'green' };
+    case 'execution_failed':
+      return { icon: <WarningOutlined style={{ color: 'var(--r4)', fontSize: 14 }} />, label: '执行失败', color: 'red' };
+    default:
+      return { icon: null, label: status, color: 'default' };
+  }
+};
+
+/** Approval status display when feedback_status=adopted and listing_task_id exists */
+const approvalStatusLabel = (status: string | null): string => {
+  if (!status) return '-';
+  switch (status) {
+    case 'pending': return '审批中';
+    case 'approved': return '已批准';
+    case 'rejected': return '已拒绝';
+    default: return status;
+  }
+};
+
+const approvalStatusColor = (status: string | null): string => {
+  switch (status) {
+    case 'pending': return 'blue';
+    case 'approved': return 'green';
+    case 'rejected': return 'red';
+    default: return 'default';
+  }
 const modeColor = (mode: string): string => {
   if (mode === 'mock') return 'orange';
   if (mode === 'sandbox') return 'blue';
@@ -130,6 +207,9 @@ export default function OwnerPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [suggestionFilter, setSuggestionFilter] = useState<string>('');
+  const [approvalModal, setApprovalModal] = useState<SuggestionResponse | null>(null);
+  const [approvalAction, setApprovalAction] = useState<'adopt' | 'reject' | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
 
   // Risk summary
   const { data: riskSummary } = useQuery({
@@ -144,7 +224,7 @@ export default function OwnerPage() {
   const { data: suggestions, isLoading: suggestionsLoading } = useQuery({
     queryKey: ['owner-suggestions'],
     queryFn: async () => {
-      const res = await apiClient.get<Suggestion[]>('/v1/owner/suggestions', { limit: '50' });
+      const res = await apiClient.get<SuggestionResponse[]>('/v1/owner/suggestions', { limit: '50' });
       return res.data ?? [];
     },
   });
@@ -167,6 +247,25 @@ export default function OwnerPage() {
     },
   });
 
+  // Provide feedback (adopt / reject) via the new API
+  const provideFeedback = useMutation({
+    mutationFn: async (params: { suggestionId: number; action: 'adopt' | 'reject'; note?: string }) => {
+      await apiClient.post(`/v1/owner/suggestions/${params.suggestionId}/feedback`, {
+        action: params.action,
+        note: params.note || '',
+      });
+    },
+    onSuccess: () => {
+      message.success('操作成功');
+      qc.invalidateQueries({ queryKey: ['owner-suggestions'] });
+      qc.invalidateQueries({ queryKey: ['owner-risk-summary'] });
+      setApprovalModal(null);
+      setApprovalAction(null);
+      setRejectNote('');
+    },
+    onError: (e: Error) => message.error(`操作失败: ${e.message}`),
+  });
+
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ['owner-risk-summary'] });
     qc.invalidateQueries({ queryKey: ['owner-suggestions'] });
@@ -183,10 +282,39 @@ export default function OwnerPage() {
     [suggestions]
   );
 
+  // Filter + sort suggestions (created_at descending)
   const filteredSuggestions = useMemo(() => {
-    if (!suggestionFilter) return suggestions ?? [];
-    return (suggestions ?? []).filter((s) => s.decision === suggestionFilter);
+    let data = suggestions ?? [];
+    if (suggestionFilter) {
+      data = data.filter((s) => s.decision === suggestionFilter);
+    }
+    return [...data].sort((a, b) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
   }, [suggestions, suggestionFilter]);
+
+  // Handlers
+  const handleAdopt = (s: SuggestionResponse) => {
+    setApprovalModal(s);
+    setApprovalAction('adopt');
+    setRejectNote('');
+  };
+
+  const handleReject = (s: SuggestionResponse) => {
+    setApprovalModal(s);
+    setApprovalAction('reject');
+    setRejectNote('');
+  };
+
+  const confirmApproval = async () => {
+    if (!approvalModal) return;
+    const action = approvalAction === 'adopt' ? 'adopt' : 'reject';
+    provideFeedback.mutate({
+      suggestionId: approvalModal.id,
+      action,
+      note: action === 'reject' ? rejectNote : undefined,
+    });
+  };
 
   // ---------- Render ----------
   return (
@@ -398,7 +526,7 @@ export default function OwnerPage() {
               display: 'flex', alignItems: 'center', gap: 8,
               fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
             }}>
-              Agent 上架建议
+              Agent 上架建议 — 决策队列
               <Tag color="orange" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>Mock</Tag>
             </div>
             <div style={{ padding: 16 }}>
@@ -449,28 +577,42 @@ export default function OwnerPage() {
                       {
                         title: '商品',
                         dataIndex: 'product_title',
-                        width: 160,
+                        width: 140,
                         ellipsis: true,
                         render: (v: string) => <Text strong>{v || '-'}</Text>,
                       },
                       {
-                        title: '建议',
-                        dataIndex: 'suggestion',
-                        width: 110,
-                        render: (v: string) => <Tag color={suggestionColor(v)}>{v}</Tag>,
+                        title: '完整度',
+                        dataIndex: 'completeness_score',
+                        width: 90,
+                        sorter: (a, b) => a.completeness_score - b.completeness_score,
+                        render: (v: number) => (
+                          <Tag color={completenessColor(v)}>{v}%</Tag>
+                        ),
+                      },
+                      {
+                        title: '利润率',
+                        dataIndex: 'profit_margin',
+                        width: 90,
+                        sorter: (a, b) => a.profit_margin - b.profit_margin,
+                        render: (v: number) => (
+                          <Tag color={profitColor(v)}>{v}%</Tag>
+                        ),
+                      },
+                      {
+                        title: '预计利润',
+                        dataIndex: 'estimated_profit',
+                        width: 100,
+                        sorter: (a, b) => a.estimated_profit - b.estimated_profit,
+                        render: (v: number) => (
+                          <Text style={{ fontVariantNumeric: 'tabular-nums' }}>{formatUSD(v)}</Text>
+                        ),
                       },
                       {
                         title: '评估结论',
                         dataIndex: 'decision',
                         width: 100,
                         render: (v: string) => <Tag color={decisionColor(v)}>{decisionLabel(v)}</Tag>,
-                      },
-                      {
-                        title: '理由',
-                        dataIndex: 'reason',
-                        width: 280,
-                        ellipsis: true,
-                        render: (v: string) => <Text type="secondary" ellipsis={{ tooltip: v }}>{v}</Text>,
                       },
                       {
                         title: '置信度',
@@ -481,17 +623,86 @@ export default function OwnerPage() {
                         ),
                       },
                       {
+                        title: '风险',
+                        dataIndex: 'risk_level',
+                        width: 80,
+                        render: (v: string) => <Tag color={riskColor(v)}>{v}</Tag>,
+                      },
+                      {
+                        title: '审批/任务',
+                        key: 'approval_status',
+                        width: 100,
+                        render: (_: unknown, record: SuggestionResponse) => {
+                          if (!record.listing_task_id) return <Text type="secondary">-</Text>;
+                          if (record.feedback_status === 'adopted') {
+                            return (
+                              <Tag color={approvalStatusColor(record.approval_status)}>
+                                {approvalStatusLabel(record.approval_status)}
+                              </Tag>
+                            );
+                          }
+                          if (record.feedback_status === 'executed') {
+                            return <Tag color="green">已执行</Tag>;
+                          }
+                          if (record.feedback_status === 'execution_failed') {
+                            return <Tag color="red">执行失败</Tag>;
+                          }
+                          return <Text type="secondary">-</Text>;
+                        },
+                      },
+                      {
+                        title: '反馈状态',
+                        dataIndex: 'feedback_status',
+                        width: 110,
+                        render: (v: string) => {
+                          const cfg = feedbackStatusConfig(v);
+                          return (
+                            <Space size={4}>
+                              {cfg.icon}
+                              <Text style={{ fontSize: '0.75rem' }}>{cfg.label}</Text>
+                            </Space>
+                          );
+                        },
+                      },
+                      {
+                        title: '理由',
+                        dataIndex: 'reason',
+                        width: 260,
+                        ellipsis: true,
+                        render: (v: string) => <Text type="secondary" ellipsis={{ tooltip: v }}>{v}</Text>,
+                      },
+                      {
                         title: '时间',
                         dataIndex: 'created_at',
                         width: 140,
+                        sorter: (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+                        defaultSortOrder: 'descend',
                       },
                       {
                         title: '操作',
                         key: 'actions',
                         width: 180,
                         fixed: 'right' as const,
-                        render: (_: unknown, record: Suggestion) => (
+                        render: (_: unknown, record: SuggestionResponse) => (
                           <Space size="small">
+                            <Button
+                              size="small"
+                              type="primary"
+                              icon={<CheckOutlined />}
+                              disabled={record.decision !== 'list' || record.feedback_status !== 'pending'}
+                              onClick={() => handleAdopt(record)}
+                            >
+                              采纳
+                            </Button>
+                            <Button
+                              size="small"
+                              danger
+                              icon={<CloseOutlined />}
+                              disabled={record.feedback_status !== 'pending'}
+                              onClick={() => handleReject(record)}
+                            >
+                              拒绝
+                            </Button>
                             {record.decision === 'list' && (
                               <>
                                 <Button
@@ -580,6 +791,39 @@ export default function OwnerPage() {
           </div>
         </Col>
       </Row>
+
+      {/* Approval confirmation modal */}
+      <Modal
+        title={approvalAction === 'adopt' ? '确认采纳建议' : '确认拒绝建议'}
+        open={!!approvalModal}
+        onCancel={() => { setApprovalModal(null); setApprovalAction(null); setRejectNote(''); }}
+        onOk={confirmApproval}
+        confirmLoading={provideFeedback.isPending}
+        okText={approvalAction === 'adopt' ? '采纳' : '拒绝'}
+        cancelText="取消"
+        okButtonProps={{ danger: approvalAction === 'reject' }}
+      >
+        <p>
+          商品："{approvalModal?.product_title || `ID:${approvalModal?.product_id}`}"
+        </p>
+        {approvalAction === 'adopt' ? (
+          <div style={{ background: 'var(--g1)', padding: 12, borderRadius: 6, marginTop: 8, border: '1px solid var(--g3)' }}>
+            <Text type="secondary" style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+              将会创建审批请求 → 审批通过后 → Agent 将执行上架
+            </Text>
+          </div>
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>拒绝原因（选填）：</Text>
+            <Input.TextArea
+              rows={3}
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              placeholder="请输入拒绝原因..."
+            />
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
