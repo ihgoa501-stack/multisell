@@ -11,19 +11,6 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-<<<<<<< HEAD
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	CORS     CORSConfig     `mapstructure:"cors"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
-	Log      LogConfig      `mapstructure:"log"`
-	Sentry   SentryConfig   `mapstructure:"sentry"`
-	LLM      LLMConfig      `mapstructure:"llm"`
-	Prism    PrismConfig    `mapstructure:"prism"`
-	EncryptionKey string         `mapstructure:"encryption_key"`
-=======
 	Server      ServerConfig      `mapstructure:"server"`
 	Database    DatabaseConfig    `mapstructure:"database"`
 	Redis       RedisConfig       `mapstructure:"redis"`
@@ -34,8 +21,8 @@ type Config struct {
 	Sentry      SentryConfig      `mapstructure:"sentry"`
 	LLM         LLMConfig         `mapstructure:"llm"`
 	SchemaDrift SchemaDriftConfig `mapstructure:"schemadrift"`
+	Prism       PrismConfig       `mapstructure:"prism"`
 	EncryptionKey string          `mapstructure:"encryption_key"`
->>>>>>> dd01bb69 (feat: add schema drift detection and migration version health check)
 }
 
 // LLMConfig holds LLM-related settings.

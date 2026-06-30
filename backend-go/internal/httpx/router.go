@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,8 +15,10 @@ import (
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/aftersales"
+	"github.com/lingmirror/backend-go/internal/domain/agentlearning"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/content"
@@ -31,6 +34,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
+	"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
@@ -47,8 +51,10 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/order"
 	"github.com/lingmirror/backend-go/internal/domain/orderimport"
+	"github.com/lingmirror/backend-go/internal/domain/orchestration"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
+	"github.com/lingmirror/backend-go/internal/domain/personalrule"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
 	"github.com/lingmirror/backend-go/internal/domain/producthub"
@@ -56,6 +62,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
 	"github.com/lingmirror/backend-go/internal/domain/settings"
+	"github.com/lingmirror/backend-go/internal/domain/sentiment"
 	"github.com/lingmirror/backend-go/internal/domain/settlement"
 	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
@@ -63,6 +70,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
+	"github.com/lingmirror/backend-go/internal/domain/support"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
@@ -70,7 +78,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
-	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
@@ -116,7 +123,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// ===================================================	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
 	// ===================================================
 	// Create event bus (with optional outbox persistence).
-	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
+	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithDLQ(db))
 	busCtx, busCancel := context.WithCancel(context.Background())
 	defer busCancel()
 	bus.Start(busCtx)
@@ -139,9 +146,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	aiosCfg := setup.Initialize(db, bus, logger)
 	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
 	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget)
-
-	// ToolBridge for sourcing data collection
-	_ = toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
 
 	// Reverse logistics return rate tracker (DB-backed).
 	returnRateTracker := aftersales.NewReturnRateTracker(db, logger)
@@ -447,6 +451,69 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	rbacAdminGroup.Use(middleware.RequirePermission(db, "rbac.manage"))
 	rbac.RegisterRoutes(rbacAdminGroup, db, logger)
 
+		// System management routes (requires rbac.manage permission)
+		systemGroup := protected.Group("/system")
+		systemGroup.Use(middleware.RequirePermission(db, "rbac.manage"))
+
+		// GET /api/v1/system/events/dlq — paginated DLQ events
+		systemGroup.GET("/events/dlq", func(c *gin.Context) {
+			dlq := bus.DLQ()
+			if dlq == nil {
+				c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": []interface{}{}, "total": 0, "page": 1, "size": 20})
+				return
+			}
+			page := 1
+			size := 20
+			if p, err := parseIntParam(c.Query("page"), 1); err == nil {
+				page = p
+			}
+			if s, err := parseIntParam(c.Query("size"), 20); err == nil {
+				size = s
+			}
+			events, total, err := dlq.ListDLQ(page, size)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"code": 0, "message": "ok", "data": events,
+				"total": total, "page": page, "size": size,
+			})
+		})
+
+		// POST /api/v1/system/events/dlq/replay — replay DLQ events by ID
+		systemGroup.POST("/events/dlq/replay", func(c *gin.Context) {
+			dlq := bus.DLQ()
+			if dlq == nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "DLQ not configured"})
+				return
+			}
+			var req struct {
+				IDs []uint `json:"ids"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid request: " + err.Error()})
+				return
+			}
+			if len(req.IDs) == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "ids is required"})
+				return
+			}
+			replayed, err := dlq.ReplayEventsByIDs(bus, req.IDs)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"replayed": replayed}})
+		})
+
+		// GET /api/v1/system/scheduler — scheduler task runtime state
+		systemGroup.GET("/scheduler", func(c *gin.Context) {
+			states := sched.TaskRunState()
+			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": states})
+		})
+
+
 	// Agent routes (wired through the AI orchestrator)
 	agent.RegisterRoutes(protected, db, logger, aiOrch)
 
@@ -643,6 +710,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 
+	// Previously-unregistered domain modules (Issue #78): code existed but
+	// RegisterRoutes was never called, so the endpoints were unreachable.
+	agentlearning.RegisterRoutes(protected, db, logger)
+	approval.RegisterRoutes(protected, db, logger)
+	landedcost.RegisterRoutes(protected, db, logger)
+	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
+	personalrule.RegisterRoutes(protected, db, logger)
+	producthub.RegisterRoutes(protected, db, logger)
+	sentiment.RegisterRoutes(protected, db, logger)
+	support.RegisterRoutes(protected, db, logger)
+
 	// WebSocket route
 	hub := realtime.NewHub(logger)
 	go hub.Run()
@@ -665,4 +743,17 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 		Context:       ctx,
 	})
 	return err
+}
+
+// parseIntParam parses an integer from a string with a default fallback.
+func parseIntParam(s string, defaultVal int) (int, error) {
+	if s == "" {
+		return defaultVal, nil
+	}
+	n := 0
+	_, err := fmt.Sscanf(s, "0", &n)
+	if err != nil {
+		return defaultVal, err
+	}
+	return n, nil
 }

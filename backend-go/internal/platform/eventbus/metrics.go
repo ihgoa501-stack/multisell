@@ -35,4 +35,14 @@ var (
 			Help: "Current event queue depth.",
 		},
 	)
+
+	// eventsDLQTotal tracks the total number of events moved to the dead-letter
+	// queue, labeled by topic.
+	eventsDLQTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "multisell_events_dlq_total",
+			Help: "Total events moved to dead-letter queue.",
+		},
+		[]string{"topic"},
+	)
 )
