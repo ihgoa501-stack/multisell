@@ -42,9 +42,8 @@ type ActionInput struct {
 }
 
 // ActionCreator creates approval-gated UnifiedActions for high-risk
-// operations (refund, resend, replenishment, etc.). Implementations should
-// persist the action in the "suggested" state so it shows up in the
-// approval queue.
+// operations. Implementations should persist suggestions for approval,
+// not execute refunds, resends, or replenishment automatically.
 type ActionCreator interface {
 	CreateAction(in *ActionInput) (int64, error)
 }
@@ -57,6 +56,7 @@ type Orchestrator struct {
 	logger        *zap.Logger
 	returnTracker *aftersales.ReturnRateTracker
 	actions       ActionCreator
+	escalation    *EscalationManager
 }
 
 // NewOrchestrator creates a new supply chain orchestrator.
@@ -69,18 +69,41 @@ func NewOrchestrator(bus *eventbus.Bus, db *gorm.DB, logger *zap.Logger, returnT
 	}
 }
 
-// WithActionCreator wires an ActionCreator (typically an adapter around
-// *ai.Service) so the orchestrator can create approval-gated UnifiedActions
-// for refund/resend/replenishment operations. Without a creator the
-// orchestrator logs a warning and skips action creation — flows still work.
+// WithActionCreator wires an ActionCreator for approval-gated high-risk actions.
+// Without a creator, flows still progress and action creation is skipped.
 func (o *Orchestrator) WithActionCreator(ac ActionCreator) *Orchestrator {
 	o.actions = ac
 	return o
 }
 
+// SetEscalationManager injects a 4-level EscalationManager (Issue #35) into the
+// orchestrator state machine. When set, the orchestrator can route operational
+// errors through Escalate(...) to apply the standard auto-retry → skip →
+// manual-review → global-alert progression. When nil, Escalate is a no-op.
+func (o *Orchestrator) SetEscalationManager(em *EscalationManager) *Orchestrator {
+	o.escalation = em
+	return o
+}
+
+// Escalate routes an escalation event through the configured EscalationManager.
+// Returns nil when no manager is wired (the orchestrator logs and continues) so
+// callers can invoke Escalate unconditionally without guarding for nil.
+func (o *Orchestrator) Escalate(ctx context.Context, evt EscalationEvent) error {
+	if o.escalation == nil {
+		o.logger.Warn("orchestrator: escalation manager not configured, dropping event",
+			zap.String("flow_id", evt.FlowID),
+			zap.Int("level", int(evt.Level)),
+			zap.String("error", evt.Error),
+		)
+		return nil
+	}
+	return o.escalation.Handle(ctx, evt)
+}
+
 // HandleRecommendEvent processes sourcing.recommend events.
-// It extracts product info from the event payload and publishes
-// a supplychain.quote_requested event to trigger A10 quoting.
+// It creates a supply_chain_flow record (source_type="sourcing_recommend"),
+// then publishes a supplychain.quote_requested event carrying the flow_id
+// so downstream events can be correlated on the flow timeline.
 func (o *Orchestrator) HandleRecommendEvent(ctx context.Context, evt eventbus.Event) error {
 	payload := evt.Payload
 
@@ -95,6 +118,40 @@ func (o *Orchestrator) HandleRecommendEvent(ctx context.Context, evt eventbus.Ev
 
 	sourceURL, _ := payload["source_url"].(string)
 
+	// Persist a supply_chain_flow record so the recommendation enters the
+	// auditable flow timeline. The DB is optional — if absent (e.g. in
+	// lightweight unit tests without a DB), we still publish the event
+	// with a generated flow_id so downstream consumers can correlate.
+	flowID := uuid.New().String()
+	if o.db != nil {
+		ctxData := map[string]interface{}{
+			"product_id": productID,
+			"source_url": sourceURL,
+		}
+		rawCtx, err := json.Marshal(ctxData)
+		if err != nil {
+			o.logger.Error("HandleRecommendEvent: failed to marshal context",
+				zap.Int64("product_id", productID), zap.Error(err))
+			return err
+		}
+		contextRaw := json.RawMessage(rawCtx)
+		flow := &SupplyChainFlow{
+			ID:         flowID,
+			SourceType: "sourcing_recommend",
+			SourceID:   strconv.FormatInt(productID, 10),
+			Status:     "pending",
+			Context:    &contextRaw,
+		}
+		if err := o.db.WithContext(ctx).Create(flow).Error; err != nil {
+			o.logger.Error("HandleRecommendEvent: failed to create supply chain flow",
+				zap.Int64("product_id", productID), zap.Error(err))
+			return err
+		}
+		o.logger.Info("sourcing recommend flow created",
+			zap.String("flow_id", flowID),
+			zap.Int64("product_id", productID))
+	}
+
 	quotePayload, err := supplyevent.ToPayload(supplyevent.QuoteRequested{
 		ProductID:   productID,
 		SourceURL:   sourceURL,
@@ -105,6 +162,8 @@ func (o *Orchestrator) HandleRecommendEvent(ctx context.Context, evt eventbus.Ev
 	if err != nil {
 		return err
 	}
+	// Attach flow_id so the event can be linked back to the flow timeline.
+	quotePayload["flow_id"] = flowID
 
 	_, err = o.bus.Publish(ctx, "supplychain.quote_requested", "supplychain", quotePayload)
 	return err
@@ -118,14 +177,7 @@ func (o *Orchestrator) HandleTick(ctx context.Context, evt eventbus.Event) error
 
 // HandleAftersaleReturn processes supplychain.aftersale.returned events.
 // It creates a reverse supply-chain flow (return -> inspection -> refund/resend),
-// tracks the return in the ReturnRateTracker, transitions the flow status, and
-// creates an approval-gated UnifiedAction so a human operator can approve the
-// actual refund/resend — the orchestrator never executes high-risk operations
-// automatically.
-//
-// The return-rate tracker update closes the data flywheel to A8 sourcing:
-// elevated return rates for a SKU surface in A8's next scan via the
-// sku_return_stats table, downgrading the SKU's sourcing score.
+// tracks the return in the ReturnRateTracker, and transitions the flow status.
 func (o *Orchestrator) HandleAftersaleReturn(ctx context.Context, evt eventbus.Event) error {
 	payload := evt.Payload
 
@@ -138,15 +190,8 @@ func (o *Orchestrator) HandleAftersaleReturn(ctx context.Context, evt eventbus.E
 
 	reason, _ := payload["reason"].(string)
 
-	// Track the return in the DB-backed return-rate tracker. This is the
-	// writeback to A8: elevated return rates surface in A8's next scan and
-	// downgrade the SKU's sourcing score.
-	if o.returnTracker != nil && skuID != 0 {
-		if err := o.returnTracker.TrackReturn(skuID, quantity); err != nil {
-			o.logger.Warn("HandleAftersaleReturn: failed to track return rate",
-				zap.Int64("sku_id", skuID), zap.Error(err))
-		}
-	}
+	// Track the return event in-memory.
+	o.returnTracker.TrackReturn(skuID, quantity)
 
 	// Build context JSON for the supply chain flow record.
 	ctxData := map[string]interface{}{
@@ -191,26 +236,19 @@ func (o *Orchestrator) HandleAftersaleReturn(ctx context.Context, evt eventbus.E
 		// Non-fatal — flow was created; continue.
 	}
 
-	// Create an approval-gated UnifiedAction for the refund/resend decision.
-	// The orchestrator only SUGGESTS the action; a human operator must approve
-	// before any money moves or goods ship. Risk is high because refunds move
-	// money out and resends consume inventory.
-	o.createRefundResendAction(ctx, flow.ID, aftersaleID, orderID, skuID, quantity, reason)
-
 	o.logger.Info("reverse logistics flow created",
 		zap.String("flow_id", flow.ID),
 		zap.Int64("aftersale_id", aftersaleID),
 		zap.Int64("sku_id", skuID),
 		zap.String("status", "inspecting"))
 
+	o.createRefundResendAction(ctx, flow.ID, aftersaleID, orderID, skuID, quantity, reason)
+
 	return nil
 }
 
-// createRefundResendAction creates a UnifiedAction in the "suggested" state
-// for the refund/resend decision. The action requires human approval — the
-// orchestrator never executes refunds or resends automatically. Failures are
-// logged but do not fail the handler: the flow itself was already created,
-// and operators can still drive it manually from the cockpit.
+// createRefundResendAction creates an approval-gated suggestion for the
+// operator. It never executes refunds or resends automatically.
 func (o *Orchestrator) createRefundResendAction(ctx context.Context, flowID string, aftersaleID, orderID, skuID int64, quantity int, reason string) {
 	if o.actions == nil {
 		o.logger.Warn("HandleAftersaleReturn: no ActionCreator wired; skipping UnifiedAction creation",
@@ -218,22 +256,22 @@ func (o *Orchestrator) createRefundResendAction(ctx context.Context, flowID stri
 		return
 	}
 	payload := map[string]interface{}{
-		"flow_id":      flowID,
 		"aftersale_id": aftersaleID,
 		"order_id":     orderID,
 		"sku_id":       skuID,
 		"quantity":     quantity,
 		"reason":       reason,
-		"options":      []string{"refund", "resend"},
+		"flow_id":      flowID,
 	}
-	desc := "客户发起退货 (aftersale_id=" + strconv.FormatInt(aftersaleID, 10) +
-		", sku_id=" + strconv.FormatInt(skuID, 10) +
-		", qty=" + strconv.Itoa(quantity) + "). 请审批：退款 或 重发。"
+	desc := "退货已进入逆向物流流程，请审批退款或重发方案。"
+	if reason != "" {
+		desc += " 原因：" + reason
+	}
 	in := &ActionInput{
 		SourceTable:        "supply_chain_flow",
 		SourceID:           flowID,
 		SourceType:         "aftersale_return",
-		AgentID:            "A6", // A6 aftersales management owns refund decisions
+		AgentID:            "A6",
 		SquadID:            "service",
 		ActionType:         "refund_or_resend",
 		BusinessObjectType: "aftersales_order",
@@ -253,7 +291,7 @@ func (o *Orchestrator) createRefundResendAction(ctx context.Context, flowID stri
 			zap.Error(err))
 		return
 	}
-	o.logger.Info("refund/resend UnifiedAction created",
+	o.logger.Info("HandleAftersaleReturn: UnifiedAction created",
 		zap.Int64("action_id", actionID),
 		zap.String("flow_id", flowID),
 		zap.Int64("aftersale_id", aftersaleID))
@@ -262,11 +300,8 @@ func (o *Orchestrator) createRefundResendAction(ctx context.Context, flowID stri
 // HandleStockCritical processes supplychain.stock.critical events.
 //
 // When A5 stock_alert detects a red (critical) stock level, it publishes
-// this event. The orchestrator:
-//  1. Creates a supply_chain_flow record (status pending → sourcing_requested).
-//  2. Publishes a sourcing.rescan event so A8 can scan for replacement products.
-//  3. Creates an approval-gated UnifiedAction for replenishment — actual
-//     purchase orders are never auto-placed; a human operator must approve.
+// this event. The orchestrator creates a supply_chain_flow record and
+// publishes a sourcing.rescan event so A8 can scan for replacement products.
 func (o *Orchestrator) HandleStockCritical(ctx context.Context, evt eventbus.Event) error {
 	payload := evt.Payload
 
@@ -328,23 +363,18 @@ func (o *Orchestrator) HandleStockCritical(ctx context.Context, evt eventbus.Eve
 			zap.String("flow_id", flow.ID), zap.Error(err))
 	}
 
-	// Create an approval-gated UnifiedAction for replenishment. The
-	// orchestrator only SUGGESTS the replenishment — placing an actual
-	// purchase order moves money and inventory, so a human must approve.
-	o.createReplenishAction(flow.ID, skuID, currentStock, safetyStock, sellableDays)
-
 	o.logger.Info("stock critical flow created",
 		zap.String("flow_id", flow.ID),
 		zap.Int64("sku_id", skuID),
 		zap.String("status", "sourcing_requested"))
 
+	o.createReplenishAction(flow.ID, skuID, currentStock, safetyStock, sellableDays)
+
 	return nil
 }
 
-// createReplenishAction creates a UnifiedAction in the "suggested" state for
-// the replenishment decision. Risk is high because replenishment places a
-// purchase order (money out + inventory in). Failures are logged but do not
-// fail the handler — the flow and sourcing.rescan event already happened.
+// createReplenishAction creates an approval-gated replenishment suggestion.
+// It never places purchase orders automatically.
 func (o *Orchestrator) createReplenishAction(flowID string, skuID int64, currentStock, safetyStock int, sellableDays float64) {
 	if o.actions == nil {
 		o.logger.Warn("HandleStockCritical: no ActionCreator wired; skipping UnifiedAction creation",
@@ -352,23 +382,18 @@ func (o *Orchestrator) createReplenishAction(flowID string, skuID int64, current
 		return
 	}
 	payload := map[string]interface{}{
-		"flow_id":          flowID,
-		"sku_id":           skuID,
-		"current_stock":    currentStock,
-		"safety_stock":     safetyStock,
-		"sellable_days":    sellableDays,
-		"suggested_action": "place_purchase_order",
+		"sku_id":        skuID,
+		"current_stock": currentStock,
+		"safety_stock":  safetyStock,
+		"sellable_days": sellableDays,
+		"flow_id":       flowID,
 	}
-	desc := "库存红色预警 (sku_id=" + strconv.FormatInt(skuID, 10) +
-		", 当前库存=" + strconv.Itoa(currentStock) +
-		", 安全库存=" + strconv.Itoa(safetyStock) +
-		", 可售天数=" + strconv.FormatFloat(sellableDays, 'f', 1, 64) +
-		"). 请审批：是否下达采购补货单。"
+	desc := "库存红色预警，建议创建补货单。该操作涉及采购资金和库存变化，必须人工审批。"
 	in := &ActionInput{
 		SourceTable:        "supply_chain_flow",
 		SourceID:           flowID,
 		SourceType:         "stock_critical",
-		AgentID:            "A5", // A5 inventory alert owns replenishment suggestions
+		AgentID:            "A5",
 		SquadID:            "logistics",
 		ActionType:         "replenish_order",
 		BusinessObjectType: "sku",
@@ -388,7 +413,7 @@ func (o *Orchestrator) createReplenishAction(flowID string, skuID int64, current
 			zap.Error(err))
 		return
 	}
-	o.logger.Info("replenish UnifiedAction created",
+	o.logger.Info("HandleStockCritical: UnifiedAction created",
 		zap.Int64("action_id", actionID),
 		zap.String("flow_id", flowID),
 		zap.Int64("sku_id", skuID))

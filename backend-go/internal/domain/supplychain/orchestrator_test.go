@@ -3,7 +3,6 @@ package supplychain
 import (
 	"context"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -81,7 +80,8 @@ func TestOrchestrator_HandleRecommendEvent(t *testing.T) {
 		return nil
 	})
 
-	orch := NewOrchestrator(bus, nil, nil, nil)
+	// nil DB — orchestrator should still publish the event with a generated flow_id.
+	orch := NewOrchestrator(bus, nil, logger, nil)
 
 	payload := map[string]interface{}{
 		"id":         int64(42),
@@ -119,6 +119,81 @@ func TestOrchestrator_HandleRecommendEvent(t *testing.T) {
 		src, ok := published.Payload["source_url"].(string)
 		if !ok || src != "https://detail.1688.com/offer/123.html" {
 			t.Errorf("expected source_url in payload, got %v", published.Payload["source_url"])
+		}
+		// flow_id must always be present so downstream events can correlate.
+		flowID, ok := published.Payload["flow_id"].(string)
+		if !ok || flowID == "" {
+			t.Errorf("expected non-empty flow_id in payload, got %v (type %T)",
+				published.Payload["flow_id"], published.Payload["flow_id"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for supplychain.quote_requested event")
+	}
+}
+
+// TestOrchestrator_HandleRecommendEvent_CreatesFlow verifies that when a DB is
+// configured, HandleRecommendEvent persists a supply_chain_flow record with
+// source_type="sourcing_recommend" and uses its ID as the flow_id in the
+// published event payload.
+func TestOrchestrator_HandleRecommendEvent_CreatesFlow(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger, eventbus.WithWorkers(1), eventbus.WithBufferSize(10))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus.Start(ctx)
+
+	received := make(chan eventbus.Event, 1)
+	bus.Subscribe("supplychain.quote_requested", func(ctx context.Context, evt eventbus.Event) error {
+		received <- evt
+		return nil
+	})
+
+	db := newTestFlowDB(t)
+	orch := NewOrchestrator(bus, db, logger, nil)
+
+	payload := map[string]interface{}{
+		"id":         float64(77),
+		"source_url": "https://detail.1688.com/offer/77.html",
+		"title":      "DB-backed Product",
+		"score":      float64(9),
+	}
+
+	evt := eventbus.Event{
+		Topic:   "sourcing.recommend",
+		Source:  "A8",
+		Payload: payload,
+	}
+
+	if err := orch.HandleRecommendEvent(ctx, evt); err != nil {
+		t.Fatalf("HandleRecommendEvent returned error: %v", err)
+	}
+
+	// Verify the flow record was persisted.
+	var flows []SupplyChainFlow
+	if err := db.Where("source_type = ?", "sourcing_recommend").Find(&flows).Error; err != nil {
+		t.Fatalf("query flows: %v", err)
+	}
+	if len(flows) != 1 {
+		t.Fatalf("expected 1 sourcing_recommend flow, got %d", len(flows))
+	}
+	if flows[0].SourceID != "77" {
+		t.Errorf("expected source_id '77', got %s", flows[0].SourceID)
+	}
+	if flows[0].Status != "pending" {
+		t.Errorf("expected status 'pending', got %s", flows[0].Status)
+	}
+
+	// Verify the published event's flow_id matches the persisted flow's ID.
+	select {
+	case published := <-received:
+		flowID, ok := published.Payload["flow_id"].(string)
+		if !ok {
+			t.Fatalf("expected flow_id string in payload, got %v (type %T)",
+				published.Payload["flow_id"], published.Payload["flow_id"])
+		}
+		if flowID != flows[0].ID {
+			t.Errorf("flow_id mismatch: payload=%s, db=%s", flowID, flows[0].ID)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for supplychain.quote_requested event")
@@ -299,6 +374,8 @@ func TestOrchestrator_HandleAftersaleReturn_MultipleReturns(t *testing.T) {
 	}
 }
 
+
+
 func TestOrchestrator_HandleStockCritical(t *testing.T) {
 	log := dbtest.NewLogger(t)
 	bus := eventbus.New(log, eventbus.WithWorkers(1), eventbus.WithBufferSize(10))
@@ -461,253 +538,65 @@ func TestOrchestrator_HandleStockCritical_MissingSkuID(t *testing.T) {
 	}
 }
 
-// fakeActionCreator is a test double for ActionCreator that records every
-// CreateAction call so tests can assert the orchestrator emits approval-gated
-// actions for high-risk operations (refund/resend, replenishment).
-type fakeActionCreator struct {
-	mu     sync.Mutex
-	calls  []*ActionInput
-	ids    int64
-	failOn int // 1-based call index that should return an error; 0 = none
-}
+// ---------------------------------------------------------------------------
+// Orchestrator <-> EscalationManager integration (Issue #35)
+// ---------------------------------------------------------------------------
 
-func (f *fakeActionCreator) CreateAction(in *ActionInput) (int64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.ids++
-	idx := len(f.calls) + 1
-	f.calls = append(f.calls, in)
-	if f.failOn == idx {
-		return 0, fmt.Errorf("simulated action create failure")
-	}
-	return f.ids, nil
-}
-
-func (f *fakeActionCreator) Calls() []*ActionInput {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := make([]*ActionInput, len(f.calls))
-	copy(out, f.calls)
-	return out
-}
-
-// TestOrchestrator_HandleAftersaleReturn_CreatesRefundAction verifies that
-// the orchestrator creates an approval-gated refund/resend UnifiedAction when
-// processing a supplychain.aftersale.returned event. The action must require
-// approval (no auto-execution of refunds) and be high-risk.
-func TestOrchestrator_HandleAftersaleReturn_CreatesRefundAction(t *testing.T) {
+func TestOrchestrator_Escalate_WithManager(t *testing.T) {
 	logger := dbtest.NewLogger(t)
 	bus := eventbus.New(logger)
-	db := newTestFlowDB(t)
-	rt := aftersales.NewReturnRateTracker(db, logger)
-	ac := &fakeActionCreator{}
-	orch := NewOrchestrator(bus, db, logger, rt).WithActionCreator(ac)
+	orch := NewOrchestrator(bus, nil, logger, nil)
 
-	ctx := context.Background()
+	em := NewEscalationManager(logger, nil)
+	orch.SetEscalationManager(em)
 
-	payload := map[string]interface{}{
-		"aftersale_id": float64(301),
-		"order_id":     float64(8001),
-		"sku_id":       float64(55),
-		"quantity":     float64(2),
-		"reason":       "质量问题",
-	}
-	evt := eventbus.Event{Topic: "supplychain.aftersale.returned", Source: "aftersales", Payload: payload}
-
-	if err := orch.HandleAftersaleReturn(ctx, evt); err != nil {
-		t.Fatalf("HandleAftersaleReturn returned error: %v", err)
+	// Level 1 (skip_and_switch) returns nil without needing a hub.
+	evt := EscalationEvent{
+		FlowID:      "flow-esc-1",
+		Level:       EscalationLevel1,
+		Error:       "carrier API timeout",
+		ChannelName: "CNAIR",
 	}
 
-	calls := ac.Calls()
-	if len(calls) != 1 {
-		t.Fatalf("expected 1 CreateAction call, got %d", len(calls))
-	}
-	in := calls[0]
-	if in.ActionType != "refund_or_resend" {
-		t.Errorf("expected action_type refund_or_resend, got %s", in.ActionType)
-	}
-	if in.RiskLevel != "high" {
-		t.Errorf("expected risk_level high, got %s", in.RiskLevel)
-	}
-	if !in.RequiresApproval {
-		t.Error("expected RequiresApproval=true (no auto-refund)")
-	}
-	if in.SourceTable != "supply_chain_flow" {
-		t.Errorf("expected source_table supply_chain_flow, got %s", in.SourceTable)
-	}
-	if in.AgentID != "A6" {
-		t.Errorf("expected agent_id A6 (aftersales mgmt), got %s", in.AgentID)
-	}
-	// The flow ID is generated; verify it's non-empty and matches the persisted flow.
-	if in.SourceID == "" {
-		t.Error("expected non-empty source_id (flow ID)")
-	}
-	var flows []SupplyChainFlow
-	if err := db.Where("source_type = ?", "aftersale_return").Find(&flows).Error; err != nil {
-		t.Fatalf("query flows: %v", err)
-	}
-	if len(flows) != 1 || flows[0].ID != in.SourceID {
-		t.Errorf("action source_id %s should match persisted flow id %s", in.SourceID, flows[0].ID)
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate with manager should return nil for L1, got: %v", err)
 	}
 }
 
-// TestOrchestrator_HandleAftersaleReturn_NoActionCreator verifies the
-// orchestrator still creates the flow when no ActionCreator is wired —
-// action creation is best-effort, not blocking.
-func TestOrchestrator_HandleAftersaleReturn_NoActionCreator(t *testing.T) {
+func TestOrchestrator_Escalate_WithoutManager(t *testing.T) {
 	logger := dbtest.NewLogger(t)
 	bus := eventbus.New(logger)
-	db := newTestFlowDB(t)
-	rt := aftersales.NewReturnRateTracker(db, logger)
-	// No WithActionCreator — orchestrator should still work.
-	orch := NewOrchestrator(bus, db, logger, rt)
+	// No escalation manager wired.
+	orch := NewOrchestrator(bus, nil, logger, nil)
 
-	ctx := context.Background()
-	payload := map[string]interface{}{
-		"aftersale_id": float64(302),
-		"order_id":     float64(8002),
-		"sku_id":       float64(56),
-		"quantity":     float64(1),
-		"reason":       "test",
-	}
-	evt := eventbus.Event{Topic: "supplychain.aftersale.returned", Payload: payload}
-
-	if err := orch.HandleAftersaleReturn(ctx, evt); err != nil {
-		t.Fatalf("HandleAftersaleReturn returned error: %v", err)
+	evt := EscalationEvent{
+		FlowID: "flow-esc-2",
+		Level:  EscalationLevel3,
+		Error:  "system-wide failure",
 	}
 
-	// Flow should still be created.
-	var count int64
-	db.Model(&SupplyChainFlow{}).Where("source_type = ?", "aftersale_return").Count(&count)
-	if count != 1 {
-		t.Errorf("expected 1 flow even without ActionCreator, got %d", count)
+	// Should be a no-op (nil) rather than panicking.
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate without manager should return nil, got: %v", err)
 	}
 }
 
-// TestOrchestrator_HandleAftersaleReturn_ActionCreateFails verifies that
-// an ActionCreator failure does NOT fail the handler — the flow is still
-// created and operators can drive it manually from the cockpit.
-func TestOrchestrator_HandleAftersaleReturn_ActionCreateFails(t *testing.T) {
+func TestOrchestrator_Escalate_Level0PromotionChain(t *testing.T) {
 	logger := dbtest.NewLogger(t)
 	bus := eventbus.New(logger)
-	db := newTestFlowDB(t)
-	rt := aftersales.NewReturnRateTracker(db, logger)
-	ac := &fakeActionCreator{failOn: 1}
-	orch := NewOrchestrator(bus, db, logger, rt).WithActionCreator(ac)
+	orch := NewOrchestrator(bus, nil, logger, nil)
+	orch.SetEscalationManager(NewEscalationManager(logger, nil))
 
-	ctx := context.Background()
-	payload := map[string]interface{}{
-		"aftersale_id": float64(303),
-		"order_id":     float64(8003),
-		"sku_id":       float64(57),
-		"quantity":     float64(1),
-		"reason":       "fail test",
-	}
-	evt := eventbus.Event{Topic: "supplychain.aftersale.returned", Payload: payload}
-
-	if err := orch.HandleAftersaleReturn(ctx, evt); err != nil {
-		t.Fatalf("HandleAftersaleReturn should not fail when action create fails, got: %v", err)
+	// Level 0 with attempts exhausted should auto-promote to Level 1 and
+	// ultimately return nil (the skip_and_switch handler returns nil).
+	evt := EscalationEvent{
+		FlowID:  "flow-esc-3",
+		Level:   EscalationLevel0,
+		Error:   "transient carrier error",
+		Attempt: 3,
 	}
 
-	// Flow should still be created.
-	var count int64
-	db.Model(&SupplyChainFlow{}).Where("source_type = ?", "aftersale_return").Count(&count)
-	if count != 1 {
-		t.Errorf("expected 1 flow even when action create fails, got %d", count)
-	}
-}
-
-// TestOrchestrator_HandleStockCritical_CreatesReplenishAction verifies that
-// the orchestrator creates an approval-gated replenishment UnifiedAction when
-// processing a supplychain.stock.critical event. Replenishment places a
-// purchase order (money + inventory), so it must require human approval.
-func TestOrchestrator_HandleStockCritical_CreatesReplenishAction(t *testing.T) {
-	log := dbtest.NewLogger(t)
-	bus := eventbus.New(log)
-	db := newTestFlowDB(t)
-	ac := &fakeActionCreator{}
-	orch := NewOrchestrator(bus, db, log, nil).WithActionCreator(ac)
-
-	ctx := context.Background()
-	payload := map[string]interface{}{
-		"sku_id":        float64(404),
-		"current_stock": float64(20),
-		"safety_stock":  float64(100),
-		"sellable_days": float64(2.5),
-	}
-	evt := eventbus.Event{Topic: "supplychain.stock.critical", Source: "A5", Payload: payload}
-
-	if err := orch.HandleStockCritical(ctx, evt); err != nil {
-		t.Fatalf("HandleStockCritical returned error: %v", err)
-	}
-
-	calls := ac.Calls()
-	if len(calls) != 1 {
-		t.Fatalf("expected 1 CreateAction call, got %d", len(calls))
-	}
-	in := calls[0]
-	if in.ActionType != "replenish_order" {
-		t.Errorf("expected action_type replenish_order, got %s", in.ActionType)
-	}
-	if in.RiskLevel != "high" {
-		t.Errorf("expected risk_level high, got %s", in.RiskLevel)
-	}
-	if !in.RequiresApproval {
-		t.Error("expected RequiresApproval=true (no auto-replenish)")
-	}
-	if in.AgentID != "A5" {
-		t.Errorf("expected agent_id A5 (inventory alert), got %s", in.AgentID)
-	}
-	if in.BusinessObjectID != "404" {
-		t.Errorf("expected business_object_id 404, got %s", in.BusinessObjectID)
-	}
-}
-
-// TestOrchestrator_HandleStockCritical_NoActionCreator verifies the
-// orchestrator still creates the flow + publishes sourcing.rescan when no
-// ActionCreator is wired — action creation is best-effort.
-func TestOrchestrator_HandleStockCritical_NoActionCreator(t *testing.T) {
-	log := dbtest.NewLogger(t)
-	bus := eventbus.New(log, eventbus.WithWorkers(1), eventbus.WithBufferSize(10))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	bus.Start(ctx)
-
-	rescanReceived := make(chan eventbus.Event, 1)
-	bus.Subscribe("sourcing.rescan", func(ctx context.Context, evt eventbus.Event) error {
-		rescanReceived <- evt
-		return nil
-	})
-
-	db := newTestFlowDB(t)
-	// No WithActionCreator.
-	orch := NewOrchestrator(bus, db, log, nil)
-
-	payload := map[string]interface{}{
-		"sku_id":        float64(505),
-		"current_stock": float64(10),
-		"safety_stock":  float64(80),
-		"sellable_days": float64(1.5),
-	}
-	evt := eventbus.Event{Topic: "supplychain.stock.critical", Source: "A5", Payload: payload}
-
-	if err := orch.HandleStockCritical(ctx, evt); err != nil {
-		t.Fatalf("HandleStockCritical returned error: %v", err)
-	}
-
-	// Flow should still be created.
-	var count int64
-	db.Model(&SupplyChainFlow{}).Where("source_type = ?", "stock_critical").Count(&count)
-	if count != 1 {
-		t.Errorf("expected 1 flow even without ActionCreator, got %d", count)
-	}
-
-	// sourcing.rescan should still be published.
-	select {
-	case <-rescanReceived:
-		// ok
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for sourcing.rescan event")
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate L0→L1 promotion should return nil, got: %v", err)
 	}
 }

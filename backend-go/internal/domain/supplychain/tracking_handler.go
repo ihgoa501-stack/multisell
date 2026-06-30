@@ -12,11 +12,21 @@ import (
 // TrackingHandler handles supply chain tracking HTTP requests.
 type TrackingHandler struct {
 	service *TrackingService
+	carrier *MockCarrierClient
 }
 
 // NewTrackingHandler creates a new supply chain tracking handler.
 func NewTrackingHandler(service *TrackingService) *TrackingHandler {
 	return &TrackingHandler{service: service}
+}
+
+// SetCarrierClient injects a carrier API client used by SyncFromCarrier.
+// When unset, the sync endpoint returns 501 Not Implemented. In production a
+// real carrier adapter should be injected here; in development/tests the
+// MockCarrierClient is used (see Issue #38).
+func (h *TrackingHandler) SetCarrierClient(c *MockCarrierClient) *TrackingHandler {
+	h.carrier = c
+	return h
 }
 
 // List returns a paginated list of tracking records.
@@ -121,6 +131,37 @@ func (h *TrackingHandler) UpdateStatus(c *gin.Context) {
 			return
 		}
 		response.Error(c, http.StatusInternalServerError, "failed to update tracking record: "+err.Error())
+		return
+	}
+
+	response.Success(c, item)
+}
+
+// SyncFromCarrier triggers a pull of the latest tracking events from the
+// configured carrier API client and merges them into the tracking record's
+// status_history. When no carrier client is configured the endpoint returns
+// 501 Not Implemented.
+//
+// POST /api/v1/supplychain/tracking/:id/sync
+func (h *TrackingHandler) SyncFromCarrier(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		response.Error(c, http.StatusBadRequest, "missing id")
+		return
+	}
+
+	if h.carrier == nil {
+		response.Error(c, http.StatusNotImplemented, "carrier client not configured")
+		return
+	}
+
+	item, err := h.service.SyncFromCarrier(c.Request.Context(), id, h.carrier)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			response.Error(c, http.StatusNotFound, "tracking record not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, "failed to sync tracking from carrier: "+err.Error())
 		return
 	}
 
