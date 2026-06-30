@@ -18,6 +18,20 @@ import (
 )
 
 var (
+	schedulerTickDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "multisell_scheduler_tick_duration_seconds",
+			Help:    "Duration of scheduler tick execution.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"agent_id", "decision_point"},
+	)
+
+	schedulerTickErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "multisell_scheduler_tick_errors_total",
+		Help: "Total number of scheduler tick publish errors.",
+	})
+
 	schedulerTicksTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "multisell_scheduler_ticks_total",
@@ -158,6 +172,7 @@ func (s *Scheduler) runTask(ctx context.Context, task Task) {
 				start := time.Now()
 				s.emitTick(task)
 				elapsed := time.Since(start)
+				schedulerTickDuration.WithLabelValues(task.AgentID, task.DecisionPoint).Observe(elapsed.Seconds())
 				s.lastTickAt.Store(task.ID, &start)
 				s.lastTickDuration.Store(task.ID, elapsed)
 				s.incCumulativeTicks(task.ID)
@@ -192,6 +207,7 @@ func (s *Scheduler) emitTick(task Task) {
 		s.logger.Warn("scheduler tick publish failed",
 			zap.String("agent_id", task.AgentID),
 			zap.Error(err))
+		schedulerTickErrors.Inc()
 	}
 
 	schedulerTicksTotal.WithLabelValues(task.AgentID, task.DecisionPoint).Inc()
