@@ -651,6 +651,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
 	go hub.Run()
+
+	// Wire the 4-level EscalationManager (Issue #35) into the supply chain
+	// orchestrator state machine now that the WebSocket hub is available —
+	// Level 2 (manual review) and Level 3 (global alert) broadcast via the hub.
+	supplyChainOrch.SetEscalationManager(supplychain.NewEscalationManager(logger, hub))
+
 	wsHandler := realtime.NewHandler(hub, logger, cfg.JWT.Secret).WithAIChat(ai.NewAIChatHandler(aiOrch))
 	r.GET("/ws", wsHandler.ServeWS)
 
