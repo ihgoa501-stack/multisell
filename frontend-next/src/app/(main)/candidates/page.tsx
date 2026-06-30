@@ -1,69 +1,71 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, Modal, message, Badge, Typography } from 'antd';
-import { DatabaseOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Modal, message, Badge, Typography, Tag } from 'antd';
+import { DatabaseOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import apiClient from '@/lib/api-client';
+import dayjs from 'dayjs';
 
-interface CompletenessItem {
-  dimension: string;
-  label: string;
-  complete: boolean;
-  reason: string;
-}
-
-interface Candidate {
+interface CandidateProduct {
   id: number;
   title: string;
-  category_name: string;
-  cost_price: number;
-  target_price: number;
-  currency: string;
-  target_platform: string;
+  description: string;
+  main_image: string;
+  purchase_price: number;
+  purchase_currency: string;
+  package_weight_kg: number;
+  target_sale_price: number;
+  target_currency: string;
+  target_platform_id: number | null;
+  destination_country: string;
+  hs_code: string;
+  origin_country: string;
   status: string;
-  completeness: CompletenessItem[];
-  seed_data: boolean;
+  is_seed_data: boolean;
+  created_by: string;
+  created_at: string;
 }
 
-const statusBadgeMap: Record<string, { text: string; color: 'success' | 'warning' | 'default' }> = {
-  complete: { text: '完整', color: 'success' },
-  incomplete: { text: '资料不完整', color: 'warning' },
-  pending: { text: '待检查', color: 'default' },
+const statusColorMap: Record<string, string> = {
+  draft: 'default',
+  in_review: 'processing',
+  approved: 'success',
+  rejected: 'error',
+};
+
+const statusLabelMap: Record<string, string> = {
+  draft: '草稿',
+  in_review: '审核中',
+  approved: '已通过',
+  rejected: '已拒绝',
 };
 
 const platformLabelMap: Record<string, string> = {
-  ozon: 'Ozon',
-  shopee: 'Shopee',
-  lazada: 'Lazada',
+  '1': 'Ozon',
+  '2': 'Shopee',
+  '3': 'Lazada',
 };
 
 export default function CandidatesPage() {
-  const [data, setData] = useState<Candidate[]>([]);
+  const [data, setData] = useState<CandidateProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [detailModal, setDetailModal] = useState<Candidate | null>(null);
+  const [detailModal, setDetailModal] = useState<CandidateProduct | null>(null);
 
   const loadCandidates = async () => {
     setLoading(true);
     try {
-      const res = await apiClient.get<{
-        code: number;
-        message: string;
-        data: Candidate[];
-        total: number;
-        page: number;
-        size: number;
-      }>('/v1/candidates', {
+      const res = await apiClient.get<CandidateProduct[]>('/v1/candidates', {
         page: String(page),
         size: String(pageSize),
       });
-      if (res.data) {
-        setData(res.data.data || []);
-        setTotal(res.data.total || 0);
-      }
+      // Paginated response puts items in data, total/page/size at root
+      const body = res as unknown as { data: CandidateProduct[]; total: number };
+      setData(body.data || []);
+      setTotal(body.total || 0);
     } catch {
       message.error('加载候选商品列表失败');
     } finally {
@@ -94,6 +96,21 @@ export default function CandidatesPage() {
     }
   };
 
+  const handleEvaluate = async (productId: number) => {
+    try {
+      const res = await apiClient.post(`/v1/loop/evaluate/${productId}`, {
+        triggered_by: 'owner',
+      });
+      if (res.code === 0) {
+        message.success('评估完成，可在 Owner 总控台查看建议');
+      } else {
+        message.error(res.message || '评估失败');
+      }
+    } catch {
+      message.error('评估请求失败');
+    }
+  };
+
   const columns = [
     {
       title: 'ID',
@@ -106,57 +123,60 @@ export default function CandidatesPage() {
       ellipsis: true,
     },
     {
-      title: '类目',
-      dataIndex: 'category_name',
-      width: 130,
-      ellipsis: true,
-      render: (val: string) => val || '-',
+      title: '采购价',
+      dataIndex: 'purchase_price',
+      width: 100,
+      render: (price: number) => (price != null ? `¥${price.toFixed(2)}` : '-'),
     },
     {
-      title: '成本价',
-      dataIndex: 'cost_price',
-      width: 120,
-      render: (price: number, record: Candidate) =>
-        price != null ? `${price.toFixed(2)} ${record.currency || ''}` : '-',
-    },
-    {
-      title: '目标价',
-      dataIndex: 'target_price',
+      title: '目标售价',
+      dataIndex: 'target_sale_price',
       width: 110,
-      render: (price: number) =>
-        price != null ? `¥${price.toFixed(2)}` : '-',
+      render: (price: number) => (price != null ? `$${price.toFixed(2)}` : '-'),
     },
     {
       title: '目标平台',
-      dataIndex: 'target_platform',
-      width: 120,
-      render: (platform: string) => platformLabelMap[platform] || platform || '-',
+      dataIndex: 'target_platform_id',
+      width: 100,
+      render: (id: number) =>
+        id ? platformLabelMap[String(id)] || `平台 #${id}` : '-',
     },
     {
-      title: '完整性',
+      title: '目的国',
+      dataIndex: 'destination_country',
+      width: 80,
+    },
+    {
+      title: '重量',
+      dataIndex: 'package_weight_kg',
+      width: 80,
+      render: (w: number) => (w != null ? `${w.toFixed(2)}kg` : '-'),
+    },
+    {
+      title: '状态',
       dataIndex: 'status',
-      width: 120,
-      render: (status: string) => {
-        const mapping = statusBadgeMap[status] || {
-          text: status || '未知',
-          color: 'default' as const,
-        };
-        return <Badge status={mapping.color} text={mapping.text} />;
-      },
+      width: 100,
+      render: (status: string) => (
+        <Badge
+          status={(statusColorMap[status] || 'default') as 'success' | 'error' | 'processing' | 'warning' | 'default'}
+          text={statusLabelMap[status] || status}
+        />
+      ),
     },
     {
       title: '操作',
-      width: 80,
-      render: (_: unknown, record: Candidate) => (
+      width: 100,
+      render: (_: unknown, record: CandidateProduct) => (
         <Button
           type="link"
           size="small"
+          icon={<ThunderboltOutlined />}
           onClick={(e) => {
             e.stopPropagation();
-            setDetailModal(record);
+            handleEvaluate(record.id);
           }}
         >
-          详情
+          评估
         </Button>
       ),
     },
@@ -207,7 +227,7 @@ export default function CandidatesPage() {
 
       {/* Table */}
       <Card size="small" styles={{ body: { padding: 0 } }}>
-        <Table<Candidate>
+        <Table<CandidateProduct>
           rowKey="id"
           columns={columns}
           dataSource={data}
@@ -252,92 +272,49 @@ export default function CandidatesPage() {
                 lineHeight: 1.8,
               }}
             >
-              <div>类目：{detailModal.category_name || '-'}</div>
+              <div>采购价：¥{detailModal.purchase_price?.toFixed(2)}</div>
               <div>
-                成本价：{detailModal.cost_price?.toFixed(2)}{' '}
-                {detailModal.currency} → 目标价：¥
-                {detailModal.target_price?.toFixed(2)}
+                目标售价：${detailModal.target_sale_price?.toFixed(2)} {detailModal.target_currency}
               </div>
               <div>
-                目标平台：{platformLabelMap[detailModal.target_platform] ||
-                  detailModal.target_platform || '-'}
+                目标平台：
+                {detailModal.target_platform_id
+                  ? platformLabelMap[String(detailModal.target_platform_id)] || `平台 #${detailModal.target_platform_id}`
+                  : '-'}
+                {' → '}
+                目的国：{detailModal.destination_country || '-'}
               </div>
-              <div style={{ marginTop: 8 }}>
-                完整性状态：
-                <Badge
-                  status={
-                    statusBadgeMap[detailModal.status]?.color || 'default'
-                  }
-                  text={
-                    statusBadgeMap[detailModal.status]?.text ||
-                    detailModal.status ||
-                    '未知'
-                  }
-                />
+              <div>
+                包装：{detailModal.package_weight_kg?.toFixed(2)}kg |
+                HS编码：{detailModal.hs_code || '-'}
+              </div>
+              <div>
+                状态：<Tag color={statusColorMap[detailModal.status] || 'default'}>
+                  {statusLabelMap[detailModal.status] || detailModal.status}
+                </Tag>
+                {detailModal.is_seed_data && (
+                  <Tag color="orange" style={{ marginLeft: 8 }}>种子数据</Tag>
+                )}
+              </div>
+              <div>来源：{detailModal.created_by || '-'}</div>
+              <div>
+                创建时间：
+                {detailModal.created_at
+                  ? dayjs(detailModal.created_at).format('YYYY-MM-DD HH:mm:ss')
+                  : '-'}
               </div>
             </div>
 
-            <Typography.Title level={5}>完整性检查明细</Typography.Title>
-            <table
-              style={{ width: '100%', borderCollapse: 'collapse' }}
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              onClick={() => {
+                handleEvaluate(detailModal.id);
+                setDetailModal(null);
+              }}
             >
-              <thead>
-                <tr
-                  style={{
-                    borderBottom: '1px solid var(--border)',
-                    textAlign: 'left',
-                  }}
-                >
-                  <th style={{ padding: '8px 12px', fontWeight: 600 }}>
-                    维度
-                  </th>
-                  <th style={{ padding: '8px 12px', fontWeight: 600 }}>
-                    结果
-                  </th>
-                  <th style={{ padding: '8px 12px', fontWeight: 600 }}>
-                    说明
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {detailModal.completeness?.map((item) => (
-                  <tr
-                    key={item.dimension}
-                    style={{ borderBottom: '1px solid var(--border)' }}
-                  >
-                    <td style={{ padding: '8px 12px' }}>{item.label}</td>
-                    <td style={{ padding: '8px 12px' }}>
-                      {item.complete ? (
-                        <span
-                          style={{
-                            color: '#52c41a',
-                            fontSize: 16,
-                            fontWeight: 700,
-                          }}
-                        >
-                          &#10003;
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            color: '#ff4d4f',
-                            fontSize: 16,
-                            fontWeight: 700,
-                          }}
-                        >
-                          &#10007;
-                        </span>
-                      )}
-                    </td>
-                    <td
-                      style={{ padding: '8px 12px', color: 'var(--t2)' }}
-                    >
-                      {item.reason || '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              执行完整度+利润评估
+            </Button>
           </div>
         )}
       </Modal>
