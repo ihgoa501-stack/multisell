@@ -30,6 +30,21 @@ interface FlowRecord {
   updated_at: string;
 }
 
+interface EventOutboxRow {
+  id: number;
+  topic: string;
+  source: string;
+  payload: Record<string, unknown> | null;
+  priority: number;
+  status: string;
+  created_at: string;
+}
+
+interface FlowEventsResponse {
+  flow: FlowRecord;
+  events: EventOutboxRow[];
+}
+
 function formatTimestamp(ts: string): string {
   return dayjs(ts).format('YYYY-MM-DD HH:mm:ss');
 }
@@ -54,10 +69,10 @@ function renderJson(data: Record<string, unknown> | null) {
   );
 }
 
-function buildTimelineItems(flow: FlowRecord) {
+function buildTimelineItems(flow: FlowRecord, events: EventOutboxRow[]) {
   const items = [];
 
-  // Created event
+  // Created event — always the first milestone.
   items.push({
     color: 'blue',
     children: (
@@ -73,37 +88,60 @@ function buildTimelineItems(flow: FlowRecord) {
     ),
   });
 
-  // Status change events from context
-  if (flow.context?.events && Array.isArray(flow.context.events)) {
-    for (const evt of flow.context.events as Record<string, unknown>[]) {
-      const time = evt.timestamp as string;
-      const type = evt.type as string;
-      const data = evt.data as Record<string, unknown> | undefined;
-      items.push({
-        color: type === 'error' ? 'red' : type === 'warning' ? 'orange' : 'green',
-        children: (
-          <div>
-            <Text strong>{type ?? '事件'}</Text>
-            {time && <Text type="secondary"> — {formatTimestamp(time)}</Text>}
-            {data && (
-              <pre
-                style={{
-                  marginTop: 4,
-                  fontSize: 12,
-                  background: '#fafafa',
-                  padding: 8,
-                  borderRadius: 4,
-                  maxHeight: 150,
-                  overflow: 'auto',
-                }}
-              >
-                {JSON.stringify(data, null, 2)}
-              </pre>
-            )}
-          </div>
-        ),
-      });
-    }
+  // Event-outbox timeline (real events from event_outbox table).
+  for (const evt of events) {
+    const topic = evt.topic;
+    const isQuoteRequested = topic === 'supplychain.quote_requested';
+    const isFlywheel = topic === 'supplychain.flywheel';
+    const isQuoteReady = topic === 'supplychain.quote_ready';
+    const isOrderRequested = topic === 'supplychain.order.requested';
+    const color = isQuoteRequested
+      ? 'blue'
+      : isQuoteReady
+        ? 'cyan'
+        : isOrderRequested
+          ? 'gold'
+          : isFlywheel
+            ? 'green'
+            : 'gray';
+
+    const label = isQuoteRequested
+      ? '请求报价 (quote_requested)'
+      : isQuoteReady
+        ? '报价就绪 (quote_ready)'
+        : isOrderRequested
+          ? '下单请求 (order.requested)'
+          : isFlywheel
+            ? '履约回写 (flywheel)'
+            : topic;
+
+    items.push({
+      color,
+      children: (
+        <div>
+          <Text strong>{label}</Text>
+          <br />
+          <Text type="secondary">{formatTimestamp(evt.created_at)}</Text>
+          <br />
+          <Text type="secondary">来源: {evt.source}</Text>
+          {evt.payload && (
+            <pre
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                background: '#fafafa',
+                padding: 8,
+                borderRadius: 4,
+                maxHeight: 150,
+                overflow: 'auto',
+              }}
+            >
+              {JSON.stringify(evt.payload, null, 2)}
+            </pre>
+          )}
+        </div>
+      ),
+    });
   }
 
   // Updated-at as a marker
@@ -128,10 +166,13 @@ export default function SupplyChainDetailPage() {
   const router = useRouter();
   const id = params.id as string;
 
-  const { data: flow, isLoading, error } = useQuery({
-    queryKey: ['supplychain', 'flow', id],
+  // Fetch flow + event timeline together via the /flows/:id/events endpoint.
+  // This endpoint returns { flow, events: EventOutboxRow[] } where events are
+  // pulled from event_outbox by flow_id.
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['supplychain', 'flow-events', id],
     queryFn: async () => {
-      const res = await apiClient.get<FlowRecord>(`/v1/supplychain/flows/${id}`);
+      const res = await apiClient.get<FlowEventsResponse>(`/v1/supplychain/flows/${id}/events`);
       return res.data;
     },
   });
@@ -144,7 +185,7 @@ export default function SupplyChainDetailPage() {
     );
   }
 
-  if (error || !flow) {
+  if (error || !data) {
     return (
       <div style={{ padding: 24 }}>
         <Text type="danger">加载失败: {(error as Error)?.message ?? '未知错误'}</Text>
@@ -152,8 +193,10 @@ export default function SupplyChainDetailPage() {
     );
   }
 
+  const flow = data.flow;
+  const events = data.events ?? [];
   const statusCfg = STATUS_MAP[flow.status] ?? { color: 'default', label: flow.status };
-  const timelineItems = buildTimelineItems(flow);
+  const timelineItems = buildTimelineItems(flow, events);
 
   return (
     <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
@@ -190,7 +233,7 @@ export default function SupplyChainDetailPage() {
       </Card>
 
       {/* Timeline card */}
-      <Card title="时间线" style={{ marginBottom: 24 }}>
+      <Card title={`时间线 (${events.length} 个事件)`} style={{ marginBottom: 24 }}>
         <Timeline items={timelineItems} />
       </Card>
 

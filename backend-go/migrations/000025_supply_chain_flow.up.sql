@@ -10,3 +10,7 @@ CREATE TABLE supply_chain_flow (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX idx_supply_chain_flow_status ON supply_chain_flow(status);
+CREATE INDEX idx_supply_chain_flow_source_type ON supply_chain_flow(source_type);
+CREATE INDEX idx_supply_chain_flow_created_at ON supply_chain_flow(created_at DESC);
