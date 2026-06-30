@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2.2 (2026-06-29) — Compliance Risk Engine
+
+### New Module
+- **Compliance domain** (`internal/domain/compliance/`) — Issue #68 Phase 1: A7 adapter layer, batch product scanner (6h interval replacing 2h A7 tick), idempotent scan result persistence, 5 HTTP endpoints (check/scan/results/suppress), wired into scheduler and event bus.
+- **Frontend** — Compliance results tab embedded in product listing detail page (`/products/[id]`), with scan trigger and acknowledge workflow.
+
+### Tech Debt Paid
+- `data_freshness.compliance` dimension now populated on compliance scan
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
 ## v0.2.1 (2026-06-26) — July gap-fill P1
 
 ### New Modules
