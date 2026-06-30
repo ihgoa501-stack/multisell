@@ -29,22 +29,39 @@ type EventPublisher interface {
 
 // Service provides sourcing business logic for the A8 Agent.
 type Service struct {
-	db      *gorm.DB
-	logger  *zap.Logger
-	bridge  ToolBridge
-	events  EventPublisher
+	db              *gorm.DB
+	logger          *zap.Logger
+	bridge          ToolBridge
+	events          EventPublisher
+	bsrSource       MarketTrendSource
+	keywordSource   MarketTrendSource
 }
 
 // NewService creates a new sourcing service.
-// bridge and events are optional: if nil, FetchProduct and event publishing
-// will return errors.
-func NewService(db *gorm.DB, logger *zap.Logger, bridge ToolBridge, events EventPublisher) *Service {
-	return &Service{
+// bridge, events, and trend sources are optional: if nil, their respective
+// operations will return errors.
+func NewService(db *gorm.DB, logger *zap.Logger, bridge ToolBridge, events EventPublisher, trendSources ...MarketTrendSource) *Service {
+	svc := &Service{
 		db:     db,
 		logger: logger,
 		bridge: bridge,
 		events: events,
 	}
+
+	// Assign trend sources if provided.
+	for _, src := range trendSources {
+		if src == nil {
+			continue
+		}
+		switch src.Name() {
+		case "amazon_bsr":
+			svc.bsrSource = src
+		case "keyword_trends":
+			svc.keywordSource = src
+		}
+	}
+
+	return svc
 }
 
 // FetchProduct fetches product data from the given URL via the ToolBridge.
@@ -319,4 +336,22 @@ func (s *Service) ListRecommendations(page, size int) ([]Recommendation, int64, 
 	}
 
 	return recs, total, nil
+}
+
+// FetchMarketTrends returns Amazon BSR trend data for the given product category.
+// Returns an error if the BSR source is not configured.
+func (s *Service) FetchMarketTrends(ctx context.Context, category string) ([]MarketTrendItem, error) {
+	if s.bsrSource == nil {
+		return nil, fmt.Errorf("sourcing: Amazon BSR source not configured")
+	}
+	return s.bsrSource.FetchTrends(ctx, category)
+}
+
+// FetchKeywordTrends returns keyword search volume and competition data for
+// the given search keyword. Returns an error if the keyword source is not configured.
+func (s *Service) FetchKeywordTrends(ctx context.Context, keyword string) ([]MarketTrendItem, error) {
+	if s.keywordSource == nil {
+		return nil, fmt.Errorf("sourcing: keyword trend source not configured")
+	}
+	return s.keywordSource.FetchTrends(ctx, keyword)
 }

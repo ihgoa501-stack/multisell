@@ -90,3 +90,49 @@ func parseInt(s string) (int, error) {
 	}
 	return n, nil
 }
+
+// MarketTrends GET /sourcing/market-trends
+// Returns Amazon BSR (Best Sellers Rank) market trend data for a product category.
+// Query param: category (required) — e.g. "家居", "电子".
+func (h *Handler) MarketTrends(c *gin.Context) {
+	category := c.Query("category")
+	if category == "" {
+		response.Error(c, http.StatusBadRequest, "category query parameter is required")
+		return
+	}
+
+	items, err := h.service.FetchMarketTrends(c.Request.Context(), category)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"source":   "amazon_bsr",
+		"category": category,
+		"items":    items,
+	})
+}
+
+// KeywordTrends GET /sourcing/keyword-trends
+// Returns keyword search volume and competition trend data.
+// Query param: keyword (required) — e.g. "t恤", "蓝牙耳机".
+func (h *Handler) KeywordTrends(c *gin.Context) {
+	keyword := c.Query("keyword")
+	if keyword == "" {
+		response.Error(c, http.StatusBadRequest, "keyword query parameter is required")
+		return
+	}
+
+	items, err := h.service.FetchKeywordTrends(c.Request.Context(), keyword)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"source":  "keyword_trends",
+		"keyword": keyword,
+		"items":   items,
+	})
+}
