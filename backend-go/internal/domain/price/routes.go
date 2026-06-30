@@ -28,4 +28,31 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		skus.GET("/:id/current-price", h.GetCurrentPrice)
 		skus.GET("/:id/price-history", h.PriceHistory)
 	}
+
+	// Competitor Price routes
+	cp := rg.Group("/competitor-prices")
+	{
+		cp.GET("", h.ListCompetitorPrices)
+		cp.GET("/:id", h.GetCompetitorPrice)
+		cp.POST("", h.CreateCompetitorPrice)
+		cp.DELETE("/:id", h.DeleteCompetitorPrice)
+	}
+
+	// Pricing Strategy routes
+	ps := rg.Group("/pricing-strategies")
+	{
+		ps.GET("", h.ListPricingStrategies)
+		ps.GET("/:id", h.GetPricingStrategy)
+		ps.POST("", h.SavePricingStrategy)
+		ps.PUT("/:id", h.UpdatePricingStrategy)
+		ps.DELETE("/:id", h.DeletePricingStrategy)
+	}
+
+	// Pricing Recommendation routes
+	pr := rg.Group("/pricing-recommendations")
+	{
+		pr.GET("", h.ListRecommendations)
+		pr.POST("/generate", h.GenerateRecommendation)
+		pr.POST("/:id/apply", h.ApplyRecommendation)
+	}
 }
