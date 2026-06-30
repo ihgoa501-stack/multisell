@@ -16,6 +16,9 @@ type ApprovalRequest struct {
 	NewValue    string     `gorm:"column:new_value;type:text" json:"new_value,omitempty"`
 	Reason      string     `gorm:"column:reason;type:text" json:"reason,omitempty"`
 	ReviewNote  string     `gorm:"column:review_note;type:text" json:"review_note,omitempty"`
+	TargetType  string     `gorm:"column:target_type" json:"target_type,omitempty"`
+	TargetID    int64      `gorm:"column:target_id" json:"target_id,omitempty"`
+	RiskLevel   string     `gorm:"column:risk_level" json:"risk_level,omitempty"`
 	ExpiresAt   *time.Time `gorm:"column:expires_at" json:"expires_at,omitempty"`
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
@@ -31,6 +34,9 @@ type CreateApprovalInput struct {
 	OldValue    string     `json:"old_value"`
 	NewValue    string     `json:"new_value"`
 	Reason      string     `json:"reason"`
+	TargetType  string     `json:"target_type"`
+	TargetID    int64      `json:"target_id"`
+	RiskLevel   string     `json:"risk_level"`
 	ExpiresAt   *time.Time `json:"expires_at"`
 }
 

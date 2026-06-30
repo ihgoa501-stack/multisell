@@ -66,6 +66,9 @@ func (s *Service) Create(input *CreateApprovalInput) (*ApprovalRequest, error) {
 		OldValue:    input.OldValue,
 		NewValue:    input.NewValue,
 		Reason:      input.Reason,
+		TargetType:  input.TargetType,
+		TargetID:    input.TargetID,
+		RiskLevel:   input.RiskLevel,
 		ExpiresAt:   input.ExpiresAt,
 	}
 	if err := s.db.Create(req).Error; err != nil {
@@ -152,8 +155,7 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 		}
 	}
 
-	// Average review time (for approved/rejected requests) — computed in Go so
-	// it works on both PostgreSQL and SQLite (tests).
+	// Average review time (for approved/rejected requests)
 	var reviewed []ApprovalRequest
 	s.db.Where("status IN ('approved', 'rejected')").Find(&reviewed)
 	if len(reviewed) > 0 {
@@ -176,6 +178,19 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 	stats.EscalatedCount = escalated
 
 	return stats, nil
+}
+
+// FindApprovedByTarget returns the most recent approved approval for a given target and request type.
+func (s *Service) FindApprovedByTarget(targetType string, targetID int64, requestType string) (*ApprovalRequest, error) {
+	var req ApprovalRequest
+	err := s.db.
+		Where("target_type = ? AND target_id = ? AND request_type = ? AND status = ?", targetType, targetID, requestType, "approved").
+		Order("updated_at DESC, id DESC").
+		First(&req).Error
+	if err != nil {
+		return nil, err
+	}
+	return &req, nil
 }
 
 // AutoEscalate checks for requests pending > 24h and returns their IDs.
