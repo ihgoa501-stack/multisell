@@ -3,6 +3,7 @@ package aftersales
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -364,4 +365,290 @@ func (s *Service) publishAfterSaleProcessed(o *AfterSalesOrder) {
 	if _, err := s.events.Publish(context.Background(), "supplychain.aftersale.completed", "aftersales", payload); err != nil {
 		s.logger.Warn("failed to publish AfterSaleProcessed event", zap.Error(err))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Dispute Resolution Engine
+// ---------------------------------------------------------------------------
+
+// Dispute thresholds for rule-based scoring.
+const (
+	DisputeAmountLowThreshold  = 50.0  // below this is low-risk
+	DisputeAmountHighThreshold = 500.0 // above this is high-risk
+	DisputeAutoApproveScore    = 75.0  // score >= this => auto-approve
+	DisputeAutoRejectScore     = 25.0  // score <= this => auto-reject
+)
+
+// DisputeService provides dispute case evaluation and auto-decision.
+type DisputeService struct {
+	db              *gorm.DB
+	logger          *zap.Logger
+	deliveryChecker DeliveryChecker
+}
+
+// NewDisputeService creates a new DisputeService.
+func NewDisputeService(db *gorm.DB, logger *zap.Logger, deliveryChecker DeliveryChecker) *DisputeService {
+	if deliveryChecker == nil {
+		deliveryChecker = &noopDeliveryChecker{}
+	}
+	return &DisputeService{
+		db:              db,
+		logger:          logger,
+		deliveryChecker: deliveryChecker,
+	}
+}
+
+// noopDeliveryChecker always returns false (not delivered) when no real
+// delivery checker is wired in. This avoids nil checks in production code.
+type noopDeliveryChecker struct{}
+
+func (n *noopDeliveryChecker) IsDelivered(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+
+// CreateCase creates a new dispute case.
+func (ds *DisputeService) CreateCase(ctx context.Context, in *CreateDisputeInput) (*DisputeCase, error) {
+	dc := DisputeCase{
+		TransactionID: in.TransactionID,
+		Platform:      in.Platform,
+		ClaimType:     in.ClaimType,
+		Amount:        in.Amount,
+		Status:        "pending",
+		Evidence:      in.Evidence,
+		DecisionScore: 0,
+	}
+	if err := ds.db.WithContext(ctx).Create(&dc).Error; err != nil {
+		return nil, fmt.Errorf("create dispute case: %w", err)
+	}
+	return &dc, nil
+}
+
+// GetCase returns a single dispute case by ID.
+func (ds *DisputeService) GetCase(ctx context.Context, id int64) (*DisputeCase, error) {
+	var dc DisputeCase
+	if err := ds.db.WithContext(ctx).First(&dc, id).Error; err != nil {
+		return nil, err
+	}
+	return &dc, nil
+}
+
+// ListCases returns paginated dispute cases with optional filters.
+func (ds *DisputeService) ListCases(ctx context.Context, p *common.Pagination, f *DisputeListFilter) ([]DisputeCase, int64, error) {
+	q := ds.db.Model(&DisputeCase{})
+	if f != nil {
+		if f.Platform != "" {
+			q = q.Where("platform = ?", f.Platform)
+		}
+		if f.ClaimType != "" {
+			q = q.Where("claim_type = ?", f.ClaimType)
+		}
+		if f.Status != "" {
+			q = q.Where("status = ?", f.Status)
+		}
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []DisputeCase
+	if err := q.Order("id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// EvaluateCase runs rule-based scoring on a dispute case. It does NOT call
+// any external AI API. The score is computed from:
+//   - delivery status (is the shipment delivered?)
+//   - dispute amount relative to thresholds
+//   - claim type characteristics
+//
+// Returns the updated dispute case with DecisionScore, AiReason, and
+// DecisionSource populated.
+func (ds *DisputeService) EvaluateCase(ctx context.Context, id int64) (*EvaluateDisputeResult, error) {
+	dc, err := ds.GetCase(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get dispute case: %w", err)
+	}
+
+	breakdown := make([]RuleBreakdownItem, 0)
+	score := 50.0 // neutral baseline
+
+	// 1. Delivery check for "not_received" claims
+	if dc.ClaimType == "not_received" {
+		delivered, checkErr := ds.deliveryChecker.IsDelivered(ctx, dc.TransactionID, dc.Platform)
+		if checkErr != nil {
+			ds.logger.Warn("delivery check failed", zap.Error(checkErr))
+		} else if delivered {
+			score -= 30
+			breakdown = append(breakdown, RuleBreakdownItem{
+				Rule:   "delivery_status",
+				Score:  -30,
+				Reason: "Buyer claims not received but tracking shows delivered",
+			})
+		} else {
+			breakdown = append(breakdown, RuleBreakdownItem{
+				Rule:   "delivery_status",
+				Score:  0,
+				Reason: "Buyer claims not received and tracking does not show delivered",
+			})
+		}
+	}
+
+	// 2. Amount check
+	switch {
+	case dc.Amount <= 0:
+		// No amount specified — neutral
+	case dc.Amount < DisputeAmountLowThreshold:
+		score += 20
+		breakdown = append(breakdown, RuleBreakdownItem{
+			Rule:   "amount_threshold",
+			Score:  20,
+			Reason: fmt.Sprintf("Dispute amount $%.2f is below low threshold $%.2f", dc.Amount, DisputeAmountLowThreshold),
+		})
+	case dc.Amount > DisputeAmountHighThreshold:
+		score -= 10
+		breakdown = append(breakdown, RuleBreakdownItem{
+			Rule:   "amount_threshold",
+			Score:  -10,
+			Reason: fmt.Sprintf("Dispute amount $%.2f exceeds high threshold $%.2f", dc.Amount, DisputeAmountHighThreshold),
+		})
+	default:
+		breakdown = append(breakdown, RuleBreakdownItem{
+			Rule:   "amount_threshold",
+			Score:  0,
+			Reason: fmt.Sprintf("Dispute amount $%.2f is within normal range", dc.Amount),
+		})
+	}
+
+	// 3. Claim type scoring
+	switch dc.ClaimType {
+	case "damaged", "defective":
+		score += 10
+		breakdown = append(breakdown, RuleBreakdownItem{
+			Rule:   "claim_type",
+			Score:  10,
+			Reason: fmt.Sprintf("Claim type '%s' — supports buyer (quality issue)", dc.ClaimType),
+		})
+	case "wrong_item":
+		score += 15
+		breakdown = append(breakdown, RuleBreakdownItem{
+			Rule:   "claim_type",
+			Score:  15,
+			Reason: fmt.Sprintf("Claim type '%s' — supports buyer (seller error)", dc.ClaimType),
+		})
+	case "not_received":
+		score += 5
+		breakdown = append(breakdown, RuleBreakdownItem{
+			Rule:   "claim_type",
+			Score:  5,
+			Reason: fmt.Sprintf("Claim type '%s' — neutral (needs delivery check)", dc.ClaimType),
+		})
+	case "change_of_mind":
+		score -= 10
+		breakdown = append(breakdown, RuleBreakdownItem{
+			Rule:   "claim_type",
+			Score:  -10,
+			Reason: fmt.Sprintf("Claim type '%s' — does not support buyer (change of mind)", dc.ClaimType),
+		})
+	default:
+		breakdown = append(breakdown, RuleBreakdownItem{
+			Rule:   "claim_type",
+			Score:  0,
+			Reason: fmt.Sprintf("Claim type '%s' — no specific rule", dc.ClaimType),
+		})
+	}
+
+	// Clamp score to [0, 100]
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+
+	// Build AI reason summary
+	reasonParts := make([]string, 0, len(breakdown))
+	for _, item := range breakdown {
+		if item.Score != 0 {
+			reasonParts = append(reasonParts, fmt.Sprintf("%s (%+.0f): %s", item.Rule, item.Score, item.Reason))
+		}
+	}
+	aiReason := fmt.Sprintf("Score: %.0f/100.", score)
+	if len(reasonParts) > 0 {
+		aiReason += " Rules triggered: " + strings.Join(reasonParts, "; ")
+	} else {
+		aiReason += " No rules triggered."
+	}
+
+	// Persist evaluation result
+	updates := map[string]interface{}{
+		"decision_score":  score,
+		"ai_reason":       aiReason,
+		"decision_source": "rule",
+	}
+	if err := ds.db.Model(&DisputeCase{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("update dispute case score: %w", err)
+	}
+
+	// Reload
+	dc.DecisionScore = score
+	dc.AiReason = aiReason
+	dc.DecisionSource = "rule"
+
+	decision := evaluateDecision(score)
+	return &EvaluateDisputeResult{
+		Dispute:       dc,
+		Score:         score,
+		Decision:      decision,
+		RuleBreakdown: breakdown,
+	}, nil
+}
+
+// AutoDecide evaluates the case and automatically decides it based on the
+// rule-based score:
+//   - Score >= DisputeAutoApproveScore (75): auto-approve
+//   - Score <= DisputeAutoRejectScore (25): auto-reject
+//   - Otherwise: mark as manual_review
+func (ds *DisputeService) AutoDecide(ctx context.Context, id int64) (*EvaluateDisputeResult, error) {
+	result, err := ds.EvaluateCase(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	newStatus := evaluateDecision(result.Score)
+	updates := map[string]interface{}{
+		"status": newStatus,
+	}
+	if err := ds.db.Model(&DisputeCase{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("auto decide dispute case: %w", err)
+	}
+
+	result.Dispute.Status = newStatus
+	result.Decision = newStatus
+	return result, nil
+}
+
+// evaluateDecision maps a score to a status decision.
+func evaluateDecision(score float64) string {
+	switch {
+	case score >= DisputeAutoApproveScore:
+		return "approved"
+	case score <= DisputeAutoRejectScore:
+		return "rejected"
+	default:
+		return "manual_review"
+	}
+}
+
+// UpdateDisputeStatus manually updates a dispute case's status and reason.
+func (ds *DisputeService) UpdateDisputeStatus(ctx context.Context, id int64, status, reason string) (*DisputeCase, error) {
+	updates := map[string]interface{}{
+		"status":    status,
+		"ai_reason": reason,
+	}
+	if err := ds.db.Model(&DisputeCase{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("update dispute case status: %w", err)
+	}
+	return ds.GetCase(ctx, id)
 }

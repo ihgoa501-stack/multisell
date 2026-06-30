@@ -11,3 +11,9 @@ type OrderWriter interface {
 type EventPublisher interface {
 	Publish(ctx context.Context, topic, source string, payload map[string]interface{}) (string, error)
 }
+
+// DeliveryChecker checks whether a shipment has been delivered for a given
+// transaction on a platform. Used by the dispute evaluation engine.
+type DeliveryChecker interface {
+	IsDelivered(ctx context.Context, transactionID, platform string) (bool, error)
+}
