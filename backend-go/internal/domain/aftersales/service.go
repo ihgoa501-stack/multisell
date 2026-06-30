@@ -101,13 +101,13 @@ func (s *Service) Create(in *CreateInput) (*AfterSalesOrder, error) {
 		status = "pending"
 	}
 	o := AfterSalesOrder{
-		OrderID:       in.OrderID,
-		ItemID:        in.ItemID,
-		SkuID:         in.SkuID,
-		Reason:        in.Reason,
-		Status:        status,
+		OrderID:          in.OrderID,
+		ItemID:           in.ItemID,
+		SkuID:            in.SkuID,
+		Reason:           in.Reason,
+		Status:           status,
 		InspectionResult: "",
-		CreatedBy:     in.CreatedBy,
+		CreatedBy:        in.CreatedBy,
 	}
 	if in.ReturnQuantity != nil {
 		o.ReturnQuantity = *in.ReturnQuantity

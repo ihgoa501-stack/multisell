@@ -94,7 +94,7 @@ func TestApplyTariff_DDP_ReducesProfit(t *testing.T) {
 	out := ApplyTariff(base, svc, &ApplyTariffInput{
 		ProfitInput: &ProfitInput{Destination: "JP"},
 		HSCode:      "847130",
-		Quantity:     1,
+		Quantity:    1,
 	})
 
 	if !out.DDP {
@@ -177,10 +177,10 @@ func TestApplyTariff_NoRuleMatched_DDU(t *testing.T) {
 		Destination:    "RU",
 	}
 	svc := &fakeTariffDecider{result: &tariff.DecisionResult{
-		Incoterm:         "DDU",
-		TotalDutyTaxUSD:  0,
-		IncotermReason:   "No applicable tariff rule found; defaulting to DDU",
-		RulesMatched:     nil,
+		Incoterm:        "DDU",
+		TotalDutyTaxUSD: 0,
+		IncotermReason:  "No applicable tariff rule found; defaulting to DDU",
+		RulesMatched:    nil,
 	}}
 	out := ApplyTariff(base, svc, &ApplyTariffInput{ProfitInput: &ProfitInput{Destination: "RU"}})
 	if out.DDP {
@@ -210,8 +210,8 @@ func TestApplyTariff_CustomExchangeRate(t *testing.T) {
 		RulesMatched:    []tariff.RuleMatchItem{{RuleID: 1}},
 	}}
 	out := ApplyTariff(base, svc, &ApplyTariffInput{
-		ProfitInput:  &ProfitInput{Destination: "JP"},
-		USDCNYRate:   10.0,
+		ProfitInput: &ProfitInput{Destination: "JP"},
+		USDCNYRate:  10.0,
 	})
 	if out.TariffCostCNY != 5 {
 		t.Errorf("expected TariffCostCNY 5 with rate 10, got %v", out.TariffCostCNY)

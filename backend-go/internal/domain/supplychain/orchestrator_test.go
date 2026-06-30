@@ -299,8 +299,6 @@ func TestOrchestrator_HandleAftersaleReturn_MultipleReturns(t *testing.T) {
 	}
 }
 
-
-
 func TestOrchestrator_HandleStockCritical(t *testing.T) {
 	log := dbtest.NewLogger(t)
 	bus := eventbus.New(log, eventbus.WithWorkers(1), eventbus.WithBufferSize(10))

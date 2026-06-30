@@ -218,13 +218,13 @@ func (o *Orchestrator) createRefundResendAction(ctx context.Context, flowID stri
 		return
 	}
 	payload := map[string]interface{}{
-		"flow_id":     flowID,
+		"flow_id":      flowID,
 		"aftersale_id": aftersaleID,
-		"order_id":    orderID,
-		"sku_id":      skuID,
-		"quantity":    quantity,
-		"reason":      reason,
-		"options":     []string{"refund", "resend"},
+		"order_id":     orderID,
+		"sku_id":       skuID,
+		"quantity":     quantity,
+		"reason":       reason,
+		"options":      []string{"refund", "resend"},
 	}
 	desc := "客户发起退货 (aftersale_id=" + strconv.FormatInt(aftersaleID, 10) +
 		", sku_id=" + strconv.FormatInt(skuID, 10) +
@@ -352,11 +352,11 @@ func (o *Orchestrator) createReplenishAction(flowID string, skuID int64, current
 		return
 	}
 	payload := map[string]interface{}{
-		"flow_id":       flowID,
-		"sku_id":        skuID,
-		"current_stock": currentStock,
-		"safety_stock":  safetyStock,
-		"sellable_days": sellableDays,
+		"flow_id":          flowID,
+		"sku_id":           skuID,
+		"current_stock":    currentStock,
+		"safety_stock":     safetyStock,
+		"sellable_days":    sellableDays,
 		"suggested_action": "place_purchase_order",
 	}
 	desc := "库存红色预警 (sku_id=" + strconv.FormatInt(skuID, 10) +
