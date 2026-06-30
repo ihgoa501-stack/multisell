@@ -258,11 +258,11 @@ func TestService_ListTraces_Filtering(t *testing.T) {
 
 func TestRegistry_DefaultAgents(t *testing.T) {
 	r := DefaultRegistry()
-	if len(r.Agents) != 14 {
-		t.Fatalf("expected 14 agents, got %d", len(r.Agents))
+	if len(r.Agents) != 16 {
+		t.Fatalf("expected 16 agents, got %d", len(r.Agents))
 	}
 	ids := r.IDs()
-	want := []string{"A1", "A2", "A3", "A4", "A5", "A6", "A7", "G1", "G2", "G3", "G0", "A8", "A10", "A11"}
+	want := []string{"A1", "A2", "A3", "A4", "A5", "A6", "A7", "G1", "G2", "G3", "G0", "A8", "A10", "A11", "content_ai", "scheduler"}
 	for i, w := range want {
 		if ids[i] != w {
 			t.Fatalf("ids[%d] = %s, want %s", i, ids[i], w)
@@ -295,7 +295,7 @@ func TestOrchestrator_Run_StubProvider(t *testing.T) {
 				"sellable_stock":    float64(100),
 				"sales_7d":          float64(35),
 				"lead_time_days":    float64(30),
-				"safety_stock_days": float64(14),
+				"safety_stock_days": float64(16),
 				"message":           "缺货",
 			},
 	})
