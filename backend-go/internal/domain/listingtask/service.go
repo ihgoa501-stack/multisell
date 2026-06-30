@@ -11,6 +11,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -479,6 +480,11 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID))
 
 	oldStatus := task.Status
+
+		if err := s.db.Model(&task).Update("status", "pending").Error; err != nil {
+			return nil, err
+		}
+	}
 
 	// Run Prism check outside the main transaction so transient failures don't
 	// block the task-update transaction.

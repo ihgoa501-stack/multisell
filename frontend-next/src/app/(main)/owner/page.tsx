@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Badge,
   Button,
   Col,
   Empty,
@@ -20,7 +19,6 @@ import {
 import {
   ReloadOutlined,
   CheckOutlined,
-  CloseOutlined,
   AlertOutlined,
   ClockCircleOutlined,
   WarningOutlined,
@@ -32,7 +30,8 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
 } from '@ant-design/icons';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import type { SuggestionResponse } from '@/types/api';
 
@@ -43,6 +42,9 @@ interface RiskSummary {
   low_profit_products: number;
   missing_data_products: number;
   pending_approvals: number;
+  pending_approval_count?: number;
+  blocked_listing_task_count?: number;
+  recommended_listing_count?: number;
   sync_errors: number;
   total_candidates: number;
   total_recommendations: number;
@@ -58,6 +60,19 @@ interface PlatformSync {
   fees_sync: string;
   settlements_sync: string;
   last_sync_time: string;
+}
+
+interface ApprovalRequest {
+  id: number;
+  product_id: number;
+  request_type: string;
+  requester: string;
+  status: 'pending' | 'approved' | 'rejected';
+  target_type?: string;
+  target_id?: number;
+  risk_level?: 'low' | 'medium' | 'high';
+  reason?: string;
+  created_at: string;
 }
 
 // ---------- Color helpers ----------
@@ -80,6 +95,13 @@ const modeLabel = (mode: string): string => {
   if (mode === 'sandbox') return '沙箱';
   if (mode === 'production') return '生产';
   return mode;
+};
+
+const suggestionColor = (s: string): string => {
+  if (s === '建议上架') return 'green';
+  if (s === '谨慎上架') return 'orange';
+  if (s === '不建议上架') return 'red';
+  return 'blue';
 };
 
 const decisionColor = (d: string): string => {
@@ -166,10 +188,23 @@ const approvalStatusColor = (status: string | null): string => {
     case 'rejected': return 'red';
     default: return 'default';
   }
+const modeColor = (mode: string): string => {
+  if (mode === 'mock') return 'orange';
+  if (mode === 'sandbox') return 'blue';
+  if (mode === 'production') return 'red';
+  return 'default';
+};
+
+const modeLabel = (mode: string): string => {
+  if (mode === 'mock') return '模拟';
+  if (mode === 'sandbox') return '沙箱';
+  if (mode === 'production') return '生产';
+  return mode;
 };
 
 // ---------- Page ----------
 export default function OwnerPage() {
+  const router = useRouter();
   const qc = useQueryClient();
   const [suggestionFilter, setSuggestionFilter] = useState<string>('');
   const [approvalModal, setApprovalModal] = useState<SuggestionResponse | null>(null);
@@ -190,6 +225,15 @@ export default function OwnerPage() {
     queryKey: ['owner-suggestions'],
     queryFn: async () => {
       const res = await apiClient.get<SuggestionResponse[]>('/v1/owner/suggestions', { limit: '50' });
+      return res.data ?? [];
+    },
+  });
+
+  // Pending approvals
+  const { data: approvals } = useQuery({
+    queryKey: ['owner-pending-approvals'],
+    queryFn: async () => {
+      const res = await apiClient.get<ApprovalRequest[]>('/v1/approval/my', { page: '1', size: '100' });
       return res.data ?? [];
     },
   });
@@ -225,10 +269,14 @@ export default function OwnerPage() {
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ['owner-risk-summary'] });
     qc.invalidateQueries({ queryKey: ['owner-suggestions'] });
+    qc.invalidateQueries({ queryKey: ['owner-pending-approvals'] });
     qc.invalidateQueries({ queryKey: ['owner-platform-sync'] });
   };
 
-  // Compute stats
+  const pendingPublishApprovals = (approvals ?? []).filter(
+    (a: ApprovalRequest) => a.status === 'pending' && a.request_type === 'publish'
+  );
+
   const listReady = useMemo(
     () => (suggestions ?? []).filter((s) => s.decision === 'list').length,
     [suggestions]
@@ -364,6 +412,24 @@ export default function OwnerPage() {
             )}
           </div>
         ))}
+      {/* Next-action panel */}
+      <div style={{
+        background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
+        padding: 16, marginBottom: 16,
+      }}>
+        {pendingPublishApprovals.length > 0 ? (
+          <Space>
+            <ClockCircleOutlined style={{ color: 'var(--y4)', fontSize: 18 }} />
+            <Text strong>下一步：审核 {pendingPublishApprovals.length} 个上架请求</Text>
+            <Button type="primary" onClick={() => router.push('/approval')}>去审批</Button>
+          </Space>
+        ) : (
+          <Space>
+            <CheckOutlined style={{ color: 'var(--g4)', fontSize: 18 }} />
+            <Text strong>当前没有待审批上架请求</Text>
+            <Button onClick={() => router.push('/candidates')}>去评估候选商品</Button>
+          </Space>
+        )}
       </div>
 
       {/* Risk summary cards */}
@@ -371,30 +437,30 @@ export default function OwnerPage() {
         <Col xs={12} sm={6}>
           <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
             <Statistic
-              title="待审批上架"
-              value={riskSummary?.pending_approvals ?? '-'}
+              title="待审批动作"
+              value={riskSummary?.pending_approval_count ?? riskSummary?.pending_approvals ?? '-'}
               prefix={<ClockCircleOutlined style={{ color: 'var(--y4)' }} />}
-              valueStyle={{ color: (riskSummary?.pending_approvals ?? 0) > 0 ? 'var(--y4)' : 'var(--g4)' }}
+              valueStyle={{ color: (riskSummary?.pending_approval_count ?? 0) > 0 ? 'var(--y4)' : 'var(--g4)' }}
             />
           </div>
         </Col>
         <Col xs={12} sm={6}>
           <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
             <Statistic
-              title="低利润商品"
-              value={riskSummary?.low_profit_products ?? '-'}
-              prefix={<WarningOutlined style={{ color: 'var(--r4)' }} />}
-              valueStyle={{ color: (riskSummary?.low_profit_products ?? 0) > 0 ? 'var(--r4)' : 'var(--g4)' }}
+              title="被阻塞刊登任务"
+              value={riskSummary?.blocked_listing_task_count ?? 0}
+              prefix={<WarningOutlined style={{ color: 'var(--y4)' }} />}
+              valueStyle={{ color: (riskSummary?.blocked_listing_task_count ?? 0) > 0 ? 'var(--y4)' : 'var(--g4)' }}
             />
           </div>
         </Col>
         <Col xs={12} sm={6}>
           <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
             <Statistic
-              title="资料不完整商品"
-              value={riskSummary?.missing_data_products ?? '-'}
-              prefix={<AlertOutlined style={{ color: 'var(--y4)' }} />}
-              valueStyle={{ color: (riskSummary?.missing_data_products ?? 0) > 0 ? 'var(--y4)' : 'var(--g4)' }}
+              title="建议上架商品"
+              value={riskSummary?.recommended_listing_count ?? riskSummary?.list_ready_products ?? '-'}
+              prefix={<CheckOutlined style={{ color: 'var(--g4)' }} />}
+              valueStyle={{ color: 'var(--g4)' }}
             />
           </div>
         </Col>
@@ -433,10 +499,10 @@ export default function OwnerPage() {
         <Col xs={12} sm={6}>
           <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
             <Statistic
-              title="推荐上架"
-              value={riskSummary?.list_ready_products ?? listReady}
-              prefix={<CheckOutlined style={{ color: 'var(--g4)' }} />}
-              valueStyle={{ color: 'var(--g4)' }}
+              title="低利润 / 不完整商品"
+              value={((riskSummary?.low_profit_products ?? 0) + (riskSummary?.missing_data_products ?? 0)) || '-'}
+              prefix={<AlertOutlined style={{ color: 'var(--r4)' }} />}
+              valueStyle={{ color: ((riskSummary?.low_profit_products ?? 0) + (riskSummary?.missing_data_products ?? 0)) > 0 ? 'var(--r4)' : 'var(--g4)' }}
             />
           </div>
         </Col>
@@ -615,7 +681,7 @@ export default function OwnerPage() {
                       {
                         title: '操作',
                         key: 'actions',
-                        width: 130,
+                        width: 180,
                         fixed: 'right' as const,
                         render: (_: unknown, record: SuggestionResponse) => (
                           <Space size="small">
@@ -637,6 +703,25 @@ export default function OwnerPage() {
                             >
                               拒绝
                             </Button>
+                            {record.decision === 'list' && (
+                              <>
+                                <Button
+                                  size="small"
+                                  type="primary"
+                                  onClick={() => router.push('/approval')}
+                                >
+                                  查看审批
+                                </Button>
+                                {record.listing_task_id && (
+                                  <Button
+                                    size="small"
+                                    onClick={() => router.push(`/listing-tasks/${record.listing_task_id}`)}
+                                  >
+                                    查看任务
+                                  </Button>
+                                )}
+                              </>
+                            )}
                           </Space>
                         ),
                       },
@@ -680,15 +765,15 @@ export default function OwnerPage() {
                         <Space direction="vertical" style={{ width: '100%' }} size={4}>
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <Text type="secondary" style={{ fontSize: 12 }}>订单</Text>
-                            <Badge status={p.orders_sync === 'success' ? 'success' : 'error'} text={p.orders_sync} />
+                            <Text>{p.orders_sync}</Text>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <Text type="secondary" style={{ fontSize: 12 }}>商品</Text>
-                            <Badge status={p.products_sync === 'success' ? 'success' : 'error'} text={p.products_sync} />
+                            <Text>{p.products_sync}</Text>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <Text type="secondary" style={{ fontSize: 12 }}>费用</Text>
-                            <Badge status={p.fees_sync === 'success' ? 'success' : 'error'} text={p.fees_sync} />
+                            <Text>{p.fees_sync}</Text>
                           </div>
                           {p.last_sync_time && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 4 }}>

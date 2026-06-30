@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Descriptions, Table, Spin, Result, Button, Space, Tag, message } from 'antd';
+import { Alert, Card, Descriptions, Table, Spin, Result, Button, Space, Tag, message } from 'antd';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftOutlined, PlayCircleOutlined, RedoOutlined } from '@ant-design/icons';
@@ -46,6 +46,16 @@ interface TaskDetailResponse {
   items: ListingTaskItem[];
 }
 
+interface ApprovalRequest {
+  id: number;
+  status: string;
+  request_type: string;
+  target_type?: string;
+  target_id?: number;
+  risk_level?: string;
+  reason?: string;
+}
+
 export default function ListingTaskDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -63,6 +73,27 @@ export default function ListingTaskDetailPage() {
 
   const task = data?.task;
   const items = data?.items || [];
+
+  // Fetch approvals for this listing task
+  const { data: approvalsData } = useQuery({
+    queryKey: ['listing-task-approvals', id],
+    queryFn: async () => {
+      const res = await apiClient.get<ApprovalRequest[]>('/v1/approval', {
+        status: '',
+        request_type: 'publish',
+        page: '1',
+        size: '100',
+      });
+      return (Array.isArray(res.data) ? res.data : []).filter(
+        (a) => a.target_type === 'listing_task' && String(a.target_id) === String(id)
+      );
+    },
+  });
+
+  const publishApproval = approvalsData?.[0];
+  const isApproved = publishApproval?.status === 'approved';
+  const isRejected = publishApproval?.status === 'rejected';
+  const isPendingApproval = task?.status === 'blocked' && publishApproval?.status === 'pending';
 
   const executeMutation = useMutation({
     mutationFn: async () => {
@@ -128,7 +159,11 @@ export default function ListingTaskDetailPage() {
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/listing-tasks')}>
           返回列表
         </Button>
-        {task?.status === 'failed' || task?.status === 'blocked' ? (
+        {task?.status === 'blocked' ? (
+          <Button type="primary" onClick={() => router.push('/approval')}>
+            去审批
+          </Button>
+        ) : task?.status === 'failed' ? (
           <Button
             type="primary"
             icon={<RedoOutlined />}
@@ -162,6 +197,14 @@ export default function ListingTaskDetailPage() {
         </Card>
       ) : (
         <Space direction="vertical" size="middle" style={{ display: 'flex' }}>
+          {task?.status === 'blocked' && (
+            <Alert
+              type={isApproved ? 'success' : isRejected ? 'error' : 'warning'}
+              message={isApproved ? '审批已通过，可以执行' : isRejected ? '审批已拒绝，任务保持阻塞' : '该任务等待 Owner 审批'}
+              description={publishApproval?.reason || '审批通过前，系统不会执行该刊登任务。'}
+              showIcon
+            />
+          )}
           <Card title="基本信息">
             <Descriptions bordered column={2} size="small">
               <Descriptions.Item label="任务 ID">{task?.id}</Descriptions.Item>

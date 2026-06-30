@@ -1,6 +1,7 @@
 package listingtask
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -512,4 +513,56 @@ func TestService_Item_ListItems(t *testing.T) {
 		t.Fatalf("total = %d", total)
 	}
 	_ = items
+}
+
+func TestService_ExecuteTaskBlocksWithoutApproval(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+
+	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "blocked", CreatedBy: "A8"}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	_, err := svc.ExecuteTask(task.ID)
+	if err == nil {
+		t.Fatal("expected approval required error")
+	}
+	if !strings.Contains(err.Error(), "approval required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestService_ExecuteTaskAllowsApprovedBlockedTask(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+
+	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "blocked", CreatedBy: "A8"}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	item := ListingTaskItem{TaskID: task.ID, ProductID: 10, PlatformID: 1, Status: "pending"}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	db.Create(&approval.ApprovalRequest{
+		ProductID:   10,
+		RequestType: "publish",
+		Requester:   "A8",
+		Reviewer:    "owner",
+		Status:      "approved",
+		TargetType:  "listing_task",
+		TargetID:    task.ID,
+		RiskLevel:   "high",
+	})
+
+	updated, err := svc.ExecuteTask(task.ID)
+	if err != nil {
+		t.Fatalf("ExecuteTask: %v", err)
+	}
+	if updated.Status != "completed" {
+		t.Fatalf("status = %s, want completed", updated.Status)
+	}
 }
