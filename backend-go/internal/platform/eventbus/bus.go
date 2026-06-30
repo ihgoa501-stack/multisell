@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"strconv"
 	"sync"
 	"time"
 
@@ -375,7 +376,7 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 		return "", err
 	}
 
-	eventsQueueDepth.Set(float64(pool.backend.Len()))
+	eventsQueueDepthVec.WithLabelValues(strconv.Itoa(priority)).Set(float64(pool.backend.Len()))
 	eventsPublished.WithLabelValues(topic, "published").Inc()
 
 	return evt.ID, nil
@@ -456,6 +457,9 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 			return
 		}
 
+		// Propagate correlation ID to handler context.
+	handlerCtx := WithCorrelationID(ctx, evt.CorrelationID)
+
 		// Dispatch to all matching subscribers with panic recovery per handler.
 		var panicked bool
 		var lastErr string
@@ -475,7 +479,7 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 							eventsHandlerErrors.WithLabelValues(evt.Topic).Inc()
 						}
 					}()
-					if err := s.handler(ctx, evt); err != nil {
+					if err := s.handler(handlerCtx, evt); err != nil {
 						lastErr = err.Error()
 						b.logger.Warn("handler error",
 							zap.String("event_id", evt.ID),
@@ -504,6 +508,11 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 				)
 				eventsPublished.WithLabelValues(evt.Topic, "delivered").Inc()
 			}
+		}
+
+		// Track delivery metrics.
+		if !panicked && lastErr == "" {
+			eventsDelivered.Inc()
 		}
 
 		// Retry or DLQ logic. If the event failed and DLQ is configured,
