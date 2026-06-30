@@ -10,20 +10,69 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
 
+/** Timeout for all fetch requests in milliseconds. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Category labels for structured error reporting. */
+export type ApiErrorCategory =
+  | 'auth'
+  | 'validation'
+  | 'server'
+  | 'network'
+  | 'timeout'
+  | 'unknown';
+
+/**
+ * Structured error type returned by the API client.
+ * Components can inspect `status`, `message`, and `category` to show
+ * user-appropriate error messages.
+ */
+export class ApiError extends Error {
+  override name = 'ApiError';
+
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly category: ApiErrorCategory = 'unknown',
+  ) {
+    super(message);
+  }
+
+  static fromStatus(status: number, statusText?: string): ApiError {
+    let category: ApiErrorCategory;
+    if (status === 401 || status === 403) category = 'auth';
+    else if (status >= 400 && status < 500) category = 'validation';
+    else if (status >= 500) category = 'server';
+    else category = 'unknown';
+    return new ApiError(status, statusText || `HTTP ${status}`, category);
+  }
+}
+
 interface QueueItem {
   resolve: (token: string) => void;
   reject: (error: unknown) => void;
 }
 
-class ApiClient {
+export class ApiClient {
   private baseUrl: string;
   private refreshing = false;
   private refreshQueue: QueueItem[] = [];
   /** In-flight GET request deduplication map. Keys are full URL strings. */
   private inflightRequests: Map<string, Promise<unknown>> = new Map();
 
+  /** Optional callback invoked on 403 responses. */
+  private static forbiddenHandler: (() => void) | null = null;
+
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Register a callback that fires whenever a 403 response is received.
+   * The permission store uses this to re-fetch permissions automatically.
+   */
+  static setForbiddenHandler(handler: (() => void) | null): void {
+    ApiClient.forbiddenHandler = handler;
   }
 
   private getHeaders(token?: string): HeadersInit {
@@ -39,6 +88,32 @@ class ApiClient {
       }
     }
     return headers;
+  }
+
+  /**
+   * Wraps `fetch` with a 30-second timeout and converts transport/abort
+   * errors into structured {@link ApiError} instances.
+   */
+  private async fetchWithTimeout(
+    url: string,
+    options: RequestInit = {},
+  ): Promise<Response> {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      return response;
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new ApiError(0, 'Request timeout', 'timeout');
+      }
+      throw new ApiError(
+        0,
+        err instanceof Error ? err.message : 'Network error',
+        'network',
+      );
+    }
   }
 
   /**
@@ -61,11 +136,14 @@ class ApiClient {
         throw new Error('No refresh token available');
       }
 
-      const response = await fetch(`${this.baseUrl}/v1/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/v1/auth/refresh`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        },
+      );
 
       if (!response.ok) {
         throw new Error(`Refresh failed: ${response.status}`);
@@ -154,31 +232,38 @@ class ApiClient {
 
   /**
    * Execute the fetch and handle 401 → token refresh → retry.
+   * Also catches 403 to trigger the permission-reload callback.
    */
   private async executeWithRefresh<T>(
     url: URL,
     options: RequestInit,
   ): Promise<T> {
-    const response = await fetch(url.toString(), options);
+    const response = await this.fetchWithTimeout(url.toString(), options);
+
+    // 403 — trigger the forbidden handler (typically re-fetches permissions)
+    if (response.status === 403) {
+      ApiClient.forbiddenHandler?.();
+      throw ApiError.fromStatus(403);
+    }
 
     // If not a 401 or if we're server-side, just handle the response
     if (response.status !== 401) {
       if (!response.ok) {
-        throw new Error(`API error: ${response.status} ${response.statusText}`);
+        throw ApiError.fromStatus(response.status, response.statusText);
       }
       return response.json();
     }
 
     // 401 handling — only on client side with a stored token
     if (typeof window === 'undefined') {
-      throw new Error(`API error: ${response.status} ${response.statusText}`);
+      throw ApiError.fromStatus(401, response.statusText);
     }
 
     const originalToken = getToken();
     if (!originalToken) {
       // No token at all — redirect to login
       window.location.href = '/login';
-      throw new Error('Not authenticated');
+      throw new ApiError(401, 'Not authenticated', 'auth');
     }
 
     // Attempt token refresh
@@ -191,10 +276,13 @@ class ApiClient {
       body: options.body,
     };
 
-    const retryResponse = await fetch(url.toString(), retryOptions);
+    const retryResponse = await this.fetchWithTimeout(
+      url.toString(),
+      retryOptions,
+    );
     if (!retryResponse.ok) {
       // Retry also failed — refresh token might be valid but access is denied
-      throw new Error(`API error: ${retryResponse.status} ${retryResponse.statusText}`);
+      throw ApiError.fromStatus(retryResponse.status, retryResponse.statusText);
     }
 
     return retryResponse.json();

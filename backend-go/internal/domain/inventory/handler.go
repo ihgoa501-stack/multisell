@@ -316,3 +316,37 @@ func (h *Handler) ListTransfers(c *gin.Context) {
 
 	response.Paginated(c, items, total, p.Page, p.Size)
 }
+
+// ── Cross-Platform Sync handlers ──────────────────────────────────────────
+
+// SyncCrossPlatform runs a cross-platform inventory sync for a single product.
+// POST /api/v1/inventory/sync-cross-platform/:productId
+func (h *Handler) SyncCrossPlatform(c *gin.Context) {
+	productID, err := strconv.ParseInt(c.Param("productId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid productId")
+		return
+	}
+
+	result, err := h.service.SyncAcrossPlatforms(c.Request.Context(), productID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "sync failed: "+err.Error())
+		return
+	}
+
+	response.Success(c, result)
+}
+
+// OversellReport returns the oversell detection log with pagination.
+// GET /api/v1/inventory/oversell-report?page=&size=
+func (h *Handler) OversellReport(c *gin.Context) {
+	p := common.ParsePagination(c)
+
+	items, total, err := h.service.ListOversellReport(c.Request.Context(), p.Page, p.Size)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to list oversell report: "+err.Error())
+		return
+	}
+
+	response.Paginated(c, items, total, p.Page, p.Size)
+}

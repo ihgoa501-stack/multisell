@@ -43,7 +43,7 @@ export default function OzonProductsPage() {
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/platform-integrations')}>返回</Button>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}><ShoppingOutlined /> Ozon 商品列表</h1>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', margin: 0 }}><ShoppingOutlined /> Ozon 商品列表</h1>
       </div>
 
       {isLoading ? (

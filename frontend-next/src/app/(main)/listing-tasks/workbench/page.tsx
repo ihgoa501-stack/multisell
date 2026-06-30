@@ -29,7 +29,7 @@ export default function ListingTasksWorkbenchPage() {
 
   return (
     <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>AI Listing 工作台</h1>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', marginBottom: 16 }}>AI Listing 工作台</h1>
 
       <Card style={{ marginBottom: 16 }}>
         <Space size="large">

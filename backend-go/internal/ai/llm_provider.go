@@ -13,7 +13,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
+)
+
+// LLM cache Prometheus counters.
+// Use in PromQL: cache_hit_ratio = multisell_llm_cache_hit_tokens_total / (multisell_llm_cache_hit_tokens_total + multisell_llm_cache_miss_tokens_total)
+var (
+	llmCacheHitTokens = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "multisell_llm_cache_hit_tokens_total",
+		Help: "Total input tokens served from prompt cache (cache hit).",
+	})
+	llmCacheMissTokens = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "multisell_llm_cache_miss_tokens_total",
+		Help: "Total input tokens that were NOT served from prompt cache (cache miss).",
+	})
+	llmCacheCreationTokens = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "multisell_llm_cache_creation_tokens_total",
+		Help: "Total tokens spent creating new cache entries (cache creation).",
+	})
 )
 
 // LLMProvider is the abstract interface for language model backends.
@@ -191,6 +210,9 @@ func (p *openAICompatible) Chat(ctx context.Context, req *LLMRequest) (*LLMRespo
 		Usage struct {
 			PromptTokens     int `json:"prompt_tokens"`
 			CompletionTokens int `json:"completion_tokens"`
+			PromptTokensDetails *struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"prompt_tokens_details,omitempty"`
 		} `json:"usage"`
 		Model string `json:"model"`
 	}
@@ -199,6 +221,15 @@ func (p *openAICompatible) Chat(ctx context.Context, req *LLMRequest) (*LLMRespo
 	}
 	if len(parsed.Choices) == 0 {
 		return nil, errors.New("LLM returned no choices")
+	}
+
+	// Track cache token counters.
+	pt := parsed.Usage.PromptTokens
+	if d := parsed.Usage.PromptTokensDetails; d != nil && d.CachedTokens > 0 {
+		llmCacheHitTokens.Add(float64(d.CachedTokens))
+		llmCacheMissTokens.Add(float64(pt - d.CachedTokens))
+	} else {
+		llmCacheMissTokens.Add(float64(pt))
 	}
 	return &LLMResponse{
 		Answer:       parsed.Choices[0].Message.Content,
@@ -392,6 +423,8 @@ func (p *anthropicProvider) Chat(ctx context.Context, req *LLMRequest) (*LLMResp
 		Usage struct {
 			InputTokens  int `json:"input_tokens"`
 			OutputTokens int `json:"output_tokens"`
+			CacheReadInputTokens    int `json:"cache_read_input_tokens,omitempty"`
+			CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
 		} `json:"usage"`
 		Model string `json:"model"`
 	}
@@ -401,6 +434,18 @@ func (p *anthropicProvider) Chat(ctx context.Context, req *LLMRequest) (*LLMResp
 	answer := ""
 	if len(parsed.Content) > 0 {
 		answer = parsed.Content[0].Text
+	}
+
+	// Track cache token counters.
+	pt := parsed.Usage.InputTokens
+	if parsed.Usage.CacheReadInputTokens > 0 {
+		llmCacheHitTokens.Add(float64(parsed.Usage.CacheReadInputTokens))
+		llmCacheMissTokens.Add(float64(pt - parsed.Usage.CacheReadInputTokens))
+	} else {
+		llmCacheMissTokens.Add(float64(pt))
+	}
+	if parsed.Usage.CacheCreationInputTokens > 0 {
+		llmCacheCreationTokens.Add(float64(parsed.Usage.CacheCreationInputTokens))
 	}
 	return &LLMResponse{
 		Answer:    answer,

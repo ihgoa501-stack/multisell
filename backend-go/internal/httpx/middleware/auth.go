@@ -56,7 +56,14 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		if userID, exists := claims["user_id"]; exists {
-			c.Set("user_id", userID)
+			switch v := userID.(type) {
+			case float64:
+				c.Set("user_id", int64(v))
+			case int64:
+				c.Set("user_id", v)
+			default:
+				c.Set("user_id", userID)
+			}
 		}
 
 		c.Next()

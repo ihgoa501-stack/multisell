@@ -180,7 +180,7 @@ export default function AgentTracePage() {
         }}
       >
         <Space>
-          <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>
+          <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', margin: 0 }}>
             Trace 回放
           </h1>
           <Text type="secondary">{traceId}</Text>

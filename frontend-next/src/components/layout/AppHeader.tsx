@@ -74,7 +74,7 @@ export default function AppHeader() {
           onClick={() => setCommandPaletteOpen(true)}
           type="text"
           size="small"
-          style={{ color: 'var(--t2)', fontSize: '0.8rem' }}
+          style={{ color: 'var(--t2)', fontSize: '0.8rem', minWidth: 44, minHeight: 44 }}
         >
           /
         </Button>
@@ -83,7 +83,7 @@ export default function AppHeader() {
           icon={<SunOutlined />}
           onClick={toggleTheme}
           size="small"
-          style={{ color: 'var(--t2)' }}
+          style={{ color: 'var(--t2)', minWidth: 44, minHeight: 44 }}
         />
         <div style={{ position: 'relative' }}>
           <Button
@@ -91,7 +91,7 @@ export default function AppHeader() {
             icon={<BellOutlined />}
             onClick={toggleActivityFeed}
             size="small"
-            style={{ color: 'var(--t2)', position: 'relative' }}
+            style={{ color: 'var(--t2)', position: 'relative', minWidth: 44, minHeight: 44 }}
           />
           {unseenCount > 0 && !activityFeedOpen && (
             <div

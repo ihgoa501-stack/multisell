@@ -233,7 +233,7 @@ export default function AgentsPage() {
           marginBottom: 16,
         }}
       >
-        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: 0 }}>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', margin: 0 }}>
           Agent 列表
         </h1>
         <Button

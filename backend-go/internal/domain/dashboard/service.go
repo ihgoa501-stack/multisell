@@ -250,3 +250,17 @@ func (s *Service) ExceptionDistribution() ([]ExceptionDistribution, error) {
 	}
 	return items, nil
 }
+
+// GetRejectionReasonStats returns rejection counts grouped by agent and reason in the last 30 days.
+func (s *Service) GetRejectionReasonStats() ([]RejectionReasonStat, error) {
+	var items []RejectionReasonStat
+	if err := s.db.Table("unified_action").
+		Select("agent_id, rejection_reason, COUNT(*) AS count").
+		Where("status = ? AND created_at > ?", "rejected", time.Now().Add(-30*24*time.Hour)).
+		Group("agent_id, rejection_reason").
+		Order("agent_id ASC, count DESC").
+		Scan(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
