@@ -69,3 +69,13 @@ func (h *Handler) Exceptions(c *gin.Context) {
 	}
 	response.Success(c, items)
 }
+
+// RejectionReasons GET /dashboard/rejection-reasons
+func (h *Handler) RejectionReasons(c *gin.Context) {
+	items, err := h.service.GetRejectionReasonStats()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, items)
+}

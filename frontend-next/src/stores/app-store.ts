@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+export type PanelMode = 'ai' | 'balanced' | 'tool';
+
 interface AppState {
   sidebarCollapsed: boolean;
   copilotOpen: boolean;
@@ -8,6 +10,7 @@ interface AppState {
   activeTool: string | null;
   activityFeedOpen: boolean;
   unseenCount: number;
+  panelMode: PanelMode;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setCopilotOpen: (open: boolean) => void;
@@ -16,7 +19,11 @@ interface AppState {
   setActiveTool: (tool: string | null) => void;
   toggleActivityFeed: () => void;
   markActivitiesRead: () => void;
+  setPanelMode: (mode: PanelMode) => void;
+  cyclePanelMode: () => void;
 }
+
+const modeCycle: PanelMode[] = ['ai', 'balanced', 'tool'];
 
 export const useAppStore = create<AppState>((set) => ({
   sidebarCollapsed: false,
@@ -26,6 +33,7 @@ export const useAppStore = create<AppState>((set) => ({
   activeTool: null,
   activityFeedOpen: false,
   unseenCount: 3,
+  panelMode: 'balanced',
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setSidebarCollapsed: (collapsed: boolean) => set({ sidebarCollapsed: collapsed }),
   setCopilotOpen: (open: boolean) => set({ copilotOpen: open }),
@@ -34,4 +42,11 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveTool: (tool: string | null) => set({ activeTool: tool }),
   toggleActivityFeed: () => set((state) => ({ activityFeedOpen: !state.activityFeedOpen })),
   markActivitiesRead: () => set({ unseenCount: 0 }),
+  setPanelMode: (mode: PanelMode) => set({ panelMode: mode }),
+  cyclePanelMode: () =>
+    set((state) => {
+      const idx = modeCycle.indexOf(state.panelMode);
+      const next = modeCycle[(idx + 1) % modeCycle.length];
+      return { panelMode: next };
+    }),
 }));

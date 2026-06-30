@@ -13,6 +13,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/database"
 	"github.com/lingmirror/backend-go/internal/httpx"
+	"github.com/lingmirror/backend-go/internal/schemadrift"
 )
 
 func main() {
@@ -53,6 +54,13 @@ func main() {
 	if err != nil {
 		sugar.Fatalf("failed to connect database: %v", err)
 	}
+
+	// Schema drift detection at startup
+	driftDetector := schemadrift.New(db, logger, schemadrift.Config{
+		Enabled: cfg.SchemaDrift.Enabled,
+		OnDrift: cfg.SchemaDrift.OnDrift,
+	})
+	driftDetector.Check()
 
 	// Setup router
 	router := httpx.NewRouter(db, cfg, logger)

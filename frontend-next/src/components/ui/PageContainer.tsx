@@ -61,7 +61,7 @@ export default function PageContainer({
   if (empty) {
     return (
       <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
-        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>{title}</h1>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)' }}>{title}</h1>
         <div style={{ marginTop: 16 }} />
         <EmptyState
           description={emptyDesc ?? '暂无数据'}
@@ -75,7 +75,7 @@ export default function PageContainer({
   if (error) {
     return (
       <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
-        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)' }}>{title}</h1>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)' }}>{title}</h1>
         <div style={{ marginTop: 16 }} />
         <EmptyState
           description={errorMsg ?? '加载失败'}
@@ -99,7 +99,7 @@ export default function PageContainer({
         }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: 0 }}>{title}</h1>
+          <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', margin: 0 }}>{title}</h1>
           {subtitle && (
             <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
               {subtitle}

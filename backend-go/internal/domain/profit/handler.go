@@ -1,0 +1,52 @@
+package profit
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/response"
+)
+
+// Handler handles profit summary HTTP requests.
+type Handler struct {
+	service *Service
+}
+
+// NewHandler creates a new profit handler.
+func NewHandler(service *Service) *Handler {
+	return &Handler{service: service}
+}
+
+// Summary GET /profit/summary/:productId
+func (h *Handler) Summary(c *gin.Context) {
+	productIDStr := c.Param("productId")
+	productID, err := strconv.ParseInt(productIDStr, 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid productId")
+		return
+	}
+
+	var in SummaryInput
+	c.ShouldBindJSON(&in)
+
+	result, err := h.service.Calculate(productID, in.CalculatedBy)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// ListSummaries GET /profit/summaries
+func (h *Handler) ListSummaries(c *gin.Context) {
+	p := common.ParsePagination(c)
+	status := c.Query("status")
+	items, total, err := h.service.ListSummaries(p.Page, p.Size, status)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, items, total, p.Page, p.Size)
+}

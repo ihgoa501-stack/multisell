@@ -136,10 +136,10 @@ func NewComplianceGuardAgent() *ComplianceGuardAgent {
 //
 // Delegates to toolregistry.DefaultRegistry.Call() first. Falls back to
 // built-in logic when no tool is registered for the decision point.
-func (a *ComplianceGuardAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *ComplianceGuardAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	// Try toolregistry first — tools registered via init() functions may
 	// provide a more up-to-date or dynamic implementation.
-	result, regErr := toolregistry.DefaultRegistry.Call(context.Background(), decisionPoint, ctx)
+	result, regErr := toolregistry.DefaultRegistry.Call(ctx, decisionPoint, params)
 	if regErr == nil {
 		if m, ok := result.(map[string]interface{}); ok {
 			conf, _ := m["confidence"].(float64)
@@ -154,9 +154,9 @@ func (a *ComplianceGuardAgent) Decide(decisionPoint string, ctx map[string]inter
 	// Fallback to built-in logic.
 	switch decisionPoint {
 	case "compliance_check":
-		return a.check(ctx)
+		return a.check(params)
 	case "certification_lookup":
-		return a.lookup(ctx)
+		return a.lookup(params)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",

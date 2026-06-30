@@ -104,8 +104,8 @@ func (a *AftersalesMgmtAgent) registerTools() {
 
 // callDecision dispatches a decision point through the tool registry,
 // extracting confidence and risk level from the tool handler output.
-func (a *AftersalesMgmtAgent) callDecision(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	result, err := a.toolReg.Call(context.Background(), "aftersales.agent."+decisionPoint, ctx)
+func (a *AftersalesMgmtAgent) callDecision(callCtx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	result, err := a.toolReg.Call(callCtx, "aftersales.agent."+decisionPoint, params)
 	if err != nil {
 		return nil, 0, "high", err
 	}
@@ -126,10 +126,10 @@ func (a *AftersalesMgmtAgent) callDecision(decisionPoint string, ctx map[string]
 //   - "aftersales_report" — KPI aggregation with trend and anomaly alerts
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
-func (a *AftersalesMgmtAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *AftersalesMgmtAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "return_analysis", "refund_decision", "dispute_manage", "aftersales_report":
-		return a.callDecision(decisionPoint, ctx)
+		return a.callDecision(ctx, decisionPoint, params)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",
