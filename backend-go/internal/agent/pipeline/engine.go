@@ -20,6 +20,7 @@ type Engine struct {
 	runAgent RunAgentFunc
 	edges    []PipelineEdge
 	logger   *zap.Logger
+	breakers *CircuitBreakerRegistry
 }
 
 // NewEngine creates a pipeline engine with the given runner function and edges.
@@ -29,7 +30,20 @@ func NewEngine(runAgent RunAgentFunc, edges []PipelineEdge, logger *zap.Logger) 
 		runAgent: runAgent,
 		edges:    edges,
 		logger:   logger,
+		breakers: NewCircuitBreakerRegistry(DefaultBreakerConfig()),
 	}
+}
+
+// Breakers returns the circuit breaker registry for configuration.
+func (e *Engine) Breakers() *CircuitBreakerRegistry {
+	return e.breakers
+}
+
+// ConfigureBreaker sets custom breaker config for a specific agent.
+func (e *Engine) ConfigureBreaker(agentID string, cfg BreakerConfig) {
+	e.breakers.mu.Lock()
+	e.breakers.breakers[agentID] = NewCircuitBreaker(cfg)
+	e.breakers.mu.Unlock()
 }
 
 // Dispatch evaluates all registered edges against an event and triggers
