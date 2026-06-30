@@ -1,6 +1,7 @@
 package compliance
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/lingmirror/backend-go/internal/agent/impl"
@@ -46,7 +47,7 @@ func (a *A7Adapter) RunCheck(input *CheckInput) (*CheckOutput, float64, error) {
 		"target_platform": input.Platform,
 	}
 
-	outputMap, confidence, _, err := a.agent.Decide("compliance_check", ctx)
+	outputMap, confidence, _, err := a.agent.Decide(context.Background(), "compliance_check", ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("compliance check failed: %w", err)
 	}
