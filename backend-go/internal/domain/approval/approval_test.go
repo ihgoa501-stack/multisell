@@ -361,3 +361,47 @@ func TestService_CreateWithOldNewValues(t *testing.T) {
 		t.Errorf("expected reason 'market adjustment', got %s", req.Reason)
 	}
 }
+
+func TestService_FindApprovedByTarget(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ApprovalRequest{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	db.Create(&ApprovalRequest{
+		ProductID:   101,
+		RequestType: "publish",
+		Requester:   "A8",
+		Status:      "approved",
+		TargetType:  "listing_task",
+		TargetID:    55,
+		Reason:      "资料完整且利润达标",
+	})
+
+	req, err := svc.FindApprovedByTarget("listing_task", 55, "publish")
+	if err != nil {
+		t.Fatalf("FindApprovedByTarget: %v", err)
+	}
+	if req.TargetType != "listing_task" || req.TargetID != 55 || req.Status != "approved" {
+		t.Fatalf("unexpected approval: %+v", req)
+	}
+}
+
+func TestService_FindApprovedByTargetRejectsPending(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ApprovalRequest{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	db.Create(&ApprovalRequest{
+		ProductID:   101,
+		RequestType: "publish",
+		Requester:   "A8",
+		Status:      "pending",
+		TargetType:  "listing_task",
+		TargetID:    55,
+	})
+
+	_, err := svc.FindApprovedByTarget("listing_task", 55, "publish")
+	if err == nil {
+		t.Fatal("expected no approved approval for pending request")
+	}
+}

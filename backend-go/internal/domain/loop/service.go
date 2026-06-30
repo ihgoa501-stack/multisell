@@ -10,6 +10,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
+		"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -22,6 +23,7 @@ type Service struct {
 	completenessSvc *completeness.Service
 	profitSvc     *profit.Service
 	listingtaskSvc *listingtask.Service
+	approvalSvc  *approval.Service
 }
 
 // NewService creates a new evaluation loop service.
@@ -33,6 +35,7 @@ func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismServ
 		completenessSvc: completeness.NewService(db, logger),
 		profitSvc:       profit.NewService(db, logger),
 		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict),
+		approvalSvc:  approval.NewService(db, logger),
 	}
 }
 
@@ -68,14 +71,31 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 	// 4. Generate recommendation (agent-like decision rules)
 	decision, confidence, reason, riskFlags := s.generateRecommendation(compResult, profitResult)
 
-	// 5. If decision is "list", create a blocked listingtask (pending approval)
+	// 5. If decision is "list", create a blocked listingtask + pending approval in one transaction
 	var listingTaskID *int64
 	if decision == "list" {
-		task, err := s.createListingTask(&prod, profitResult, compResult, triggeredBy)
-		if err != nil {
-			s.logger.Warn("failed to create listing task", zap.Int64("product_id", productID), zap.Error(err))
-		} else {
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			task, err := s.createListingTask(tx, &prod, profitResult, compResult, triggeredBy)
+			if err != nil {
+				return err
+			}
 			listingTaskID = &task.ID
+
+			as := approval.NewService(tx, s.logger)
+			_, err = as.Create(&approval.CreateApprovalInput{
+				ProductID:   prod.ID,
+				RequestType: "publish",
+				Requester:   triggeredBy,
+				TargetType:  "listing_task",
+				TargetID:    task.ID,
+				RiskLevel:   "high",
+				NewValue:    string(task.DecisionSnapshot),
+				Reason:      reason,
+			})
+			return err
+		})
+		if err != nil {
+			return nil, fmt.Errorf("creating listing approval: %w", err)
 		}
 	}
 
@@ -192,7 +212,7 @@ func (s *Service) generateRecommendation(comp *completeness.CheckResult, profit 
 }
 
 // createListingTask creates a blocked listing task requiring approval.
-func (s *Service) createListingTask(prod *candidate.CandidateProduct, profitResult *profit.ProfitResult, compResult *completeness.CheckResult, triggeredBy string) (*listingtask.ListingTask, error) {
+func (s *Service) createListingTask(db *gorm.DB, prod *candidate.CandidateProduct, profitResult *profit.ProfitResult, compResult *completeness.CheckResult, triggeredBy string) (*listingtask.ListingTask, error) {
 	// Build decision snapshot
 	ds := map[string]interface{}{
 		"completeness_score": compResult.Score,
@@ -214,7 +234,7 @@ func (s *Service) createListingTask(prod *candidate.CandidateProduct, profitResu
 	targetMargin := profitResult.ProfitMargin
 	targetPrice := prod.TargetSalePrice
 
-	task, err := s.listingtaskSvc.Create(&listingtask.CreateTaskInput{
+	task, err := listingtask.NewService(db, s.logger, nil, false).Create(&listingtask.CreateTaskInput{
 		ProductID:           prod.ID,
 		PlatformID:          platformID,
 		SourceType:          "campaign",

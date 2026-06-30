@@ -21,13 +21,16 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 // RiskSummary returns aggregated risk metrics for the Owner cockpit.
 func (s *Service) RiskSummary() (map[string]interface{}, error) {
 	result := map[string]interface{}{
-		"low_profit_products":   0,
-		"missing_data_products": 0,
-		"pending_approvals":     0,
-		"sync_errors":           0,
-		"total_candidates":      0,
-		"total_recommendations": 0,
-		"list_ready_products":   0,
+		"low_profit_products":     0,
+		"missing_data_products":   0,
+		"pending_approvals":       0,
+		"pending_approval_count":  0,
+		"blocked_listing_task_count": 0,
+		"recommended_listing_count":  0,
+		"sync_errors":             0,
+		"total_candidates":        0,
+		"total_recommendations":   0,
+		"list_ready_products":     0,
 	}
 
 	var totalCandidates int64
@@ -51,6 +54,13 @@ func (s *Service) RiskSummary() (map[string]interface{}, error) {
 	s.db.Model(&struct{}{}).Table("listing_task").
 		Where("status = ?", "blocked").Count(&pendingApp)
 	result["pending_approvals"] = pendingApp
+	result["blocked_listing_task_count"] = pendingApp
+
+	// New: count pending approval requests from approval_request table
+	var pendingApprovalCount int64
+	s.db.Model(&struct{}{}).Table("approval_request").
+		Where("status = ?", "pending").Count(&pendingApprovalCount)
+	result["pending_approval_count"] = pendingApprovalCount
 
 	var syncErr int64
 	s.db.Model(&struct{}{}).Table("mock_sync_status").
@@ -67,6 +77,7 @@ func (s *Service) RiskSummary() (map[string]interface{}, error) {
 		WHERE decision = 'list'
 	`).Scan(&listReady)
 	result["list_ready_products"] = listReady
+	result["recommended_listing_count"] = listReady
 
 	return result, nil
 }
