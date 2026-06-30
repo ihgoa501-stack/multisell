@@ -3,10 +3,8 @@ package inventory
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -305,68 +303,6 @@ func (s *Service) ListLogs(ctx context.Context, skuID int64, page, size int) ([]
 		return nil, 0, err
 	}
 	return items, total, nil
-}
-
-// ── Warehouse ─────────────────────────────────────────────────────
-
-// ListWarehouses returns a paginated list of warehouses.
-// Warehouse is defined in the allocation module.
-func (s *Service) ListWarehouses(ctx context.Context, page, size int, search string) ([]allocation.Warehouse, int64, error) {
-	var items []allocation.Warehouse
-	var total int64
-
-	q := s.db.WithContext(ctx).Model(&allocation.Warehouse{})
-	if search != "" {
-		q = q.Where("name ILIKE ? OR code ILIKE ?", "%"+search+"%", "%"+search+"%")
-	}
-
-	if err := q.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	if page <= 0 {
-		page = 1
-	}
-	if size <= 0 {
-		size = 20
-	}
-	offset := (page - 1) * size
-	if err := q.Order("id DESC").Offset(offset).Limit(size).Find(&items).Error; err != nil {
-		return nil, 0, err
-	}
-	return items, total, nil
-}
-
-// GetWarehouseByID retrieves a single warehouse by ID.
-func (s *Service) GetWarehouseByID(ctx context.Context, id int64) (*allocation.Warehouse, error) {
-	var w allocation.Warehouse
-	if err := s.db.WithContext(ctx).First(&w, id).Error; err != nil {
-		return nil, err
-	}
-	return &w, nil
-}
-
-// CreateWarehouse inserts a new warehouse.
-func (s *Service) CreateWarehouse(ctx context.Context, w *allocation.Warehouse) error {
-	w.Name = strings.TrimSpace(w.Name)
-	if w.Name == "" {
-		return gorm.ErrInvalidData
-	}
-	return s.db.WithContext(ctx).Create(w).Error
-}
-
-// UpdateWarehouse saves changes to an existing warehouse.
-func (s *Service) UpdateWarehouse(ctx context.Context, w *allocation.Warehouse) error {
-	w.Name = strings.TrimSpace(w.Name)
-	if w.Name == "" {
-		return gorm.ErrInvalidData
-	}
-	return s.db.WithContext(ctx).Save(w).Error
-}
-
-// DeleteWarehouse removes a warehouse by ID (hard delete).
-func (s *Service) DeleteWarehouse(ctx context.Context, id int64) error {
-	return s.db.WithContext(ctx).Delete(&allocation.Warehouse{}, id).Error
 }
 
 // ── InventoryWarehouse ───────────────────────────────────────────

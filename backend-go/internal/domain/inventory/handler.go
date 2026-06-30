@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
-	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
@@ -165,103 +164,6 @@ func (h *Handler) ListLogs(c *gin.Context) {
 	}
 
 	response.Paginated(c, items, total, p.Page, p.Size)
-}
-
-// ── Warehouse handlers ───────────────────────────────────────────
-
-// ListWarehouses returns a paginated list of warehouses.
-// GET /api/v1/inventory/warehouses?page=1&size=20&search=xxx
-func (h *Handler) ListWarehouses(c *gin.Context) {
-	p := common.ParsePagination(c)
-	search := c.Query("search")
-
-	items, total, err := h.service.ListWarehouses(c.Request.Context(), p.Page, p.Size, search)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "failed to list warehouses: "+err.Error())
-		return
-	}
-
-	response.Paginated(c, items, total, p.Page, p.Size)
-}
-
-// GetWarehouse returns a single warehouse by ID.
-// GET /api/v1/inventory/warehouses/:id
-func (h *Handler) GetWarehouse(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	item, err := h.service.GetWarehouseByID(c.Request.Context(), id)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			response.Error(c, http.StatusNotFound, "warehouse not found")
-			return
-		}
-		response.Error(c, http.StatusInternalServerError, "failed to get warehouse: "+err.Error())
-		return
-	}
-
-	response.Success(c, item)
-}
-
-// CreateWarehouse creates a new warehouse.
-// POST /api/v1/inventory/warehouses
-func (h *Handler) CreateWarehouse(c *gin.Context) {
-	var w allocation.Warehouse
-	if err := c.ShouldBindJSON(&w); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
-		return
-	}
-
-	if err := h.service.CreateWarehouse(c.Request.Context(), &w); err != nil {
-		response.Error(c, http.StatusInternalServerError, "failed to create warehouse: "+err.Error())
-		return
-	}
-
-	response.Success(c, w)
-}
-
-// UpdateWarehouse updates a warehouse.
-// PUT /api/v1/inventory/warehouses/:id
-func (h *Handler) UpdateWarehouse(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	var w allocation.Warehouse
-	if err := c.ShouldBindJSON(&w); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
-		return
-	}
-	w.ID = id
-
-	if err := h.service.UpdateWarehouse(c.Request.Context(), &w); err != nil {
-		response.Error(c, http.StatusInternalServerError, "failed to update warehouse: "+err.Error())
-		return
-	}
-
-	response.Success(c, w)
-}
-
-// DeleteWarehouse deletes a warehouse.
-// DELETE /api/v1/inventory/warehouses/:id
-func (h *Handler) DeleteWarehouse(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	if err := h.service.DeleteWarehouse(c.Request.Context(), id); err != nil {
-		response.Error(c, http.StatusInternalServerError, "failed to delete warehouse: "+err.Error())
-		return
-	}
-
-	response.Success(c, gin.H{"id": id})
 }
 
 // ListInventoryBySku returns inventory per warehouse for a SKU.
