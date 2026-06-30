@@ -152,20 +152,18 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 		}
 	}
 
-	// Average review time (for approved/rejected requests)
-	var durations []struct{ Duration float64 }
-	if err := s.db.Model(&ApprovalRequest{}).
-		Select("EXTRACT(EPOCH FROM (updated_at - created_at))/3600 as duration").
-		Where("status IN ('approved', 'rejected') AND updated_at > created_at").
-		Find(&durations).Error; err != nil {
-		return nil, err
-	}
-	if len(durations) > 0 {
-		var total float64
-		for _, d := range durations {
-			total += d.Duration
+	// Average review time (for approved/rejected requests) — computed in Go so
+	// it works on both PostgreSQL and SQLite (tests).
+	var reviewed []ApprovalRequest
+	s.db.Where("status IN ('approved', 'rejected')").Find(&reviewed)
+	if len(reviewed) > 0 {
+		var totalHours float64
+		for _, r := range reviewed {
+			if r.UpdatedAt.After(r.CreatedAt) {
+				totalHours += r.UpdatedAt.Sub(r.CreatedAt).Hours()
+			}
 		}
-		stats.AvgReviewHours = math.Round(total/float64(len(durations))*100) / 100
+		stats.AvgReviewHours = math.Round(totalHours/float64(len(reviewed))*100) / 100
 	}
 
 	// Count escalated (pending > 24h)

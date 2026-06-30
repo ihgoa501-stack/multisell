@@ -218,10 +218,20 @@ func (o *PipelineOrchestrator) triggerAgent(ctx context.Context, productID int64
 		o.logger.Warn("no agent mapping for pipeline step", zap.String("step", stepName))
 		return nil
 	}
+	if o.aiOrch == nil {
+		o.logger.Warn("ai orchestrator not configured, skipping agent trigger",
+			zap.String("step", stepName), zap.String("agent_id", agentID))
+		return nil
+	}
+
+	dp := stepDecisionPoint[stepName]
+	if dp == "" {
+		dp = stepName + "_decision"
+	}
 
 	_, err := o.aiOrch.RunWithContext(ctx, &ai.RunAgentRequest{
 		AgentID:       agentID,
-		DecisionPoint: stepName + "_decision",
+		DecisionPoint: dp,
 		Context: map[string]interface{}{
 			"product_id": productID,
 			"step":       stepName,
