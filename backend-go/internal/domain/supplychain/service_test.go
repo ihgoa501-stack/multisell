@@ -31,6 +31,24 @@ func createTestTable(t testing.TB, db *gorm.DB) {
 	`)
 }
 
+// createEventOutboxTable creates the event_outbox table manually in SQLite
+// for tests that need to verify event_outbox queries (Service.GetEvents).
+func createEventOutboxTable(t testing.TB, db *gorm.DB) {
+	t.Helper()
+	db.Exec(`
+		CREATE TABLE IF NOT EXISTS event_outbox (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			topic TEXT,
+			source TEXT,
+			payload TEXT,
+			priority INTEGER DEFAULT 0,
+			status TEXT DEFAULT 'pending',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			delivered_at DATETIME
+		)
+	`)
+}
+
 // flywheelSpy subscribes to supplychain.flywheel and records the first event.
 type flywheelSpy struct {
 	event    *eventbus.Event
@@ -278,5 +296,113 @@ func TestBuildFlywheelEvent_NoSummaries(t *testing.T) {
 	}
 	if evt.ActualCost != 0 {
 		t.Errorf("expected ActualCost 0, got %f", evt.ActualCost)
+	}
+}
+
+// TestGetEvents_ReturnsEventsFromOutbox verifies that GetEvents queries the
+// event_outbox table and returns events whose payload.flow_id matches the
+// requested flow ID, ordered by created_at ascending.
+func TestGetEvents_ReturnsEventsFromOutbox(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createTestTable(t, db)
+	createEventOutboxTable(t, db)
+	logger := dbtest.NewLogger(t)
+	svc := NewService(db, logger, nil)
+	ctx := context.Background()
+
+	// Create a flow record.
+	flow := &SupplyChainFlow{
+		SourceType: "sourcing_recommend",
+		SourceID:   "42",
+		Status:     "pending",
+	}
+	if err := svc.Create(ctx, flow); err != nil {
+		t.Fatalf("Create flow: %v", err)
+	}
+
+	// Insert three event_outbox rows: two for this flow, one for another flow.
+	// SQLite's json_extract is used to filter by payload.flow_id.
+	insertOutbox := func(topic, source, payloadJSON string) {
+		if err := db.Exec(
+			`INSERT INTO event_outbox (topic, source, payload, priority, status, created_at) VALUES (?, ?, ?, ?, 'delivered', ?)`,
+			topic, source, payloadJSON, 0, time.Now().UTC().Format(time.RFC3339Nano),
+		).Error; err != nil {
+			t.Fatalf("insert event_outbox: %v", err)
+		}
+	}
+
+	insertOutbox("supplychain.quote_requested", "supplychain",
+		`{"flow_id":"`+flow.ID+`","product_id":42}`)
+	insertOutbox("supplychain.quote_ready", "A10",
+		`{"flow_id":"`+flow.ID+`","channel_name":"CNAIR","total_shipping_fee":236.25}`)
+	insertOutbox("supplychain.quote_requested", "supplychain",
+		`{"flow_id":"another-flow-id","product_id":99}`)
+
+	resp, err := svc.GetEvents(ctx, flow.ID)
+	if err != nil {
+		t.Fatalf("GetEvents: %v", err)
+	}
+	if resp.Flow == nil || resp.Flow.ID != flow.ID {
+		t.Fatalf("expected flow with ID %s, got %+v", flow.ID, resp.Flow)
+	}
+	if len(resp.Events) != 2 {
+		t.Fatalf("expected 2 events for flow %s, got %d", flow.ID, len(resp.Events))
+	}
+	// Events should be ordered ascending by created_at.
+	if resp.Events[0].Topic != "supplychain.quote_requested" {
+		t.Errorf("expected first event topic supplychain.quote_requested, got %s", resp.Events[0].Topic)
+	}
+	if resp.Events[1].Topic != "supplychain.quote_ready" {
+		t.Errorf("expected second event topic supplychain.quote_ready, got %s", resp.Events[1].Topic)
+	}
+	// Verify payload was deserialized.
+	pid, ok := resp.Events[0].Payload["product_id"].(float64)
+	if !ok || int64(pid) != 42 {
+		t.Errorf("expected product_id 42 in first event payload, got %v", resp.Events[0].Payload["product_id"])
+	}
+}
+
+// TestGetEvents_NotFound verifies that GetEvents returns ErrRecordNotFound when
+// the flow ID does not exist.
+func TestGetEvents_NotFound(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createTestTable(t, db)
+	logger := dbtest.NewLogger(t)
+	svc := NewService(db, logger, nil)
+	ctx := context.Background()
+
+	_, err := svc.GetEvents(ctx, "nonexistent-id")
+	if err != gorm.ErrRecordNotFound {
+		t.Errorf("expected ErrRecordNotFound, got %v", err)
+	}
+}
+
+// TestGetEvents_NoOutboxTable verifies graceful degradation when event_outbox
+// does not exist — the flow is still returned with an empty events list.
+func TestGetEvents_NoOutboxTable(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createTestTable(t, db)
+	logger := dbtest.NewLogger(t)
+	svc := NewService(db, logger, nil)
+	ctx := context.Background()
+
+	flow := &SupplyChainFlow{
+		SourceType: "sourcing_recommend",
+		SourceID:   "1",
+		Status:     "pending",
+	}
+	if err := svc.Create(ctx, flow); err != nil {
+		t.Fatalf("Create flow: %v", err)
+	}
+
+	resp, err := svc.GetEvents(ctx, flow.ID)
+	if err != nil {
+		t.Fatalf("GetEvents: %v", err)
+	}
+	if resp.Flow == nil || resp.Flow.ID != flow.ID {
+		t.Errorf("expected flow returned, got %+v", resp.Flow)
+	}
+	if len(resp.Events) != 0 {
+		t.Errorf("expected 0 events when outbox missing, got %d", len(resp.Events))
 	}
 }
