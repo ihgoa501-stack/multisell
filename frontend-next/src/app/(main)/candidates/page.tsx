@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, Modal, message, Badge, Typography } from 'antd';
-import { DatabaseOutlined } from '@ant-design/icons';
+import { Alert, Badge, Button, Card, message, Modal, Space, Table, Tag, Typography } from 'antd';
+import { DatabaseOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 
 interface CompletenessItem {
@@ -37,9 +38,28 @@ const platformLabelMap: Record<string, string> = {
   lazada: 'Lazada',
 };
 
+type EvaluateResult = {
+  product_id: number;
+  title: string;
+  completeness_score: number;
+  completeness_status: string;
+  missing_items: string[];
+  profit_margin: number;
+  estimated_profit: number;
+  profit_status: string;
+  decision: 'list' | 'cautious' | 'skip';
+  confidence: number;
+  reason: string;
+  risk_flags: string[];
+  listing_task_id?: number | null;
+};
+
 export default function CandidatesPage() {
+  const router = useRouter();
   const [data, setData] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(false);
+  const [evaluating, setEvaluating] = useState<number | null>(null);
+  const [lastEvaluation, setLastEvaluation] = useState<EvaluateResult | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -76,6 +96,24 @@ export default function CandidatesPage() {
     loadCandidates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
+
+  const handleEvaluate = async (productId: number) => {
+    setEvaluating(productId);
+    setLastEvaluation(null);
+    try {
+      const res = await apiClient.post<EvaluateResult>(`/v1/loop/evaluate/${productId}`);
+      if (res.data) {
+        setLastEvaluation(res.data);
+        message.success('评估完成');
+      } else {
+        message.error(res.message || '评估失败');
+      }
+    } catch {
+      message.error('评估请求失败');
+    } finally {
+      setEvaluating(null);
+    }
+  };
 
   const handleSeed = async () => {
     setSeeding(true);
@@ -146,18 +184,31 @@ export default function CandidatesPage() {
     },
     {
       title: '操作',
-      width: 80,
+      width: 140,
       render: (_: unknown, record: Candidate) => (
-        <Button
-          type="link"
-          size="small"
-          onClick={(e) => {
-            e.stopPropagation();
-            setDetailModal(record);
-          }}
-        >
-          详情
-        </Button>
+        <Space size="small">
+          <Button
+            type="link"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDetailModal(record);
+            }}
+          >
+            详情
+          </Button>
+          <Button
+            size="small"
+            icon={<PlayCircleOutlined />}
+            loading={evaluating === record.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEvaluate(record.id);
+            }}
+          >
+            评估
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -204,6 +255,33 @@ export default function CandidatesPage() {
           生成种子数据
         </Button>
       </Card>
+
+      {/* Evaluation result */}
+      {lastEvaluation && (
+        <Card size="small" style={{ marginBottom: 16 }}>
+          <Alert
+            type={lastEvaluation.decision === 'list' ? 'success' : lastEvaluation.decision === 'cautious' ? 'warning' : 'error'}
+            message={
+              lastEvaluation.decision === 'list'
+                ? '系统建议上架，但仍需 Owner 审批'
+                : lastEvaluation.decision === 'cautious'
+                  ? '系统建议谨慎处理'
+                  : '系统不建议上架'
+            }
+            description={lastEvaluation.reason}
+            showIcon
+            style={{ marginBottom: lastEvaluation.listing_task_id ? 12 : 0 }}
+          />
+          {lastEvaluation.listing_task_id && (
+            <Space style={{ marginTop: 12 }}>
+              <Tag color="orange">待审批</Tag>
+              <Typography.Text>已生成刊登任务 #{lastEvaluation.listing_task_id}，审批通过前不会执行发布。</Typography.Text>
+              <Button type="primary" onClick={() => router.push('/approval')}>去审批</Button>
+              <Button onClick={() => router.push(`/listing-tasks/${lastEvaluation.listing_task_id}`)}>查看任务</Button>
+            </Space>
+          )}
+        </Card>
+      )}
 
       {/* Table */}
       <Card size="small" styles={{ body: { padding: 0 } }}>
