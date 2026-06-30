@@ -21,23 +21,24 @@ export interface User {
   roles?: string[];
 }
 
-export interface SuggestionResponse {
+export interface TrustScore {
   id: number;
-  product_id: number;
-  product_title: string;
-  completeness_score: number;
-  profit_margin: number;
-  estimated_profit: number;
-  decision: string;           // list | cautious | skip
-  confidence: number;
-  reason: string;
-  risk_flags: string;         // JSON array string
-  risk_level: string;         // low | medium | high
-  feedback_status: string;    // pending | adopted | rejected | executed | execution_failed
-  feedback_note: string;
-  listing_task_id: number | null;
-  task_status: string | null; // blocked | pending_approval | approved | executing | completed | failed | rejected | cancelled
-  approval_id: number | null;
-  approval_status: string | null; // pending | approved | rejected
+  agent_id: string;
+  agent_name: string;
+  squad_id: string;
+  total_actions: number;
+  adopted_actions: number;
+  rejected_actions: number;
+  failed_actions: number;
+  auto_approved: number;
+  adoption_rate: number;
+  execution_success: number;
+  avg_confidence: number;
+  trust_score: number;
+  autonomy_level: string;
+  target_level?: string;
+  estimated_savings: number;
+  last_action_at?: string;
   created_at: string;
+  updated_at: string;
 }

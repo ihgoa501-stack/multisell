@@ -10,8 +10,8 @@ import {
   Spin,
   Statistic,
   Table,
+  Tabs,
   Tag,
-  Tooltip,
   Typography,
 } from 'antd';
 import {
@@ -25,10 +25,13 @@ import {
   ThunderboltOutlined,
   ApiOutlined,
   ArrowRightOutlined,
+  CloseOutlined,
+  MinusCircleOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
+import type { TrustScore } from '@/types/api';
 
 const { Text } = Typography;
 
@@ -56,12 +59,10 @@ interface Suggestion {
   reason: string;
   confidence: number;
   risk_level: string;
+  feedback_status: string;
+  feedback_note?: string;
   created_at: string;
   listing_task_id?: number | null;
-  // Enhanced feedback fields (optional, populated by backend when available)
-  feedback_status?: 'pending' | 'adopted' | 'rejected' | 'executed' | 'execution_failed';
-  feedback_note?: string;
-  task_status?: string;
 }
 
 interface PlatformSync {
@@ -116,54 +117,6 @@ const confidenceColor = (v: number): string => {
   return 'red';
 };
 
-// ---------- Feedback status helpers ----------
-const feedbackIconMap: Record<string, string> = {
-  pending: '⌛',
-  adopted: '✅',
-  rejected: '❌',
-  executed: '⚡',
-  execution_failed: '⚠️',
-};
-
-const feedbackTooltipMap: Record<string, string> = {
-  pending: '待执行：建议已提交，等待自动处理',
-  adopted: '已采纳：建议已被 Owner 采纳',
-  rejected: '已拒绝：建议已被 Owner 拒绝',
-  executed: '已执行：建议已被成功执行',
-  execution_failed: '执行失败：建议执行时发生错误，悬浮查看详情',
-};
-
-// ---------- Task status helpers ----------
-const taskStatusColorMap: Record<string, string> = {
-  pending: 'blue',
-  blocked: 'red',
-  pending_approval: 'orange',
-  executing: 'processing',
-  completed: 'success',
-  failed: 'error',
-  cancelled: 'default',
-};
-
-const taskStatusLabelMap: Record<string, string> = {
-  pending: '待处理',
-  blocked: '已阻断',
-  pending_approval: '待审批',
-  executing: '执行中',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-};
-
-const taskStatusTooltipMap: Record<string, string> = {
-  blocked: '该任务已被系统阻断，需查看审计日志了解原因',
-  pending_approval: '该任务等待审批',
-  pending: '任务等待处理',
-  executing: '任务正在执行中',
-  completed: '任务已完成',
-  failed: '任务执行失败',
-  cancelled: '任务已取消',
-};
-
 const modeColor = (mode: string): string => {
   if (mode === 'mock') return 'orange';
   if (mode === 'sandbox') return 'blue';
@@ -178,10 +131,28 @@ const modeLabel = (mode: string): string => {
   return mode;
 };
 
+const feedbackStatusLabel = (s: string): string => {
+  if (s === 'adopted') return '已采纳';
+  if (s === 'rejected') return '已拒绝';
+  if (s === 'executed') return '已执行';
+  if (s === 'execution_failed') return '执行失败';
+  if (s === 'pending') return '待处理';
+  return s;
+};
+
+const feedbackStatusColor = (s: string): string => {
+  if (s === 'adopted') return 'green';
+  if (s === 'rejected') return 'red';
+  if (s === 'executed') return 'green';
+  if (s === 'execution_failed') return 'red';
+  return 'default';
+};
+
 // ---------- Page ----------
 export default function OwnerPage() {
   const router = useRouter();
   const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState<string>('queue');
   const [suggestionFilter, setSuggestionFilter] = useState<string>('');
 
   // Risk summary
@@ -197,7 +168,7 @@ export default function OwnerPage() {
   const { data: suggestions, isLoading: suggestionsLoading } = useQuery({
     queryKey: ['owner-suggestions'],
     queryFn: async () => {
-      const res = await apiClient.get<Suggestion[]>('/v1/owner/suggestions', { limit: '50' });
+      const res = await apiClient.get<Suggestion[]>('/v1/owner/suggestions', { limit: '100' });
       return res.data ?? [];
     },
   });
@@ -220,11 +191,22 @@ export default function OwnerPage() {
     },
   });
 
+  // Trust Scores (Agent Evaluation tab)
+  const { data: trustScores, isLoading: trustScoresLoading } = useQuery({
+    queryKey: ['owner-trust-scores'],
+    queryFn: async () => {
+      const res = await apiClient.get<TrustScore[]>('/v1/trust-scores');
+      return res.data ?? [];
+    },
+    enabled: activeTab === 'agents',
+  });
+
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ['owner-risk-summary'] });
     qc.invalidateQueries({ queryKey: ['owner-suggestions'] });
     qc.invalidateQueries({ queryKey: ['owner-pending-approvals'] });
     qc.invalidateQueries({ queryKey: ['owner-platform-sync'] });
+    qc.invalidateQueries({ queryKey: ['owner-trust-scores'] });
   };
 
   const pendingPublishApprovals = (approvals ?? []).filter(
@@ -236,118 +218,54 @@ export default function OwnerPage() {
     [suggestions]
   );
 
+  // Queue: pending suggestions
+  const queueSuggestions = useMemo(() => {
+    const pending = (suggestions ?? []).filter((s) => s.feedback_status === 'pending');
+    if (!suggestionFilter) return pending;
+    return pending.filter((s) => s.decision === suggestionFilter);
+  }, [suggestions, suggestionFilter]);
+
+  // History: processed suggestions (adopted / rejected / executed / execution_failed)
+  const historySuggestions = useMemo(() => {
+    return (suggestions ?? []).filter(
+      (s) => s.feedback_status !== 'pending'
+    ).reverse();
+  }, [suggestions]);
+
   const filteredSuggestions = useMemo(() => {
     if (!suggestionFilter) return suggestions ?? [];
     return (suggestions ?? []).filter((s) => s.decision === suggestionFilter);
   }, [suggestions, suggestionFilter]);
 
-  // ---------- Render ----------
-  return (
-    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%', fontFamily: 'var(--body)' }}>
-      {/* Page header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        <h1 style={{
-          fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)',
-          color: 'var(--t1)', margin: 0,
-        }}>
-          Owner 经营总控台
-        </h1>
-        <Button icon={<ReloadOutlined />} onClick={refreshAll}>
-          刷新
-        </Button>
-      </div>
+  // Computed stats for Agent evaluation
+  const agentStats = useMemo(() => {
+    if (!suggestions) return [];
+    const map = new Map<string, { total: number; adopted: number; rejected: number }>();
+    for (const s of suggestions) {
+      const key = s.agent_source;
+      if (!map.has(key)) {
+        map.set(key, { total: 0, adopted: 0, rejected: 0 });
+      }
+      const stats = map.get(key)!;
+      stats.total++;
+      if (s.feedback_status === 'adopted' || s.feedback_status === 'executed') {
+        stats.adopted++;
+      } else if (s.feedback_status === 'rejected') {
+        stats.rejected++;
+      }
+    }
+    return Array.from(map.entries()).map(([agent, stats]) => ({
+      agent,
+      total: stats.total,
+      adopted: stats.adopted,
+      rejected: stats.rejected,
+      rate: stats.total > 0 ? ((stats.adopted / stats.total) * 100).toFixed(1) : '0.0',
+    }));
+  }, [suggestions]);
 
-      {/* Inline styles for table row highlighting */}
-      <style>{`
-        .execution-failed-row {
-          background: rgba(255, 77, 79, 0.04);
-        }
-        .execution-failed-row:hover td {
-          background: rgba(255, 77, 79, 0.08) !important;
-        }
-      `}</style>
-
-      {/* System status banner */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px',
-          marginBottom: 16, borderRadius: 8,
-          background: 'var(--y1)', border: '1px solid var(--y3)',
-        }}
-      >
-        <div
-          style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: 'var(--y4)', flexShrink: 0,
-          }}
-        />
-        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--y6)', flexShrink: 0 }}>
-          模拟环境 · Mock Data
-        </div>
-        <div style={{ fontSize: '0.7rem', color: 'var(--y5)', flex: 1 }}>
-          当前页面展示的是本地模拟数据，不涉及真实交易。平台集成处于沙箱模式。
-        </div>
-        <Tag color="orange">Mock</Tag>
-        <Tag color="blue">沙箱</Tag>
-        <Tag color="default" style={{ opacity: 0.5 }}>生产</Tag>
-      </div>
-
-      {/* P0 local closed-loop flow */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px',
-          marginBottom: 16, borderRadius: 8,
-          background: 'var(--s1)', border: '1px solid var(--bd)',
-        }}
-      >
-        <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--t2)', flexShrink: 0 }}>
-          本地闭环流程 →
-        </div>
-        {[
-          { label: '候选商品', href: '/candidates', icon: '📦', color: 'var(--i4)' },
-          { label: '完整性评估', icon: '🔍', color: 'var(--c4)' },
-          { label: '上架建议', icon: '💡', color: 'var(--g4)' },
-          { label: 'Owner 审批', href: '/approval', icon: '✅', color: 'var(--g4)' },
-        ].map((step, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {i > 0 && <ArrowRightOutlined style={{ fontSize: '0.6rem', color: 'var(--t4)' }} />}
-            {step.href ? (
-              <a
-                href={step.href}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
-                  fontSize: '0.72rem', fontWeight: 500,
-                  background: 'var(--s2)', color: step.color,
-                  border: '1px solid var(--bd)', textDecoration: 'none',
-                }}
-              >
-                <span style={{ fontSize: '0.75rem' }}>{step.icon}</span>
-                {step.label}
-              </a>
-            ) : (
-              <span
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '3px 10px', borderRadius: 6,
-                  fontSize: '0.72rem', fontWeight: 500,
-                  background: 'var(--s2)', color: 'var(--t2)',
-                }}
-              >
-                <span style={{ fontSize: '0.75rem' }}>{step.icon}</span>
-                {step.label}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
+  // ---------- Render queue tab ----------
+  const renderQueueTab = () => (
+    <>
       {/* Next-action panel */}
       <div style={{
         background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
@@ -500,18 +418,15 @@ export default function OwnerPage() {
                 </Button>
               </Space>
               <Spin spinning={suggestionsLoading}>
-                {filteredSuggestions.length === 0 && !suggestionsLoading ? (
-                  <Empty description="暂无建议数据" />
+                {queueSuggestions.length === 0 && !suggestionsLoading ? (
+                  <Empty description="暂无待处理建议" />
                 ) : (
                   <Table
                     rowKey="id"
-                    dataSource={filteredSuggestions}
+                    dataSource={queueSuggestions}
                     size="small"
                     scroll={{ x: 'max-content' }}
                     pagination={{ pageSize: 10, showSizeChanger: false }}
-                    rowClassName={(record: Suggestion) =>
-                      record.feedback_status === 'execution_failed' ? 'execution-failed-row' : ''
-                    }
                     columns={[
                       {
                         title: '商品',
@@ -546,64 +461,6 @@ export default function OwnerPage() {
                         render: (v: number) => (
                           <Tag color={confidenceColor(v)}>{(v * 100).toFixed(0)}%</Tag>
                         ),
-                      },
-                      {
-                        title: '反馈状态',
-                        dataIndex: 'feedback_status',
-                        width: 100,
-                        render: (v: string | undefined, record: Suggestion) => {
-                          if (!v) return <Text type="secondary" style={{ fontSize: 12 }}>-</Text>;
-                          const icon = feedbackIconMap[v] || '?';
-                          const tip = feedbackTooltipMap[v] || '';
-                          if (v === 'execution_failed') {
-                            return (
-                              <Tooltip title={record.feedback_note || tip}>
-                                <span style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                  <span style={{ fontSize: '1rem' }}>{icon}</span>
-                                  <Text type="danger" style={{ fontSize: 12, marginLeft: 4 }}>失败</Text>
-                                </span>
-                              </Tooltip>
-                            );
-                          }
-                          return (
-                            <Tooltip title={tip}>
-                              <span style={{ fontSize: '1rem', cursor: 'default' }}>{icon}</span>
-                            </Tooltip>
-                          );
-                        },
-                      },
-                      {
-                        title: '任务状态',
-                        dataIndex: 'task_status',
-                        width: 100,
-                        render: (v: string | undefined) => {
-                          if (!v) return null;
-                          const color = taskStatusColorMap[v] || 'default';
-                          const label = taskStatusLabelMap[v] || v;
-                          const tip = taskStatusTooltipMap[v] || '';
-                          if (v === 'blocked') {
-                            return (
-                              <Tooltip title={tip}>
-                                <Tag color={color} style={{ cursor: 'pointer' }}>{label}</Tag>
-                              </Tooltip>
-                            );
-                          }
-                          if (v === 'failed') {
-                            return (
-                              <Tooltip title="任务执行失败，可查看错误信息">
-                                <Tag color={color}>{label}</Tag>
-                              </Tooltip>
-                            );
-                          }
-                          if (tip) {
-                            return (
-                              <Tooltip title={tip}>
-                                <Tag color={color}>{label}</Tag>
-                              </Tooltip>
-                            );
-                          }
-                          return <Tag color={color}>{label}</Tag>;
-                        },
                       },
                       {
                         title: '时间',
@@ -705,6 +562,319 @@ export default function OwnerPage() {
           </div>
         </Col>
       </Row>
+    </>
+  );
+
+  // ---------- Render history tab ----------
+  const renderHistoryTab = () => (
+    <Spin spinning={suggestionsLoading}>
+      {historySuggestions.length === 0 && !suggestionsLoading ? (
+        <Empty description="暂无审批历史" />
+      ) : (
+        <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+          <div style={{
+            padding: '12px 16px', borderBottom: '1px solid var(--bd)',
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
+          }}>
+            审批历史 (已处理建议)
+          </div>
+          <div style={{ padding: 16 }}>
+            <Table
+              rowKey="id"
+              dataSource={historySuggestions}
+              size="small"
+              scroll={{ x: 'max-content' }}
+              pagination={{ pageSize: 10, showSizeChanger: false }}
+              columns={[
+                {
+                  title: '商品',
+                  dataIndex: 'product_title',
+                  width: 160,
+                  ellipsis: true,
+                  render: (v: string) => <Text strong>{v || '-'}</Text>,
+                },
+                {
+                  title: '建议',
+                  dataIndex: 'suggestion',
+                  width: 100,
+                  render: (v: string) => <Tag color={suggestionColor(v)}>{v}</Tag>,
+                },
+                {
+                  title: '采纳/拒绝',
+                  dataIndex: 'feedback_status',
+                  width: 110,
+                  render: (v: string) => (
+                    <Tag color={feedbackStatusColor(v)}>
+                      {v === 'adopted' && <CheckOutlined style={{ marginRight: 4 }} />}
+                      {v === 'rejected' && <CloseOutlined style={{ marginRight: 4 }} />}
+                      {v === 'executed' && <CheckOutlined style={{ marginRight: 4 }} />}
+                      {v === 'execution_failed' && <MinusCircleOutlined style={{ marginRight: 4 }} />}
+                      {feedbackStatusLabel(v)}
+                    </Tag>
+                  ),
+                },
+                {
+                  title: '审批状态',
+                  dataIndex: 'decision',
+                  width: 100,
+                  render: (v: string) => <Tag color={decisionColor(v)}>{decisionLabel(v)}</Tag>,
+                },
+                {
+                  title: '执行状态',
+                  dataIndex: 'feedback_note',
+                  width: 160,
+                  ellipsis: true,
+                  render: (v: string | undefined) =>
+                    v ? <Text type="secondary" ellipsis={{ tooltip: v }}>{v}</Text> : <Text type="secondary">-</Text>,
+                },
+                {
+                  title: '备注',
+                  dataIndex: 'feedback_note',
+                  width: 200,
+                  ellipsis: true,
+                  render: (v: string | undefined) =>
+                    v ? <Text type="secondary" ellipsis={{ tooltip: v }}>{v}</Text> : <Text type="secondary">-</Text>,
+                },
+                {
+                  title: '时间',
+                  dataIndex: 'created_at',
+                  width: 140,
+                },
+                {
+                  title: '操作',
+                  key: 'actions',
+                  width: 120,
+                  fixed: 'right' as const,
+                  render: (_: unknown, record: Suggestion) => (
+                    <Space size="small">
+                      {record.listing_task_id && (
+                        <Button
+                          size="small"
+                          onClick={() => router.push(`/listing-tasks/${record.listing_task_id}`)}
+                        >
+                          查看任务
+                        </Button>
+                      )}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        </div>
+      )}
+    </Spin>
+  );
+
+  // ---------- Render agent evaluation tab ----------
+  const renderAgentEvalTab = () => (
+    <Spin spinning={trustScoresLoading}>
+      {trustScores && trustScores.length > 0 ? (
+        <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+          <div style={{
+            padding: '12px 16px', borderBottom: '1px solid var(--bd)',
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
+          }}>
+            Agent 信任分与采纳率
+          </div>
+          <div style={{ padding: 16 }}>
+            <Table
+              rowKey="agent_id"
+              dataSource={trustScores}
+              size="small"
+              scroll={{ x: 'max-content' }}
+              pagination={false}
+              columns={[
+                {
+                  title: 'Agent ID',
+                  dataIndex: 'agent_id',
+                  width: 100,
+                  render: (v: string) => <Tag color="blue">{v}</Tag>,
+                },
+                {
+                  title: '名称',
+                  dataIndex: 'agent_name',
+                  width: 140,
+                  render: (v: string) => <Text strong>{v}</Text>,
+                },
+                {
+                  title: '分队',
+                  dataIndex: 'squad_id',
+                  width: 100,
+                  render: (v: string) => <Tag>{v}</Tag>,
+                },
+                {
+                  title: '信任分',
+                  dataIndex: 'trust_score',
+                  width: 90,
+                  render: (v: number) => (
+                    <Text strong style={{ color: v >= 0.8 ? 'var(--g4)' : v >= 0.55 ? 'var(--y4)' : 'var(--r4)' }}>
+                      {v.toFixed(2)}
+                    </Text>
+                  ),
+                },
+                {
+                  title: '自主等级',
+                  dataIndex: 'autonomy_level',
+                  width: 100,
+                  render: (v: string) => {
+                    const color = v === 'autonomous' ? 'green' : v === 'supervised' ? 'blue' : v === 'guided' ? 'orange' : 'default';
+                    return <Tag color={color}>{v}</Tag>;
+                  },
+                },
+                {
+                  title: '总建议数',
+                  dataIndex: 'total_actions',
+                  width: 90,
+                },
+                {
+                  title: '已采纳',
+                  dataIndex: 'adopted_actions',
+                  width: 80,
+                },
+                {
+                  title: '已拒绝',
+                  dataIndex: 'rejected_actions',
+                  width: 80,
+                },
+                {
+                  title: '采纳率',
+                  dataIndex: 'adoption_rate',
+                  width: 90,
+                  render: (v: number) => (
+                    <Tag color={v >= 0.8 ? 'green' : v >= 0.5 ? 'orange' : 'red'}>
+                      {(v * 100).toFixed(1)}%
+                    </Tag>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        </div>
+      ) : trustScoresLoading ? null : (
+        <Empty description="暂无评估数据" />
+      )}
+    </Spin>
+  );
+
+  // ---------- Render ----------
+  return (
+    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%', fontFamily: 'var(--body)' }}>
+      {/* Page header */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+        }}
+      >
+        <h1 style={{
+          fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)',
+          color: 'var(--t1)', margin: 0,
+        }}>
+          Owner 经营总控台
+        </h1>
+        <Button icon={<ReloadOutlined />} onClick={refreshAll}>
+          刷新
+        </Button>
+      </div>
+
+      {/* System status banner */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px',
+          marginBottom: 16, borderRadius: 8,
+          background: 'var(--y1)', border: '1px solid var(--y3)',
+        }}
+      >
+        <div
+          style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: 'var(--y4)', flexShrink: 0,
+          }}
+        />
+        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--y6)', flexShrink: 0 }}>
+          模拟环境 · Mock Data
+        </div>
+        <div style={{ fontSize: '0.7rem', color: 'var(--y5)', flex: 1 }}>
+          当前页面展示的是本地模拟数据，不涉及真实交易。平台集成处于沙箱模式。
+        </div>
+        <Tag color="orange">Mock</Tag>
+        <Tag color="blue">沙箱</Tag>
+        <Tag color="default" style={{ opacity: 0.5 }}>生产</Tag>
+      </div>
+
+      {/* P0 local closed-loop flow */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px',
+          marginBottom: 16, borderRadius: 8,
+          background: 'var(--s1)', border: '1px solid var(--bd)',
+        }}
+      >
+        <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--t2)', flexShrink: 0 }}>
+          本地闭环流程 →
+        </div>
+        {[
+          { label: '候选商品', href: '/candidates', icon: '📦', color: 'var(--i4)' },
+          { label: '完整性评估', icon: '🔍', color: 'var(--c4)' },
+          { label: '上架建议', icon: '💡', color: 'var(--g4)' },
+          { label: 'Owner 审批', href: '/approval', icon: '✅', color: 'var(--g4)' },
+        ].map((step, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {i > 0 && <ArrowRightOutlined style={{ fontSize: '0.6rem', color: 'var(--t4)' }} />}
+            {step.href ? (
+              <a
+                href={step.href}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
+                  fontSize: '0.72rem', fontWeight: 500,
+                  background: 'var(--s2)', color: step.color,
+                  border: '1px solid var(--bd)', textDecoration: 'none',
+                }}
+              >
+                <span style={{ fontSize: '0.75rem' }}>{step.icon}</span>
+                {step.label}
+              </a>
+            ) : (
+              <span
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 6,
+                  fontSize: '0.72rem', fontWeight: 500,
+                  background: 'var(--s2)', color: 'var(--t2)',
+                }}
+              >
+                <span style={{ fontSize: '0.75rem' }}>{step.icon}</span>
+                {step.label}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Tab navigation */}
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          { key: 'queue', label: '决策队列' },
+          { key: 'history', label: '审批历史' },
+          { key: 'agents', label: 'Agent 评估' },
+        ]}
+        style={{ marginBottom: 0 }}
+      />
+
+      {/* Tab content */}
+      <div style={{ marginTop: 16 }}>
+        {activeTab === 'queue' && renderQueueTab()}
+        {activeTab === 'history' && renderHistoryTab()}
+        {activeTab === 'agents' && renderAgentEvalTab()}
+      </div>
     </div>
   );
 }

@@ -107,6 +107,22 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 	req.Status = status
 	req.Reviewer = input.Reviewer
 	req.ReviewNote = input.ReviewNote
+
+	// Audit: record structured operation log for the review action
+	if s.oplogSvc != nil {
+		result := status
+		_ = s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
+			Module:      "approval",
+			Action:      "approval.review",
+			ResourceID:  fmt.Sprintf("%d", id),
+			Operator:    input.Reviewer,
+			Content:     fmt.Sprintf("approval_id=%d action=%s reviewer=%s note=%s", id, input.Action, input.Reviewer, input.ReviewNote),
+			Result:      result,
+			TriggerType: "owner_approval",
+			EntityType:  req.EntityType,
+			EntityID:    req.EntityID,
+		})
+	}
 	return &req, nil
 }
 
