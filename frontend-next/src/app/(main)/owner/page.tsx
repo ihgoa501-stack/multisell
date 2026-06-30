@@ -11,6 +11,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import {
@@ -57,6 +58,10 @@ interface Suggestion {
   risk_level: string;
   created_at: string;
   listing_task_id?: number | null;
+  // Enhanced feedback fields (optional, populated by backend when available)
+  feedback_status?: 'pending' | 'adopted' | 'rejected' | 'executed' | 'execution_failed';
+  feedback_note?: string;
+  task_status?: string;
 }
 
 interface PlatformSync {
@@ -109,6 +114,54 @@ const confidenceColor = (v: number): string => {
   if (v >= 0.8) return 'green';
   if (v >= 0.5) return 'orange';
   return 'red';
+};
+
+// ---------- Feedback status helpers ----------
+const feedbackIconMap: Record<string, string> = {
+  pending: '⌛',
+  adopted: '✅',
+  rejected: '❌',
+  executed: '⚡',
+  execution_failed: '⚠️',
+};
+
+const feedbackTooltipMap: Record<string, string> = {
+  pending: '待执行：建议已提交，等待自动处理',
+  adopted: '已采纳：建议已被 Owner 采纳',
+  rejected: '已拒绝：建议已被 Owner 拒绝',
+  executed: '已执行：建议已被成功执行',
+  execution_failed: '执行失败：建议执行时发生错误，悬浮查看详情',
+};
+
+// ---------- Task status helpers ----------
+const taskStatusColorMap: Record<string, string> = {
+  pending: 'blue',
+  blocked: 'red',
+  pending_approval: 'orange',
+  executing: 'processing',
+  completed: 'success',
+  failed: 'error',
+  cancelled: 'default',
+};
+
+const taskStatusLabelMap: Record<string, string> = {
+  pending: '待处理',
+  blocked: '已阻断',
+  pending_approval: '待审批',
+  executing: '执行中',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+};
+
+const taskStatusTooltipMap: Record<string, string> = {
+  blocked: '该任务已被系统阻断，需查看审计日志了解原因',
+  pending_approval: '该任务等待审批',
+  pending: '任务等待处理',
+  executing: '任务正在执行中',
+  completed: '任务已完成',
+  failed: '任务执行失败',
+  cancelled: '任务已取消',
 };
 
 const modeColor = (mode: string): string => {
@@ -211,6 +264,16 @@ export default function OwnerPage() {
         </Button>
       </div>
 
+      {/* Inline styles for table row highlighting */}
+      <style>{`
+        .execution-failed-row {
+          background: rgba(255, 77, 79, 0.04);
+        }
+        .execution-failed-row:hover td {
+          background: rgba(255, 77, 79, 0.08) !important;
+        }
+      `}</style>
+
       {/* System status banner */}
       <div
         style={{
@@ -284,6 +347,25 @@ export default function OwnerPage() {
             )}
           </div>
         ))}
+      {/* Next-action panel */}
+      <div style={{
+        background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
+        padding: 16, marginBottom: 16,
+      }}>
+        {pendingPublishApprovals.length > 0 ? (
+          <Space>
+            <ClockCircleOutlined style={{ color: 'var(--y4)', fontSize: 18 }} />
+            <Text strong>下一步：审核 {pendingPublishApprovals.length} 个上架请求</Text>
+            <Button type="primary" onClick={() => router.push('/approval')}>去审批</Button>
+          </Space>
+        ) : (
+          <Space>
+            <CheckOutlined style={{ color: 'var(--g4)', fontSize: 18 }} />
+            <Text strong>当前没有待审批上架请求</Text>
+            <Button onClick={() => router.push('/candidates')}>去评估候选商品</Button>
+          </Space>
+        )}
+      </div>
       {/* Next-action panel */}
       <div style={{
         background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
@@ -445,6 +527,9 @@ export default function OwnerPage() {
                     size="small"
                     scroll={{ x: 'max-content' }}
                     pagination={{ pageSize: 10, showSizeChanger: false }}
+                    rowClassName={(record: Suggestion) =>
+                      record.feedback_status === 'execution_failed' ? 'execution-failed-row' : ''
+                    }
                     columns={[
                       {
                         title: '商品',
@@ -479,6 +564,64 @@ export default function OwnerPage() {
                         render: (v: number) => (
                           <Tag color={confidenceColor(v)}>{(v * 100).toFixed(0)}%</Tag>
                         ),
+                      },
+                      {
+                        title: '反馈状态',
+                        dataIndex: 'feedback_status',
+                        width: 100,
+                        render: (v: string | undefined, record: Suggestion) => {
+                          if (!v) return <Text type="secondary" style={{ fontSize: 12 }}>-</Text>;
+                          const icon = feedbackIconMap[v] || '?';
+                          const tip = feedbackTooltipMap[v] || '';
+                          if (v === 'execution_failed') {
+                            return (
+                              <Tooltip title={record.feedback_note || tip}>
+                                <span style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                  <span style={{ fontSize: '1rem' }}>{icon}</span>
+                                  <Text type="danger" style={{ fontSize: 12, marginLeft: 4 }}>失败</Text>
+                                </span>
+                              </Tooltip>
+                            );
+                          }
+                          return (
+                            <Tooltip title={tip}>
+                              <span style={{ fontSize: '1rem', cursor: 'default' }}>{icon}</span>
+                            </Tooltip>
+                          );
+                        },
+                      },
+                      {
+                        title: '任务状态',
+                        dataIndex: 'task_status',
+                        width: 100,
+                        render: (v: string | undefined) => {
+                          if (!v) return null;
+                          const color = taskStatusColorMap[v] || 'default';
+                          const label = taskStatusLabelMap[v] || v;
+                          const tip = taskStatusTooltipMap[v] || '';
+                          if (v === 'blocked') {
+                            return (
+                              <Tooltip title={tip}>
+                                <Tag color={color} style={{ cursor: 'pointer' }}>{label}</Tag>
+                              </Tooltip>
+                            );
+                          }
+                          if (v === 'failed') {
+                            return (
+                              <Tooltip title="任务执行失败，可查看错误信息">
+                                <Tag color={color}>{label}</Tag>
+                              </Tooltip>
+                            );
+                          }
+                          if (tip) {
+                            return (
+                              <Tooltip title={tip}>
+                                <Tag color={color}>{label}</Tag>
+                              </Tooltip>
+                            );
+                          }
+                          return <Tag color={color}>{label}</Tag>;
+                        },
                       },
                       {
                         title: '时间',

@@ -8,7 +8,7 @@ import (
 type ApprovalRequest struct {
 	ID          int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	ProductID   int64      `gorm:"column:product_id;not null" json:"product_id"`
-	RequestType string     `gorm:"column:request_type;not null" json:"request_type"` // publish, price_change, delist, content_update
+	RequestType string     `gorm:"column:request_type;not null" json:"request_type"` // publish, price_change, delist, content_update, listing_task
 	Requester   string     `gorm:"column:requester;not null" json:"requester"`       // agent_id or user_id
 	Reviewer    string     `gorm:"column:reviewer" json:"reviewer"`
 	Status      string     `gorm:"column:status;default:pending" json:"status"` // pending, approved, rejected
@@ -20,6 +20,8 @@ type ApprovalRequest struct {
 	TargetID    int64      `gorm:"column:target_id" json:"target_id,omitempty"`
 	RiskLevel   string     `gorm:"column:risk_level" json:"risk_level,omitempty"`
 	ExpiresAt   *time.Time `gorm:"column:expires_at" json:"expires_at,omitempty"`
+	EntityType  string     `gorm:"column:entity_type" json:"entity_type,omitempty"`
+	EntityID    int64      `gorm:"column:entity_id;default:0" json:"entity_id,omitempty"`
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
@@ -38,6 +40,8 @@ type CreateApprovalInput struct {
 	TargetID    int64      `json:"target_id"`
 	RiskLevel   string     `json:"risk_level"`
 	ExpiresAt   *time.Time `json:"expires_at"`
+	EntityType  string     `json:"entity_type"`
+	EntityID    int64      `json:"entity_id"`
 }
 
 // ReviewApprovalInput is the JSON body for reviewing an approval request.
