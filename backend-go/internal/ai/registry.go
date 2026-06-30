@@ -82,12 +82,36 @@ func DefaultRegistry() *AgentRegistry {
 			DecisionPoints: []string{"return_analysis", "refund_decision", "dispute_manage", "aftersales_report"},
 			Description:    "售后管理：退货分析、退款决策、纠纷处理、售后预警",
 			ModelHint: "gpt-4o", RiskFloor: "medium"},
+		// content_ai — product enrichment (Phase 2)
+		{ID: "content_ai", Name: "Content Generator", Squad: "growth", Autonomy: "supervised",
+			DecisionPoints: []string{"content_generate", "image_generate", "description_rewrite"},
+			Description:    "商品内容生成：标题/描述/关键词/图片自动生成与本地化",
+			ModelHint: "gpt-4o", RiskFloor: "low"},
+		// scheduler — lifecycle management (Phase 2)
+		{ID: "scheduler", Name: "Lifecycle Scheduler", Squad: "ops", Autonomy: "autonomous",
+			DecisionPoints: []string{"delisting_evaluate", "price_expiry_check", "inventory_cleanup"},
+			Description:    "商品生命周期管理：定时下架、临期检查、库存清理",
+			ModelHint: "gpt-4o-mini", RiskFloor: "medium"},
 	}
 	r := &AgentRegistry{Agents: agents, byID: make(map[string]AgentSpec, len(agents))}
 	for _, a := range agents {
 		r.byID[a.ID] = a
 	}
 	return r
+}
+
+// AddDecisionPoint appends a decision point to an existing agent's capability list.
+// Used at runtime when agents gain new capabilities or in tests.
+func (r *AgentRegistry) AddDecisionPoint(agentID, point string) {
+	spec := r.byID[agentID]
+	spec.DecisionPoints = append(spec.DecisionPoints, point)
+	r.byID[agentID] = spec
+	for i := range r.Agents {
+		if r.Agents[i].ID == agentID {
+			r.Agents[i].DecisionPoints = append(r.Agents[i].DecisionPoints, point)
+			break
+		}
+	}
 }
 
 // Get returns the agent spec by ID, case-insensitive.
