@@ -51,3 +51,19 @@ func (h *Handler) ValidateContent(c *gin.Context) {
 	}
 	response.Success(c, review)
 }
+
+// LocalizeContent POST /content/localize
+func (h *Handler) LocalizeContent(c *gin.Context) {
+	var req LocalizeInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	localizer := NewPlatformLocalizer()
+	result, err := LocalizeContent(&req, localizer)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
