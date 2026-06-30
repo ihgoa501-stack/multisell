@@ -19,5 +19,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		r.PUT("/:id", h.Update)
 		r.DELETE("/:id", h.Delete)
 		r.GET("/count", h.Count)
+		r.POST("/seed", h.Seed)
 	}
 }

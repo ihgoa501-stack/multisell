@@ -126,3 +126,13 @@ func (h *Handler) Count(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"total": total})
 }
+
+// Seed POST /candidates/seed
+func (h *Handler) Seed(c *gin.Context) {
+	count, err := h.service.Seed()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"seeded": count, "message": "种子数据生成成功"})
+}
