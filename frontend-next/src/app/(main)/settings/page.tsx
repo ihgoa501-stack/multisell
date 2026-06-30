@@ -58,7 +58,7 @@ export default function SettingsPage() {
 
   return (
     <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
-      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: '0 0 16px 0' }}>设置</h1>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', margin: '0 0 16px 0' }}>设置</h1>
       <Row gutter={[16, 16]}>
         {CARDS.map((c) => (
           <Col key={c.key} xs={24} sm={12} md={8} lg={6}>
@@ -68,7 +68,7 @@ export default function SettingsPage() {
               style={{ height: '100%' }}
             >
               <div style={{ marginBottom: 12 }}>{c.icon}</div>
-              <h3 style={{ fontWeight: 600, marginBottom: 8 }}>{c.title}</h3>
+              <h2 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: '1rem', marginBottom: 8 }}>{c.title}</h2>
               <div style={{ color: 'var(--t3)', fontSize: 13 }}>{c.desc}</div>
             </Card>
           </Col>

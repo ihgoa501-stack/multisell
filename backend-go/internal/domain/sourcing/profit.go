@@ -5,6 +5,8 @@ package sourcing
 
 import (
 	"math"
+
+	"github.com/lingmirror/backend-go/internal/domain/logistics"
 )
 
 // ---------- Profit Calculation ----------
@@ -107,4 +109,71 @@ func CalculateProfit(in *ProfitInput) *ProfitBreakdown {
 // round2 rounds to 2 decimal places.
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100
+}
+
+// ---------- ProfitService (refactored with RateEngine injection) ----------
+
+// ProfitService wraps profit calculation with an optional RateEngine for
+// dynamic shipping cost estimation.
+type ProfitService struct {
+	engine *logistics.RateEngine
+}
+
+// NewProfitService creates a profit calculation service with the given RateEngine.
+// Pass nil to fall back to the static shipping estimate map.
+func NewProfitService(engine *logistics.RateEngine) *ProfitService {
+	return &ProfitService{engine: engine}
+}
+
+// CalculateProfit computes a detailed profit estimate using the injected
+// RateEngine (if available) or the static shipping estimate map as fallback.
+func (s *ProfitService) CalculateProfit(in *ProfitInput) *ProfitBreakdown {
+	shipCost := defaultShippingCost
+	if s.engine != nil && in.WeightKg > 0 {
+		cargo := logistics.Cargo{ActualWeightKg: in.WeightKg}
+		if quote, err := s.engine.CalculateRate(cargo, in.Destination, "normal"); err == nil && len(quote.Results) > 0 {
+			shipCost = quote.Results[0].TotalShippingFee / in.WeightKg
+		}
+	}
+	if shipCost == defaultShippingCost {
+		if c, ok := shippingEstimates[in.Destination]; ok {
+			shipCost = c
+		}
+	}
+
+	platFeePct := defaultPlatformFee
+	if f, ok := platformFeeEstimates[in.Destination]; ok {
+		platFeePct = f
+	}
+
+	markup := in.MarkupPct
+	if markup <= 0 {
+		markup = 250.0
+	}
+	targetPrice := in.SourcePriceCNY * markup / 100.0
+
+	shippingCost := shipCost * in.WeightKg
+	platformFee := targetPrice * platFeePct / 100.0
+	totalCost := in.SourcePriceCNY + shippingCost + platformFee
+	profit := targetPrice - totalCost
+
+	margin := 0.0
+	if targetPrice > 0 {
+		margin = profit / targetPrice * 100.0
+	}
+
+	return &ProfitBreakdown{
+		SourcePriceCNY:  round2(in.SourcePriceCNY),
+		WeightKg:        round2(in.WeightKg),
+		Destination:     in.Destination,
+		MarkupPct:       markup,
+		TargetPriceCNY:  round2(targetPrice),
+		ShippingCostCNY: round2(shippingCost),
+		PlatformFeeCNY:  round2(platformFee),
+		PlatformFeePct:  round2(platFeePct),
+		TotalCostCNY:    round2(totalCost),
+		ProfitCNY:       round2(profit),
+		MarginPct:       round2(margin),
+		IsViable:        margin >= minViableMargin,
+	}
 }

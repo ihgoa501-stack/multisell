@@ -43,7 +43,7 @@ func SourcingTools() []toolregistry.Tool {
 					return nil, fmt.Errorf("sourcing.recommend: price_1688 must be positive")
 				}
 
-				profit := sourcing.CalculateProfit(&sourcing.ProfitInput{
+				profit := sourcing.NewProfitService(nil).CalculateProfit(&sourcing.ProfitInput{
 					SourcePriceCNY: price,
 					WeightKg:       weight,
 					Destination:    dest,

@@ -9,6 +9,15 @@ Before working, read [Agent Capabilities](./docs/AGENT_CAPABILITIES.md) — it l
 all MCP servers, API endpoints, CLI tools, database schemas, and development
 commands available to you.
 
+Before non-trivial development, refactor, review, QA, or release work, also read the governance documents:
+
+- [Owner-First Development Protocol](./docs/governance/OWNER_FIRST_PROTOCOL.md) — the Owner describes business goals; Agents own technical translation and must report in business language.
+- [Platform Constitution](./docs/governance/PLATFORM_CONSTITUTION.md) — highest-level platform rules, system layers, risk levels, forbidden actions, and Owner decision boundaries.
+- [Agent Development Protocol](./docs/governance/AGENT_DEVELOPMENT_PROTOCOL.md) — multi-Agent roles, start checklist, review checklist, QA checklist, and handoff rules.
+- [Kernel Contracts](./docs/governance/KERNEL_CONTRACTS.md) — EventBus, Command, Scheduler, ToolBridge, Approval, Audit, RBAC, Observability, and Migration contracts.
+
+When these governance docs conflict with older project docs, follow the governance docs unless the Owner explicitly overrides them.
+
 ## Project
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
@@ -238,6 +247,7 @@ cd frontend-next/e2e && npx playwright test
 ## Documentation
 
 - `AGENTS.md` — canonical cross-agent project instructions.
+- `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.
 - `docs/INDEX.md` — full documentation index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
 - `docs/ACTIVE_STACK_POLICY.md` — active stack and legacy freeze policy.

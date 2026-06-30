@@ -3,6 +3,10 @@
 //
 // Topics use glob-style patterns: "order.*" matches "order.created", "order.refund".
 // The bus can optionally persist events to an event_outbox table for durability.
+//
+// QoS isolation: events are routed to per-priority worker pools. Each priority
+// level (0=normal, 1=high, 2=critical) has dedicated workers and buffer capacity,
+// preventing a backlog at one priority from starving others.
 package eventbus
 
 import (
@@ -10,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -21,16 +26,39 @@ import (
 
 // Event represents a message on the bus.
 type Event struct {
-	ID        string                 `json:"id"`
-	Topic     string                 `json:"topic"`
-	Source    string                 `json:"source"`
-	Payload   map[string]interface{} `json:"payload"`
-	Priority  int                    `json:"priority"`   // 0=normal, 1=high, 2=critical
-	CreatedAt time.Time              `json:"created_at"`
+	ID               string                 `json:"id"`
+	Topic            string                 `json:"topic"`
+	Source           string                 `json:"source"`
+	Payload          map[string]interface{} `json:"payload"`
+	Priority         int                    `json:"priority"`   // 0=normal, 1=high, 2=critical
+	CreatedAt        time.Time              `json:"created_at"`
+	CorrelationID    string                 `json:"correlation_id"`
+	DeliveryAttempts int                    `json:"delivery_attempts"`
 }
 
 // Handler processes a single event. Return an error to signal delivery failure.
 type Handler func(ctx context.Context, event Event) error
+
+// contextKey is used for context-scoped values to avoid collisions.
+type contextKey string
+
+const correlationContextKey contextKey = "eventbus_correlation_id"
+
+// WithCorrelationID attaches a correlation ID to the context for event bus
+// operations. The correlation ID is propagated to published events and can
+// be used for distributed tracing across event handlers.
+func WithCorrelationID(ctx context.Context, correlationID string) context.Context {
+	return context.WithValue(ctx, correlationContextKey, correlationID)
+}
+
+// CorrelationIDFromContext extracts the correlation ID from the context.
+// Returns empty string if not set.
+func CorrelationIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(correlationContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
 
 // subscription binds a handler to a topic pattern.
 type subscription struct {
@@ -86,19 +114,99 @@ func (pq *priorityQueue) Pop() interface{} {
 	return item
 }
 
-// Bus is the central event bus.
+// Backend is the pluggable storage backend for the event bus.
+type Backend interface {
+	Enqueue(event Event) error
+	Dequeue() (Event, bool)
+	Len() int
+	Close()
+}
+
+// InProcessBackend is the default in-process priority queue backend. It
+// implements the Backend interface using a heap-based priority queue with
+// sync.Cond for blocking dequeue operations.
+type InProcessBackend struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	queue  priorityQueue
+	closed bool
+}
+
+// NewInProcessBackend creates a new InProcessBackend.
+func NewInProcessBackend() *InProcessBackend {
+	b := &InProcessBackend{
+		queue: make(priorityQueue, 0),
+	}
+	b.cond = sync.NewCond(&b.mu)
+	return b
+}
+
+// Enqueue adds an event to the priority queue and signals a waiting dequeue.
+func (b *InProcessBackend) Enqueue(event Event) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	item := &priorityQueueItem{event: event}
+	heap.Push(&b.queue, item)
+	b.cond.Signal()
+	return nil
+}
+
+// Dequeue removes and returns the highest-priority event, blocking until one
+// is available. Returns false if the backend has been closed.
+func (b *InProcessBackend) Dequeue() (Event, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for b.queue.Len() == 0 {
+		if b.closed {
+			return Event{}, false
+		}
+		b.cond.Wait()
+	}
+	item := heap.Pop(&b.queue).(*priorityQueueItem)
+	return item.event, true
+}
+
+// Len returns the number of events currently in the queue.
+func (b *InProcessBackend) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.queue.Len()
+}
+
+// Close marks the backend as closed and wakes all waiting goroutines.
+func (b *InProcessBackend) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
+	b.cond.Broadcast()
+}
+
+// workerPool isolates events at a single priority level with dedicated
+// workers and buffer capacity.
+type workerPool struct {
+	backend    Backend
+	bufferSize int
+	nWorkers   int
+}
+
+// DefaultMaxRetries is the default number of delivery attempts before an
+// event is moved to the dead-letter queue.
+const DefaultMaxRetries = 3
+
+// Bus is the central event bus with per-priority QoS worker pools.
 type Bus struct {
 	mu             sync.RWMutex
 	subs           []*subscription
-	queueMu        sync.Mutex
-	queue          priorityQueue
-	queueCond      *sync.Cond
 	db             *gorm.DB
 	logger         *zap.Logger
-	bufferSize     int
-	workerCount    int
 	done           chan struct{}
 	schemaRegistry *SchemaRegistry
+	dlq            *DLQManager
+	maxRetries     int
+
+	// Per-priority worker pools.
+	pools  map[int]*workerPool
+	poolWg sync.WaitGroup
 }
 
 // BusOption configures the event bus.
@@ -109,26 +217,77 @@ func WithDB(db *gorm.DB) BusOption {
 	return func(b *Bus) { b.db = db }
 }
 
-// WithBufferSize sets the channel buffer size (default 256).
+// WithBufferSize sets the channel buffer size for priority 0 (default 256).
 func WithBufferSize(n int) BusOption {
-	return func(b *Bus) { b.bufferSize = n }
+	return func(b *Bus) {
+		if pool, ok := b.pools[0]; ok {
+			pool.bufferSize = n
+		}
+	}
 }
 
-// WithWorkers sets the number of concurrent event dispatchers (default 4).
+// WithWorkers sets the number of workers for priority 0 (default 4).
+// For per-priority worker configuration use WithWorkersPerPriority.
 func WithWorkers(n int) BusOption {
-	return func(b *Bus) { b.workerCount = n }
+	return func(b *Bus) {
+		if pool, ok := b.pools[0]; ok {
+			pool.nWorkers = n
+		}
+	}
 }
 
-// New creates a new event bus.
+// WithBackend sets a custom Backend implementation for priority 0.
+func WithBackend(backend Backend) BusOption {
+	return func(b *Bus) {
+		if pool, ok := b.pools[0]; ok {
+			pool.backend = backend
+		}
+	}
+}
+
+// WithDLQ enables the dead-letter queue using the given DB connection.
+func WithDLQ(db *gorm.DB) BusOption {
+	return func(b *Bus) {
+		b.dlq = NewDLQManager(db, b.logger)
+	}
+}
+
+// WithMaxRetries sets the maximum delivery attempts before DLQ (default 3).
+func WithMaxRetries(n int) BusOption {
+	return func(b *Bus) { b.maxRetries = n }
+}
+
+// WithWorkersPerPriority configures per-priority worker counts.
+// The map key is priority, value is the number of workers.
+// Example: map[int]int{0: 4, 1: 2, 2: 2}
+func WithWorkersPerPriority(workers map[int]int) BusOption {
+	return func(b *Bus) {
+		for pri, n := range workers {
+			if pool, ok := b.pools[pri]; ok {
+				pool.nWorkers = n
+			}
+		}
+	}
+}
+
+// New creates a new event bus with per-priority QoS worker pools.
+//
+// Default pool configuration:
+//
+//	priority 2 (critical): 2 workers, buffer 64
+//	priority 1 (high):     2 workers, buffer 128
+//	priority 0 (normal):   4 workers, buffer 256
 func New(logger *zap.Logger, opts ...BusOption) *Bus {
 	b := &Bus{
-		logger:      logger,
-		bufferSize:  256,
-		workerCount: 4,
-		queue:       make(priorityQueue, 0),
-		done:        make(chan struct{}),
+		logger:     logger,
+		done:       make(chan struct{}),
+		maxRetries: DefaultMaxRetries,
+		pools: map[int]*workerPool{
+			0: {backend: NewInProcessBackend(), bufferSize: 256, nWorkers: 4},
+			1: {backend: NewInProcessBackend(), bufferSize: 128, nWorkers: 2},
+			2: {backend: NewInProcessBackend(), bufferSize: 64, nWorkers: 2},
+		},
 	}
-	b.queueCond = sync.NewCond(&b.queueMu)
 	for _, opt := range opts {
 		opt(b)
 	}
@@ -137,36 +296,50 @@ func New(logger *zap.Logger, opts ...BusOption) *Bus {
 
 // Start launches the worker goroutines that dispatch events to handlers.
 func (b *Bus) Start(ctx context.Context) {
-	for i := 0; i < b.workerCount; i++ {
-		go b.workerLoop(ctx, i)
+	for priority, pool := range b.pools {
+		pool := pool
+		for i := 0; i < pool.nWorkers; i++ {
+			b.poolWg.Add(1)
+			go b.workerLoop(ctx, priority, i)
+		}
 	}
-	b.logger.Info("event bus started",
-		zap.Int("workers", b.workerCount),
-		zap.Int("buffer", b.bufferSize))
+	b.logger.Info("event bus started with QoS pools",
+		zap.Int("pool[0].workers", b.pools[0].nWorkers),
+		zap.Int("pool[0].buffer", b.pools[0].bufferSize),
+		zap.Int("pool[1].workers", b.pools[1].nWorkers),
+		zap.Int("pool[1].buffer", b.pools[1].bufferSize),
+		zap.Int("pool[2].workers", b.pools[2].nWorkers),
+		zap.Int("pool[2].buffer", b.pools[2].bufferSize))
 }
 
 // Stop shuts down the event bus gracefully.
 func (b *Bus) Stop() {
 	close(b.done)
-	b.queueCond.Broadcast() // wake all workers so they see done
+	for _, pool := range b.pools {
+		pool.backend.Close()
+	}
+	b.poolWg.Wait()
 	b.logger.Info("event bus stopped")
 }
 
 // Publish delivers an event to all matching subscribers.
-// Returns the event ID and any handler error.
+// Returns the event ID.
 func (b *Bus) Publish(ctx context.Context, topic string, source string, payload map[string]interface{}) (string, error) {
 	return b.PublishWithPriority(ctx, topic, source, payload, 0)
 }
 
 // PublishWithPriority delivers an event with a given priority level.
+// The priority determines which worker pool handles the event:
+// 0=normal, 1=high, 2=critical.
 func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, payload map[string]interface{}, priority int) (string, error) {
 	evt := Event{
-		ID:        uuid.New().String(),
-		Topic:     topic,
-		Source:    source,
-		Payload:   payload,
-		Priority:  priority,
-		CreatedAt: time.Now(),
+		ID:            uuid.New().String(),
+		Topic:         topic,
+		Source:        source,
+		Payload:       payload,
+		Priority:      priority,
+		CreatedAt:     time.Now(),
+		CorrelationID: CorrelationIDFromContext(ctx),
 	}
 
 	// Validate against schema registry if configured.
@@ -187,19 +360,23 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 		}
 	}
 
-	item := &priorityQueueItem{event: evt}
+	// Route to the appropriate pool based on priority.
+	pool, ok := b.pools[priority]
+	if !ok {
+		pool = b.pools[0]
+	}
 
-	// Enqueue to the priority queue with backpressure.
-	// If the queue is at capacity the event is dropped immediately and
-	// ErrQueueFull is returned to the caller.
-	b.queueMu.Lock()
-	if b.bufferSize > 0 && b.queue.Len() >= b.bufferSize {
-		b.queueMu.Unlock()
+	// Enqueue to the pool's backend with backpressure.
+	if pool.bufferSize > 0 && pool.backend.Len() >= pool.bufferSize {
 		return "", ErrQueueFull
 	}
-	heap.Push(&b.queue, item)
-	b.queueCond.Signal()
-	b.queueMu.Unlock()
+
+	if err := pool.backend.Enqueue(evt); err != nil {
+		return "", err
+	}
+
+	eventsQueueDepth.Set(float64(pool.backend.Len()))
+	eventsPublished.WithLabelValues(topic, "published").Inc()
 
 	return evt.ID, nil
 }
@@ -244,58 +421,112 @@ func (b *Bus) Close() error {
 	return nil
 }
 
-// workerLoop pops events from the priority queue and dispatches them to
-// matching subscribers in FIFO order per priority level.
-func (b *Bus) workerLoop(ctx context.Context, id int) {
-	b.logger.Debug("event bus worker started", zap.Int("worker_id", id))
+// DLQ returns the dead-letter queue manager, or nil if not configured.
+func (b *Bus) DLQ() *DLQManager {
+	return b.dlq
+}
+
+// workerLoop pops events from the given pool's backend and dispatches them to
+// matching subscribers. Failed events are retried (up to maxRetries) and then
+// moved to the dead-letter queue if configured.
+func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
+	pool, ok := b.pools[poolID]
+	if !ok {
+		return
+	}
+
+	b.logger.Debug("event bus worker started",
+		zap.Int("pool_id", poolID),
+		zap.Int("worker_id", workerID))
+	defer b.poolWg.Done()
+
 	for {
 		// Check for shutdown before blocking.
 		select {
 		case <-ctx.Done():
-			b.logger.Debug("event bus worker stopped (context cancelled)", zap.Int("worker_id", id))
 			return
 		case <-b.done:
-			b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
 			return
 		default:
 		}
 
-		// Wait for an item on the priority queue.
-		b.queueMu.Lock()
-		for b.queue.Len() == 0 {
-			b.queueCond.Wait()
-			// Re-check shutdown signals after Cond.Wait returns (woken by
-			// Broadcast on Stop or Signal from a new enqueue).
-			select {
-			case <-b.done:
-				b.queueMu.Unlock()
-				b.logger.Debug("event bus worker stopped", zap.Int("worker_id", id))
-				return
-			case <-ctx.Done():
-				b.queueMu.Unlock()
-				b.logger.Debug("event bus worker stopped (context cancelled)", zap.Int("worker_id", id))
-				return
-			default:
-			}
+		// Dequeue blocks until an event is available or the backend is closed.
+		evt, ok := pool.backend.Dequeue()
+		if !ok {
+			return
 		}
-		item := heap.Pop(&b.queue).(*priorityQueueItem)
-		b.queueMu.Unlock()
 
-		// Dispatch to all matching subscribers sequentially within this worker.
-		evt := item.event
+		// Dispatch to all matching subscribers with panic recovery per handler.
+		var panicked bool
+		var lastErr string
 		b.mu.RLock()
 		for _, sub := range b.subs {
 			if matchTopic(sub.topic, evt.Topic) {
-				if err := sub.handler(ctx, evt); err != nil {
-					b.logger.Warn("handler error",
-						zap.String("event_id", evt.ID),
-						zap.String("topic", evt.Topic),
-						zap.String("subscription_id", sub.id),
-						zap.Error(err))
-				}
+				func(s *subscription) {
+					defer func() {
+						if r := recover(); r != nil {
+							panicked = true
+							lastErr = fmt.Sprintf("%v", r)
+							b.logger.Error("handler panic recovered",
+								zap.String("event_id", evt.ID),
+								zap.String("topic", evt.Topic),
+								zap.String("subscription_id", s.id),
+								zap.Any("panic", r))
+							eventsHandlerErrors.WithLabelValues(evt.Topic).Inc()
+						}
+					}()
+					if err := s.handler(ctx, evt); err != nil {
+						lastErr = err.Error()
+						b.logger.Warn("handler error",
+							zap.String("event_id", evt.ID),
+							zap.String("topic", evt.Topic),
+							zap.String("subscription_id", s.id),
+							zap.Error(err))
+						eventsHandlerErrors.WithLabelValues(evt.Topic).Inc()
+					}
+				}(sub)
 			}
 		}
 		b.mu.RUnlock()
+
+		// Update outbox status after all handlers have run.
+		if b.db != nil {
+			if panicked || lastErr != "" {
+				b.db.WithContext(ctx).Exec(
+					`UPDATE event_outbox SET status='failed', last_error=?, delivery_attempts=COALESCE(delivery_attempts,0)+1 WHERE event_id=? AND status='pending'`,
+					lastErr, evt.ID,
+				)
+				eventsPublished.WithLabelValues(evt.Topic, "failed").Inc()
+			} else {
+				b.db.WithContext(ctx).Exec(
+					`UPDATE event_outbox SET status='delivered', delivered_at=NOW(), delivery_attempts=COALESCE(delivery_attempts,0)+1 WHERE event_id=? AND status='pending'`,
+					evt.ID,
+				)
+				eventsPublished.WithLabelValues(evt.Topic, "delivered").Inc()
+			}
+		}
+
+		// Retry or DLQ logic. If the event failed and DLQ is configured,
+		// move to DLQ after max retries. Otherwise re-enqueue for retry.
+		if panicked || lastErr != "" {
+			evt.DeliveryAttempts++
+			if evt.DeliveryAttempts >= b.maxRetries && b.dlq != nil {
+				b.dlq.MoveToDLQ(evt, lastErr, evt.DeliveryAttempts)
+				b.logger.Warn("event moved to DLQ after max retries",
+					zap.String("event_id", evt.ID),
+					zap.String("topic", evt.Topic),
+					zap.Int("attempts", evt.DeliveryAttempts),
+					zap.String("last_error", lastErr))
+				eventsDLQTotal.WithLabelValues(evt.Topic).Inc()
+			} else if evt.DeliveryAttempts < b.maxRetries {
+				// Re-enqueue for retry.
+				_ = pool.backend.Enqueue(evt)
+				b.logger.Debug("re-enqueuing event for retry",
+					zap.String("event_id", evt.ID),
+					zap.String("topic", evt.Topic),
+					zap.Int("attempt", evt.DeliveryAttempts))
+			}
+		}
 	}
 }
 
@@ -326,15 +557,17 @@ func matchTopic(pattern, topic string) bool {
 	return len(parts) == len(subj)
 }
 
-// persistOutbox writes the event to the event_outbox table for durability.
+// persistOutbox writes the event to the event_outbox table with 'pending'
+// status. The workerLoop updates the status to 'delivered' or 'failed' after
+// all handlers have run.
 func (b *Bus) persistOutbox(ctx context.Context, evt *Event) error {
 	payloadBytes, err := json.Marshal(evt.Payload)
 	if err != nil {
 		return err
 	}
 	return b.db.WithContext(ctx).Exec(
-		`INSERT INTO event_outbox (topic, source, payload, priority, status, created_at)
-		 VALUES (?, ?, ?, ?, 'delivered', ?)`,
-		evt.Topic, evt.Source, payloadBytes, evt.Priority, evt.CreatedAt,
+		`INSERT INTO event_outbox (topic, source, payload, priority, status, created_at, event_id)
+		 VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+		evt.Topic, evt.Source, payloadBytes, evt.Priority, evt.CreatedAt, evt.ID,
 	).Error
 }

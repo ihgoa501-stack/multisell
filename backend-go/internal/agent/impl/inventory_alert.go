@@ -194,21 +194,21 @@ func (a *InventoryAlertAgent) registerTools() {
 //   - "stock_alert"
 //   - "replenishment_plan"
 //   - "logistics_choice"
-func (a *InventoryAlertAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	a.fillSkuFromDB(ctx)
+func (a *InventoryAlertAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	a.fillSkuFromDB(params)
 
 	if a.registry != nil {
-		return a.decideViaRegistry(decisionPoint, ctx)
+		return a.decideViaRegistry(ctx, decisionPoint, params)
 	}
-	return a.decideDirect(decisionPoint, ctx)
+	return a.decideDirect(decisionPoint, params)
 }
 
 // decideViaRegistry delegates the decision through the ToolRegistry's hook chain.
-func (a *InventoryAlertAgent) decideViaRegistry(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	result, callErr := a.registry.Call(context.Background(), decisionPoint, ctx)
+func (a *InventoryAlertAgent) decideViaRegistry(callCtx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	result, callErr := a.registry.Call(callCtx, decisionPoint, params)
 	if callErr != nil {
 		// Tool not found or hook rejected; fall through to direct dispatch.
-		return a.decideDirect(decisionPoint, ctx)
+		return a.decideDirect(decisionPoint, params)
 	}
 
 	// Unwrap the tool output envelope.
