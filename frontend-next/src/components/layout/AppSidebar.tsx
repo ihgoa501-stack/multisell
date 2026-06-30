@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import { usePermissionStore } from '@/stores/permission-store';
-import { menuGroups, type MenuItem } from '@/config/menu';
+import { menuGroups, statusLabels, type MenuItem } from '@/config/menu';
 import { ApiClient } from '@/lib/api-client';
 
 type SessionItem = {
   key: string;
   label: string;
   group: string;
+  status?: string;
 };
 
 function elapsedStr(startedAt: Date): string {
@@ -64,6 +65,7 @@ export default function AppSidebar() {
         key: item.key,
         label: item.label,
         group: g.label,
+        status: item.status,
       }))
     );
 
@@ -462,6 +464,22 @@ export default function AppSidebar() {
                   >
                     {session.label}
                   </span>
+                  {session.status && (
+                    <span
+                      style={{
+                        fontSize: '0.5rem',
+                        padding: '0 3px',
+                        borderRadius: 3,
+                        background: session.status === 'mock' ? 'var(--y2)' : 'var(--b2)',
+                        color: session.status === 'mock' ? 'var(--y5)' : 'var(--b5)',
+                        fontWeight: 600,
+                        flexShrink: 0,
+                        lineHeight: '1.4',
+                      }}
+                    >
+                      {statusLabels[session.status] ?? session.status}
+                    </span>
+                  )}
                 </div>
               );
             })}

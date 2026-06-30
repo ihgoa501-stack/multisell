@@ -27,6 +27,7 @@ import {
   ShoppingOutlined,
   ThunderboltOutlined,
   ApiOutlined,
+  ArrowRightOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -255,6 +256,81 @@ export default function OwnerPage() {
         </Button>
       </div>
 
+      {/* System status banner */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px',
+          marginBottom: 16, borderRadius: 8,
+          background: 'var(--y1)', border: '1px solid var(--y3)',
+        }}
+      >
+        <div
+          style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: 'var(--y4)', flexShrink: 0,
+          }}
+        />
+        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--y6)', flexShrink: 0 }}>
+          模拟环境 · Mock Data
+        </div>
+        <div style={{ fontSize: '0.7rem', color: 'var(--y5)', flex: 1 }}>
+          当前页面展示的是本地模拟数据，不涉及真实交易。平台集成处于沙箱模式。
+        </div>
+        <Tag color="orange">Mock</Tag>
+        <Tag color="blue">沙箱</Tag>
+        <Tag color="default" style={{ opacity: 0.5 }}>生产</Tag>
+      </div>
+
+      {/* P0 local closed-loop flow */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px',
+          marginBottom: 16, borderRadius: 8,
+          background: 'var(--s1)', border: '1px solid var(--bd)',
+        }}
+      >
+        <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--t2)', flexShrink: 0 }}>
+          本地闭环流程 →
+        </div>
+        {[
+          { label: '候选商品', href: '/candidates', icon: '📦', color: 'var(--i4)' },
+          { label: '完整性评估', icon: '🔍', color: 'var(--c4)' },
+          { label: '上架建议', icon: '💡', color: 'var(--g4)' },
+          { label: 'Owner 审批', href: '/approval', icon: '✅', color: 'var(--g4)' },
+        ].map((step, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {i > 0 && <ArrowRightOutlined style={{ fontSize: '0.6rem', color: 'var(--t4)' }} />}
+            {step.href ? (
+              <a
+                href={step.href}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
+                  fontSize: '0.72rem', fontWeight: 500,
+                  background: 'var(--s2)', color: step.color,
+                  border: '1px solid var(--bd)', textDecoration: 'none',
+                }}
+              >
+                <span style={{ fontSize: '0.75rem' }}>{step.icon}</span>
+                {step.label}
+              </a>
+            ) : (
+              <span
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 6,
+                  fontSize: '0.72rem', fontWeight: 500,
+                  background: 'var(--s2)', color: 'var(--t2)',
+                }}
+              >
+                <span style={{ fontSize: '0.75rem' }}>{step.icon}</span>
+                {step.label}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
       {/* Risk summary cards */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
@@ -346,9 +422,11 @@ export default function OwnerPage() {
           <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
             <div style={{
               padding: '12px 16px', borderBottom: '1px solid var(--bd)',
+              display: 'flex', alignItems: 'center', gap: 8,
               fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
             }}>
               Agent 上架建议
+              <Tag color="orange" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>Mock</Tag>
             </div>
             <div style={{ padding: 16 }}>
               <Space style={{ marginBottom: 12 }}>
@@ -480,9 +558,11 @@ export default function OwnerPage() {
           <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
             <div style={{
               padding: '12px 16px', borderBottom: '1px solid var(--bd)',
+              display: 'flex', alignItems: 'center', gap: 8,
               fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
             }}>
               平台同步状态
+              <Tag color="blue" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>沙箱</Tag>
             </div>
             <div style={{ padding: 16 }}>
               <Spin spinning={syncLoading}>
