@@ -68,6 +68,8 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 	}
 	if in.Status != "" {
 		c.Status = in.Status
+	} else {
+		c.Status = "draft"
 	}
 	if err := s.db.Create(&c).Error; err != nil {
 		return nil, err

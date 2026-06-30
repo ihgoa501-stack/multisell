@@ -20,6 +20,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/aftersales"
+	"github.com/lingmirror/backend-go/internal/domain/agentlearning"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
@@ -28,6 +30,11 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/compliance"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
+	"github.com/lingmirror/backend-go/internal/domain/landedcost"
+	"github.com/lingmirror/backend-go/internal/domain/orchestration"
+	"github.com/lingmirror/backend-go/internal/domain/personalrule"
+	"github.com/lingmirror/backend-go/internal/domain/producthub"
+	"github.com/lingmirror/backend-go/internal/domain/sentiment"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
@@ -632,6 +639,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	}()
 
 	owner.RegisterRoutes(protected, db, logger)
+	agentlearning.RegisterRoutes(protected, db, logger)
+	approval.RegisterRoutes(protected, db, logger)
+	landedcost.RegisterRoutes(protected, db, logger)
+	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
+	personalrule.RegisterRoutes(protected, db, logger)
+	producthub.RegisterRoutes(protected, db, logger)
+	sentiment.RegisterRoutes(protected, db, logger)
 
 	shipping.RegisterRoutes(protected, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)

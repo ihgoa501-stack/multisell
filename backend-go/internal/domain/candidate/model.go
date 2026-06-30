@@ -28,7 +28,7 @@ type CandidateProduct struct {
 	TargetCurrency    string          `gorm:"column:target_currency;default:USD" json:"target_currency"`
 	TargetPlatformID  *int64          `gorm:"column:target_platform_id" json:"target_platform_id,omitempty"`
 	DestinationCountry string        `gorm:"column:destination_country;default:US" json:"destination_country"`
-	Status            string          `gorm:"column:status;default:draft" json:"status"` // draft, in_review, approved, rejected
+	Status            string          `gorm:"column:status" json:"status"` // draft, in_review, approved, rejected
 	IsSeedData        bool            `gorm:"column:is_seed_data;default:false" json:"is_seed_data"`
 	CreatedBy         string          `gorm:"column:created_by" json:"created_by"`
 	UpdatedBy         string          `gorm:"column:updated_by" json:"updated_by"`
