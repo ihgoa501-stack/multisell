@@ -109,7 +109,7 @@ func TestComplianceListResults(t *testing.T) {
 
 	t.Run("list_all", func(t *testing.T) {
 		p := &common.Pagination{Page: 1, Size: 100}
-		items, total, err := svc.ListResults(p, "", "")
+		items, total, err := svc.ListResults(p, "", "", 0)
 		if err != nil {
 			t.Fatalf("ListResults failed: %v", err)
 		}
@@ -123,7 +123,7 @@ func TestComplianceListResults(t *testing.T) {
 
 	t.Run("filter_by_status", func(t *testing.T) {
 		p := &common.Pagination{Page: 1, Size: 100}
-		items, total, err := svc.ListResults(p, StatusPass, "")
+		items, total, err := svc.ListResults(p, StatusPass, "", 0)
 		if err != nil {
 			t.Fatalf("ListResults with status filter failed: %v", err)
 		}
@@ -142,7 +142,7 @@ func TestComplianceListResults(t *testing.T) {
 
 	t.Run("filter_by_risk", func(t *testing.T) {
 		p := &common.Pagination{Page: 1, Size: 100}
-		items, total, err := svc.ListResults(p, "", RiskLow)
+		items, total, err := svc.ListResults(p, "", RiskLow, 0)
 		if err != nil {
 			t.Fatalf("ListResults with risk filter failed: %v", err)
 		}
@@ -161,7 +161,7 @@ func TestComplianceListResults(t *testing.T) {
 
 	t.Run("paginated", func(t *testing.T) {
 		p := &common.Pagination{Page: 1, Size: 2}
-		items, total, err := svc.ListResults(p, "", "")
+		items, total, err := svc.ListResults(p, "", "", 0)
 		if err != nil {
 			t.Fatalf("ListResults paginated failed: %v", err)
 		}
