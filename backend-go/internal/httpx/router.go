@@ -10,6 +10,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
 	"github.com/lingmirror/backend-go/internal/aios/setup"
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry/tools"
 	"github.com/lingmirror/backend-go/internal/auth"
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
@@ -537,6 +538,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	sourcing1688.RegisterRoutes(protected, db, logger)
 	tariff.RegisterRoutes(protected, db, logger)
 	logistics.RegisterRoutes(protected, db, logger)
+	// Wire the loaded carrier-rate engine into the sourcing profit-calc tool
+	// so sourcing.recommend uses real shipping rates instead of the static
+	// fallback map. No-op if DefaultEngine is nil (no YAML files loaded).
+	tools.SetSourcingEngine(logistics.DefaultEngine)
 	supplychain.RegisterRoutes(protected, db, logger, bus)
 	productanalysis.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)

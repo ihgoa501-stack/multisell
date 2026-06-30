@@ -6,8 +6,25 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
+	"github.com/lingmirror/backend-go/internal/domain/logistics"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 )
+
+// ── Package-level state for sourcing tool handlers ──────────────────
+
+// sourcingEngine is the rate engine injected into the sourcing profit
+// calculation. It is read at tool-invocation time (not registration time),
+// so callers can set it after tool registration via SetSourcingEngine.
+// A nil engine makes ProfitService fall back to the static shipping map.
+var sourcingEngine *logistics.RateEngine
+
+// SetSourcingEngine wires a rate engine into the sourcing.recommend tool.
+// Must be called during server initialization (e.g. from the router after
+// the logistics module has loaded its carrier-rates YAML). Pass nil to
+// explicitly disable engine-based shipping estimates.
+func SetSourcingEngine(engine *logistics.RateEngine) {
+	sourcingEngine = engine
+}
 
 // SourcingTools returns the tool definitions for the sourcing domain (A8).
 func SourcingTools() []toolregistry.Tool {
@@ -43,7 +60,9 @@ func SourcingTools() []toolregistry.Tool {
 					return nil, fmt.Errorf("sourcing.recommend: price_1688 must be positive")
 				}
 
-				profit := sourcing.NewProfitService(nil).CalculateProfit(&sourcing.ProfitInput{
+				// Read sourcingEngine at invocation time so the engine can be
+				// injected after tool registration (see SetSourcingEngine).
+				profit := sourcing.NewProfitService(sourcingEngine).CalculateProfit(&sourcing.ProfitInput{
 					SourcePriceCNY: price,
 					WeightKg:       weight,
 					Destination:    dest,
