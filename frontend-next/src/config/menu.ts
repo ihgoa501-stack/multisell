@@ -30,8 +30,8 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '商品管理',
     items: [
-	      { key: "/product-hub", icon: "DatabaseOutlined", label: "产品档案" },
-      { key: '/products', icon: 'ShoppingOutlined', label: '商品' },
+	      { key: '/product-hub', icon: 'DatabaseOutlined', label: '产品档案' },
+	      { key: '/products', icon: 'ShoppingOutlined', label: '商品', permission: 'product.read' },
       { key: '/categories', label: '类目' },
       { key: '/brands', label: '品牌' },
       { key: '/sku', label: 'SKU' },
@@ -51,7 +51,7 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '订单物流',
     items: [
-      { key: '/orders', icon: 'FileTextOutlined', label: '订单' },
+      { key: '/orders', icon: 'FileTextOutlined', label: '订单', permission: 'order.read' },
       { key: '/order-import', label: '订单导入' },
       { key: '/shipping', label: '物流' },
       { key: '/platform-fees', label: '平台费用' },
@@ -61,8 +61,8 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '财务',
     items: [
-      { key: '/finance', icon: 'DollarOutlined', label: '财务总览' },
-      { key: '/settlement', label: '结算' },
+      { key: '/finance', icon: 'DollarOutlined', label: '财务总览', permission: 'finance.read' },
+      { key: '/settlement', label: '结算', permission: 'finance.read' },
       { key: '/decision', label: '决策' },
       { key: '/allocation', label: '分配' },
       { key: '/allocation/cost', label: '成本分摊' },
@@ -71,7 +71,7 @@ export const menuGroups: MenuGroup[] = [
   {
     label: 'AgentOS',
     items: [
-      { key: '/agentos', icon: 'ThunderboltOutlined', label: '控制台' },
+      { key: '/agentos', icon: 'ThunderboltOutlined', label: '控制台', permission: 'agent.read' },
       { key: '/agents', label: 'Agent 列表' },
       { key: '/agents/actions', label: 'Action 中心' },
       { key: '/agents/evolution', label: '进化' },
@@ -87,9 +87,9 @@ export const menuGroups: MenuGroup[] = [
       { key: '/notifications', label: '通知' },
       { key: '/image-gen', label: '图片生成' },
       { key: '/import-batches', label: '批量导入' },
-      { key: '/operation-logs', label: '操作日志' },
+      { key: '/operation-logs', label: '操作日志', permission: 'audit.read' },
       { key: '/search', label: '搜索' },
-      { key: '/reports', label: '报表' },
+      { key: '/reports', label: '报表', permission: 'report.read' },
       { key: '/aftersales', label: '售后' },
       { key: '/sourcing1688', label: '1688采购' },
       { key: '/support', label: '客服中心', icon: 'CustomerServiceOutlined' },
@@ -99,9 +99,9 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '设置',
     items: [
-      { key: '/settings', icon: 'SettingOutlined', label: '系统设置' },
+      { key: '/settings', icon: 'SettingOutlined', label: '系统设置', permission: 'settings.read' },
       { key: '/settings/llm', label: 'LLM 配置' },
-      { key: '/settings/rbac', label: '权限管理' },
+      { key: '/settings/rbac', label: '权限管理', permission: 'rbac.manage' },
       { key: '/settings/policy', label: '审批策略' },
     ],
   },

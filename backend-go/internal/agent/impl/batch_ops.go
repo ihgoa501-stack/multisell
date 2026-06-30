@@ -1,6 +1,7 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -9,8 +10,8 @@ import (
 type BatchOpsAgent struct{}
 func NewBatchOpsAgent() *BatchOpsAgent { return &BatchOpsAgent{} }
 
-func (a *BatchOpsAgent) Decide(decisionPoint string, ctx map[string]interface{}) (map[string]interface{}, float64, string, error) {
-	raw, err := toolregistry.DefaultRegistry.Invoke(decisionPoint, ctx)
+func (a *BatchOpsAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (map[string]interface{}, float64, string, error) {
+	raw, err := toolregistry.DefaultRegistry.Invoke(decisionPoint, params, ctx)
 	if err == nil {
 		result, _ := raw.(map[string]interface{})
 		confidence := 0.85
@@ -28,13 +29,13 @@ func (a *BatchOpsAgent) Decide(decisionPoint string, ctx map[string]interface{})
 
 	switch decisionPoint {
 	case "batch_price_update":
-		return a.batchPriceUpdate(ctx)
+		return a.batchPriceUpdate(params)
 	case "batch_inventory_sync":
-		return a.batchInventorySync(ctx)
+		return a.batchInventorySync(params)
 	case "batch_listing_update":
-		return a.batchListingUpdate(ctx)
+		return a.batchListingUpdate(params)
 	case "import_validation":
-		return a.importValidation(ctx)
+		return a.importValidation(params)
 	}
 	return insufficientData(decisionPoint, []string{"unknown"}), 0.5, "low", nil
 }

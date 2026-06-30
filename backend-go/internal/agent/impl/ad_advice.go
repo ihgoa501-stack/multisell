@@ -96,12 +96,12 @@ func (a *AdAdviceAgent) handleAdOptimize(ctx context.Context, input map[string]i
 // Supported decision points:
 //   - "acos_analysis" → tool "acos.analyze"
 //   - "ad_optimization" → tool "ad.optimize"
-func (a *AdAdviceAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *AdAdviceAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "acos_analysis":
-		return a.dispatchOrDirect("acos.analyze", decisionPoint, ctx, a.analyzeAcos)
+		return a.dispatchOrDirect(ctx, "acos.analyze", decisionPoint, params, a.analyzeAcos)
 	case "ad_optimization":
-		return a.dispatchOrDirect("ad.optimize", decisionPoint, ctx, a.suggestAdOptimization)
+		return a.dispatchOrDirect(ctx, "ad.optimize", decisionPoint, params, a.suggestAdOptimization)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",
@@ -114,13 +114,14 @@ func (a *AdAdviceAgent) Decide(decisionPoint string, ctx map[string]interface{})
 // dispatchOrDirect tries the ToolRegistry first; if unavailable, falls back to
 // the provided direct handler.
 func (a *AdAdviceAgent) dispatchOrDirect(
+	callCtx context.Context,
 	toolName string,
 	_ string, // decisionPoint — reserved for future use
-	ctx map[string]interface{},
+	params map[string]interface{},
 	direct func(map[string]interface{}) (map[string]interface{}, float64, string, error),
 ) (map[string]interface{}, float64, string, error) {
 	if a.registry != nil {
-		result, callErr := a.registry.Call(context.Background(), toolName, ctx)
+		result, callErr := a.registry.Call(callCtx, toolName, params)
 		if callErr == nil {
 			if m, ok := result.(map[string]interface{}); ok {
 				// Extract confidence from the output map if present.
@@ -131,7 +132,7 @@ func (a *AdAdviceAgent) dispatchOrDirect(
 		// Registry call failed — fall back to direct below.
 		// Logging would go here if we had a logger on the agent.
 	}
-	return direct(ctx)
+	return direct(params)
 }
 
 // extractConfidence looks for a "confidence" field in the output map.

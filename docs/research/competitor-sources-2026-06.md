@@ -1,6 +1,6 @@
 # Competitor Sources - 2026-06
 
-Retrieval date: 2026-06-15
+Retrieval date: 2026-06-27 (initial: 2026-06-15; AI-native competitors and Jijia added 2026-06-27)
 
 ## Evidence Rules
 
@@ -30,6 +30,10 @@ Roadmap decisions should not depend on claims that cannot be traced to a source 
 | Sellercloud | https://sellercloud.com/ | official_site | Catalog, inventory, warehouse, order rule engine, purchasing, shipping, reporting, accounting, web service API, 350+ integrations |
 | ShipStation | https://www.shipstation.com/ | official_site | Carrier integrations, marketplace integrations, shipping labels, rate comparison, address validation, tracking, analytics APIs |
 | Linnworks | https://www.linnworks.com/ | official_site | Order/shipping management, inventory, warehouse, marketplace listings, analytics, automation, carrier labels/tracking/cost control, bulk listing |
+| Jijia (积加) | https://www.jijiaerp.com/ | official_site | Multi-platform full-channel ERP (Amazon -> 60+ platforms), business-finance integration (业财集成), full-process FIFO batch cost, 600+ third-party warehouses, 300+ third-party logistics, BI/data warehouse, open platform, ecommerce middle-office, vertical solutions for large/garment/3C cross-border |
+| Luckee AI | https://www.luckee.ai/ | official_site | Cross-border AI agent for Amazon SMB sellers and agencies; review analysis (AI semantic clustering, 85-100% coverage across 14 marketplaces), ad diagnosis (8-phase SP health check, star/healthy/monitor/problematic), listing optimizer, operation assistant |
+| 知行奇点 | https://zhixingjidian.cn/ | official_site | Enterprise AI agent framework (Operator Layer) for billion-level cross-border brands; multi-agent workflows covering product sourcing, content, ads, KOL, R&D; positioned as "human + AI hybrid department" rather than SaaS tool |
+| RoxyBrowser AI Agent | https://roxybrowser.cn/blog/world-first-ai-agent-anti-detect-browser | official_site | World's first AI agent antidetect browser (launched Feb 2026); MCP-native browser automation, natural-language batch operations across cross-border ecommerce/social media/data scraping; zero-script approach (no Python/Selenium required) |
 
 ## Claim Log
 
@@ -50,9 +54,19 @@ Roadmap decisions should not depend on claims that cannot be traced to a source 
 | Sellercloud | Presents catalog, inventory, warehouse, order management, order rule engine, purchasing, shipping, reporting, accounting, web service API, and 350+ integrations. | official_site | https://sellercloud.com/ | Use as an architecture benchmark for module boundaries and automation rules. |
 | ShipStation | Presents carrier and marketplace integrations plus APIs for order consolidation, labels, rate comparison, address validation, checkout, tracking, and analytics. | official_site | https://www.shipstation.com/ | Shipping should become adapter-backed TMS, not scattered manual fields. |
 | Linnworks | Presents order/shipping, inventory, warehouse, marketplace listings, analytics, bulk listing, order routing, carrier labels, tracking, and cost control. | official_site | https://www.linnworks.com/ | Add automation after canonical order/shipping/inventory records exist. |
+| Jijia | Positions multi-platform full-channel ERP (upgraded from Amazon ERP) supporting 60+ platforms, 600+ third-party warehouses, 300+ third-party logistics. Features full-process FIFO batch cost, business-finance integration (业财集成), BI/data warehouse, and ecommerce middle-office. | official_site | https://www.jijiaerp.com/ | Jijia is the strongest reference for business-finance integration and batch-cost architecture. |
+| Jijia | Targets 90%+ 亿级卖家 (billion-level enterprise sellers) with vertical solutions for large-item cross-border, garment/fashion, and 3C electronics. | official_site | https://www.jijiaerp.com/ | LingMirror's cost-layer architecture should prioritize enterprise-grade traceability but avoid Jijia's enterprise-only price point. |
+| Luckee AI | Provides cross-border AI agent for Amazon SMB sellers and agencies. Review Analysis uses dual-source scraping for 85-100% written review coverage, AI semantic clustering across 14 marketplaces, and P0-P3 actionable recommendations. | official_site | https://www.luckee.ai/ | Validates narrow-but-deep Amazon agent model. LingMirror should consider a similar single-workflow entry wedge. |
+| Luckee AI | Ad Diagnosis delivers 8-phase SP advertising health check across campaigns, keywords, and search terms, producing star/healthy/monitor/problematic ratings. | official_site | https://www.luckee.ai/ | LingMirror's agentOS should match this diagnosis depth for any ad-related agent. |
+| 知行奇点 | Positions as China's Operator Layer for cross-border ecommerce, providing multi-agent framework covering product sourcing, content, ads, KOL, and R&D agent workflows for billion-level brands. | official_site | https://zhixingjidian.cn/ | Direct competitive positioning to LingMirror's agentOS. The "human + AI hybrid department" model is a viable enterprise deployment pattern. |
+| 知行奇点 | Claims to be the only provider simultaneously possessing cross-border industry know-how, full agent framework, and end-to-end business delivery capability. | official_site | https://zhixingjidian.cn/ | LingMirror must also differentiate on domain know-how + orchestration, not just generic agent capability. |
+| RoxyBrowser | Claims world's first AI agent antidetect browser (Feb 2026). Integrates AI agent via MCP protocol for native browser automation — no Python/Selenium required. Supports natural-language-driven batch operations for cross-border ecommerce, social media, and data scraping. | official_site | https://roxybrowser.cn/blog/world-first-ai-agent-anti-detect-browser | MCP-native architecture validates the agent-tool protocol pattern LingMirror should support. Antidetect browser channel represents an alternative distribution model. |
 
 ## Research Confidence Notes
 
-- Mabang, SellFox, Dianxiaomi, Eccang, Tongtool, CaptainBI, BigSeller, 4Seller, Sellercloud, ShipStation, and Linnworks are supported by official public pages.
+- Mabang, SellFox, Dianxiaomi, Eccang, Tongtool, CaptainBI, BigSeller, 4Seller, Sellercloud, ShipStation, Linnworks, Jijia, Luckee AI, 知行奇点, and RoxyBrowser AI Agent are all supported by official public pages.
+- Jijia (积加) was previously marked as unverified. Sourced and verified 2026-06-27 from jijiaerp.com. Confidence: High.
+- Luckee AI, 知行奇点, and RoxyBrowser AI Agent were added 2026-06-27 as a new AI-native agent cluster. All sourced from official sites. Confidence: High.
 - Some vendor counts such as platform, logistics, warehouse, and user totals are marketing claims. Use them as evidence of positioning and ecosystem ambition, not verified operational quality.
+- AI-native competitors (Luckee AI, 知行奇点, RoxyBrowser) are all launched within 2024-2026. Their market traction data is limited to time since launch and should be treated as positional evidence, not maturity evidence.
 - Help-center depth was not exhaustively reviewed in this pass. When implementing a specific integration, run a second source pass on official API/help docs.

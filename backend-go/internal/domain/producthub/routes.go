@@ -12,7 +12,7 @@ import (
 
 // RegisterRoutes registers all Product Hub routes.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	// Services
+	// Services for /product-hub
 	masterSvc := NewMasterService(db, logger)
 	variantSvc := NewVariantService(db, logger)
 	offerSvc := NewSupplierOfferService(db, logger)
@@ -20,7 +20,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	costSvc := NewCostVersionService(db, logger)
 	aggrSvc := NewAggregationService(db, logger)
 
-	// Handlers
+	// Handlers for /product-hub
 	masterH := NewMasterHandler(masterSvc)
 	hubH := NewHubHandler(aggrSvc)
 
@@ -159,4 +159,33 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 			response.Success(c, gin.H{"id": costID, "status": "confirmed"})
 		})
 	}
+
+	// Services for /products (version history, freshness, relations)
+	svc := NewService(db, logger)
+	versionSvc := NewVersionService(db, logger)
+	freshnessSvc := NewFreshnessService(db, logger)
+	relationSvc := NewRelationService(db, logger)
+	h := NewHandler(svc, versionSvc, freshnessSvc, relationSvc)
+
+	productsGroup := rg.Group("/products")
+	{
+		// Version history endpoints
+		productsGroup.GET("/:id/versions", h.ListVersions)
+		productsGroup.GET("/:id/versions/:versionId", h.GetVersion)
+		productsGroup.POST("/:id/versions/:versionId/rollback", h.Rollback)
+
+		// Decision recording with automatic snapshot
+		productsGroup.POST("/:id/decisions", h.RecordDecision)
+
+		// Freshness endpoints
+		productsGroup.GET("/:id/freshness", h.GetProductFreshness)
+		productsGroup.GET("/freshness/stale", h.ListStaleProducts)
+		productsGroup.POST("/:id/freshness/verify", h.VerifyDimension)
+
+		// Product relation endpoints
+		productsGroup.GET("/:id/relations", h.GetRelatedProducts)
+		productsGroup.POST("/:id/discover-relations", h.AutoDiscoverRelations)
+	}
+	productsGroup.POST("/relations", h.CreateRelation)
+	productsGroup.DELETE("/relations/:id", h.DeleteRelation)
 }

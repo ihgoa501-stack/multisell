@@ -1,7 +1,7 @@
 # 凌镜 LingMirror — 文档索引
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 最后更新：2026-06-24
+> 最后更新：2026-06-29
 
 ---
 
@@ -11,12 +11,18 @@
 |------|------|
 | [项目状态](PROJECT_STATUS.md) | 当前完成进度、功能清单 |
 | [全站功能清单](FUNCTION_INVENTORY.md) | 当前页面、操作和 API 功能梳理 |
+| [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | 长期方向、阶段路线、Owner 控制规则和 Agent 提案检查表 |
+| [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | Day 1-7 完整开发计划，5 条并行线 |
+| [每日战情板](7_DAY_BATTLE_BOARD.md) | 7 天每日进度追踪 |
 | [Agent Commerce OS 完整蓝图](LINGMIRROR_AGENT_COMMERCE_OS_BLUEPRINT.md) | 完整产品定位、系统分层、开发路径 |
 | [产品愿景与 MVP](PRODUCT_VISION_AND_MVP.md) | 产品定位、第一可用版本定义 |
 | [路线图](ROADMAP.md) | Phase 0–8 详细阶段规划 |
 | [项目治理与 Agent 协作规范](PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | 协作规则、验收标准 |
 | [Active Stack Policy](ACTIVE_STACK_POLICY.md) | Go + Next 活跃技术栈和旧栈边界 |
 | [AIOS 基础设施架构](aios-architecture.md) | AIOS 内核层 11 个基础设施模块的接口契约与实现路径 |
+| [经营闭环审计](ONE_PERSON_AGENT_COMPANY_LOOP_AUDIT.md) | 8 环节经营闭环当前可用性评估 |
+| [每日验收日志](DAILY_ACCEPTANCE_LOG.md) | Day 0-7 每日交付验收记录 |
+| [Claude Code 工作流](CLAUDE_CODE_AGENT_WORKFLOW.md) | Subagent 定义、并行策略、日终验证 |
 
 ## 🧠 知识库 (Knowledge Base)
 
@@ -48,11 +54,17 @@
 
 | 文档 | 说明 |
 |------|------|
+| [Owner-First 开发协议](governance/OWNER_FIRST_PROTOCOL.md) | 非技术 Owner 如何提需求，Agent 如何澄清、拆解、验收和汇报 |
+| [平台宪法](governance/PLATFORM_CONSTITUTION.md) | 平台优先最高规则：系统分层、风险等级、禁止事项、Owner 决策边界 |
+| [Agent 开发协议](governance/AGENT_DEVELOPMENT_PROTOCOL.md) | 多 Agent 角色、开工检查、review、QA、交接规则 |
+| [Kernel 契约](governance/KERNEL_CONTRACTS.md) | EventBus、Command、Scheduler、ToolBridge、Approval、Audit 等内核契约 |
+| [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 当前 Docker/Go/Next/PostgreSQL 运维命令 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
+| [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [AgentOS Phase 1 实现计划](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) | 第一版工程骨架总控台 |
 | [Agent Commerce 动作中枢计划](superpowers/plans/2026-06-22-agent-commerce-action-center.md) | Phase 2 动作提案、审批、执行、复盘 |
 | [核心模块架构](PERMISSIONS_AND_AUDIT.md) | 权限系统 + 审计日志设计 |

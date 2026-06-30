@@ -190,8 +190,8 @@ func (a *SettlementReconAgent) registerTools() {
 //   - "cash_flow_watch"       -- monitor platform balances and forecast cash flow
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
-func (a *SettlementReconAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	result, err := a.registry.Call(context.Background(), decisionPoint, ctx)
+func (a *SettlementReconAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	result, err := a.registry.Call(ctx, decisionPoint, params)
 	if err != nil {
 		return map[string]interface{}{
 			"status":         "unknown",

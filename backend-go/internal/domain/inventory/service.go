@@ -11,6 +11,108 @@ import (
 	"gorm.io/gorm"
 )
 
+// ── Cross-Platform Sync ────────────────────────────────────────────────────
+
+// SyncAcrossPlatforms prevents overselling by checking inventory across all
+// platforms. If total committed stock (sum of active listings across platforms)
+// exceeds available stock, it flags the result.
+func (s *Service) SyncAcrossPlatforms(ctx context.Context, productID int64) (*CrossPlatformSyncResult, error) {
+	// Get total available inventory for all SKUs belonging to this product.
+	var availableInventory int
+	if err := s.db.WithContext(ctx).
+		Raw(`SELECT COALESCE(SUM(i.quantity), 0)
+			 FROM inventory i
+			 JOIN sku sk ON sk.id = i.sku_id
+			 WHERE sk.product_id = ?`, productID).
+		Scan(&availableInventory).Error; err != nil {
+		return nil, fmt.Errorf("sync: failed to sum available inventory: %w", err)
+	}
+
+	// Get all active listings for this product with per-platform committed
+	// quantity from published_data->>'stock'. If the field is missing or
+	// null we treat it as 1 (assumes each active listing reserves at least one unit).
+	type listingRow struct {
+		PlatformID int64
+		Status     string
+		Quantity   int
+	}
+	var listings []listingRow
+	if err := s.db.WithContext(ctx).
+		Raw(`SELECT platform_id, status,
+			        COALESCE((published_data->>'stock')::int, 1) AS quantity
+			 FROM product_listing
+			 WHERE product_id = ?
+			   AND status IN ('active','live','published')`, productID).
+		Scan(&listings).Error; err != nil {
+		return nil, fmt.Errorf("sync: failed to query active listings: %w", err)
+	}
+
+	totalCommitted := 0
+	platformBreakdown := make([]PlatformCommitment, 0, len(listings))
+	for _, l := range listings {
+		totalCommitted += l.Quantity
+		platformBreakdown = append(platformBreakdown, PlatformCommitment{
+			PlatformID: l.PlatformID,
+			Status:     l.Status,
+			Committed:  l.Quantity,
+			MaxAllowed: availableInventory,
+		})
+	}
+
+	oversellDetected := totalCommitted > availableInventory
+	oversellBy := 0
+	if oversellDetected {
+		oversellBy = totalCommitted - availableInventory
+	}
+
+	// Log the oversell detection to the oversell log table.
+	alertGenerated := false
+	if oversellDetected {
+		alertGenerated = true
+		_ = s.db.WithContext(ctx).Create(&InventoryOversellLog{
+			ProductID:      productID,
+			AvailableStock: availableInventory,
+			TotalCommitted: totalCommitted,
+			OversellBy:     oversellBy,
+			DetectedAt:     time.Now(),
+			Status:         "open",
+		}).Error
+	}
+
+	return &CrossPlatformSyncResult{
+		ProductID:          productID,
+		AvailableInventory: availableInventory,
+		TotalCommitted:     totalCommitted,
+		OversellDetected:   oversellDetected,
+		OversellBy:         oversellBy,
+		PlatformBreakdown:  platformBreakdown,
+		AlertGenerated:     alertGenerated,
+	}, nil
+}
+
+// ListOversellReport returns all oversell detections with pagination.
+func (s *Service) ListOversellReport(ctx context.Context, page, size int) ([]InventoryOversellLog, int64, error) {
+	var items []InventoryOversellLog
+	var total int64
+
+	q := s.db.WithContext(ctx).Model(&InventoryOversellLog{})
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	offset := (page - 1) * size
+	if err := q.Order("detected_at DESC").Offset(offset).Limit(size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // Service provides inventory business logic.
 type Service struct {
 	db     *gorm.DB
