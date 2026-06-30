@@ -2,8 +2,11 @@ package httpx
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/agent"
@@ -15,13 +18,10 @@ import (
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/aftersales"
-	"github.com/lingmirror/backend-go/internal/domain/agentlearning"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/category"
-	"github.com/lingmirror/backend-go/internal/domain/content"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
@@ -34,35 +34,22 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
-	"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
-	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
-	"github.com/lingmirror/backend-go/internal/domain/mock"
-	"github.com/lingmirror/backend-go/internal/domain/owner"
-
-	"github.com/lingmirror/backend-go/internal/domain/completeness"
-	"github.com/lingmirror/backend-go/internal/domain/profit"
-	"github.com/lingmirror/backend-go/internal/domain/loop"
-
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
 	"github.com/lingmirror/backend-go/internal/domain/metabolism"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/order"
 	"github.com/lingmirror/backend-go/internal/domain/orderimport"
-	"github.com/lingmirror/backend-go/internal/domain/orchestration"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
-	"github.com/lingmirror/backend-go/internal/domain/personalrule"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
-	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
 	"github.com/lingmirror/backend-go/internal/domain/settings"
-	"github.com/lingmirror/backend-go/internal/domain/sentiment"
 	"github.com/lingmirror/backend-go/internal/domain/settlement"
 	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
@@ -70,20 +57,17 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
-	"github.com/lingmirror/backend-go/internal/domain/support"
-	"github.com/lingmirror/backend-go/internal/domain/tariff"
+		"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
-	"github.com/lingmirror/backend-go/internal/migration"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
-	"github.com/lingmirror/backend-go/internal/prismadapter"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"time"
 )
 
 // NewRouter creates and configures the Gin engine with all routes.
@@ -105,13 +89,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Health check
 	r.GET("/api/health", func(c *gin.Context) {
-		mc := migration.NewChecker(db, logger)
 		c.JSON(http.StatusOK, gin.H{
-			"status":             "ok",
-			"version":            cfg.Server.Version,
-			"migration_version":  mc.CurrentVersion(),
-			"migration_expected": mc.ExpectedVersion(),
-			"db_reachable":       true,
+			"status":  "ok",
+			"version": "0.1.0",
 		})
 	})
 
@@ -120,10 +100,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
-	// ===================================================	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
-	// ===================================================
+	// ==========================================================
+	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
+	// ==========================================================
+
 	// Create event bus (with optional outbox persistence).
-	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithDLQ(db))
+	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
 	busCtx, busCancel := context.WithCancel(context.Background())
 	defer busCancel()
 	bus.Start(busCtx)
@@ -147,6 +129,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
 	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget)
 
+	// ToolBridge for sourcing data collection
+	_ = toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
+
 	// Reverse logistics return rate tracker (DB-backed).
 	returnRateTracker := aftersales.NewReturnRateTracker(db, logger)
 
@@ -154,8 +139,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// and handles reverse logistics via HandleAftersaleReturn).
 	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker)
 
-	// ===================================================	// Event Bus Subscriptions: agent triggers + pipeline chains
-	// ===================================================
+	// ==========================================================
+	// Event Bus Subscriptions: agent triggers + pipeline chains
+	// ==========================================================
+
 	// scheduler.tick.A5 → orchestrator runs A5 stock_alert
 	bus.Subscribe("scheduler.tick.A5", func(ctx context.Context, evt eventbus.Event) error {
 		_, err := aiOrch.Run(&ai.RunAgentRequest{
@@ -239,21 +226,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		svc := entropy.NewService(db, logger)
 		_, err := svc.RunDefenses(0)
 		return err
-	})
-
-	// scheduler.tick.freshness -> check for stale product data
-	bus.Subscribe("scheduler.tick.freshness", func(ctx context.Context, evt eventbus.Event) error {
-		fSvc := producthub.NewFreshnessService(db, logger)
-		stale, err := fSvc.CheckFreshness(ctx)
-		if err != nil {
-			return err
-		}
-		if len(stale) > 0 {
-			logger.Warn("stale product data detected",
-				zap.Int("count", len(stale)),
-			)
-		}
-		return nil
 	})
 
 	// scheduler.tick.A8 → sourcing batch scan
@@ -342,8 +314,96 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return nil
 	})
 
-	// ===================================================	// Schedule all agent periodic tasks
-	// ===================================================
+	// -------------------------------------------------------
+	// Agent Decision Audit Chain: log every agent.decided.*
+	// event to the operation_log for the full audit trail.
+	// -------------------------------------------------------
+	auditSvc := operationlog.NewService(db, logger)
+	bus.Subscribe("agent.decided.**", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		if len(payload) == 0 {
+			logger.Warn("agent.decided event with empty payload, skipping audit",
+				zap.String("topic", evt.Topic))
+			return nil
+		}
+
+		// Extract agent_id and decision_point from payload or topic.
+		agentID, _ := payload["agent_id"].(string)
+		decisionPoint, _ := payload["decision_point"].(string)
+		if agentID == "" || decisionPoint == "" {
+			// Parse from topic: agent.decided.{agent_id}.{decision_point}
+			parts := strings.SplitN(evt.Topic, ".", 4)
+			if len(parts) >= 4 {
+				if agentID == "" {
+					agentID = parts[2]
+				}
+				if decisionPoint == "" {
+					decisionPoint = parts[3]
+				}
+			}
+		}
+
+		// Extract audit-relevant fields.
+		confidence, _ := payload["confidence"].(float64)
+		riskLevel, _ := payload["risk_level"].(string)
+		status, _ := payload["status"].(string)
+		if riskLevel == "" {
+			// Some agents use risk instead of risk_level.
+			if r, ok := payload["risk"].(string); ok {
+				riskLevel = r
+			}
+		}
+
+		// Build a compact content JSON summarizing the decision.
+		contentParts := []string{}
+		if status != "" {
+			contentParts = append(contentParts, "status:"+status)
+		}
+		if riskLevel != "" {
+			contentParts = append(contentParts, "risk:"+riskLevel)
+		}
+		if action, ok := payload["action"].(string); ok {
+			contentParts = append(contentParts, "action:"+action)
+		}
+		contentSummary := strings.Join(contentParts, " ")
+		if contentSummary == "" {
+			contentSummary = agentID + "/" + decisionPoint
+		}
+
+		// Marshal the full payload as content JSON for audit records.
+		payloadBytes, _ := json.Marshal(payload)
+		content := string(payloadBytes)
+		if len(content) > 2048 {
+			content = content[:2048]
+		}
+
+		entry := &operationlog.OperationLog{
+			Module:     fmt.Sprintf("agent:%s", agentID),
+			Action:     "agent_decision",
+			ResourceID: decisionPoint,
+			Content:    content,
+			Operator:   agentID,
+			Result:     "success",
+			Duration:   0,
+		}
+		if err := auditSvc.Create(entry); err != nil {
+			logger.Warn("agent decision audit log write failed",
+				zap.String("topic", evt.Topic),
+				zap.Error(err))
+		}
+		logger.Debug("agent decision audit logged",
+			zap.String("agent_id", agentID),
+			zap.String("decision_point", decisionPoint),
+			zap.Float64("confidence", confidence),
+			zap.String("risk_level", riskLevel),
+			zap.String("summary", contentSummary))
+		return nil
+	})
+
+	// ==========================================================
+	// Schedule all agent periodic tasks
+	// ==========================================================
+
 	sched.Register(scheduler.Task{
 		ID: "tick-g0", AgentID: "G0", DecisionPoint: "system_health",
 		Interval: time.Minute * 5, Description: "协调仲裁健康检查",
@@ -388,10 +448,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
-	sched.Register(scheduler.Task{
-		ID: "tick-freshness", AgentID: "freshness", DecisionPoint: "freshness_check",
-		Interval: time.Hour * 2, Description: "数据新鲜度扫描",
-	})
 		sched.Register(scheduler.Task{
 			ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
 			Interval: time.Minute * 15, Description: "Ozon 订单同步",
@@ -419,20 +475,18 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
 
-	// ===================================================	// HTTP routes
-	// ===================================================
+	// ==========================================================
+	// HTTP routes
+	// ==========================================================
+
 	// API v1 routes
 	api := r.Group("/api/v1")
 
 	// API v1 Health check (public)
 	api.GET("/health", func(c *gin.Context) {
-		mc := migration.NewChecker(db, logger)
 		c.JSON(http.StatusOK, gin.H{
-			"status":             "ok",
-			"version":            cfg.Server.Version,
-			"migration_version":  mc.CurrentVersion(),
-			"migration_expected": mc.ExpectedVersion(),
-			"db_reachable":       true,
+			"status":  "ok",
+			"version": "0.1.0",
 		})
 	})
 
@@ -443,76 +497,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	protected := api.Group("")
 	protected.Use(middleware.Auth(cfg))
 
-	// RBAC: current user permissions (accessible to all authenticated users)
-	rbac.RegisterPublicRoutes(protected, db, logger)
-
-	// RBAC: admin routes (requires rbac.manage permission)
-	rbacAdminGroup := protected.Group("")
-	rbacAdminGroup.Use(middleware.RequirePermission(db, "rbac.manage"))
-	rbac.RegisterRoutes(rbacAdminGroup, db, logger)
-
-		// System management routes (requires rbac.manage permission)
-		systemGroup := protected.Group("/system")
-		systemGroup.Use(middleware.RequirePermission(db, "rbac.manage"))
-
-		// GET /api/v1/system/events/dlq — paginated DLQ events
-		systemGroup.GET("/events/dlq", func(c *gin.Context) {
-			dlq := bus.DLQ()
-			if dlq == nil {
-				c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": []interface{}{}, "total": 0, "page": 1, "size": 20})
-				return
-			}
-			page := 1
-			size := 20
-			if p, err := parseIntParam(c.Query("page"), 1); err == nil {
-				page = p
-			}
-			if s, err := parseIntParam(c.Query("size"), 20); err == nil {
-				size = s
-			}
-			events, total, err := dlq.ListDLQ(page, size)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{
-				"code": 0, "message": "ok", "data": events,
-				"total": total, "page": page, "size": size,
-			})
-		})
-
-		// POST /api/v1/system/events/dlq/replay — replay DLQ events by ID
-		systemGroup.POST("/events/dlq/replay", func(c *gin.Context) {
-			dlq := bus.DLQ()
-			if dlq == nil {
-				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "DLQ not configured"})
-				return
-			}
-			var req struct {
-				IDs []uint `json:"ids"`
-			}
-			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid request: " + err.Error()})
-				return
-			}
-			if len(req.IDs) == 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "ids is required"})
-				return
-			}
-			replayed, err := dlq.ReplayEventsByIDs(bus, req.IDs)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"replayed": replayed}})
-		})
-
-		// GET /api/v1/system/scheduler — scheduler task runtime state
-		systemGroup.GET("/scheduler", func(c *gin.Context) {
-			states := sched.TaskRunState()
-			c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": states})
-		})
-
+	// RBAC routes
+	rbac.RegisterRoutes(protected, db, logger)
 
 	// Agent routes (wired through the AI orchestrator)
 	agent.RegisterRoutes(protected, db, logger, aiOrch)
@@ -616,62 +602,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
-
-	// Initialize Prism client (config-driven; nil if disabled).
-	var prismSvc prismadapter.PrismService
-	prismStrict := cfg.Prism.Strict
-	if cfg.Prism.Enabled && cfg.Prism.BaseURL != "" {
-			timeout := time.Duration(cfg.Prism.Timeout) * time.Second
-			if timeout <= 0 {
-				timeout = 30 * time.Second
-		}
-		prismSvc = prismadapter.NewClient(cfg.Prism.BaseURL, cfg.Prism.APIKey, timeout)
-		logger.Info("Prism client initialized", zap.String("base_url", cfg.Prism.BaseURL), zap.Bool("strict", prismStrict))
-	} else {
-		logger.Info("Prism client disabled")
-	}
-	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
-
-	candidate.RegisterRoutes(protected, db, logger)
-	completeness.RegisterRoutes(protected, db, logger)
-	profit.RegisterRoutes(protected, db, logger)
-	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
-	mock.RegisterRoutes(protected, db, logger)
-	// Auto-seed mock demo data on startup
-	func() {
-		ms := mock.NewService(db, logger.Named("mock"))
-		if err := ms.SeedMockData(); err != nil {
-			logger.Warn("mock data seed failed", zap.Error(err))
-		}
-	}()
-
-	owner.RegisterRoutes(protected, db, logger)
-
-
-
+	listingtask.RegisterRoutes(protected, db, logger)
 	shipping.RegisterRoutes(protected, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
-
-	// Order routes (requires order.read permission)
-	orderGroup := protected.Group("")
-	orderGroup.Use(middleware.RequirePermission(db, "order.read"))
-	order.RegisterRoutes(orderGroup, db, logger)
-	orderimport.RegisterRoutes(orderGroup, db, logger)
-
-	// Settlement routes (requires finance.read permission)
-	settlementGroup := protected.Group("")
-	settlementGroup.Use(middleware.RequirePermission(db, "finance.read"))
-	settlement.RegisterRoutes(settlementGroup, db, logger)
-
-	// Finance routes (requires finance.read permission)
-	financeGroup := protected.Group("")
-	financeGroup.Use(middleware.RequirePermission(db, "finance.read"))
-	finance.RegisterRoutes(financeGroup, db, logger)
+	order.RegisterRoutes(protected, db, logger)
+	orderimport.RegisterRoutes(protected, db, logger)
+	settlement.RegisterRoutes(protected, db, logger)
+	finance.RegisterRoutes(protected, db, logger)
 	decision.RegisterRoutes(protected, db, logger)
 	allocation.RegisterRoutes(protected, db, logger)
 	exceptions.RegisterRoutes(protected, db, logger)
 	notification.RegisterRoutes(protected, db, logger)
-		content.RegisterRoutes(protected, db, logger, aiOrch)
 	dashboard.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
 	settings.RegisterRoutes(protected, db, logger)
@@ -705,21 +646,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
 		logger.Info("metabolism: M1 tick received")
-		err := m1Svc.Execute(false)
-		return err
+			_, err := m1Svc.ScoreAndExcreteEntities(false)
+			return err
 	})
 	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
-
-	// Previously-unregistered domain modules (Issue #78): code existed but
-	// RegisterRoutes was never called, so the endpoints were unreachable.
-	agentlearning.RegisterRoutes(protected, db, logger)
-	approval.RegisterRoutes(protected, db, logger)
-	landedcost.RegisterRoutes(protected, db, logger)
-	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
-	personalrule.RegisterRoutes(protected, db, logger)
-	producthub.RegisterRoutes(protected, db, logger)
-	sentiment.RegisterRoutes(protected, db, logger)
-	support.RegisterRoutes(protected, db, logger)
 
 	// WebSocket route
 	hub := realtime.NewHub(logger)
@@ -743,17 +673,4 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 		Context:       ctx,
 	})
 	return err
-}
-
-// parseIntParam parses an integer from a string with a default fallback.
-func parseIntParam(s string, defaultVal int) (int, error) {
-	if s == "" {
-		return defaultVal, nil
-	}
-	n := 0
-	_, err := fmt.Sscanf(s, "0", &n)
-	if err != nil {
-		return defaultVal, err
-	}
-	return n, nil
 }
