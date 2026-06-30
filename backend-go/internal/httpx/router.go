@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/agent"
+		"github.com/lingmirror/backend-go/internal/agent/pipeline"
 	"github.com/lingmirror/backend-go/internal/agentos"
 	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
@@ -129,6 +130,18 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
 	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget)
 
+	// Pipeline engine for declarative decision DAG (replaces inline chain handlers).
+	pipelineEng := pipeline.NewEngine(func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
+		timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+			AgentID:       agentID,
+			DecisionPoint: dp,
+			Context:       ctxMap,
+		})
+		return err
+	}, pipeline.DefaultEdges, logger)
+
 	// ToolBridge for sourcing data collection
 	_ = toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
 
@@ -221,10 +234,28 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		_, err := ug.AutoUpgrade()
 		return err
 	})
-	// scheduler.tick.entropy → run entropy defenses
+	// scheduler.tick.entropy → run entropy defenses + agent health check
 	bus.Subscribe("scheduler.tick.entropy", func(ctx context.Context, evt eventbus.Event) error {
 		svc := entropy.NewService(db, logger)
 		_, err := svc.RunDefenses(0)
+
+		// Check agent health and publish unhealthy agents to the bus.
+		unhealthy, healthErr := svc.CheckAgentHealth()
+		if healthErr != nil {
+			logger.Warn("entropy: agent health check failed", zap.Error(healthErr))
+		} else {
+			for _, ua := range unhealthy {
+				logger.Warn("entropy: agent health below threshold",
+					zap.String("agent_id", ua.AgentID),
+					zap.Float64("health_score", ua.HealthScore),
+				)
+				bus.Publish(ctx, "entropy.agent.unhealthy."+ua.AgentID, "entropy", map[string]interface{}{
+					"agent_id":     ua.AgentID,
+					"health_score": ua.HealthScore,
+				})
+			}
+		}
+
 		return err
 	})
 
@@ -234,84 +265,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 
 	// -------------------------------------------------------
-	// Pipeline chain rules (via event bus)
+	// Declarative Pipeline DAG (replaces inline chain handlers).
+	// All pipeline edges are defined in pipeline.DefaultEdges and evaluated
+	// by pipelineEng.Dispatch. This wildcard subscription catches all
+	// agent.decided.* events and routes them through the DAG engine.
 	// -------------------------------------------------------
-
-	// A5 stock_alert (red) → G3 discount_risk_check
-	bus.Subscribe("agent.decided.A5.stock_alert", func(ctx context.Context, evt eventbus.Event) error {
-		payload := evt.Payload
-		if status, ok := payload["stock_status"].(string); ok && status == "red" {
-			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer timeoutCancel()
-			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
-				AgentID:       "G3",
-				DecisionPoint: "discount_risk_check",
-				Context:       payload,
-			})
-			return err
-		}
-		return nil
-	})
-
-	// G3 discount_risk_check (block) → A6 profit_watch
-	bus.Subscribe("agent.decided.G3.discount_risk_check", func(ctx context.Context, evt eventbus.Event) error {
-		payload := evt.Payload
-		if action, ok := payload["action"].(string); ok && action == "block" {
-			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer timeoutCancel()
-			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
-				AgentID:       "A6",
-				DecisionPoint: "profit_watch",
-				Context:       payload,
-			})
-			return err
-		}
-		return nil
-	})
-
-	// A6 profit_watch (loss) → A2 listing_optimize
-	bus.Subscribe("agent.decided.A6.profit_watch", func(ctx context.Context, evt eventbus.Event) error {
-		payload := evt.Payload
-		isLoss, _ := payload["is_loss"].(bool)
-		belowThreshold, _ := payload["below_threshold"].(bool)
-		if isLoss || belowThreshold {
-			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer timeoutCancel()
-			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
-				AgentID:       "A2",
-				DecisionPoint: "listing_optimize",
-				Context:       payload,
-			})
-			return err
-		}
-		return nil
-	})
-
-	// G0 system_health (anomaly_count > 3) → G1 dashboard_overview
-	bus.Subscribe("agent.decided.G0.system_health", func(ctx context.Context, evt eventbus.Event) error {
-		payload := evt.Payload
-		if count, ok := payload["anomaly_count"].(int); ok && count > 3 {
-			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer timeoutCancel()
-			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
-				AgentID:       "G1",
-				DecisionPoint: "dashboard_overview",
-				Context:       payload,
-			})
-			return err
-		}
-		// Also check for float64 (JSON unmarshal from scheduler)
-		if count, ok := payload["anomaly_count"].(float64); ok && count > 3 {
-			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer timeoutCancel()
-			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
-				AgentID:       "G1",
-				DecisionPoint: "dashboard_overview",
-				Context:       payload,
-			})
-			return err
-		}
-		return nil
+	bus.Subscribe("agent.decided.*", func(ctx context.Context, evt eventbus.Event) error {
+		return pipelineEng.Dispatch(ctx, evt)
 	})
 
 	// -------------------------------------------------------
