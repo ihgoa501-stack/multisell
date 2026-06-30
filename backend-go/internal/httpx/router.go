@@ -137,7 +137,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI orchestrator (shared by /ai and /agents routes).
 	aiosCfg := setup.Initialize(db, bus, logger)
 	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
-	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget)
+	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget).WithBus(bus)
 
 	// Pipeline engine for declarative decision DAG (replaces inline chain handlers).
 	pipelineEng := pipeline.NewEngine(func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
@@ -279,8 +279,79 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// by pipelineEng.Dispatch. This wildcard subscription catches all
 	// agent.decided.* events and routes them through the DAG engine.
 	// -------------------------------------------------------
+
+	// Wildcard DAG subscription — routes all agent decisions through the pipeline engine.
 	bus.Subscribe("agent.decided.*", func(ctx context.Context, evt eventbus.Event) error {
 		return pipelineEng.Dispatch(ctx, evt)
+	})
+
+	// A5 stock_alert (red) → G3 discount_risk_check
+	bus.Subscribe("agent.decided.A5.stock_alert", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		if status, ok := payload["stock_status"].(string); ok && status == "red" {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "G3",
+				DecisionPoint: "discount_risk_check",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			return err
+		}
+		return nil
+	})
+
+	// A6 profit_watch (loss) → A2 listing_optimize
+	bus.Subscribe("agent.decided.A6.profit_watch", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		isLoss, _ := payload["is_loss"].(bool)
+		belowThreshold, _ := payload["below_threshold"].(bool)
+		if isLoss || belowThreshold {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "A2",
+				DecisionPoint: "listing_optimize",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			return err
+		}
+		return nil
+	})
+
+	// G0 system_health (anomaly_count > 3) → G1 dashboard_overview
+	bus.Subscribe("agent.decided.G0.system_health", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		if count, ok := payload["anomaly_count"].(int); ok && count > 3 {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "G1",
+				DecisionPoint: "dashboard_overview",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			return err
+		}
+		// Also check for float64 (JSON unmarshal from scheduler)
+		if count, ok := payload["anomaly_count"].(float64); ok && count > 3 {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "G1",
+				DecisionPoint: "dashboard_overview",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			return err
+		}
+		return nil
 	})
 
 	// -------------------------------------------------------
@@ -290,10 +361,28 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	auditSvc := operationlog.NewService(db, logger)
 	bus.Subscribe("agent.decided.**", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
+
 		if len(payload) == 0 {
 			logger.Warn("agent.decided event with empty payload, skipping audit",
 				zap.String("topic", evt.Topic))
 			return nil
+		}
+
+		// Chain: if action is "block", trigger A6 profit_watch proactively.
+		if action, ok := payload["action"].(string); ok && action == "block" {
+			timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer timeoutCancel()
+			traceID, _ := payload["trace_id"].(string)
+			_, err := aiOrch.RunWithContext(timeoutCtx, &ai.RunAgentRequest{
+				AgentID:       "A6",
+				DecisionPoint: "profit_watch",
+				Context:       payload,
+				ParentTraceID: traceID,
+			})
+			if err != nil {
+				logger.Warn("agent decision chain: A6 profit_watch triggered via block action",
+					zap.Error(err))
+			}
 		}
 
 		// Extract agent_id and decision_point from payload or topic.

@@ -18,7 +18,16 @@ import (
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"crypto/sha256"
+	"sort"
+	"sync"
 )
+
+// EventPublisher publishes events to the event bus.
+// This interface avoids direct dependency on the eventbus package.
+type EventPublisher interface {
+	Publish(ctx context.Context, topic, source string, payload map[string]interface{}) (string, error)
+}
 
 // Orchestrator coordinates AI agent workflows.
 type Orchestrator struct {
@@ -29,6 +38,8 @@ type Orchestrator struct {
 	provider   LLMProvider
 	agentImpls map[string]impl.Agent
 	hub        *realtime.Hub
+	bus           EventPublisher
+	decisionCache *decisionCache
 
 	// guardrails is the AIOS guardrails chain for L1-L5 defensive checks.
 	// When nil, all checks pass through (no-op). Set via WithGuardrails().
@@ -46,6 +57,7 @@ type Orchestrator struct {
 // NewOrchestrator creates a new AI orchestrator.
 func NewOrchestrator(db *gorm.DB, logger *zap.Logger) *Orchestrator {
 	return &Orchestrator{
+		decisionCache: newDecisionCache(5 * time.Minute),
 		db:         db,
 		logger:     logger,
 		registry:   DefaultRegistry(),
@@ -84,6 +96,30 @@ func (o *Orchestrator) WithHub(hub *realtime.Hub) *Orchestrator {
 	return o
 }
 
+// WithBus sets the event bus for publishing agent decision events.
+func (o *Orchestrator) WithBus(bus EventPublisher) *Orchestrator {
+	o.bus = bus
+	return o
+}
+
+// WithDecisionCache configures the decision cache TTL. A zero TTL disables caching.
+func (o *Orchestrator) WithDecisionCache(ttl time.Duration) *Orchestrator {
+	if ttl <= 0 {
+		o.decisionCache = nil
+	} else {
+		o.decisionCache = newDecisionCache(ttl)
+	}
+	return o
+}
+
+// ClearDecisionCache clears all cached decision results.
+func (o *Orchestrator) ClearDecisionCache() {
+	if o.decisionCache != nil {
+		o.decisionCache.clear()
+	}
+}
+
+
 // WithGuardrails sets the AIOS guardrails chain for L1-L5 defensive checks.
 func (o *Orchestrator) WithGuardrails(c *guardrails.Chain) *Orchestrator {
 	o.guardrails = c
@@ -103,6 +139,7 @@ type RunAgentRequest struct {
 	UserID        *int64                 `json:"user_id"`
 	Context       map[string]interface{} `json:"context"`
 	Stream        bool                   `json:"stream"`
+	ParentTraceID string                 `json:"parent_trace_id,omitempty"`
 }
 
 // RunAgentResult is the output of an agent run.
@@ -322,6 +359,22 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		TokenCount:  380 + len(toolCalls)*120,
 		Status:      "completed",
 	})
+	// Cache the result if caching is enabled.
+	if o.decisionCache != nil {
+		o.decisionCache.set(req.AgentID, req.DecisionPoint, req.Context, &RunAgentResult{
+			TraceID:       traceID,
+			AgentID:       agent.ID,
+			DecisionPoint: req.DecisionPoint,
+			Output:        output,
+			Confidence:    confidence,
+			RiskLevel:     riskLevel,
+			Action:        action,
+		})
+	}
+
+	// Publish agent.decided.* event to the event bus for pipeline chaining.
+	o.publishDecisionEvent(traceID, agent, req, output, confidence, riskLevel)
+
 
 	// Trigger trust score recalculation asynchronously — must not block the
 	// agent run response. Recalculation iterates all agents and can be expensive
@@ -356,6 +409,36 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		Action:        action,
 	}, nil
 }
+
+// publishDecisionEvent publishes an agent.decided.* event to the event bus
+// so that pipeline chain subscribers can react to this agent's decision.
+func (o *Orchestrator) publishDecisionEvent(traceID string, agent AgentSpec, req *RunAgentRequest, output map[string]interface{}, confidence float64, riskLevel string) {
+	if o.bus == nil {
+		return
+	}
+	payload := make(map[string]interface{}, len(output)+5)
+	for k, v := range output {
+		payload[k] = v
+	}
+	payload["trace_id"] = traceID
+	payload["agent_id"] = agent.ID
+	payload["decision_point"] = req.DecisionPoint
+	payload["confidence"] = confidence
+	payload["risk_level"] = riskLevel
+	if req.ParentTraceID != "" {
+		payload["parent_trace_id"] = req.ParentTraceID
+	}
+	topic := fmt.Sprintf("agent.decided.%s.%s", agent.ID, req.DecisionPoint)
+	go func() {
+		_, err := o.bus.Publish(context.Background(), topic, "orchestrator", payload)
+		if err != nil {
+			o.logger.Warn("failed to publish agent.decided event",
+				zap.String("topic", topic),
+				zap.Error(err))
+		}
+	}()
+}
+
 
 // persistAction stores a unified action via the Service to avoid duplicates.
 func (o *Orchestrator) persistAction(in *CreateActionInput) (*UnifiedAction, error) {
@@ -732,3 +815,81 @@ func mustJSON(v interface{}) json.RawMessage {
 
 // ErrUnknownAgent is returned when an agent ID cannot be resolved.
 var ErrUnknownAgent = errors.New("unknown agent")
+
+// decisionCache caches agent decision results with a TTL.
+type decisionCache struct {
+	mu      sync.RWMutex
+	entries map[string]*cacheEntry
+	ttl     time.Duration
+}
+
+type cacheEntry struct {
+	result    *RunAgentResult
+	expiresAt time.Time
+}
+
+func newDecisionCache(ttl time.Duration) *decisionCache {
+	return &decisionCache{
+		entries: make(map[string]*cacheEntry),
+		ttl:     ttl,
+	}
+}
+
+func (c *decisionCache) cacheKey(agentID, decisionPoint string, ctx map[string]interface{}) string {
+	h := sha256.New()
+	h.Write([]byte(agentID))
+	h.Write([]byte{0})
+	h.Write([]byte(decisionPoint))
+	if ctx != nil {
+		keys := make([]string, 0, len(ctx))
+		for k := range ctx {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			h.Write([]byte(k))
+			h.Write([]byte{'='})
+			switch v := ctx[k].(type) {
+			case string:
+				h.Write([]byte(v))
+			case float64:
+				fmt.Fprintf(h, "%f", v)
+			default:
+				b, _ := json.Marshal(v)
+				h.Write(b)
+			}
+			h.Write([]byte{'&'})
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func (c *decisionCache) get(agentID, decisionPoint string, ctx map[string]interface{}) (*RunAgentResult, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	key := c.cacheKey(agentID, decisionPoint, ctx)
+	entry, ok := c.entries[key]
+	if !ok {
+		return nil, false
+	}
+	if time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.result, true
+}
+
+func (c *decisionCache) set(agentID, decisionPoint string, ctx map[string]interface{}, result *RunAgentResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := c.cacheKey(agentID, decisionPoint, ctx)
+	c.entries[key] = &cacheEntry{
+		result:    result,
+		expiresAt: time.Now().Add(c.ttl),
+	}
+}
+
+func (c *decisionCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = make(map[string]*cacheEntry)
+}
