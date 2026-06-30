@@ -65,6 +65,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
+	"github.com/lingmirror/backend-go/internal/domain/supplyevent"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
@@ -280,6 +281,48 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// -------------------------------------------------------
 	bus.Subscribe("agent.decided.*", func(ctx context.Context, evt eventbus.Event) error {
 		return pipelineEng.Dispatch(ctx, evt)
+	})
+
+	// A5 stock_alert (red) publishes supplychain.stock.critical for approval-gated replenishment.
+	bus.Subscribe("agent.decided.A5.stock_alert", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		status, _ := payload["stock_status"].(string)
+		if status != "red" {
+			return nil
+		}
+
+		skuCode, _ := payload["sku_code"].(string)
+		var skuID int64
+		if skuCode != "" {
+			var s sku.Sku
+			if err := db.WithContext(ctx).Where("code = ?", skuCode).First(&s).Error; err == nil {
+				skuID = s.ID
+			} else {
+				logger.Warn("A5 red stock bridge: sku_code lookup failed",
+					zap.String("sku_code", skuCode), zap.Error(err))
+			}
+		}
+		if skuID == 0 {
+			return nil
+		}
+
+		stockCritical := supplyevent.StockCritical{
+			SkuID:        skuID,
+			CurrentStock: int(toInt(payload["sellable_stock"])),
+			SafetyStock:  int(toInt(payload["safety_stock_days"])),
+			SellableDays: toFloat64(payload["sellable_days"]),
+			ReportedAt:   time.Now(),
+		}
+		scPayload, err := supplyevent.ToPayload(stockCritical)
+		if err != nil {
+			logger.Warn("A5 red stock bridge: marshal failed", zap.Error(err))
+			return nil
+		}
+		if _, err := bus.Publish(ctx, "supplychain.stock.critical", "A5", scPayload); err != nil {
+			logger.Warn("A5 red stock bridge: publish failed",
+				zap.Int64("sku_id", skuID), zap.Error(err))
+		}
+		return nil
 	})
 
 	// -------------------------------------------------------
@@ -681,4 +724,28 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 		Context:       ctx,
 	})
 	return err
+}
+
+func toInt(v interface{}) int64 {
+	switch n := v.(type) {
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	}
+	return 0
+}
+
+func toFloat64(v interface{}) float64 {
+	switch n := v.(type) {
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case float64:
+		return n
+	}
+	return 0
 }

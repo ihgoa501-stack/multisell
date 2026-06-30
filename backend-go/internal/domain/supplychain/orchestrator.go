@@ -21,6 +21,33 @@ import (
 	"gorm.io/gorm"
 )
 
+// ActionInput is the supplychain-local shape for creating a UnifiedAction.
+// It mirrors the subset of ai.CreateActionInput that the orchestrator needs;
+// keeping it local avoids importing internal/ai from this domain package.
+type ActionInput struct {
+	SourceTable        string
+	SourceID           string
+	SourceType         string
+	AgentID            string
+	SquadID            string
+	ActionType         string
+	BusinessObjectType string
+	BusinessObjectID   string
+	Title              string
+	Description        string
+	Payload            map[string]interface{}
+	RiskLevel          string
+	RequiresApproval   bool
+	ProposedBy         string
+}
+
+// ActionCreator creates approval-gated UnifiedActions for high-risk
+// operations. Implementations should persist suggestions for approval,
+// not execute refunds, resends, or replenishment automatically.
+type ActionCreator interface {
+	CreateAction(in *ActionInput) (int64, error)
+}
+
 // Orchestrator coordinates supply chain operations across agents
 // (A8 sourcing, A10 quoting, etc.) via the event bus.
 type Orchestrator struct {
@@ -28,6 +55,7 @@ type Orchestrator struct {
 	db            *gorm.DB
 	logger        *zap.Logger
 	returnTracker *aftersales.ReturnRateTracker
+	actions       ActionCreator
 	escalation    *EscalationManager
 }
 
@@ -39,6 +67,13 @@ func NewOrchestrator(bus *eventbus.Bus, db *gorm.DB, logger *zap.Logger, returnT
 		logger:        logger,
 		returnTracker: returnTracker,
 	}
+}
+
+// WithActionCreator wires an ActionCreator for approval-gated high-risk actions.
+// Without a creator, flows still progress and action creation is skipped.
+func (o *Orchestrator) WithActionCreator(ac ActionCreator) *Orchestrator {
+	o.actions = ac
+	return o
 }
 
 // SetEscalationManager injects a 4-level EscalationManager (Issue #35) into the
@@ -207,7 +242,59 @@ func (o *Orchestrator) HandleAftersaleReturn(ctx context.Context, evt eventbus.E
 		zap.Int64("sku_id", skuID),
 		zap.String("status", "inspecting"))
 
+	o.createRefundResendAction(ctx, flow.ID, aftersaleID, orderID, skuID, quantity, reason)
+
 	return nil
+}
+
+// createRefundResendAction creates an approval-gated suggestion for the
+// operator. It never executes refunds or resends automatically.
+func (o *Orchestrator) createRefundResendAction(ctx context.Context, flowID string, aftersaleID, orderID, skuID int64, quantity int, reason string) {
+	if o.actions == nil {
+		o.logger.Warn("HandleAftersaleReturn: no ActionCreator wired; skipping UnifiedAction creation",
+			zap.String("flow_id", flowID), zap.Int64("aftersale_id", aftersaleID))
+		return
+	}
+	payload := map[string]interface{}{
+		"aftersale_id": aftersaleID,
+		"order_id":     orderID,
+		"sku_id":       skuID,
+		"quantity":     quantity,
+		"reason":       reason,
+		"flow_id":      flowID,
+	}
+	desc := "退货已进入逆向物流流程，请审批退款或重发方案。"
+	if reason != "" {
+		desc += " 原因：" + reason
+	}
+	in := &ActionInput{
+		SourceTable:        "supply_chain_flow",
+		SourceID:           flowID,
+		SourceType:         "aftersale_return",
+		AgentID:            "A6",
+		SquadID:            "service",
+		ActionType:         "refund_or_resend",
+		BusinessObjectType: "aftersales_order",
+		BusinessObjectID:   strconv.FormatInt(aftersaleID, 10),
+		Title:              "售后退货审批：退款/重发 #" + strconv.FormatInt(aftersaleID, 10),
+		Description:        desc,
+		Payload:            payload,
+		RiskLevel:          "high",
+		RequiresApproval:   true,
+		ProposedBy:         "supplychain.orchestrator",
+	}
+	actionID, err := o.actions.CreateAction(in)
+	if err != nil {
+		o.logger.Warn("HandleAftersaleReturn: failed to create UnifiedAction",
+			zap.String("flow_id", flowID),
+			zap.Int64("aftersale_id", aftersaleID),
+			zap.Error(err))
+		return
+	}
+	o.logger.Info("HandleAftersaleReturn: UnifiedAction created",
+		zap.Int64("action_id", actionID),
+		zap.String("flow_id", flowID),
+		zap.Int64("aftersale_id", aftersaleID))
 }
 
 // HandleStockCritical processes supplychain.stock.critical events.
@@ -281,7 +368,55 @@ func (o *Orchestrator) HandleStockCritical(ctx context.Context, evt eventbus.Eve
 		zap.Int64("sku_id", skuID),
 		zap.String("status", "sourcing_requested"))
 
+	o.createReplenishAction(flow.ID, skuID, currentStock, safetyStock, sellableDays)
+
 	return nil
+}
+
+// createReplenishAction creates an approval-gated replenishment suggestion.
+// It never places purchase orders automatically.
+func (o *Orchestrator) createReplenishAction(flowID string, skuID int64, currentStock, safetyStock int, sellableDays float64) {
+	if o.actions == nil {
+		o.logger.Warn("HandleStockCritical: no ActionCreator wired; skipping UnifiedAction creation",
+			zap.String("flow_id", flowID), zap.Int64("sku_id", skuID))
+		return
+	}
+	payload := map[string]interface{}{
+		"sku_id":        skuID,
+		"current_stock": currentStock,
+		"safety_stock":  safetyStock,
+		"sellable_days": sellableDays,
+		"flow_id":       flowID,
+	}
+	desc := "库存红色预警，建议创建补货单。该操作涉及采购资金和库存变化，必须人工审批。"
+	in := &ActionInput{
+		SourceTable:        "supply_chain_flow",
+		SourceID:           flowID,
+		SourceType:         "stock_critical",
+		AgentID:            "A5",
+		SquadID:            "logistics",
+		ActionType:         "replenish_order",
+		BusinessObjectType: "sku",
+		BusinessObjectID:   strconv.FormatInt(skuID, 10),
+		Title:              "库存红色预警补货审批：SKU #" + strconv.FormatInt(skuID, 10),
+		Description:        desc,
+		Payload:            payload,
+		RiskLevel:          "high",
+		RequiresApproval:   true,
+		ProposedBy:         "supplychain.orchestrator",
+	}
+	actionID, err := o.actions.CreateAction(in)
+	if err != nil {
+		o.logger.Warn("HandleStockCritical: failed to create UnifiedAction",
+			zap.String("flow_id", flowID),
+			zap.Int64("sku_id", skuID),
+			zap.Error(err))
+		return
+	}
+	o.logger.Info("HandleStockCritical: UnifiedAction created",
+		zap.Int64("action_id", actionID),
+		zap.String("flow_id", flowID),
+		zap.Int64("sku_id", skuID))
 }
 
 // getInt64 extracts an int64 from an event payload, handling both int64 and
