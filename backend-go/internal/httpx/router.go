@@ -26,6 +26,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
+	"github.com/lingmirror/backend-go/internal/domain/compliance"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
@@ -201,14 +202,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		})
 		return err
 	})
-	// scheduler.tick.A7 → A7 compliance_check
-	bus.Subscribe("scheduler.tick.A7", func(ctx context.Context, evt eventbus.Event) error {
-		_, err := aiOrch.Run(&ai.RunAgentRequest{
-			AgentID:       "A7",
-			DecisionPoint: "compliance_check",
-			Context:       evt.Payload,
-		})
-		return err
+	// scheduler.tick.compliance-scan → compliance scanner batch scan
+	bus.Subscribe("scheduler.tick.compliance-scan", func(ctx context.Context, evt eventbus.Event) error {
+		return compliance.HandleTick(db, logger)(ctx, evt)
 	})
 	// scheduler.tick.A4 → A4 auto_reply
 	bus.Subscribe("scheduler.tick.A4", func(ctx context.Context, evt eventbus.Event) error {
@@ -448,8 +444,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Interval: time.Hour * 1, Description: "仓储报关",
 	})
 	sched.Register(scheduler.Task{
-		ID: "tick-a7", AgentID: "A7", DecisionPoint: "compliance_check",
-		Interval: time.Hour * 2, Description: "合规检测",
+		ID: "tick-compliance-scan", AgentID: "compliance-scan", DecisionPoint: "batch_scan",
+		Interval: time.Hour * 6, Description: "合规批量扫描",
 	})
 	sched.Register(scheduler.Task{
 		ID: "tick-trustscore", AgentID: "trustscore", DecisionPoint: "recalculate",
@@ -680,6 +676,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	evolution.RegisterRoutes(protected, db, logger)
 	entropy.RegisterRoutes(protected, db, logger)
 	cost.RegisterRoutes(protected, db, logger, cfg.LLM.DailyBudgetUSD)
+
+	// Compliance risk engine.
+	compliance.RegisterRoutes(protected, db, logger)
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)

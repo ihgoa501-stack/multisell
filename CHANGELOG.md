@@ -41,6 +41,17 @@
 - P1 T2–T7: EventBus async worker buffer, error info leak on API responses, AgentOS error handling in UI, N+1 queries in listing/product queries, entropy defense timer precision, agent pipeline timeout on sync path
 - P2 T8–T9: Dead code removal in legacy Python stack, JWT refresh audit logging
 
+## v0.2.2 (2026-06-29) — Compliance Risk Engine
+
+### New Module
+- **Compliance domain** (`internal/domain/compliance/`) — Issue #68 Phase 1: A7 adapter layer, batch product scanner (6h interval replacing 2h A7 tick), idempotent scan result persistence, 5 HTTP endpoints (check/scan/results/suppress), wired into scheduler and event bus.
+- **Frontend** — Compliance results tab embedded in product listing detail page (`/products/[id]`), with scan trigger and acknowledge workflow.
+
+### Tech Debt Paid
+- `data_freshness.compliance` dimension now populated on compliance scan
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
 ## v0.2.1 (2026-06-26) — July gap-fill P1
 
 ### New Modules
