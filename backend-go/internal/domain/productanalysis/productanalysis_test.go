@@ -22,7 +22,7 @@ func TestAnalyze_Basic(t *testing.T) {
 	svc := newService(t, db)
 
 	// Insert a sourcing product into the same DB (test uses SQLite)
-	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT)")
+	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT, product_id BIGINT)")
 	db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (1, 10.0, 'pending')")
 
 	result, err := svc.Analyze(&AnalyzeInput{
@@ -57,7 +57,7 @@ func TestAnalyze_ZeroPrice(t *testing.T) {
 	db := newTestDB(t)
 	svc := newService(t, db)
 
-	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT)")
+	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT, product_id BIGINT)")
 	db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (2, 0, 'pending')")
 
 	// cost is 0 → margin = 100% → score = 100
@@ -90,7 +90,7 @@ func TestAnalyze_NegativeMargin(t *testing.T) {
 	db := newTestDB(t)
 	svc := newService(t, db)
 
-	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT)")
+	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT, product_id BIGINT)")
 	db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (3, 50.0, 'pending')")
 
 	// sale price (10) < cost (50) → negative margin → score 0
@@ -110,7 +110,7 @@ func TestGetAnalysis_ScopedToUser(t *testing.T) {
 	db := newTestDB(t)
 	svc := newService(t, db)
 
-	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT)")
+	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT, product_id BIGINT)")
 	db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (4, 10.0, 'pending')")
 
 	result, err := svc.Analyze(&AnalyzeInput{
@@ -148,7 +148,7 @@ func TestListAnalyses_Pagination(t *testing.T) {
 	db := newTestDB(t)
 	svc := newService(t, db)
 
-	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT)")
+	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT, product_id BIGINT)")
 	for i := 1; i <= 5; i++ {
 		db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (?, 10.0, 'pending')", int64(100+i))
 	}
@@ -189,7 +189,7 @@ func TestListAnalyses_UserScoped(t *testing.T) {
 	db := newTestDB(t)
 	svc := newService(t, db)
 
-	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT)")
+	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT, product_id BIGINT)")
 	db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (50, 10.0, 'pending')")
 	db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (51, 10.0, 'pending')")
 
@@ -206,7 +206,7 @@ func TestRecordFeedback(t *testing.T) {
 	db := newTestDB(t)
 	svc := newService(t, db)
 
-	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT)")
+	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT, product_id BIGINT)")
 	db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (60, 10.0, 'pending')")
 
 	result, _ := svc.Analyze(&AnalyzeInput{SourcingProductID: 60, TargetSalePrice: 20}, "u1")
@@ -292,7 +292,7 @@ func TestAnalyze_CacheHit(t *testing.T) {
 	db := newTestDB(t)
 	svc := newService(t, db)
 
-	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT)")
+	db.Exec("CREATE TABLE sourcing_1688_product (id INTEGER PRIMARY KEY, price REAL, status TEXT, product_id BIGINT)")
 	db.Exec("INSERT INTO sourcing_1688_product (id, price, status) VALUES (100, 10.0, 'pending')")
 
 	r1, err := svc.Analyze(&AnalyzeInput{SourcingProductID: 100, TargetSalePrice: 25}, "cache_user")

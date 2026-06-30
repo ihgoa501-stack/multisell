@@ -38,9 +38,9 @@ func NewDiscountRiskAgent(db *gorm.DB, logger *zap.Logger) *DiscountRiskAgent {
 
 // callTool delegates a decision point to the tool registry and extracts
 // the output map, confidence, and risk level from the result.
-func (a *DiscountRiskAgent) callTool(toolName string, decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	c := context.Background()
-	result, callErr := toolregistry.DefaultRegistry.Call(c, toolName, ctx)
+func (a *DiscountRiskAgent) callTool(callCtx context.Context, toolName string, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+
+	result, callErr := toolregistry.DefaultRegistry.Call(callCtx, toolName, params)
 	if callErr != nil {
 		return map[string]interface{}{
 			"status":         "error",
@@ -79,18 +79,18 @@ func (a *DiscountRiskAgent) callTool(toolName string, decisionPoint string, ctx 
 //   - "discount_risk_check"  — alias for discount_check
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high/critical), error.
-func (a *DiscountRiskAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *DiscountRiskAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "discount_check":
 		// Optional DB enrichment before delegating to tool.
-		a.fillSkuFromDB(ctx)
-		return a.callTool("discount.check", decisionPoint, ctx)
+		a.fillSkuFromDB(params)
+		return a.callTool(ctx, "discount.check", decisionPoint, params)
 	case "discount_risk_check":
 		// Optional DB enrichment before delegating to tool.
-		a.fillSkuFromDB(ctx)
-		return a.callTool("discount.risk_check", decisionPoint, ctx)
+		a.fillSkuFromDB(params)
+		return a.callTool(ctx, "discount.risk_check", decisionPoint, params)
 	case "promotion_validation":
-		return a.callTool("discount.validate", decisionPoint, ctx)
+		return a.callTool(ctx, "discount.validate", decisionPoint, params)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",

@@ -3,17 +3,27 @@ package logistics
 import (
 	"errors"
 	"sort"
+	"sync"
 )
 
 // Service is the A10 Logistics Agent's core service.
-// It wraps RateEngine and provides high-level APIs for other agents (e.g. A8).
+// It wraps RateEngine for quote calculations and maintains in-memory
+// fulfillment statistics (carrier_performance, category_performance)
+// fed by the supplychain.flywheel data-flywheel events.
 type Service struct {
-	engine *RateEngine
+	engine       *RateEngine
+	mu           sync.RWMutex
+	carrierStats map[string]*CarrierPerformance   // key: "channel|provider"
+	categoryStats map[string]*CategoryPerformance // key: "category|channel"
 }
 
 // NewService creates a logistics service over the given rate table entries.
 func NewService(tables []RateTableEntry) *Service {
-	return &Service{engine: NewRateEngine(tables)}
+	return &Service{
+		engine:        NewRateEngine(tables),
+		carrierStats:  make(map[string]*CarrierPerformance),
+		categoryStats: make(map[string]*CategoryPerformance),
+	}
 }
 
 // GetQuote returns all shipping quotes for the given cargo, destination, and cargo type.

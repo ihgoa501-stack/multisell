@@ -68,6 +68,13 @@ type ExceptionDistribution struct {
 	Cnt           int64  `json:"cnt"`
 }
 
+// RejectionReasonStat is one row in the rejection-reason aggregation.
+type RejectionReasonStat struct {
+	AgentID         string `json:"agent_id"`
+	RejectionReason string `json:"rejection_reason"`
+	Count           int64  `json:"count"`
+}
+
 // monthRange returns the [start, end) range for the month containing t.
 func monthRange(t time.Time) (time.Time, time.Time) {
 	start := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())

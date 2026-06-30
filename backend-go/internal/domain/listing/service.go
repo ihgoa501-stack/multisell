@@ -185,19 +185,30 @@ func (s *Service) SyncStatus(id int64, newStatus, syncMessage string) (*ProductL
 // ---------- Listing publish chain ----------
 
 // PublishProduct creates a product_listing record for the given product+platform
-// and triggers a listing_task in a single transaction. external_id maps to
-// platform_product_id, listing_url maps to platform_url.
+// and triggers a listing_task in a single transaction. It stores Prism configuration
+// in published_data for use by ExecuteTask downstream.
 func (s *Service) PublishProduct(productID, platformID int64, in *PublishProductInput) (*ProductListing, error) {
 	status := in.Status
 	if status == "" {
 		status = "publishing"
 	}
+
+	// Build published_data with optional Prism configuration.
+	pd := map[string]interface{}{
+		"prism": map[string]interface{}{
+			"enabled": in.PrismEnabled,
+			"options": in.PrismOptions,
+		},
+	}
+	pdBytes, _ := json.Marshal(pd)
+
 	l := ProductListing{
 		ProductID:         productID,
 		PlatformID:        platformID,
 		PlatformProductID: in.ExternalID,
 		PlatformURL:       in.ListingURL,
 		Status:            status,
+		PublishedData:     pdBytes,
 	}
 	now := time.Now()
 	err := s.db.Transaction(func(tx *gorm.DB) error {

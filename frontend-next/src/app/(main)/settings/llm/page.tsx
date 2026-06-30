@@ -26,7 +26,7 @@ export default function SettingsLlmPage() {
 
   return (
     <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
-      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '1rem', color: 'var(--t1)', margin: '0 0 16px 0' }}>LLM 配置</h1>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', margin: '0 0 16px 0' }}>LLM 配置</h1>
       <Card>
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: 48 }}>

@@ -47,9 +47,11 @@ type UpdateListingInput struct {
 
 // PublishProductInput is the body for POST /listing/products/:product_id/publish/:platform_id.
 type PublishProductInput struct {
-	ExternalID string `json:"external_id"`
-	ListingURL string `json:"listing_url"`
-	Status     string `json:"status"`
+	ExternalID    string          `json:"external_id"`
+	ListingURL    string          `json:"listing_url"`
+	Status        string          `json:"status"`
+	PrismEnabled  bool            `json:"prism_enabled"`
+	PrismOptions  json.RawMessage `json:"prism_options,omitempty"` // extra Prism params
 }
 
 // CreateTasksFromDecisionsInput is the body for POST /listing/listing-tasks/from-decisions.
