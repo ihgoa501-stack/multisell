@@ -71,6 +71,36 @@ func HandleSourcingTick(db *gorm.DB, logger *zap.Logger) eventbus.Handler {
 	}
 }
 
+// HandleSourcingRescan handles "sourcing.rescan" events published by the
+// supply-chain orchestrator when A5 detects a red (critical) stock level.
+//
+// The rescan payload includes the affected sku_id, current/safety stock, and
+// sellable days. This handler logs the rescan request and is the wiring
+// point for A8 to re-evaluate sourcing for the affected SKU/category —
+// actual rescans will be implemented in Phase 2 alongside HandleSourcingTick.
+//
+// This handler is read-only and never places purchase orders; replenishment
+// is gated by an approval-gated UnifiedAction created in the orchestrator.
+func HandleSourcingRescan(db *gorm.DB, logger *zap.Logger) eventbus.Handler {
+	return func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		skuID := int64(0)
+		if v, ok := payload["sku_id"].(int64); ok {
+			skuID = v
+		} else if v, ok := payload["sku_id"].(float64); ok {
+			skuID = int64(v)
+		}
+		logger.Info("A8 sourcing.rescan event received — replacement sourcing trigger",
+			zap.Int64("sku_id", skuID),
+			zap.Any("payload", payload),
+		)
+		// Phase 2: invoke A8 sourcing scan for the affected SKU/category to
+		// find replacement products. The rescan payload provides the SKU and
+		// stock context needed to prioritize replacements.
+		return nil
+	}
+}
+
 func toString(v interface{}) string {
 	if v == nil {
 		return ""
