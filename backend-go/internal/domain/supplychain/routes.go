@@ -23,7 +23,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *e
 
 	// Tracking routes
 	trackingSvc := NewTrackingService(db, logger)
-	th := NewTrackingHandler(trackingSvc)
+	th := NewTrackingHandler(trackingSvc).SetCarrierClient(NewMockCarrierClient())
 
 	trackingGroup := rg.Group("/supplychain/tracking")
 	{
@@ -32,5 +32,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *e
 		trackingGroup.GET("/flow/:flowId", th.GetByFlow)
 		trackingGroup.POST("", th.Create)
 		trackingGroup.PUT("/:id/status", th.UpdateStatus)
+		trackingGroup.POST("/:id/sync", th.SyncFromCarrier)
 	}
 }
