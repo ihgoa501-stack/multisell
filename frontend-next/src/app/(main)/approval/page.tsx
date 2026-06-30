@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Table, Tabs, Tag, Button, Modal, Form, Select, message, Space, Typography } from 'antd';
+import { Descriptions, Table, Tabs, Tag, Button, Modal, Form, Select, message, Space, Typography } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import { getCurrentOperator } from '@/lib/user';
 import PageContainer from '@/components/ui/PageContainer';
 import type { Result, PageResult } from '@/types/api';
 
@@ -24,6 +25,9 @@ interface ApprovalRequest {
   expires_at: string | null;
   created_at: string;
   updated_at: string;
+  target_type?: string;
+  target_id?: number;
+  risk_level?: string;
 }
 
 interface ApprovalStats {
@@ -100,7 +104,7 @@ export default function ApprovalPage() {
     mutationFn: async ({ id, action, reviewNote }: { id: number; action: string; reviewNote: string }) => {
       return apiClient.put(`/v1/approval/${id}/review`, {
         action,
-        reviewer: 'admin',
+        reviewer: getCurrentOperator(),
         review_note: reviewNote,
       });
     },
@@ -111,6 +115,9 @@ export default function ApprovalPage() {
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: ['approval'] });
       queryClient.invalidateQueries({ queryKey: ['approval-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['owner-risk-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['owner-suggestions'] });
+      queryClient.invalidateQueries({ queryKey: ['owner-pending-approvals'] });
     },
     onError: (err: Error) => {
       message.error(`审批失败: ${err.message}`);
@@ -245,7 +252,7 @@ export default function ApprovalPage() {
               loading={reviewMutation.isPending}
               onClick={() => handleReviewSubmit('reject')}
             >
-              驳回
+              拒绝，保持阻塞
             </Button>
             <Button
               type="primary"
@@ -254,38 +261,32 @@ export default function ApprovalPage() {
               onClick={() => handleReviewSubmit('approve')}
               style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
             >
-              通过
+              批准，允许执行任务
             </Button>
           </Space>
         }
       >
         {selectedRequest && (
           <div style={{ marginBottom: 16 }}>
-            <p>
-              <strong>商品ID:</strong> {selectedRequest.product_id}
-            </p>
-            <p>
-              <strong>类型:</strong> {fmtType(selectedRequest.request_type)}
-            </p>
-            <p>
-              <strong>发起人:</strong> {selectedRequest.requester}
-            </p>
-            <p>
-              <strong>原因:</strong> {selectedRequest.reason || '无'}
-            </p>
-            {selectedRequest.old_value && (
-              <p>
-                <strong>旧值:</strong> {selectedRequest.old_value}
-              </p>
-            )}
-            {selectedRequest.new_value && (
-              <p>
-                <strong>新值:</strong> {selectedRequest.new_value}
-              </p>
-            )}
-            <p>
-              <strong>创建时间:</strong> {formatDate(selectedRequest.created_at)}
-            </p>
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="业务动作">{fmtType(selectedRequest.request_type)}</Descriptions.Item>
+              <Descriptions.Item label="风险等级">
+                <Tag color={selectedRequest.risk_level === 'high' ? 'red' : selectedRequest.risk_level === 'medium' ? 'orange' : 'green'}>
+                  {selectedRequest.risk_level || '未标记'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="目标对象">
+                {selectedRequest.target_type || '-'} #{selectedRequest.target_id || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="发起人">{selectedRequest.requester}</Descriptions.Item>
+              <Descriptions.Item label="Agent 理由">{selectedRequest.reason || '无'}</Descriptions.Item>
+              <Descriptions.Item label="批准后会发生什么">
+                系统允许对应刊登任务进入执行流程；审批本身不会直接改价、改库存、改订单或发布到真实平台。
+              </Descriptions.Item>
+              <Descriptions.Item label="不批准会怎样">
+                刊登任务保持阻塞，Owner 可回到候选商品或任务详情补充信息后重新评估。
+              </Descriptions.Item>
+            </Descriptions>
           </div>
         )}
         <Form form={form} layout="vertical">

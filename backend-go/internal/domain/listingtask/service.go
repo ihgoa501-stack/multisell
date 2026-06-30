@@ -9,6 +9,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -368,6 +369,18 @@ func (s *Service) ExecuteTask(taskID int64) (*ListingTask, error) {
 	}
 	if task.Status == "completed" || task.Status == "cancelled" {
 		return &task, nil
+	}
+
+	// Blocked tasks require an approved approval before execution.
+	if task.Status == "blocked" {
+		approvalSvc := approval.NewService(s.db, s.logger)
+		if _, err := approvalSvc.FindApprovedByTarget("listing_task", task.ID, "publish"); err != nil {
+			return nil, fmt.Errorf("approval required for listing task %d: %w", task.ID, err)
+		}
+		task.Status = "pending"
+		if err := s.db.Model(&task).Update("status", "pending").Error; err != nil {
+			return nil, err
+		}
 	}
 
 	// Run Prism check outside the main transaction so transient failures don't

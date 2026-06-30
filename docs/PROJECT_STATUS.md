@@ -272,3 +272,37 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - 剩余 lint 34 problems（12 errors / 22 warnings）均为无关模块遗留
 - **需修复** `src/config/menu.ts` 合并冲突标记（导致 build 失败）
 - 清理 stale worktrees
+
+## 本次新增内容（2026-06-30，Production Closed Loop）
+
+### 安全审批闭环
+
+安全审批闭环是第一个"生产经营闭环"硬化目标：候选商品 → 评估 → 阻塞刊登任务 → Owner 审批 → 批准执行。
+
+| 模块 | 改动 |
+|------|------|
+| approval | 新增 `target_type`/`target_id`/`risk_level` 字段，Add `FindApprovedByTarget` 查询 |
+| loop | Evaluate 创建 listing_task 时同时创建 pending approval（事务内） |
+| listingtask | ExecuteTask 对 `blocked` 任务先检查是否有已批准的 approval |
+| owner | RiskSummary 返回真实 `pending_approval_count`/`blocked_listing_task_count`/`recommended_listing_count` |
+
+### 前端 Owner 体验闭环
+
+| 页面 | 改动 |
+|------|------|
+| `/owner` | 移除直接审批 listing_task 的 mutation；新增下一步操作面板和审批/任务路由 |
+| `/candidates` | 评估结果后显示 listing_task_id 和"去审批"入口 |
+| `/approval` | 审批弹窗使用决策卡说明批准/拒绝后果，使用 `getCurrentOperator()` |
+| `/listing-tasks/[id]` | 显示审批状态；`blocked` 任务只引导到审批，不直接执行 |
+
+### 迁移
+- `migrations/000030_approval_target_fields` — approval_request 表新增 target_type, target_id, risk_level 列
+
+### 验证
+| 检查 | 结果 |
+|------|------|
+| `go test ./internal/domain/approval` | ✅ 23/23 通过 |
+| `go test ./internal/domain/loop` | ✅ 3/3 通过 |
+| `go test ./internal/domain/listingtask` | ✅ 11/11 通过 |
+| `go test ./internal/domain/owner` | ✅ 1/1 通过 |
+| `npm run build` | ❌ 预计失败：products/[id]/page.tsx 预存错误（与本次改动无关） |
