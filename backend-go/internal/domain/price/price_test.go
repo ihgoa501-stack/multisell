@@ -23,7 +23,7 @@ import (
 
 func newTestDB(t *testing.T) *Service {
 	t.Helper()
-	db := dbtest.NewDB(t, &Price{}, &PriceChangeLog{})
+	db := dbtest.NewDB(t, &Price{}, &PriceChangeLog{}, &CompetitorPrice{}, &PricingStrategy{}, &PricingRecommendation{})
 	return NewService(db, zap.NewNop())
 }
 
@@ -1079,4 +1079,988 @@ func TestHandler_PriceHistory_InvalidID(t *testing.T) {
 	}
 	verifyCode(t, w.Body.Bytes(), http.StatusBadRequest)
 	verifyMessage(t, w.Body.Bytes(), "invalid id")
+}
+
+// ---------------------------------------------------------------------------
+// New helpers for competitor pricing tests
+// ---------------------------------------------------------------------------
+
+func newTestDBWithEngine(t *testing.T) *Service {
+	t.Helper()
+	db := dbtest.NewDB(t, &Price{}, &PriceChangeLog{}, &CompetitorPrice{}, &PricingStrategy{}, &PricingRecommendation{})
+	return NewService(db, zap.NewNop())
+}
+
+func setupPriceRouter(svc *Service) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	h := NewHandler(svc)
+	r := gin.New()
+	rg := r.Group("/api/v1")
+
+	// Price CRUD routes
+	prices := rg.Group("/prices")
+	{
+		prices.GET("", h.ListPrices)
+		prices.GET("/:id", h.GetPrice)
+		prices.POST("", h.SetPrice)
+		prices.PUT("/:id", h.UpdatePrice)
+		prices.DELETE("/:id", h.DeletePrice)
+	}
+
+	// SKU-scoped price routes
+	skus := rg.Group("/skus")
+	{
+		skus.GET("/:id/prices", h.ListPricesBySKU)
+		skus.GET("/:id/current-price", h.GetCurrentPrice)
+		skus.GET("/:id/price-history", h.PriceHistory)
+	}
+
+	// Competitor Price routes
+	cp := rg.Group("/competitor-prices")
+	{
+		cp.GET("", h.ListCompetitorPrices)
+		cp.GET("/:id", h.GetCompetitorPrice)
+		cp.POST("", h.CreateCompetitorPrice)
+		cp.DELETE("/:id", h.DeleteCompetitorPrice)
+	}
+
+	// Pricing Strategy routes
+	ps := rg.Group("/pricing-strategies")
+	{
+		ps.GET("", h.ListPricingStrategies)
+		ps.GET("/:id", h.GetPricingStrategy)
+		ps.POST("", h.SavePricingStrategy)
+		ps.PUT("/:id", h.UpdatePricingStrategy)
+		ps.DELETE("/:id", h.DeletePricingStrategy)
+	}
+
+	// Pricing Recommendation routes
+	pr := rg.Group("/pricing-recommendations")
+	{
+		pr.GET("", h.ListRecommendations)
+		pr.POST("/generate", h.GenerateRecommendation)
+		pr.POST("/:id/apply", h.ApplyRecommendation)
+	}
+
+	return r
+}
+
+// ---------------------------------------------------------------------------
+// Pricing Engine -- unit tests
+// ---------------------------------------------------------------------------
+
+func TestPricingEngine_BuyBoxFirst(t *testing.T) {
+	engine := NewPricingEngine()
+	now := time.Now()
+
+	result := engine.Generate(EngineInput{
+		SkuID:        1,
+		CurrentPrice: decimal.NewFromInt(100),
+		CompetitorPrices: []CompetitorPrice{
+			{CompetitorName: "comp_a", Price: decimal.NewFromInt(95), CapturedAt: now},
+			{CompetitorName: "comp_b", Price: decimal.NewFromInt(90), CapturedAt: now},
+		},
+		StrategyType: StrategyBuyBoxFirst,
+	})
+
+	expected := decimal.NewFromInt(90).Mul(decimal.NewFromFloat(0.98)).Round(2)
+	got := result.RecommendedPrice.Round(2)
+	if !got.Equal(expected) {
+		t.Fatalf("RecommendedPrice=%v, want %v", got, expected)
+	}
+	if result.StrategyUsed != StrategyBuyBoxFirst {
+		t.Fatalf("StrategyUsed=%q, want %q", result.StrategyUsed, StrategyBuyBoxFirst)
+	}
+	if result.CompetitorCount != 2 {
+		t.Fatalf("CompetitorCount=%d, want 2", result.CompetitorCount)
+	}
+	if result.RiskLevel != "medium" {
+		t.Fatalf("RiskLevel=%q, want medium", result.RiskLevel)
+	}
+	if result.Reason == "" {
+		t.Fatal("expected non-empty Reason")
+	}
+}
+
+func TestPricingEngine_Match(t *testing.T) {
+	engine := NewPricingEngine()
+	now := time.Now()
+
+	result := engine.Generate(EngineInput{
+		SkuID:        2,
+		CurrentPrice: decimal.NewFromInt(120),
+		CompetitorPrices: []CompetitorPrice{
+			{CompetitorName: "comp_x", Price: decimal.NewFromInt(110), CapturedAt: now},
+			{CompetitorName: "comp_y", Price: decimal.NewFromInt(105), CapturedAt: now},
+			{CompetitorName: "comp_z", Price: decimal.NewFromInt(108), CapturedAt: now},
+		},
+		StrategyType: StrategyMatch,
+	})
+
+	expected := decimal.NewFromInt(105)
+	if !result.RecommendedPrice.Equal(expected) {
+		t.Fatalf("RecommendedPrice=%v, want %v", result.RecommendedPrice, expected)
+	}
+	if result.CompetitorCount != 3 {
+		t.Fatalf("CompetitorCount=%d, want 3", result.CompetitorCount)
+	}
+	if result.RiskLevel != "medium" {
+		t.Fatalf("RiskLevel=%q, want medium", result.RiskLevel)
+	}
+}
+
+func TestPricingEngine_ProfitPriority(t *testing.T) {
+	engine := NewPricingEngine()
+
+	result := engine.Generate(EngineInput{
+		SkuID:           3,
+		CurrentPrice:    decimal.NewFromInt(100),
+		CompetitorPrices: []CompetitorPrice{
+			{CompetitorName: "comp_a", Price: decimal.NewFromInt(80), CapturedAt: time.Now()},
+		},
+		StrategyType:    StrategyProfitPriority,
+		Cost:            decimal.NewFromInt(50),
+		PlatformFeeRate: 0.10,
+	})
+
+	expected := decimal.NewFromInt(100)
+	if !result.RecommendedPrice.Equal(expected) {
+		t.Fatalf("RecommendedPrice=%v, want %v", result.RecommendedPrice, expected)
+	}
+	if result.RiskLevel != "low" {
+		t.Fatalf("RiskLevel=%q, want low", result.RiskLevel)
+	}
+}
+
+func TestPricingEngine_ProfitPriorityBelowMinMargin(t *testing.T) {
+	engine := NewPricingEngine()
+
+	result := engine.Generate(EngineInput{
+		SkuID:           4,
+		CurrentPrice:    decimal.NewFromInt(40),
+		CompetitorPrices: []CompetitorPrice{
+			{CompetitorName: "comp_a", Price: decimal.NewFromInt(38), CapturedAt: time.Now()},
+		},
+		StrategyType:    StrategyProfitPriority,
+		Cost:            decimal.NewFromInt(50),
+		PlatformFeeRate: 0.10,
+	})
+
+	expected := decimal.NewFromInt(50).Mul(decimal.NewFromFloat(1.15)).Div(decimal.NewFromFloat(0.9)).Round(2)
+	got := result.RecommendedPrice.Round(2)
+	if !got.Equal(expected) {
+		t.Fatalf("RecommendedPrice=%v, want %v", got, expected)
+	}
+}
+
+func TestPricingEngine_ProfitPriorityNoCost(t *testing.T) {
+	engine := NewPricingEngine()
+
+	result := engine.Generate(EngineInput{
+		SkuID:           5,
+		CurrentPrice:    decimal.NewFromInt(100),
+		CompetitorPrices: []CompetitorPrice{
+			{CompetitorName: "comp_a", Price: decimal.NewFromInt(80), CapturedAt: time.Now()},
+		},
+		StrategyType: StrategyProfitPriority,
+	})
+
+	if !result.RecommendedPrice.Equal(decimal.NewFromInt(100)) {
+		t.Fatalf("RecommendedPrice=%v, want 100 (no cost fallback)", result.RecommendedPrice)
+	}
+	if result.RiskLevel != "low" {
+		t.Fatalf("RiskLevel=%q, want low", result.RiskLevel)
+	}
+}
+
+func TestPricingEngine_NoCompetitors(t *testing.T) {
+	engine := NewPricingEngine()
+
+	result := engine.Generate(EngineInput{
+		SkuID:        6,
+		CurrentPrice: decimal.NewFromInt(100),
+		StrategyType: StrategyBuyBoxFirst,
+	})
+
+	if !result.RecommendedPrice.Equal(decimal.NewFromInt(100)) {
+		t.Fatalf("RecommendedPrice=%v, want 100 (no competitor fallback)", result.RecommendedPrice)
+	}
+	if result.RiskLevel != "high" {
+		t.Fatalf("RiskLevel=%q, want high for missing data", result.RiskLevel)
+	}
+	if result.CompetitorCount != 0 {
+		t.Fatalf("CompetitorCount=%d, want 0", result.CompetitorCount)
+	}
+	if !strings.Contains(result.Reason, "no competitor prices") {
+		t.Fatalf("Reason=%q, want 'no competitor prices'", result.Reason)
+	}
+}
+
+func TestPricingEngine_Bounds(t *testing.T) {
+	engine := NewPricingEngine()
+	now := time.Now()
+
+	result := engine.Generate(EngineInput{
+		SkuID:        7,
+		CurrentPrice: decimal.NewFromInt(100),
+		CompetitorPrices: []CompetitorPrice{
+			{CompetitorName: "comp_a", Price: decimal.NewFromInt(50), CapturedAt: now},
+		},
+		StrategyType: StrategyMatch,
+		Parameters: StrategyParameters{
+			MinPrice: 60,
+		},
+	})
+
+	expected := decimal.NewFromInt(60)
+	if !result.RecommendedPrice.Equal(expected) {
+		t.Fatalf("RecommendedPrice=%v, want %v (clamped by min price)", result.RecommendedPrice, expected)
+	}
+	if !strings.Contains(result.Reason, "minimum price") {
+		t.Fatalf("Reason=%q, want 'adjusted to minimum price'", result.Reason)
+	}
+}
+
+func TestPricingEngine_DuplicateNames(t *testing.T) {
+	engine := NewPricingEngine()
+	now := time.Now()
+	earlier := now.Add(-time.Hour)
+
+	result := engine.Generate(EngineInput{
+		SkuID:        8,
+		CurrentPrice: decimal.NewFromInt(100),
+		CompetitorPrices: []CompetitorPrice{
+			{CompetitorName: "comp_a", Price: decimal.NewFromInt(90), CapturedAt: earlier},
+			{CompetitorName: "comp_a", Price: decimal.NewFromInt(95), CapturedAt: now},
+			{CompetitorName: "comp_b", Price: decimal.NewFromInt(85), CapturedAt: now},
+		},
+		StrategyType: StrategyMatch,
+	})
+
+	expected := decimal.NewFromInt(85)
+	if !result.RecommendedPrice.Equal(expected) {
+		t.Fatalf("RecommendedPrice=%v, want %v (dedup kept latest)", result.RecommendedPrice, expected)
+	}
+	if result.CompetitorCount != 2 {
+		t.Fatalf("CompetitorCount=%d, want 2 (dedup)", result.CompetitorCount)
+	}
+}
+
+func TestPricingEngine_CustomParams(t *testing.T) {
+	engine := NewPricingEngine()
+	now := time.Now()
+
+	result := engine.Generate(EngineInput{
+		SkuID:        9,
+		CurrentPrice: decimal.NewFromInt(200),
+		CompetitorPrices: []CompetitorPrice{
+			{CompetitorName: "comp_a", Price: decimal.NewFromInt(180), CapturedAt: now},
+		},
+		StrategyType: StrategyBuyBoxFirst,
+		Parameters: StrategyParameters{
+			BuyBoxDiscount: 0.05,
+		},
+	})
+
+	expected := decimal.NewFromInt(180).Mul(decimal.NewFromFloat(0.95)).Round(2)
+	got := result.RecommendedPrice.Round(2)
+	if !got.Equal(expected) {
+		t.Fatalf("RecommendedPrice=%v, want %v (5%% discount)", got, expected)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Service tests -- CompetitorPrice CRUD
+// ---------------------------------------------------------------------------
+
+func TestCreateCompetitorPrice(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	cp := &CompetitorPrice{
+		SkuID:          1,
+		Platform:       "ozon",
+		CompetitorName: "seller_x",
+		Price:          decimal.NewFromInt(99),
+	}
+	if err := svc.CreateCompetitorPrice(ctx, cp); err != nil {
+		t.Fatalf("CreateCompetitorPrice: %v", err)
+	}
+	if cp.ID == 0 {
+		t.Fatal("expected non-zero ID after create")
+	}
+	if cp.Currency != "USD" {
+		t.Fatalf("Currency=%q, want USD (default)", cp.Currency)
+	}
+	if cp.CapturedAt.IsZero() {
+		t.Fatal("expected CapturedAt to be set")
+	}
+}
+
+func TestListCompetitorPrices(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "a", Price: decimal.NewFromInt(100), CapturedAt: time.Now()})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "b", Price: decimal.NewFromInt(200), CapturedAt: time.Now()})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 2, CompetitorName: "c", Price: decimal.NewFromInt(300), CapturedAt: time.Now()})
+
+	items, total, err := svc.ListCompetitorPrices(ctx, 1, 20, 1)
+	if err != nil {
+		t.Fatalf("ListCompetitorPrices: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("total=%d, want 2", total)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2", len(items))
+	}
+	for _, it := range items {
+		if it.SkuID != 1 {
+			t.Fatalf("item SkuID=%d, want 1", it.SkuID)
+		}
+	}
+}
+
+func TestGetCompetitorPriceByID(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "a", Price: decimal.NewFromInt(100), CapturedAt: time.Now()})
+
+	cp, err := svc.GetCompetitorPriceByID(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetCompetitorPriceByID: %v", err)
+	}
+	if cp.SkuID != 1 {
+		t.Fatalf("SkuID=%d, want 1", cp.SkuID)
+	}
+}
+
+func TestGetCompetitorPriceByID_NotFound(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	_, err := svc.GetCompetitorPriceByID(ctx, 999)
+	if err != gorm.ErrRecordNotFound {
+		t.Fatalf("expected gorm.ErrRecordNotFound, got %v", err)
+	}
+}
+
+func TestDeleteCompetitorPrice(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "a", Price: decimal.NewFromInt(100), CapturedAt: time.Now()})
+
+	if err := svc.DeleteCompetitorPrice(ctx, 1); err != nil {
+		t.Fatalf("DeleteCompetitorPrice: %v", err)
+	}
+
+	var count int64
+	svc.db.Model(&CompetitorPrice{}).Count(&count)
+	if count != 0 {
+		t.Fatalf("expected 0 records after delete, got %d", count)
+	}
+}
+
+func TestGetLatestCompetitorPrices_Dedup(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	now := time.Now()
+	earlier := now.Add(-2 * time.Hour)
+
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "comp_a", Price: decimal.NewFromInt(80), CapturedAt: earlier})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "comp_b", Price: decimal.NewFromInt(90), CapturedAt: now})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "comp_a", Price: decimal.NewFromInt(85), CapturedAt: now})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 2, CompetitorName: "comp_c", Price: decimal.NewFromInt(100), CapturedAt: now})
+
+	prices, err := svc.GetLatestCompetitorPrices(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetLatestCompetitorPrices: %v", err)
+	}
+
+	if len(prices) != 2 {
+		t.Fatalf("len(prices)=%d, want 2 (dedup)", len(prices))
+	}
+
+	for _, p := range prices {
+		if p.CompetitorName == "comp_a" && !p.Price.Equal(decimal.NewFromInt(85)) {
+			t.Fatalf("comp_a price=%v, want 85 (latest)", p.Price)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Service tests -- PricingStrategy CRUD
+// ---------------------------------------------------------------------------
+
+func TestSaveAndGetPricingStrategy(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	ps := &PricingStrategy{
+		SkuID:        int64Ptr(1),
+		StrategyType: StrategyBuyBoxFirst,
+		Parameters:   `{"buy_box_discount":0.03}`,
+		Active:       true,
+	}
+	if err := svc.SavePricingStrategy(ctx, ps); err != nil {
+		t.Fatalf("SavePricingStrategy: %v", err)
+	}
+	if ps.ID == 0 {
+		t.Fatal("expected non-zero ID")
+	}
+
+	got, err := svc.GetPricingStrategyByID(ctx, ps.ID)
+	if err != nil {
+		t.Fatalf("GetPricingStrategyByID: %v", err)
+	}
+	if got.StrategyType != StrategyBuyBoxFirst {
+		t.Fatalf("StrategyType=%q, want %q", got.StrategyType, StrategyBuyBoxFirst)
+	}
+}
+
+func TestGetEffectiveStrategy_SkuFirst(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingStrategy{
+		SkuID: nil, StrategyType: StrategyMatch, Active: true,
+	})
+	svc.db.WithContext(ctx).Create(&PricingStrategy{
+		SkuID: int64Ptr(1), StrategyType: StrategyBuyBoxFirst, Active: true,
+	})
+
+	strategy, err := svc.GetEffectiveStrategy(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetEffectiveStrategy: %v", err)
+	}
+	if strategy == nil {
+		t.Fatal("expected non-nil strategy")
+	}
+	if strategy.StrategyType != StrategyBuyBoxFirst {
+		t.Fatalf("StrategyType=%q, want buy_box_first (SKU-specific)", strategy.StrategyType)
+	}
+}
+
+func TestGetEffectiveStrategy_GlobalFallback(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingStrategy{
+		SkuID: nil, StrategyType: StrategyMatch, Active: true,
+	})
+
+	strategy, err := svc.GetEffectiveStrategy(ctx, 999)
+	if err != nil {
+		t.Fatalf("GetEffectiveStrategy: %v", err)
+	}
+	if strategy == nil {
+		t.Fatal("expected non-nil strategy from global fallback")
+	}
+	if strategy.StrategyType != StrategyMatch {
+		t.Fatalf("StrategyType=%q, want match (global default)", strategy.StrategyType)
+	}
+}
+
+func TestGetEffectiveStrategy_None(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	strategy, err := svc.GetEffectiveStrategy(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetEffectiveStrategy: %v", err)
+	}
+	if strategy != nil {
+		t.Fatal("expected nil when no strategy configured")
+	}
+}
+
+func TestListPricingStrategies(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingStrategy{StrategyType: StrategyBuyBoxFirst, Active: true})
+	svc.db.WithContext(ctx).Create(&PricingStrategy{StrategyType: StrategyMatch, Active: true})
+	svc.db.WithContext(ctx).Create(&PricingStrategy{SkuID: int64Ptr(1), StrategyType: StrategyProfitPriority, Active: true})
+
+	items, total, err := svc.ListPricingStrategies(ctx, 1, 10, 0)
+	if err != nil {
+		t.Fatalf("ListPricingStrategies: %v", err)
+	}
+	if total != 3 {
+		t.Fatalf("total=%d, want 3", total)
+	}
+	if len(items) != 3 {
+		t.Fatalf("len(items)=%d, want 3", len(items))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Service tests -- Recommendation generation (integration)
+// ---------------------------------------------------------------------------
+
+func TestGenerateRecommendation_WithCompetitors(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&Price{
+		SkuID: 1, PriceType: "sale_price", Price: decimal.NewFromInt(100), Status: 1,
+	})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{
+		SkuID: 1, CompetitorName: "comp_a", Price: decimal.NewFromInt(90),
+		CapturedAt: time.Now(),
+	})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{
+		SkuID: 1, CompetitorName: "comp_b", Price: decimal.NewFromInt(85),
+		CapturedAt: time.Now(),
+	})
+
+	rec, err := svc.GenerateRecommendation(ctx, GenerateRecommendationInput{
+		SkuID:        1,
+		StrategyType: StrategyBuyBoxFirst,
+	})
+	if err != nil {
+		t.Fatalf("GenerateRecommendation: %v", err)
+	}
+	if rec.ID == 0 {
+		t.Fatal("expected non-zero ID (persisted)")
+	}
+	if rec.SkuID != 1 {
+		t.Fatalf("SkuID=%d, want 1", rec.SkuID)
+	}
+	if !rec.CurrentPrice.Equal(decimal.NewFromInt(100)) {
+		t.Fatalf("CurrentPrice=%v, want 100", rec.CurrentPrice)
+	}
+	if rec.CompetitorCount != 2 {
+		t.Fatalf("CompetitorCount=%d, want 2", rec.CompetitorCount)
+	}
+}
+
+func TestGenerateRecommendation_NoCompetitors(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	rec, err := svc.GenerateRecommendation(ctx, GenerateRecommendationInput{
+		SkuID:        1,
+		StrategyType: StrategyMatch,
+	})
+	if err != nil {
+		t.Fatalf("GenerateRecommendation: %v", err)
+	}
+	if rec.RiskLevel != "high" {
+		t.Fatalf("RiskLevel=%q, want high for no competitors", rec.RiskLevel)
+	}
+	if rec.CompetitorCount != 0 {
+		t.Fatalf("CompetitorCount=%d, want 0", rec.CompetitorCount)
+	}
+}
+
+func TestGenerateRecommendation_EmptyStrategyUsesDefault(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{
+		SkuID: 1, CompetitorName: "comp_a", Price: decimal.NewFromInt(90),
+		CapturedAt: time.Now(),
+	})
+
+	rec, err := svc.GenerateRecommendation(ctx, GenerateRecommendationInput{
+		SkuID: 1,
+	})
+	if err != nil {
+		t.Fatalf("GenerateRecommendation: %v", err)
+	}
+	if rec.RecommendedPrice.IsZero() {
+		t.Fatal("expected non-zero RecommendedPrice")
+	}
+	if rec.StrategyUsed != StrategyBuyBoxFirst {
+		t.Fatalf("StrategyUsed=%q, want buy_box_first (default)", rec.StrategyUsed)
+	}
+}
+
+func TestGenerateRecommendation_UsesConfiguredStrategy(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingStrategy{
+		SkuID: nil, StrategyType: StrategyMatch, Active: true,
+	})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{
+		SkuID: 1, CompetitorName: "comp_a", Price: decimal.NewFromInt(90),
+		CapturedAt: time.Now(),
+	})
+
+	rec, err := svc.GenerateRecommendation(ctx, GenerateRecommendationInput{
+		SkuID: 1,
+	})
+	if err != nil {
+		t.Fatalf("GenerateRecommendation: %v", err)
+	}
+	if rec.StrategyUsed != StrategyMatch {
+		t.Fatalf("StrategyUsed=%q, want match (from configured strategy)", rec.StrategyUsed)
+	}
+	if !rec.RecommendedPrice.Equal(decimal.NewFromInt(90)) {
+		t.Fatalf("RecommendedPrice=%v, want 90 (matched)", rec.RecommendedPrice)
+	}
+}
+
+func TestListRecommendations(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingRecommendation{
+		SkuID: 1, CurrentPrice: decimal.NewFromInt(100), RecommendedPrice: decimal.NewFromInt(95),
+		StrategyUsed: StrategyBuyBoxFirst, RiskLevel: "medium", CompetitorCount: 2,
+	})
+	svc.db.WithContext(ctx).Create(&PricingRecommendation{
+		SkuID: 1, CurrentPrice: decimal.NewFromInt(100), RecommendedPrice: decimal.NewFromInt(85),
+		StrategyUsed: StrategyMatch, RiskLevel: "medium", CompetitorCount: 3,
+	})
+	svc.db.WithContext(ctx).Create(&PricingRecommendation{
+		SkuID: 2, CurrentPrice: decimal.NewFromInt(200), RecommendedPrice: decimal.NewFromInt(200),
+		StrategyUsed: StrategyProfitPriority, RiskLevel: "low", CompetitorCount: 1,
+	})
+
+	items, total, err := svc.ListRecommendations(ctx, 1, 10, 1)
+	if err != nil {
+		t.Fatalf("ListRecommendations: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("total=%d, want 2", total)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2", len(items))
+	}
+}
+
+func TestApplyRecommendation(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingRecommendation{
+		SkuID: 1, CurrentPrice: decimal.NewFromInt(100), RecommendedPrice: decimal.NewFromInt(95),
+		StrategyUsed: StrategyBuyBoxFirst, RiskLevel: "low",
+	})
+
+	if err := svc.ApplyRecommendation(ctx, 1); err != nil {
+		t.Fatalf("ApplyRecommendation: %v", err)
+	}
+
+	var rec PricingRecommendation
+	svc.db.WithContext(ctx).First(&rec, 1)
+	if !rec.Applied {
+		t.Fatal("expected Applied=true after ApplyRecommendation")
+	}
+	if rec.AppliedAt == nil {
+		t.Fatal("expected non-nil AppliedAt")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Handler tests -- Competitor Prices
+// ---------------------------------------------------------------------------
+
+func TestHandler_CreateCompetitorPrice(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+
+	body := `{"sku_id":1,"competitor_name":"seller_x","price":99.99,"platform":"ozon"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/competitor-prices", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+
+	var count int64
+	svc.db.Model(&CompetitorPrice{}).Count(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 competitor price, got %d", count)
+	}
+}
+
+func TestHandler_CreateCompetitorPrice_Invalid(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+
+	body := `{"sku_id":1}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/competitor-prices", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("HTTP status=%d, want 400", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), http.StatusBadRequest)
+}
+
+func TestHandler_ListCompetitorPrices(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "a", Price: decimal.NewFromInt(100), CapturedAt: time.Now()})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "b", Price: decimal.NewFromInt(200), CapturedAt: time.Now()})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/competitor-prices?page=1&size=10&sku_id=1", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+
+	var pageResp struct {
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &pageResp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if pageResp.Total != 2 {
+		t.Fatalf("Total=%d, want 2", pageResp.Total)
+	}
+}
+
+func TestHandler_GetCompetitorPrice(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "a", Price: decimal.NewFromInt(100), CapturedAt: time.Now()})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/competitor-prices/1", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+}
+
+func TestHandler_DeleteCompetitorPrice(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{SkuID: 1, CompetitorName: "a", Price: decimal.NewFromInt(100), CapturedAt: time.Now()})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("DELETE", "/api/v1/competitor-prices/1", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+}
+
+// ---------------------------------------------------------------------------
+// Handler tests -- Pricing Strategies
+// ---------------------------------------------------------------------------
+
+func TestHandler_SavePricingStrategy(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+
+	body := `{"strategy_type":"buy_box_first","parameters":{"buy_box_discount":0.03}}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/pricing-strategies", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+}
+
+func TestHandler_UpdatePricingStrategy(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingStrategy{
+		SkuID: nil, StrategyType: StrategyMatch, Active: true,
+	})
+
+	body := `{"strategy_type":"buy_box_first","active":false}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("PUT", "/api/v1/pricing-strategies/1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+
+	var updated PricingStrategy
+	svc.db.First(&updated, 1)
+	if updated.StrategyType != StrategyBuyBoxFirst {
+		t.Fatalf("StrategyType=%q, want buy_box_first", updated.StrategyType)
+	}
+	if updated.Active != false {
+		t.Fatal("expected Active=false")
+	}
+}
+
+func TestHandler_ListPricingStrategies(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingStrategy{StrategyType: StrategyBuyBoxFirst, Active: true})
+	svc.db.WithContext(ctx).Create(&PricingStrategy{StrategyType: StrategyMatch, Active: true})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/pricing-strategies?page=1&size=10", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+}
+
+func TestHandler_DeletePricingStrategy(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingStrategy{StrategyType: StrategyBuyBoxFirst, Active: true})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("DELETE", "/api/v1/pricing-strategies/1", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+}
+
+// ---------------------------------------------------------------------------
+// Handler tests -- Pricing Recommendations
+// ---------------------------------------------------------------------------
+
+func TestHandler_GenerateRecommendation(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&Price{
+		SkuID: 1, PriceType: "sale_price", Price: decimal.NewFromInt(100), Status: 1,
+	})
+	svc.db.WithContext(ctx).Create(&CompetitorPrice{
+		SkuID: 1, CompetitorName: "comp_a", Price: decimal.NewFromInt(90),
+		CapturedAt: time.Now(),
+	})
+
+	body := `{"sku_id":1,"strategy_type":"match"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/pricing-recommendations/generate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+}
+
+func TestHandler_GenerateRecommendation_InvalidBody(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+
+	body := `{"strategy_type":"match"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/pricing-recommendations/generate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("HTTP status=%d, want 400", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), http.StatusBadRequest)
+}
+
+func TestHandler_ListRecommendations(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingRecommendation{
+		SkuID: 1, CurrentPrice: decimal.NewFromInt(100), RecommendedPrice: decimal.NewFromInt(95),
+		StrategyUsed: StrategyBuyBoxFirst, RiskLevel: "medium",
+	})
+	svc.db.WithContext(ctx).Create(&PricingRecommendation{
+		SkuID: 1, CurrentPrice: decimal.NewFromInt(100), RecommendedPrice: decimal.NewFromInt(85),
+		StrategyUsed: StrategyMatch, RiskLevel: "medium",
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/pricing-recommendations?page=1&size=10&sku_id=1", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+}
+
+func TestHandler_ApplyRecommendation(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+	ctx := context.Background()
+
+	svc.db.WithContext(ctx).Create(&PricingRecommendation{
+		SkuID: 1, CurrentPrice: decimal.NewFromInt(100), RecommendedPrice: decimal.NewFromInt(95),
+		StrategyUsed: StrategyBuyBoxFirst, RiskLevel: "low",
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/pricing-recommendations/1/apply", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	verifyCode(t, w.Body.Bytes(), 0)
+
+	var rec PricingRecommendation
+	svc.db.First(&rec, 1)
+	if !rec.Applied {
+		t.Fatal("expected recommendation marked as applied")
+	}
+}
+
+func TestHandler_ApplyRecommendation_InvalidID(t *testing.T) {
+	svc := newTestDBWithEngine(t)
+	router := setupPriceRouter(svc)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/pricing-recommendations/abc/apply", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("HTTP status=%d, want 400", w.Code)
+	}
+	verifyCode(t, w.Body.Bytes(), http.StatusBadRequest)
+}
+
+// ---------------------------------------------------------------------------
+// Utility helpers
+// ---------------------------------------------------------------------------
+
+func int64Ptr(n int64) *int64 {
+	return &n
 }
