@@ -461,12 +461,11 @@ func TestMiddleware_SetsUserID(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
 	}
-	// MapClaims decodes JSON numbers as float64.
-	got, ok := captured.(float64)
+	got, ok := captured.(int64)
 	if !ok {
-		t.Fatalf("expected float64, got %T (%+v)", captured, captured)
+		t.Fatalf("expected int64, got %T (%+v)", captured, captured)
 	}
-	if int64(got) != user.ID {
+	if got != user.ID {
 		t.Fatalf("user_id = %v, want %d", got, user.ID)
 	}
 }

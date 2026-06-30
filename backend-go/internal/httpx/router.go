@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/agent"
-		"github.com/lingmirror/backend-go/internal/agent/pipeline"
+	"github.com/lingmirror/backend-go/internal/agent/pipeline"
 	"github.com/lingmirror/backend-go/internal/agentos"
 	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
@@ -22,7 +22,9 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
+	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/category"
+	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
@@ -38,15 +40,19 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/listing"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
+	"github.com/lingmirror/backend-go/internal/domain/loop"
 	"github.com/lingmirror/backend-go/internal/domain/metabolism"
+	"github.com/lingmirror/backend-go/internal/domain/mock"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/order"
 	"github.com/lingmirror/backend-go/internal/domain/orderimport"
+	"github.com/lingmirror/backend-go/internal/domain/owner"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
+	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
@@ -56,15 +62,16 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
-	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
-		"github.com/lingmirror/backend-go/internal/domain/tariff"
+	"github.com/lingmirror/backend-go/internal/domain/supplychain"
+	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
+	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
@@ -143,7 +150,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	}, pipeline.DefaultEdges, logger)
 
 	// ToolBridge for sourcing data collection
-	_ = toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
+	toolBridge := toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
 
 	// Reverse logistics return rate tracker (DB-backed).
 	returnRateTracker := aftersales.NewReturnRateTracker(db, logger)
@@ -408,22 +415,22 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		ID: "tick-entropy", AgentID: "entropy", DecisionPoint: "defend",
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
-		sched.Register(scheduler.Task{
-			ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
-			Interval: time.Minute * 15, Description: "Ozon 订单同步",
-		})
-		sched.Register(scheduler.Task{
-			ID: "tick-a8", AgentID: "A8", DecisionPoint: "sourcing_scan",
-			Interval: time.Hour * 1, Description: "选品扫描",
-		})
-		sched.Register(scheduler.Task{
-			ID: "tick-m1", AgentID: "M1", DecisionPoint: "excretion_scoring",
-			Interval: time.Hour * 1, Description: "代谢排泄评分",
-		})
-		sched.Register(scheduler.Task{
-			ID: "tick-sla-escalation", AgentID: "agentos", DecisionPoint: "sla_escalation",
-			Interval: time.Minute * 15, Description: "SLA过期升级待审批动作",
-		})
+	sched.Register(scheduler.Task{
+		ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
+		Interval: time.Minute * 15, Description: "Ozon 订单同步",
+	})
+	sched.Register(scheduler.Task{
+		ID: "tick-a8", AgentID: "A8", DecisionPoint: "sourcing_scan",
+		Interval: time.Hour * 1, Description: "选品扫描",
+	})
+	sched.Register(scheduler.Task{
+		ID: "tick-m1", AgentID: "M1", DecisionPoint: "excretion_scoring",
+		Interval: time.Hour * 1, Description: "代谢排泄评分",
+	})
+	sched.Register(scheduler.Task{
+		ID: "tick-sla-escalation", AgentID: "agentos", DecisionPoint: "sla_escalation",
+		Interval: time.Minute * 15, Description: "SLA过期升级待审批动作",
+	})
 
 	// Ozon sync handler
 	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
@@ -502,7 +509,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 	// sourcing.recommend (A8) -> A2 listing_optimize for high-score products
 	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
-			// Process recommendation through the handler (logging, etc.)
+		// Process recommendation through the handler (logging, etc.)
 		_ = sourcing.HandleSourcingRecommend(db, logger)(ctx, evt)
 		score, _ := evt.Payload["score"].(int)
 		scoreFloat, _ := evt.Payload["score"].(float64)
@@ -562,7 +569,37 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
-	listingtask.RegisterRoutes(protected, db, logger)
+
+	// Initialize Prism client (config-driven; nil if disabled).
+	var prismSvc prismadapter.PrismService
+	prismStrict := cfg.Prism.Strict
+	if cfg.Prism.Enabled && cfg.Prism.BaseURL != "" {
+		timeout := time.Duration(cfg.Prism.Timeout) * time.Second
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
+		prismSvc = prismadapter.NewClient(cfg.Prism.BaseURL, cfg.Prism.APIKey, timeout)
+		logger.Info("Prism client initialized", zap.String("base_url", cfg.Prism.BaseURL), zap.Bool("strict", prismStrict))
+	} else {
+		logger.Info("Prism client disabled")
+	}
+	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+
+	candidate.RegisterRoutes(protected, db, logger)
+	completeness.RegisterRoutes(protected, db, logger)
+	profit.RegisterRoutes(protected, db, logger)
+	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+	mock.RegisterRoutes(protected, db, logger)
+	// Auto-seed mock demo data on startup
+	func() {
+		ms := mock.NewService(db, logger.Named("mock"))
+		if err := ms.SeedMockData(); err != nil {
+			logger.Warn("mock data seed failed", zap.Error(err))
+		}
+	}()
+
+	owner.RegisterRoutes(protected, db, logger)
+
 	shipping.RegisterRoutes(protected, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
 	order.RegisterRoutes(protected, db, logger)
@@ -582,7 +619,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	integrations.RegisterRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
-	sourcing.RegisterRoutes(protected, db, logger, sourcing.NewAgentEventPublisher(bus))
+	sourcing.RegisterRoutes(protected, db, logger, toolBridge, sourcing.NewAgentEventPublisher(bus))
 	sourcing1688.RegisterRoutes(protected, db, logger)
 	tariff.RegisterRoutes(protected, db, logger)
 	logistics.RegisterRoutes(protected, db, logger)
@@ -598,16 +635,16 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
-		// scheduler.tick.agentos -> SLA escalation for overdue pending actions
-		bus.Subscribe("scheduler.tick.agentos", func(ctx context.Context, evt eventbus.Event) error {
-			agentosSvc := agentos.NewService(db, logger)
-			return agentosSvc.SLAEscalation()
-		})
+	// scheduler.tick.agentos -> SLA escalation for overdue pending actions
+	bus.Subscribe("scheduler.tick.agentos", func(ctx context.Context, evt eventbus.Event) error {
+		agentosSvc := agentos.NewService(db, logger)
+		return agentosSvc.SLAEscalation()
+	})
 
 	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
 		logger.Info("metabolism: M1 tick received")
-			_, err := m1Svc.ScoreAndExcreteEntities(false)
-			return err
+		_, err := m1Svc.ScoreAndExcreteEntities(false)
+		return err
 	})
 	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 
