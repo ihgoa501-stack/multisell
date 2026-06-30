@@ -358,3 +358,79 @@ ListingTask 的 `ExecuteTask` 方法实现了 6 层执行门禁检查：
 | `go test ./internal/domain/listingtask` | ✅ 11/11 通过 |
 | `go test ./internal/domain/owner` | ✅ 1/1 通过 |
 | `npm run build` | ❌ 预计失败：products/[id]/page.tsx 预存错误（与本次改动无关） |
+## 本次新增内容（2026-06-30，可信经营闭环）
+
+### 新增领域模块
+
+| 模块 | 位置 | 说明 |
+|------|------|------|
+| **ListingTask 状态机** | `internal/domain/listingtask/statemachine.go` | 基于通用状态机框架的状态转换定义 |
+| **Approval Entity 字段** | `internal/domain/approval/model.go` | `EntityType` / `EntityID` 字段，支持关联到具体业务实体 |
+
+### 执行门禁（Execution Gate）
+
+ListingTask 的 `ExecuteTask` 方法实现了 6 层执行门禁检查：
+
+1. **任务存在** — 查询数据库确保任务存在
+2. **幂等性** — completed 状态直接返回成功；executing 状态返回错误
+3. **状态机校验** — 只有 approved 状态允许转换到 executing
+4. **ApprovalID 存在性** — 必须有 approval_id
+5. **审批记录校验** — 审批记录必须存在、为 approved、EntityType=listing_task、EntityID=task.ID
+6. **审计记录** — 操作前后记录 operation_log
+
+### Owner 反馈闭环
+
+- `POST /api/v1/owner/suggestions/:id/feedback {action:"adopt"}` — 采纳建议：更新 listing task 为 pending_approval，创建审批请求
+- `POST /api/v1/owner/suggestions/:id/feedback {action:"reject"}` — 拒绝建议：更新 feedback_status=rejected，更新 listing task 为 rejected
+- 同时记录 feedback_note 供审计
+
+### 新增 API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/v1/listing-task/:task_id/execute | 执行上架（通过执行门禁） |
+| PUT | /api/v1/approval/:id/review | 审批通过/拒绝 |
+| POST | /api/v1/owner/suggestions/:id/feedback | Owner 反馈（采纳/拒绝） |
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./internal/domain/listingtask/...` | 通过 |
+| `go test ./internal/domain/loop/...` | 通过 |
+| `go test ./internal/domain/approval/...` | 通过 |
+| `go test ./internal/domain/owner/...` | 通过 |
+| `go test ./internal/integrationtest/...` | 通过 |
+| `go vet ./...` | 通过 |
+
+### 已知限制
+
+- 上架执行目前是沙盒模式（mock），不推送到真实电商平台
+- 所有数据使用 in-memory SQLite，不依赖外部服务
+- Prism 图像合规检查可选（通过 config 控制），集成测试中默认禁用
+- Approval 自动升级（AutoEscalate）功能已实现但仅记录日志，不发送通知
+- RBAC 权限检查在集成测试中默认跳过（rbacSvc=nil）
+- 前端 lint（eslint）存在预先存在的问题（eslint-config-next 内部错误），非本次引入
+
+## 后续补充（2026-06-30，P1 收尾）
+
+### 结构化审计字段
+- `operation_log` 表新增 `trigger_type`、`agent_suggestion_id`、`approval_id`、`entity_type`、`entity_id` 字段
+- 新增 `000046_audit_structured_fields` migration
+- 所有闭环审计写入点已改用 `LogStructured` 方法
+- 审计现在可以直接 SQL 查询：按 trigger_type 过滤、按 approval_id 关联、按 entity 范围搜索
+
+### 状态机完备
+- 新增 Candidate Evaluation 状态机（candidate/statemachine.go）
+- 新增平台同步任务状态机（integrations/statemachine.go）
+- 5 个状态机全部就位：ListingTask、Approval、Recommendation、Candidate、PlatformSync
+
+### TrustScore 集成
+- `trustscore/service.go` 新增 `RecordAgentFeedback` 方法
+- Owner 反馈时自动调用 TrustScore 更新
+- 计算维度包含：采纳率 35% + 执行成功率 25% + 平均置信度 20% + listing 反馈率 20%
+
+### Owner 工作台增强
+- 新增 Tab 切换：决策队列、审批历史、Agent 评估
+- 审批历史展示已处理的 Agent 建议
+- Agent 评估展示各 Agent 信任分、采纳数、采纳率

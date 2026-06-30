@@ -6,19 +6,25 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
+	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides Owner cockpit aggregated data.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db            *gorm.DB
+	logger        *zap.Logger
+	trustscoreSvc *trustscore.Service // optional, may be nil
+	oplogSvc      *operationlog.Service // optional, may be nil
 }
 
 // NewService creates a new Owner cockpit service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+// trustscoreSvc may be nil (TrustScore integration disabled).
+// oplogSvc may be nil (audit logging disabled).
+func NewService(db *gorm.DB, logger *zap.Logger, trustscoreSvc *trustscore.Service, oplogSvc *operationlog.Service) *Service {
+	return &Service{db: db, logger: logger, trustscoreSvc: trustscoreSvc, oplogSvc: oplogSvc}
 }
 
 // RiskSummary returns aggregated risk metrics for the Owner cockpit.
@@ -247,6 +253,18 @@ type FeedbackInput struct {
 	Note   string `json:"note"`
 }
 
+// recordTrustScoreFeedback notifies TrustScore when feedback is recorded.
+func (s *Service) recordTrustScoreFeedback(agentID string) {
+	if s.trustscoreSvc == nil || agentID == "" {
+		return
+	}
+	if err := s.trustscoreSvc.RecordAgentFeedback(agentID); err != nil {
+		s.logger.Warn("failed to record trust score feedback",
+			zap.String("agent_id", agentID),
+			zap.Error(err))
+	}
+}
+
 // RecordFeedback records Owner feedback on a listing recommendation.
 // - adopt: updates listing task status to pending_approval, creates approval request
 // - reject: updates listing task status to rejected, sets feedback note
@@ -257,6 +275,7 @@ func (s *Service) RecordFeedback(recommendationID int64, input *FeedbackInput) e
 		ProductID           int64
 		Decision            string
 		CreatedListingTaskID *int64
+		TriggeredBy         string
 	}
 	var rec Rec
 	if err := s.db.Table("listing_recommendation").First(&rec, recommendationID).Error; err != nil {
@@ -300,7 +319,7 @@ func (s *Service) RecordFeedback(recommendationID int64, input *FeedbackInput) e
 			if input.Note != "" {
 				reason = input.Note
 			}
-			_, err := approvalSvc.Create(&approval.CreateApprovalInput{
+			approvalRec, err := approvalSvc.Create(&approval.CreateApprovalInput{
 				ProductID:   rec.ProductID,
 				RequestType: "listing_task",
 				Requester:   "owner",
@@ -310,6 +329,23 @@ func (s *Service) RecordFeedback(recommendationID int64, input *FeedbackInput) e
 			})
 			if err != nil {
 				return fmt.Errorf("create approval request: %w", err)
+			}
+
+			// Audit: record structured audit log for adopt action
+			if s.oplogSvc != nil {
+				_ = s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
+					Module:            "owner",
+					Action:            "owner.feedback",
+					ResourceID:        fmt.Sprintf("%d", recommendationID),
+					Operator:          "owner",
+					Content:           fmt.Sprintf("recommendation_id=%d action=adopt product_id=%d listing_task_id=%d note=%s", recommendationID, rec.ProductID, *rec.CreatedListingTaskID, input.Note),
+					Result:            "adopted",
+					TriggerType:       "owner_approval",
+					AgentSuggestionID: &rec.ID,
+					ApprovalID:        &approvalRec.ID,
+					EntityType:        "listing_task",
+					EntityID:          *rec.CreatedListingTaskID,
+				})
 			}
 		}
 
@@ -340,7 +376,30 @@ func (s *Service) RecordFeedback(recommendationID int64, input *FeedbackInput) e
 				}
 			}
 		}
+
+		// Audit: record structured audit log for reject action
+		if s.oplogSvc != nil {
+			listingTaskID := int64(0)
+			if rec.CreatedListingTaskID != nil {
+				listingTaskID = *rec.CreatedListingTaskID
+			}
+			_ = s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
+				Module:            "owner",
+				Action:            "owner.feedback",
+				ResourceID:        fmt.Sprintf("%d", recommendationID),
+				Operator:          "owner",
+				Content:           fmt.Sprintf("recommendation_id=%d action=reject product_id=%d listing_task_id=%d note=%s", recommendationID, rec.ProductID, listingTaskID, input.Note),
+				Result:            "rejected",
+				TriggerType:       "owner_approval",
+				AgentSuggestionID: &rec.ID,
+				EntityType:        "listing_task",
+				EntityID:          listingTaskID,
+			})
+		}
 	}
+
+	// Notify TrustScore about this feedback for agent evaluation
+	s.recordTrustScoreFeedback(rec.TriggeredBy)
 
 	return nil
 }

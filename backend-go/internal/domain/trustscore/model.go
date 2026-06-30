@@ -16,10 +16,15 @@ type TrustScore struct {
 	FailedActions  int     `gorm:"column:failed_actions;default:0" json:"failed_actions"`
 	AutoApproved   int     `gorm:"column:auto_approved;default:0" json:"auto_approved"`
 
+	// Listing recommendation feedback metrics
+	FeedbackAdopted   int `gorm:"column:feedback_adopted;default:0" json:"feedback_adopted"`
+	FeedbackRejected  int `gorm:"column:feedback_rejected;default:0" json:"feedback_rejected"`
+
 	// Derived trust metrics
 	AdoptionRate     float64 `gorm:"column:adoption_rate;type:numeric(5,4);default:0" json:"adoption_rate"`
 	ExecutionSuccess float64 `gorm:"column:execution_success;type:numeric(5,4);default:0" json:"execution_success"`
 	AvgConfidence    float64 `gorm:"column:avg_confidence;type:numeric(5,4);default:0" json:"avg_confidence"`
+	ListingFeedbackRate float64 `gorm:"column:listing_feedback_rate;type:numeric(5,4);default:0" json:"listing_feedback_rate"`
 	TrustScore       float64 `gorm:"column:trust_score;type:numeric(5,4);default:0" json:"trust_score"`       // 0.0 - 1.0
 	AutonomyLevel    string  `gorm:"column:autonomy_level;default:advisory" json:"autonomy_level"`            // advisory | guided | supervised | autonomous
 	TargetLevel      string  `gorm:"column:target_level" json:"target_level,omitempty"`                       // next eligible level

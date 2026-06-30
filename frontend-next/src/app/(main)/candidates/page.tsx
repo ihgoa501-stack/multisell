@@ -66,6 +66,7 @@ type EvaluateResult = {
 export default function CandidatesPage() {
   const router = useRouter();
   const [data, setData] = useState<Candidate[]>([]);
+  const [data, setData] = useState<CandidateProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState<number | null>(null);
   const [lastEvaluation, setLastEvaluation] = useState<EvaluateResult | null>(null);
@@ -134,21 +135,6 @@ export default function CandidatesPage() {
     }
   };
 
-  const handleEvaluate = async (productId: number) => {
-    try {
-      const res = await apiClient.post(`/v1/loop/evaluate/${productId}`, {
-        triggered_by: 'owner',
-      });
-      if (res.code === 0) {
-        message.success('评估完成，可在 Owner 总控台查看建议');
-      } else {
-        message.error(res.message || '评估失败');
-      }
-    } catch {
-      message.error('评估请求失败');
-    }
-  };
-
   const columns = [
     {
       title: 'ID',
@@ -205,6 +191,7 @@ export default function CandidatesPage() {
       title: '操作',
       width: 140,
       render: (_: unknown, record: Candidate) => (
+      render: (_: unknown, record: CandidateProduct) => (
         <Space size="small">
           <Button
             type="link"

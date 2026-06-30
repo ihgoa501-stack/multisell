@@ -34,6 +34,9 @@ func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismServ
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
 		profitSvc:       profit.NewService(db, logger),
+		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict),
+		approvalSvc:  approval.NewService(db, logger),
+		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, nil, nil, nil),
 		listingtaskSvc: listingtask.NewService(db, logger, prismSvc, prismStrict, nil, nil, nil),
 		approvalSvc:    approval.NewService(db, logger),
 	}

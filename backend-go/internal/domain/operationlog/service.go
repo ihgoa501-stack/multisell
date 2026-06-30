@@ -16,6 +16,21 @@ type ListFilter struct {
 	To       time.Time
 }
 
+// StructuredLogInput carries structured audit fields for LogStructured.
+type StructuredLogInput struct {
+	Module            string
+	Action            string
+	ResourceID        string
+	Operator          string
+	Content           string
+	Result            string
+	TriggerType       string
+	AgentSuggestionID *int64
+	ApprovalID        *int64
+	EntityType        string
+	EntityID          int64
+}
+
 // Service provides operationlog business logic.
 type Service struct {
 	db     *gorm.DB
@@ -74,7 +89,7 @@ func (s *Service) Create(l *OperationLog) error {
 	return s.db.Create(l).Error
 }
 
-// Log is a convenience helper for recording mutations.
+// Log is a convenience helper for recording mutations (backward-compatible).
 func (s *Service) Log(module, action, resourceID, operator, content string) error {
 	return s.Create(&OperationLog{
 		Module:     module,
@@ -82,5 +97,22 @@ func (s *Service) Log(module, action, resourceID, operator, content string) erro
 		ResourceID: resourceID,
 		Operator:   operator,
 		Content:    content,
+	})
+}
+
+// LogStructured records a structured audit log entry with trigger metadata.
+func (s *Service) LogStructured(input *StructuredLogInput) error {
+	return s.Create(&OperationLog{
+		Module:            input.Module,
+		Action:            input.Action,
+		ResourceID:        input.ResourceID,
+		Operator:          input.Operator,
+		Content:           input.Content,
+		Result:            input.Result,
+		TriggerType:       input.TriggerType,
+		AgentSuggestionID: input.AgentSuggestionID,
+		ApprovalID:        input.ApprovalID,
+		EntityType:        input.EntityType,
+		EntityID:          input.EntityID,
 	})
 }
