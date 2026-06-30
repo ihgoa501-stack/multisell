@@ -485,13 +485,17 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		return &task, nil
 	}
 
-	// Blocked tasks require an approved approval before execution.
-	if task.Status == "blocked" {
-		approvalSvc := approval.NewService(s.db, s.logger)
-		if _, err := approvalSvc.FindApprovedByTarget("listing_task", task.ID, "publish"); err != nil {
-			return nil, fmt.Errorf("approval required for listing task %d: %w", task.ID, err)
-		}
-		task.Status = "pending"
+	// Validation gate
+	if err := s.validateExecutePreconditions(&task); err != nil {
+		return nil, err
+	}
+
+	// Audit: execution started
+	s.writeAudit("listing_task.execute", "started", fmt.Sprintf("%d", taskID), operator,
+		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID))
+
+	oldStatus := task.Status
+
 		if err := s.db.Model(&task).Update("status", "pending").Error; err != nil {
 			return nil, err
 		}

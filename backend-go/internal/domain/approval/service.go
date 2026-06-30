@@ -185,6 +185,19 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 	return stats, nil
 }
 
+// HasPendingForEntity checks if there is a pending approval for the given entity.
+// Used for duplicate-prevention when creating approvals linked to a listing task.
+func (s *Service) HasPendingForEntity(entityType string, entityID int64) (bool, error) {
+	var count int64
+	err := s.db.Model(&ApprovalRequest{}).
+		Where("entity_type = ? AND entity_id = ? AND status = ?", entityType, entityID, "pending").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // FindApprovedByTarget returns the most recent approved approval for a given target and request type.
 func (s *Service) FindApprovedByTarget(targetType string, targetID int64, requestType string) (*ApprovalRequest, error) {
 	var req ApprovalRequest

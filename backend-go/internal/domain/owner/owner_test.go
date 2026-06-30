@@ -103,6 +103,7 @@ func TestService_Suggestions_Empty(t *testing.T) {
 func TestService_Suggestions_DefaultLimit(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
 		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
@@ -123,6 +124,7 @@ func TestService_Suggestions_DefaultLimit(t *testing.T) {
 func TestService_Suggestions_WithFeedbackStatus(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS candidate_product (
 		id INTEGER PRIMARY KEY, title TEXT
@@ -166,6 +168,7 @@ func TestService_Suggestions_WithFeedbackStatus(t *testing.T) {
 func TestService_RecordFeedback_InvalidAction(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
 		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
@@ -182,6 +185,7 @@ func TestService_RecordFeedback_InvalidAction(t *testing.T) {
 func TestService_RecordFeedback_Reject(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
 		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
@@ -213,6 +217,7 @@ func TestService_RecordFeedback_Reject(t *testing.T) {
 func TestService_RecordFeedback_AdoptWithListingTask(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
 		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
@@ -274,6 +279,7 @@ func TestService_RecordFeedback_AdoptWithListingTask(t *testing.T) {
 func TestService_RecordFeedback_NotFound(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
 
 	err := svc.RecordFeedback(999, &FeedbackInput{Action: "adopt"})
 	if err == nil {
