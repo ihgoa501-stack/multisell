@@ -26,3 +26,29 @@ type ValidateRequest struct {
 	Language    string `json:"language" binding:"required"`
 	Platform    string `json:"platform" binding:"required"`
 }
+
+
+// LocalizeInput is the request payload for the content localization endpoint.
+type LocalizeInput struct {
+	Title           string `json:"title"`
+	Description     string `json:"description"`
+	Keywords        []string `json:"keywords"`
+	SourceLanguage  string `json:"source_language"`
+	TargetPlatform  string `json:"target_platform"`
+	TargetLocale    string `json:"target_locale"`
+	Category        string `json:"category"`
+	Brand           string `json:"brand"`
+	Specifications  []string `json:"specifications"`
+}
+
+// LocalizedContent is the response payload for the content localization endpoint.
+type LocalizedContent struct {
+	Title           string   `json:"title"`
+	Description     string   `json:"description"`
+	Keywords        []string `json:"keywords"`
+	Platform        string   `json:"platform"`
+	Locale          string   `json:"locale"`
+	AppliedRules    []string `json:"applied_rules"`
+	FilteredTerms   []string `json:"filtered_terms"`
+	FieldMapping    map[string]string `json:"field_mapping"`
+}
