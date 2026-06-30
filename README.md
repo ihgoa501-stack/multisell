@@ -6,9 +6,8 @@
 
 - Backend: `backend-go/` — Go / Gin / GORM / PostgreSQL
 - Frontend: `frontend-next/` — Next.js / React / TypeScript / Ant Design
-- Legacy paused: `backend/` and `frontend/`
 
-旧 Python/FastAPI + Vue 版本已暂停维护，仅用于行为对照、数据迁移和紧急回滚。具体规则见 [Active Stack Policy](docs/ACTIVE_STACK_POLICY.md)。
+旧 Python/FastAPI + Vue 版本已于 2026-06-30 删除，历史代码保留在 git history 中。
 
 ## 核心定位
 
@@ -72,13 +71,9 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 访问 http://localhost:3000
 
-### 启动旧版本（仅回滚/对照）
+### 启动旧版本
 
-```bash
-docker compose -f docker-compose.legacy.yml up -d
-```
-
-旧版本不再承接新功能。
+旧版本已于 2026-06-30 删除，历史代码在 git history 中。
 
 ## 测试
 
@@ -121,9 +116,8 @@ npm run lint
 
 从旧版本迁移到新版本时，按新后端迁移 runbook 执行：
 
-1. 在 staging 中导入旧库数据并重命名为 `legacy_*` 表。
-2. 执行 `backend-go/migrations/000003_data_migration.up.sql`。
-3. 执行 `backend-go/migrations/validate.sql`，确认行数、checksum、FK 完整性。
+1. 执行 `backend-go/migrations/000003_data_migration.up.sql`。
+2. 执行 `backend-go/migrations/validate.sql`，确认行数、checksum、FK 完整性。
 
 ## 技术栈
 
@@ -131,6 +125,4 @@ npm run lint
 - 前端：Next.js / React / TypeScript / Ant Design
 - 部署：Docker / Docker Compose / Nginx
 
-## Legacy Status
-
-`backend/` and `frontend/` are paused. Do not add new product features there.
+旧栈已于 2026-06-30 删除。历史代码保留在 git history 中。

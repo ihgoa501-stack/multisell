@@ -6,16 +6,17 @@
 
 ## 当前结论
 
-凌镜已完成全站新技术栈迁移，并完成一人Agent公司7天MVP最小经营闭环的核心接线。
+凌镜已完成全站新技术栈迁移，旧栈（Python/FastAPI + Vue 3）已于 2026-06-30 删除。
+Git history 保留了全部历史代码，可随时回溯。
 
-当前唯一活跃开发线是：
+当前唯一活跃开发线：
 
 - Backend: `backend-go/`，Go / Gin / GORM / PostgreSQL
 - Frontend: `frontend-next/`，Next.js / React / TypeScript / Ant Design
 - API prefix: `/api/v1`
 - Health check: `/api/health`
 
-旧栈 `backend/`（Python / FastAPI）和 `frontend/`（Vue 3）已经暂停，只能用于行为对照、迁移参考、安全回滚或文档标注。新功能不得继续落到旧栈。
+历史文档中出现 `backend/app/*`、`frontend/src/views/*`、`/api/*` 时，按旧栈参考处理（已归档在 git history 中）。
 
 ## 一句话说明
 
