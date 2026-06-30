@@ -3,7 +3,6 @@ package memory
 import (
 	"sort"
 	"strings"
-	"sync"
 
 	"go.uber.org/zap"
 )
@@ -22,8 +21,7 @@ type LongTermMemory struct {
 	// When non-nil, items are embedded on Remember for vector-based retrieval.
 	// In v1, this is unused — search is keyword-based.
 	embedFn func(text string) ([]float32, error)
-
-	mu     sync.RWMutex // guards agentID (the store has its own lock)
+ // guards agentID (the store has its own lock)
 	logger *zap.Logger
 }
 

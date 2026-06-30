@@ -62,7 +62,7 @@ export default function PlatformIntegrationsPage() {
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>平台对接</h1>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', margin: 0 }}>平台对接</h1>
         <Button type="primary" icon={<LinkOutlined />} onClick={() => setModalOpen(true)}>连接 Ozon 店铺</Button>
       </div>
 

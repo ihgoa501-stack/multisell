@@ -10,6 +10,8 @@ type OperationLog struct {
 	ResourceID string    `gorm:"column:resource_id;size:100" json:"resource_id"`
 	Content    string    `gorm:"column:content;type:text" json:"content"`
 	Operator   string    `gorm:"column:operator;size:100" json:"operator"`
+	UserID     int64     `gorm:"column:user_id" json:"user_id"`
+	Result     string    `gorm:"column:result;size:20" json:"result"` // success/failure
 	IP         string    `gorm:"column:ip;size:50" json:"ip"`
 	Duration   int       `gorm:"column:duration" json:"duration"`
 	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`

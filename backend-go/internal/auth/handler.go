@@ -31,7 +31,7 @@ type registerRequest struct {
 	Password    string `json:"password" binding:"required,min=6"`
 	DisplayName string `json:"display_name"`
 	Email       string `json:"email"`
-	Role        string `json:"role"` // optional, defaults to "user"
+	Role        string `json:"role"` // ignored on purpose — hardcoded in Register for security
 }
 
 // Register handles new user registration.
@@ -41,7 +41,10 @@ func (h *Handler) Register(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "参数无效: "+err.Error())
 		return
 	}
-	user, err := h.service.Register(req.Username, req.Password, req.DisplayName, req.Email, req.Role)
+	// Security: hardcode role to "operator" instead of accepting it from the client.
+	// This prevents self-registration as admin or other privileged roles.
+	// Role changes must go through the admin user management endpoint (not yet implemented).
+	user, err := h.service.Register(req.Username, req.Password, req.DisplayName, req.Email, "operator")
 	if err != nil {
 		response.Error(c, http.StatusConflict, err.Error())
 		return

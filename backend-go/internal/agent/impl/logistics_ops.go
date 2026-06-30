@@ -127,8 +127,8 @@ func (a *LogisticsOpsAgent) toolDefs() []*toolregistry.Tool {
 //   - logistics_route_opt    — recommend logistics route mix
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
-func (a *LogisticsOpsAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
-	result, callErr := a.toolReg.Call(context.Background(), decisionPoint, ctx)
+func (a *LogisticsOpsAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	result, callErr := a.toolReg.Call(ctx, decisionPoint, params)
 	if callErr != nil {
 		return map[string]interface{}{
 			"status":         "unknown",

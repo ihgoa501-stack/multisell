@@ -6,7 +6,37 @@
 // Observer queries described in the architecture doc.
 package observability
 
-import "time"
+import (
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+// Prometheus metrics for agent heartbeat and instance state monitoring.
+var (
+	AgentMissedHeartbeats = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "multisell_agent_missed_heartbeats",
+		Help: "Number of consecutive missed heartbeats per agent",
+	}, []string{"agent_id"})
+
+	AgentInstanceState = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "multisell_agent_instance_state",
+		Help: "Agent instance state: 0=Running, 1=Degraded, 2=Stopped",
+	}, []string{"agent_id"})
+
+	// AgentAdoptionRate tracks the action adoption rate per agent.
+	AgentAdoptionRate = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "multisell_agent_adoption_rate",
+		Help: "Action adoption rate per agent (adopted / total)",
+	}, []string{"agent_id"})
+
+	// AgentSuccessRate tracks the execution success rate per agent.
+	AgentSuccessRate = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "multisell_agent_success_rate",
+		Help: "Execution success rate per agent",
+	}, []string{"agent_id"})
+)
 
 // AgentMetrics is a per-agent metrics snapshot over a time period.
 //
