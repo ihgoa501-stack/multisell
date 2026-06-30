@@ -9,6 +9,7 @@ body:
         ### 提交前检查 / Before Submitting
         - 搜索现有 [Issues](https://github.com/ihgoa501-stack/multisell/issues) 确认没有重复 / Search existing issues to avoid duplicates
         - 如果是不成熟的想法或讨论，请先使用 [Discussions](https://github.com/ihgoa501-stack/multisell/discussions) / For early-stage ideas, use Discussions first
+        - 📖 写 Issue 指南 / Guide: [issue-example.md](https://github.com/ihgoa501-stack/multisell/blob/main/issue-example.md)
 
   - type: textarea
     id: background
