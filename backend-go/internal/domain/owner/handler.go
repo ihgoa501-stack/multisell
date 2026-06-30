@@ -54,3 +54,25 @@ func (h *Handler) PlatformSyncStatus(c *gin.Context) {
 	}
 	response.Success(c, items)
 }
+
+// Feedback POST /owner/suggestions/:id/feedback
+func (h *Handler) Feedback(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid suggestion id")
+		return
+	}
+
+	var in FeedbackInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.service.RecordFeedback(id, &in); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"message": "feedback recorded"})
+}

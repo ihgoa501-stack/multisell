@@ -272,3 +272,56 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - 剩余 lint 34 problems（12 errors / 22 warnings）均为无关模块遗留
 - **需修复** `src/config/menu.ts` 合并冲突标记（导致 build 失败）
 - 清理 stale worktrees
+
+## 本次新增内容（2026-06-30，可信经营闭环）
+
+### 新增领域模块
+
+| 模块 | 位置 | 说明 |
+|------|------|------|
+| **ListingTask 状态机** | `internal/domain/listingtask/statemachine.go` | 基于通用状态机框架的状态转换定义 |
+| **Approval Entity 字段** | `internal/domain/approval/model.go` | `EntityType` / `EntityID` 字段，支持关联到具体业务实体 |
+
+### 执行门禁（Execution Gate）
+
+ListingTask 的 `ExecuteTask` 方法实现了 6 层执行门禁检查：
+
+1. **任务存在** — 查询数据库确保任务存在
+2. **幂等性** — completed 状态直接返回成功；executing 状态返回错误
+3. **状态机校验** — 只有 approved 状态允许转换到 executing
+4. **ApprovalID 存在性** — 必须有 approval_id
+5. **审批记录校验** — 审批记录必须存在、为 approved、EntityType=listing_task、EntityID=task.ID
+6. **审计记录** — 操作前后记录 operation_log
+
+### Owner 反馈闭环
+
+- `POST /api/v1/owner/suggestions/:id/feedback {action:"adopt"}` — 采纳建议：更新 listing task 为 pending_approval，创建审批请求
+- `POST /api/v1/owner/suggestions/:id/feedback {action:"reject"}` — 拒绝建议：更新 feedback_status=rejected，更新 listing task 为 rejected
+- 同时记录 feedback_note 供审计
+
+### 新增 API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/v1/listing-task/:task_id/execute | 执行上架（通过执行门禁） |
+| PUT | /api/v1/approval/:id/review | 审批通过/拒绝 |
+| POST | /api/v1/owner/suggestions/:id/feedback | Owner 反馈（采纳/拒绝） |
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./internal/domain/listingtask/...` | 通过 |
+| `go test ./internal/domain/loop/...` | 通过 |
+| `go test ./internal/domain/approval/...` | 通过 |
+| `go test ./internal/domain/owner/...` | 通过 |
+| `go test ./internal/integrationtest/...` | 通过 |
+| `go vet ./...` | 通过 |
+
+### 已知限制
+
+- 上架执行目前是沙盒模式（mock），不推送到真实电商平台
+- 所有数据使用 in-memory SQLite，不依赖外部服务
+- Prism 图像合规检查可选（通过 config 控制），集成测试中默认禁用
+- Approval 自动升级（AutoEscalate）功能已实现但仅记录日志，不发送通知
+- RBAC 权限检查在集成测试中默认跳过（rbacSvc=nil）

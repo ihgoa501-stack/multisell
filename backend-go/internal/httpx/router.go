@@ -681,7 +681,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	} else {
 		logger.Info("Prism client disabled")
 	}
-	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+	approvalSvc := approval.NewService(db, logger, auditSvc)
+	rbacSvc := rbac.NewService(db, logger)
+	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
+	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
 
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
@@ -698,7 +701,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	owner.RegisterRoutes(protected, db, logger)
 	agentlearning.RegisterRoutes(protected, db, logger)
-	approval.RegisterRoutes(protected, db, logger)
+	approval.RegisterRoutes(protected, db, logger, auditSvc)
 	landedcost.RegisterRoutes(protected, db, logger)
 	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
 	personalrule.RegisterRoutes(protected, db, logger)

@@ -5,19 +5,22 @@ import (
 	"math"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides CRUD operations and auto-escalation for approval requests.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db       *gorm.DB
+	logger   *zap.Logger
+	oplogSvc *operationlog.Service // optional, may be nil
 }
 
 // NewService creates a new approval service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+// oplogSvc may be nil (audit logging disabled).
+func NewService(db *gorm.DB, logger *zap.Logger, oplogSvc *operationlog.Service) *Service {
+	return &Service{db: db, logger: logger, oplogSvc: oplogSvc}
 }
 
 // List returns paginated approval requests with optional filters.
@@ -67,6 +70,8 @@ func (s *Service) Create(input *CreateApprovalInput) (*ApprovalRequest, error) {
 		NewValue:    input.NewValue,
 		Reason:      input.Reason,
 		ExpiresAt:   input.ExpiresAt,
+		EntityType:  input.EntityType,
+		EntityID:    input.EntityID,
 	}
 	if err := s.db.Create(req).Error; err != nil {
 		return nil, fmt.Errorf("creating approval request: %w", err)
@@ -176,6 +181,20 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 	stats.EscalatedCount = escalated
 
 	return stats, nil
+}
+
+
+// HasPendingForEntity checks if there is a pending approval for the given entity.
+// Used for duplicate-prevention when creating approvals linked to a listing task.
+func (s *Service) HasPendingForEntity(entityType string, entityID int64) (bool, error) {
+	var count int64
+	err := s.db.Model(&ApprovalRequest{}).
+		Where("entity_type = ? AND entity_id = ? AND status = ?", entityType, entityID, "pending").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // AutoEscalate checks for requests pending > 24h and returns their IDs.

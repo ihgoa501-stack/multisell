@@ -82,7 +82,7 @@ func NewAgentDecisionSubscriber(db *gorm.DB, logger *zap.Logger) func(ctx contex
 			reason = r
 		}
 
-		svc := NewService(db, logger)
+		svc := NewService(db, logger, nil)
 		input := &CreateApprovalInput{
 			ProductID:   productID,
 			RequestType: requestType,
