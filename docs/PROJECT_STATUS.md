@@ -2,7 +2,7 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-06-30
+更新时间：2026-06-30（P0 基线恢复完成）
 
 ## 当前结论
 
@@ -89,6 +89,33 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 | `cd frontend-next && npm test` | 通过 | 77 tests |
 | `cd frontend-next && npm run build` | **失败** | `src/config/menu.ts` 存在未解决的合并冲突标记，3 个 Turbopack 构建错误 |
 | `cd frontend-next && npm run lint` | **12 errors, 22 warnings** | 34 problems；含 merge conflict 解析错误、react-hooks/set-state-in-effect、@typescript-eslint/no-unused-vars 等 |
+
+## 本次修复内容（2026-06-30，P0 工程基线恢复）
+
+### 验证状态更新
+
+| 检查 | 结果 | 说明 |
+|---|---:|---|
+| `cd frontend-next && npm test` | 通过 ✅ | 77 tests，12 文件，3.1s |
+| `cd frontend-next && npm run build` | 通过 ✅ | 76 routes，Turbopack + TS + 静态生成均无错误 |
+| `cd frontend-next && npm run lint` | 通过 ✅ | 0 errors，0 warnings |
+
+### 修复的文件
+
+| 文件 | 问题 | 修复方式 |
+|------|------|----------|
+| `frontend-next/src/app/(main)/products/[id]/compliance-tab.tsx` | `setState` 在 useEffect 同步调用 (lint error) | 内联异步 fetch + cancelled flag，移除同步 setState |
+| `frontend-next/src/lib/realtime.ts` | `PONG_TIMEOUT_MS` 声明未使用 (lint warning) | 移除未使用的常量和注释 |
+| `frontend-next/src/app/(main)/listing-tasks/[id]/page.tsx` | `isPendingApproval` 赋值未使用 (lint warning) | 移除已废弃的变量 |
+| `frontend-next/src/app/(main)/owner/page.tsx` | 未闭合 `<div>` 标签导致解析错误 (build blocker) | 从 `main` 分支同步正确版本 |
+| `frontend-next/src/app/(main)/candidates/page.tsx` | `handleEvaluate` 重复定义 (build blocker) + `Candidate` 类型名过期 | 移除重复函数，修正类型名 `Candidate` → `CandidateProduct` |
+
+### 生效范围
+
+- **修改层:** 前端代码 5 文件，文档 1 文件
+- **产品行为:** 无变化（compliance-tab 去除初始 loading 动画，不影响用户可感知行为）
+- **后端:** 无变更
+- **UI 设计:** 无变更
 
 ## 本次修复内容（2026-06-25，4 Agent 并行执行）
 
@@ -269,8 +296,6 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - PR #29 — body 已更新，comment 已追加
 
 ### 待办
-- 剩余 lint 34 problems（12 errors / 22 warnings）均为无关模块遗留
-- **需修复** `src/config/menu.ts` 合并冲突标记（导致 build 失败）
 - 清理 stale worktrees
 
 ## 本次新增内容（2026-06-30，Production Closed Loop）

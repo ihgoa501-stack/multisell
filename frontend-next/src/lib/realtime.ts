@@ -29,8 +29,7 @@ export type WSConnectionStatus =
 
 /** Heartbeat interval in milliseconds. */
 const HEARTBEAT_MS = 25_000;
-/** Pong timeout in milliseconds — if no pong after ping, force reconnect. */
-const PONG_TIMEOUT_MS = 10_000;
+// ponytail: pong timeout (10s) reserved for future heartbeat enforcement.
 
 /** Maximum reconnection attempts before giving up entirely. */
 const MAX_RETRIES = 10;
