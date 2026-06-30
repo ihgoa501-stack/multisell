@@ -39,15 +39,15 @@ func NewSourcingAgent() *SourcingAgent {
 //   - "sourcing_recommend" — delegates to toolregistry.DefaultRegistry.Call()
 //
 // Returns: output map, confidence [0-1], riskLevel (low/medium/high), error.
-func (a *SourcingAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *SourcingAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	switch decisionPoint {
 	case "sourcing_recommend":
 		// Validate required fields before calling the tool.
-		if missing := missingFields(ctx, sourcingRequiredFields); len(missing) > 0 {
+		if missing := missingFields(params, sourcingRequiredFields); len(missing) > 0 {
 			return insufficientData("sourcing_recommend", missing), 0.0, "low", nil
 		}
 
-		result, callErr := toolregistry.DefaultRegistry.Call(context.Background(), "sourcing.recommend", ctx)
+		result, callErr := toolregistry.DefaultRegistry.Call(ctx, "sourcing.recommend", params)
 		if callErr != nil {
 			return map[string]interface{}{
 				"status":         "error",

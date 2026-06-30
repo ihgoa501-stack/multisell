@@ -39,6 +39,25 @@ type ProductSupplier struct {
 // TableName overrides the default table name.
 func (ProductSupplier) TableName() string { return "product_supplier" }
 
+// SupplierScore stores computed credibility scores for a supplier.
+type SupplierScore struct {
+	ID                  int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	SupplierID          int64     `gorm:"column:supplier_id;not null;uniqueIndex" json:"supplier_id"`
+	OnTimeDeliveryRate  float64   `gorm:"column:on_time_delivery_rate;default:0" json:"on_time_delivery_rate"`   // 0-100
+	QualityPassRate     float64   `gorm:"column:quality_pass_rate;default:0" json:"quality_pass_rate"`           // 0-100
+	CommunicationScore  float64   `gorm:"column:communication_score;default:0" json:"communication_score"`       // 0-100
+	OrderFulfillmentPct float64   `gorm:"column:order_fulfillment_pct;default:0" json:"order_fulfillment_pct"`   // % of orders fulfilled
+	AvgLeadTimeDays     float64   `gorm:"column:avg_lead_time_days;default:0" json:"avg_lead_time_days"`
+	ReliabilityScore    float64   `gorm:"column:reliability_score;default:0" json:"reliability_score"`           // composite 0-100
+	DataFreshness       int       `gorm:"column:data_freshness;default:0" json:"data_freshness"`                 // days since last update
+	LastOrderDate       *time.Time `gorm:"column:last_order_date" json:"last_order_date,omitempty"`
+	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt           time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+// TableName overrides the default table name.
+func (SupplierScore) TableName() string { return "supplier_score" }
+
 // SupplierComparisonResponse is the response for product-vs-supplier comparison.
 type SupplierComparisonResponse struct {
 	ProductID   int64             `json:"product_id"`

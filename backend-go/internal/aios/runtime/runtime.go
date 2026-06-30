@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/aios/observability"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 )
@@ -415,6 +416,11 @@ func (r *Runtime) HealthCheck(ctx context.Context) {
 			r.checkHeartbeat(ctx, inst, now)
 		}
 
+		// Set Prometheus metrics for this agent instance.
+		agentID := inst.Manifest.ID
+		observability.AgentMissedHeartbeats.WithLabelValues(agentID).Set(float64(inst.MissedHeartbeats))
+		observability.AgentInstanceState.WithLabelValues(agentID).Set(float64(agentStateToCode(inst.State)))
+
 		inst.mu.Unlock()
 	}
 }
@@ -491,6 +497,19 @@ func (r *Runtime) tryRecovery(ctx context.Context, inst *AgentInstance, now time
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+// agentStateToCode maps agent lifecycle states to Prometheus metric codes:
+// 0 = Running (Ready, Active, Idle), 1 = Degraded, 2 = Stopped (all others).
+func agentStateToCode(s AgentInstanceState) int {
+	switch s {
+	case StateReady, StateActive, StateIdle:
+		return 0 // Running
+	case StateDegraded:
+		return 1 // Degraded
+	default:
+		return 2 // Stopped
+	}
+}
 
 // getInstance returns the agent instance by ID, acquiring the runtime read
 // lock briefly to find the pointer, then returning it. The caller must

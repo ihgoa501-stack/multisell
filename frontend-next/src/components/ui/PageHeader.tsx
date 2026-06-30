@@ -38,7 +38,7 @@ export default function PageHeader({
         }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>{title}</h1>
+          <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', margin: 0 }}>{title}</h1>
           {subtitle && (
             <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
               {subtitle}

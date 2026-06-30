@@ -15,6 +15,17 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.2.1`.
 
+## Governance First
+
+This repository uses an Owner-first, platform-first multi-Agent workflow. Before non-trivial development, refactor, review, QA, or release work, read the governance documents:
+
+- `docs/governance/OWNER_FIRST_PROTOCOL.md` — the Owner describes business goals; Agents own technical translation and must report in business language.
+- `docs/governance/PLATFORM_CONSTITUTION.md` — highest-level platform rules: system layers, risk levels, forbidden actions, and Owner decision boundaries.
+- `docs/governance/AGENT_DEVELOPMENT_PROTOCOL.md` — multi-Agent roles, start checklist, review checklist, QA checklist, and handoff rules.
+- `docs/governance/KERNEL_CONTRACTS.md` — EventBus, Command, Scheduler, ToolBridge, Approval, Audit, RBAC, Observability, and Migration contracts.
+
+When these governance docs conflict with older project docs, follow the governance docs unless the Owner explicitly overrides them.
+
 | Stack | Dir | Entry |
 |-------|-----|-------|
 | Backend (active) | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
@@ -179,6 +190,7 @@ Legacy Hermes Python (`backend/app/agent/`) is reference-only.
 ## Documentation
 
 - `CLAUDE.md` — Claude Code guidance (keep consistent).
+- `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.
 - `docs/INDEX.md` — full doc index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
 - `docs/ACTIVE_STACK_POLICY.md` — active/legacy policy.
