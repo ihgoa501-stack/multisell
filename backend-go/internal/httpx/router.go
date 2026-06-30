@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -53,6 +54,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
+	"github.com/lingmirror/backend-go/internal/domain/supplyevent"
 		"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
@@ -134,7 +136,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Supply chain orchestrator (bridges A8 sourcing with A10 logistics quoting,
 	// and handles reverse logistics via HandleAftersaleReturn).
-	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker)
+	// Wired with an ActionCreator adapter so refund/resend/replenish operations
+	// create approval-gated UnifiedActions instead of executing directly.
+	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker).
+		WithActionCreator(&scActionCreatorAdapter{db: db, logger: logger})
 
 	// ==========================================================
 	// Event Bus Subscriptions: agent triggers + pipeline chains
@@ -246,6 +251,59 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 				Context:       payload,
 			})
 			return err
+		}
+		return nil
+	})
+
+	// A5 stock_alert (red) → publish supplychain.stock.critical
+	// Issue #41: smart stock linkage. When A5 detects a red (critical) stock
+	// level, publish a supplychain.stock.critical event so the supply-chain
+	// orchestrator can create a reverse-logistics-style flow, trigger A8
+	// sourcing rescan, and create an approval-gated replenishment action.
+	// This is a publish-only bridge — the orchestrator handles all side
+	// effects, and replenishment never executes automatically.
+	bus.Subscribe("agent.decided.A5.stock_alert", func(ctx context.Context, evt eventbus.Event) error {
+		payload := evt.Payload
+		status, _ := payload["stock_status"].(string)
+		if status != "red" {
+			return nil
+		}
+		// Extract SKU ID from the payload. A5's output uses sku_code (string);
+		// resolve to sku_id via the skus table so downstream handlers can join.
+		skuCode, _ := payload["sku_code"].(string)
+		var skuID int64
+		if skuCode != "" {
+			var s sku.Sku
+			if err := db.WithContext(ctx).Where("code = ?", skuCode).First(&s).Error; err == nil {
+				skuID = s.ID
+			} else {
+				logger.Warn("A5 red → stock.critical: sku_code lookup failed",
+					zap.String("sku_code", skuCode), zap.Error(err))
+			}
+		}
+		if skuID == 0 {
+			// Without a SKU ID the orchestrator cannot act; skip silently.
+			return nil
+		}
+		// Publish a supplyevent.StockCritical event. Fields are best-effort:
+		// A5's output has sellable_stock/sellable_days but not safety_stock;
+		// we pass what we have and let the orchestrator handle defaults.
+		stockCritical := supplyevent.StockCritical{
+			SkuID:        skuID,
+			CurrentStock: int(toInt(payload["sellable_stock"])),
+			SafetyStock:  int(toInt(payload["safety_stock_days"])),
+			SellableDays: toFloat64(payload["sellable_days"]),
+			ReportedAt:   time.Now(),
+		}
+		scPayload, err := supplyevent.ToPayload(stockCritical)
+		if err != nil {
+			logger.Warn("A5 red → stock.critical: marshal failed", zap.Error(err))
+			return nil
+		}
+		_, err = bus.Publish(ctx, "supplychain.stock.critical", "A5", scPayload)
+		if err != nil {
+			logger.Warn("A5 red → stock.critical: publish failed",
+				zap.Int64("sku_id", skuID), zap.Error(err))
 		}
 		return nil
 	})
@@ -511,6 +569,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return supplyChainOrch.HandleStockCritical(ctx, evt)
 	})
 
+	// Issue #41: sourcing.rescan → A8 sourcing rescan handler.
+	// Published by the orchestrator when stock.critical fires; A8 logs the
+	// rescan request and (in Phase 2) re-evaluates sourcing for the affected
+	// SKU/category to find replacement products. Read-only — never places POs.
+	bus.Subscribe("sourcing.rescan", sourcing.HandleSourcingRescan(db, logger))
+
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
 	listingtask.RegisterRoutes(protected, db, logger)
@@ -584,4 +648,80 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 		Context:       ctx,
 	})
 	return err
+}
+
+// scActionCreatorAdapter adapts *ai.Service to the supplychain.ActionCreator
+// interface. It converts the supplychain-local ActionInput to ai.CreateActionInput
+// and persists a "suggested" UnifiedAction that requires human approval.
+//
+// This adapter exists to keep the supplychain package decoupled from
+// internal/ai — the domain layer speaks in supplychain.ActionInput, and the
+// adapter handles the translation at the wiring layer.
+type scActionCreatorAdapter struct {
+	db     *gorm.DB
+	logger *zap.Logger
+}
+
+// CreateAction converts the supplychain-local input and persists a
+// UnifiedAction via ai.Service. Returns the new action ID.
+func (a *scActionCreatorAdapter) CreateAction(in *supplychain.ActionInput) (int64, error) {
+	svc := ai.NewService(a.db, a.logger)
+	var payloadRaw json.RawMessage
+	if len(in.Payload) > 0 {
+		raw, err := json.Marshal(in.Payload)
+		if err != nil {
+			return 0, err
+		}
+		payloadRaw = raw
+	}
+	requires := in.RequiresApproval
+	action, err := svc.CreateAction(&ai.CreateActionInput{
+		SourceTable:        in.SourceTable,
+		SourceID:           in.SourceID,
+		SourceType:         in.SourceType,
+		AgentID:            in.AgentID,
+		SquadID:            in.SquadID,
+		ActionType:         in.ActionType,
+		BusinessObjectType: in.BusinessObjectType,
+		BusinessObjectID:   in.BusinessObjectID,
+		Title:              in.Title,
+		Description:        in.Description,
+		Payload:            payloadRaw,
+		RiskLevel:          in.RiskLevel,
+		RequiresApproval:   &requires,
+		ProposedBy:         in.ProposedBy,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return action.ID, nil
+}
+
+// toInt extracts an integer from a map value, handling int, int64, and
+// float64 representations that arise from in-process vs. JSON-deserialized
+// event payloads.
+func toInt(v interface{}) int64 {
+	switch n := v.(type) {
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	}
+	return 0
+}
+
+// toFloat64 extracts a float64 from a map value, handling int, int64, and
+// float64 representations.
+func toFloat64(v interface{}) float64 {
+	switch n := v.(type) {
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case float64:
+		return n
+	}
+	return 0
 }

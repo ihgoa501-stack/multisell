@@ -3,6 +3,7 @@ package supplychain
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -459,5 +460,256 @@ func TestOrchestrator_HandleStockCritical_MissingSkuID(t *testing.T) {
 	db.Model(&SupplyChainFlow{}).Count(&count)
 	if count != 0 {
 		t.Errorf("expected 0 flows for missing sku_id, got %d", count)
+	}
+}
+
+// fakeActionCreator is a test double for ActionCreator that records every
+// CreateAction call so tests can assert the orchestrator emits approval-gated
+// actions for high-risk operations (refund/resend, replenishment).
+type fakeActionCreator struct {
+	mu     sync.Mutex
+	calls  []*ActionInput
+	ids    int64
+	failOn int // 1-based call index that should return an error; 0 = none
+}
+
+func (f *fakeActionCreator) CreateAction(in *ActionInput) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ids++
+	idx := len(f.calls) + 1
+	f.calls = append(f.calls, in)
+	if f.failOn == idx {
+		return 0, fmt.Errorf("simulated action create failure")
+	}
+	return f.ids, nil
+}
+
+func (f *fakeActionCreator) Calls() []*ActionInput {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]*ActionInput, len(f.calls))
+	copy(out, f.calls)
+	return out
+}
+
+// TestOrchestrator_HandleAftersaleReturn_CreatesRefundAction verifies that
+// the orchestrator creates an approval-gated refund/resend UnifiedAction when
+// processing a supplychain.aftersale.returned event. The action must require
+// approval (no auto-execution of refunds) and be high-risk.
+func TestOrchestrator_HandleAftersaleReturn_CreatesRefundAction(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	db := newTestFlowDB(t)
+	rt := aftersales.NewReturnRateTracker(db, logger)
+	ac := &fakeActionCreator{}
+	orch := NewOrchestrator(bus, db, logger, rt).WithActionCreator(ac)
+
+	ctx := context.Background()
+
+	payload := map[string]interface{}{
+		"aftersale_id": float64(301),
+		"order_id":     float64(8001),
+		"sku_id":       float64(55),
+		"quantity":     float64(2),
+		"reason":       "质量问题",
+	}
+	evt := eventbus.Event{Topic: "supplychain.aftersale.returned", Source: "aftersales", Payload: payload}
+
+	if err := orch.HandleAftersaleReturn(ctx, evt); err != nil {
+		t.Fatalf("HandleAftersaleReturn returned error: %v", err)
+	}
+
+	calls := ac.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 CreateAction call, got %d", len(calls))
+	}
+	in := calls[0]
+	if in.ActionType != "refund_or_resend" {
+		t.Errorf("expected action_type refund_or_resend, got %s", in.ActionType)
+	}
+	if in.RiskLevel != "high" {
+		t.Errorf("expected risk_level high, got %s", in.RiskLevel)
+	}
+	if !in.RequiresApproval {
+		t.Error("expected RequiresApproval=true (no auto-refund)")
+	}
+	if in.SourceTable != "supply_chain_flow" {
+		t.Errorf("expected source_table supply_chain_flow, got %s", in.SourceTable)
+	}
+	if in.AgentID != "A6" {
+		t.Errorf("expected agent_id A6 (aftersales mgmt), got %s", in.AgentID)
+	}
+	// The flow ID is generated; verify it's non-empty and matches the persisted flow.
+	if in.SourceID == "" {
+		t.Error("expected non-empty source_id (flow ID)")
+	}
+	var flows []SupplyChainFlow
+	if err := db.Where("source_type = ?", "aftersale_return").Find(&flows).Error; err != nil {
+		t.Fatalf("query flows: %v", err)
+	}
+	if len(flows) != 1 || flows[0].ID != in.SourceID {
+		t.Errorf("action source_id %s should match persisted flow id %s", in.SourceID, flows[0].ID)
+	}
+}
+
+// TestOrchestrator_HandleAftersaleReturn_NoActionCreator verifies the
+// orchestrator still creates the flow when no ActionCreator is wired —
+// action creation is best-effort, not blocking.
+func TestOrchestrator_HandleAftersaleReturn_NoActionCreator(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	db := newTestFlowDB(t)
+	rt := aftersales.NewReturnRateTracker(db, logger)
+	// No WithActionCreator — orchestrator should still work.
+	orch := NewOrchestrator(bus, db, logger, rt)
+
+	ctx := context.Background()
+	payload := map[string]interface{}{
+		"aftersale_id": float64(302),
+		"order_id":     float64(8002),
+		"sku_id":       float64(56),
+		"quantity":     float64(1),
+		"reason":       "test",
+	}
+	evt := eventbus.Event{Topic: "supplychain.aftersale.returned", Payload: payload}
+
+	if err := orch.HandleAftersaleReturn(ctx, evt); err != nil {
+		t.Fatalf("HandleAftersaleReturn returned error: %v", err)
+	}
+
+	// Flow should still be created.
+	var count int64
+	db.Model(&SupplyChainFlow{}).Where("source_type = ?", "aftersale_return").Count(&count)
+	if count != 1 {
+		t.Errorf("expected 1 flow even without ActionCreator, got %d", count)
+	}
+}
+
+// TestOrchestrator_HandleAftersaleReturn_ActionCreateFails verifies that
+// an ActionCreator failure does NOT fail the handler — the flow is still
+// created and operators can drive it manually from the cockpit.
+func TestOrchestrator_HandleAftersaleReturn_ActionCreateFails(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	db := newTestFlowDB(t)
+	rt := aftersales.NewReturnRateTracker(db, logger)
+	ac := &fakeActionCreator{failOn: 1}
+	orch := NewOrchestrator(bus, db, logger, rt).WithActionCreator(ac)
+
+	ctx := context.Background()
+	payload := map[string]interface{}{
+		"aftersale_id": float64(303),
+		"order_id":     float64(8003),
+		"sku_id":       float64(57),
+		"quantity":     float64(1),
+		"reason":       "fail test",
+	}
+	evt := eventbus.Event{Topic: "supplychain.aftersale.returned", Payload: payload}
+
+	if err := orch.HandleAftersaleReturn(ctx, evt); err != nil {
+		t.Fatalf("HandleAftersaleReturn should not fail when action create fails, got: %v", err)
+	}
+
+	// Flow should still be created.
+	var count int64
+	db.Model(&SupplyChainFlow{}).Where("source_type = ?", "aftersale_return").Count(&count)
+	if count != 1 {
+		t.Errorf("expected 1 flow even when action create fails, got %d", count)
+	}
+}
+
+// TestOrchestrator_HandleStockCritical_CreatesReplenishAction verifies that
+// the orchestrator creates an approval-gated replenishment UnifiedAction when
+// processing a supplychain.stock.critical event. Replenishment places a
+// purchase order (money + inventory), so it must require human approval.
+func TestOrchestrator_HandleStockCritical_CreatesReplenishAction(t *testing.T) {
+	log := dbtest.NewLogger(t)
+	bus := eventbus.New(log)
+	db := newTestFlowDB(t)
+	ac := &fakeActionCreator{}
+	orch := NewOrchestrator(bus, db, log, nil).WithActionCreator(ac)
+
+	ctx := context.Background()
+	payload := map[string]interface{}{
+		"sku_id":        float64(404),
+		"current_stock": float64(20),
+		"safety_stock":  float64(100),
+		"sellable_days": float64(2.5),
+	}
+	evt := eventbus.Event{Topic: "supplychain.stock.critical", Source: "A5", Payload: payload}
+
+	if err := orch.HandleStockCritical(ctx, evt); err != nil {
+		t.Fatalf("HandleStockCritical returned error: %v", err)
+	}
+
+	calls := ac.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 CreateAction call, got %d", len(calls))
+	}
+	in := calls[0]
+	if in.ActionType != "replenish_order" {
+		t.Errorf("expected action_type replenish_order, got %s", in.ActionType)
+	}
+	if in.RiskLevel != "high" {
+		t.Errorf("expected risk_level high, got %s", in.RiskLevel)
+	}
+	if !in.RequiresApproval {
+		t.Error("expected RequiresApproval=true (no auto-replenish)")
+	}
+	if in.AgentID != "A5" {
+		t.Errorf("expected agent_id A5 (inventory alert), got %s", in.AgentID)
+	}
+	if in.BusinessObjectID != "404" {
+		t.Errorf("expected business_object_id 404, got %s", in.BusinessObjectID)
+	}
+}
+
+// TestOrchestrator_HandleStockCritical_NoActionCreator verifies the
+// orchestrator still creates the flow + publishes sourcing.rescan when no
+// ActionCreator is wired — action creation is best-effort.
+func TestOrchestrator_HandleStockCritical_NoActionCreator(t *testing.T) {
+	log := dbtest.NewLogger(t)
+	bus := eventbus.New(log, eventbus.WithWorkers(1), eventbus.WithBufferSize(10))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus.Start(ctx)
+
+	rescanReceived := make(chan eventbus.Event, 1)
+	bus.Subscribe("sourcing.rescan", func(ctx context.Context, evt eventbus.Event) error {
+		rescanReceived <- evt
+		return nil
+	})
+
+	db := newTestFlowDB(t)
+	// No WithActionCreator.
+	orch := NewOrchestrator(bus, db, log, nil)
+
+	payload := map[string]interface{}{
+		"sku_id":        float64(505),
+		"current_stock": float64(10),
+		"safety_stock":  float64(80),
+		"sellable_days": float64(1.5),
+	}
+	evt := eventbus.Event{Topic: "supplychain.stock.critical", Source: "A5", Payload: payload}
+
+	if err := orch.HandleStockCritical(ctx, evt); err != nil {
+		t.Fatalf("HandleStockCritical returned error: %v", err)
+	}
+
+	// Flow should still be created.
+	var count int64
+	db.Model(&SupplyChainFlow{}).Where("source_type = ?", "stock_critical").Count(&count)
+	if count != 1 {
+		t.Errorf("expected 1 flow even without ActionCreator, got %d", count)
+	}
+
+	// sourcing.rescan should still be published.
+	select {
+	case <-rescanReceived:
+		// ok
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for sourcing.rescan event")
 	}
 }

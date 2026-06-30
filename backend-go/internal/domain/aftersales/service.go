@@ -88,6 +88,13 @@ func (s *Service) Get(id int64) (*AfterSalesOrder, error) {
 }
 
 // Create inserts a new aftersales order.
+//
+// On success it publishes a "supplychain.aftersale.returned" event so the
+// supply-chain orchestrator can spin up a reverse-logistics flow (return →
+// inspect → refund/resend) and create the corresponding approval-gated
+// UnifiedAction. The event is published best-effort: a publish failure is
+// logged but does not roll back the create, because the aftersales order
+// itself is the system of record — downstream reconciliation can recover.
 func (s *Service) Create(in *CreateInput) (*AfterSalesOrder, error) {
 	status := in.Status
 	if status == "" {
@@ -111,7 +118,40 @@ func (s *Service) Create(in *CreateInput) (*AfterSalesOrder, error) {
 	if err := s.db.Create(&o).Error; err != nil {
 		return nil, err
 	}
+	s.publishAftersaleReturned(&o)
 	return &o, nil
+}
+
+// publishAftersaleReturned publishes a supplyevent.AftersaleReturned event
+// so the supply-chain orchestrator can create a reverse-logistics flow.
+func (s *Service) publishAftersaleReturned(o *AfterSalesOrder) {
+	if s.events == nil {
+		return
+	}
+	// Only publish when there's a SKU to track — without a SKU the
+	// orchestrator cannot correlate the return to inventory or sourcing.
+	if o.SkuID == nil {
+		return
+	}
+	evt := supplyevent.AftersaleReturned{
+		AftersaleID: o.ID,
+		OrderID:     o.OrderID,
+		SkuID:       *o.SkuID,
+		Quantity:    o.ReturnQuantity,
+		Reason:      o.Reason,
+		ReturnedAt:  time.Now(),
+	}
+	payload, err := supplyevent.ToPayload(evt)
+	if err != nil {
+		s.logger.Warn("failed to serialize AftersaleReturned event",
+			zap.Int64("aftersale_id", o.ID), zap.Error(err))
+		return
+	}
+	if _, err := s.events.Publish(context.Background(),
+		"supplychain.aftersale.returned", "aftersales", payload); err != nil {
+		s.logger.Warn("failed to publish AftersaleReturned event",
+			zap.Int64("aftersale_id", o.ID), zap.Error(err))
+	}
 }
 
 // Update applies partial updates to an aftersales order.
