@@ -417,7 +417,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	category.RegisterRoutes(protected, db, logger)
 	brand.RegisterRoutes(protected, db, logger)
 	sku.RegisterRoutes(protected, db, logger)
-	compliance.RegisterRoutes(protected, db, logger)
 	price.RegisterRoutes(protected, db, logger)
 	inventory.RegisterRoutes(protected, db, logger)
 	supplier.RegisterRoutes(protected, db, logger)

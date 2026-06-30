@@ -169,9 +169,13 @@ func (s *Service) SaveResult(result *CheckResult) error {
 }
 
 // ListResults returns a paginated, filtered list of compliance check results.
+// Pass 0 for productID to skip filtering on that dimension.
 // Pass an empty string for status or riskLevel to skip filtering on that dimension.
-func (s *Service) ListResults(p *common.Pagination, status, riskLevel string) ([]CheckResult, int64, error) {
+func (s *Service) ListResults(p *common.Pagination, status, riskLevel string, productID int64) ([]CheckResult, int64, error) {
 	q := s.db.Model(&CheckResult{})
+	if productID > 0 {
+		q = q.Where("product_id = ?", productID)
+	}
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
