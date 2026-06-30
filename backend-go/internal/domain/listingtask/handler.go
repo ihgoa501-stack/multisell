@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/response"
@@ -272,6 +273,34 @@ func (h *Handler) RetryItem(c *gin.Context) {
 		return
 	}
 	response.Success(c, item)
+}
+
+
+func (h *Handler) SubmitFeedback(c *gin.Context) {
+	taskID, ok := parseIDParam(c, "task_id")
+	if !ok {
+		return
+	}
+	var in struct {
+		Status string `json:"status" binding:"required"`
+		Note   string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	userID, _ := c.Get("user_id")
+	updatedBy := fmt.Sprintf("%v", userID)
+	task, err := h.service.SubmitFeedback(taskID, in.Status, in.Note, updatedBy)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "listing task not found")
+			return
+		}
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, task)
 }
 
 // ---------- Stats / Bulk Retry ----------

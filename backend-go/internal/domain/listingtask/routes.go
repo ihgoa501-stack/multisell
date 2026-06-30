@@ -2,6 +2,7 @@ package listingtask
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -9,8 +10,9 @@ import (
 
 // RegisterRoutes registers listing task routes on the given router group.
 // prismSvc may be nil (Prism disabled); prismStrict controls error handling.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) {
-	svc := NewService(db, logger, prismSvc, prismStrict)
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool, sandbox bool, rbacMw ...gin.HandlerFunc) {
+	auditSvc := operationlog.NewService(db, logger)
+	svc := NewService(db, logger, prismSvc, prismStrict, auditSvc, nil, sandbox)
 	h := NewHandler(svc)
 
 	tasks := rg.Group("/listing-tasks")
@@ -36,5 +38,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, prismS
 		chain.POST("/:task_id/execute", h.Execute)
 		chain.POST("/:task_id/retry-failed", h.RetryFailed)
 		chain.POST("/:task_id/items/:item_id/retry", h.RetryItem)
+		chain.POST("/:task_id/feedback", h.SubmitFeedback)
 	}
 }

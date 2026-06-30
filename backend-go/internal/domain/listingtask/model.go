@@ -25,6 +25,10 @@ type ListingTask struct {
 	UpdatedBy         string          `gorm:"column:updated_by" json:"updated_by"`
 	CreatedAt         time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt         time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+
+	// Agent feedback: tracks whether the agent recommendation was accepted or rejected.
+	AgentFeedbackStatus *string `gorm:"column:agent_feedback_status" json:"agent_feedback_status,omitempty"`
+	AgentFeedbackNote   string  `gorm:"column:agent_feedback_note" json:"agent_feedback_note,omitempty"`
 }
 
 // TableName explicitly sets the table name (no AutoMigrate).

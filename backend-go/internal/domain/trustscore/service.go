@@ -1,6 +1,7 @@
 package trustscore
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -288,6 +289,43 @@ func (s *Service) RecalculateForAgent(agentID, agentName, squadID string) error 
 
 // GetEligibleForUpgrade returns agents whose trust score qualifies them
 // for the next autonomy level.
+
+// RecordRecommendationFeedback records whether an agent recommendation was accepted/rejected
+// by the owner. Writes to unified_action so the next Recalculate() picks it up
+// for TrustScore and agent evaluation purposes.
+func (s *Service) RecordRecommendationFeedback(agentID string, accepted bool, taskID, productID int64, operator, reason string) error {
+	now := time.Now()
+	status := "rejected"
+	approvedBy := ""
+	rejectedBy := ""
+	rejectionReason := ""
+	if accepted {
+		status = "approved"
+		approvedBy = operator
+	} else {
+		rejectedBy = operator
+		rejectionReason = reason
+	}
+
+	return s.db.Exec(`
+		INSERT INTO unified_action
+			(source_table, source_id, source_type, agent_id, action_type,
+			 business_object_type, business_object_id, title, description,
+			 status, approved_by, rejected_by, rejection_reason, proposed_by, proposed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (source_table, source_id)
+		DO UPDATE SET
+			status = EXCLUDED.status,
+			approved_by = EXCLUDED.approved_by,
+			rejected_by = EXCLUDED.rejected_by,
+			rejection_reason = EXCLUDED.rejection_reason,
+			proposed_at = EXCLUDED.proposed_at,
+			updated_at = NOW()
+	`, "listing_task", fmt.Sprintf("%d", taskID), "feedback", agentID, "recommendation_feedback",
+		"listing_task", fmt.Sprintf("%d", taskID), "Agent Recommendation Feedback", reason,
+		status, approvedBy, rejectedBy, rejectionReason, agentID, now).Error
+}
+
 func (s *Service) GetEligibleForUpgrade() ([]TrustScore, error) {
 	var scores []TrustScore
 	if err := s.db.Where("trust_score >= ? AND autonomy_level != 'autonomous'", AutonomyThresholds["supervised"]).Find(&scores).Error; err != nil {

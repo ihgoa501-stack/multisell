@@ -1,12 +1,16 @@
 package listingtask
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/trustscore"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
@@ -20,12 +24,15 @@ type Service struct {
 	logger     *zap.Logger
 	prismSvc   prismadapter.PrismService // nil = Prism disabled at runtime
 	prismStrict bool                      // block on Prism error vs warn+continue
+	trustScoreSvc *trustscore.Service
+	auditSvc   *operationlog.Service
+	sandbox    bool
 }
 
 // NewService creates a new listingtask service.
 // prismSvc may be nil, in which case Prism is never called.
-func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
-	return &Service{db: db, logger: logger, prismSvc: prismSvc, prismStrict: prismStrict}
+func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool, auditSvc *operationlog.Service, trustScoreSvc *trustscore.Service, sandbox bool) *Service {
+	return &Service{db: db, logger: logger, prismSvc: prismSvc, prismStrict: prismStrict, auditSvc: auditSvc, sandbox: sandbox}
 }
 
 // ---------- ListingTask ----------
@@ -104,8 +111,13 @@ func (s *Service) Update(id int64, in *UpdateTaskInput) (*ListingTask, error) {
 	if err := s.db.First(&t, id).Error; err != nil {
 		return nil, err
 	}
+	oldStatus := t.Status
 	updates := map[string]interface{}{}
 	if in.Status != nil {
+		sm := NewListingTaskStateMachine()
+		if err := sm.MustTransition(context.Background(), t.Status, *in.Status, &t); err != nil {
+			return nil, err
+		}
 		updates["status"] = *in.Status
 	}
 	if in.SourceItemKey != nil {
@@ -143,6 +155,15 @@ func (s *Service) Update(id int64, in *UpdateTaskInput) (*ListingTask, error) {
 	}
 	if err := s.db.First(&t, id).Error; err != nil {
 		return nil, err
+	}
+	// Audit status transition if status changed
+	if s.auditSvc != nil && in.Status != nil && oldStatus != *in.Status {
+		operator := "system"
+		if in.UpdatedBy != nil {
+			operator = *in.UpdatedBy
+		}
+		s.auditSvc.Log("listingtask", "status_update", fmt.Sprintf("%d", id), operator,
+			fmt.Sprintf("Status changed from %s to %s", oldStatus, *in.Status))
 	}
 	return &t, nil
 }
@@ -212,6 +233,10 @@ func (s *Service) RetryAllTasks() (int64, error) {
 			}).Error; err != nil {
 			return res.RowsAffected, err
 		}
+	}
+	if res.RowsAffected > 0 && s.auditSvc != nil {
+		s.auditSvc.Log("listingtask", "retry_all_failed", "all", "system",
+			fmt.Sprintf("Reset %d failed tasks to pending", res.RowsAffected))
 	}
 	return res.RowsAffected, nil
 }
@@ -331,6 +356,10 @@ func (s *Service) RetryFailed(taskID int64) (*ListingTask, error) {
 	if err := s.db.First(&task, taskID).Error; err != nil {
 		return nil, err
 	}
+	if s.auditSvc != nil {
+		s.auditSvc.Log("listingtask", "retry_failed", fmt.Sprintf("%d", taskID), "system",
+			fmt.Sprintf("Reset failed task %d to pending", taskID))
+	}
 	return &task, nil
 }
 
@@ -350,6 +379,10 @@ func (s *Service) RetryItem(taskID, itemID int64) (*ListingTaskItem, error) {
 	if err := s.db.First(&item, itemID).Error; err != nil {
 		return nil, err
 	}
+	if s.auditSvc != nil {
+		s.auditSvc.Log("listingtask", "retry_item", fmt.Sprintf("%d", itemID), "system",
+			fmt.Sprintf("Reset item %d of task %d to pending", itemID, taskID))
+	}
 	return &item, nil
 }
 
@@ -366,8 +399,45 @@ func (s *Service) ExecuteTask(taskID int64) (*ListingTask, error) {
 	if err := s.db.First(&task, taskID).Error; err != nil {
 		return nil, err
 	}
-	if task.Status == "completed" || task.Status == "cancelled" {
-		return &task, nil
+
+	// Sandbox mode check
+	if s.sandbox {
+		if s.auditSvc != nil {
+			s.auditSvc.Log("listingtask", "sandbox_block", fmt.Sprintf("%d", taskID), "system",
+				fmt.Sprintf("Sandbox mode: task %d execution blocked", taskID))
+		}
+		return nil, fmt.Errorf("sandbox mode: execution blocked for task %d", taskID)
+	}
+
+	sm := NewListingTaskStateMachine()
+	if !sm.CanTransition(task.Status, "executing") {
+		if task.Status == "completed" {
+			return nil, fmt.Errorf("task %d is already completed (idempotency guard)", taskID)
+		}
+		if task.Status == "cancelled" {
+			return nil, fmt.Errorf("task %d is cancelled, cannot execute", taskID)
+		}
+		return nil, fmt.Errorf("task %d cannot execute from status %s", taskID, task.Status)
+	}
+
+	// Sandbox gate: block execution in sandbox mode
+	if s.sandbox {
+		if s.auditSvc != nil {
+			s.auditSvc.Log("listingtask", "sandbox_block", fmt.Sprintf("%d", taskID), "system",
+				fmt.Sprintf("Sandbox mode: task %d execution blocked", taskID))
+		}
+		return nil, fmt.Errorf("sandbox mode: execution blocked for task %d", taskID)
+	}
+
+	// Approval gate: must have an approved approval
+	if err := s.checkApproval(&task); err != nil {
+		return nil, err
+	}
+
+	// Audit: write pre-execution entry
+	if s.auditSvc != nil {
+		s.auditSvc.Log("listingtask", "execute", fmt.Sprintf("%d", taskID), "system",
+			fmt.Sprintf("Executing listing task %d for product %d on platform %d", taskID, task.ProductID, task.PlatformID))
 	}
 
 	// Run Prism check outside the main transaction so transient failures don't
@@ -436,6 +506,70 @@ func (s *Service) ExecuteTask(taskID int64) (*ListingTask, error) {
 	if err := s.db.First(&task, taskID).Error; err != nil {
 		return nil, err
 	}
+	return &task, nil
+}
+
+// checkApproval verifies there's an approved approval for this task's product.
+func (s *Service) checkApproval(task *ListingTask) error {
+	var count int64
+	s.db.Model(&approval.ApprovalRequest{}).
+		Where("product_id = ? AND request_type = 'publish' AND status = '" + approval.StatusApproved + "' AND (expires_at IS NULL OR expires_at > ?)",
+			task.ProductID, time.Now()).
+		Count(&count)
+	if count == 0 {
+		// Check if there's a pending approval (informational)
+		var pending int64
+		s.db.Model(&approval.ApprovalRequest{}).
+			Where("product_id = ? AND request_type = 'publish' AND status = '" + approval.StatusPending + "'", task.ProductID).
+			Count(&pending)
+		if pending > 0 {
+			return fmt.Errorf("task %d requires approval: approval for product %d is still pending", task.ID, task.ProductID)
+		}
+		return fmt.Errorf("task %d requires approval: no approved approval found for product %d", task.ID, task.ProductID)
+	}
+	return nil
+}
+
+// SubmitFeedback records whether an agent recommendation was accepted or rejected.
+// This feeds into TrustScore evaluation for agent assessment.
+func (s *Service) SubmitFeedback(taskID int64, status, note, updatedBy string) (*ListingTask, error) {
+	if status != "accepted" && status != "rejected" {
+		return nil, fmt.Errorf("invalid feedback status: %s (must be accepted or rejected)", status)
+	}
+	var task ListingTask
+	if err := s.db.First(&task, taskID).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.Model(&task).Updates(map[string]interface{}{
+		"agent_feedback_status": status,
+		"agent_feedback_note":   note,
+		"updated_by":            updatedBy,
+	}).Error; err != nil {
+		return nil, err
+	}
+	task.AgentFeedbackStatus = &status
+	task.AgentFeedbackNote = note
+	task.UpdatedBy = updatedBy
+
+	// Build structured audit content with all fields needed for TrustScore processing.
+	accepted := status == "accepted"
+	agentID := task.SourceType
+	execResult := task.Status
+
+	// Write structured audit log
+	if s.auditSvc != nil {
+		auditContent := fmt.Sprintf(`{"agent":"%s","feedback":"%s","execution":"%s","task_id":%d,"product_id":%d,"note":"%s"}`,
+			agentID, status, execResult, taskID, task.ProductID, note)
+		s.auditSvc.Log("listingtask", "feedback_"+status, fmt.Sprintf("%d", taskID), updatedBy, auditContent)
+	}
+
+	// Notify TrustScore for agent evaluation.
+	if s.trustScoreSvc != nil {
+		if err := s.trustScoreSvc.RecordRecommendationFeedback(agentID, accepted, taskID, task.ProductID, updatedBy, note); err != nil {
+			s.logger.Warn("Failed to record TrustScore feedback", zap.Int64("task_id", taskID), zap.Error(err))
+		}
+	}
+
 	return &task, nil
 }
 

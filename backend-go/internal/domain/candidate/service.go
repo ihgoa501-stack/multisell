@@ -1,6 +1,7 @@
 package candidate
 
 import (
+	"context"
 	"github.com/lingmirror/backend-go/internal/common"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -175,6 +176,10 @@ func (s *Service) Update(id int64, in *UpdateCandidateInput) (*CandidateProduct,
 		updates["destination_country"] = *in.DestinationCountry
 	}
 	if in.Status != nil {
+		if err := NewCandidateStateMachine().MustTransition(context.Background(), c.Status, *in.Status, nil); err != nil {
+			return nil, err
+		}
+
 		updates["status"] = *in.Status
 	}
 	if in.UpdatedBy != nil {

@@ -22,6 +22,7 @@ type Config struct {
 	LLM         LLMConfig         `mapstructure:"llm"`
 	SchemaDrift SchemaDriftConfig `mapstructure:"schemadrift"`
 	Prism       PrismConfig       `mapstructure:"prism"`
+	Sandbox     bool              `mapstructure:"sandbox"`
 	EncryptionKey string          `mapstructure:"encryption_key"`
 }
 
@@ -141,6 +142,7 @@ func Load() (*Config, error) {
 	v.BindEnv("prism.timeout", "PRISM_TIMEOUT")
 	v.BindEnv("prism.enabled", "PRISM_ENABLED")
 	v.BindEnv("prism.strict", "PRISM_STRICT")
+	v.BindEnv("sandbox", "SANDBOX")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

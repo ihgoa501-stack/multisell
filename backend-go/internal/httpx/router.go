@@ -681,7 +681,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	} else {
 		logger.Info("Prism client disabled")
 	}
-	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict, cfg.Sandbox, middleware.RequirePermission(db, "listing.execute"))
 
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)

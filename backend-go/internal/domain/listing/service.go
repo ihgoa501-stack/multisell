@@ -352,8 +352,9 @@ func (s *Service) PublishTask(taskID int64) (*listingtask.ListingTask, error) {
 	if err := s.db.First(&task, taskID).Error; err != nil {
 		return nil, err
 	}
-	if task.Status != "pending" {
-		return nil, fmt.Errorf("task %d is not pending (current=%s)", taskID, task.Status)
+	sm := listingtask.NewListingTaskStateMachine()
+	if err := sm.MustTransition(context.Background(), task.Status, "executing", &task); err != nil {
+		return nil, fmt.Errorf("task %d cannot execute (current=%s): %w", taskID, task.Status, err)
 	}
 	if err := s.db.Model(&task).Update("status", "executing").Error; err != nil {
 		return nil, err

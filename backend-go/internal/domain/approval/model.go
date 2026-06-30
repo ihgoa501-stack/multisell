@@ -11,7 +11,7 @@ type ApprovalRequest struct {
 	RequestType string     `gorm:"column:request_type;not null" json:"request_type"` // publish, price_change, delist, content_update
 	Requester   string     `gorm:"column:requester;not null" json:"requester"`       // agent_id or user_id
 	Reviewer    string     `gorm:"column:reviewer" json:"reviewer"`
-	Status      string     `gorm:"column:status;default:pending" json:"status"` // pending, approved, rejected
+	Status      string     `gorm:"column:status;default:pending" json:"status"`
 	OldValue    string     `gorm:"column:old_value;type:text" json:"old_value,omitempty"`
 	NewValue    string     `gorm:"column:new_value;type:text" json:"new_value,omitempty"`
 	Reason      string     `gorm:"column:reason;type:text" json:"reason,omitempty"`
@@ -20,6 +20,16 @@ type ApprovalRequest struct {
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
+
+// Status constants
+const (
+	StatusPending    = "pending"
+	StatusApproved   = "approved"
+	StatusRejected   = "rejected"
+	StatusExpired    = "expired"
+	StatusCanceled   = "canceled"
+	StatusSuperseded = "superseded"
+)
 
 func (ApprovalRequest) TableName() string { return "approval_request" }
 

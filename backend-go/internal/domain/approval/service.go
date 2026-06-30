@@ -1,6 +1,7 @@
 package approval
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
@@ -178,6 +179,63 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 	return stats, nil
 }
 
+
+
+// Cancel cancels a pending approval request.
+func (s *Service) Cancel(id int64, reason, canceledBy string) (*ApprovalRequest, error) {
+	var req ApprovalRequest
+	if err := s.db.First(&req, id).Error; err != nil {
+		return nil, err
+	}
+	sm := NewApprovalStateMachine()
+	if err := sm.MustTransition(context.Background(), req.Status, "canceled", &req); err != nil {
+		return nil, err
+	}
+	if err := s.db.Model(&req).Updates(map[string]interface{}{
+		"status":      "canceled",
+		"review_note": reason,
+		"reviewer":    canceledBy,
+	}).Error; err != nil {
+		return nil, err
+	}
+	req.Status = "canceled"
+	req.ReviewNote = reason
+	req.Reviewer = canceledBy
+	return &req, nil
+}
+
+// ExpirePending marks all expired pending approvals as expired.
+func (s *Service) ExpirePending() (int64, error) {
+	res := s.db.Model(&ApprovalRequest{}).
+		Where("status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?", time.Now()).
+		Update("status", "expired")
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return res.RowsAffected, nil
+}
+
+// Supersede marks an approval as superseded by a newer one.
+func (s *Service) Supersede(id int64, newApprovalID int64) (*ApprovalRequest, error) {
+	var req ApprovalRequest
+	if err := s.db.First(&req, id).Error; err != nil {
+		return nil, err
+	}
+	sm := NewApprovalStateMachine()
+	if err := sm.MustTransition(context.Background(), req.Status, "superseded", &req); err != nil {
+		return nil, err
+	}
+	note := fmt.Sprintf("superseded by approval %d", newApprovalID)
+	if err := s.db.Model(&req).Updates(map[string]interface{}{
+		"status":      "superseded",
+		"review_note": note,
+	}).Error; err != nil {
+		return nil, err
+	}
+	req.Status = "superseded"
+	req.ReviewNote = note
+	return &req, nil
+}
 // AutoEscalate checks for requests pending > 24h and returns their IDs.
 func (s *Service) AutoEscalate() ([]ApprovalRequest, error) {
 	cutoff := time.Now().Add(-24 * time.Hour)

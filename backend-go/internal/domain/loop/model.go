@@ -17,9 +17,18 @@ type ListingRecommendation struct {
 	RiskFlags         string    `gorm:"column:risk_flags;type:text" json:"risk_flags"` // JSON array of risk flags
 	CreatedListingTaskID *int64 `gorm:"column:created_listing_task_id" json:"created_listing_task_id,omitempty"`
 	TriggeredBy       string    `gorm:"column:triggered_by" json:"triggered_by"`
+	Status            string    `gorm:"column:status;default:pending" json:"status"` // pending, accepted, rejected, expired
 	CreatedAt         time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt         time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
+
+// Status constants for ListingRecommendation lifecycle.
+const (
+	RecStatusPending  = "pending"
+	RecStatusAccepted = "accepted"
+	RecStatusRejected = "rejected"
+	RecStatusExpired  = "expired"
+)
 
 func (ListingRecommendation) TableName() string { return "listing_recommendation" }
 

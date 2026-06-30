@@ -202,3 +202,65 @@ func (s *Service) PlatformSyncStatus() ([]map[string]interface{}, error) {
 	}
 	return result, nil
 }
+
+
+// DecisionQueue returns enriched recommendations with task/approval/feedback status.
+func (s *Service) DecisionQueue(limit int) ([]map[string]interface{}, error) {
+	// Get base suggestions using existing logic
+	suggestions, err := s.Suggestions(limit)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, sug := range suggestions {
+		taskID, ok := sug["listing_task_id"].(int64)
+		if !ok || taskID == 0 {
+			continue
+		}
+		productID, _ := sug["product_id"].(int64)
+
+		// Get task details
+		var taskInfo struct {
+			Status               string
+			LastError            string
+			AgentFeedbackStatus  *string
+		}
+		s.db.Table("listing_task").Select("status, last_error, agent_feedback_status").
+			Where("id = ?", taskID).Scan(&taskInfo)
+		sug["task_status"] = taskInfo.Status
+		sug["task_error"] = taskInfo.LastError
+		sug["agent_feedback_status"] = taskInfo.AgentFeedbackStatus
+
+		// Get latest approval status for this product
+		var approvalStatus string
+		s.db.Table("approval_request").
+			Select("status").
+			Where("product_id = ? AND request_type = 'publish'", productID).
+			Order("id DESC").Limit(1).Scan(&approvalStatus)
+		sug["approval_status"] = approvalStatus
+
+		// Determine if the task can be approved
+		sug["can_approve"] = taskInfo.Status == "blocked" || taskInfo.Status == "pending"
+
+		// Determine blocking reasons
+		var reasons []string
+		if taskInfo.Status == "blocked" {
+			reasons = append(reasons, "任务被系统阻断")
+		}
+		if taskInfo.LastError != "" {
+			reasons = append(reasons, taskInfo.LastError)
+		}
+		if approvalStatus == "rejected" {
+			reasons = append(reasons, "审批被拒绝")
+		}
+		if approvalStatus == "pending" {
+			reasons = append(reasons, "审批待处理")
+		}
+		if approvalStatus == "" {
+			reasons = append(reasons, "无审批记录")
+		}
+		sug["blocking_reasons"] = reasons
+	}
+
+	return suggestions, nil
+}

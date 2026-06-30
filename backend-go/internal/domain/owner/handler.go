@@ -46,6 +46,22 @@ func (h *Handler) Suggestions(c *gin.Context) {
 }
 
 // PlatformSyncStatus GET /owner/platform-sync
+func (h *Handler) DecisionQueue(c *gin.Context) {
+	limitStr := c.Query("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+	items, err := h.service.DecisionQueue(limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, items)
+}
+
 func (h *Handler) PlatformSyncStatus(c *gin.Context) {
 	items, err := h.service.PlatformSyncStatus()
 	if err != nil {

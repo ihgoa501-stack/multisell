@@ -470,3 +470,127 @@ func TestMapDecisionPointToRequestType(t *testing.T) {
 		}
 	}
 }
+
+
+// ── Approval State Machine ──
+
+func TestApproval_Cancel(t *testing.T) {
+	db := dbtest.NewDB(t, &ApprovalRequest{})
+	s := NewService(db, dbtest.NewLogger(t))
+
+	req, _ := s.Create(&CreateApprovalInput{
+		ProductID: 1, RequestType: "publish", Requester: "A3",
+	})
+	canceled, err := s.Cancel(req.ID, "no longer needed", "user-1")
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if canceled.Status != "canceled" {
+		t.Errorf("expected canceled, got %s", canceled.Status)
+	}
+}
+
+func TestApproval_Cancel_OnlyPending(t *testing.T) {
+	db := dbtest.NewDB(t, &ApprovalRequest{})
+	s := NewService(db, dbtest.NewLogger(t))
+
+	req, _ := s.Create(&CreateApprovalInput{
+		ProductID: 1, RequestType: "publish", Requester: "A3",
+	})
+	s.Review(req.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "u1"})
+
+	// Can't cancel an already-approved request
+	_, err := s.Cancel(req.ID, "too late", "u2")
+	if err == nil {
+		t.Fatal("expected error canceling approved request")
+	}
+}
+
+func TestApproval_ExpirePending(t *testing.T) {
+	db := dbtest.NewDB(t, &ApprovalRequest{})
+	s := NewService(db, dbtest.NewLogger(t))
+
+	now := time.Now()
+	expired := now.Add(-1 * time.Hour)
+	db.Create(&ApprovalRequest{
+		ProductID: 1, RequestType: "publish", Requester: "A3",
+		Status: "pending", ExpiresAt: &expired,
+	})
+
+	// Create one that's not expired
+	s.Create(&CreateApprovalInput{ProductID: 2, RequestType: "publish", Requester: "A3"})
+
+	count, err := s.ExpirePending()
+	if err != nil {
+		t.Fatalf("ExpirePending: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 expired, got %d", count)
+	}
+
+	// Verify the expired one changed
+	var req ApprovalRequest
+	db.First(&req, 1)
+	if req.Status != "expired" {
+		t.Errorf("expected expired, got %s", req.Status)
+	}
+}
+
+func TestApproval_Supersede(t *testing.T) {
+	db := dbtest.NewDB(t, &ApprovalRequest{})
+	s := NewService(db, dbtest.NewLogger(t))
+
+	req1, _ := s.Create(&CreateApprovalInput{
+		ProductID: 1, RequestType: "publish", Requester: "A3",
+	})
+	s.Review(req1.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "u1"})
+
+	// Supersede the approved request with a new one
+	newReq, _ := s.Create(&CreateApprovalInput{
+		ProductID: 1, RequestType: "publish", Requester: "A3",
+	})
+	superseded, err := s.Supersede(req1.ID, newReq.ID)
+	if err != nil {
+		t.Fatalf("Supersede: %v", err)
+	}
+	if superseded.Status != "superseded" {
+		t.Errorf("expected superseded, got %s", superseded.Status)
+	}
+}
+
+func TestApproval_StateMachine_Transitions(t *testing.T) {
+	sm := NewApprovalStateMachine()
+
+	// Valid transitions
+	tests := []struct{ from, to string; valid bool }{
+		{"pending", "approved", true},
+		{"pending", "rejected", true},
+		{"pending", "expired", true},
+		{"pending", "canceled", true},
+		{"pending", "superseded", true},
+		{"approved", "superseded", true},
+		{"rejected", "pending", false},
+		{"expired", "pending", false},
+		{"canceled", "pending", false},
+		{"approved", "rejected", false},
+	}
+	for _, tc := range tests {
+		got := sm.CanTransition(tc.from, tc.to)
+		if got != tc.valid {
+			t.Errorf("CanTransition(%q -> %q) = %v, want %v", tc.from, tc.to, got, tc.valid)
+		}
+	}
+
+	if !sm.IsTerminal("rejected") {
+		t.Error("rejected should be terminal")
+	}
+	if !sm.IsTerminal("expired") {
+		t.Error("expired should be terminal")
+	}
+	if !sm.IsTerminal("canceled") {
+		t.Error("canceled should be terminal")
+	}
+	if sm.IsTerminal("pending") {
+		t.Error("pending should not be terminal")
+	}
+}

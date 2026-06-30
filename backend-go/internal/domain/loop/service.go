@@ -6,9 +6,11 @@ import (
 	"math"
 	"strings"
 
+	"context"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
@@ -22,17 +24,19 @@ type Service struct {
 	completenessSvc *completeness.Service
 	profitSvc     *profit.Service
 	listingtaskSvc *listingtask.Service
+	auditSvc       *operationlog.Service
 }
 
 // NewService creates a new evaluation loop service.
 // prismSvc and prismStrict are forwarded to listingtask service.
-func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
+func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool, auditSvc *operationlog.Service) *Service {
 	return &Service{
 		db:              db,
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
 		profitSvc:       profit.NewService(db, logger),
-		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict),
+		auditSvc: auditSvc,
+		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, auditSvc, nil, false),
 	}
 }
 
@@ -231,6 +235,23 @@ func (s *Service) createListingTask(prod *candidate.CandidateProduct, profitResu
 }
 
 // GetRecommendations returns paginated listing recommendations.
+// UpdateRecommendationStatus updates the lifecycle status of a ListingRecommendation.
+func (s *Service) UpdateRecommendationStatus(id int64, newStatus string) (*ListingRecommendation, error) {
+	var rec ListingRecommendation
+	if err := s.db.First(&rec, id).Error; err != nil {
+		return nil, err
+	}
+	sm := NewRecommendationStateMachine()
+	if err := sm.MustTransition(context.Background(), rec.Status, newStatus, &rec); err != nil {
+		return nil, err
+	}
+	if err := s.db.Model(&rec).Update("status", newStatus).Error; err != nil {
+		return nil, err
+	}
+	rec.Status = newStatus
+	return &rec, nil
+}
+
 func (s *Service) GetRecommendations(page, size int, decision string) ([]ListingRecommendation, int64, error) {
 	var items []ListingRecommendation
 	var total int64

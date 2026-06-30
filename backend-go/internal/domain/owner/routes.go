@@ -15,6 +15,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	{
 		r.GET("/risk-summary", h.RiskSummary)
 		r.GET("/suggestions", h.Suggestions)
+			r.GET("/decision-queue", h.DecisionQueue)
 		r.GET("/platform-sync", h.PlatformSyncStatus)
 	}
 }

@@ -272,3 +272,43 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - 剩余 lint 34 problems（12 errors / 22 warnings）均为无关模块遗留
 - **需修复** `src/config/menu.ts` 合并冲突标记（导致 build 失败）
 - 清理 stale worktrees
+
+## 本次更新内容（2026-06-30，可信经营闭环收口）
+
+### 新增功能
+- **ListingTask 状态机** — 定义 blocked→pending→executing→completed/failed→pending 状态转换，在执行入口统一校验。新增 `listingtask/statemachine.go`
+- **Approval 状态机增强** — 增加 expired/canceled/superseded 状态及转换定义，新增 Cancel/ExpirePending/Supersede 方法。新增 `approval/statemachine.go`
+- **统一执行门禁** — `ExecuteTask` 执行前增加 approval 审批检查、idempotency 幂等守卫、audit 审计写入口。无 valid approval 无法执行
+- **Agent 建议反馈回流** — `ListingTask` 模型增加 `agent_feedback_status`（accepted/rejected）和 `agent_feedback_note` 字段，提供 `POST /listing-task/:task_id/feedback` API
+- **Owner 决策队列** — 新增 `GET /owner/decision-queue` API，返回完善度/利润/风险/任务状态/审批状态/阻断原因/Agent反馈状态
+- **Owner 工作台菜单** — 新增"经营闭环"侧边栏分组（经营总控台 + 候选商品）
+
+### 平台门禁列表
+| 门禁 | 触发点 | 实现 |
+|------|--------|------|
+| Auth/JWT | 所有 API | middleware.Auth（已有） |
+| RBAC | 财务等敏感模块 | middleware.RequirePermission（已有） |
+| State Machine | ListingTask 状态更新 | listingtask/statemachine.go（本期新增） |
+| Approval | ExecuteTask 执行前 | checkApproval()（本期新增） |
+| Idempotency | 重复执行 blocking | status=completed 明确报错（本期新增） |
+| Audit | 执行/反馈关键操作 | operationlog.Service.Log（本期新增） |
+
+### 验证状态
+| 检查 | 结果 | 说明 |
+|------|------|------|
+| `go test ./internal/domain/listingtask/...` | 通过 | 21 tests（含状态机/门禁/反馈） |
+| `go test ./internal/domain/approval/...` | 通过 | 28 tests（含取消/过期/替代） |
+| `go test ./internal/domain/loop/...` | 通过 | 4 tests |
+| `go test ./internal/domain/listing/...` | 通过 | 13 tests |
+| `go test ./internal/domain/order/...` | 通过 | 43 tests |
+| `go vet ./...` | 通过 | 无输出 |
+| `npm run build` | ⚠️ 需 npm install | worktree 缺 node_modules |
+| `npm test` | ⚠️ 需 npm install | 同上 |
+
+### 安全边界（维持不变）
+- 所有 API 受 JWT 保护
+- ListingTask 初始为 `blocked` 状态，需审批后执行
+- ExecuteTask 前必检查 approval
+- 无真实外部发布/改价/改库存代码
+- 所有状态转换通过 operationlog 可追溯
+- loop 是本地模拟经营闭环，不触发真实外部操作

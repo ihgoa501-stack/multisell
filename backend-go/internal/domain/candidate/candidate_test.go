@@ -17,13 +17,13 @@ func TestService_CreateAndGet(t *testing.T) {
 	salePrice := 120.0
 
 	c, err := svc.Create(&CreateCandidateInput{
-		Title:             "Test Product",
-		Description:       "A test product description",
-		PurchasePrice:     &price,
-		PackageWeightKg:   &weight,
-		TargetSalePrice:   &salePrice,
+		Title:              "Test Product",
+		Description:        "A test product description",
+		PurchasePrice:      &price,
+		PackageWeightKg:    &weight,
+		TargetSalePrice:    &salePrice,
 		DestinationCountry: "US",
-		CreatedBy:         "tester",
+		CreatedBy:          "tester",
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -120,5 +120,73 @@ func TestService_Count(t *testing.T) {
 	}
 	if total != 2 {
 		t.Fatalf("total = %d", total)
+	}
+}
+
+func TestService_UpdateStatus(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, _ := svc.Create(&CreateCandidateInput{Title: "StatusTest", PurchasePrice: &price, CreatedBy: "tester"})
+	if c.Status != "draft" {
+		t.Fatalf("expected draft, got %s", c.Status)
+	}
+
+	// draft → in_review (valid)
+	inReview := "in_review"
+	updated, err := svc.Update(c.ID, &UpdateCandidateInput{Status: &inReview})
+	if err != nil {
+		t.Fatalf("draft → in_review should be valid: %v", err)
+	}
+	if updated.Status != "in_review" {
+		t.Fatalf("expected in_review, got %s", updated.Status)
+	}
+
+	// in_review → approved (valid)
+	approved := "approved"
+	updated, err = svc.Update(c.ID, &UpdateCandidateInput{Status: &approved})
+	if err != nil {
+		t.Fatalf("in_review → approved should be valid: %v", err)
+	}
+	if updated.Status != "approved" {
+		t.Fatalf("expected approved, got %s", updated.Status)
+	}
+}
+
+func TestService_UpdateStatus_Invalid(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, _ := svc.Create(&CreateCandidateInput{Title: "InvalidStatus", PurchasePrice: &price, CreatedBy: "tester"})
+
+	// draft → approved (invalid)
+	approved := "approved"
+	_, err := svc.Update(c.ID, &UpdateCandidateInput{Status: &approved})
+	if err == nil {
+		t.Fatal("draft → approved should be rejected")
+	}
+
+	// draft → in_review (valid)
+	inReview := "in_review"
+	_, err = svc.Update(c.ID, &UpdateCandidateInput{Status: &inReview})
+	if err != nil {
+		t.Fatalf("draft → in_review should be valid: %v", err)
+	}
+
+	// in_review → approved (valid)
+	_, err = svc.Update(c.ID, &UpdateCandidateInput{Status: &approved})
+	if err != nil {
+		t.Fatalf("in_review → approved should be valid: %v", err)
+	}
+
+	// approved → draft (invalid, terminal)
+	draft := "draft"
+	_, err = svc.Update(c.ID, &UpdateCandidateInput{Status: &draft})
+	if err == nil {
+		t.Fatal("approved → draft from terminal should be rejected")
 	}
 }
