@@ -31,9 +31,9 @@ func NewDashboardAgent() *DashboardAgent {
 //
 // Supported decision points:
 //   - "dashboard_overview" — delegates to toolregistry.DefaultRegistry.Call()
-func (a *DashboardAgent) Decide(decisionPoint string, ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+func (a *DashboardAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	if decisionPoint == "dashboard_overview" {
-		result, callErr := toolregistry.DefaultRegistry.Call(context.Background(), "dashboard.overview", ctx)
+		result, callErr := toolregistry.DefaultRegistry.Call(ctx, "dashboard.overview", params)
 		if callErr != nil {
 			return map[string]interface{}{
 				"status":         "error",

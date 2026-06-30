@@ -19,6 +19,7 @@ func AllTools() []toolregistry.Tool {
 	all = append(all, AdAdviceTools()...)
 	all = append(all, DashboardTools()...)
 	all = append(all, SourcingTools()...)
+		all = append(all, DiscountTools()...)
 	return all
 }
 

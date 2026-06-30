@@ -2,31 +2,14 @@ package costcontrol
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
 )
 
-// fakeDB implements a minimal stub for DB reads/writes in tests.
-// ponytail: no GORM test helper needed — budget tests are pure logic.
-type fakeDB struct {
-	mu    sync.Mutex
-	spend float64
-}
 
-func (f *fakeDB) DailySpend() (*CostLogSummary, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return &CostLogSummary{TotalCost: f.spend}, nil
-}
 
-func (f *fakeDB) AddCost(c float64) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.spend += c
-}
 
 func TestAllow_Unlimited(t *testing.T) {
 	logger := zap.NewNop()

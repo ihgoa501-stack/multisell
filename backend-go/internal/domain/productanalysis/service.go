@@ -23,9 +23,10 @@ func NewService(db *gorm.DB, logger *zap.Logger) Service {
 // We query it directly rather than importing the sourcing1688 package to
 // avoid a circular dependency and keep the domain boundary clean.
 type sourcingProduct struct {
-	ID     int64
-	Price  float64 `gorm:"column:price"`
-	Status string
+	ID        int64
+	Price     float64 `gorm:"column:price"`
+	Status    string
+	ProductID *int64 `gorm:"column:product_id"`
 }
 
 func (sourcingProduct) TableName() string { return "sourcing_1688_product" }
@@ -75,9 +76,24 @@ func (s *svc) Analyze(in *AnalyzeInput, userID string) (*AnalysisResult, error) 
 	// 2. Calculate profit
 	marginPct, profitScore := CalculateProfitMargin(in.TargetSalePrice, src.Price)
 
-	// 3. Demand & competition (stubs — return no_data until Phase 0)
-	demandScore, demandStatus := CalculateDemandScore()
-	compScore, compStatus := CalculateCompetitionScore()
+	// 3. Demand & competition — real calculations from order + listing data
+	var demandScore *float64
+	var demandStatus string = "no_data"
+	var compScore *float64
+	var compStatus string = "no_data"
+
+	if src.ProductID != nil {
+		demandScore, demandStatus = CalculateDemandScore(s.db, *src.ProductID)
+
+		// Get product's category for competition scoring
+		var catID int64
+		if err := s.db.Table("product").
+			Select("category_id").
+			Where("id = ?", *src.ProductID).
+			Take(&catID).Error; err == nil {
+			compScore, compStatus = CalculateCompetitionScore(s.db, catID)
+		}
+	}
 
 	// 4. Persist the analysis
 	estCost := src.Price

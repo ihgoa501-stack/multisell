@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { menuGroups, type MenuItem } from '@/config/menu';
+import { ApiClient } from '@/lib/api-client';
 
 type SessionItem = {
   key: string;
@@ -31,6 +32,17 @@ export default function AppSidebar() {
 
   useEffect(() => {
     fetchPermissions();
+
+    // Register the 403 handler: when the backend returns 403, re-fetch permissions.
+    ApiClient.setForbiddenHandler(() => {
+      const { clearPermissions, fetchPermissions } = usePermissionStore.getState();
+      clearPermissions();
+      fetchPermissions();
+    });
+
+    return () => {
+      ApiClient.setForbiddenHandler(null);
+    };
   }, [fetchPermissions]);
 
   // Tick every 30s to update elapsed times
