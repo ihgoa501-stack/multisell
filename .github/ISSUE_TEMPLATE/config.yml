@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 讨论区 / Discussions
+    url: https://github.com/ihgoa501-stack/multisell/discussions
+    about: 使用疑问、想法交流、方案讨论请前往 Discussions / Ask questions, share ideas, and discuss proposals here
+  - name: 📖 文档 / Documentation
+    url: https://github.com/ihgoa501-stack/multisell/blob/main/docs/INDEX.md
+    about: 查阅项目文档和指南 / Check the project documentation

@@ -1,0 +1,44 @@
+name: Stale Issue Cleanup
+on:
+  schedule:
+    - cron: "0 2 * * 1"  # 每周一凌晨 2 点 / Every Monday 2am (Asia/Shanghai)
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@28ca1036281a5e5922ead5184a1bbf96e5fc984e # v9
+        with:
+          stale-issue-message: |
+            此 Issue 已超过 30 天没有新活动。如果没有补充新信息，将在 7 天后自动关闭。
+            This issue has been inactive for 30 days. It will be closed in 7 days if no further activity.
+
+          stale-pr-message: |
+            此 PR 已超过 45 天没有新活动。如果没有新变更，将在 7 天后自动关闭。
+            This PR has been inactive for 45 days. It will be closed in 7 days if no further activity.
+
+          close-issue-message: |
+            因长时间无活动，此 Issue 已自动关闭。如果问题仍然存在，请重新打开并补充最新信息。
+            Closed due to inactivity. If the issue persists, please reopen with updated information.
+
+          close-pr-message: |
+            因长时间无活动，此 PR 已自动关闭。
+            Closed due to inactivity.
+
+          # 标记为 stale 的天数
+          days-before-stale: 30
+          days-before-close: 7
+
+          # 不对带有这些标签的 Issue/PR 做 stale 标记
+          exempt-issue-labels:
+            - "priority/critical"
+            - "priority/high"
+            - "status/blocked"
+            - "type/epic"
+          exempt-pr-labels:
+            - "dependencies"
+            - "status/blocked"
+
+          # stale 标记时添加的标签
+          stale-issue-label: "status/stale"
+          stale-pr-label: "status/stale"
