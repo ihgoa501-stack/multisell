@@ -202,7 +202,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 
 	// Synthesize final output. If a real LLM provider is configured, call it;
 	// otherwise fall back to the deterministic stub.
-	output, confidence, riskLevel, err := o.synthesizeOutput(agent, req.DecisionPoint, req.Context)
+	output, confidence, riskLevel, err := o.synthesizeOutput(context.Background(), agent, req.DecisionPoint, req.Context)
 	if err != nil {
 		return nil, err
 	}
@@ -366,22 +366,22 @@ func (o *Orchestrator) persistAction(in *CreateActionInput) (*UnifiedAction, err
 // synthesizeOutput produces the agent's final output. It checks for a concrete
 // agent implementation first, and falls back to the LLM provider or deterministic
 // stub when no implementation is registered.
-func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[string]interface{}) (map[string]interface{}, float64, string, error) {
+func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp string, params map[string]interface{}) (map[string]interface{}, float64, string, error) {
 	// Check if there is a concrete implementation for this agent.
 	if implAgent, ok := o.agentImpls[agent.ID]; ok {
 		o.logger.Debug("using concrete agent implementation",
 			zap.String("agent_id", agent.ID),
 			zap.String("decision_point", dp),
 		)
-		return implAgent.Decide(dp, ctx)
+		return implAgent.Decide(ctx, dp, params)
 	}
 
 	// Build the prompt.
 	system := fmt.Sprintf("You are %s (%s), a LingMirror agent in the %s squad. Decision point: %s. Description: %s. Respond in Chinese, be concise (<=120 chars).",
 		agent.ID, agent.Name, agent.Squad, dp, agent.Description)
 	userMsg := fmt.Sprintf("Agent %s @ %s — please decide.", agent.ID, dp)
-	if ctx != nil {
-		if m, ok := ctx["message"].(string); ok && m != "" {
+	if params != nil {
+		if m, ok := params["message"].(string); ok && m != "" {
 			userMsg = m
 		}
 	}
@@ -413,7 +413,7 @@ func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[stri
 				zap.String("reason", budgetRes.Reason),
 				zap.Float64("daily_spent", budgetRes.DailySpent),
 			)
-			out, conf, risk := stubFinalOutput(agent, dp, ctx)
+			out, conf, risk := stubFinalOutput(agent, dp, params)
 			return out, conf, risk, nil
 		}
 		if budgetErr == nil && budgetRes.Action == costcontrol.ActionDowngrade {
@@ -458,8 +458,8 @@ func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[stri
 				"latency_ms":     resp.LatencyMs,
 				"timestamp":      time.Now().Format(time.RFC3339),
 			}
-			if ctx != nil {
-				out["echoed_context"] = ctx
+			if params != nil {
+				out["echoed_context"] = params
 			}
 			confidence := 0.82
 			if resp.TokensOut > 0 {
@@ -483,7 +483,7 @@ func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[stri
 						return nil, 0, "", fmt.Errorf("LLM output blocked by guardrails: %s", res.Reason)
 					}
 					// In non-production, fall back to stub output.
-					out, conf, risk := stubFinalOutput(agent, dp, ctx)
+					out, conf, risk := stubFinalOutput(agent, dp, params)
 					return out, conf, risk, nil
 				}
 				if !res.Pass {
@@ -496,7 +496,7 @@ func (o *Orchestrator) synthesizeOutput(agent AgentSpec, dp string, ctx map[stri
 			return out, confidence, agent.RiskFloor, nil
 		}
 	}
-	out, conf, risk := stubFinalOutput(agent, dp, ctx)
+	out, conf, risk := stubFinalOutput(agent, dp, params)
 	return out, conf, risk, nil
 }
 
