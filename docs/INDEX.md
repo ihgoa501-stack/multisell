@@ -1,9 +1,32 @@
 # 凌镜 LingMirror — 文档索引
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 最后更新：2026-06-29
+> 更新日期：2026-06-30
 
 ---
+
+---
+
+## 🚀 快速入门 (Quick Start)
+
+| 文档 | 说明 |
+|------|------|
+| [入门教程](tutorial-getting-started.md) | 🆕 从零搭建开发环境到创建第一个商品——新人首选 |
+| [API 快速参考](reference-api-quick.md) | 🆕 路由、认证、响应格式、中间件栈速查 |
+| [模块目录](reference-module-catalog.md) | 🆕 全部 60+ 后端领域模块一览 |
+| [配置参考](reference-configuration.md) | 🆕 config.yaml + 环境变量完整说明 |
+| [Agent Pipeline 解释](explanation-agent-pipeline.md) | 🆕 Agent 间如何通过 EventBus 通信和协作 |
+
+## 🛠️ 操作指南 (How-to)
+
+| 文档 | 说明 |
+|------|------|
+| [添加新领域模块](howto-add-domain-module.md) | 🆕 添加完整 CRUD 模块 step-by-step |
+| [配置平台集成](howto-platform-integrations.md) | 🆕 接入 Ozon / Shopee API |
+| [创建自定义 Agent 规则](howto-agent-rules.md) | 🆕 控制 Agent 决策边界和触发条件 |
+| [运行测试与验证](howto-test-and-verify.md) | 🆕 Go 测试、前端测试、E2E |
+| [配置与部署](howto-deploy.md) | 🆕 Docker 生产部署、Nginx/Caddy |
+| [使用 WebSocket 流式更新](howto-websocket.md) | 🆕 连接 /ws 端点接收实时数据 |
 
 ## 📋 项目概览
 
