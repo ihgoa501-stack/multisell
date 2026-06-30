@@ -84,6 +84,35 @@ jobs:
         run: npm run build
       - name: Test
         run: npm run test --if-present
+      - name: Lint
+        # continue-on-error: true — known lint failures exist (see CLAUDE.md).
+        # Once lint is clean, remove this flag to enforce lint as a CI gate.
+        continue-on-error: true
+        run: npm run lint
+
+  # ==========================================
+  # E2E tests (mocked backend, no real backend needed)
+  # ==========================================
+  e2e-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-next/e2e
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-next/e2e/package-lock.json
+      - name: Install frontend dependencies (for web server)
+        run: cd .. && npm ci
+      - name: Install e2e dependencies
+        run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E tests
+        run: npx playwright test --reporter=list
 
   # ==========================================
   # CD: 自动部署到生产（仅合并到 main 时触发）

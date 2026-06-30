@@ -1,6 +1,7 @@
 package order
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -129,6 +130,10 @@ func (s *Service) Update(id int64, in *UpdateOrderInput) (*Order, error) {
 	}
 	updates := map[string]interface{}{}
 	if in.Status != nil {
+		sm := NewOrderStateMachine()
+		if err := sm.MustTransition(context.Background(), o.Status, *in.Status, nil); err != nil {
+			return nil, err
+		}
 		updates["status"] = *in.Status
 	}
 	if in.TrackingNumber != nil {
@@ -173,6 +178,10 @@ func (s *Service) Delete(id int64) error {
 
 // UpdateStatus transitions an order's status and logs the change.
 func (s *Service) UpdateStatus(id int64, from, to, operator, remark string) error {
+	sm := NewOrderStateMachine()
+	if err := sm.MustTransition(context.Background(), from, to, nil); err != nil {
+		return err
+	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var o Order
 		if err := tx.First(&o, id).Error; err != nil {

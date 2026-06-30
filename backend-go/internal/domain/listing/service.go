@@ -94,6 +94,10 @@ func (s *Service) Update(id int64, in *UpdateListingInput) (*ProductListing, err
 		updates["platform_sku"] = *in.PlatformSKU
 	}
 	if in.Status != nil {
+		sm := NewListingStateMachine()
+		if err := sm.MustTransition(context.Background(), l.Status, *in.Status, nil); err != nil {
+			return nil, err
+		}
 		updates["status"] = *in.Status
 	}
 	if in.PlatformURL != nil {
@@ -129,17 +133,21 @@ func (s *Service) Delete(id int64) error {
 	return nil
 }
 
-// Publish triggers the publish flow for a listing: sets status to pending and
-// records published_data. In a full implementation this would enqueue a platform
-// API call; here it transitions state transactionally.
+// Publish triggers the publish flow for a listing: validates the draft -> submitted
+// transition and records published_data. In a full implementation this would enqueue
+// a platform API call; here it transitions state transactionally.
 func (s *Service) Publish(id int64, payload json.RawMessage) (*ProductListing, error) {
 	var l ProductListing
 	if err := s.db.First(&l, id).Error; err != nil {
 		return nil, err
 	}
+	sm := NewListingStateMachine()
+	if err := sm.MustTransition(context.Background(), l.Status, "submitted", nil); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	updates := map[string]interface{}{
-		"status":         "pending",
+		"status":         "submitted",
 		"published_data": payload,
 		"last_sync_at":   &now,
 	}
@@ -168,6 +176,10 @@ func (s *Service) SyncStatus(id int64, newStatus, syncMessage string) (*ProductL
 		"last_sync_at": &now,
 	}
 	if newStatus != "" {
+		sm := NewListingStateMachine()
+		if err := sm.MustTransition(context.Background(), l.Status, newStatus, nil); err != nil {
+			return nil, err
+		}
 		updates["status"] = newStatus
 	}
 	if syncMessage != "" {
