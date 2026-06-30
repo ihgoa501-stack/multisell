@@ -537,3 +537,66 @@ func TestOrchestrator_HandleStockCritical_MissingSkuID(t *testing.T) {
 		t.Errorf("expected 0 flows for missing sku_id, got %d", count)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Orchestrator <-> EscalationManager integration (Issue #35)
+// ---------------------------------------------------------------------------
+
+func TestOrchestrator_Escalate_WithManager(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	orch := NewOrchestrator(bus, nil, logger, nil)
+
+	em := NewEscalationManager(logger, nil)
+	orch.SetEscalationManager(em)
+
+	// Level 1 (skip_and_switch) returns nil without needing a hub.
+	evt := EscalationEvent{
+		FlowID:      "flow-esc-1",
+		Level:       EscalationLevel1,
+		Error:       "carrier API timeout",
+		ChannelName: "CNAIR",
+	}
+
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate with manager should return nil for L1, got: %v", err)
+	}
+}
+
+func TestOrchestrator_Escalate_WithoutManager(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	// No escalation manager wired.
+	orch := NewOrchestrator(bus, nil, logger, nil)
+
+	evt := EscalationEvent{
+		FlowID: "flow-esc-2",
+		Level:  EscalationLevel3,
+		Error:  "system-wide failure",
+	}
+
+	// Should be a no-op (nil) rather than panicking.
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate without manager should return nil, got: %v", err)
+	}
+}
+
+func TestOrchestrator_Escalate_Level0PromotionChain(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	bus := eventbus.New(logger)
+	orch := NewOrchestrator(bus, nil, logger, nil)
+	orch.SetEscalationManager(NewEscalationManager(logger, nil))
+
+	// Level 0 with attempts exhausted should auto-promote to Level 1 and
+	// ultimately return nil (the skip_and_switch handler returns nil).
+	evt := EscalationEvent{
+		FlowID:  "flow-esc-3",
+		Level:   EscalationLevel0,
+		Error:   "transient carrier error",
+		Attempt: 3,
+	}
+
+	if err := orch.Escalate(context.Background(), evt); err != nil {
+		t.Errorf("Escalate L0→L1 promotion should return nil, got: %v", err)
+	}
+}

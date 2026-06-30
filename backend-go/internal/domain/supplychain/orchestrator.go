@@ -28,6 +28,7 @@ type Orchestrator struct {
 	db            *gorm.DB
 	logger        *zap.Logger
 	returnTracker *aftersales.ReturnRateTracker
+	escalation    *EscalationManager
 }
 
 // NewOrchestrator creates a new supply chain orchestrator.
@@ -38,6 +39,30 @@ func NewOrchestrator(bus *eventbus.Bus, db *gorm.DB, logger *zap.Logger, returnT
 		logger:        logger,
 		returnTracker: returnTracker,
 	}
+}
+
+// SetEscalationManager injects a 4-level EscalationManager (Issue #35) into the
+// orchestrator state machine. When set, the orchestrator can route operational
+// errors through Escalate(...) to apply the standard auto-retry → skip →
+// manual-review → global-alert progression. When nil, Escalate is a no-op.
+func (o *Orchestrator) SetEscalationManager(em *EscalationManager) *Orchestrator {
+	o.escalation = em
+	return o
+}
+
+// Escalate routes an escalation event through the configured EscalationManager.
+// Returns nil when no manager is wired (the orchestrator logs and continues) so
+// callers can invoke Escalate unconditionally without guarding for nil.
+func (o *Orchestrator) Escalate(ctx context.Context, evt EscalationEvent) error {
+	if o.escalation == nil {
+		o.logger.Warn("orchestrator: escalation manager not configured, dropping event",
+			zap.String("flow_id", evt.FlowID),
+			zap.Int("level", int(evt.Level)),
+			zap.String("error", evt.Error),
+		)
+		return nil
+	}
+	return o.escalation.Handle(ctx, evt)
 }
 
 // HandleRecommendEvent processes sourcing.recommend events.
