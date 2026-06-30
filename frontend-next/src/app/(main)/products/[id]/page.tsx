@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import PageContainer from '@/components/ui/PageContainer';
 import apiClient from '@/lib/api-client';
+import ComplianceTab from './compliance-tab';
 import { fmtDate, fmtMoney } from '@/components/crud/CrudListPage';
 import { useState } from 'react';
 
@@ -569,6 +570,10 @@ export default function Product360Page() {
       ),
     },
     {
+      key: 'compliance-scan', label: '合规检查',
+      children: <ComplianceTab productId={id} />,
+    },
+    {
       key: 'listings', label: '刊登状态',
       children: <Card title="各平台刊登状态"><Table rowKey="key" dataSource={listingData} columns={listingColumns} pagination={false} size="small" /></Card>,
     },
@@ -664,6 +669,5 @@ export default function Product360Page() {
         </div>
       </Card>
       <Tabs items={tabItems} />
-    </PageContainer>
   );
 }

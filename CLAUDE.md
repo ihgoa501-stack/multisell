@@ -25,10 +25,8 @@ Version `v0.2.1` in `VERSION`, tracked on `main`.
 
 | Stack | Dir | Entry |
 |-------|-----|-------|
-| Backend (active) | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
-| Frontend (active) | `frontend-next/` | `src/app/` — Next.js 16, React 19, TypeScript, Ant Design 6 |
-| Backend (legacy, frozen) | `backend/` | Python/FastAPI — reference only; no new features |
-| Frontend (legacy, frozen) | `frontend/` | Vue 3 — reference only; no new features |
+| Backend | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
+| Frontend | `frontend-next/` | `src/app/` — Next.js 16, React 19, TypeScript, Ant Design 6 |
 
 API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT.
 
@@ -38,7 +36,6 @@ API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT
 # Infrastructure
 docker compose up -d                 # Postgres 15
 docker compose up -d db              # Postgres only
-docker compose -f docker-compose.legacy.yml up -d  # legacy stack
 
 # Backend
 cd backend-go

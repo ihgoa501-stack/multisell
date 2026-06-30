@@ -28,10 +28,8 @@ When these governance docs conflict with older project docs, follow the governan
 
 | Stack | Dir | Entry |
 |-------|-----|-------|
-| Backend (active) | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
-| Frontend (active) | `frontend-next/` | `src/app/` — Next.js 16, React 19, TypeScript, Ant Design 6 |
-| Backend (legacy, frozen) | `backend/` | Python/FastAPI — reference only |
-| Frontend (legacy, frozen) | `frontend/` | Vue 3 — reference only |
+| Backend | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
+| Frontend | `frontend-next/` | `src/app/` — Next.js 16, React 19, TypeScript, Ant Design 6 |
 
 API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT.
 
@@ -51,7 +49,6 @@ API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT
 | Frontend lint | `cd frontend-next && npm run lint` |
 | Frontend test | `cd frontend-next && npm test` |
 | E2E | `cd frontend-next/e2e && npx playwright test` |
-| Legacy full stack | `docker compose -f docker-compose.legacy.yml up -d` |
 
 New dev database: `multisell`. Migrations under `backend-go/migrations/`.
 
@@ -184,8 +181,6 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 | `domain/sourcing/` | Sourcing profit formula engine (A8) |
 | `domain/trustscore/` | Trust score + autonomy gating |
 | `domain/actionpolicy/` | Action approval policy |
-
-Legacy Hermes Python (`backend/app/agent/`) is reference-only.
 
 ## Documentation
 
