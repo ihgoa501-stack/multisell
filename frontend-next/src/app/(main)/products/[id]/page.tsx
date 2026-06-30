@@ -669,5 +669,6 @@ export default function Product360Page() {
         </div>
       </Card>
       <Tabs items={tabItems} />
+      </PageContainer>
   );
 }
