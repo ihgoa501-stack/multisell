@@ -88,11 +88,21 @@ func TestService_Update(t *testing.T) {
 	svc := NewService(db, testLogger())
 
 	o, _ := svc.Create(&CreateOrderInput{OrderNo: "ORD-002"})
-	newStatus := "shipped"
-	newTracking := "TRACK-123"
-	updated, err := svc.Update(o.ID, &UpdateOrderInput{Status: &newStatus, TrackingNumber: &newTracking})
+	// First transition to confirmed (valid step)
+	newStatus := "confirmed"
+	updated, err := svc.Update(o.ID, &UpdateOrderInput{Status: &newStatus})
 	if err != nil {
-		t.Fatalf("Update: %v", err)
+		t.Fatalf("Update to confirmed failed: %v", err)
+	}
+	if updated.Status != "confirmed" {
+		t.Fatalf("status = %s", updated.Status)
+	}
+	// Then transition to shipped with tracking
+	newStatus = "shipped"
+	newTracking := "TRACK-123"
+	updated, err = svc.Update(o.ID, &UpdateOrderInput{Status: &newStatus, TrackingNumber: &newTracking})
+	if err != nil {
+		t.Fatalf("Update to shipped: %v", err)
 	}
 	if updated.Status != "shipped" {
 		t.Fatalf("status = %s", updated.Status)
@@ -107,7 +117,7 @@ func TestService_UpdateStatus_LogsTransition(t *testing.T) {
 	svc := NewService(db, testLogger())
 
 	o, _ := svc.Create(&CreateOrderInput{OrderNo: "ORD-003", Status: "pending"})
-	if err := svc.UpdateStatus(o.ID, "pending", "paid", "alice", "user paid"); err != nil {
+	if err := svc.UpdateStatus(o.ID, "pending", "confirmed", "alice", "order confirmed"); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 
@@ -116,7 +126,7 @@ func TestService_UpdateStatus_LogsTransition(t *testing.T) {
 		t.Fatalf("status logs = %d", len(detail.StatusLogs))
 	}
 	log := detail.StatusLogs[0]
-	if log.FromStatus != "pending" || log.ToStatus != "paid" {
+	if log.FromStatus != "pending" || log.ToStatus != "confirmed" {
 		t.Fatalf("transition = %s → %s", log.FromStatus, log.ToStatus)
 	}
 	if log.Operator != "alice" {
@@ -170,7 +180,7 @@ func TestService_Delete_Cascades(t *testing.T) {
 		Items:   []OrderItemInput{{SkuID: 1, ProductID: 1, ProductName: "x", UnitPrice: 1, Quantity: 1}},
 	})
 	// Add a status log
-	_ = svc.UpdateStatus(o.ID, "pending", "paid", "op", "")
+	_ = svc.UpdateStatus(o.ID, "pending", "confirmed", "op", "")
 
 	if err := svc.Delete(o.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -219,5 +229,83 @@ func TestService_Summary(t *testing.T) {
 	}
 	if summary.ByStatus["shipped"] != 1 {
 		t.Fatalf("shipped = %d", summary.ByStatus["shipped"])
+	}
+}
+
+// ---------- State machine integration tests ----------
+
+func TestService_InvalidStatusTransition(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	o, _ := svc.Create(&CreateOrderInput{OrderNo: "ORD-INVALID", Status: "pending"})
+	// Try to go directly from pending to delivered (should fail)
+	err := svc.UpdateStatus(o.ID, "pending", "delivered", "op", "")
+	if err == nil {
+		t.Fatal("expected error for invalid transition pending -> delivered")
+	}
+}
+
+func TestService_UpdateStatus_Terminal(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	o, _ := svc.Create(&CreateOrderInput{OrderNo: "ORD-TERM", Status: "pending"})
+	// Walk through valid transitions to reach terminal states
+	_ = svc.UpdateStatus(o.ID, "pending", "confirmed", "op", "")
+	_ = svc.UpdateStatus(o.ID, "confirmed", "shipped", "op", "")
+	_ = svc.UpdateStatus(o.ID, "shipped", "delivered", "op", "")
+	_ = svc.UpdateStatus(o.ID, "delivered", "completed", "op", "")
+	// Try to transition from completed (terminal)
+	err := svc.UpdateStatus(o.ID, "completed", "pending", "op", "")
+	if err == nil {
+		t.Fatal("expected error for transition from terminal status completed")
+	}
+}
+
+func TestService_Update_InvalidStatusTransition(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	o, _ := svc.Create(&CreateOrderInput{OrderNo: "ORD-INVUPD", Status: "pending"})
+	newStatus := "delivered"
+	_, err := svc.Update(o.ID, &UpdateOrderInput{Status: &newStatus})
+	if err == nil {
+		t.Fatal("expected error for invalid transition pending -> delivered via Update")
+	}
+}
+
+func TestService_ValidCancelledTransition(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	o, _ := svc.Create(&CreateOrderInput{OrderNo: "ORD-CANCEL", Status: "pending"})
+	// Cancel from pending is valid
+	err := svc.UpdateStatus(o.ID, "pending", "cancelled", "op", "customer request")
+	if err != nil {
+		t.Fatalf("Expected pending -> cancelled to be valid: %v", err)
+	}
+
+	// Verify the order was cancelled
+	detail, err := svc.Get(o.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if detail.Order.Status != "cancelled" {
+		t.Fatalf("status = %s, want cancelled", detail.Order.Status)
+	}
+}
+
+func TestService_CancelFromConfirmedOrShipped(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	o, _ := svc.Create(&CreateOrderInput{OrderNo: "ORD-C-CONF", Status: "pending"})
+	_ = svc.UpdateStatus(o.ID, "pending", "confirmed", "op", "")
+
+	// Cancel from confirmed is valid
+	err := svc.UpdateStatus(o.ID, "confirmed", "cancelled", "op", "inventory issue")
+	if err != nil {
+		t.Fatalf("Expected confirmed -> cancelled to be valid: %v", err)
 	}
 }

@@ -143,13 +143,13 @@ func TestListing_Update(t *testing.T) {
 
 	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "draft"})
 
-	status := "active"
+	status := "submitted"
 	updated, err := svc.Update(created.ID, &UpdateListingInput{Status: &status})
 	if err != nil {
-		t.Fatalf("Update failed: %v", err)
+		t.Fatalf("Update draft -> submitted failed: %v", err)
 	}
-	if updated.Status != "active" {
-		t.Fatalf("after Update Status=%q, want active", updated.Status)
+	if updated.Status != "submitted" {
+		t.Fatalf("after Update Status=%q, want submitted", updated.Status)
 	}
 }
 
@@ -163,8 +163,8 @@ func TestListing_Publish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Publish failed: %v", err)
 	}
-	if published.Status != "pending" {
-		t.Fatalf("after Publish Status=%q, want pending", published.Status)
+	if published.Status != "submitted" {
+		t.Fatalf("after Publish Status=%q, want submitted", published.Status)
 	}
 	if published.LastSyncAt == nil {
 		t.Fatal("expected LastSyncAt to be set after Publish")
@@ -174,16 +174,18 @@ func TestListing_Publish(t *testing.T) {
 func TestListing_SyncStatus(t *testing.T) {
 	svc := newService(t)
 
-	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "publishing"})
+	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "draft"})
+	// Submit listing first, then sync status to approved
+	submitted, _ := svc.Publish(created.ID, json.RawMessage(`{}`))
 
-	synced, err := svc.SyncStatus(created.ID, "active", "Sync complete")
+	synced, err := svc.SyncStatus(submitted.ID, "approved", "Platform approved")
 	if err != nil {
 		t.Fatalf("SyncStatus failed: %v", err)
 	}
-	if synced.Status != "active" {
-		t.Fatalf("after SyncStatus Status=%q, want active", synced.Status)
+	if synced.Status != "approved" {
+		t.Fatalf("after SyncStatus Status=%q, want approved", synced.Status)
 	}
-	if synced.SyncMessage != "Sync complete" {
+	if synced.SyncMessage != "Platform approved" {
 		t.Fatalf("SyncMessage=%q", synced.SyncMessage)
 	}
 }
@@ -206,5 +208,105 @@ func TestListing_Delete_NotFound(t *testing.T) {
 
 	if err := svc.Delete(999); err == nil {
 		t.Fatal("expected error for non-existent ID")
+	}
+}
+
+// ---------- State machine integration tests ----------
+
+func TestListing_InvalidStatusTransition(t *testing.T) {
+	svc := newService(t)
+
+	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "draft"})
+	status := "active"
+	_, err := svc.Update(created.ID, &UpdateListingInput{Status: &status})
+	if err == nil {
+		t.Fatal("expected error for invalid transition draft -> active")
+	}
+}
+
+func TestListing_SyncStatus_InvalidTransition(t *testing.T) {
+	svc := newService(t)
+
+	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "draft"})
+	// Can't go from draft directly to ended
+	_, err := svc.SyncStatus(created.ID, "ended", "")
+	if err == nil {
+		t.Fatal("expected error for invalid transition draft -> ended")
+	}
+}
+
+func TestListing_ValidStatusTransition(t *testing.T) {
+	svc := newService(t)
+
+	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "draft"})
+	status := "submitted"
+	updated, err := svc.Update(created.ID, &UpdateListingInput{Status: &status})
+	if err != nil {
+		t.Fatalf("Update draft -> submitted failed: %v", err)
+	}
+	if updated.Status != "submitted" {
+		t.Fatalf("Status=%q, want submitted", updated.Status)
+	}
+}
+
+func TestListing_FullLifecycle(t *testing.T) {
+	svc := newService(t)
+
+	// Create a new listing in draft
+	l, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "draft"})
+
+	// draft -> submitted
+	s1 := "submitted"
+	l, err := svc.Update(l.ID, &UpdateListingInput{Status: &s1})
+	if err != nil {
+		t.Fatalf("draft -> submitted: %v", err)
+	}
+
+	// submitted -> approved
+	l, err = svc.SyncStatus(l.ID, "approved", "")
+	if err != nil {
+		t.Fatalf("submitted -> approved: %v", err)
+	}
+
+	// approved -> active
+	s3 := "active"
+	l, err = svc.Update(l.ID, &UpdateListingInput{Status: &s3})
+	if err != nil {
+		t.Fatalf("approved -> active: %v", err)
+	}
+
+	// active -> paused
+	s4 := "paused"
+	l, err = svc.Update(l.ID, &UpdateListingInput{Status: &s4})
+	if err != nil {
+		t.Fatalf("active -> paused: %v", err)
+	}
+
+	// paused -> ended
+	s5 := "ended"
+	l, err = svc.Update(l.ID, &UpdateListingInput{Status: &s5})
+	if err != nil {
+		t.Fatalf("paused -> ended: %v", err)
+	}
+
+	if l.Status != "ended" {
+		t.Fatalf("final status=%q, want ended", l.Status)
+	}
+}
+
+func TestListing_RejectedTransition(t *testing.T) {
+	svc := newService(t)
+
+	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "draft"})
+	status := "submitted"
+	created, _ = svc.Update(created.ID, &UpdateListingInput{Status: &status})
+
+	// submitted -> rejected
+	synced, err := svc.SyncStatus(created.ID, "rejected", "Does not meet platform requirements")
+	if err != nil {
+		t.Fatalf("submitted -> rejected should be valid: %v", err)
+	}
+	if synced.Status != "rejected" {
+		t.Fatalf("Status=%q, want rejected", synced.Status)
 	}
 }
