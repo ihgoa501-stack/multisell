@@ -89,3 +89,52 @@ type Summary struct {
 	ByStatus      map[string]int64 `json:"by_status"`
 	TotalRefunded float64          `json:"total_refunded"`
 }
+
+// DisputeCase maps to "dispute_case".
+type DisputeCase struct {
+	ID             int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TransactionID  string    `gorm:"column:transaction_id;not null;index" json:"transaction_id"`
+	Platform       string    `gorm:"column:platform;not null" json:"platform"`
+	ClaimType      string    `gorm:"column:claim_type;not null" json:"claim_type"`
+	Amount         float64   `gorm:"column:amount;default:0" json:"amount"`
+	Status         string    `gorm:"column:status;default:pending" json:"status"`
+	Evidence       string    `gorm:"column:evidence;type:text" json:"evidence,omitempty"`
+	DecisionScore  float64   `gorm:"column:decision_score;default:0" json:"decision_score"`
+	AiReason       string    `gorm:"column:ai_reason;type:text" json:"ai_reason,omitempty"`
+	DecisionSource string    `gorm:"column:decision_source;default:rule" json:"decision_source"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+func (DisputeCase) TableName() string { return "dispute_case" }
+
+// CreateDisputeInput is the payload for POST /aftersales/disputes.
+type CreateDisputeInput struct {
+	TransactionID string  `json:"transaction_id" binding:"required"`
+	Platform      string  `json:"platform" binding:"required"`
+	ClaimType     string  `json:"claim_type" binding:"required"`
+	Amount        float64 `json:"amount"`
+	Evidence      string  `json:"evidence"`
+}
+
+// DisputeListFilter captures dispute query parameters.
+type DisputeListFilter struct {
+	Platform  string
+	ClaimType string
+	Status    string
+}
+
+// EvaluateDisputeResult is the response for evaluating a dispute.
+type EvaluateDisputeResult struct {
+	Dispute       *DisputeCase        `json:"dispute"`
+	Score         float64             `json:"score"`
+	Decision      string              `json:"decision"`
+	RuleBreakdown []RuleBreakdownItem `json:"rule_breakdown"`
+}
+
+// RuleBreakdownItem describes one rule evaluation result.
+type RuleBreakdownItem struct {
+	Rule   string  `json:"rule"`
+	Score  float64 `json:"score"`
+	Reason string  `json:"reason"`
+}

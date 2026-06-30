@@ -45,6 +45,18 @@ var stepAgentMapping = map[string]string{
 	"delisting":   "scheduler",
 }
 
+// stepDecisionPoint maps pipeline step names to the agent decision point
+// to invoke. Falls back to stepName + "_decision" when absent.
+var stepDecisionPoint = map[string]string{
+	"sourcing":   "sourcing_recommend",
+	"enrichment": "content_generate",
+	"compliance": "compliance_check",
+	"pricing":    "acos_analysis",
+	"listing":    "listing_optimize",
+	"monitoring": "stock_alert",
+	"delisting":  "delisting_evaluate",
+}
+
 // DefaultPipeline defines the standard step order for product lifecycle.
 var DefaultPipeline = []string{
 	"sourcing",    // A8  finds product candidate

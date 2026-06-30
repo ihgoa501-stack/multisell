@@ -95,22 +95,58 @@ npm run lint
 
 ## 项目文档
 
+### 🚀 入门
 | 文档 | 用途 |
 |------|------|
-| [产品愿景与第一可用版本](docs/PRODUCT_VISION_AND_MVP.md) | 最终产品定位、第一阶段切入口、后续 Agent 开发方向 |
-| [项目现状](docs/PROJECT_STATUS.md) | 当前已完成能力、已知限制、验证结果 |
-| [项目收口与 Agent 协作规范](docs/PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | Agent 分工、验收标准、协作流程 |
-| [开发指南](docs/DEVELOPMENT_GUIDE.md) | 本地启动、测试、模块约定、交接提示词 |
+| [入门教程](docs/tutorial-getting-started.md) | 从零搭建开发环境到创建第一个商品（新手上路首选） |
+
+### 📖 参考
+| 文档 | 用途 |
+|------|------|
+| [API 快速参考](docs/reference-api-quick.md) | 路由、认证、响应格式、中间件栈速查 |
+| [模块目录](docs/reference-module-catalog.md) | 全部 60+ 后端领域模块一览 |
+| [配置参考](docs/reference-configuration.md) | config.yaml + 环境变量完整说明 |
 | [权限与审计](docs/PERMISSIONS_AND_AUDIT.md) | 鉴权规则、权限码、审计日志接入方式 |
-| [路线图](docs/ROADMAP.md) | 后续阶段优先级和每阶段待办 |
+| [API 端点清单](docs/api-inventory.md) | 完整 API 路由/Handler 对照表 |
+
+### 🛠️ 操作指南
+| 文档 | 用途 |
+|------|------|
+| [添加新领域模块](docs/howto-add-domain-module.md) | 添加完整 CRUD 模块的 step-by-step |
+| [配置平台集成](docs/howto-platform-integrations.md) | 接入 Ozon / Shopee API |
+| [创建自定义 Agent 规则](docs/howto-agent-rules.md) | 控制 Agent 决策边界和触发条件 |
+| [运行测试与验证](docs/howto-test-and-verify.md) | Go 测试、前端测试、E2E、冒烟测试 |
+| [配置与部署](docs/howto-deploy.md) | Docker 生产部署、Nginx/Caddy、备份恢复 |
+| [使用 WebSocket 流式更新](docs/howto-websocket.md) | 连接 /ws 端点，接收 AI 流式输出 |
+
+### 🧠 解释
+| 文档 | 用途 |
+|------|------|
+| [Agent Pipeline 和事件驱动编排](docs/explanation-agent-pipeline.md) | Agent 间如何通过 EventBus 通信和协作 |
+
+### 📚 领域指南
+| 文档 | 用途 |
+|------|------|
 | [AI 选品使用指南](docs/sourcing-guide.md) | A8 选品引擎使用说明与 API 参考 |
-| [物流费率引擎指南](docs/logistics-guide.md) | 物流费率引擎配置与调用 |
+| [物流费率引擎指南](docs/logistics-guide.md) | A10 物流费率引擎配置与调用 |
 | [ToolBridge 指南](docs/toolbridge-guide.md) | Agent 工具桥接插件开发 |
 | [Chrome 扩展指南](docs/chrome-extension-guide.md) | 选品助手扩展安装与协议 |
-| [剩余开发总文档](docs/DEVELOPMENT_BACKLOG_AND_SPEC.md) | 还需要开发的全部事项、优先级、模块规格和验收标准 |
-| [Active Stack Policy](docs/ACTIVE_STACK_POLICY.md) | 新旧版本边界、旧栈冻结规则、默认开发入口 |
-| [新技术栈重构计划](docs/superpowers/plans/2026-06-23-lingmirror-new-tech-refactor.md) | Go + Next + AI 页面完整重构计划 |
-| [生产切流 Runbook](docs/superpowers/plans/2026-06-23-cutover-runbook.md) | 切流、验证和回滚步骤 |
+
+### 🏛️ 架构与治理
+| 文档 | 用途 |
+|------|------|
+| [系统架构设计 v1](docs/system-architecture-design-v1.md) | 九层架构、数据流、Agent 编排 |
+| [AIOS 基础设施架构](docs/aios-architecture.md) | 11 个 AIOS 内核模块设计 |
+| [产品愿景与 MVP](docs/PRODUCT_VISION_AND_MVP.md) | 最终产品定位、第一阶段切入口 |
+| [项目现状](docs/PROJECT_STATUS.md) | 当前完成能力、已知限制 |
+| [路线图](docs/ROADMAP.md) | 后续阶段优先级和每阶段待办 |
+| [项目治理与 Agent 协作规范](docs/PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | Agent 分工、验收标准 |
+| [Owner-First 开发协议](docs/governance/OWNER_FIRST_PROTOCOL.md) | 非技术 Owner 如何提需求和验收 |
+| [平台宪法](docs/governance/PLATFORM_CONSTITUTION.md) | 系统分层、风险等级、禁止操作 |
+| [Agent 开发协议](docs/governance/AGENT_DEVELOPMENT_PROTOCOL.md) | 多 Agent 开工/review/QA/交接规则 |
+| [Kernel 契约](docs/governance/KERNEL_CONTRACTS.md) | EventBus/Command/Scheduler/ToolBridge 等接口契约 |
+| [开发指南](docs/DEVELOPMENT_GUIDE.md) | 本地启动、测试、模块约定、交接提示词 |
+| [Active Stack Policy](docs/ACTIVE_STACK_POLICY.md) | 新旧版本边界、旧栈冻结规则 |
 
 ## 数据迁移
 
