@@ -2,70 +2,59 @@ package pipeline
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
-// --- Circuit Breaker for Agent Pipeline ---
-
-// BreakerState represents the state of a circuit breaker.
-type BreakerState int
+// State represents the circuit breaker state.
+type State int
 
 const (
-	BreakerClosed   BreakerState = iota // normal operation
-	BreakerOpen                         // failing, fast-fail
-	BreakerHalfOpen                     // probing recovery
+	// StateClosed is normal operation — calls are allowed.
+	StateClosed State = iota
+	// StateOpen means the circuit is broken — calls are blocked.
+	StateOpen
+	// StateHalfOpen means a probe call is allowed to test recovery.
+	StateHalfOpen
 )
 
-func (s BreakerState) String() string {
+func (s State) String() string {
 	switch s {
-	case BreakerClosed:
+	case StateClosed:
 		return "CLOSED"
-	case BreakerOpen:
+	case StateOpen:
 		return "OPEN"
-	case BreakerHalfOpen:
+	case StateHalfOpen:
 		return "HALF_OPEN"
 	default:
 		return "UNKNOWN"
 	}
 }
 
-// BreakerConfig configures a single circuit breaker.
-type BreakerConfig struct {
-	// Threshold is the failure ratio that triggers open (0.0–1.0). Default 0.5.
+// CircuitBreakerConfig configures a single circuit breaker.
+type CircuitBreakerConfig struct {
+	// Threshold is the failure rate (0.0–1.0) that triggers the OPEN state.
+	// Default: 0.5 (50%). Thresold is only checked when the sliding window
+	// reaches WindowSize entries.
 	Threshold float64
-	// WindowSize is the number of recent calls to evaluate. Default 10.
+
+	// WindowSize is the number of recent calls to track.
+	// Default: 10.
 	WindowSize int
-	// Cooldown is how long to stay OPEN before HALF_OPEN. Default 30s.
+
+	// Cooldown is how long the breaker stays OPEN before transitioning to
+	// HALF_OPEN and allowing a probe call.
+	// Default: 30s.
 	Cooldown time.Duration
-	// HalfOpenMax is how many probe calls to allow in HALF_OPEN. Default 1.
+
+	// HalfOpenMax is the maximum number of probe calls allowed in HALF_OPEN
+	// state before the breaker decides.
+	// Default: 1.
 	HalfOpenMax int
 }
 
-// record is a single invocation outcome within the sliding window.
-type record struct {
-	failed bool
-	at     time.Time
-}
-
-// CircuitBreaker tracks recent call outcomes for one agent.
-type CircuitBreaker struct {
-	mu     sync.RWMutex
-	config BreakerConfig
-	state  BreakerState
-	window []record
-	// halfOpenCount tracks probe attempts in HALF_OPEN.
-	halfOpenCount int
-	// openedAt is when the breaker transitioned to OPEN.
-	openedAt time.Time
-	// Total counters for observability.
-	totalSuccess atomic.Int64
-	totalFailure atomic.Int64
-}
-
-// DefaultBreakerConfig returns a sensible default configuration.
-func DefaultBreakerConfig() BreakerConfig {
-	return BreakerConfig{
+// DefaultCircuitBreakerConfig returns the default circuit breaker configuration.
+func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
+	return CircuitBreakerConfig{
 		Threshold:   0.5,
 		WindowSize:  10,
 		Cooldown:    30 * time.Second,
@@ -73,206 +62,260 @@ func DefaultBreakerConfig() BreakerConfig {
 	}
 }
 
+// count records a single call result in the sliding window.
+type count struct {
+	success bool
+	time    time.Time
+}
+
+// CircuitBreaker tracks success/failure for a single target and implements
+// the circuit breaker pattern with a sliding window.
+type CircuitBreaker struct {
+	mu         sync.RWMutex
+	state      State
+	config     CircuitBreakerConfig
+	window     []count
+	lastOpened time.Time    // when the circuit was last opened
+	halfOpenN  int          // calls allowed in current half-open window
+	createdAt  time.Time
+}
+
 // NewCircuitBreaker creates a circuit breaker with the given config.
-func NewCircuitBreaker(cfg BreakerConfig) *CircuitBreaker {
+// If config has zero fields, defaults are applied per-field.
+func NewCircuitBreaker(config CircuitBreakerConfig) *CircuitBreaker {
+	cfg := applyConfigDefaults(config)
+	return &CircuitBreaker{
+		state:     StateClosed,
+		config:    cfg,
+		window:    make([]count, 0, cfg.WindowSize),
+		createdAt: time.Now(),
+	}
+}
+
+func applyConfigDefaults(cfg CircuitBreakerConfig) CircuitBreakerConfig {
+	def := DefaultCircuitBreakerConfig()
 	if cfg.Threshold <= 0 || cfg.Threshold > 1 {
-		cfg.Threshold = 0.5
+		cfg.Threshold = def.Threshold
 	}
 	if cfg.WindowSize <= 0 {
-		cfg.WindowSize = 10
+		cfg.WindowSize = def.WindowSize
 	}
 	if cfg.Cooldown <= 0 {
-		cfg.Cooldown = 30 * time.Second
+		cfg.Cooldown = def.Cooldown
 	}
 	if cfg.HalfOpenMax <= 0 {
-		cfg.HalfOpenMax = 1
+		cfg.HalfOpenMax = def.HalfOpenMax
 	}
-	return &CircuitBreaker{config: cfg, state: BreakerClosed}
+	return cfg
 }
 
-// Allow returns true if the call should proceed.
+// Allow checks whether a call to the protected target is permitted based on
+// the current circuit breaker state.
 func (cb *CircuitBreaker) Allow() bool {
-	cb.mu.RLock()
-	state := cb.state
-	cooldown := cb.config.Cooldown
-	openedAt := cb.openedAt
-	cb.mu.RUnlock()
-
-	switch state {
-	case BreakerClosed:
-		return true
-	case BreakerOpen:
-		if time.Since(openedAt) >= cooldown {
-			cb.mu.Lock()
-			// Double-check after acquiring write lock.
-			if cb.state == BreakerOpen && time.Since(cb.openedAt) >= cb.config.Cooldown {
-				cb.state = BreakerHalfOpen
-				cb.halfOpenCount = 1
-			}
-			allowed := cb.state == BreakerHalfOpen
-			cb.mu.Unlock()
-			return allowed
-		}
-		return false
-	case BreakerHalfOpen:
-		cb.mu.Lock()
-		allowed := cb.halfOpenCount < cb.config.HalfOpenMax
-		if allowed {
-			cb.halfOpenCount++
-		}
-		cb.mu.Unlock()
-		return allowed
-	}
-	return true
-}
-
-// Record records a call outcome and transitions state if needed.
-func (cb *CircuitBreaker) Record(success bool) {
-	now := time.Now()
-
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	if success {
-		cb.totalSuccess.Add(1)
-	} else {
-		cb.totalFailure.Add(1)
-	}
-
-	// Append to sliding window.
-	cb.window = append(cb.window, record{failed: !success, at: now})
-
-	// Prune records outside the window.
-	windowStart := now.Add(-cb.config.Cooldown * 3) // keep ~3 cooldowns
-	cut := 0
-	for i, r := range cb.window {
-		if r.at.After(windowStart) {
-			cut = i
-			break
+	switch cb.state {
+	case StateClosed:
+		return true
+	case StateOpen:
+		// Check if cooldown has elapsed -> transition to HALF_OPEN.
+		if time.Since(cb.lastOpened) >= cb.config.Cooldown {
+			cb.state = StateHalfOpen
+			cb.halfOpenN = 0
+			return true
 		}
+		return false
+	case StateHalfOpen:
+		if cb.halfOpenN < cb.config.HalfOpenMax {
+			cb.halfOpenN++
+			return true
+		}
+		return false
+	default:
+		return true
 	}
-	if cut > 0 && cut <= len(cb.window) {
-		cb.window = cb.window[cut:]
-	}
+}
 
-	// Only evaluate when window is full enough.
-	if len(cb.window) < cb.config.WindowSize {
-		return
-	}
+// Record records the outcome of a call and transitions state accordingly.
+func (cb *CircuitBreaker) Record(success bool) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
-	// Trim to window size.
+	switch cb.state {
+	case StateClosed:
+		cb.recordClosed(success)
+	case StateHalfOpen:
+		cb.recordHalfOpen(success)
+	default:
+		// OPEN state: ignore (shouldn't normally arrive here).
+	}
+}
+
+func (cb *CircuitBreaker) recordClosed(success bool) {
+	// Add to window.
+	cb.window = append(cb.window, count{success: success, time: time.Now()})
+
+	// Trim window to WindowSize.
 	if len(cb.window) > cb.config.WindowSize {
 		cb.window = cb.window[len(cb.window)-cb.config.WindowSize:]
 	}
 
-	// Count failures in window.
+	// Check failure rate only when the window is at capacity.
+	if len(cb.window) == cb.config.WindowSize && cb.failureRateLocked() >= cb.config.Threshold {
+		cb.state = StateOpen
+		cb.lastOpened = time.Now()
+	}
+}
+
+func (cb *CircuitBreaker) recordHalfOpen(success bool) {
+	if success {
+		// Probe succeeded — reset to CLOSED.
+		cb.state = StateClosed
+		cb.window = cb.window[:0] // reset window
+	} else {
+		// Probe failed — back to OPEN.
+		cb.state = StateOpen
+		cb.lastOpened = time.Now()
+	}
+}
+
+// failureRateLocked returns the failure rate (0.0–1.0) in the current window.
+// Must be called with cb.mu held.
+func (cb *CircuitBreaker) failureRateLocked() float64 {
+	if len(cb.window) == 0 {
+		return 0
+	}
 	var failures int
-	for _, r := range cb.window {
-		if r.failed {
+	for _, c := range cb.window {
+		if !c.success {
 			failures++
 		}
 	}
-	ratio := float64(failures) / float64(len(cb.window))
-
-	switch cb.state {
-	case BreakerClosed:
-		if ratio >= cb.config.Threshold {
-			cb.state = BreakerOpen
-			cb.openedAt = now
-		}
-	case BreakerHalfOpen:
-		if !success {
-			// Probe failed — back to open.
-			cb.state = BreakerOpen
-			cb.openedAt = now
-		} else {
-			// Probe succeeded — close.
-			cb.state = BreakerClosed
-			cb.window = nil // reset window
-		}
-	}
+	return float64(failures) / float64(len(cb.window))
 }
 
-// Reset forces the breaker back to CLOSED state.
-func (cb *CircuitBreaker) Reset() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	cb.state = BreakerClosed
-	cb.window = nil
-	cb.halfOpenCount = 0
+// FailureRate returns the failure rate (0.0–1.0) in the current window.
+func (cb *CircuitBreaker) FailureRate() float64 {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+	return cb.failureRateLocked()
 }
 
-// State returns the current state (thread-safe).
-func (cb *CircuitBreaker) State() BreakerState {
+// State returns the current circuit breaker state.
+func (cb *CircuitBreaker) State() State {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
 	return cb.state
 }
 
-// Stats returns current breaker statistics.
-func (cb *CircuitBreaker) Stats() (state BreakerState, success, failure int64, windowSize int) {
+// WindowSize returns the number of calls in the current window.
+func (cb *CircuitBreaker) WindowSize() int {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
-	return cb.state, cb.totalSuccess.Load(), cb.totalFailure.Load(), len(cb.window)
+	return len(cb.window)
 }
 
-// --- Registry ---
+// Reset forces the breaker back to CLOSED and clears the window.
+func (cb *CircuitBreaker) Reset() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	cb.state = StateClosed
+	cb.window = cb.window[:0]
+	cb.lastOpened = time.Time{}
+	cb.halfOpenN = 0
+}
 
-// CircuitBreakerRegistry manages per-agent circuit breakers.
+// =============================================================================
+// CircuitBreakerRegistry — manages a map of named breakers
+// =============================================================================
+
+// CircuitBreakerRegistry holds all circuit breakers, keyed by agent ID.
+// It is safe for concurrent use.
 type CircuitBreakerRegistry struct {
-	mu      sync.RWMutex
-	config  BreakerConfig
+	mu       sync.RWMutex
 	breakers map[string]*CircuitBreaker
 }
 
-// NewCircuitBreakerRegistry creates a registry with the given default config.
-func NewCircuitBreakerRegistry(cfg BreakerConfig) *CircuitBreakerRegistry {
+// NewCircuitBreakerRegistry creates an empty registry.
+func NewCircuitBreakerRegistry() *CircuitBreakerRegistry {
 	return &CircuitBreakerRegistry{
-		config:   cfg,
 		breakers: make(map[string]*CircuitBreaker),
 	}
 }
 
-// GetOrCreate returns the breaker for the given agent, creating one if needed.
-func (r *CircuitBreakerRegistry) GetOrCreate(agentID string) *CircuitBreaker {
+// GetOrCreate returns the breaker for the given name, creating it with the
+// default config if it doesn't exist.
+func (r *CircuitBreakerRegistry) GetOrCreate(name string) *CircuitBreaker {
 	r.mu.RLock()
-	b, ok := r.breakers[agentID]
+	cb, ok := r.breakers[name]
 	r.mu.RUnlock()
 	if ok {
-		return b
+		return cb
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Double-check.
-	if b, ok := r.breakers[agentID]; ok {
-		return b
+
+	// Double-check after acquiring write lock.
+	if cb, ok := r.breakers[name]; ok {
+		return cb
 	}
-	b = NewCircuitBreaker(r.config)
-	r.breakers[agentID] = b
-	return b
+
+	cb = NewCircuitBreaker(DefaultCircuitBreakerConfig())
+	r.breakers[name] = cb
+	return cb
 }
 
-// Allow delegates to the named agent's breaker.
-func (r *CircuitBreakerRegistry) Allow(agentID string) bool {
-	return r.GetOrCreate(agentID).Allow()
+// GetOrCreateWithConfig returns the breaker for the given name, creating it
+// with the specified config if it doesn't exist.
+func (r *CircuitBreakerRegistry) GetOrCreateWithConfig(name string, config CircuitBreakerConfig) *CircuitBreaker {
+	r.mu.RLock()
+	cb, ok := r.breakers[name]
+	r.mu.RUnlock()
+	if ok {
+		return cb
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if cb, ok := r.breakers[name]; ok {
+		return cb
+	}
+
+	cb = NewCircuitBreaker(config)
+	r.breakers[name] = cb
+	return cb
 }
 
-// Record delegates to the named agent's breaker.
-func (r *CircuitBreakerRegistry) Record(agentID string, success bool) {
-	r.GetOrCreate(agentID).Record(success)
+// Get returns the breaker for the given name, or nil if not found.
+func (r *CircuitBreakerRegistry) Get(name string) *CircuitBreaker {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.breakers[name]
 }
 
-// ResetAll resets all registered breakers.
+// Allow checks whether a call to the named target is permitted.
+func (r *CircuitBreakerRegistry) Allow(name string) bool {
+	return r.GetOrCreate(name).Allow()
+}
+
+// Record records the outcome of a call to the named target.
+func (r *CircuitBreakerRegistry) Record(name string, success bool) {
+	r.GetOrCreate(name).Record(success)
+}
+
+// ResetAll resets all breakers to CLOSED.
 func (r *CircuitBreakerRegistry) ResetAll() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, b := range r.breakers {
-		b.Reset()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, cb := range r.breakers {
+		cb.Reset()
 	}
 }
 
-// BreakerNames returns the list of known agent IDs.
+// BreakerNames returns a copy of all registered breaker names.
 func (r *CircuitBreakerRegistry) BreakerNames() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

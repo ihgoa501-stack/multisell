@@ -12,18 +12,24 @@ import (
 
 // RegisterRoutes registers all Product Hub routes.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	// Services for /product-hub
+	// Services
 	masterSvc := NewMasterService(db, logger)
 	variantSvc := NewVariantService(db, logger)
 	offerSvc := NewSupplierOfferService(db, logger)
 	sampleSvc := NewSampleService(db, logger)
 	costSvc := NewCostVersionService(db, logger)
 	aggrSvc := NewAggregationService(db, logger)
+	svc := NewService(db, logger)
+	versionSvc := NewVersionService(db, logger)
+	freshnessSvc := NewFreshnessService(db, logger)
+	relationSvc := NewRelationService(db, logger)
+	h := NewHandler(svc, versionSvc, freshnessSvc, relationSvc)
 
-	// Handlers for /product-hub
+	// Handlers
 	masterH := NewMasterHandler(masterSvc)
 	hubH := NewHubHandler(aggrSvc)
 
+	// Product Hub master CRUD and sub-resources
 	group := rg.Group("/product-hub")
 	{
 		// Master CRUD
@@ -160,13 +166,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		})
 	}
 
-	// Services for /products (version history, freshness, relations)
-	svc := NewService(db, logger)
-	versionSvc := NewVersionService(db, logger)
-	freshnessSvc := NewFreshnessService(db, logger)
-	relationSvc := NewRelationService(db, logger)
-	h := NewHandler(svc, versionSvc, freshnessSvc, relationSvc)
-
+	// Product details sub-routes (version history, freshness, relations)
 	productsGroup := rg.Group("/products")
 	{
 		// Version history endpoints

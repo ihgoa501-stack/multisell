@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Button, Tag, Space, Typography, Progress } from 'antd';
+import { Card, Tag, Space, Typography, Progress } from 'antd';
 import { LikeOutlined, MessageOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { StatusBadge, TypeBadge, SeverityBadge } from './FeedbackStatusBadge';

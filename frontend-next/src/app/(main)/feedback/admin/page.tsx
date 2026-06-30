@@ -20,7 +20,7 @@ import type {
   FeedbackSubmission,
 } from '@/types/feedback';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 const { TextArea } = Input;
 
 export default function FeedbackAdminPage() {
@@ -28,7 +28,7 @@ export default function FeedbackAdminPage() {
   const [projects, setProjects] = useState<FeedbackProject[]>([]);
   const [projectId, setProjectId] = useState<number | null>(null);
   const [stats, setStats] = useState<FeedbackStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // Status update modal
   const [statusModal, setStatusModal] = useState<{ open: boolean; id: number; currentStatus: string } | null>(null);

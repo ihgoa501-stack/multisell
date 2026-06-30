@@ -7,7 +7,7 @@
  * 25s heartbeat ping, and a max of 10 retry attempts.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, startTransition } from 'react';
 import { getToken } from '@/lib/auth';
 
 /** Wire format from backend (SSEEvent). */
@@ -88,7 +88,9 @@ export function useAIWebSocket(
   // Connect effect
   useEffect(() => {
     if (!enabled) {
-      setStatus('disconnected');
+      startTransition(() => {
+        setStatus('disconnected');
+      });
       return;
     }
 

@@ -1,6 +1,6 @@
 # 凌镜 LingMirror — 全站功能清单
 
-> 更新时间：2026-06-24
+> 更新时间：2026-06-30
 > 范围：当前活跃新栈 `backend-go/` + `frontend-next/`
 
 ---
@@ -134,16 +134,11 @@
 
 ## 当前联调风险
 
-### API 前缀
+### API 前缀（已修复 ✅）
 
-前端默认 API base 是 `http://localhost:8080/api`，后端业务 API 在 `/api/v1`。因此前端 `apiClient` 调用应统一使用 `/v1/*`。
+此前列出的 17 处缺失 `/v1` 前缀的 API 调用（`/ai/actions`、`/policy/rules`、`/evolution/nudges`、`/trust-scores/summary` 等）已于 2026-06-25 修复，跨 6 个前端文件。
 
-仍需修正的典型路径：
-
-- `/ai/actions` -> `/v1/ai/actions`
-- `/policy/rules` -> `/v1/policy/rules`
-- `/evolution/nudges` -> `/v1/evolution/nudges`
-- `/trust-scores/summary` -> `/v1/trust-scores/summary`
+当前前端所有 `apiClient` 调用均统一使用 `/api/v1` 前缀。
 
 ### 路径命名
 
@@ -156,12 +151,12 @@
 
 ## 验证快照
 
-2026-06-24：
+2026-06-30：
 
 | 命令 | 结果 |
 |---|---|
 | `cd backend-go && go test ./...` | 通过 |
 | `cd backend-go && go vet ./...` | 通过 |
-| `cd frontend-next && npm test` | 通过，75 tests |
-| `cd frontend-next && npm run build` | 通过 |
-| `cd frontend-next && npm run lint` | 失败，需修复 lint errors |
+| `cd frontend-next && npm test` | 通过，77 tests |
+| `cd frontend-next && npm run build` | **失败**（`src/config/menu.ts` 未解决的合并冲突） |
+| `cd frontend-next && npm run lint` | 12 errors, 22 warnings |

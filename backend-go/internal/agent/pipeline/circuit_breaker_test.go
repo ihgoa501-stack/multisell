@@ -1,359 +1,681 @@
 package pipeline
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
+	"go.uber.org/zap"
 )
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultBreakerConfig()
-	if cfg.Threshold != 0.5 {
-		t.Fatalf("expected threshold 0.5, got %v", cfg.Threshold)
-	}
-	if cfg.WindowSize != 10 {
-		t.Fatalf("expected window size 10, got %v", cfg.WindowSize)
-	}
-	if cfg.Cooldown != 30*time.Second {
-		t.Fatalf("expected cooldown 30s, got %v", cfg.Cooldown)
-	}
-	if cfg.HalfOpenMax != 1 {
-		t.Fatalf("expected half open max 1, got %v", cfg.HalfOpenMax)
-	}
-}
+// =============================================================================
+// CircuitBreaker unit tests
+// =============================================================================
 
-func TestCustomConfig(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.3, WindowSize: 5, Cooldown: 5 * time.Second, HalfOpenMax: 2}
-	cb := NewCircuitBreaker(cfg)
-	if cb.config.Threshold != 0.3 {
-		t.Fatal("threshold not set")
+func TestCircuitBreaker_DefaultConfig(t *testing.T) {
+	cb := NewCircuitBreaker(DefaultCircuitBreakerConfig())
+	if cb.State() != StateClosed {
+		t.Fatalf("expected CLOSED, got %s", cb.State())
 	}
-	if cb.State() != BreakerClosed {
-		t.Fatal("should start closed")
-	}
-}
-
-func TestAllowClosed(t *testing.T) {
-	cb := NewCircuitBreaker(DefaultBreakerConfig())
-	for i := 0; i < 5; i++ {
-		if !cb.Allow() {
-			t.Fatal("should allow when closed")
-		}
-	}
-}
-
-func TestCircuitOpenOnThreshold(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.6, WindowSize: 5, Cooldown: time.Hour, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
-
-	// Record 3 successes and 2 failures (ratio 0.4 — under threshold).
-	for i := 0; i < 5; i++ {
-		cb.Record(false)
-	}
-	// 5 failures in 5 = 1.0, but window is 5 so it triggers
-	if cb.State() != BreakerOpen {
-		t.Fatalf("expected OPEN after threshold exceeded, got %v", cb.State())
-	}
-}
-
-func TestBlockedWhenOpen(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.1, WindowSize: 3, Cooldown: time.Hour, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
-
-	cb.Record(false) // 1/1 = 1.0 > 0.1, but window not full (only 1)
-	// Need 3 records to trigger
-	cb.Record(false)
-	cb.Record(false)
-
-	if cb.State() != BreakerOpen {
-		t.Fatalf("expected OPEN, got %v", cb.State())
-	}
-	if cb.Allow() {
-		t.Fatal("should NOT allow when OPEN and in cooldown")
-	}
-}
-
-func TestHalfOpenAfterCooldown(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.1, WindowSize: 3, Cooldown: 10 * time.Millisecond, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
-
-	cb.Record(false)
-	cb.Record(false)
-	cb.Record(false) // window full, 3/3 fails > 0.1
-
-	if cb.State() != BreakerOpen {
-		t.Fatalf("expected OPEN, got %v", cb.State())
-	}
-
-	time.Sleep(15 * time.Millisecond)
-
-	// Allow should transition to HALF_OPEN.
 	if !cb.Allow() {
-		t.Fatal("should allow after cooldown (HALF_OPEN)")
-	}
-	if cb.State() != BreakerHalfOpen {
-		t.Fatalf("expected HALF_OPEN after cooldown, got %v", cb.State())
+		t.Fatal("expected Allow()=true in CLOSED state")
 	}
 }
 
-func TestHalfOpenSuccessCloses(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.1, WindowSize: 3, Cooldown: 10 * time.Millisecond, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
+func TestCircuitBreaker_ConfigDefaults(t *testing.T) {
+	// Zero config should get defaults.
+	cb := NewCircuitBreaker(CircuitBreakerConfig{})
 
-	cb.Record(false)
-	cb.Record(false)
-	cb.Record(false)
-	if cb.State() != BreakerOpen {
-		t.Fatal("should be OPEN")
+	if cb.config.Threshold != 0.5 {
+		t.Fatalf("expected threshold 0.5, got %f", cb.config.Threshold)
 	}
-
-	time.Sleep(15 * time.Millisecond)
-
-	// Transition to HALF_OPEN via Allow.
-	cb.Allow()
-	if cb.State() != BreakerHalfOpen {
-		t.Fatalf("expected HALF_OPEN, got %v", cb.State())
+	if cb.config.WindowSize != 10 {
+		t.Fatalf("expected window size 10, got %d", cb.config.WindowSize)
 	}
-
-	// Record success — should close.
-	cb.Record(true)
-	if cb.State() != BreakerClosed {
-		t.Fatalf("expected CLOSED after successful probe, got %v", cb.State())
+	if cb.config.Cooldown != 30*time.Second {
+		t.Fatalf("expected cooldown 30s, got %s", cb.config.Cooldown)
+	}
+	if cb.config.HalfOpenMax != 1 {
+		t.Fatalf("expected HalfOpenMax 1, got %d", cb.config.HalfOpenMax)
 	}
 }
 
-func TestHalfOpenFailureReopens(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.1, WindowSize: 3, Cooldown: 10 * time.Millisecond, HalfOpenMax: 1}
+func TestCircuitBreaker_CustomConfig(t *testing.T) {
+	cfg := CircuitBreakerConfig{
+		Threshold:   0.3,
+		WindowSize:  5,
+		Cooldown:    10 * time.Second,
+		HalfOpenMax: 2,
+	}
 	cb := NewCircuitBreaker(cfg)
 
-	// Trigger open.
-	cb.Record(false)
-	cb.Record(false)
-	cb.Record(false)
-	if cb.State() != BreakerOpen {
-		t.Fatal("should be OPEN")
+	if cb.config.Threshold != 0.3 {
+		t.Fatalf("expected threshold 0.3, got %f", cb.config.Threshold)
 	}
-
-	time.Sleep(15 * time.Millisecond)
-
-	// Enter HALF_OPEN.
-	cb.Allow()
-	if cb.State() != BreakerHalfOpen {
-		t.Fatalf("expected HALF_OPEN, got %v", cb.State())
+	if cb.config.WindowSize != 5 {
+		t.Fatalf("expected window size 5, got %d", cb.config.WindowSize)
 	}
-
-	// Record failure — should go back to OPEN.
-	cb.Record(false)
-	if cb.State() != BreakerOpen {
-		t.Fatalf("expected OPEN after failed probe, got %v", cb.State())
+	if cb.config.Cooldown != 10*time.Second {
+		t.Fatalf("expected cooldown 10s, got %s", cb.config.Cooldown)
+	}
+	if cb.config.HalfOpenMax != 2 {
+		t.Fatalf("expected HalfOpenMax 2, got %d", cb.config.HalfOpenMax)
 	}
 }
 
-func TestWindowNotFullNoTrigger(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.1, WindowSize: 10, Cooldown: time.Hour, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
+func TestCircuitBreaker_OpenOnThreshold(t *testing.T) {
+	// With a 40% threshold and window 5, 3 successes + 2 failures = 40%.
+	// Since window is full (5), 40% >= 40% -> opens.
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		Threshold:  0.4,
+		WindowSize: 5,
+		Cooldown:   10 * time.Second,
+	})
 
-	// Only 3 failures out of 10 required window — not enough.
-	for i := 0; i < 5; i++ {
-		cb.Record(false)
+	for i := 0; i < 3; i++ {
+		cb.Record(true)
 	}
-	if cb.State() == BreakerOpen {
-		t.Fatal("should NOT open with fewer records than window size")
+	cb.Record(false)
+	cb.Record(false)
+
+	if cb.State() != StateOpen {
+		t.Fatalf("expected OPEN after 2/5 failures (40%%), got %s", cb.State())
 	}
 }
 
-func TestWindowSliding(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.5, WindowSize: 4, Cooldown: time.Hour, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
+func TestCircuitBreaker_StaysClosedBelowThreshold(t *testing.T) {
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		Threshold:  0.5,
+		WindowSize: 10,
+		Cooldown:   30 * time.Second,
+	})
 
-	// 4 failures = 100% failure, should open.
+	// 4 failures out of 10 = 40% < 50%.
+	for i := 0; i < 6; i++ {
+		cb.Record(true)
+	}
 	for i := 0; i < 4; i++ {
 		cb.Record(false)
 	}
-	if cb.State() != BreakerOpen {
-		t.Fatal("should be OPEN after 4 failures")
+
+	if cb.State() != StateClosed {
+		t.Fatalf("expected CLOSED at 40%% failure, got %s", cb.State())
 	}
 }
 
-func TestReset(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.1, WindowSize: 3, Cooldown: time.Hour, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
+func TestCircuitBreaker_StaysClosedUntilWindowFull(t *testing.T) {
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		Threshold:  0.3,
+		WindowSize: 5,
+		Cooldown:   1 * time.Hour,
+	})
 
-	for i := 0; i < 3; i++ {
-		cb.Record(false)
+	// Even 2 failures with only 2 records (100% failure rate) won't trigger
+	// because the window isn't full yet.
+	cb.Record(false)
+	cb.Record(false)
+
+	if cb.State() != StateClosed {
+		t.Fatalf("expected CLOSED (window not full), got %s", cb.State())
 	}
-	if cb.State() != BreakerOpen {
-		t.Fatal("should be OPEN")
+}
+
+func TestCircuitBreaker_BlocksWhenOpen(t *testing.T) {
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		Threshold:  0.3,
+		WindowSize: 5,
+		Cooldown:   1 * time.Hour, // long cooldown to stay OPEN
+	})
+
+	// Fill window with 3 successes + 2 failures = 40% > 30%.
+	for i := 0; i < 3; i++ {
+		cb.Record(true)
+	}
+	cb.Record(false)
+	cb.Record(false)
+
+	if cb.State() != StateOpen {
+		t.Fatalf("expected OPEN state, got %s", cb.State())
+	}
+
+	if cb.Allow() {
+		t.Fatal("expected Allow()=false while circuit is OPEN with long cooldown")
+	}
+}
+
+func TestCircuitBreaker_HalfOpenProbeSuccess(t *testing.T) {
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		Threshold:  0.4,
+		WindowSize: 5,
+		Cooldown:   1 * time.Millisecond, // very short cooldown
+	})
+
+	// Trip the breaker: 2 failures out of 5 = 40%.
+	for i := 0; i < 3; i++ {
+		cb.Record(true)
+	}
+	cb.Record(false)
+	cb.Record(false)
+
+	if cb.State() != StateOpen {
+		t.Fatalf("expected OPEN before cooldown, got %s", cb.State())
+	}
+
+	// Wait for cooldown.
+	time.Sleep(5 * time.Millisecond)
+
+	// Allow() should transition to HALF_OPEN and permit a probe.
+	allowed := cb.Allow()
+	if !allowed {
+		t.Fatal("expected Allow()=true after cooldown (HALF_OPEN)")
+	}
+	if cb.State() != StateHalfOpen {
+		t.Fatalf("expected HALF_OPEN after cooldown, got %s", cb.State())
+	}
+
+	// Record a success — should reset to CLOSED.
+	cb.Record(true)
+	if cb.State() != StateClosed {
+		t.Fatalf("expected CLOSED after probe success, got %s", cb.State())
+	}
+
+	// Allow should work again.
+	if !cb.Allow() {
+		t.Fatal("expected Allow()=true after reset to CLOSED")
+	}
+}
+
+func TestCircuitBreaker_HalfOpenProbeFailure(t *testing.T) {
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		Threshold:  0.4,
+		WindowSize: 5,
+		Cooldown:   1 * time.Millisecond,
+	})
+
+	// Trip the breaker.
+	for i := 0; i < 3; i++ {
+		cb.Record(true)
+	}
+	cb.Record(false)
+	cb.Record(false)
+
+	// Wait for cooldown.
+	time.Sleep(5 * time.Millisecond)
+
+	// Allow transitions to HALF_OPEN.
+	if !cb.Allow() {
+		t.Fatal("expected Allow()=true in HALF_OPEN")
+	}
+
+	// Record a failure — should go back to OPEN.
+	cb.Record(false)
+	if cb.State() != StateOpen {
+		t.Fatalf("expected OPEN after probe failure, got %s", cb.State())
+	}
+}
+
+func TestCircuitBreaker_WindowSliding(t *testing.T) {
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		Threshold:  0.5,
+		WindowSize: 3,
+		Cooldown:   30 * time.Second,
+	})
+
+	// Fill window: 3 successes, no failures.
+	for i := 0; i < 3; i++ {
+		cb.Record(true)
+	}
+	if cb.State() != StateClosed {
+		t.Fatalf("expected CLOSED, got %s", cb.State())
+	}
+	if r := cb.FailureRate(); r != 0 {
+		t.Fatalf("expected failure rate 0, got %f", r)
+	}
+
+	// Add failures. Since window is 3, old successes slide out.
+	// After 3 more records: first 3 slide out, we have [f, f, f].
+	cb.Record(false) // window: [t, t, f]
+	cb.Record(false) // window: [t, f, f]
+	cb.Record(false) // window: [f, f, f] — 100% failure
+
+	if cb.State() != StateOpen {
+		t.Fatalf("expected OPEN after sliding window fills with failures, got %s", cb.State())
+	}
+}
+
+func TestCircuitBreaker_Reset(t *testing.T) {
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		Threshold:  0.3,
+		WindowSize: 5,
+		Cooldown:   30 * time.Second,
+	})
+
+	// Trip the breaker.
+	for i := 0; i < 3; i++ {
+		cb.Record(true)
+	}
+	cb.Record(false)
+	cb.Record(false)
+
+	if cb.State() != StateOpen {
+		t.Fatalf("expected OPEN before reset, got %s", cb.State())
 	}
 
 	cb.Reset()
-	if cb.State() != BreakerClosed {
-		t.Fatal("should be CLOSED after reset")
+	if cb.State() != StateClosed {
+		t.Fatalf("expected CLOSED after reset, got %s", cb.State())
 	}
-	if !cb.Allow() {
-		t.Fatal("should allow after reset")
+	if cb.WindowSize() != 0 {
+		t.Fatalf("expected empty window after reset, got %d", cb.WindowSize())
 	}
 }
 
-func TestConcurrentAccess(t *testing.T) {
-	cb := NewCircuitBreaker(DefaultBreakerConfig())
+func TestCircuitBreaker_ConcurrentSafety(t *testing.T) {
+	cb := NewCircuitBreaker(DefaultCircuitBreakerConfig())
 	var wg sync.WaitGroup
+
+	// Fire off many concurrent calls to Allow() and Record().
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		go func(n int) {
+		go func() {
 			defer wg.Done()
-			cb.Allow()
-			cb.Record(n%2 == 0)
-			cb.State()
-		}(i)
+			_ = cb.Allow()
+			cb.Record(true)
+		}()
 	}
 	wg.Wait()
-}
 
-func TestRegistryGetOrCreate(t *testing.T) {
-	r := NewCircuitBreakerRegistry(DefaultBreakerConfig())
-	b1 := r.GetOrCreate("A5")
-	b2 := r.GetOrCreate("A5")
-	if b1 != b2 {
-		t.Fatal("should return same breaker for same agent")
-	}
-	b3 := r.GetOrCreate("G3")
-	if b1 == b3 {
-		t.Fatal("should return different breaker for different agent")
+	// Should not panic, and should still be CLOSED with 0 failures.
+	if cb.State() != StateClosed {
+		t.Fatalf("expected CLOSED after all successes, got %s", cb.State())
 	}
 }
 
-func TestRegistryAllowRecord(t *testing.T) {
-	r := NewCircuitBreakerRegistry(BreakerConfig{Threshold: 0.1, WindowSize: 3, Cooldown: time.Hour, HalfOpenMax: 1})
-	if !r.Allow("A5") {
-		t.Fatal("should allow initially")
+// =============================================================================
+// CircuitBreakerRegistry tests
+// =============================================================================
+
+func TestRegistry_GetOrCreate(t *testing.T) {
+	r := NewCircuitBreakerRegistry()
+
+	cb1 := r.GetOrCreate("agent-A1")
+	if cb1 == nil {
+		t.Fatal("expected non-nil breaker")
 	}
-	r.Record("A5", false)
-	r.Record("A5", false)
-	r.Record("A5", false)
-	if r.Allow("A5") {
-		t.Fatal("should NOT allow after threshold")
+	if cb1.State() != StateClosed {
+		t.Fatalf("expected CLOSED, got %s", cb1.State())
 	}
-	// Different agent still fine.
-	if !r.Allow("G3") {
-		t.Fatal("G3 should not be affected")
+
+	// Getting same name returns same breaker.
+	cb2 := r.GetOrCreate("agent-A1")
+	if cb1 != cb2 {
+		t.Fatal("expected same breaker instance")
 	}
 }
 
-func TestRegistryResetAll(t *testing.T) {
-	r := NewCircuitBreakerRegistry(BreakerConfig{Threshold: 0.1, WindowSize: 3, Cooldown: time.Hour, HalfOpenMax: 1})
-	for i := 0; i < 3; i++ {
-		r.Record("A5", false)
+func TestRegistry_AllowRecord(t *testing.T) {
+	r := NewCircuitBreakerRegistry()
+
+	// Allow creates a breaker if needed.
+	if !r.Allow("agent-X") {
+		t.Fatal("expected Allow()=true for new breaker")
 	}
-	if r.Allow("A5") {
-		t.Fatal("should be blocked")
+
+	// 8 successes + 2 failures = 20% < 50% threshold -> stays CLOSED.
+	for i := 0; i < 8; i++ {
+		r.Record("agent-X", true)
 	}
+	r.Record("agent-X", false)
+	r.Record("agent-X", false)
+
+	if r.Get("agent-X").State() != StateClosed {
+		t.Fatalf("expected CLOSED (20%% failure rate < 50%% threshold), got %s", r.Get("agent-X").State())
+	}
+}
+
+func TestRegistry_ResetAll(t *testing.T) {
+	r := NewCircuitBreakerRegistry()
+
+	// Create breakers and trip one.
+	cbA := r.GetOrCreate("agent-A")
+	cbB := r.GetOrCreate("agent-B")
+
+	// Trip A by filling the window with all failures.
+	for i := 0; i < 10; i++ {
+		cbA.Record(false)
+	}
+	if cbA.State() != StateOpen {
+		t.Fatalf("expected OPEN for agent-A, got %s", cbA.State())
+	}
+
 	r.ResetAll()
-	if !r.Allow("A5") {
-		t.Fatal("should allow after reset")
+	if cbA.State() != StateClosed {
+		t.Fatalf("expected CLOSED after ResetAll, got %s", cbA.State())
+	}
+	if cbB.State() != StateClosed {
+		t.Fatalf("expected CLOSED after ResetAll, got %s", cbB.State())
 	}
 }
 
-func TestRegistryBreakerNames(t *testing.T) {
-	r := NewCircuitBreakerRegistry(DefaultBreakerConfig())
-	r.GetOrCreate("A5")
-	r.GetOrCreate("G3")
+func TestRegistry_BreakerNames(t *testing.T) {
+	r := NewCircuitBreakerRegistry()
+	r.GetOrCreate("a1")
+	r.GetOrCreate("b2")
+	r.GetOrCreate("c3")
+
 	names := r.BreakerNames()
-	if len(names) != 2 {
-		t.Fatalf("expected 2 names, got %v", names)
+	if len(names) != 3 {
+		t.Fatalf("expected 3 names, got %d: %v", len(names), names)
 	}
 }
 
-func TestHalfOpenMaxAllowed(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.5, WindowSize: 2, Cooldown: 10 * time.Millisecond, HalfOpenMax: 2}
-	cb := NewCircuitBreaker(cfg)
+// =============================================================================
+// Engine integration tests
+// =============================================================================
 
-	// Trigger open.
-	cb.Record(false)
-	cb.Record(false)
-	if cb.State() != BreakerOpen {
-		t.Fatal("should be OPEN")
-	}
+// newTestLogger creates a no-op logger for tests.
+func newTestLogger() *zap.Logger {
+	cfg := zap.NewDevelopmentConfig()
+	cfg.Level.SetLevel(zap.FatalLevel + 1) // suppress all output
+	l, _ := cfg.Build()
+	return l
+}
 
-	time.Sleep(15 * time.Millisecond)
+func TestEngine_DispatchBreakerOpenDegrades(t *testing.T) {
+	// Engine with an edge that always matches, but the agent's breaker is OPEN.
+	runCount := 0
+	eng := NewEngine(
+		func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
+			runCount++
+			return nil
+		},
+		[]PipelineEdge{
+			{
+				SourceTopic: "agent.decided.*",
+				TargetAgent: "A1",
+				TargetDP:    "test_dp",
+				Priority:    1,
+			},
+		},
+		newTestLogger(),
+	)
 
-	// Both probes allowed.
-	if !cb.Allow() {
-		t.Fatal("first half-open probe should be allowed")
+	// Trip the breaker for A1 by forcing OPEN state.
+	breaker := eng.Breakers().GetOrCreate("A1")
+	breaker.mu.Lock()
+	breaker.state = StateOpen
+	breaker.lastOpened = time.Now()
+	breaker.mu.Unlock()
+
+	err := eng.Dispatch(context.Background(), eventbus.Event{
+		Topic:   "agent.decided.A5.stock_alert",
+		Payload: map[string]interface{}{},
+	})
+	if err != nil {
+		t.Fatalf("expected nil error (degraded), got: %v", err)
 	}
-	if !cb.Allow() {
-		t.Fatal("second half-open probe should be allowed")
-	}
-	// Third should be blocked.
-	if cb.Allow() {
-		t.Fatal("third half-open probe should be blocked")
+	if runCount != 0 {
+		t.Fatalf("expected 0 runs (breaker open), got %d", runCount)
 	}
 }
 
-func TestEngineIntegration(t *testing.T) {
-	// This tests that the engine integration works end-to-end.
-	// The breaker is wired in Engine.Dispatch and works per-agent.
+func TestEngine_DispatchBreakerRecordsResult(t *testing.T) {
+	var callCount int
+	eng := NewEngine(
+		func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
+			callCount++
+			if callCount == 1 {
+				return nil // success
+			}
+			return errors.New("simulated failure")
+		},
+		[]PipelineEdge{
+			{
+				SourceTopic: "agent.decided.*",
+				TargetAgent: "A2",
+				TargetDP:    "test_dp",
+				Priority:    0,
+			},
+		},
+		newTestLogger(),
+	)
 
-	cfg := BreakerConfig{Threshold: 0.1, WindowSize: 3, Cooldown: time.Hour, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
+	// Record 1 success.
+	_ = eng.Dispatch(context.Background(), eventbus.Event{
+		Topic:   "agent.decided.A5.stock_alert",
+		Payload: map[string]interface{}{},
+	})
 
-	if !cb.Allow() {
-		t.Fatal("should allow when closed")
+	breaker := eng.Breakers().Get("A2")
+	if breaker == nil {
+		t.Fatal("expected breaker for A2")
+	}
+	if r := breaker.FailureRate(); r != 0.0 {
+		t.Fatalf("expected 0%% failure rate, got %f", r)
 	}
 
-	// 3 failures = threshold exceeded.
-	cb.Record(false)
-	cb.Record(false)
-	cb.Record(false)
+	// Record 1 failure.
+	_ = eng.Dispatch(context.Background(), eventbus.Event{
+		Topic:   "agent.decided.A5.stock_alert",
+		Payload: map[string]interface{}{},
+	})
 
-	if cb.Allow() {
-		t.Fatal("should NOT allow when open")
-	}
-}
-
-func TestStats(t *testing.T) {
-	cb := NewCircuitBreaker(DefaultBreakerConfig())
-	cb.Record(true)
-	cb.Record(false)
-
-	state, success, failure, _ := cb.Stats()
-	if state != BreakerClosed {
-		t.Fatalf("expected CLOSED, got %v", state)
-	}
-	if success < 1 {
-		t.Fatal("expected at least 1 success")
-	}
-	if failure < 1 {
-		t.Fatal("expected at least 1 failure")
-	}
-}
-
-// Edge case: single failure should not trigger breaker when window not full.
-func TestSingleFailureNoTrigger(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.5, WindowSize: 10, Cooldown: time.Hour, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
-
-	cb.Record(false) // 1 record, window not full — no trigger
-	if cb.State() == BreakerOpen {
-		t.Fatal("single failure should not trigger OPEN")
-	}
-	if !cb.Allow() {
-		t.Fatal("should still allow")
+	if r := breaker.FailureRate(); r != 0.5 {
+		t.Fatalf("expected 50%% failure rate, got %f", r)
 	}
 }
 
-// Edge case: all successes should keep breaker closed.
-func TestAllSuccess(t *testing.T) {
-	cfg := BreakerConfig{Threshold: 0.5, WindowSize: 10, Cooldown: time.Hour, HalfOpenMax: 1}
-	cb := NewCircuitBreaker(cfg)
+func TestEngine_DispatchWithConfigurableBreaker(t *testing.T) {
+	eng := NewEngine(
+		func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
+			return errors.New("always fail")
+		},
+		[]PipelineEdge{
+			{
+				SourceTopic: "agent.decided.*",
+				TargetAgent: "A3",
+				TargetDP:    "test_dp",
+			},
+		},
+		newTestLogger(),
+	)
 
-	for i := 0; i < 20; i++ {
-		cb.Record(true)
+	// Configure a breaker with 60% threshold and window 5.
+	// 3 failures out of 5 = 60% -> trips on the 5th call.
+	eng.ConfigureBreaker("A3", CircuitBreakerConfig{
+		Threshold:  0.6,
+		WindowSize: 5,
+		Cooldown:   1 * time.Hour,
+	})
+
+	for i := 0; i < 5; i++ {
+		_ = eng.Dispatch(context.Background(), eventbus.Event{
+			Topic:   "agent.decided.A5.stock_alert",
+			Payload: map[string]interface{}{},
+		})
 	}
-	if cb.State() != BreakerClosed {
-		t.Fatal("all successes should stay CLOSED")
+
+	cb := eng.Breakers().Get("A3")
+	if cb == nil {
+		t.Fatal("expected breaker for A3")
 	}
-	if !cb.Allow() {
-		t.Fatal("should always allow")
+	if cb.State() != StateOpen {
+		t.Fatalf("expected OPEN after 5/5 failures (100%%), got %s", cb.State())
+	}
+	if cb.WindowSize() != 5 {
+		t.Fatalf("expected window size 5, got %d", cb.WindowSize())
+	}
+
+	// Next dispatch should be degraded (breaker open).
+	_ = eng.Dispatch(context.Background(), eventbus.Event{
+		Topic:   "agent.decided.A5.stock_alert",
+		Payload: map[string]interface{}{},
+	})
+
+	// Window should still be 5 (degraded calls aren't recorded).
+	if cb.WindowSize() != 5 {
+		t.Fatalf("expected window size 5 (degraded calls not recorded), got %d", cb.WindowSize())
+	}
+}
+
+func TestEngine_BreakersAccessor(t *testing.T) {
+	eng := NewEngine(
+		func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
+			return nil
+		},
+		[]PipelineEdge{},
+		newTestLogger(),
+	)
+
+	r := eng.Breakers()
+	if r == nil {
+		t.Fatal("expected non-nil breakers registry")
+	}
+
+	r.GetOrCreate("test-agent")
+	if len(r.BreakerNames()) != 1 {
+		t.Fatalf("expected 1 breaker, got %d", len(r.BreakerNames()))
+	}
+}
+
+func TestEngine_MultipleEdgesIndependentBreakers(t *testing.T) {
+	var callCount int
+	eng := NewEngine(
+		func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
+			callCount++
+			if agentID == "A5" {
+				return errors.New("A5 always fails")
+			}
+			return nil
+		},
+		[]PipelineEdge{
+			{
+				SourceTopic: "agent.decided.A5.stock_alert",
+				Condition: Condition{
+					Field:  "stock_status",
+					Equals: "red",
+				},
+				TargetAgent: "A5",
+				TargetDP:    "stock_alert",
+				Priority:    1,
+			},
+			{
+				SourceTopic: "agent.decided.A6.profit_watch",
+				Condition: Condition{
+					Field:      "is_loss",
+					BoolEquals: boolPtr(true),
+				},
+				TargetAgent: "A6",
+				TargetDP:    "profit_watch",
+				Priority:    1,
+			},
+			{
+				SourceTopic: "agent.decided.A6.profit_watch",
+				Condition: Condition{
+					Field:      "below_threshold",
+					BoolEquals: boolPtr(true),
+				},
+				TargetAgent: "A6",
+				TargetDP:    "profit_watch",
+				Priority:    1,
+			},
+		},
+		newTestLogger(),
+	)
+
+	// Trip A5 with failures (window=10, threshold=50%).
+	for i := 0; i < 10; i++ {
+		_ = eng.Dispatch(context.Background(), eventbus.Event{
+			Topic: "agent.decided.A5.stock_alert",
+			Payload: map[string]interface{}{
+				"stock_status": "red",
+			},
+		})
+	}
+
+	cbA5 := eng.Breakers().Get("A5")
+	cbA6 := eng.Breakers().Get("A6")
+
+	if cbA5 == nil || cbA5.State() != StateOpen {
+		t.Fatalf("expected A5 breaker OPEN, got %v", cbA5)
+	}
+	if cbA6 != nil {
+		t.Fatalf("expected A6 breaker to be nil (never called), got state=%s", cbA6.State())
+	}
+}
+
+func TestEngine_DispatchNoBreakerForNonMatchingEdge(t *testing.T) {
+	eng := NewEngine(
+		func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
+			return nil
+		},
+		[]PipelineEdge{
+			{
+				SourceTopic: "some.other.topic",
+				TargetAgent: "A99",
+				TargetDP:    "noop",
+			},
+		},
+		newTestLogger(),
+	)
+
+	_ = eng.Dispatch(context.Background(), eventbus.Event{
+		Topic:   "unrelated.event",
+		Payload: map[string]interface{}{},
+	})
+
+	// No breaker should have been created since no edge matched.
+	if len(eng.Breakers().BreakerNames()) != 0 {
+		t.Fatalf("expected no breakers created, got %v", eng.Breakers().BreakerNames())
+	}
+}
+
+func TestEngine_UnrelatedEdge(t *testing.T) {
+	eng := NewEngine(
+		func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
+			return nil
+		},
+		[]PipelineEdge{
+			{
+				SourceTopic: "agent.decided.A5.stock_alert",
+				TargetAgent: "A5",
+				TargetDP:    "alert",
+			},
+		},
+		newTestLogger(),
+	)
+
+	// Dispatch an event that doesn't match any edge.
+	_ = eng.Dispatch(context.Background(), eventbus.Event{
+		Topic: "scheduler.tick.G0",
+		Payload: map[string]interface{}{
+			"anomaly_count": 5,
+		},
+	})
+
+	// No runs, no breaker created.
+	if len(eng.Breakers().BreakerNames()) != 0 {
+		t.Fatalf("expected no breakers for unrelated event, got %v", eng.Breakers().BreakerNames())
+	}
+}
+
+func TestCircuitBreaker_StateString(t *testing.T) {
+	tests := []struct {
+		state State
+		want  string
+	}{
+		{StateClosed, "CLOSED"},
+		{StateOpen, "OPEN"},
+		{StateHalfOpen, "HALF_OPEN"},
+		{State(99), "UNKNOWN"},
+	}
+	for _, tt := range tests {
+		got := tt.state.String()
+		if got != tt.want {
+			t.Errorf("State(%d).String() = %q, want %q", tt.state, got, tt.want)
+		}
 	}
 }

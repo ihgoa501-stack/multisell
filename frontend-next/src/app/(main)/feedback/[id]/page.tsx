@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, startTransition } from 'react';
 import {
   Typography, Card, Spin, Tag, Descriptions, Space, Button, Divider,
   Input, List, Form, message, Row, Col, Timeline, Progress, Result,
@@ -47,7 +47,9 @@ export default function FeedbackDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    void fetchDetail();
+    startTransition(() => {
+      void fetchDetail();
+    });
   }, [fetchDetail, id]);
 
   const handleVote = async (voteType: string) => {
@@ -83,6 +85,16 @@ export default function FeedbackDetailPage() {
     }
   };
 
+  const attachments = useMemo<FeedbackAttachment[]>(() => {
+    if (!data?.attachments || data.attachments === '[]') return [];
+    try {
+      const parsed = JSON.parse(data.attachments) as unknown;
+      return Array.isArray(parsed) ? parsed as FeedbackAttachment[] : [];
+    } catch {
+      return [];
+    }
+  }, [data]);
+
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>;
   }
@@ -92,15 +104,6 @@ export default function FeedbackDetailPage() {
   }
 
   const submission = data!;
-  const attachments = useMemo<FeedbackAttachment[]>(() => {
-    if (!submission?.attachments || submission.attachments === '[]') return [];
-    try {
-      const parsed = JSON.parse(submission.attachments) as unknown;
-      return Array.isArray(parsed) ? parsed as FeedbackAttachment[] : [];
-    } catch {
-      return [];
-    }
-  }, [submission?.attachments]);
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>

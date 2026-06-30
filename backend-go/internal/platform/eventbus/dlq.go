@@ -1,6 +1,7 @@
 package eventbus
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -117,7 +118,7 @@ func (m *DLQManager) ReplayEvents(ids []uint, publishFn func(Event) error) (int,
 // Uses the Bus's Publish function to re-queue events.
 func (m *DLQManager) ReplayEventsByIDs(bus *Bus, ids []uint) (int, error) {
 	return m.ReplayEvents(ids, func(evt Event) error {
-		_, err := bus.PublishWithPriority(nil, evt.Topic, evt.Source, evt.Payload, evt.Priority)
+			_, err := bus.PublishWithPriority(context.Background(), evt.Topic, evt.Source, evt.Payload, evt.Priority)
 		return err
 	})
 }

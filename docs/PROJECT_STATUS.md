@@ -2,20 +2,21 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-06-29
+更新时间：2026-06-30
 
 ## 当前结论
 
-凌镜已完成全站新技术栈迁移，并完成一人Agent公司7天MVP最小经营闭环的核心接线。
+凌镜已完成全站新技术栈迁移，旧栈（Python/FastAPI + Vue 3）已于 2026-06-30 删除。
+Git history 保留了全部历史代码，可随时回溯。
 
-当前唯一活跃开发线是：
+当前唯一活跃开发线：
 
 - Backend: `backend-go/`，Go / Gin / GORM / PostgreSQL
 - Frontend: `frontend-next/`，Next.js / React / TypeScript / Ant Design
 - API prefix: `/api/v1`
 - Health check: `/api/health`
 
-旧栈 `backend/`（Python / FastAPI）和 `frontend/`（Vue 3）已经暂停，只能用于行为对照、迁移参考、安全回滚或文档标注。新功能不得继续落到旧栈。
+历史文档中出现 `backend/app/*`、`frontend/src/views/*`、`/api/*` 时，按旧栈参考处理（已归档在 git history 中）。
 
 ## 一句话说明
 
@@ -79,15 +80,15 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 ## 验证状态
 
-2026-06-26 复核结果（July gap-fill P1 追加后）：
+2026-06-30 质量收口复核（Issue #64）：
 
 | 检查 | 结果 | 说明 |
 |---|---:|---|
-| `cd backend-go && go test ./...` | 通过 | 38 个 Go 测试包，新增 logistics、sourcing、toolbridge 等模块测试 |
+| `cd backend-go && go test ./...` | 通过 | Go 测试全绿 |
 | `cd backend-go && go vet ./...` | 通过 | 无 vet 输出 |
-| `cd frontend-next && npm test` | 通过 | 12 个 test files，77 tests |
-| `cd frontend-next && npm run build` | 通过 | Sentry auth token/source map 上传 warning 不阻塞 build |
-| `cd frontend-next && npm run lint` | **0 TS errors**, 28 lint problems | TS 41→0 清零，剩余均为遗留文件（非本次改动） |
+| `cd frontend-next && npm test` | 通过 | 77 tests |
+| `cd frontend-next && npm run build` | **失败** | `src/config/menu.ts` 存在未解决的合并冲突标记，3 个 Turbopack 构建错误 |
+| `cd frontend-next && npm run lint` | **12 errors, 22 warnings** | 34 problems；含 merge conflict 解析错误、react-hooks/set-state-in-effect、@typescript-eslint/no-unused-vars 等 |
 
 ## 本次修复内容（2026-06-25，4 Agent 并行执行）
 
@@ -268,5 +269,6 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - PR #29 — body 已更新，comment 已追加
 
 ### 待办
-- 剩余 lint 28 problems（9 errors / 19 warnings）均为无关模块遗留
+- 剩余 lint 34 problems（12 errors / 22 warnings）均为无关模块遗留
+- **需修复** `src/config/menu.ts` 合并冲突标记（导致 build 失败）
 - 清理 stale worktrees
