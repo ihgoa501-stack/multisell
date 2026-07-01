@@ -542,7 +542,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 				logger.Warn("supplychain: inventory not found for sku", zap.Int64("sku_id", skuID), zap.Error(err))
 				continue
 			}
-			_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "采购入库: "+orderNo)
+			if err := invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "采购入库: "+orderNo); err != nil {
+				logger.Warn("supplychain: failed to update stock for sku", zap.Int64("sku_id", skuID), zap.Error(err))
+			}
 		}
 		return nil
 	})
@@ -579,7 +581,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 			return nil
 		}
 		// Aftersales restock adds stock back to inventory
-		_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "售后入库")
+		if err := invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "售后入库"); err != nil {
+			logger.Warn("supplychain: failed to update stock for aftersale", zap.Int64("sku_id", skuID), zap.Error(err))
+		}
 		return nil
 	})
 
