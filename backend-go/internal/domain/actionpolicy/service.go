@@ -62,6 +62,18 @@ func (s *Service) Evaluate(ctx *ActionContext) (*PolicyEvaluationResult, error) 
 		} else if rule.Outcome == "escalate" && result.FinalOutcome != "block" { result.FinalOutcome = "escalate"
 		} else if rule.Outcome == "auto_approve" && result.FinalOutcome != "block" { result.FinalOutcome = "auto_approve" }
 	}
+
+	// High-risk gate: high-risk actions must not be auto-approved.
+	if ctx.RiskLevel == "high" && result.FinalOutcome == "auto_approve" {
+		result.FinalOutcome = "escalate"
+		result.Verdicts = append(result.Verdicts, RuleVerdict{
+			RuleID:   0,
+			RuleName: "high-risk-gate",
+			Outcome:  "escalate",
+			Reason:   "high-risk action cannot be auto-approved",
+		})
+	}
+
 	return result, nil
 }
 

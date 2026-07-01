@@ -9,17 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"crypto/sha256"
 	"github.com/lingmirror/backend-go/internal/agent/impl"
 	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"crypto/sha256"
 	"sort"
 	"sync"
 )
@@ -32,13 +32,13 @@ type EventPublisher interface {
 
 // Orchestrator coordinates AI agent workflows.
 type Orchestrator struct {
-	db         *gorm.DB
-	logger     *zap.Logger
-	registry   *AgentRegistry
-	traces     *TraceWriter
-	provider   LLMProvider
-	agentImpls map[string]impl.Agent
-	hub        *realtime.Hub
+	db            *gorm.DB
+	logger        *zap.Logger
+	registry      *AgentRegistry
+	traces        *TraceWriter
+	provider      LLMProvider
+	agentImpls    map[string]impl.Agent
+	hub           *realtime.Hub
 	bus           EventPublisher
 	decisionCache *decisionCache
 
@@ -59,12 +59,12 @@ type Orchestrator struct {
 func NewOrchestrator(db *gorm.DB, logger *zap.Logger) *Orchestrator {
 	return &Orchestrator{
 		decisionCache: newDecisionCache(5 * time.Minute),
-		db:         db,
-		logger:     logger,
-		registry:   DefaultRegistry(),
-		traces:     NewTraceWriter(db, logger),
-		provider:   NewLLMProvider(logger),
-		agentImpls: impl.All(db, logger),
+		db:            db,
+		logger:        logger,
+		registry:      DefaultRegistry(),
+		traces:        NewTraceWriter(db, logger),
+		provider:      NewLLMProvider(logger),
+		agentImpls:    impl.All(db, logger),
 	}
 }
 
@@ -125,7 +125,6 @@ func (o *Orchestrator) ClearDecisionCache() {
 	}
 }
 
-
 // WithGuardrails sets the AIOS guardrails chain for L1-L5 defensive checks.
 func (o *Orchestrator) WithGuardrails(c *guardrails.Chain) *Orchestrator {
 	o.guardrails = c
@@ -150,13 +149,13 @@ type RunAgentRequest struct {
 
 // RunAgentResult is the output of an agent run.
 type RunAgentResult struct {
-	TraceID    string                 `json:"trace_id"`
-	AgentID    string                 `json:"agent_id"`
-	DecisionPoint string               `json:"decision_point"`
-	Output     map[string]interface{} `json:"output"`
-	Confidence float64                `json:"confidence"`
-	RiskLevel  string                 `json:"risk_level"`
-	Action     *UnifiedAction         `json:"action,omitempty"`
+	TraceID       string                 `json:"trace_id"`
+	AgentID       string                 `json:"agent_id"`
+	DecisionPoint string                 `json:"decision_point"`
+	Output        map[string]interface{} `json:"output"`
+	Confidence    float64                `json:"confidence"`
+	RiskLevel     string                 `json:"risk_level"`
+	Action        *UnifiedAction         `json:"action,omitempty"`
 }
 
 // Run executes an agent decision end-to-end:
@@ -337,6 +336,17 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		requires := dynamicAutonomy == "supervised" || dynamicAutonomy == "guided"
 		actionInput.RequiresApproval = &requires
 		action, _ = o.persistAction(actionInput)
+		// Forbidden action check: block actions matching forbidden_action table.
+		if action != nil {
+			if fbErr := actionpolicy.CheckForbidden(o.db, action.AgentID, action.ActionType, action.RiskLevel); fbErr != nil {
+				o.logger.Warn("action blocked by forbidden rules", zap.Int64("action_id", action.ID), zap.Error(fbErr))
+				aiSvc := NewService(o.db, o.logger)
+				if _, rejErr := aiSvc.RejectAction(action.ID, "governance", "blocked: "+fbErr.Error()); rejErr != nil {
+					o.logger.Warn("failed to reject forbidden action", zap.Error(rejErr))
+				}
+				action, _ = aiSvc.GetAction(action.ID)
+			}
+		}
 		// Evaluate against approval policy for auto-approve/block decisions.
 		if action != nil {
 			policySvc := actionpolicy.NewService(o.db, o.logger)
@@ -406,7 +416,6 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	// Publish agent.decided.* event to the event bus for pipeline chaining.
 	o.publishDecisionEvent(traceID, agent, req, output, confidence, riskLevel)
 
-
 	// Trigger trust score recalculation asynchronously — must not block the
 	// agent run response. Recalculation iterates all agents and can be expensive
 	// when the trace or action tables are large.
@@ -469,7 +478,6 @@ func (o *Orchestrator) publishDecisionEvent(traceID string, agent AgentSpec, req
 		}
 	}()
 }
-
 
 // persistAction stores a unified action via the Service to avoid duplicates.
 func (o *Orchestrator) persistAction(in *CreateActionInput) (*UnifiedAction, error) {
@@ -922,7 +930,6 @@ func (c *decisionCache) cacheKey(agentID, decisionPoint string, ctx map[string]i
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
-
 
 func (c *decisionCache) set(agentID, decisionPoint string, ctx map[string]interface{}, result *RunAgentResult) {
 	c.mu.Lock()
