@@ -85,7 +85,7 @@ export default function ProductHubDetailPage() {
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row gutter={[16, 16]} style={{ marginTop: 'var(--space-lg)' }}>
         <Col span={12}>
           <Card title="产品创意" size="small">
             {concept ? (

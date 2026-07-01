@@ -237,7 +237,7 @@ export default function CandidatesPage() {
       {/* Toolbar */}
       <Card
         size="small"
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 'var(--space-lg)' }}
         styles={{
           body: {
             padding: '12px 20px',
@@ -274,7 +274,7 @@ export default function CandidatesPage() {
             style={{ marginBottom: lastEvaluation.listing_task_id ? 12 : 0 }}
           />
           {lastEvaluation.listing_task_id && (
-            <Space style={{ marginTop: 12 }}>
+            <Space style={{ marginTop: 'var(--space-md)' }}>
               <Tag color="orange">待审批</Tag>
               <Typography.Text>已生成刊登任务 #{lastEvaluation.listing_task_id}，审批通过前不会执行发布。</Typography.Text>
               <Button type="primary" onClick={() => router.push('/approval')}>去审批</Button>
@@ -326,7 +326,7 @@ export default function CandidatesPage() {
 
             <div
               style={{
-                marginBottom: 16,
+                marginBottom: 'var(--space-lg)',
                 color: 'var(--t2)',
                 lineHeight: 1.8,
               }}

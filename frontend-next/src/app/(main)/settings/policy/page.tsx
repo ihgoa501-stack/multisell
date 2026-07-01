@@ -266,7 +266,7 @@ export default function PolicySettingsPage() {
 
   return (
     <div style={{ padding: 'var(--space-xl)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
         <Title level={3} style={{ margin: 0 }}>审批策略</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
           新建策略
