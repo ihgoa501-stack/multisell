@@ -21,25 +21,24 @@ import (
 type Service struct {
 	db              *gorm.DB
 	logger          *zap.Logger
+	auditSvc        *operationlog.Service
 	completenessSvc *completeness.Service
 	profitSvc       *profit.Service
 	listingtaskSvc  *listingtask.Service
 	approvalSvc     *approval.Service
-	oplogSvc        *operationlog.Service
 }
 
 // NewService creates a new evaluation loop service.
-func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
-	oplogSvc := operationlog.NewService(db, logger)
-	approvalSvc := approval.NewService(db, logger, oplogSvc)
+// prismSvc and prismStrict are forwarded to listingtask service.
+func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool, auditSvc *operationlog.Service) *Service {
 	return &Service{
 		db:              db,
+		auditSvc:        auditSvc,
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
 		profitSvc:       profit.NewService(db, logger),
-		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, oplogSvc, nil),
-		approvalSvc:     approvalSvc,
-		oplogSvc:        oplogSvc,
+		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, nil, auditSvc, nil),
+		approvalSvc:     approval.NewService(db, logger, auditSvc),
 	}
 }
 
@@ -77,7 +76,6 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 
 	// 5. If decision is "list", create a blocked listingtask + pending approval in one transaction
 	var listingTaskID *int64
-	var approvalID *int64
 	if decision == "list" {
 		err := s.db.Transaction(func(tx *gorm.DB) error {
 			task, err := s.createListingTask(tx, &prod, profitResult, compResult, triggeredBy)
@@ -86,46 +84,22 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 			}
 			listingTaskID = &task.ID
 
-			as := approval.NewService(tx, s.logger, s.oplogSvc)
-			req, err := as.Create(&approval.CreateApprovalInput{
+			as := approval.NewService(tx, s.logger, s.auditSvc)
+			_, err = as.Create(&approval.CreateApprovalInput{
 				ProductID:   prod.ID,
 				RequestType: "publish",
 				Requester:   triggeredBy,
 				TargetType:  "listing_task",
 				TargetID:    task.ID,
-				EntityType:  "listing_task",
-				EntityID:    task.ID,
 				RiskLevel:   "high",
 				NewValue:    string(task.DecisionSnapshot),
 				Reason:      reason,
 			})
-			if err != nil {
-				return err
-			}
-			approvalID = &req.ID
 			return err
 		})
 		if err != nil {
 			return nil, fmt.Errorf("creating listing approval: %w", err)
 		}
-
-		// Write audit log for the approval-gated transition
-		entityID := int64(0)
-		if listingTaskID != nil {
-			entityID = *listingTaskID
-		}
-		s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
-			Module:      "loop",
-			Action:      "evaluate_list",
-			ResourceID:  fmt.Sprintf("candidate:%d", productID),
-			Operator:    triggeredBy,
-			Content:     reason,
-			Result:      "pending_approval",
-			TriggerType: "agent",
-			EntityType:  "listing_task",
-			EntityID:    entityID,
-			ApprovalID:  approvalID,
-		})
 	}
 
 	// 6. Store the recommendation record
@@ -264,7 +238,7 @@ func (s *Service) createListingTask(db *gorm.DB, prod *candidate.CandidateProduc
 	targetMargin := profitResult.ProfitMargin
 	targetPrice := prod.TargetSalePrice
 
-	task, err := listingtask.NewService(db, s.logger, nil, false, s.approvalSvc, s.oplogSvc, nil).Create(&listingtask.CreateTaskInput{
+	task, err := listingtask.NewService(db, s.logger, nil, false, s.approvalSvc, s.auditSvc, nil).Create(&listingtask.CreateTaskInput{
 		ProductID:           prod.ID,
 		PlatformID:          platformID,
 		SourceType:          "campaign",

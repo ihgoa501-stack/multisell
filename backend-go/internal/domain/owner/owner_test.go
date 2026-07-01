@@ -226,8 +226,9 @@ func TestService_RecordFeedback_AdoptWithListingTask(t *testing.T) {
 	exec(t, db, `INSERT INTO listing_task (id, status) VALUES (99, 'blocked')`)
 	exec(t, db, `CREATE TABLE IF NOT EXISTS approval_request (
 		id INTEGER PRIMARY KEY, product_id INTEGER, request_type TEXT,
-		requester TEXT, reviewer TEXT, status TEXT, old_value TEXT,
-		new_value TEXT, reason TEXT, review_note TEXT, target_type TEXT, target_id INTEGER, risk_level TEXT, entity_type TEXT,
+		requester TEXT, reviewer TEXT, status TEXT, risk_level TEXT, old_value TEXT,
+		new_value TEXT, reason TEXT, review_note TEXT, target_type TEXT,
+		target_id INTEGER, entity_type TEXT,
 		entity_id INTEGER, expires_at TIMESTAMP, updated_at TIMESTAMP, created_at TIMESTAMP
 	)`)
 

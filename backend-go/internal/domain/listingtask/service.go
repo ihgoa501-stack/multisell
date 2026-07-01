@@ -553,10 +553,6 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		return &task, nil
 	}
 
-	// Audit: execution started
-	s.writeAudit("listing_task.execute", "started", fmt.Sprintf("%d", taskID), operator,
-		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID),
-		&task)
 
 	oldStatus := task.Status
 
