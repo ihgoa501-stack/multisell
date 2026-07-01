@@ -85,9 +85,6 @@ jobs:
       - name: Test
         run: npm run test --if-present
       - name: Lint
-        # continue-on-error: true — known lint failures exist (see CLAUDE.md).
-        # Once lint is clean, remove this flag to enforce lint as a CI gate.
-        continue-on-error: true
         run: npm run lint
 
   # ==========================================
