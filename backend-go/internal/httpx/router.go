@@ -533,6 +533,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		ID: "tick-sla-escalation", AgentID: "agentos", DecisionPoint: "sla_escalation",
 		Interval: time.Minute * 15, Description: "SLA过期升级待审批动作",
 	})
+	sched.Register(scheduler.Task{
+		ID: "tick-orch", AgentID: "orch", DecisionPoint: "supply_chain_heartbeat",
+		Interval: time.Minute * 15, Description: "供应链编排心跳",
+	})
 
 	// Ozon sync handler
 	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
