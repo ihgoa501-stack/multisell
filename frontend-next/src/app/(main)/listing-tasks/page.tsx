@@ -8,7 +8,6 @@ const { Text } = Typography;
 const statusColorMap: Record<string, string> = {
   blocked: 'red',
   pending: 'blue',
-  pending_approval: 'blue',
   executing: 'orange',
   completed: 'green',
   failed: 'red',
