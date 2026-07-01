@@ -6,6 +6,7 @@ import {
 import { CheckCircleOutlined, CloseCircleOutlined, LinkOutlined, RobotOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import { StatRowSkeleton } from '@/components/ui/PageSkeleton';
 
 interface OverviewData {
   order_total?: number;
@@ -106,8 +107,9 @@ export default function DashboardPage() {
 
   if (overviewLoading) {
     return (
-      <div style={{ padding: 'var(--space-xl)', textAlign: 'center' }}>
-        <Spin tip="加载中..." />
+      <div style={{ padding: 'var(--space-xl)' }}>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', marginBottom: 'var(--space-xl)' }}>Dashboard</h1>
+        <StatRowSkeleton count={6} />
       </div>
     );
   }
