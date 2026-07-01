@@ -37,6 +37,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { getCurrentOperator } from '@/lib/user';
+import StatCard from '@/components/ui/StatCard';
+import SectionCard from '@/components/ui/SectionCard';
 
 const { Text } = Typography;
 
@@ -401,82 +403,40 @@ export default function AgentOSPage() {
       {/* 顶部：统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="待审批总数"
-              value={overview?.pending_total ?? 0}
-              prefix={<ClockCircleOutlined style={{ color: 'var(--y4)' }} />}
-              valueStyle={{ color: 'var(--y4)' }}
-            />
-          </div>
+          <StatCard title="待审批总数" value={overview?.pending_total ?? 0}
+            prefix={<ClockCircleOutlined />} valueStyle={{ color: 'var(--y4)' }} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="SLA 超期"
-              value={overview?.sla_breached ?? 0}
-              prefix={<AlertOutlined style={{ color: 'var(--r4)' }} />}
-              valueStyle={{ color: 'var(--r4)' }}
-            />
-          </div>
+          <StatCard title="SLA 超期" value={overview?.sla_breached ?? 0}
+            prefix={<AlertOutlined />} valueStyle={{ color: 'var(--r4)' }} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="工作队列长度"
-              value={overview?.work_queue_len ?? 0}
-              prefix={<TeamOutlined style={{ color: 'var(--i4)' }} />}
-            />
-          </div>
+          <StatCard title="工作队列长度" value={overview?.work_queue_len ?? 0}
+            prefix={<TeamOutlined />} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="平均置信度"
-              value={
-                overview?.avg_confidence !== undefined
-                  ? `${(overview.avg_confidence * 100).toFixed(0)}%`
-                  : '-'
-              }
-              prefix={<SafetyCertificateOutlined style={{ color: 'var(--g4)' }} />}
-              valueStyle={{ color: 'var(--g4)' }}
-            />
-          </div>
+          <StatCard title="平均置信度"
+            value={overview?.avg_confidence !== undefined ? `${(overview.avg_confidence * 100).toFixed(0)}%` : '-'}
+            prefix={<SafetyCertificateOutlined />} valueStyle={{ color: 'var(--g4)' }} />
         </Col>
       </Row>
 
       {/* AIOS 系统指标 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={8}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="已注册 Agent"
-              value={aiosHealth?.agents ?? 0}
-              prefix={<ApiOutlined style={{ color: 'var(--i4)' }} />}
-              loading={healthLoading}
-            />
-          </div>
+          <StatCard title="已注册 Agent" value={aiosHealth?.agents ?? 0}
+            prefix={<ApiOutlined />} loading={healthLoading} />
         </Col>
         <Col xs={12} sm={8}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="已注册 Tool"
-              value={aiosHealth?.tools ?? 0}
-              prefix={<ToolOutlined style={{ color: 'var(--g4)' }} />}
-              loading={healthLoading}
-            />
-          </div>
+          <StatCard title="已注册 Tool" value={aiosHealth?.tools ?? 0}
+            prefix={<ToolOutlined />} loading={healthLoading} />
         </Col>
         <Col xs={12} sm={8}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="系统健康"
-              value={aiosHealth?.status === 'ok' ? '正常' : aiosHealth?.status ?? '-'}
-              prefix={<HeartOutlined style={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }} />}
-              valueStyle={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }}
-              loading={healthLoading}
-            />
-          </div>
+          <StatCard title="系统健康"
+            value={aiosHealth?.status === 'ok' ? '正常' : aiosHealth?.status ?? '-'}
+            prefix={<HeartOutlined />}
+            valueStyle={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }}
+            loading={healthLoading} />
         </Col>
       </Row>
 
@@ -484,11 +444,7 @@ export default function AgentOSPage() {
         {/* 左侧：Squad 健康地图 + 工作队列 */}
         <Col xs={24} lg={17}>
           {/* Squad 健康地图 */}
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, marginBottom: 16 }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
-              Squad 健康地图
-            </div>
-            <div style={{ padding: 16 }}>
+          <SectionCard title="Squad 健康地图" style={{ marginBottom: 16 }}>
               <Spin spinning={overviewLoading}>
                 {(overview?.squads ?? []).length === 0 && !overviewLoading ? (
                   <Empty description="暂无 Squad 数据" />
@@ -572,15 +528,10 @@ export default function AgentOSPage() {
                   </Space>
                 )}
               </Spin>
-            </div>
-          </div>
+          </SectionCard>
 
           {/* 待审批工作队列 */}
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
-              待审批工作队列
-            </div>
-            <div style={{ padding: 16 }}>
+          <SectionCard title="待审批工作队列" noPadding>
               <Space style={{ marginBottom: 12 }}>
                 <Button
                   size="small"
@@ -642,17 +593,12 @@ export default function AgentOSPage() {
                   style: { cursor: 'pointer' },
                 })}
               />
-            </div>
-          </div>
+          </SectionCard>
         </Col>
 
         {/* 右侧：Autonomy 控制面板 */}
         <Col xs={24} lg={7}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
-              Autonomy 控制面板（只读）
-            </div>
-            <div style={{ padding: 16 }}>
+          <SectionCard title="Autonomy 控制面板（只读）">
               <Spin spinning={autonomyLoading}>
                 {(autonomyData ?? []).length === 0 && !autonomyLoading ? (
                   <Empty description="暂无 Autonomy 配置" />
@@ -688,7 +634,7 @@ export default function AgentOSPage() {
                                 justifyContent: 'space-between',
                               }}
                             >
-                              <Text type="secondary" style={{ fontSize: 12 }}>
+                              <Text type="secondary" style={{ fontSize: 'var(--text-small)' }}>
                                 需要审批
                               </Text>
                               <Tag color={entry.requires_approval ? 'orange' : 'green'}>
@@ -701,10 +647,10 @@ export default function AgentOSPage() {
                                 justifyContent: 'space-between',
                               }}
                             >
-                              <Text type="secondary" style={{ fontSize: 12 }}>
+                              <Text type="secondary" style={{ fontSize: 'var(--text-small)' }}>
                                 每小时上限
                               </Text>
-                              <Text style={{ fontSize: 12 }}>
+                              <Text style={{ fontSize: 'var(--text-small)' }}>
                                 {entry.max_actions_per_hour}
                               </Text>
                             </div>
@@ -715,26 +661,12 @@ export default function AgentOSPage() {
                   </Space>
                 )}
               </Spin>
-            </div>
-          </div>
+          </SectionCard>
         </Col>
       </Row>
 
       {/* Agent Timeline */}
-      <div
-        style={{
-          background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
-          marginTop: 16,
-        }}
-      >
-        <div style={{
-          padding: '12px 16px', borderBottom: '1px solid var(--bd)',
-          display: 'flex', alignItems: 'center', gap: 8,
-          fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
-        }}>
-          <RobotOutlined /> Agent 活动时间线
-        </div>
-        <div style={{ padding: 16 }}>
+      <SectionCard title={<><RobotOutlined /> Agent 活动时间线</>} style={{ marginTop: 16 }}>
           <Spin spinning={timelineLoading}>
             {(timelineData ?? []).length === 0 && !timelineLoading ? (
               <Empty description="暂无时间线数据" />
@@ -777,8 +709,7 @@ export default function AgentOSPage() {
               />
             )}
           </Spin>
-        </div>
-      </div>
+      </SectionCard>
 
       {/* Work Item Detail Drawer */}
       <Drawer

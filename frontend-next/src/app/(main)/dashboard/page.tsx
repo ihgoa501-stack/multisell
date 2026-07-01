@@ -106,7 +106,7 @@ export default function DashboardPage() {
 
   if (overviewLoading) {
     return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
+      <div style={{ padding: 'var(--space-xl)', textAlign: 'center' }}>
         <Spin tip="加载中..." />
       </div>
     );
@@ -118,8 +118,8 @@ export default function DashboardPage() {
   const agents = o.agent_statuses ?? [];
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', marginBottom: 24 }}>Dashboard</h1>
+    <div style={{ padding: 'var(--space-xl)' }}>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', marginBottom: 'var(--space-xl)' }}>Dashboard</h1>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} md={8} lg={4}>
@@ -127,29 +127,28 @@ export default function DashboardPage() {
         </Col>
         <Col xs={24} sm={12} md={8} lg={4}>
           <Card>
-            <Money value={o.order_revenue} />
-            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>订单收入</div>
+              <Money value={o.order_revenue} />
+            <div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)', marginTop: 'var(--space-xs)' }}>订单收入</div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={8} lg={4}>
-          <Card>
+          <Card size="small" styles={{ body: { padding: 'var(--space-md)' } }}>
             <Money value={o.order_profit} />
-            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>订单利润</div>
+            <div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)', marginTop: 'var(--space-xs)' }}>订单利润</div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={8} lg={4}>
           <Card><Statistic title="SKU 总数" value={o.sku_total ?? 0} /></Card>
         </Col>
         <Col xs={24} sm={12} md={8} lg={4}>
-          <Card>
-            <Statistic title="低库存" value={o.low_stock_count ?? 0}
-              valueStyle={{ color: (o.low_stock_count ?? 0) > 0 ? '#fa8c16' : undefined }} />
+          <Card size="small" styles={{ body: { padding: 'var(--space-md)' } }}><Statistic title="低库存" value={o.low_stock_count ?? 0}
+              valueStyle={{ color: (o.low_stock_count ?? 0) > 0 ? 'var(--y4)' : 'var(--t1)' }} />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={8} lg={4}>
-          <Card>
+          <Card size="small" styles={{ body: { padding: 'var(--space-md)' } }}>
             <Statistic title="异常" value={o.exception_open_count ?? 0}
-              valueStyle={{ color: (o.exception_open_count ?? 0) > 0 ? '#cf1322' : undefined }} />
+              valueStyle={{ color: (o.exception_open_count ?? 0) > 0 ? 'var(--r4)' : 'var(--t1)' }} />
           </Card>
         </Col>
       </Row>
@@ -162,7 +161,7 @@ export default function DashboardPage() {
                 <a href="/platform-integrations">连接 Ozon 店铺</a>
               </Empty>
             ) : platforms.map((p) => (
-              <Card key={p.platform_id} size="small" style={{ marginBottom: 8, borderLeft: p.status === 'active' ? '3px solid #52c41a' : '3px solid #ff4d4f' }}>
+              <Card key={p.platform_id} size="small" style={{ marginBottom: 8, borderLeft: p.status === 'active' ? '3px solid var(--g4)' : '3px solid var(--r4)' }}>
                 <Descriptions column={2} size="small">
                   <Descriptions.Item label="平台">
                     <Tag color={PLATFORM_COLORS[p.platform_code] || 'default'}>{p.platform_name}</Tag>
@@ -184,7 +183,7 @@ export default function DashboardPage() {
         <Col xs={24} lg={12}>
           <Card title={<><RobotOutlined /> AI Agent 状态</>}>
             {agents.length === 0 ? (
-              <Empty description="Agent 暂无活动"><span style={{ color: '#999' }}>系统启动中...</span></Empty>
+              <Empty description="Agent 暂无活动"><span style={{ color: 'var(--t3)' }}>系统启动中...</span></Empty>
             ) : (
               <Row gutter={[12, 12]}>
                 {agents.map((a) => (
@@ -192,10 +191,10 @@ export default function DashboardPage() {
                     <Card size="small">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <Tag color={AGENT_COLORS[a.agent_id] || 'default'}>{a.agent_id}</Tag>
-                        {a.status === 'active' ? <CheckCircleOutlined style={{ color: '#52c41a' }} /> : <CloseCircleOutlined style={{ color: '#999' }} />}
+                        {a.status === 'active' ? <CheckCircleOutlined style={{ color: 'var(--g4)' }} /> : <CloseCircleOutlined style={{ color: 'var(--t3)' }} />}
                       </div>
                       <div style={{ fontWeight: 500, fontSize: 13 }}>{a.name}</div>
-                      <div style={{ color: '#999', fontSize: 11, marginTop: 4 }}>
+                      <div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)', marginTop: 'var(--space-xs)' }}>
                         {a.last_activity ? a.last_activity.slice(0, 16).replace('T', ' ') : '等待运行'}
                       </div>
                     </Card>
@@ -224,8 +223,8 @@ export default function DashboardPage() {
         <Col xs={24} lg={12}>
           <Card title="当月收入 vs 成本">
             <Row gutter={16}>
-              <Col span={12}><Money value={o.month_revenue} /><div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>收入</div></Col>
-              <Col span={12}><Statistic title="成本" value={o.month_cost ?? 0} precision={2} prefix="¥" valueStyle={{ color: '#cf1322' }} /></Col>
+              <Col span={12}><Money value={o.month_revenue} /><div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)', marginTop: 'var(--space-xs)' }}>收入</div></Col>
+              <Col span={12}><Statistic title="成本" value={o.month_cost ?? 0} precision={2} prefix="¥" valueStyle={{ color: 'var(--r4)' }} /></Col>
             </Row>
           </Card>
         </Col>

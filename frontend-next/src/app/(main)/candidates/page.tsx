@@ -75,14 +75,13 @@ export default function CandidatesPage() {
   const [pageSize, setPageSize] = useState(20);
   const [detailModal, setDetailModal] = useState<CandidateProduct | null>(null);
 
-  const loadCandidates = async () => {
+  const fetchCandidates = async (p: number, ps: number) => {
     setLoading(true);
     try {
       const res = await apiClient.get<CandidateProduct[]>('/v1/candidates', {
-        page: String(page),
-        size: String(pageSize),
+        page: String(p),
+        size: String(ps),
       });
-      // Paginated response puts items in data, total/page/size at root
       const body = res as unknown as { data: CandidateProduct[]; total: number };
       setData(body.data || []);
       setTotal(body.total || 0);
@@ -94,21 +93,7 @@ export default function CandidatesPage() {
   };
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiClient.get<CandidateProduct[]>('/v1/candidates', {
-          page: String(page),
-          size: String(pageSize),
-        });
-        const body = res as unknown as { data: CandidateProduct[]; total: number };
-        if (!cancelled) setData(body.data || []);
-        if (!cancelled) setTotal(body.total || 0);
-      } catch {
-        if (!cancelled) message.error('加载候选商品列表失败');
-      }
-    })();
-    return () => { cancelled = true; };
+    fetchCandidates(page, pageSize);
   }, [page, pageSize]);
 
   const handleEvaluate = async (productId: number) => {
@@ -135,7 +120,7 @@ export default function CandidatesPage() {
       const res = await apiClient.post('/v1/candidates/seed');
       if (res.code === 0) {
         message.success('种子数据生成成功');
-        await loadCandidates();
+        await fetchCandidates(page, pageSize);
       } else {
         message.error(res.message || '种子数据生成失败');
       }
