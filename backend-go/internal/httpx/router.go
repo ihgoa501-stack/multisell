@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/agent"
+	"github.com/lingmirror/backend-go/internal/agent/impl"
 	"github.com/lingmirror/backend-go/internal/agent/pipeline"
 	"github.com/lingmirror/backend-go/internal/agentos"
 	"github.com/lingmirror/backend-go/internal/ai"
@@ -34,6 +35,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/orchestration"
+	"github.com/lingmirror/backend-go/internal/domain/workflow"
 	"github.com/lingmirror/backend-go/internal/domain/personalrule"
 	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/sentiment"
@@ -84,6 +86,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge/drivers"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
@@ -118,7 +121,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Prometheus metrics endpoint
 	if cfg.Metrics.Enabled {
-		r.GET("/metrics", middleware.MetricsHandler())
+	r.GET("/metrics", middleware.MetricsHandler())
 	}
 
 	// ==========================================================
@@ -643,6 +646,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	approval.RegisterRoutes(protected, db, logger, auditSvc)
 	landedcost.RegisterRoutes(protected, db, logger)
 	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
+	workflow.RegisterRoutes(protected, db, bus, aiOrch, cmd, logger)
 	personalrule.RegisterRoutes(protected, db, logger)
 	producthub.RegisterRoutes(protected, db, logger)
 	sentiment.RegisterRoutes(protected, db, logger)
@@ -722,6 +726,21 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI routes need the hub for realtime broadcasts.
 	ai.RegisterRoutes(protected, db, logger, hub)
 
+	// Browser Extension WebSocket + A12 Collection Agent
+	extSvc := &hubExtensionService{hub: hub}
+	pluginDrv := drivers.NewPluginDriver(extSvc, 120*time.Second)
+	toolBridge.AddDriver(toolbridge.DriverEntry{
+		Name:   "plugin",
+		Driver: pluginDrv,
+		Weight: 10,
+	})
+	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret).
+		WithPluginDriver(&extPluginBridge{driver: pluginDrv})
+	r.GET("/ws/extension", extHandler.ServeWS)
+	candSvc := candidate.NewService(db, logger)
+	a12 := impl.NewCollectionAgent(toolBridge, candSvc, logger)
+	aiOrch.RegisterAgent("A12", a12)
+
 	return r
 }
 
@@ -735,4 +754,33 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 		Context:       ctx,
 	})
 	return err
+}
+
+// ── Extension WebSocket adapter types ────────────────────────────────
+
+// hubExtensionService adapts the realtime Hub to the drivers.ExtensionService
+// interface, allowing the PluginDriver to send messages to the browser extension.
+type hubExtensionService struct {
+	hub *realtime.Hub
+}
+
+func (s *hubExtensionService) SendToUser(userID int64, msg []byte) error {
+	return s.hub.SendToUser(userID, msg)
+}
+
+func (s *hubExtensionService) RegisterCallback(userID int64, _ func([]byte)) {
+	// Callback registration is handled via the ExtensionHandler's
+	// OnFetchProductResult routing. No additional registration needed.
+}
+
+// extPluginBridge adapts drivers.PluginDriver to the realtime.PluginDriver
+// interface, so fetch_product_result messages from the extension WS are
+// routed to the PluginDriver's pending-request channels.
+type extPluginBridge struct {
+	driver *drivers.PluginDriver
+}
+
+func (b *extPluginBridge) OnFetchProductResult(_ int64, data json.RawMessage) error {
+	b.driver.HandleResponse(data)
+	return nil
 }

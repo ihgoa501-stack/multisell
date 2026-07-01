@@ -103,6 +103,11 @@ func (o *Orchestrator) WithBus(bus EventPublisher) *Orchestrator {
 	return o
 }
 
+// RegisterAgent adds or replaces an agent implementation after construction.
+func (o *Orchestrator) RegisterAgent(id string, agent impl.Agent) {
+	o.agentImpls[id] = agent
+}
+
 // WithDecisionCache configures the decision cache TTL. A zero TTL disables caching.
 func (o *Orchestrator) WithDecisionCache(ttl time.Duration) *Orchestrator {
 	if ttl <= 0 {
