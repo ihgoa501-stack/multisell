@@ -97,14 +97,44 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 		status = "rejected"
 	}
 
+	now := time.Now()
 	updates := map[string]interface{}{
 		"status":      status,
 		"reviewer":    input.Reviewer,
 		"review_note": input.ReviewNote,
-		"updated_at":  time.Now(),
+		"updated_at":  now,
 	}
-	if err := s.db.Model(&req).Updates(updates).Error; err != nil {
-		return nil, err
+
+	// Build unified_action sync updates if applicable.
+	uaUpdates := map[string]interface{}{}
+	if req.EntityType == "unified_action" && req.EntityID > 0 {
+		uaUpdates["status"] = status
+		uaUpdates["updated_at"] = now
+		if input.Action == "approve" {
+			uaUpdates["approved_by"] = input.Reviewer
+			uaUpdates["approved_at"] = now
+		} else {
+			uaUpdates["rejected_by"] = input.Reviewer
+			uaUpdates["rejected_at"] = now
+			uaUpdates["rejection_reason"] = input.ReviewNote
+		}
+	}
+
+	// Wrap approval update + UA sync in a single transaction.
+	var txErr error
+	txErr = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&req).Updates(updates).Error; err != nil {
+			return err
+		}
+		if len(uaUpdates) > 0 {
+			if err := tx.Table("unified_action").Where("id = ?", req.EntityID).Updates(uaUpdates).Error; err != nil {
+				return fmt.Errorf("sync unified_action: %w", err)
+			}
+		}
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
 	}
 
 	req.Status = status
@@ -119,34 +149,25 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 			Action:      "approval.review",
 			ResourceID:  fmt.Sprintf("%d", id),
 			Operator:    input.Reviewer,
-			Content:     fmt.Sprintf("approval_id=%d action=%s reviewer=%s note=%s", id, input.Action, input.Reviewer, input.ReviewNote),
+			Content:     fmt.Sprintf("approval_id=%d action=%s reviewer=%s", id, input.Action, input.Reviewer),
 			Result:      result,
 			TriggerType: "owner_approval",
 			EntityType:  req.EntityType,
 			EntityID:    req.EntityID,
 		})
-	}
-
-	// Sync linked unified_action status for action-approval linkage.
-	if req.EntityType == "unified_action" && req.EntityID > 0 {
-		syncUpdates := map[string]interface{}{
-			"status":     status,
-			"updated_at": time.Now(),
-		}
-		if input.Action == "approve" {
-			syncUpdates["approved_by"] = input.Reviewer
-			syncUpdates["approved_at"] = time.Now()
-		} else {
-			syncUpdates["rejected_by"] = input.Reviewer
-			syncUpdates["rejected_at"] = time.Now()
-			syncUpdates["rejection_reason"] = input.ReviewNote
-		}
-		if err := s.db.Table("unified_action").Where("id = ?", req.EntityID).Updates(syncUpdates).Error; err != nil {
-			s.logger.Warn("failed to sync unified_action status",
-				zap.Int64("action_id", req.EntityID),
-				zap.String("approval_status", status),
-				zap.Error(err),
-			)
+		// Log review note separately as structured field to avoid log injection.
+		if input.ReviewNote != "" {
+			_ = s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
+				Module:      "approval",
+				Action:      "approval.review.note",
+				ResourceID:  fmt.Sprintf("%d", id),
+				Operator:    input.Reviewer,
+				Content:     input.ReviewNote, // ponytail: review_note is plain text recorded as-is for audit completeness
+				Result:      "recorded",
+				TriggerType: "owner_approval",
+				EntityType:  req.EntityType,
+				EntityID:    req.EntityID,
+			})
 		}
 	}
 

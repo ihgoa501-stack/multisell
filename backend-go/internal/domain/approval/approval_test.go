@@ -2,9 +2,60 @@ package approval
 
 import (
 	"testing"
-
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"gorm.io/gorm"
 )
+
+// createUnifiedActionTable creates the unified_action table via raw SQL so
+// the approval test package doesn't need to import the ai package's model.
+func createUnifiedActionTable(tx *gorm.DB) {
+	createUA := `CREATE TABLE IF NOT EXISTS unified_action (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		source_table TEXT NOT NULL DEFAULT '',
+		source_id TEXT NOT NULL DEFAULT '',
+		source_type TEXT NOT NULL DEFAULT '',
+		trace_id TEXT DEFAULT '',
+		agent_id TEXT DEFAULT '',
+		squad_id TEXT DEFAULT '',
+		action_type TEXT NOT NULL DEFAULT '',
+		business_object_type TEXT DEFAULT '',
+		business_object_id TEXT DEFAULT '',
+		title TEXT NOT NULL DEFAULT '',
+		description TEXT DEFAULT '',
+		payload TEXT DEFAULT '{}',
+		before_snapshot TEXT DEFAULT '{}',
+		after_snapshot TEXT DEFAULT '{}',
+		risk_level TEXT DEFAULT 'medium',
+		requires_approval INTEGER DEFAULT 0,
+		status TEXT DEFAULT 'suggested',
+		confidence REAL,
+		proposed_by TEXT DEFAULT '',
+		approved_by TEXT DEFAULT '',
+		approved_at TIMESTAMP,
+		rejected_by TEXT DEFAULT '',
+		rejected_at TIMESTAMP,
+		rejection_reason TEXT DEFAULT '',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	)`
+	if err := tx.Exec(createUA).Error; err != nil {
+		panic("create unified_action table: " + err.Error())
+	}
+}
+
+// insertUnifiedActionRow inserts a test unified_action row with default values.
+func insertUnifiedActionRow(tx *gorm.DB, id int64, title string) {
+	insertUA := `INSERT INTO unified_action (
+		id, source_table, source_id, source_type, agent_id, action_type,
+		title, risk_level, requires_approval, status, proposed_by
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	if err := tx.Exec(insertUA,
+		id, "ai_trace", "trc_test_appr_"+title, "agent_run", "A5", "stock_alert",
+		title, "medium", 1, "suggested", "agent:A5",
+	).Error; err != nil {
+		panic("insert unified_action: " + err.Error())
+	}
+}
 
 func TestService_Create(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})
@@ -351,77 +402,26 @@ func TestService_FindApprovedByTargetRejectsPending(t *testing.T) {
 func TestService_Review_SyncsUnifiedAction_Approved(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ApprovalRequest{})
+	createUnifiedActionTable(db)
+	insertUnifiedActionRow(db, 1001, "Test Action")
+
 	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	// Create the unified_action table and a test row via raw SQL.
-	createUA := `CREATE TABLE IF NOT EXISTS unified_action (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		source_table TEXT NOT NULL DEFAULT '',
-		source_id TEXT NOT NULL DEFAULT '',
-		source_type TEXT NOT NULL DEFAULT '',
-		trace_id TEXT DEFAULT '',
-		agent_id TEXT DEFAULT '',
-		squad_id TEXT DEFAULT '',
-		action_type TEXT NOT NULL DEFAULT '',
-		business_object_type TEXT DEFAULT '',
-		business_object_id TEXT DEFAULT '',
-		title TEXT NOT NULL DEFAULT '',
-		description TEXT DEFAULT '',
-		payload TEXT DEFAULT '{}',
-		before_snapshot TEXT DEFAULT '{}',
-		after_snapshot TEXT DEFAULT '{}',
-		risk_level TEXT DEFAULT 'medium',
-		requires_approval INTEGER DEFAULT 0,
-		status TEXT DEFAULT 'suggested',
-		confidence REAL,
-		proposed_by TEXT DEFAULT '',
-		approved_by TEXT DEFAULT '',
-		approved_at TIMESTAMP,
-		rejected_by TEXT DEFAULT '',
-		rejected_at TIMESTAMP,
-		rejection_reason TEXT DEFAULT '',
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	)`
-	if err := db.Exec(createUA).Error; err != nil {
-		t.Fatalf("create unified_action table: %v", err)
-	}
-
-	// Insert a unified_action row in "suggested" status.
-	insertUA := `INSERT INTO unified_action (
-		id, source_table, source_id, source_type, agent_id, action_type,
-		title, risk_level, requires_approval, status, proposed_by
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	if err := db.Exec(insertUA,
-		1001, "ai_trace", "trc_test_appr_1", "agent_run", "A5", "stock_alert",
-		"Test Action", "medium", 1, "suggested", "agent:A5",
-	).Error; err != nil {
-		t.Fatalf("insert unified_action: %v", err)
-	}
-
-	// Create approval_request linked to unified_action
 	req, err := svc.Create(&CreateApprovalInput{
-		ProductID:   1,
-		RequestType: "unified_action",
-		Requester:   "agent:A5",
-		EntityType:  "unified_action",
-		EntityID:    1001,
+		ProductID: 1, RequestType: "unified_action", Requester: "agent:A5",
+		EntityType: "unified_action", EntityID: 1001,
 	})
 	if err != nil {
 		t.Fatalf("Create approval: %v", err)
 	}
 
-	// Review as approved
 	_, err = svc.Review(req.ID, &ReviewApprovalInput{
-		Action:     "approve",
-		Reviewer:   "owner",
-		ReviewNote: "approved by owner",
+		Action: "approve", Reviewer: "owner", ReviewNote: "approved by owner",
 	})
 	if err != nil {
 		t.Fatalf("Review: %v", err)
 	}
 
-	// Verify unified_action.status synced to "approved"
 	var status string
 	db.Table("unified_action").Select("status").Where("id = ?", 1001).Scan(&status)
 	if status != "approved" {
@@ -434,77 +434,26 @@ func TestService_Review_SyncsUnifiedAction_Approved(t *testing.T) {
 func TestService_Review_SyncsUnifiedAction_Rejected(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ApprovalRequest{})
+	createUnifiedActionTable(db)
+	insertUnifiedActionRow(db, 1002, "Test Action Reject")
+
 	svc := NewService(db, dbtest.NewLogger(t), nil)
 
-	// Create unified_action table with all columns the sync logic uses.
-	createUA := `CREATE TABLE IF NOT EXISTS unified_action (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		source_table TEXT NOT NULL DEFAULT '',
-		source_id TEXT NOT NULL DEFAULT '',
-		source_type TEXT NOT NULL DEFAULT '',
-		trace_id TEXT DEFAULT '',
-		agent_id TEXT DEFAULT '',
-		squad_id TEXT DEFAULT '',
-		action_type TEXT NOT NULL DEFAULT '',
-		business_object_type TEXT DEFAULT '',
-		business_object_id TEXT DEFAULT '',
-		title TEXT NOT NULL DEFAULT '',
-		description TEXT DEFAULT '',
-		payload TEXT DEFAULT '{}',
-		before_snapshot TEXT DEFAULT '{}',
-		after_snapshot TEXT DEFAULT '{}',
-		risk_level TEXT DEFAULT 'medium',
-		requires_approval INTEGER DEFAULT 0,
-		status TEXT DEFAULT 'suggested',
-		confidence REAL,
-		proposed_by TEXT DEFAULT '',
-		approved_by TEXT DEFAULT '',
-		approved_at TIMESTAMP,
-		rejected_by TEXT DEFAULT '',
-		rejected_at TIMESTAMP,
-		rejection_reason TEXT DEFAULT '',
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	)`
-	if err := db.Exec(createUA).Error; err != nil {
-		t.Fatalf("create unified_action table: %v", err)
-	}
-
-	// Insert a unified_action row in "suggested" status.
-	insertUA := `INSERT INTO unified_action (
-		id, source_table, source_id, source_type, agent_id, action_type,
-		title, risk_level, requires_approval, status, proposed_by
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	if err := db.Exec(insertUA,
-		1002, "ai_trace", "trc_test_appr_2", "agent_run", "A5", "stock_alert",
-		"Test Action Reject", "medium", 1, "suggested", "agent:A5",
-	).Error; err != nil {
-		t.Fatalf("insert unified_action: %v", err)
-	}
-
-	// Create approval_request linked to unified_action
 	req, err := svc.Create(&CreateApprovalInput{
-		ProductID:   1,
-		RequestType: "unified_action",
-		Requester:   "agent:A5",
-		EntityType:  "unified_action",
-		EntityID:    1002,
+		ProductID: 1, RequestType: "unified_action", Requester: "agent:A5",
+		EntityType: "unified_action", EntityID: 1002,
 	})
 	if err != nil {
 		t.Fatalf("Create approval: %v", err)
 	}
 
-	// Review as rejected
 	_, err = svc.Review(req.ID, &ReviewApprovalInput{
-		Action:     "reject",
-		Reviewer:   "owner",
-		ReviewNote: "not ready",
+		Action: "reject", Reviewer: "owner", ReviewNote: "not ready",
 	})
 	if err != nil {
 		t.Fatalf("Review: %v", err)
 	}
 
-	// Verify unified_action.status synced to "rejected"
 	var status string
 	db.Table("unified_action").Select("status").Where("id = ?", 1002).Scan(&status)
 	if status != "rejected" {
