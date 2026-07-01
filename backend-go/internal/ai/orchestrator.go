@@ -242,7 +242,28 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	// otherwise fall back to the deterministic stub.
 	output, confidence, riskLevel, err := o.synthesizeOutput(context.Background(), agent, req.DecisionPoint, req.Context)
 	if err != nil {
-		return nil, err
+		// Complete the trace with failed status so the failure is recorded, not silent.
+		errMsg := err.Error()
+		if len(errMsg) > 500 {
+			errMsg = errMsg[:500]
+		}
+		_, _ = o.traces.Complete(traceID, &CompleteTraceInput{
+			FinalOutput: []byte(`{"error":"` + strings.ReplaceAll(errMsg, `"`, `\"`) + `"}`),
+			Confidence:  nil,
+			RiskLevel:   "medium",
+			TokenCount:  0,
+			Status:      "failed",
+		})
+		// Publish agent.decided event with error context for audit/pipeline.
+		o.publishDecisionEvent(traceID, agent, req, map[string]interface{}{"error": errMsg}, 0, "medium")
+		return &RunAgentResult{
+			TraceID:       traceID,
+			AgentID:       agent.ID,
+			DecisionPoint: req.DecisionPoint,
+			Output:        map[string]interface{}{"error": errMsg, "failed": true},
+			Confidence:    0,
+			RiskLevel:     "medium",
+		}, nil
 	}
 
 	// Apply personal rules to modify/block the output.

@@ -637,3 +637,74 @@ func (s *Service) AgentTimeline(limit int) ([]AgentTimelineEntry, error) {
 
 	return result, nil
 }
+
+// ---------------------------------------------------------------------------
+// FailedRun types and method
+// ---------------------------------------------------------------------------
+
+// FailedRun represents a failed agent run with error context.
+type FailedRun struct {
+	ID            int64  `json:"id"`
+	TraceID       string `json:"trace_id"`
+	AgentID       string `json:"agent_id"`
+	DecisionPoint string `json:"decision_point"`
+	Status        string `json:"status"`
+	ErrorMessage  string `json:"error_message"`
+	StartedAt     string `json:"started_at"`
+	CompletedAt   string `json:"completed_at"`
+}
+
+// FailedRuns returns recent failed agent traces.
+func (s *Service) FailedRuns(limit int) ([]FailedRun, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	type row struct {
+		ID            int64
+		TraceID       string
+		AgentID       string
+		DecisionPoint string
+		Status        string
+		FinalOutput   *string // jsonb, might contain error message
+		StartedAt     time.Time
+		CompletedAt   *time.Time
+	}
+	var rows []row
+	if err := s.db.Table("ai_trace").
+		Select("id, trace_id, agent_id, decision_point, status, CAST(final_output AS TEXT) AS final_output, started_at, completed_at").
+		Where("status = ?", "failed").
+		Order("started_at DESC").
+		Limit(limit).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]FailedRun, 0, len(rows))
+	for _, r := range rows {
+		// Try to extract error message from final_output JSON.
+		errMsg := ""
+		if r.FinalOutput != nil && *r.FinalOutput != "" {
+			// The final_output might be JSON like {"error": "..."}
+			// Fall back: just show the raw output as the error message.
+			if len(*r.FinalOutput) > 500 {
+				errMsg = (*r.FinalOutput)[:500]
+			} else {
+				errMsg = *r.FinalOutput
+			}
+		}
+		completedAt := ""
+		if r.CompletedAt != nil {
+			completedAt = r.CompletedAt.Format("2006-01-02 15:04:05")
+		}
+		result = append(result, FailedRun{
+			ID:            r.ID,
+			TraceID:       r.TraceID,
+			AgentID:       r.AgentID,
+			DecisionPoint: r.DecisionPoint,
+			Status:        r.Status,
+			ErrorMessage:  errMsg,
+			StartedAt:     r.StartedAt.Format("2006-01-02 15:04:05"),
+			CompletedAt:   completedAt,
+		})
+	}
+	return result, nil
+}
