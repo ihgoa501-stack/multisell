@@ -2,7 +2,7 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-06-30（P0 基线恢复完成）
+更新时间：2026-07-01（P3 首次完整业务闭环完成）
 
 ## 当前结论
 
@@ -490,3 +490,51 @@ ListingTask 的 `ExecuteTask` 方法实现了 6 层执行门禁检查：
 - 新增 Tab 切换：决策队列、审批历史、Agent 评估
 - 审批历史展示已处理的 Agent 建议
 - Agent 评估展示各 Agent 信任分、采纳数、采纳率
+
+## 本次修复内容（2026-07-01，P3 首次完整业务闭环）
+
+### 目标
+证明凌镜能运行一条完整的 AI 商业闭环：候选商品 → 完整度检查 → 利润计算 → 上架推荐 → 审批门禁 → 内部上架任务 → 审计/追踪。
+
+### 修复的构建问题
+
+| 文件 | 问题 | 修复 |
+|------|------|------|
+| `loop/service.go` | `NewService` 构造函数内 `listingtaskSvc`/`approvalSvc` 重复赋值 | 清理重复行，传入正确服务链 |
+| `loop/service.go` | `Evaluate` 未传递 `EntityType`/`EntityID` 给审批 | 补充实体字段确保审批门禁可验证 |
+| `loop/loop_test.go` | 文件因合并冲突出现函数截断和重复定义 | 完全重写，7 个独立测试函数 |
+| `listingtask/service.go` | 重复代码块（合并残留） | 清理 3 处重复 |
+| `listingtask/service.go` | `approval` 重复导入 | 去重 |
+| `approval/service.go` | `HasPendingForEntity` 方法重复定义 | 去重 |
+| `listingtask/listingtask_test.go` | `NewService` 调用签名过时 | 更新为 7 参数签名 |
+| `approval/approval_test.go` | 2 处 `NewService` 调用缺参 | 添加 `nil` 参数 |
+| `owner/owner_test.go` | 多处 `NewService` 重复赋值 + 缺参 | 清理保留正确调用；补充 `approval_request` 表 schema 字段 |
+
+### 新增测试
+
+| 测试 | 验证 |
+|------|------|
+| `TestEvaluate_MissingCriticalData_Blocked` | 缺少重量/价格的候选商品 → `skip` + 业务可读理由 |
+| `TestEvaluate_LowProfit_NotRecommended` | 采购成本远超售价 → `skip` + 负利润理由 |
+| `TestEvaluate_AuditLogExists` | Evaluate("list") → `operation_log` 存在且 `trigger_type=agent` |
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./...` | 全部通过 |
+| `go vet ./...` | 无警告 |
+
+### 关键 API
+
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/api/v1/loop/evaluate/:productId` | 全链路评估（完整度→利润→推荐→阻塞任务+审批→审计） |
+
+### 安全边界
+
+- 所有 listing task 创建时为 `blocked` 状态
+- 状态机只允许 `blocked → pending_approval → approved → executing`
+- `ExecuteTask` 6 层门禁：状态机 + ApprovalID + 审批记录 + 实体匹配
+- 无外部平台发布代码通路
+- 所有审批门禁过渡写入 `operation_log`
