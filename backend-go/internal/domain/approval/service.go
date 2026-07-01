@@ -65,7 +65,7 @@ func (s *Service) Create(input *CreateApprovalInput) (*ApprovalRequest, error) {
 		ProductID:   input.ProductID,
 		RequestType: input.RequestType,
 		Requester:   input.Requester,
-		Status:      "pending",
+		Status:      StatusPending,
 		OldValue:    input.OldValue,
 		NewValue:    input.NewValue,
 		Reason:      input.Reason,
@@ -88,13 +88,13 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 	if err := s.db.First(&req, id).Error; err != nil {
 		return nil, err
 	}
-	if req.Status != "pending" {
+	if req.Status != StatusPending {
 		return nil, fmt.Errorf("approval %d is not pending, current status: %s", id, req.Status)
 	}
 
-	status := "approved"
+	status := StatusApproved
 	if input.Action == "reject" {
-		status = "rejected"
+		status = StatusRejected
 	}
 
 	now := time.Now()
@@ -176,7 +176,7 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 
 // MyPending returns approval requests pending review.
 func (s *Service) MyPending(page, size int) ([]ApprovalRequest, int64, error) {
-	q := s.db.Model(&ApprovalRequest{}).Where("status = ?", "pending")
+	q := s.db.Model(&ApprovalRequest{}).Where("status = ?", StatusPending)
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -212,11 +212,11 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 	for _, c := range counts {
 		stats.TotalCount += c.Count
 		switch c.Status {
-		case "pending":
+		case StatusPending:
 			stats.PendingCount = c.Count
-		case "approved":
+		case StatusApproved:
 			stats.ApprovedCount = c.Count
-		case "rejected":
+		case StatusRejected:
 			stats.RejectedCount = c.Count
 		}
 	}
@@ -237,7 +237,7 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 	// Count escalated (pending > 24h)
 	var escalated int64
 	if err := s.db.Model(&ApprovalRequest{}).
-		Where("status = 'pending' AND created_at < ?", time.Now().Add(-24*time.Hour)).
+		Where("status = ? AND created_at < ?", time.Now().Add(-24*time.Hour)).
 		Count(&escalated).Error; err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 func (s *Service) HasPendingForEntity(entityType string, entityID int64) (bool, error) {
 	var count int64
 	err := s.db.Model(&ApprovalRequest{}).
-		Where("entity_type = ? AND entity_id = ? AND status = ?", entityType, entityID, "pending").
+		Where("entity_type = ? AND entity_id = ? AND status = ?", entityType, entityID, StatusPending).
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -263,7 +263,7 @@ func (s *Service) HasPendingForEntity(entityType string, entityID int64) (bool, 
 func (s *Service) FindApprovedByTarget(targetType string, targetID int64, requestType string) (*ApprovalRequest, error) {
 	var req ApprovalRequest
 	err := s.db.
-		Where("target_type = ? AND target_id = ? AND request_type = ? AND status = ?", targetType, targetID, requestType, "approved").
+		Where("target_type = ? AND target_id = ? AND request_type = ? AND status = ?", targetType, targetID, requestType, StatusApproved).
 		Order("updated_at DESC, id DESC").
 		First(&req).Error
 	if err != nil {
@@ -276,7 +276,7 @@ func (s *Service) FindApprovedByTarget(targetType string, targetID int64, reques
 func (s *Service) AutoEscalate() ([]ApprovalRequest, error) {
 	cutoff := time.Now().Add(-24 * time.Hour)
 	var items []ApprovalRequest
-	if err := s.db.Where("status = 'pending' AND created_at < ?", cutoff).
+	if err := s.db.Where("status = ? AND created_at < ?", cutoff).
 		Order("created_at ASC").
 		Find(&items).Error; err != nil {
 		return nil, err

@@ -350,7 +350,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			}
 			// If action requires approval and wasn't auto-processed, create approval request.
 			if action != nil && requires {
-				o.ensureApprovalCreated(action.ID)
+				o.ensureApprovalCreated(action)
 			}
 		}
 	}
@@ -452,37 +452,31 @@ func (o *Orchestrator) persistAction(in *CreateActionInput) (*UnifiedAction, err
 }
 
 // ensureApprovalCreated creates an approval_request for a UnifiedAction that
-// requires human review. It re-fetches the action to check its current status
-// since policy evaluation may have auto-approved or blocked it.
-func (o *Orchestrator) ensureApprovalCreated(actionID int64) {
-	aiSvc := NewService(o.db, o.logger)
-	freshAction, getErr := aiSvc.GetAction(actionID)
-	if getErr != nil {
-		o.logger.Warn("failed to re-fetch action for approval", zap.Int64("action_id", actionID), zap.Error(getErr))
-		return
-	}
-	if freshAction.Status != ActionStatusSuggested && freshAction.Status != ActionStatusEscalated {
+// requires human review. The caller already has the action with a fresh status
+// (post-policy-evaluation), so we use it directly to avoid a DB re-read.
+func (o *Orchestrator) ensureApprovalCreated(a *UnifiedAction) {
+	if a.Status != ActionStatusSuggested && a.Status != ActionStatusEscalated {
 		return // already processed by policy (auto-approved, blocked, etc.)
 	}
 	approvalSvc := approval.NewService(o.db, o.logger, nil)
 	_, appErr := approvalSvc.Create(&approval.CreateApprovalInput{
 		ProductID:   0,
-		RequestType: freshAction.ActionType,
-		Requester:   "agent:" + freshAction.AgentID,
-		Reason:      freshAction.Title,
-		RiskLevel:   freshAction.RiskLevel,
+		RequestType: a.ActionType,
+		Requester:   "agent:" + a.AgentID,
+		Reason:      a.Title,
+		RiskLevel:   a.RiskLevel,
 		EntityType:  "unified_action",
-		EntityID:    freshAction.ID,
+		EntityID:    a.ID,
 	})
 	if appErr != nil {
 		o.logger.Warn("failed to create approval for action",
-			zap.Int64("action_id", freshAction.ID),
+			zap.Int64("action_id", a.ID),
 			zap.Error(appErr))
 		return
 	}
 	o.logger.Info("created approval for action",
-		zap.Int64("action_id", freshAction.ID),
-		zap.String("action_type", freshAction.ActionType))
+		zap.Int64("action_id", a.ID),
+		zap.String("action_type", a.ActionType))
 }
 
 // synthesizeOutput produces the agent's final output. It checks for a concrete

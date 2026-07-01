@@ -4,6 +4,13 @@ import (
 	"time"
 )
 
+// Approval status constants.
+const (
+	StatusPending  = "pending"
+	StatusApproved = "approved"
+	StatusRejected = "rejected"
+)
+
 // ApprovalRequest maps to the "approval_request" table.
 type ApprovalRequest struct {
 	ID          int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
