@@ -3,6 +3,7 @@ package producthub
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/response"
@@ -185,6 +186,46 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		// Product relation endpoints
 		productsGroup.GET("/:id/relations", h.GetRelatedProducts)
 		productsGroup.POST("/:id/discover-relations", h.AutoDiscoverRelations)
+
+		// Product dashboard summary (360)
+		productsGroup.GET("/360/summary", func(c *gin.Context) {
+			var total, active, draft int64
+			db.Model(&ProductMaster{}).Count(&total)
+			db.Model(&ProductMaster{}).Where("lifecycle_status = ?", "active").Count(&active)
+			db.Model(&ProductMaster{}).Where("lifecycle_status IN ?",
+				[]string{"idea", "researching", "sampling", "approved"},
+			).Count(&draft)
+			// ponytail: low_stock + expiring_certificates return 0 —
+			//  need inventory + compliance module integration for real data
+			response.Success(c, gin.H{
+				"total_products":       total,
+				"active_products":      active,
+				"draft_products":       draft,
+				"low_stock_products":   0,
+				"expiring_certificates": 0,
+			})
+		})
+
+		// Product recent decision traces
+		productsGroup.GET("/decision", func(c *gin.Context) {
+			type decisionRow struct {
+				ID        int64     `json:"id"`
+				ProductID int64     `json:"product_id"`
+				Action    string    `json:"action"`
+				Reason    string    `json:"reason"`
+				CreatedAt time.Time `json:"created_at"`
+			}
+			var rows []decisionRow
+			if err := db.Table("pre_listing_decision").
+				Select("id, sku_id AS product_id, recommendation AS action, reasoning AS reason, created_at").
+				Order("created_at DESC").
+				Limit(10).
+				Find(&rows).Error; err != nil {
+				response.InternalError(c, err)
+				return
+			}
+			response.Success(c, rows)
+		})
 	}
 	productsGroup.POST("/relations", h.CreateRelation)
 	productsGroup.DELETE("/relations/:id", h.DeleteRelation)
