@@ -227,18 +227,6 @@ func (s *Service) FindApprovedByTarget(targetType string, targetID int64, reques
 	return &req, nil
 }
 
-// HasPendingForEntity checks if there is a pending approval for the given entity.
-// Used for duplicate-prevention when creating approvals linked to a listing task.
-func (s *Service) HasPendingForEntity(entityType string, entityID int64) (bool, error) {
-	var count int64
-	err := s.db.Model(&ApprovalRequest{}).
-		Where("entity_type = ? AND entity_id = ? AND status = ?", entityType, entityID, "pending").
-		Count(&count).Error
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
 
 // AutoEscalate checks for requests pending > 24h and returns their IDs.
 func (s *Service) AutoEscalate() ([]ApprovalRequest, error) {
