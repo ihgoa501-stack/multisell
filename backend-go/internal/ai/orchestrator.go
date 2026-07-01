@@ -13,7 +13,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/realtime"
@@ -346,34 +345,6 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 					o.logger.Warn("reject failed", zap.Error(err))
 				} else {
 					action, _ = aiSvc.GetAction(action.ID)
-				}
-			}
-			// If action requires approval and wasn't auto-processed, create approval request.
-			if action != nil && requires {
-				aiSvc := NewService(o.db, o.logger)
-				freshAction, getErr := aiSvc.GetAction(action.ID)
-				if getErr != nil {
-					o.logger.Warn("failed to re-fetch action for approval", zap.Int64("action_id", action.ID), zap.Error(getErr))
-				} else if freshAction.Status == ActionStatusSuggested || freshAction.Status == ActionStatusEscalated {
-					approvalSvc := approval.NewService(o.db, o.logger, nil)
-					_, appErr := approvalSvc.Create(&approval.CreateApprovalInput{
-						ProductID:   0,
-						RequestType: freshAction.ActionType,
-						Requester:   "agent:" + freshAction.AgentID,
-						Reason:      freshAction.Title,
-						RiskLevel:   freshAction.RiskLevel,
-						EntityType:  "unified_action",
-						EntityID:    freshAction.ID,
-					})
-					if appErr != nil {
-						o.logger.Warn("failed to create approval for action",
-							zap.Int64("action_id", freshAction.ID),
-							zap.Error(appErr))
-					} else {
-						o.logger.Info("created approval for action",
-							zap.Int64("action_id", freshAction.ID),
-							zap.String("action_type", freshAction.ActionType))
-					}
 				}
 			}
 		}

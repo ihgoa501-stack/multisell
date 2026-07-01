@@ -126,30 +126,6 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 			EntityID:    req.EntityID,
 		})
 	}
-
-	// Sync linked unified_action status for action-approval linkage.
-	if req.EntityType == "unified_action" && req.EntityID > 0 {
-		syncUpdates := map[string]interface{}{
-			"status":     status,
-			"updated_at": time.Now(),
-		}
-		if input.Action == "approve" {
-			syncUpdates["approved_by"] = input.Reviewer
-			syncUpdates["approved_at"] = time.Now()
-		} else {
-			syncUpdates["rejected_by"] = input.Reviewer
-			syncUpdates["rejected_at"] = time.Now()
-			syncUpdates["rejection_reason"] = input.ReviewNote
-		}
-		if err := s.db.Table("unified_action").Where("id = ?", req.EntityID).Updates(syncUpdates).Error; err != nil {
-			s.logger.Warn("failed to sync unified_action status",
-				zap.Int64("action_id", req.EntityID),
-				zap.String("approval_status", status),
-				zap.Error(err),
-			)
-		}
-	}
-
 	return &req, nil
 }
 

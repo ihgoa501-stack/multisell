@@ -243,14 +243,6 @@ Approval is required by default for:
 - Destructive data changes.
 - Autonomous Agent execution of business mutations.
 
-### UnifiedAction ↔ Approval Linkage (P5)
-
-Agent UnifiedActions that require approval are automatically linked to `approval_request` records:
-
-- When the Orchestrator creates a UnifiedAction with `requires_approval=true` and the policy outcome is "needs human review", an `approval_request` is created with `entity_type="unified_action"` and `entity_id=<action.ID>`.
-- When the approval is reviewed (approved/rejected), the linked UnifiedAction's status, reviewer, and timestamp fields are synced automatically.
-- This applies to all scheduled agents (A5 stock_alert, A6 profit_watch, A7 compliance_check, G3 discount_risk_check, etc.) that run through the Orchestrator with autonomy level `supervised` or `guided`.
-
 ## 8. Audit Contract
 
 Audit records what changed and why.
