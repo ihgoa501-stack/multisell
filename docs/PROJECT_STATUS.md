@@ -685,3 +685,62 @@ Owner 总控台新增两个区域：
 | `go vet ./...` | ✅ 通过 |
 | 安全边界 | ✅ 新增审批联动仍受审批保护，未绕过任何门禁 |
 | 文档更新 | ✅ PROJECT_STATUS.md
+
+## 本次新增内容（2026-07-01，P6 小范围试运行准备）
+
+### 业务目标
+
+进入小范围试运行准备状态 — 确保 Agent 运行失败可见、失败原因可追踪、有基础可观测性和试运行说明。
+
+### 核心改动
+
+**1. Orchestrator 失败记录（silent fail → recorded fail）**
+
+之前当 `synthesizeOutput` 失败时，orchestrator 直接 `return nil, err`：
+- Trace 停留在 "running" 状态，不完成
+- 无 action 创建
+- 无事件发布
+- 调用者不知道有失败发生
+
+现在改为：
+- Trace 以 `status="failed"` 完成，错误信息写入 `final_output`
+- 发布 `agent.decided.*` 事件（含 error 上下文）
+- 返回带 `trace_id` 的 `RunAgentResult`（非 nil error）
+
+**2. 失败 Agent 运行查询 API**
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | /api/v1/agentos/failures | 最近失败的 Agent 运行（trace_id、Agent、决策点、错误信息、时间） |
+
+**3. 试运行文档**
+
+| 文档 | 说明 |
+|------|------|
+| `docs/trial-run-guide.md` | Owner 面向的小范围试运行六步流程、监控要点、常见问题、安全边界说明 |
+
+### 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `internal/ai/orchestrator.go` | synthesizeOutput 失败→记录 failed trace + 发布事件 |
+| `internal/agentos/service.go` | 新增 FailedRun 类型 + FailedRuns 方法 |
+| `internal/agentos/handler.go` | 新增 FailedRuns 处理器 |
+| `internal/agentos/routes.go` | 注册 GET /failures |
+| `internal/agentos/agentos_handler_test.go` | 新增 TestService_FailedRuns 测试 |
+| `docs/trial-run-guide.md` | 新建 Owner 试运行指南 |
+
+### 新增测试
+
+| 包 | 测试 | 说明 |
+|----|------|------|
+| agentos | TestService_FailedRuns | 2 条 trace（1 failed, 1 completed）→ 只返回 failed |
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./...` | ✅ 通过 |
+| `go vet ./...` | ✅ 通过 |
+| 安全边界 | ✅ 未修改审批/审计/权限逻辑 |
+| 文档更新 | ✅ PROJECT_STATUS.md, trial-run-guide.md

@@ -86,3 +86,14 @@ func (h *Handler) AgentTimeline(c *gin.Context) {
 	}
 	response.Success(c, entries)
 }
+
+// FailedRuns GET /agentos/failures
+func (h *Handler) FailedRuns(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	items, err := h.service.FailedRuns(limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, items)
+}

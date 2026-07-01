@@ -183,3 +183,33 @@ func TestService_AgentTimeline(t *testing.T) {
 		}
 	}
 }
+
+func TestService_FailedRuns(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:agentos_test_failed?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	svc := NewService(db, zap.NewNop())
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS ai_trace (
+		id INTEGER PRIMARY KEY, trace_id TEXT, agent_id TEXT,
+		decision_point TEXT, status TEXT, final_output TEXT,
+		started_at TIMESTAMP, completed_at TIMESTAMP
+	)`)
+	db.Exec(`INSERT INTO ai_trace (id, trace_id, agent_id, decision_point, status, final_output, started_at, completed_at)
+		VALUES (1, 'trace-1', 'A5', 'stock_alert', 'failed', '{"error":"LLM timeout"}', datetime('now'), datetime('now'))`)
+	db.Exec(`INSERT INTO ai_trace (id, trace_id, agent_id, decision_point, status, final_output, started_at, completed_at)
+		VALUES (2, 'trace-2', 'A6', 'profit_watch', 'completed', '{}', datetime('now', '-1 hour'), datetime('now', '-1 hour'))`)
+
+	result, err := svc.FailedRuns(50)
+	if err != nil {
+		t.Fatalf("FailedRuns: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 failed run, got %d", len(result))
+	}
+	if result[0].AgentID != "A5" {
+		t.Errorf("expected agent A5, got %s", result[0].AgentID)
+	}
+}
