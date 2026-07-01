@@ -5,19 +5,22 @@ import (
 	"math"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides CRUD operations and auto-escalation for approval requests.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db       *gorm.DB
+	logger   *zap.Logger
+	oplogSvc *operationlog.Service // optional, may be nil
 }
 
 // NewService creates a new approval service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+// oplogSvc may be nil (audit logging disabled).
+func NewService(db *gorm.DB, logger *zap.Logger, oplogSvc *operationlog.Service) *Service {
+	return &Service{db: db, logger: logger, oplogSvc: oplogSvc}
 }
 
 // List returns paginated approval requests with optional filters.
@@ -70,6 +73,8 @@ func (s *Service) Create(input *CreateApprovalInput) (*ApprovalRequest, error) {
 		TargetID:    input.TargetID,
 		RiskLevel:   input.RiskLevel,
 		ExpiresAt:   input.ExpiresAt,
+		EntityType:  input.EntityType,
+		EntityID:    input.EntityID,
 	}
 	if err := s.db.Create(req).Error; err != nil {
 		return nil, fmt.Errorf("creating approval request: %w", err)
@@ -105,6 +110,22 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 	req.Status = status
 	req.Reviewer = input.Reviewer
 	req.ReviewNote = input.ReviewNote
+
+	// Audit: record structured operation log for the review action
+	if s.oplogSvc != nil {
+		result := status
+		_ = s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
+			Module:      "approval",
+			Action:      "approval.review",
+			ResourceID:  fmt.Sprintf("%d", id),
+			Operator:    input.Reviewer,
+			Content:     fmt.Sprintf("approval_id=%d action=%s reviewer=%s note=%s", id, input.Action, input.Reviewer, input.ReviewNote),
+			Result:      result,
+			TriggerType: "owner_approval",
+			EntityType:  req.EntityType,
+			EntityID:    req.EntityID,
+		})
+	}
 	return &req, nil
 }
 
@@ -180,6 +201,19 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 	return stats, nil
 }
 
+// HasPendingForEntity checks if there is a pending approval for the given entity.
+// Used for duplicate-prevention when creating approvals linked to a listing task.
+func (s *Service) HasPendingForEntity(entityType string, entityID int64) (bool, error) {
+	var count int64
+	err := s.db.Model(&ApprovalRequest{}).
+		Where("entity_type = ? AND entity_id = ? AND status = ?", entityType, entityID, "pending").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // FindApprovedByTarget returns the most recent approved approval for a given target and request type.
 func (s *Service) FindApprovedByTarget(targetType string, targetID int64, requestType string) (*ApprovalRequest, error) {
 	var req ApprovalRequest
@@ -191,6 +225,19 @@ func (s *Service) FindApprovedByTarget(targetType string, targetID int64, reques
 		return nil, err
 	}
 	return &req, nil
+}
+
+// HasPendingForEntity checks if there is a pending approval for the given entity.
+// Used for duplicate-prevention when creating approvals linked to a listing task.
+func (s *Service) HasPendingForEntity(entityType string, entityID int64) (bool, error) {
+	var count int64
+	err := s.db.Model(&ApprovalRequest{}).
+		Where("entity_type = ? AND entity_id = ? AND status = ?", entityType, entityID, "pending").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // AutoEscalate checks for requests pending > 24h and returns their IDs.

@@ -52,6 +52,32 @@ type actionRow struct {
 	Auto     int
 }
 
+// feedbackRow holds batched listing recommendation feedback per agent.
+type feedbackRow struct {
+	AgentID        string
+	FeedbackAdopted  int
+	FeedbackRejected int
+}
+
+// RecordAgentFeedback recalculates trust score for a specific agent based on
+// listing recommendation feedback (adopt/reject). This is called asynchronously
+// when an Owner provides feedback on a listing recommendation.
+func (s *Service) RecordAgentFeedback(agentID string) error {
+	// Find the agent in the default list to get name and squad
+	agentName := agentID
+	squadID := ""
+	for _, a := range defaultAgentList() {
+		if a.ID == agentID {
+			agentName = a.Name
+			squadID = a.Squad
+			break
+		}
+	}
+
+	// Delegate to RecalculateForAgent which already handles listing_recommendation queries
+	return s.RecalculateForAgent(agentID, agentName, squadID)
+}
+
 // Recalculate recomputes trust scores for all registered agents.
 // Uses batched GROUP BY queries instead of N+1 per-agent lookups.
 func (s *Service) Recalculate() error {
@@ -115,9 +141,25 @@ func (s *Service) Recalculate() error {
 		laMap[v.AgentID] = v.MaxTime
 	}
 
+	// Batch 4: listing recommendation feedback per agent.
+	var feedbackStats []feedbackRow
+	s.db.Raw(`
+		SELECT
+			triggered_by AS agent_id,
+			COUNT(*) FILTER (WHERE feedback_status = 'adopted') AS feedback_adopted,
+			COUNT(*) FILTER (WHERE feedback_status = 'rejected') AS feedback_rejected
+		FROM listing_recommendation
+		WHERE triggered_by IN ? AND feedback_status IN ('adopted', 'rejected')
+		GROUP BY triggered_by
+	`, ids).Scan(&feedbackStats)
+	fbMap := make(map[string]feedbackRow, len(feedbackStats))
+	for _, v := range feedbackStats {
+		fbMap[v.AgentID] = v
+	}
+
 	// Per-agent computation — in-memory only, no per-agent DB queries.
 	for _, agent := range agents {
-		if err := s.recalculateOne(agent, asMap[agent.ID], confMap[agent.ID], laMap[agent.ID]); err != nil {
+		if err := s.recalculateOne(agent, asMap[agent.ID], confMap[agent.ID], laMap[agent.ID], fbMap[agent.ID]); err != nil {
 			s.logger.Warn("recalculate failed", zap.String("agent", agent.ID), zap.Error(err))
 		}
 	}
@@ -126,7 +168,7 @@ func (s *Service) Recalculate() error {
 
 // recalculateOne computes and persists one agent's trust score using
 // pre-fetched batch data — does NOT make its own queries.
-func (s *Service) recalculateOne(agent agentInfo, as actionRow, avgConf float64, lastActionAt *time.Time) error {
+func (s *Service) recalculateOne(agent agentInfo, as actionRow, avgConf float64, lastActionAt *time.Time, fb feedbackRow) error {
 	score, err := s.GetByAgent(agent.ID)
 	if err != nil {
 		return err
@@ -143,31 +185,44 @@ func (s *Service) recalculateOne(agent agentInfo, as actionRow, avgConf float64,
 	}
 	avgConf = clamp01(avgConf)
 
+	// Listing recommendation feedback rate
+	totalFeedback := fb.FeedbackAdopted + fb.FeedbackRejected
+	listingFeedbackRate := 0.0
+	if totalFeedback > 0 {
+		listingFeedbackRate = float64(fb.FeedbackAdopted) / float64(totalFeedback)
+	}
+	listingFeedbackRate = clamp01(listingFeedbackRate)
+
 	// Publish agent adoption and success rate to Prometheus.
 	observability.AgentAdoptionRate.WithLabelValues(agent.ID).Set(adoptionRate)
 	observability.AgentSuccessRate.WithLabelValues(agent.ID).Set(execSuccess)
 
-	trustScore := adoptionRate*0.40 + execSuccess*0.30 + avgConf*0.30
+	// Composite trust score with listing feedback rate (20% weight)
+	// adoptionRate (35%) + execSuccess (25%) + avgConf (20%) + listingFeedbackRate (20%)
+	trustScore := adoptionRate*0.35 + execSuccess*0.25 + avgConf*0.20 + listingFeedbackRate*0.20
 	trustScore = clamp01(trustScore)
 
 	currentLevel := score.AutonomyLevel
 	targetLevel := determineTargetLevel(trustScore, currentLevel)
 
 	updates := map[string]interface{}{
-		"agent_name":        agent.Name,
-		"squad_id":          agent.Squad,
-		"total_actions":     as.Total,
-		"adopted_actions":   as.Adopted,
-		"rejected_actions":  as.Rejected,
-		"failed_actions":    as.Failed,
-		"auto_approved":     as.Auto,
-		"adoption_rate":     math.Round(adoptionRate*10000) / 10000,
-		"execution_success": math.Round(execSuccess*10000) / 10000,
-		"avg_confidence":    math.Round(avgConf*10000) / 10000,
-		"trust_score":       math.Round(trustScore*10000) / 10000,
-		"autonomy_level":    currentLevel,
-		"target_level":      targetLevel,
-		"last_action_at":    lastActionAt,
+		"agent_name":           agent.Name,
+		"squad_id":             agent.Squad,
+		"total_actions":        as.Total,
+		"adopted_actions":      as.Adopted,
+		"rejected_actions":     as.Rejected,
+		"failed_actions":       as.Failed,
+		"auto_approved":        as.Auto,
+		"feedback_adopted":     fb.FeedbackAdopted,
+		"feedback_rejected":    fb.FeedbackRejected,
+		"adoption_rate":        math.Round(adoptionRate*10000) / 10000,
+		"execution_success":    math.Round(execSuccess*10000) / 10000,
+		"avg_confidence":       math.Round(avgConf*10000) / 10000,
+		"listing_feedback_rate": math.Round(listingFeedbackRate*10000) / 10000,
+		"trust_score":          math.Round(trustScore*10000) / 10000,
+		"autonomy_level":       currentLevel,
+		"target_level":         targetLevel,
+		"last_action_at":       lastActionAt,
 	}
 
 	if score.ID == 0 {
@@ -179,9 +234,12 @@ func (s *Service) recalculateOne(agent agentInfo, as actionRow, avgConf float64,
 		score.RejectedActions = as.Rejected
 		score.FailedActions = as.Failed
 		score.AutoApproved = as.Auto
+		score.FeedbackAdopted = fb.FeedbackAdopted
+		score.FeedbackRejected = fb.FeedbackRejected
 		score.AdoptionRate = math.Round(adoptionRate*10000) / 10000
 		score.ExecutionSuccess = math.Round(execSuccess*10000) / 10000
 		score.AvgConfidence = math.Round(avgConf*10000) / 10000
+		score.ListingFeedbackRate = math.Round(listingFeedbackRate*10000) / 10000
 		score.TrustScore = math.Round(trustScore*10000) / 10000
 		score.AutonomyLevel = currentLevel
 		score.TargetLevel = targetLevel
@@ -233,6 +291,18 @@ func (s *Service) RecalculateForAgent(agentID, agentName, squadID string) error 
 	}
 	s.db.Raw(`SELECT MAX(proposed_at) AS max_time FROM unified_action WHERE agent_id = ?`, agentID).Scan(&lastAction)
 
+	// Query listing recommendation feedback stats
+	var fb feedbackRow
+	s.db.Raw(`
+		SELECT
+			triggered_by AS agent_id,
+			COUNT(*) FILTER (WHERE feedback_status = 'adopted') AS feedback_adopted,
+			COUNT(*) FILTER (WHERE feedback_status = 'rejected') AS feedback_rejected
+		FROM listing_recommendation
+		WHERE triggered_by = ? AND feedback_status IN ('adopted', 'rejected')
+		GROUP BY triggered_by
+	`, agentID).Scan(&fb)
+
 	// Calculate metrics
 	total := float64(maxInt(actionStats.Total, 1))
 	adoptionRate := float64(actionStats.Adopted) / total
@@ -242,9 +312,16 @@ func (s *Service) RecalculateForAgent(agentID, agentName, squadID string) error 
 	}
 	avgConf := clamp01(confStats.AvgConf)
 
-	// Composite trust score
-	// adoptionRate (40%) + execSuccess (30%) + avgConf (30%)
-	trustScore := adoptionRate*0.40 + execSuccess*0.30 + avgConf*0.30
+	// Listing feedback rate
+	totalFeedback := fb.FeedbackAdopted + fb.FeedbackRejected
+	listingFeedbackRate := 0.0
+	if totalFeedback > 0 {
+		listingFeedbackRate = float64(fb.FeedbackAdopted) / float64(totalFeedback)
+	}
+	listingFeedbackRate = clamp01(listingFeedbackRate)
+
+	// Composite trust score with listing feedback rate (20% weight)
+	trustScore := adoptionRate*0.35 + execSuccess*0.25 + avgConf*0.20 + listingFeedbackRate*0.20
 	trustScore = clamp01(trustScore)
 
 	// Determine current and target autonomy level
@@ -253,20 +330,23 @@ func (s *Service) RecalculateForAgent(agentID, agentName, squadID string) error 
 
 	// Update score record
 	updates := map[string]interface{}{
-		"agent_name":       agentName,
-		"squad_id":         squadID,
-		"total_actions":    actionStats.Total,
-		"adopted_actions":  actionStats.Adopted,
-		"rejected_actions": actionStats.Rejected,
-		"failed_actions":   actionStats.Failed,
-		"auto_approved":    actionStats.Auto,
-		"adoption_rate":    math.Round(adoptionRate*10000) / 10000,
-		"execution_success": math.Round(execSuccess*10000) / 10000,
-		"avg_confidence":   math.Round(avgConf*10000) / 10000,
-		"trust_score":      math.Round(trustScore*10000) / 10000,
-		"autonomy_level":   currentLevel,
-		"target_level":     targetLevel,
-		"last_action_at":   lastAction.MaxTime,
+		"agent_name":           agentName,
+		"squad_id":             squadID,
+		"total_actions":        actionStats.Total,
+		"adopted_actions":      actionStats.Adopted,
+		"rejected_actions":     actionStats.Rejected,
+		"failed_actions":       actionStats.Failed,
+		"auto_approved":        actionStats.Auto,
+		"feedback_adopted":     fb.FeedbackAdopted,
+		"feedback_rejected":    fb.FeedbackRejected,
+		"adoption_rate":        math.Round(adoptionRate*10000) / 10000,
+		"execution_success":    math.Round(execSuccess*10000) / 10000,
+		"avg_confidence":       math.Round(avgConf*10000) / 10000,
+		"listing_feedback_rate": math.Round(listingFeedbackRate*10000) / 10000,
+		"trust_score":          math.Round(trustScore*10000) / 10000,
+		"autonomy_level":       currentLevel,
+		"target_level":         targetLevel,
+		"last_action_at":       lastAction.MaxTime,
 	}
 
 	if score.ID == 0 {
@@ -274,12 +354,6 @@ func (s *Service) RecalculateForAgent(agentID, agentName, squadID string) error 
 		score.AgentID = agentID
 		score.AgentName = agentName
 		score.SquadID = squadID
-		for k, v := range updates {
-			switch k {
-			case "autonomy_level":
-				score.AutonomyLevel = v.(string)
-			}
-		}
 		return s.db.Create(score).Error
 	}
 
@@ -366,11 +440,11 @@ func defaultAgentList() []agentInfo {
 		{ID: "G3", Name: "Discount Risk", Squad: "governance"},
 		{ID: "G0", Name: "Coordinator", Squad: "governance"},
 				{ID: "A9", Name: "Batch Ops", Squad: "ops"},
-{ID: "A8", Name: "Settlement Recon", Squad: "settle"},
-		{ID: "A10", Name: "Logistics Ops", Squad: "fulfillment"},
-		{ID: "A11", Name: "Aftersales Mgmt", Squad: "settle"},
+	{ID: "A8", Name: "Settlement Recon", Squad: "settle"},
+			{ID: "A10", Name: "Logistics Ops", Squad: "fulfillment"},
+			{ID: "A11", Name: "Aftersales Mgmt", Squad: "settle"},
+		}
 	}
-}
 
 type agentInfo struct {
 	ID    string

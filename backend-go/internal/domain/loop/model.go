@@ -17,6 +17,9 @@ type ListingRecommendation struct {
 	RiskFlags         string    `gorm:"column:risk_flags;type:text" json:"risk_flags"` // JSON array of risk flags
 	CreatedListingTaskID *int64 `gorm:"column:created_listing_task_id" json:"created_listing_task_id,omitempty"`
 	TriggeredBy       string    `gorm:"column:triggered_by" json:"triggered_by"`
+	FeedbackStatus    string    `gorm:"column:feedback_status;default:pending" json:"feedback_status"`
+	// pending, adopted, rejected, executed, execution_failed
+	FeedbackNote      string    `gorm:"column:feedback_note;type:text" json:"feedback_note,omitempty"`
 	CreatedAt         time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt         time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }

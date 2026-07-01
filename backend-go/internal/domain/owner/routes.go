@@ -8,7 +8,7 @@ import (
 
 // RegisterRoutes registers Owner cockpit routes.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger)
+	svc := NewService(db, logger, nil, nil)
 	h := NewHandler(svc)
 
 	r := rg.Group("/owner")
@@ -16,5 +16,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		r.GET("/risk-summary", h.RiskSummary)
 		r.GET("/suggestions", h.Suggestions)
 		r.GET("/platform-sync", h.PlatformSyncStatus)
+		r.POST("/suggestions/:id/feedback", h.Feedback)
 	}
 }

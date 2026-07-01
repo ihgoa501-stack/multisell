@@ -320,8 +320,8 @@ func TestRecalculate(t *testing.T) {
 	if a1First.TotalActions != 10 {
 		t.Errorf("first call: expected total_actions=10, got %d", a1First.TotalActions)
 	}
-	if !approx(a1First.TrustScore, 0.805, 0.0005) {
-		t.Errorf("first call: expected trust_score=~0.805, got %f", a1First.TrustScore)
+	if !approx(a1First.TrustScore, 0.640, 0.0005) {
+		t.Errorf("first call: expected trust_score=~0.640, got %f", a1First.TrustScore)
 	}
 
 	// ---- Second Recalculate: updates existing records with computed values ----
@@ -355,9 +355,9 @@ func TestRecalculate(t *testing.T) {
 	if !approx(a1.AvgConfidence, 0.85, 0.0005) {
 		t.Errorf("avg_confidence: want ~0.850, got %f", a1.AvgConfidence)
 	}
-	// trustScore = 0.7*0.4 + 0.9*0.3 + 0.85*0.3 = 0.28 + 0.27 + 0.255 = 0.805
-	if !approx(a1.TrustScore, 0.805, 0.0005) {
-		t.Errorf("trust_score: want ~0.805, got %f", a1.TrustScore)
+	// trustScore = 0.7*0.4 + 0.9*0.3 + 0.85*0.3 = 0.28 + 0.27 + 0.255 = 0.640
+	if !approx(a1.TrustScore, 0.640, 0.0005) {
+		t.Errorf("trust_score: want ~0.640, got %f", a1.TrustScore)
 	}
 	if a1.AutonomyLevel != "advisory" {
 		t.Errorf("autonomy_level: want advisory, got %s", a1.AutonomyLevel)
@@ -374,8 +374,8 @@ func TestRecalculate(t *testing.T) {
 	if a2.AdoptedActions != 5 {
 		t.Errorf("A2 adopted: want 5, got %d", a2.AdoptedActions)
 	}
-	if !approx(a2.TrustScore, 0.985, 0.0005) {
-		t.Errorf("A2 trust_score: want ~0.985, got %f", a2.TrustScore)
+	if !approx(a2.TrustScore, 0.790, 0.0005) {
+		t.Errorf("A2 trust_score: want ~0.790, got %f", a2.TrustScore)
 	}
 
 	// --- Verify A3: policy-only rejected, zero adopted -> adoption=0, execSuccess=1.0, conf=0
@@ -386,16 +386,16 @@ func TestRecalculate(t *testing.T) {
 	if a3.RejectedActions != 0 {
 		t.Errorf("A3 rejected (policy should be excluded): want 0, got %d", a3.RejectedActions)
 	}
-	// trust=0*0.4 + 1.0*0.3 + 0*0.3 = 0.30
-	if !approx(a3.TrustScore, 0.30, 0.0005) {
-		t.Errorf("A3 trust_score: want ~0.30, got %f", a3.TrustScore)
+	// trust=0*0.35 + 1.0*0.25 + 0*0.20 + 0*0.20 = 0.250
+	if !approx(a3.TrustScore, 0.250, 0.0005) {
+		t.Errorf("A3 trust_score: want ~0.250, got %f", a3.TrustScore)
 	}
 
 	// --- Verify an agent with NO data ---
 	a4, _ := svc.GetByAgent("A4")
-	// trust=0*0.4 + 1.0*0.3 + 0*0.3 = 0.30
-	if !approx(a4.TrustScore, 0.30, 0.0005) {
-		t.Errorf("A4 trust_score (no data): want ~0.30, got %f", a4.TrustScore)
+	// trust=0*0.35 + 1.0*0.25 + 0*0.20 + 0*0.20 = 0.250
+	if !approx(a4.TrustScore, 0.250, 0.0005) {
+		t.Errorf("A4 trust_score (no data): want ~0.250, got %f", a4.TrustScore)
 	}
 }
 
@@ -448,15 +448,15 @@ func TestRecalculateForAgent(t *testing.T) {
 		t.Errorf("auto_approved: want 5, got %d", a5.AutoApproved)
 	}
 	// adoptionRate=5/6≈0.8333, execSuccess=1-1/6≈0.8333, avgConf=0.95
-	// trustScore=0.8333*0.4+0.8333*0.3+0.95*0.3=0.3333+0.2500+0.2850=0.8683
+	// trustScore=0.8333*0.35+0.8333*0.25+0.95*0.20+0*0.20=0.2917+0.2083+0.1900=0.690
 	if !approx(a5.AdoptionRate, 0.8333, 0.001) {
 		t.Errorf("adoption_rate: want ~0.8333, got %f", a5.AdoptionRate)
 	}
 	if !approx(a5.ExecutionSuccess, 0.8333, 0.001) {
 		t.Errorf("execution_success: want ~0.8333, got %f", a5.ExecutionSuccess)
 	}
-	if !approx(a5.TrustScore, 0.8683, 0.001) {
-		t.Errorf("trust_score: want ~0.8683, got %f", a5.TrustScore)
+	if !approx(a5.TrustScore, 0.690, 0.001) {
+		t.Errorf("trust_score: want ~0.690, got %f", a5.TrustScore)
 	}
 
 	// Agent with no existing record gets created
@@ -618,7 +618,7 @@ func TestAutoUpgrade(t *testing.T) {
 	svc.db.Exec(`INSERT INTO ai_trace (id, agent_id, confidence) VALUES (1, 'A1', 0.95)`)
 
 	// AutoUpgrade calls Recalculate then UpgradeEligible.
-	// A1 has trust=0.985 (advisory -> guided), so one upgrade is expected.
+	// A1 has trust=0.790 (advisory -> guided), so one upgrade is expected.
 	results, err := upgrader.AutoUpgrade()
 	if err != nil {
 		t.Fatalf("AutoUpgrade() error: %v", err)
@@ -848,6 +848,9 @@ func TestHandler_AutoUpgrade(t *testing.T) {
 	svc.db.Exec(`CREATE TABLE ai_trace (
 		id INTEGER, agent_id TEXT, confidence REAL
 	)`)
+	svc.db.Exec(`CREATE TABLE listing_recommendation (
+		id INTEGER, product_id INTEGER, triggered_by TEXT, feedback_status TEXT
+	)`)
 
 	_ = svc
 
@@ -909,5 +912,187 @@ func TestHandler_Summary(t *testing.T) {
 	}
 	if items[0].TotalActions != 0 {
 		t.Errorf("expected 0 total actions, got %d", items[0].TotalActions)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RecordAgentFeedback tests
+// ---------------------------------------------------------------------------
+
+func TestRecordAgentFeedback_NoData(t *testing.T) {
+	svc := newTestDB(t)
+
+	// Create listing_recommendation table
+	svc.db.Exec(`CREATE TABLE listing_recommendation (
+		id INTEGER, product_id INTEGER, triggered_by TEXT, feedback_status TEXT
+	)`)
+	svc.db.Exec(`CREATE TABLE unified_action (
+		id INTEGER, agent_id TEXT, status TEXT,
+		rejected_by TEXT, approved_by TEXT, proposed_at TIMESTAMP
+	)`)
+	svc.db.Exec(`CREATE TABLE ai_trace (
+		id INTEGER, agent_id TEXT, confidence REAL
+	)`)
+
+	// Record feedback for A1 with no listing feedback data
+	if err := svc.RecordAgentFeedback("A1"); err != nil {
+		t.Fatalf("RecordAgentFeedback(A1) error: %v", err)
+	}
+
+	score, err := svc.GetByAgent("A1")
+	if err != nil {
+		t.Fatalf("GetByAgent error: %v", err)
+	}
+	if score == nil {
+		t.Fatal("expected score to be created")
+	}
+	if score.FeedbackAdopted != 0 {
+		t.Errorf("feedback_adopted: want 0, got %d", score.FeedbackAdopted)
+	}
+	if score.FeedbackRejected != 0 {
+		t.Errorf("feedback_rejected: want 0, got %d", score.FeedbackRejected)
+	}
+	// No listing feedback data -> listing_feedback_rate = 0
+	if score.ListingFeedbackRate != 0 {
+		t.Errorf("listing_feedback_rate: want 0, got %f", score.ListingFeedbackRate)
+	}
+}
+
+func TestRecordAgentFeedback_WithData(t *testing.T) {
+	svc := newTestDB(t)
+
+	// Create listing_recommendation table
+	svc.db.Exec(`CREATE TABLE listing_recommendation (
+		id INTEGER, product_id INTEGER, triggered_by TEXT, feedback_status TEXT
+	)`)
+	svc.db.Exec(`CREATE TABLE unified_action (
+		id INTEGER, agent_id TEXT, status TEXT,
+		rejected_by TEXT, approved_by TEXT, proposed_at TIMESTAMP
+	)`)
+	svc.db.Exec(`CREATE TABLE ai_trace (
+		id INTEGER, agent_id TEXT, confidence REAL
+	)`)
+
+	now := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
+
+	// Insert listing recommendations with feedback for A1
+	// 3 adopted, 1 rejected
+	svc.db.Exec(`INSERT INTO listing_recommendation (id, product_id, triggered_by, feedback_status) VALUES (1, 1, 'A1', 'adopted')`)
+	svc.db.Exec(`INSERT INTO listing_recommendation (id, product_id, triggered_by, feedback_status) VALUES (2, 2, 'A1', 'adopted')`)
+	svc.db.Exec(`INSERT INTO listing_recommendation (id, product_id, triggered_by, feedback_status) VALUES (3, 3, 'A1', 'adopted')`)
+	svc.db.Exec(`INSERT INTO listing_recommendation (id, product_id, triggered_by, feedback_status) VALUES (4, 4, 'A1', 'rejected')`)
+
+	// Insert some action and trace data so the trust score is recalculated
+	for i := 0; i < 5; i++ {
+		svc.db.Exec(`INSERT INTO unified_action (id, agent_id, status, approved_by, proposed_at) VALUES (?, 'A1', 'approved', 'policy', ?)`, i+1, now)
+	}
+	svc.db.Exec(`INSERT INTO ai_trace (id, agent_id, confidence) VALUES (1, 'A1', 0.90)`)
+
+	// RecordAgentFeedback for A1 (first call creates record with default values)
+	if err := svc.RecordAgentFeedback("A1"); err != nil {
+		t.Fatalf("first RecordAgentFeedback(A1) error: %v", err)
+	}
+
+	score, err := svc.GetByAgent("A1")
+	if err != nil {
+		t.Fatalf("GetByAgent error: %v", err)
+	}
+	if score == nil {
+		t.Fatal("expected score to exist")
+	}
+
+	// First call creates record with zero defaults
+	if score.FeedbackAdopted != 0 {
+		t.Logf("first call: feedback_adopted=%d (expected 0 as new record)", score.FeedbackAdopted)
+	}
+
+	// Call again to trigger the update with computed values
+	if err := svc.RecordAgentFeedback("A1"); err != nil {
+		t.Fatalf("second RecordAgentFeedback(A1) error: %v", err)
+	}
+
+	score, _ = svc.GetByAgent("A1")
+
+	// Verify feedback counts
+	if score.FeedbackAdopted != 3 {
+		t.Errorf("feedback_adopted: want 3, got %d", score.FeedbackAdopted)
+	}
+	if score.FeedbackRejected != 1 {
+		t.Errorf("feedback_rejected: want 1, got %d", score.FeedbackRejected)
+	}
+
+	// listing_feedback_rate = 3 / (3+1) = 0.75
+	if !approx(score.ListingFeedbackRate, 0.75, 0.0005) {
+		t.Errorf("listing_feedback_rate: want ~0.75, got %f", score.ListingFeedbackRate)
+	}
+
+	// Trust score includes listing feedback rate factor (20%)
+	// adoptionRate=1.0*0.35 + execSuccess=1.0*0.25 + avgConf=0.90*0.20 + listingFeedbackRate=0.75*0.20
+	// = 0.35 + 0.25 + 0.18 + 0.15 = 0.93
+	if !approx(score.TrustScore, 0.93, 0.0005) {
+		t.Errorf("trust_score: want ~0.93, got %f", score.TrustScore)
+	}
+}
+
+func TestRecalculate_WithListingFeedback(t *testing.T) {
+	svc := newTestDB(t)
+
+	// Create external tables
+	svc.db.Exec(`CREATE TABLE unified_action (
+		id INTEGER, agent_id TEXT, status TEXT,
+		rejected_by TEXT, approved_by TEXT, proposed_at TIMESTAMP
+	)`)
+	svc.db.Exec(`CREATE TABLE ai_trace (
+		id INTEGER, agent_id TEXT, confidence REAL
+	)`)
+	svc.db.Exec(`CREATE TABLE listing_recommendation (
+		id INTEGER, product_id INTEGER, triggered_by TEXT, feedback_status TEXT
+	)`)
+
+	now := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
+
+	// A1: 3 adopted, 1 rejected in listing feedback
+	svc.db.Exec(`INSERT INTO listing_recommendation (id, product_id, triggered_by, feedback_status) VALUES (1, 1, 'A1', 'adopted')`)
+	svc.db.Exec(`INSERT INTO listing_recommendation (id, product_id, triggered_by, feedback_status) VALUES (2, 2, 'A1', 'adopted')`)
+	svc.db.Exec(`INSERT INTO listing_recommendation (id, product_id, triggered_by, feedback_status) VALUES (3, 3, 'A1', 'adopted')`)
+	svc.db.Exec(`INSERT INTO listing_recommendation (id, product_id, triggered_by, feedback_status) VALUES (4, 4, 'A1', 'rejected')`)
+	for i := 0; i < 10; i++ {
+		svc.db.Exec(`INSERT INTO unified_action (id, agent_id, status, approved_by, proposed_at) VALUES (?, 'A1', 'approved', 'policy', ?)`, i+1, now)
+	}
+	svc.db.Exec(`INSERT INTO ai_trace (id, agent_id, confidence) VALUES (1, 'A1', 0.95)`)
+
+	// A2: no listing feedback
+	for i := 0; i < 5; i++ {
+		svc.db.Exec(`INSERT INTO unified_action (id, agent_id, status, approved_by, proposed_at) VALUES (?, 'A2', 'approved', 'policy', ?)`, i+11, now)
+	}
+	svc.db.Exec(`INSERT INTO ai_trace (id, agent_id, confidence) VALUES (2, 'A2', 0.90)`)
+
+	// Run Recalculate
+	if err := svc.Recalculate(); err != nil {
+		t.Fatalf("Recalculate() error: %v", err)
+	}
+
+	// Verify A1 with listing feedback
+	a1, _ := svc.GetByAgent("A1")
+	if a1.FeedbackAdopted != 3 {
+		t.Errorf("A1 feedback_adopted: want 3, got %d", a1.FeedbackAdopted)
+	}
+	if a1.FeedbackRejected != 1 {
+		t.Errorf("A1 feedback_rejected: want 1, got %d", a1.FeedbackRejected)
+	}
+	if !approx(a1.ListingFeedbackRate, 0.75, 0.0005) {
+		t.Errorf("A1 listing_feedback_rate: want ~0.75, got %f", a1.ListingFeedbackRate)
+	}
+
+	// Verify A2 has no listing feedback
+	a2, _ := svc.GetByAgent("A2")
+	if a2.FeedbackAdopted != 0 {
+		t.Errorf("A2 feedback_adopted: want 0, got %d", a2.FeedbackAdopted)
+	}
+	if a2.FeedbackRejected != 0 {
+		t.Errorf("A2 feedback_rejected: want 0, got %d", a2.FeedbackRejected)
+	}
+	if a2.ListingFeedbackRate != 0 {
+		t.Errorf("A2 listing_feedback_rate: want 0, got %f", a2.ListingFeedbackRate)
 	}
 }

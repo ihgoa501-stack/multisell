@@ -20,13 +20,13 @@ func newTestDB(t *testing.T) *gorm.DB {
 
 func TestService_RiskSummary(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	// Create the tables referenced in RiskSummary queries.
 	exec(t, db, `CREATE TABLE IF NOT EXISTS candidate_product (id INTEGER PRIMARY KEY, title TEXT)`)
 	exec(t, db, `CREATE TABLE IF NOT EXISTS completeness_check (id INTEGER PRIMARY KEY, product_id INTEGER, status TEXT)`)
 	exec(t, db, `CREATE TABLE IF NOT EXISTS profit_summary (id INTEGER PRIMARY KEY, product_id INTEGER, status TEXT)`)
-	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_task (id INTEGER PRIMARY KEY, status TEXT)`)
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_task (id INTEGER PRIMARY KEY, status TEXT, updated_at TIMESTAMP, created_at TIMESTAMP)`)
 	exec(t, db, `CREATE TABLE IF NOT EXISTS mock_sync_status (id INTEGER PRIMARY KEY, status TEXT)`)
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT)`)
 
@@ -60,7 +60,7 @@ func TestService_RiskSummary(t *testing.T) {
 
 func TestService_RiskSummary_WithData(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS candidate_product (id INTEGER PRIMARY KEY, title TEXT)`)
 	exec(t, db, `INSERT INTO candidate_product (id, title) VALUES (1, 'Product A')`)
@@ -81,11 +81,13 @@ func TestService_RiskSummary_WithData(t *testing.T) {
 
 func TestService_Suggestions_Empty(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
 		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
 		confidence REAL, reason TEXT, risk_flags TEXT,
+		feedback_status TEXT, feedback_note TEXT,
+		completeness_score REAL, profit_margin REAL, estimated_profit REAL,
 		created_listing_task_id INTEGER, created_at TIMESTAMP
 	)`)
 
@@ -93,13 +95,207 @@ func TestService_Suggestions_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Suggestions failed: %v", err)
 	}
-	// result may be nil when listing_recommendation table has no entries
+	if len(suggestions) != 0 {
+		t.Errorf("expected 0 suggestions, got %d", len(suggestions))
+	}
+}
+
+func TestService_Suggestions_DefaultLimit(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
+		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
+		confidence REAL, reason TEXT, risk_flags TEXT,
+		feedback_status TEXT, feedback_note TEXT,
+		completeness_score REAL, profit_margin REAL, estimated_profit REAL,
+		created_listing_task_id INTEGER, created_at TIMESTAMP
+	)`)
+
+	// Zero limit should default to 20.
+	suggestions, err := svc.Suggestions(0)
+	if err != nil {
+		t.Fatalf("Suggestions failed: %v", err)
+	}
 	_ = suggestions
+}
+
+func TestService_Suggestions_WithFeedbackStatus(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS candidate_product (
+		id INTEGER PRIMARY KEY, title TEXT
+	)`)
+	exec(t, db, `INSERT INTO candidate_product (id, title) VALUES (1, 'Test Product')`)
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
+		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
+		confidence REAL, reason TEXT, risk_flags TEXT,
+		feedback_status TEXT, feedback_note TEXT,
+		completeness_score REAL, profit_margin REAL, estimated_profit REAL,
+		created_listing_task_id INTEGER, created_at TIMESTAMP
+	)`)
+	exec(t, db, `INSERT INTO listing_recommendation (id, product_id, decision, confidence, feedback_status, completeness_score, profit_margin, estimated_profit)
+		VALUES (1, 1, 'list', 0.85, 'adopted', 90, 20.5, 150.0)`)
+
+	suggestions, err := svc.Suggestions(10)
+	if err != nil {
+		t.Fatalf("Suggestions failed: %v", err)
+	}
+	if len(suggestions) != 1 {
+		t.Fatalf("expected 1 suggestion, got %d", len(suggestions))
+	}
+	s := suggestions[0]
+	if s.FeedbackStatus != "adopted" {
+		t.Errorf("expected feedback_status 'adopted', got '%s'", s.FeedbackStatus)
+	}
+	if s.ProductTitle != "Test Product" {
+		t.Errorf("expected title 'Test Product', got '%s'", s.ProductTitle)
+	}
+	if s.CompletenessScore != 90 {
+		t.Errorf("expected completeness_score 90, got %f", s.CompletenessScore)
+	}
+	if s.ProfitMargin != 20.5 {
+		t.Errorf("expected profit_margin 20.5, got %f", s.ProfitMargin)
+	}
+	if s.EstimatedProfit != 150.0 {
+		t.Errorf("expected estimated_profit 150.0, got %f", s.EstimatedProfit)
+	}
+}
+
+func TestService_RecordFeedback_InvalidAction(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
+		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
+		confidence REAL, feedback_status TEXT, feedback_note TEXT
+	)`)
+	exec(t, db, `INSERT INTO listing_recommendation (id, product_id, decision) VALUES (1, 1, 'list')`)
+
+	err := svc.RecordFeedback(1, &FeedbackInput{Action: "invalid"})
+	if err == nil {
+		t.Fatal("expected error for invalid action, got nil")
+	}
+}
+
+func TestService_RecordFeedback_Reject(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
+		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
+		confidence REAL, feedback_status TEXT, feedback_note TEXT,
+		created_listing_task_id INTEGER
+	)`)
+	exec(t, db, `INSERT INTO listing_recommendation (id, product_id, decision) VALUES (1, 1, 'list')`)
+
+	err := svc.RecordFeedback(1, &FeedbackInput{Action: "reject", Note: "not ready yet"})
+	if err != nil {
+		t.Fatalf("RecordFeedback reject failed: %v", err)
+	}
+
+	// Verify feedback status updated
+	type RecCheck struct {
+		FeedbackStatus string
+		FeedbackNote   string
+	}
+	var rc RecCheck
+	db.Table("listing_recommendation").Select("feedback_status, feedback_note").First(&rc)
+	if rc.FeedbackStatus != "rejected" {
+		t.Errorf("expected 'rejected', got '%s'", rc.FeedbackStatus)
+	}
+	if rc.FeedbackNote != "not ready yet" {
+		t.Errorf("expected note 'not ready yet', got '%s'", rc.FeedbackNote)
+	}
+}
+
+func TestService_RecordFeedback_AdoptWithListingTask(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
+		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
+		confidence REAL, feedback_status TEXT, feedback_note TEXT,
+		created_listing_task_id INTEGER
+	)`)
+	listingTaskID := int64(99)
+	exec(t, db, `INSERT INTO listing_recommendation (id, product_id, decision, created_listing_task_id)
+		VALUES (1, 1, 'list', ?)`, listingTaskID)
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_task (id INTEGER PRIMARY KEY, status TEXT, updated_at TIMESTAMP, created_at TIMESTAMP)`)
+	exec(t, db, `INSERT INTO listing_task (id, status) VALUES (99, 'blocked')`)
+	exec(t, db, `CREATE TABLE IF NOT EXISTS approval_request (
+		id INTEGER PRIMARY KEY, product_id INTEGER, request_type TEXT,
+		requester TEXT, reviewer TEXT, status TEXT, old_value TEXT,
+		new_value TEXT, reason TEXT, review_note TEXT, entity_type TEXT,
+		entity_id INTEGER, expires_at TIMESTAMP, updated_at TIMESTAMP, created_at TIMESTAMP
+	)`)
+
+	err := svc.RecordFeedback(1, &FeedbackInput{Action: "adopt", Note: "looks good"})
+	if err != nil {
+		t.Fatalf("RecordFeedback adopt failed: %v", err)
+	}
+
+	// Verify recommendation feedback_status
+	type RecCheck struct {
+		FeedbackStatus string
+		FeedbackNote   string
+	}
+	var rc RecCheck
+	db.Table("listing_recommendation").Select("feedback_status, feedback_note").First(&rc)
+	if rc.FeedbackStatus != "adopted" {
+		t.Errorf("expected 'adopted', got '%s'", rc.FeedbackStatus)
+	}
+	if rc.FeedbackNote != "looks good" {
+		t.Errorf("expected note 'looks good', got '%s'", rc.FeedbackNote)
+	}
+
+	// Verify listing task status updated to pending_approval
+	var taskStatus string
+	db.Table("listing_task").Select("status").Where("id = ?", 99).Scan(&taskStatus)
+	if taskStatus != "pending_approval" {
+		t.Errorf("expected listing_task.status 'pending_approval', got '%s'", taskStatus)
+	}
+
+	// Verify approval request was created
+	var approvalCount int64
+	db.Table("approval_request").Count(&approvalCount)
+	if approvalCount != 1 {
+		t.Errorf("expected 1 approval request, got %d", approvalCount)
+	}
+
+	var entityType string
+	db.Table("approval_request").Select("entity_type").Scan(&entityType)
+	if entityType != "listing_task" {
+		t.Errorf("expected entity_type 'listing_task', got '%s'", entityType)
+	}
+}
+
+func TestService_RecordFeedback_NotFound(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	err := svc.RecordFeedback(999, &FeedbackInput{Action: "adopt"})
+	if err == nil {
+		t.Fatal("expected error for non-existent recommendation, got nil")
+	}
 }
 
 func TestService_PlatformSyncStatus_Empty(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS mock_sync_status (
 		id INTEGER PRIMARY KEY, platform_id INTEGER, platform_name TEXT,
@@ -115,27 +311,9 @@ func TestService_PlatformSyncStatus_Empty(t *testing.T) {
 	_ = result
 }
 
-func TestService_Suggestions_DefaultLimit(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t))
-
-	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
-		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
-		confidence REAL, reason TEXT, risk_flags TEXT,
-		created_listing_task_id INTEGER, created_at TIMESTAMP
-	)`)
-
-	// Zero limit should default to 20.
-	suggestions, err := svc.Suggestions(0)
-	if err != nil {
-		t.Fatalf("Suggestions failed: %v", err)
-	}
-	_ = suggestions
-}
-
-func exec(t *testing.T, db *gorm.DB, sql string) {
+func exec(t *testing.T, db *gorm.DB, sql string, args ...interface{}) {
 	t.Helper()
-	if err := db.Exec(sql).Error; err != nil {
+	if err := db.Exec(sql, args...).Error; err != nil {
 		t.Fatalf("exec %q: %v", sql, err)
 	}
 }

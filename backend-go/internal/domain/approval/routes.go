@@ -2,14 +2,16 @@ package approval
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers approval request routes under the given group.
 // Routes are mounted at /approval.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger)
+// oplogSvc may be nil (audit logging disabled).
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, oplogSvc *operationlog.Service) {
+	svc := NewService(db, logger, oplogSvc)
 	h := NewHandler(svc)
 
 	g := rg.Group("/approval")
