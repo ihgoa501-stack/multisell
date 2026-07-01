@@ -628,4 +628,60 @@ Owner 总控台新增两个区域：
 | `cd frontend-next && npm run build` | ✅ 通过 |
 | `cd frontend-next && npm run lint` | ✅ 无新增 error/warning |
 | 安全边界 | ✅ 所有新增 API 为只读，高风险动作仍受审批保护 |
+| 安全边界 | ✅ 所有新增 API 为只读，高风险动作仍受审批保护 |
 | 文档更新 | ✅ PROJECT_STATUS.md, FUNCTION_INVENTORY.md
+
+## 本次新增内容（2026-07-01，P5 多业务场景扩大）
+
+### 业务目标
+
+扩大业务场景覆盖，让系统不只服务候选商品→上架任务单一闭环。将多个 Agent 的业务输出纳入统一的 UnifiedAction + ApprovalRequest 审批框架。
+
+### 核心改动
+
+**1. Approval-UnifiedAction 自动联动**
+
+当 Orchestrator 为一个 Agent 创建 UnifiedAction（`requires_approval=true`），且 Policy 评估结果为"需人工审批"（非 auto_approve 也非 block）时，自动创建 `approval_request` 与之关联（`entity_type="unified_action"`, `entity_id=<action.ID>`）。
+
+这使以下 Agent 的场景输出自动进入统一的审批流程：
+
+| Agent | 场景 | 动作类型 | 风险等级 |
+|-------|------|----------|----------|
+| A5 库存助理 | 库存预警 | stock_alert | medium |
+| A6 利润看护 | 利润异常监控 | profit_watch | high |
+| A7 合规专员 | 合规检查告警 | compliance_check | high |
+| G0 系统健康员 | 系统异常告警 | system_health | medium |
+| G3 折扣风控 | 折扣/促销风险验证 | discount_risk_check | high |
+| A3 广告分析师 | ACOS/广告分析 | acos_analysis | medium |
+
+**2. 审批状态自动同步**
+
+当 Owner 在审批界面 approve/reject 一个 `entity_type="unified_action"` 的审批请求时：
+- 被关联的 UnifiedAction 自动更新 `status`（approved/rejected）
+- 同时更新 `approved_by` / `approved_at` 或 `rejected_by` / `rejected_at` / `rejection_reason`
+
+### 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `internal/ai/orchestrator.go` | 新增审批请求创建逻辑（+29 行） |
+| `internal/domain/approval/service.go` | 新增审批 -> UnifiedAction 状态同步（+24 行） |
+| `internal/ai/ai_test.go` | 新增 ApprovalCreationPattern 测试 |
+| `internal/domain/approval/approval_test.go` | 新增 2 个审批同步测试 |
+
+### 新增测试
+
+| 包 | 测试 | 说明 |
+|----|------|------|
+| `ai` | `TestService_ApprovalCreationPattern` | UnifiedAction→approval_request 创建模式验证 |
+| `approval` | `TestService_Review_SyncsUnifiedAction_Approved` | 审批通过同步 UnifiedAction status |
+| `approval` | `TestService_Review_SyncsUnifiedAction_Rejected` | 审批拒绝同步 UnifiedAction status |
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./...` | ✅ 通过 |
+| `go vet ./...` | ✅ 通过 |
+| 安全边界 | ✅ 新增审批联动仍受审批保护，未绕过任何门禁 |
+| 文档更新 | ✅ PROJECT_STATUS.md
