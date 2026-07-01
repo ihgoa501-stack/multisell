@@ -199,8 +199,8 @@ func (s *Scheduler) emitTick(ctx context.Context, task Task) {
 		"schedule_id":    task.ID,
 		"description":    task.Description,
 	}
-	corrID := fmt.Sprintf("scheduler-%s-%d", task.ID, time.Now().Unix())
-	ctx = eventbus.WithCorrelationID(ctx, corrID)
+	tickID := fmt.Sprintf("sched-tick-%s-%d", task.AgentID, time.Now().UnixMilli())
+	ctx = eventbus.WithCorrelationID(ctx, tickID)
 	_, err := s.bus.Publish(ctx,
 		"scheduler.tick."+task.AgentID,
 		"scheduler",
