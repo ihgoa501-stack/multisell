@@ -121,8 +121,7 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 	}
 
 	// Wrap approval update + UA sync in a single transaction.
-	var txErr error
-	txErr = s.db.Transaction(func(tx *gorm.DB) error {
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&req).Updates(updates).Error; err != nil {
 			return err
 		}
