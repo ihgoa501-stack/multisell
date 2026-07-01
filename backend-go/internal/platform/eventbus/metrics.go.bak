@@ -54,4 +54,15 @@ var (
 		Help: "Total events delivered to handlers.",
 	})
 
+	// eventsRequeued tracks total events requeued for retry.
+	eventsRequeued = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "multisell_events_requeued_total",
+		Help: "Total events requeued for retry.",
+	})
+
+	// eventsDLQReplayed tracks total events replayed from DLQ.
+	eventsDLQReplayed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "multisell_events_dlq_replayed_total",
+		Help: "Total events replayed from DLQ.",
+	})
 )
