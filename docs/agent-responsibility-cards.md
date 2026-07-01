@@ -1,363 +1,278 @@
 # LingMirror Agent Responsibility Cards
 
-> Created: 2026-06-30 | Phase: P1
-> Each card defines a LingMirror Agent as a **business role**, not a code name.
-> High-risk actions marked **approval-required**.
+> **P1 deliverable — Canonical Agent Responsibility Cards**
+> Each card defines the Agent's business job, input data, tools/APIs, outputs,
+> allowed actions, approval requirements, forbidden actions, audit fields,
+> trigger/schedule, and success metrics.
+>
+> Last updated: 2026-07-01
 
----
-
-## A1 — 选品助理 (Product Scout)
-
-| Field | Value |
-|---|---|
-| **Business job** | 为 Owner 发现值得上架的新商品，多维度评分排序 |
-| **Input data** | category, marketplace, candidate product list, search volume, trend data |
-| **Tools / APIs** | `product_scout` (scoring ranking), `market_analysis` (market summary); ToolRegistry |
-| **Outputs** | scored & ranked candidate list (Top-20), market analysis summary |
-| **Allowed actions** | create candidate recommendation, update product scout score |
-| **Approval required** | 创建采购订单、上架发布 |
-| **Forbidden actions** | 直接创建采购订单或上架商品 |
-| **Audit fields** | agent_id, trigger, category, marketplace, top_candidates, scoring_formula |
-| **Schedule / Trigger** | manual, event‑driven (candidate.proposed) |
-| **Success metrics** | Owner adoption rate of scout recommendations, lower false positive rate |
-
----
-
-## A2 — 商品优化师 (Listing Optimizer)
+## A1 Product Scout · 选品助理
 
 | Field | Value |
 |---|---|
-| **Business job** | 优化商品标题、卖点、搜索关键词，提升曝光和转化率 |
-| **Input data** | product info (title, description, specs), competitor data, seed keywords |
-| **Tools / APIs** | `listing_optimize` (title/bullets/search terms), `keyword_research` (keyword expansion); ToolRegistry |
-| **Outputs** | optimized listing (title, bullets, search terms, keyword research), actionable suggestions |
-| **Allowed actions** | generate optimized listing draft, suggest keyword additions |
-| **Approval required** | 执行上架、修改已上架商品标题/关键词 |
-| **Forbidden actions** | 直接发布或修改已上架的 Listing |
-| **Audit fields** | agent_id, product_id, original_content, optimized_content, suggestion_id |
-| **Schedule / Trigger** | manual, triggered by A6 profit_watch (loss/threshold) |
-| **Success metrics** | listing optimization adoption rate, conversion improvement |
+| **Business job** | Discover profitable cross-border products by analyzing market trends, supplier data, and platform demand signals |
+| **Reads** | Ozon/Shopee category trends, 1688 supplier catalog, historical sales data, competitor pricing |
+| **Tools / APIs** | `product_scout`/`market_analysis` (decision points), sourcing APIs (`GET /api/v1/sourcing/recommendations`), 1688 CRUD, products CRUD, product-analysis API |
+| **Outputs** | Candidate product list with estimated margin, demand score, competition level, and sourcing link |
+| **Allowed actions** | Create candidate product record, propose market analysis report, update product scout rules |
+| **Approval required** | Creating purchase orders or committing to supplier orders |
+| **Forbidden actions** | Create purchase orders without approval, modify existing supplier contracts, change platform prices |
+| **Audit fields** | `agent_id: A1`, `decision_point`, `product_id`, `recommendation`, `confidence`, `action_id` |
+| **Trigger** | Scheduled (every 6 hr), manual via `POST /api/v1/agents/A1/actions`, on-demand via sourcing dashboard |
+| **Success metric** | Candidate-to-listing conversion rate ≥5%, Owner adoption rate ≥40%, average estimated margin ≥15% |
 
----
-
-## A3 — 广告分析师 (Ad Analyst)
+## A2 Listing Optimizer · 商品优化师
 
 | Field | Value |
 |---|---|
-| **Business job** | 分析广告投放效果，提出 ACOS 优化和投放策略建议 |
-| **Input data** | ad spend, sales, impressions, clicks, ACOS, campaign structure |
-| **Tools / APIs** | `acos_analysis` (cost analysis), `ad_optimization` (strategy); internal API for ad data |
-| **Outputs** | ACOS breakdown, ad efficiency analysis, optimization suggestions |
-| **Allowed actions** | produce analysis report, suggest ad budget adjustment |
-| **Approval required** | 调整广告预算、暂停/启动广告活动 |
-| **Forbidden actions** | 直接修改广告投放设置、操作广告账户资金 |
-| **Audit fields** | agent_id, campaign_id, original_budget, suggested_budget, analysis_id |
-| **Schedule / Trigger** | scheduled (1 hr), manual |
-| **Success metrics** | ACOS reduction, ad recommendation adoption rate |
+| **Business job** | Improve listing titles, descriptions, keywords, images, and attributes to increase organic traffic and conversion rate |
+| **Reads** | Product listing data, keyword performance, category attributes, platform listing status, platform fee config |
+| **Tools / APIs** | `listing_optimize`/`keyword_research` (decision points), listing API (`GET/PUT /api/v1/listings/:id`), product search, platform integration APIs |
+| **Outputs** | Optimized title/description draft, suggested keyword additions, image improvement recommendations |
+| **Allowed actions** | Create listing task with optimized content, suggest keyword changes, propose image regeneration via `/api/v1/imagegen` |
+| **Approval required** | Publishing optimized listing to external platform, applying price changes |
+| **Forbidden actions** | Publish listings to external platforms without Owner approval, change prices directly |
+| **Audit fields** | `agent_id: A2`, `listing_id`, `optimization_type`, `before/after_diff`, `action_id` |
+| **Trigger** | Pipeline chain from A6 profit_watch (loss/threshold → A2), scheduled (every 2 hr), manual run |
+| **Success metric** | Listing task acceptance rate ≥50%, organic traffic improvement tracked per listing |
 
----
-
-## A4 — 客服助理 (Customer Service)
+## A3 Ad Analyst · 广告分析师
 
 | Field | Value |
 |---|---|
-| **Business job** | 自动回复买家常见问题、识别意图并分派给人工客服 |
-| **Input data** | incoming message text, conversation history, platform, buyer profile |
-| **Tools / APIs** | `auto_reply` (auto response), `intent_classify` (intent routing); Support API |
-| **Outputs** | auto‑reply draft, intent classification, escalation recommendation |
-| **Allowed actions** | reply to low‑risk inquiries, tag conversation intent, suggest escalation |
-| **Approval required** | 发送退款、改价、补发等涉及资金/订单的回复 |
-| **Forbidden actions** | 发送涉及退款/改价/补发的内容 |
-| **Audit fields** | agent_id, conversation_id, intent, reply_draft, action_taken |
-| **Schedule / Trigger** | scheduled (5 min), message.incoming event |
-| **Success metrics** | auto‑reply accuracy, first‑response time reduction, escalation rate |
+| **Business job** | Monitor advertising ACOS, recommend ad budget adjustments, identify under/over-performing campaigns |
+| **Reads** | Advertising spend data, order data, profit calculations, platform fee config |
+| **Tools / APIs** | `acos_analysis`/`ad_optimization` (decision points), finance profit APIs (`GET /api/v1/finance/profit/summary`), order summary API |
+| **Outputs** | ACOS report, campaign-level budget suggestion, keyword bid recommendation, ad stop/go decision |
+| **Allowed actions** | Propose budget changes, create ad adjustment recommendation, flag high-ACOS campaigns |
+| **Approval required** | Changing ad budgets >10%, pausing campaigns with active orders, committing ad spend increases |
+| **Forbidden actions** | Modify ad budgets directly without approval, pause campaigns without warning, change bids to loss-making levels |
+| **Audit fields** | `agent_id: A3`, `campaign_id`, `current_acos`, `recommended_acos`, `budget_change`, `action_id` |
+| **Trigger** | Scheduled (every 1 hr), manual run |
+| **Success metric** | ACOS reduction on acted-upon campaigns ≥5%, false alert rate ≤20% |
 
----
-
-## A5 — 库存助理 (Inventory Alert)
+## A4 Customer Service Assistant · 客服助理
 
 | Field | Value |
 |---|---|
-| **Business job** | 监控库存健康度，红/黄/绿三级预警，建议补货数量和物流渠道 |
-| **Input data** | SKU code, sellable/locked/in‑transit stock, multi‑period sales, lead time, MOQ, safety stock days |
-| **Tools / APIs** | `stock_alert` (status + replenish), `replenishment_plan` (quantity), `logistics_choice` (channel); Inventory API |
-| **Outputs** | stock status (red/yellow/green), days of cover, replenish suggestion, logistics recommendation |
-| **Allowed actions** | create replenishment suggestion, create inventory review task |
-| **Approval required** | 创建采购订单、调整库存数据、同步至外部平台 |
-| **Forbidden actions** | 直接创建采购订单或修改库存数据 |
-| **Audit fields** | agent_id, trigger, sku_id, current_stock, recommendation, action_id |
-| **Schedule / Trigger** | scheduled (15 min), inventory.low event; triggers G3 on red alert |
-| **Success metrics** | fewer stockouts, approval adoption rate, lower false alert rate |
+| **Business job** | Auto-reply to customer inquiries, classify intent, escalate complex issues to human support |
+| **Reads** | Support conversation messages, customer order history, after-sales records, reply templates |
+| **Tools / APIs** | `auto_reply`/`intent_classify` (decision points), support conversation APIs (`GET/POST /api/v1/support/conversations`), template API, after-sales API |
+| **Outputs** | Draft reply, intent classification label, escalation recommendation |
+| **Allowed actions** | Auto-reply to routine inquiries (shipping status, return policy), propose escalation, update conversation status |
+| **Approval required** | Issuing refunds or replacements, modifying order status, sending compensation offers |
+| **Forbidden actions** | Issue refunds without approval, modify order shipping address, promise delivery dates exceeding SLA |
+| **Audit fields** | `agent_id: A4`, `conversation_id`, `intent`, `reply_template_id`, `auto_replied`, `action_id` |
+| **Trigger** | Scheduled (every 5 min), real-time event on new support message |
+| **Success metric** | Auto-resolution rate ≥60%, customer satisfaction on auto-replies ≥4.0/5.0, escalation accuracy ≥85% |
 
----
-
-## A6 — 利润看护 (Profit Watch)
+## A5 Stock Alert · 库存助理
 
 | Field | Value |
 |---|---|
-| **Business job** | 监控 SKU 级利润，检测亏损风险，提出定价和成本优化建议 |
-| **Input data** | SKU code, selling price, cost price, platform, country, fees (shipping/platform/ad), refund rate |
-| **Tools / APIs** | `profit_check` / `profit_watch` (margin analysis), `cost_optimization` (cost structure); PlatformFee API, SKU API |
-| **Outputs** | per‑unit profit, gross margin, fee breakdown, loss risk, price/cost suggestions |
-| **Allowed actions** | flag loss‑risk SKUs, suggest price adjustment, alert for cost review |
-| **Approval required** | 调整售价、修改成本数据、执行定价变更 |
-| **Forbidden actions** | 直接修改商品价格或成本 |
-| **Audit fields** | agent_id, sku_id, selling_price, cost_price, margin, suggestion, action_id |
-| **Schedule / Trigger** | scheduled (1 hr), triggered by G3 discount_risk_check (block); triggers A2 on threshold |
-| **Success metrics** | early loss detection rate, price suggestion adoption rate, margin improvement |
+| **Business job** | Detect low-stock, stockout, and overstock risks; generate replenishment suggestions |
+| **Reads** | Inventory levels, sales velocity, inbound stock, purchase orders, platform listing status |
+| **Tools / APIs** | `stock_alert` (decision point), inventory read APIs (`GET /api/v1/inventory`, `GET /api/v1/inventory/logs`), order summary, purchase API |
+| **Outputs** | Risk level (red/yellow/green), affected SKU list, safety-stock breach evidence, suggested replenishment quantity and timing |
+| **Allowed actions** | Create replenishment suggestion, create inventory review task, trigger pipeline to G3 discount_risk_check on red alert |
+| **Approval required** | Creating purchase orders, pushing inventory changes to external platforms |
+| **Forbidden actions** | Directly create purchase orders without approval, modify inventory counts in database, push inventory sync without Owner OK |
+| **Audit fields** | `agent_id: A5`, `sku_id`, `alert_level`, `current_stock`, `suggested_reorder_qty`, `evidence`, `action_id` |
+| **Trigger** | Scheduled (every 15 min), pipeline chain (red alert → G3), manual run |
+| **Success metric** | Stockout reduction ≥30%, false alert rate ≤15%, replenishment suggestion adoption ≥50% |
 
----
-
-## A7 — 合规专员 (Compliance Guard)
+## A6 Profit Watch · 利润看护
 
 | Field | Value |
 |---|---|
-| **Business job** | 检测商品合规风险，检查资质认证，标记不合规商品 |
-| **Input data** | product_id, category, platform, country, certifications, product attributes |
-| **Tools / APIs** | `compliance_check` (risk scan), `certification_lookup` (cert requirements); Compliance API |
-| **Outputs** | compliance status (pass/warning/fail), risk level, evidence summary |
-| **Allowed actions** | flag compliance risk, suggest certification action, suppress reviewed findings |
-| **Approval required** | 下架不合规商品、修改商品违禁属性 |
-| **Forbidden actions** | 直接下架商品或修改合规相关属性 |
-| **Audit fields** | agent_id, product_id, compliance_status, risk_level, evidence, action_id |
-| **Schedule / Trigger** | scheduled (2 hr), manual |
-| **Success metrics** | compliance check coverage, false positive rate, regulatory risk reduction |
+| **Business job** | Monitor real and per-product profit margins, detect margin erosion, trigger listing optimization when thresholds breached |
+| **Reads** | Finance profit data, order data, platform fees, settlement data, exchange rates |
+| **Tools / APIs** | `profit_watch`/`profit_check` (decision points), finance profit calculation APIs, settlement summary, exchange rate API |
+| **Outputs** | Profit margin trend report, at-risk SKU list with margin change, suggested price/relist/remove decision |
+| **Allowed actions** | Flag negative-margin products, create listing_optimize recommendation (pipeline to A2), propose price review |
+| **Approval required** | Changing sale prices, delisting products, initiating loss-making promotions |
+| **Forbidden actions** | Change product prices without approval, delist products without Owner review, approve loss-making promotions |
+| **Audit fields** | `agent_id: A6`, `sku_id`, `current_margin`, `threshold`, `trend_direction`, `recommended_action`, `action_id` |
+| **Trigger** | Scheduled (every 1 hr), pipeline chain from G3 (block → A6), manual run |
+| **Success metric** | Negative-margin detection within 24 hr of change, false alert rate ≤10%, price review adoption ≥40% |
 
----
-
-## A8 — 选品盈利分析 (Sourcing Profit Engine)
+## A7 Compliance Guard · 合规专员
 
 | Field | Value |
 |---|---|
-| **Business job** | 评估候选商品的全链路利润前景，给出上架推荐或阻止理由 |
-| **Input data** | product candidate info, procurement cost, logistics cost, platform fee, tariff, sales estimate |
-| **Tools / APIs** | `sourcing_recommend` (profit forecast); `/api/v1/sourcing/fetch`, `/api/v1/sourcing/recommendations` |
-| **Outputs** | profit forecast, sourcing recommendation (list/block/review), risk note |
-| **Allowed actions** | produce sourcing evaluation, recommend or block candidate |
-| **Approval required** | 创建上架任务、启动采购流程 |
-| **Forbidden actions** | 直接创建采购订单或上架任务 |
-| **Audit fields** | agent_id, candidate_id, profit_forecast, recommendation, evidence |
-| **Schedule / Trigger** | manual, on‑demand via `/api/v1/sourcing/fetch` |
-| **Success metrics** | recommendation → listing conversion, forecast accuracy vs actual |
+| **Business job** | Verify product compliance with platform policies and cross-border regulations; flag certification gaps |
+| **Reads** | Product listing content, platform certification requirements, category-specific regulations, listing task data |
+| **Tools / APIs** | `compliance_check`/`certification_lookup` (decision points), product APIs, listing API, action-policy API |
+| **Outputs** | Compliance pass/fail with evidence, missing certification list, recommended corrective actions |
+| **Allowed actions** | Block non-compliant listings from publishing, create compliance review tasks, suggest certification actions |
+| **Approval required** | Bypassing a compliance check, approving a listing with unresolved compliance flags |
+| **Forbidden actions** | Remove compliance flags from product without verification, approve certifications based on verbal claims only |
+| **Audit fields** | `agent_id: A7`, `product_id`, `compliance_status`, `flags_raised`, `certifications_checked`, `action_id` |
+| **Trigger** | Scheduled (every 2 hr), on-demand during listing task execution, manual run |
+| **Success metric** | Compliance pass-through rate without Owner intervention ≥80%, blocking genuine non-compliance ≥95% |
 
----
-
-## A9 — 批量运维 (Batch Ops)
+## A8 Sourcing Profit Analyst · 选品盈利分析
 
 | Field | Value |
 |---|---|
-| **Business job** | 执行批量商品/库存/订单更新操作，导入数据验证 |
-| **Input data** | CSV/XLSX upload(s), operation type (product/order/inventory), validation rules |
-| **Tools / APIs** | `batch_price_update`, `batch_inventory_sync`, `batch_listing_update`, `import_validation` |
-| **Outputs** | batch operation result (success/fail rows), validation report |
-| **Allowed actions** | validate imported data, execute bulk updates on internal state |
-| **Approval required** | 批量修改价格、批量同步库存到外部平台 |
-| **Forbidden actions** | 批量修改价格/库存/上架状态不经过审批 |
-| **Audit fields** | agent_id, batch_id, operation_type, success_count, fail_count, summary |
-| **Schedule / Trigger** | manual, importbatch.created event |
-| **Success metrics** | batch success rate, validation accuracy, processing speed |
+| **Business job** | Analyze 1688 sourcing opportunities with profit formula engine; score supplier quality and expected margin |
+| **Reads** | 1688 supplier/product data, logistics rate engine (A10), exchange rates, platform fee config, platform historical pricing |
+| **Tools / APIs** | `sourcing_recommend` (decision point), sourcing fetch (`POST /api/v1/sourcing/fetch`), sourcing recommendations, 1688 CRUD, logistics API, exchange rate API |
+| **Outputs** | Sourcing recommendation with profit breakdown (purchase cost + logistics + platform fee + tariff), quality score, supplier score |
+| **Allowed actions** | Propose sourcing recommendations, request 1688 product fetch, update sourcing evaluation rules |
+| **Approval required** | Initiating supplier contact, committing to purchase quantities, creating purchase orders |
+| **Forbidden actions** | Connect to 1688 suppliers without Owner approval, commit to purchase orders, share pricing strategy externally |
+| **Audit fields** | `agent_id: A8`, `product_id`, `sourcing_score`, `estimated_margin`, `supplier_id`, `recommendation`, `action_id` |
+| **Trigger** | Manual run via sourcing dashboard (`/sourcing`), on-demand via `POST /api/v1/sourcing/fetch`, scheduled weekly review |
+| **Success metric** | Sourcing recommendation accuracy (actual margin vs estimated) within ±5%, recommendation adoption ≥30% |
 
----
-
-## A10 — 物流运费引擎 (Logistics Rate Engine)
+## A9 Batch Ops · 批量运维
 
 | Field | Value |
 |---|---|
-| **Business job** | 比较物流商费率，审核运费账单，优化物流线路选择 |
-| **Input data** | package dimensions/weight, origin/destination, carrier rates, shipment history |
-| **Tools / APIs** | `carrier_compare` (rate comparison), `shipping_bill_audit` (bill review), `carrier_performance`, `logistics_route_opt` |
-| **Outputs** | carrier recommendation, bill audit findings, route optimization suggestion |
-| **Allowed actions** | recommend carrier, flag billing anomalies, suggest route change |
-| **Approval required** | 切换物流商、确认运费账单、修改物流配置 |
-| **Forbidden actions** | 直接切换物流商或确认未审核的账单 |
-| **Audit fields** | agent_id, shipment_id, carriers_compared, recommendation, audit_findings |
-| **Schedule / Trigger** | manual, shipping.bill.created event |
-| **Success metrics** | shipping cost reduction, billing audit accuracy, carrier reliability score |
+| **Business job** | Execute bulk operations: batch price updates, inventory sync, listing updates, and import file validation |
+| **Reads** | Bulk import files (CSV/XLSX), existing product/inventory/listing data, import batch records |
+| **Tools / APIs** | `batch_price_update`/`batch_inventory_sync`/`batch_listing_update`/`import_validation` (decision points), price APIs, inventory APIs, listing APIs, importbatch API |
+| **Outputs** | Batch validation report, per-item success/failure breakdown, summary of changes |
+| **Allowed actions** | Validate import files, create batch operation records, execute validated batch updates (low-risk fields only) |
+| **Approval required** | Batch price changes affecting revenue, batch inventory sync to external platforms, batch listing publishing |
+| **Forbidden actions** | Execute batch operations without dry-run validation, bypass per-item error flags, push batch changes to external platforms without batch-level approval |
+| **Audit fields** | `agent_id: A9`, `batch_id`, `operation_type`, `item_count`, `success_count`, `failure_count`, `execution_mode`, `action_id` |
+| **Trigger** | Manual via import batch UI, scheduled (off-peak hours for sync tasks) |
+| **Success metric** | Batch operation success rate ≥95%, validation accuracy ≥99%, zero phantom operations (correct item count) |
 
----
-
-## A11 — 售后管理 (Aftersales Management)
+## A10 Logistics Rate Engine · 物流运费引擎
 
 | Field | Value |
 |---|---|
-| **Business job** | 分析退货原因，提供退款决策建议，管理纠纷与售后报告 |
-| **Input data** | return request details, order history, platform policy, customer communication |
-| **Tools / APIs** | `return_analysis` (return cause analysis), `refund_decision` (refund recommendation), `dispute_manage`, `aftersales_report` |
-| **Outputs** | return cause breakdown, refund decision (approve/reject/escalate), dispute summary |
-| **Allowed actions** | suggest refund decision, categorize return reason, flag abuse pattern |
-| **Approval required** | 执行退款操作、修改订单售后状态 |
-| **Forbidden actions** | 直接执行退款、修改订单状态 |
-| **Audit fields** | agent_id, return_id, decision, reason, refund_amount, action_id |
-| **Schedule / Trigger** | manual, aftersales.request.created event |
-| **Success metrics** | refund decision accuracy, dispute win rate, return rate reduction |
+| **Business job** | Compare carrier rates, audit shipping bills, evaluate carrier performance, and recommend optimal logistics routes |
+| **Reads** | Logistics rate config (YAML), carrier channel data, shipping quotes, shipping bill batches, carrier performance metrics |
+| **Tools / APIs** | `carrier_compare`/`shipping_bill_audit`/`carrier_performance`/`logistics_route_opt` (decision points), shipping provider/channel/zone/rule APIs, logistics domain module (four pricing modes) |
+| **Outputs** | Carrier comparison table, bill discrepancy report, carrier performance scorecard, recommended route with cost breakdown |
+| **Allowed actions** | Propose carrier preference, flag billing discrepancies, create route optimization suggestions |
+| **Approval required** | Changing default carrier assignments, approving bill adjustments with carriers, modifying rate configs |
+| **Forbidden actions** | Modify carrier rate tables without approval, approve disputed bills, switch carriers without documented reason |
+| **Audit fields** | `agent_id: A10`, `carrier_id`, `route_id`, `bill_id`, `current_cost`, `suggested_cost`, `variance`, `action_id` |
+| **Trigger** | On-demand via logistics dashboard, manual run, scheduled monthly bill audit, pipeline from new shipment event |
+| **Success metric** | Shipping cost savings from route optimization ≥5%, bill discrepancy detection rate ≥90% |
 
----
-
-## G0 — 系统健康员 (System Health)
+## A11 After-sales Manager · 售后管理
 
 | Field | Value |
 |---|---|
-| **Business job** | 监控系统全局健康状态，检测异常指标，触发告警和升级 |
-| **Input data** | service metrics, error rates, scheduler health, agent execution stats, anomaly count |
-| **Tools / APIs** | `system_health` (health evaluation); Observability API, Metrics API |
-| **Outputs** | system health score, anomaly list, escalation recommendation |
-| **Allowed actions** | flag degraded services, suggest restart/remediation, escalate to G1 |
-| **Approval required** | 重启服务、修改系统配置 |
-| **Forbidden actions** | 自行重启服务或修改系统配置 |
-| **Audit fields** | agent_id, health_score, anomalies, escalation |
-| **Schedule / Trigger** | scheduled (5 min); when anomalies > 3, triggers G1 |
-| **Success metrics** | anomaly detection rate, false positive rate, MTTR improvement |
+| **Business job** | Analyze return patterns, recommend refund decisions, manage disputes, and generate after-sales performance reports |
+| **Reads** | After-sales records, customer order data, platform dispute policies, refund history |
+| **Tools / APIs** | `return_analysis`/`refund_decision`/`dispute_manage`/`aftersales_report` (decision points), aftersales CRUD APIs, order API, platform integration sync |
+| **Outputs** | Return reason analysis, refund recommendation (full/partial/reject), dispute escalation suggestion, after-sales trend report |
+| **Allowed actions** | Issue standard refunds within policy, propose dispute responses, categorize return reasons, generate after-sales summary |
+| **Approval required** | Refunds exceeding policy limits, goodwill compensation, bypassing standard dispute process |
+| **Forbidden actions** | Issue refunds exceeding policy without approval, close disputes without resolution, modify return windows |
+| **Audit fields** | `agent_id: A11`, `after_sale_id`, `order_id`, `refund_amount`, `dispute_id`, `resolution`, `action_id` |
+| **Trigger** | Scheduled (every 1 hr), on-demand via after-sales dashboard, pipeline from new return event |
+| **Success metric** | Auto-refund accuracy ≥90%, dispute win rate maintained or improved, after-sales SLA compliance ≥95% |
 
----
-
-## G1 — 驾驶舱 (Dashboard Overview)
+## G0 System Health · 系统健康员
 
 | Field | Value |
 |---|---|
-| **Business job** | 汇总系统全局概览数据，为 Owner 提供经营总控台数据 |
-| **Input data** | risk summary, agent suggestions, platform sync status, pending approvals |
-| **Tools / APIs** | `dashboard_overview` (aggregated view); Owner API, Dashboard API |
-| **Outputs** | aggregated business overview, risk count, action‑needed summary |
-| **Allowed actions** | render read‑only dashboard, summarize state |
-| **Approval required** | 不适用（只读） |
-| **Forbidden actions** | 任何写操作（只读 Agent） |
-| **Audit fields** | agent_id, snapshot_ts, risk_count, suggestion_count |
-| **Schedule / Trigger** | scheduled (5 min), triggered by G0 on anomaly > 3 |
-| **Success metrics** | dashboard freshness, Owner action rate from dashboard |
+| **Business job** | Monitor overall Agent system health, detect anomalies in agent behavior, trigger governance interventions |
+| **Reads** | Agent decision logs, SPC control limits, anomaly reports, entropy module scores, agent health scores |
+| **Tools / APIs** | `system_health` (decision point), entropy agent health API, AgentOS status API, SPC control queries |
+| **Outputs** | System health score, anomaly list with severity (warning/critical), list of unhealthy agents, suggested governance actions |
+| **Allowed actions** | Pause degraded agents (circuit breaker), trigger agent health recalculation, notify Owner when anomaly >3 (pipeline to G1) |
+| **Approval required** | Restarting agents, resetting SPC baselines, disabling agents permanently |
+| **Forbidden actions** | Disable agents without Owner knowledge, clear anomaly logs without review, modify SPC control limits arbitrarily |
+| **Audit fields** | `agent_id: G0`, `anomaly_type`, `severity`, `affected_agents`, `health_scores`, `circuit_breaker_state`, `action_id` |
+| **Trigger** | Scheduled (every 5 min), pipeline (anomaly >3 → G1 dashboard_overview) |
+| **Success metric** | Anomaly detection within 5 min of occurrence, false positive rate ≤20%, system uptime impact from agent issues minimized |
 
----
-
-## G2 — 仓储专员 (Warehouse & Customs)
+## G1 Dashboard · 驾驶舱
 
 | Field | Value |
 |---|---|
-| **Business job** | 分析仓储路由选择，处理报关清关建议，优化库存分布 |
-| **Input data** | warehouse inventory levels, customs regulations, destination country, transit times |
-| **Tools / APIs** | `warehouse_routing` (routing optimization), `customs_declare` (customs guidance); Logistics API, Warehouse API |
-| **Outputs** | warehouse routing suggestion, customs documentation checklist, cost‑time tradeoff |
-| **Allowed actions** | suggest warehouse routing, flag customs risk, generate customs doc checklist |
-| **Approval required** | 修改仓储配置、执行报关操作 |
-| **Forbidden actions** | 直接修改仓储配置或提交报关材料 |
-| **Audit fields** | agent_id, shipment_id, routing_suggestion, customs_risk, checklist |
-| **Schedule / Trigger** | scheduled (1 hr), manual |
-| **Success metrics** | customs clearance time reduction, warehouse utilization improvement |
+| **Business job** | Provide agent system overview to Owner, aggregate agent status, decision stats, risk summaries, and performance metrics |
+| **Reads** | AgentOS status and work items, trust scores, anomaly reports from G0, action policy rules |
+| **Tools / APIs** | `dashboard_overview` (decision point), AgentOS overview API, trustscore API, entropy API, action-policy API |
+| **Outputs** | Dashboard summary: total decisions (7d), acceptance rate, pending confirmations, active risks, agent health grid, recent anomalies |
+| **Allowed actions** | Aggregate and present Agent data, generate dashboard views, flag areas needing Owner attention |
+| **Approval required** | None (read-only aggregation) |
+| **Forbidden actions** | Execute Agent actions, modify any system state, change approval policies |
+| **Audit fields** | `agent_id: G1`, `dashboard_version`, `data_timestamp` (read-only agent, minimal audit) |
+| **Trigger** | Scheduled (every 5 min), pipeline from G0 (anomaly >3), on-demand via Owner dashboard |
+| **Success metric** | Dashboard data freshness ≤5 min, actionable insight shown per visit |
 
----
-
-## G3 — 折扣风控 (Discount Risk Control)
+## G2 Warehouse & Customs · 仓储专员
 
 | Field | Value |
 |---|---|
-| **Business job** | 检测折扣、促销活动的利润风险和违规风险，阻止亏损上架 |
-| **Input data** | promotion details, discount rate, product margin, platform policy, historical campaign data |
-| **Tools / APIs** | `discount_risk_check` (risk evaluation), `promotion_validation` (policy compliance); Price API, Platform API |
-| **Outputs** | risk assessment (block/pass/review), margin impact estimate, policy compliance status |
-| **Allowed actions** | block high‑risk discount, flag policy violation, pass safe promotions |
-| **Approval required** | 审批高风险折扣、修改促销价格 |
-| **Forbidden actions** | 直接修改促销价格或折扣率 |
-| **Audit fields** | agent_id, promotion_id, discount_rate, risk_level, decision, margin_impact |
-| **Schedule / Trigger** | scheduled (30 min), triggered by A5 stock_alert (red); triggers A6 on block |
-| **Success metrics** | false block rate, prevented margin‑eroding promotions, compliance pass rate |
+| **Business job** | Optimize warehouse routing decisions and customs declaration processes for cross-border shipments |
+| **Reads** | Inventory levels, order shipping addresses, logistics zone data, customs regulations per country, carrier performance |
+| **Tools / APIs** | `warehouse_routing`/`customs_declare` (decision points), inventory API, shipping provider/zone APIs, logistics rate engine (A10) |
+| **Outputs** | Optimal warehouse assignment for outbound orders, customs documentation checklist, tariff code suggestion |
+| **Allowed actions** | Suggest warehouse routing for orders, propose customs classification, flag documents missing for customs |
+| **Approval required** | Changing assigned warehouse mid-fulfillment, declaring non-standard tariff codes, overriding zone assignments |
+| **Forbidden actions** | Modify warehouse inventory allocations without approval, declare incorrect tariff codes, override customs holds |
+| **Audit fields** | `agent_id: G2`, `order_id`, `warehouse_id`, `tariff_code`, `document_status`, `route_suggestion`, `action_id` |
+| **Trigger** | Scheduled (every 1 hr), on-demand per order, pipeline from new fulfillment event |
+| **Success metric** | Correct warehouse routing ≥90%, customs clearance pass rate maintained, documentation gap detection ≥95% |
 
----
-
-## trustscore — 信任分引擎 (Trust Score)
+## G3 Discount Risk · 折扣风控
 
 | Field | Value |
 |---|---|
-| **Business job** | 计算 Agent 信任分，基于历史决策质量、采纳率、准确率 |
-| **Input data** | agent action history, approval/adoption records, accuracy metrics, violation log |
-| **Tools / APIs** | trust score CRUD API, action policy API |
-| **Outputs** | per‑agent trust score (0‑100), score trend, gating recommendation |
-| **Allowed actions** | recalculate scores, recommend autonomy‑level adjustment |
-| **Approval required** | 提高 Agent 自主化等级 |
-| **Forbidden actions** | 未经记录直接修改 Agent 自主化等级 |
-| **Audit fields** | agent_id, score_before, score_after, calculation_formula, timestamp |
-| **Schedule / Trigger** | scheduled (1 hr) |
-| **Success metrics** | score correlation with actual decision quality, autonomy‑level accuracy |
+| **Business job** | Evaluate discount and promotion proposals for profitability impact and policy compliance |
+| **Reads** | Inventory levels (from A5 stock alert), pricing data, profit calculations, promotion history, action policy rules |
+| **Tools / APIs** | `discount_risk_check`/`promotion_validation` (decision points), inventory API, price API, finance profit API, action-policy API |
+| **Outputs** | Discount risk score, profitability impact estimate, promotion policy compliance check, block/pass/warn decision |
+| **Allowed actions** | Block loss-making promotions, propose discount adjustment, create profit_watch task (pipeline to A6 on block) |
+| **Approval required** | Approving high-discount promotions exceeding margin threshold, bypassing discount risk block |
+| **Forbidden actions** | Approve promotions below cost, override discount policy without Owner, change product prices for promotion |
+| **Audit fields** | `agent_id: G3`, `promotion_id`, `discount_percent`, `current_margin`, `risk_score`, `decision`, `action_id` |
+| **Trigger** | Pipeline from A5 stock_alert (red), scheduled (every 30 min), on-demand via Owner cockpit |
+| **Success metric** | Loss-making promotion prevention ≥95%, discount policy compliance ≥99%, false block rate ≤10% |
 
----
-
-## entropy — 熵防御 (Entropy Defense)
+## Trust Score Service · 信任分
 
 | Field | Value |
 |---|---|
-| **Business job** | 自净化系统：检测 Agent 规则老化、退化、冲突，执行 TTL 清理和预算约束 |
-| **Input data** | agent rule database, action logs, timestamps, budget usage, decay metrics |
-| **Tools / APIs** | entropy metrics API, TTL sweeper, budget enforcer, decay scheduler, merge detector, regret analyzer, rule health scorer, SPC controller |
-| **Outputs** | entropy summary, stale rule cleanup list, budget violations, health scores |
-| **Allowed actions** | drop stale TTL‑expired rules, flag budget overruns, report rule health |
-| **Approval required** | 清理仍然活跃但过期的规则、调整预算上限 |
-| **Forbidden actions** | 删除正在被引用的规则、全局禁用 Agent |
-| **Audit fields** | agent_id, rule_id, action (sweep/budget/decay/merge), outcome |
-| **Schedule / Trigger** | scheduled (6 hr) |
-| **Success metrics** | rule health score improvement, stale rule reduction, budget violation decrease |
+| **Business job** | Recalculate and maintain trust scores for all agents, determining autonomy eligibility and adoption metrics |
+| **Reads** | Agent action table (adopted/rejected/failed counts), listing recommendation feedback (adopted/rejected), default agent roster |
+| **Tools / APIs** | `recalculate` (decision point), trustscore internal database queries, agent decision audit tables, listing feedback tables |
+| **Outputs** | Per-agent trust score (0.0–1.0), autonomy level recommendation, score breakdown by dimension |
+| **Allowed actions** | Recalculate scores, update autonomy levels based on score thresholds, record agent feedback events |
+| **Approval required** | Manually overriding trust scores, lowering autonomy thresholds, resetting score history |
+| **Forbidden actions** | Allow low-trust agents to execute high-risk actions, delete score history without audit trail |
+| **Audit fields** | `service: trustscore`, `agent_id`, `previous_score`, `new_score`, `adopted_count`, `rejected_count`, `failed_count`, `autonomy_level` |
+| **Trigger** | Scheduled (every 1 hr), on-demand from Owner dashboard, triggered by `RecordAgentFeedback` call |
+| **Success metric** | Trust score correlates with Owner adoption (r ≥ 0.5), recalculation completes <5s, no high-autonomy assigned to low-trust agents |
 
----
-
-## M1 — 代谢评分 (Metabolism / Excretion Scoring)
+## Entropy Defense · 自净化系统
 
 | Field | Value |
 |---|---|
-| **Business job** | 评估 Agent 代谢健康度，标记低效/休眠 Agent 建议清理或升级 |
-| **Input data** | agent activity logs, execution count, success rate, last active timestamp, trust score |
-| **Tools / APIs** | `excretion_scoring` (metabolism evaluation); Metabolism API, Agent Activity API |
-| **Outputs** | metabolism score per agent, excretion recommendation (keep/warn/deprecate) |
-| **Allowed actions** | flag low‑metabolism agents, suggest deprecation or upgrade |
-| **Approval required** | 废弃 Agent、移除 Agent 注册 |
-| **Forbidden actions** | 自行注销或移除 Agent |
-| **Audit fields** | agent_id, metabolism_score, activity_count, recommendation, last_active |
-| **Schedule / Trigger** | scheduled (1 hr) |
-| **Success metrics** | early detection of degenerating agents, false deprecation rate |
+| **Business job** | Self-cleansing: monitor agent behavior for statistical anomalies, apply SPC control limits, detect rule degradation, run health checks |
+| **Reads** | Agent health scores, SPC control limit tables, personal rule health, agent decision logs |
+| **Tools / APIs** | `defend` (decision point), entropy internal (agent_health, defenses, spc_control), rule management, observability anomaly reporting |
+| **Outputs** | Entropy summary (overrides detected, unhealthy agents, SPC boundary breaches), agent health score, rule health distribution |
+| **Allowed actions** | Flag unhealthy agents, recommend rule pauses, alert on SPC boundary breaches, log defense actions |
+| **Approval required** | Pausing rules permanently, overriding SPC limits, disabling defense mechanisms |
+| **Forbidden actions** | Pause rules without audit trail, silently clear anomaly records, disable auto-defense without Owner acknowledgment |
+| **Audit fields** | `component: entropy`, `agent_id`, `health_score`, `rules_paused`, `spc_breaches`, `defense_action`, `overrides_detected` |
+| **Trigger** | Scheduled (every 6 hr), on-demand via entropy dashboard |
+| **Success metric** | Unhealthy agents detected within 1 cycle, false positive ≤15%, SPC breach detection ≥90% |
 
----
+## M1 Metabolism · 代谢评分引擎
 
-## Agent Pipeline Chain
-
-Events chain referenced across agents:
-
-```
-A5 stock_alert (red)              → G3 discount_risk_check
-G3 discount_risk_check (block)     → A6 profit_watch
-A6 profit_watch (loss/threshold)   → A2 listing_optimize
-G0 system_health (anomaly > 3)    → G1 dashboard_overview
-```
-
-All scheduled agents: G0 / A4 / G1 / A5 / G3 / A6 / A3 / G2 / A7 / M1 / trustscore / entropy
-
-## Risk Level Summary
-
-| Agent | Highest Risk Action | Approval Required |
-|-------|-------------------|-------------------|
-| A1 | 创建采购订单 / 上架 | Yes |
-| A2 | 修改已上架 Listing | Yes |
-| A3 | 调整广告预算 | Yes |
-| A4 | 退款 / 改价回复 | Yes |
-| A5 | 创建采购订单 | Yes |
-| A6 | 调整商品售价 | Yes |
-| A7 | 下架商品 | Yes |
-| A8 | 创建上架任务 | Yes |
-| A9 | 批量修改价格/库存 | Yes |
-| A10 | 切换物流商 | Yes |
-| A11 | 执行退款 | Yes |
-| G0 | 重启服务 | Yes |
-| G1 | 不适用（只读） | No |
-| G2 | 修改仓储配置 / 报关 | Yes |
-| G3 | 审批高风险折扣 | Yes |
-| trustscore | 修改自主化等级 | Yes |
-| entropy | 清理活跃规则 / 调整预算 | Yes |
-| M1 | 废弃 Agent | Yes |
-
-## Forbidden Actions (All Agents)
-
-The following actions are **forbidden for every Agent** unless explicitly approved by Owner via written policy:
-
-- 直接修改商品价格、库存、订单状态
-- 直接执行退款
-- 直接发布商品到外部平台
-- 修改权限、凭证、RBAC 设置
-- 销毁或删除业务数据
-- 绕过审批系统执行高风险的 Action
-- 修改 Agent 自主化等级
-- 执行未经授权的系统配置变更
-- 操作资金、结算、平台费用数据
+| Field | Value |
+|---|---|
+| **Business job** | Score and excrete stale/low-quality events, data artifacts, and abandoned workflows to prevent system data decay |
+| **Reads** | Event outbox table, metabolism scoring config, event age/freshness, semantic scorer (LLM for gray-zone classification 0.4–0.75) |
+| **Tools / APIs** | `excretion_scoring` (decision point), metabolism internal (service.go — TTL=7d), event outbox adapter, database queries for pending events |
+| **Outputs** | Per-event excretion score (0.0–1.0), excretable TTL-exceeded events, gray-zone events needing semantic scoring, dry-run report |
+| **Allowed actions** | Score events, mark events as excretable, run dry-run without side effects, suggest cleanup of abandoned workflows |
+| **Approval required** | Actually deleting/excreting marked events (Owner review of dry-run), modifying excretion thresholds or TTL |
+| **Forbidden actions** | Delete events without dry-run preview, modify event payloads, change event producer data |
+| **Audit fields** | `agent_id: M1`, `event_id`, `score`, `excretable`, `reason`, `dry_run` flag |
+| **Trigger** | Scheduled (every 1 hr), manual via `POST /api/v1/metabolism/run`, dry-run via `POST /api/v1/metabolism/dry-run` |
+| **Success metric** | Data decay rate reduced (fewer orphaned events ≥7 days old), excretion accuracy ≥90%, zero false-excretion of active data |
