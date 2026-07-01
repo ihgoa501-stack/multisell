@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -39,7 +40,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get sql.DB: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&AITrace{}, &AITraceEvent{}, &AIEvidenceRef{}, &UnifiedAction{}, &trustscore.TrustScore{}, &actionpolicy.PolicyRule{}); err != nil {
+	if err := db.AutoMigrate(&AITrace{}, &AITraceEvent{}, &AIEvidenceRef{}, &UnifiedAction{}, &trustscore.TrustScore{}, &actionpolicy.PolicyRule{}, &approval.ApprovalRequest{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -419,5 +420,70 @@ func TestStubProvider_Stream(t *testing.T) {
 	}
 	if sb.Len() == 0 {
 		t.Fatal("empty stream output")
+	}
+}
+
+// Test 3: Verify the orchestrator approval creation pattern — creating a
+// UnifiedAction with requires_approval=true, then manually creating a linked
+// approval_request (as the orchestrator would), and verifying through the
+// approval service.
+func TestService_ApprovalCreationPattern(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.AutoMigrate(&approval.ApprovalRequest{}); err != nil {
+		t.Fatalf("migrate approval_request: %v", err)
+	}
+
+	aiSvc := NewService(db, testLogger())
+	approvalSvc := approval.NewService(db, testLogger(), nil)
+
+	// Create a UnifiedAction with requires_approval=true
+	a, err := aiSvc.CreateAction(&CreateActionInput{
+		SourceTable: "ai_trace",
+		SourceID:    "trc_test_3",
+		SourceType:  "agent_run",
+		AgentID:     "A5",
+		ActionType:  "stock_alert",
+		Title:       "补货建议",
+		RiskLevel:   "medium",
+		ProposedBy:  "agent:A5",
+	})
+	if err != nil {
+		t.Fatalf("CreateAction: %v", err)
+	}
+	if a.Status != "suggested" {
+		t.Fatalf("expected status 'suggested', got %q", a.Status)
+	}
+	if !a.RequiresApproval {
+		t.Fatal("expected RequiresApproval=true for supervised agent action")
+	}
+
+	// Manually create an approval_request linked to the unified_action
+	// (this is the pattern the orchestrator uses).
+	req, err := approvalSvc.Create(&approval.CreateApprovalInput{
+		ProductID:   1,
+		RequestType: "unified_action",
+		Requester:   "agent:A5",
+		EntityType:  "unified_action",
+		EntityID:    a.ID,
+	})
+	if err != nil {
+		t.Fatalf("create approval: %v", err)
+	}
+
+	// Verify entity_type and entity_id are correctly set
+	if req.EntityType != "unified_action" {
+		t.Errorf("entity_type = %q, want %q", req.EntityType, "unified_action")
+	}
+	if req.EntityID != a.ID {
+		t.Errorf("entity_id = %d, want %d", req.EntityID, a.ID)
+	}
+
+	// Verify it can be queried from the approval service
+	has, err := approvalSvc.HasPendingForEntity("unified_action", a.ID)
+	if err != nil {
+		t.Fatalf("HasPendingForEntity: %v", err)
+	}
+	if !has {
+		t.Error("expected HasPendingForEntity to return true for pending approval")
 	}
 }
