@@ -11,7 +11,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -506,22 +505,6 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 	// Idempotency: already completed — return success
 	if task.Status == "completed" {
 		return &task, nil
-	}
-
-	// Validation gate
-	if err := s.validateExecutePreconditions(&task); err != nil {
-		return nil, err
-	}
-
-	// Audit: execution started
-	s.writeAudit("listing_task.execute", "started", fmt.Sprintf("%d", taskID), operator,
-		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID))
-
-	oldStatus := task.Status
-
-		if err := s.db.Model(&task).Update("status", "pending").Error; err != nil {
-			return nil, err
-		}
 	}
 
 	// Validation gate

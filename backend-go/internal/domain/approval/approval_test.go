@@ -309,7 +309,7 @@ func TestService_EntityTypeEntityID(t *testing.T) {
 func TestService_FindApprovedByTarget(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	db.Create(&ApprovalRequest{
 		ProductID:   101,
@@ -333,7 +333,7 @@ func TestService_FindApprovedByTarget(t *testing.T) {
 func TestService_FindApprovedByTargetRejectsPending(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	db.Create(&ApprovalRequest{
 		ProductID:   101,

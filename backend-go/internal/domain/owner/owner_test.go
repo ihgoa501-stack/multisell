@@ -102,8 +102,6 @@ func TestService_Suggestions_Empty(t *testing.T) {
 
 func TestService_Suggestions_DefaultLimit(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t))
 	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
@@ -124,8 +122,6 @@ func TestService_Suggestions_DefaultLimit(t *testing.T) {
 
 func TestService_Suggestions_WithFeedbackStatus(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t))
 	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS candidate_product (
@@ -169,8 +165,6 @@ func TestService_Suggestions_WithFeedbackStatus(t *testing.T) {
 
 func TestService_RecordFeedback_InvalidAction(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t))
 	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
@@ -187,8 +181,6 @@ func TestService_RecordFeedback_InvalidAction(t *testing.T) {
 
 func TestService_RecordFeedback_Reject(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t))
 	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
@@ -220,8 +212,6 @@ func TestService_RecordFeedback_Reject(t *testing.T) {
 
 func TestService_RecordFeedback_AdoptWithListingTask(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t))
 	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
@@ -237,7 +227,7 @@ func TestService_RecordFeedback_AdoptWithListingTask(t *testing.T) {
 	exec(t, db, `CREATE TABLE IF NOT EXISTS approval_request (
 		id INTEGER PRIMARY KEY, product_id INTEGER, request_type TEXT,
 		requester TEXT, reviewer TEXT, status TEXT, old_value TEXT,
-		new_value TEXT, reason TEXT, review_note TEXT, entity_type TEXT,
+		new_value TEXT, reason TEXT, review_note TEXT, target_type TEXT, target_id INTEGER, risk_level TEXT, entity_type TEXT,
 		entity_id INTEGER, expires_at TIMESTAMP, updated_at TIMESTAMP, created_at TIMESTAMP
 	)`)
 
@@ -283,8 +273,6 @@ func TestService_RecordFeedback_AdoptWithListingTask(t *testing.T) {
 
 func TestService_RecordFeedback_NotFound(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t))
 	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	err := svc.RecordFeedback(999, &FeedbackInput{Action: "adopt"})
@@ -325,7 +313,7 @@ func TestService_RiskSummaryIncludesPendingApprovalsAndBlockedTasks(t *testing.T
 		&listingtask.ListingTask{},
 		&loop.ListingRecommendation{},
 	)
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
 
 	db.Create(&approval.ApprovalRequest{
 		ProductID: 1, RequestType: "publish", Requester: "A8",

@@ -864,19 +864,6 @@ func (c *decisionCache) cacheKey(agentID, decisionPoint string, ctx map[string]i
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func (c *decisionCache) get(agentID, decisionPoint string, ctx map[string]interface{}) (*RunAgentResult, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	key := c.cacheKey(agentID, decisionPoint, ctx)
-	entry, ok := c.entries[key]
-	if !ok {
-		return nil, false
-	}
-	if time.Now().After(entry.expiresAt) {
-		return nil, false
-	}
-	return entry.result, true
-}
 
 func (c *decisionCache) set(agentID, decisionPoint string, ctx map[string]interface{}, result *RunAgentResult) {
 	c.mu.Lock()
