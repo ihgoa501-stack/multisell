@@ -300,6 +300,127 @@ func TestService_PlatformSyncStatus_Empty(t *testing.T) {
 	_ = result
 }
 
+func TestService_AgentActivity_Empty(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS unified_action (
+		id INTEGER PRIMARY KEY, title TEXT, agent_id TEXT, squad_id TEXT,
+		risk_level TEXT, status TEXT, confidence REAL, description TEXT,
+		created_at TIMESTAMP, proposed_at TIMESTAMP
+	)`)
+
+	result, err := svc.AgentActivity()
+	if err != nil {
+		t.Fatalf("AgentActivity failed: %v", err)
+	}
+	if result.CurrentlyRunning != 0 {
+		t.Errorf("expected 0 currently_running, got %d", result.CurrentlyRunning)
+	}
+	if len(result.RecentEvents) != 0 {
+		t.Errorf("expected 0 events, got %d", len(result.RecentEvents))
+	}
+}
+
+func TestService_AgentActivity_WithData(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS unified_action (
+		id INTEGER PRIMARY KEY, title TEXT, agent_id TEXT, squad_id TEXT,
+		risk_level TEXT, status TEXT, confidence REAL, description TEXT,
+		created_at TIMESTAMP, proposed_at TIMESTAMP
+	)`)
+	exec(t, db, `INSERT INTO unified_action (id, title, agent_id, status, risk_level, created_at)
+		VALUES (1, 'Action A', 'A2', 'executing', 'medium', datetime('now', '-3 minutes'))`)
+	exec(t, db, `INSERT INTO unified_action (id, title, agent_id, status, risk_level, created_at)
+		VALUES (2, 'Action B', 'A5', 'completed', 'low', datetime('now', '-2 minutes'))`)
+	exec(t, db, `INSERT INTO unified_action (id, title, agent_id, status, risk_level, created_at)
+		VALUES (3, 'Action C', 'A6', 'failed', 'high', datetime('now', '-1 minutes'))`)
+
+	result, err := svc.AgentActivity()
+	if err != nil {
+		t.Fatalf("AgentActivity failed: %v", err)
+	}
+	if result.CurrentlyRunning != 1 {
+		t.Errorf("expected 1 currently_running, got %d", result.CurrentlyRunning)
+	}
+	// Verify events are returned (at least the ones we inserted)
+	if len(result.RecentEvents) == 0 {
+		t.Fatal("expected at least 1 event")
+	}
+}
+
+func TestService_PipelineChain_Empty(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS unified_action (
+		id INTEGER PRIMARY KEY, title TEXT, agent_id TEXT, squad_id TEXT,
+		risk_level TEXT, status TEXT, confidence REAL, description TEXT,
+		created_at TIMESTAMP, proposed_at TIMESTAMP
+	)`)
+
+	result, err := svc.PipelineChain()
+	if err != nil {
+		t.Fatalf("PipelineChain failed: %v", err)
+	}
+	if len(result.Chains) == 0 {
+		t.Fatal("expected at least 1 pipeline chain")
+	}
+	// All chains should be pending or unknown since no data.
+	for _, chain := range result.Chains {
+		if chain.Name == "" {
+			t.Error("chain has empty name")
+		}
+		if len(chain.Steps) == 0 {
+			t.Errorf("chain %q has 0 steps", chain.Name)
+		}
+	}
+}
+
+func TestService_PipelineChain_WithPartialData(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS unified_action (
+		id INTEGER PRIMARY KEY, title TEXT, agent_id TEXT, squad_id TEXT,
+		risk_level TEXT, status TEXT, confidence REAL, description TEXT,
+		created_at TIMESTAMP, proposed_at TIMESTAMP
+	)`)
+	// Insert completed action for A5 - should make first chain partially done.
+	exec(t, db, `INSERT INTO unified_action (id, title, agent_id, status, created_at)
+		VALUES (1, 'Stock Check', 'A5', 'completed', datetime('now'))`)
+
+	result, err := svc.PipelineChain()
+	if err != nil {
+		t.Fatalf("PipelineChain failed: %v", err)
+	}
+
+	// Find the first chain (Stock Alert → Discount Check → Profit Watch).
+	var stockChain *ChainStatus
+	for i, chain := range result.Chains {
+		if chain.Steps[0].AgentID == "A5" {
+			stockChain = &result.Chains[i]
+			break
+		}
+	}
+	if stockChain == nil {
+		t.Fatal("expected stock alert chain")
+	}
+
+	// A5 step should be completed.
+	foundA5 := false
+	for _, step := range stockChain.Steps {
+		if step.AgentID == "A5" && step.Status == "completed" {
+			foundA5 = true
+		}
+	}
+	if !foundA5 {
+		t.Error("expected A5 step status 'completed'")
+	}
+}
+
 func exec(t *testing.T, db *gorm.DB, sql string, args ...interface{}) {
 	t.Helper()
 	if err := db.Exec(sql, args...).Error; err != nil {

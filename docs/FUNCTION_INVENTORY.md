@@ -116,7 +116,7 @@
 |---|---|
 | AI chat、run、trace、action | `ai` |
 | Agent 列表、详情、执行入口 | `agent` |
-| AgentOS 总控台、工作队列、自治概览 | `agentos` |
+| AgentOS 总控台、工作队列、工作项详情、Agent 时间线、自治概览 | `agentos` |
 | Agent 规则 | `agentrule` |
 | Action policy | `actionpolicy` |
 | 熵监控与防御 | `entropy` |

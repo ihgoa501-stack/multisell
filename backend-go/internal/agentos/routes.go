@@ -17,5 +17,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		agentos.GET("/status", h.Status)
 		agentos.GET("/work-items", h.WorkItems)
 		agentos.GET("/autonomy", h.Autonomy)
+		agentos.GET("/work-items/:id", h.WorkItemDetail)
+		agentos.GET("/agent-timeline", h.AgentTimeline)
 	}
 }

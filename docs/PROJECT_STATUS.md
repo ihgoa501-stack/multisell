@@ -544,3 +544,88 @@ P1 deliverable（根据 `docs/superpowers/plans/2026-06-30-ai-agentos-final-exec
 ### 继续 P2 的条件
 
 P1 验收完成，可以安全进入 P2（Typed Action And Tool Contract）。
+
+## 本次新增内容（2026-07-01，P4 AgentOS 协同驾驶舱）
+
+### 业务目标
+
+将 P3 的单一业务闭环（候选商品→上架任务）扩展为多 Agent 协同可视化能力，让 Owner 能看清 AI 正在做什么、为什么做、卡在哪里。
+
+### 新增后端 API
+
+| Method | Path | Description | 用途 |
+|--------|------|-------------|------|
+| GET | /api/v1/agentos/work-items/:id | WorkItemDetail | 单个工作项完整上下文（Agent、实体、审批、审计、上下游链） |
+| GET | /api/v1/agentos/agent-timeline | AgentTimeline | 每个 Agent 最近操作列表 + 状态汇总 |
+| GET | /api/v1/owner/agent-activity | AgentActivity | Owner 看板 Agent 活动摘要（运行中/已完成/失败/Top 事件） |
+| GET | /api/v1/owner/pipeline-chain | PipelineChain | Agent 流程管道状态（A5→G3→A6 等管道链健康度） |
+
+### 后端变更
+
+| 文件 | 变更说明 |
+|------|----------|
+| `internal/agentos/service.go` | 新增 `WorkItemDetail`、`AgentTimeline` 方法及配套类型 |
+| `internal/agentos/handler.go` | 新增 WorkItemDetail、AgentTimeline 处理器 |
+| `internal/agentos/routes.go` | 注册 GET /work-items/:id 和 GET /agent-timeline |
+| `internal/domain/owner/service.go` | 新增 `AgentActivity`、`PipelineChain` 方法及配套类型 |
+| `internal/domain/owner/handler.go` | 新增 AgentActivity、PipelineChain 处理器 |
+| `internal/domain/owner/routes.go` | 注册 GET /agent-activity 和 GET /pipeline-chain |
+
+### 前端变更
+
+| 页面 | 变更说明 |
+|------|----------|
+| `owner/page.tsx` | 新增 Agent Activity 活动摘要卡片 + Agent 流程管道链可视化 |
+| `agentos/page.tsx` | 新增 Agent Timeline 折叠面板（按 Agent 分组最近操作 + 状态汇总）+ 工作项详情 Drawer |
+
+### 工作项详情（WorkItemDetail）
+
+点击工作队列中的任意项，Drawer 展示：
+- 基本信息（ID、Agent、Squad、风险、状态、置信度、提议时间）
+- 决策点、输入输出摘要
+- 关联业务实体（listing_task 等）状态
+- 关联审批记录
+- 上下游链（同 trace_id 的前后操作）
+- 审计日志（最近的 operation_log 条目）
+
+### Agent 时间线（AgentTimeline）
+
+按 Agent 分组展示最近操作，每条显示：
+- 标题、状态（彩色标签）、风险等级、置信度
+- 关联实体类型和 ID
+- 状态汇总统计（suggested: 3, approved: 1, failed: 1）
+
+### Owner Agent 活动摘要
+
+Owner 总控台新增两个区域：
+- **Agent 活动摘要** — 当前运行中/今日完成/今日失败统计 + 最近 20 条操作事件
+- **Agent 流程管道** — 三条已知管道链（A5→G3→A6、A6→A2、G0→G1）的步骤状态 + 整体健康度
+
+### 安全边界
+
+- 所有新增 API 是只读聚合，不涉及任何 mutation
+- 高风险动作继续受审批保护，P4 未修改审批逻辑
+- 所有查询使用 JWT 保护路由（agentos 和 owner 组已受保护）
+
+### 新增测试
+
+| 包 | 测试 | 说明 |
+|----|------|------|
+| `agentos` | `TestService_WorkItemDetail` | 有效 ID 返回正确字段 |
+| `agentos` | `TestService_WorkItemDetail_NotFound` | 无效 ID 返回错误 |
+| `agentos` | `TestService_AgentTimeline` | 多 Agent 分组 + 状态统计 |
+| `owner` | `TestService_AgentActivity_Empty` | 空表返回零值 |
+| `owner` | `TestService_AgentActivity_WithData` | 多种状态返回正确计数 |
+| `owner` | `TestService_PipelineChain_Empty` | 空表返回已知管道定义 |
+| `owner` | `TestService_PipelineChain_WithPartialData` | 部分数据返回正确步骤状态 |
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./...` | ✅ 通过 |
+| `go vet ./...` | ✅ 通过 |
+| `cd frontend-next && npm run build` | ✅ 通过 |
+| `cd frontend-next && npm run lint` | ✅ 无新增 error/warning |
+| 安全边界 | ✅ 所有新增 API 为只读，高风险动作仍受审批保护 |
+| 文档更新 | ✅ PROJECT_STATUS.md, FUNCTION_INVENTORY.md

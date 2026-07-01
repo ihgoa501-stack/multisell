@@ -1,6 +1,8 @@
 package agentos
 
 import (
+	"fmt"
+	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -290,4 +292,345 @@ func (s *Service) SLAEscalation() error {
 			Update("status", ai.ActionStatusEscalated).Error
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// WorkItemDetail types and method
+// ---------------------------------------------------------------------------
+
+// WorkItemDetailResponse is the full context payload for a single work item.
+type WorkItemDetailResponse struct {
+	ID            int64    `json:"id"`
+	Title         string   `json:"title"`
+	AgentID       string   `json:"agent_id"`
+	SquadID       string   `json:"squad_id"`
+	RiskLevel     string   `json:"risk_level"`
+	Status        string   `json:"status"`
+	Confidence    *float64 `json:"confidence,omitempty"`
+	ProposedAt    string   `json:"proposed_at"`
+	DecisionPoint string   `json:"decision_point"`
+	Reason        string   `json:"reason"`
+	InputSummary  string   `json:"input_summary"`
+	OutputSummary string   `json:"output_summary"`
+
+	// Linked business entities
+	EntityType   string `json:"entity_type"`
+	EntityID     *int64 `json:"entity_id"`
+	EntityStatus string `json:"entity_status"`
+
+	// Linked approval
+	Approval *LinkedApproval `json:"approval,omitempty"`
+
+	// Trace
+	TraceID *string `json:"trace_id"`
+
+	// Pipeline chain links
+	UpstreamItems   []LinkedItem `json:"upstream_items"`
+	DownstreamItems []LinkedItem `json:"downstream_items"`
+
+	// Recent audit trail
+	AuditLogs []AuditEntry `json:"audit_logs"`
+}
+
+// LinkedApproval shows linked approval request info.
+type LinkedApproval struct {
+	ID        int64  `json:"id"`
+	Status    string `json:"status"`
+	RiskLevel string `json:"risk_level"`
+}
+
+// LinkedItem is a referenced entity in the pipeline chain.
+type LinkedItem struct {
+	ID     int64  `json:"id"`
+	Type   string `json:"type"` // "unified_action", "listing_task", "approval_request"
+	Title  string `json:"title"`
+	Status string `json:"status"`
+}
+
+// AuditEntry is a single audit log row in the detail view.
+type AuditEntry struct {
+	ID        int64  `json:"id"`
+	Action    string `json:"action"`
+	Content   string `json:"content"`
+	Operator  string `json:"operator"`
+	CreatedAt string `json:"created_at"`
+}
+
+// WorkItemDetail returns full context for a single work item.
+func (s *Service) WorkItemDetail(id int64) (*WorkItemDetailResponse, error) {
+	// 1. Query the unified_action row using raw SQL for full control.
+	type rawAction struct {
+		ID                 int64
+		Title              string
+		AgentID            string
+		SquadID            string
+		RiskLevel          string
+		Status             string
+		Confidence         *float64
+		ProposedAt         time.Time
+		Description        string
+		TraceID            *string
+		BusinessObjectType string
+		BusinessObjectID   string
+	}
+	var ra rawAction
+	err := s.db.Table("unified_action").
+		Select("id, title, agent_id, COALESCE(squad_id,'') AS squad_id, risk_level, status, confidence, proposed_at, COALESCE(description,'') AS description, trace_id, COALESCE(business_object_type,'') AS business_object_type, COALESCE(business_object_id,'') AS business_object_id").
+		Where("id = ?", id).
+		Scan(&ra).Error
+	if err != nil {
+		return nil, fmt.Errorf("work item not found: %w", err)
+	}
+
+	result := &WorkItemDetailResponse{
+		ID:       ra.ID,
+		Title:    ra.Title,
+		AgentID:  ra.AgentID,
+		SquadID:  ra.SquadID,
+		RiskLevel: ra.RiskLevel,
+		Status:   ra.Status,
+		Confidence: ra.Confidence,
+		ProposedAt: ra.ProposedAt.Format("2006-01-02 15:04:05"),
+		DecisionPoint: ra.Description,
+		Reason:  ra.Description,
+		InputSummary:  "",
+		OutputSummary: "",
+		EntityType:    ra.BusinessObjectType,
+		AuditLogs:     []AuditEntry{},
+		UpstreamItems:  []LinkedItem{},
+		DownstreamItems: []LinkedItem{},
+		TraceID: ra.TraceID,
+	}
+
+	// Parse business_object_id as int64 for entity_id.
+	if ra.BusinessObjectID != "" {
+		if eid, err := strconv.ParseInt(ra.BusinessObjectID, 10, 64); err == nil {
+			result.EntityID = &eid
+		}
+	}
+
+	// 2. If trace_id exists, get decision_point, input_context, final_output from ai_trace.
+	if ra.TraceID != nil && *ra.TraceID != "" {
+		type traceExtra struct {
+			DecisionPoint string
+			InputContext  string
+			FinalOutput   string
+		}
+		var te traceExtra
+		if err := s.db.Table("ai_trace").
+			Select("COALESCE(decision_point,'') AS decision_point, COALESCE(input_context::text,'') AS input_context, COALESCE(final_output::text,'') AS final_output").
+			Where("trace_id = ?", *ra.TraceID).
+			Scan(&te).Error; err == nil {
+			if te.DecisionPoint != "" {
+				result.DecisionPoint = te.DecisionPoint
+			}
+			if len(te.InputContext) > 200 {
+				result.InputSummary = te.InputContext[:200] + "..."
+			} else {
+				result.InputSummary = te.InputContext
+			}
+			if len(te.FinalOutput) > 200 {
+				result.OutputSummary = te.FinalOutput[:200] + "..."
+			} else {
+				result.OutputSummary = te.FinalOutput
+			}
+		}
+
+		// 2a. Find pipeline chain siblings sharing the same trace_id.
+		type sibling struct {
+			ID         int64
+			Title      string
+			Status     string
+			ProposedAt time.Time
+		}
+		var siblings []sibling
+		s.db.Table("unified_action").
+			Select("id, title, status, proposed_at").
+			Where("trace_id = ? AND id != ?", *ra.TraceID, id).
+			Order("proposed_at ASC").
+			Scan(&siblings)
+		for _, sib := range siblings {
+			item := LinkedItem{
+				ID:     sib.ID,
+				Type:   "unified_action",
+				Title:  sib.Title,
+				Status: sib.Status,
+			}
+			if sib.ProposedAt.Before(ra.ProposedAt) {
+				result.UpstreamItems = append(result.UpstreamItems, item)
+			} else {
+				result.DownstreamItems = append(result.DownstreamItems, item)
+			}
+		}
+	}
+
+	// 3. Query linked entity status if entity_type and entity_id are available.
+	entityID := result.EntityID
+	if entityID != nil && result.EntityType != "" {
+		switch result.EntityType {
+		case "listing_task":
+			var status string
+			if err := s.db.Table("listing_task").
+				Select("COALESCE(status,'')").
+				Where("id = ?", *entityID).
+				Scan(&status).Error; err == nil {
+				result.EntityStatus = status
+			}
+
+			// 3a. For listing_task, also find linked approval request.
+			type appRow struct {
+				ID        int64
+				Status    string
+				RiskLevel string
+			}
+			var app appRow
+			if err := s.db.Table("approval_request").
+				Select("id, COALESCE(status,'') AS status, COALESCE(risk_level,'medium') AS risk_level").
+				Where("entity_type = ? AND entity_id = ?", "listing_task", *entityID).
+				Order("id DESC").Limit(1).
+				Scan(&app).Error; err == nil && app.ID > 0 {
+				result.Approval = &LinkedApproval{
+					ID:        app.ID,
+					Status:    app.Status,
+					RiskLevel: app.RiskLevel,
+				}
+			}
+		default:
+			// Try generic table lookup for known entity types.
+			var status string
+			_ = s.db.Table(result.EntityType).
+				Select("COALESCE(status,'')").
+				Where("id = ?", *entityID).
+				Scan(&status).Error
+			if status != "" {
+				result.EntityStatus = status
+			}
+		}
+	}
+
+	// 4. Query recent operation_log entries related to this action.
+	type auditRow struct {
+		ID        int64
+		Action    string
+		Content   string
+		Operator  string
+		CreatedAt time.Time
+	}
+	var auditRows []auditRow
+	s.db.Table("operation_log").
+		Select("id, COALESCE(action,'') AS action, COALESCE(content,'') AS content, COALESCE(operator,'') AS operator, created_at").
+		Where("(entity_type = 'unified_action' AND entity_id = ?) OR resource_id = ?", id, fmt.Sprintf("%d", id)).
+		Order("created_at DESC").Limit(20).
+		Scan(&auditRows)
+	for _, a := range auditRows {
+		result.AuditLogs = append(result.AuditLogs, AuditEntry{
+			ID:        a.ID,
+			Action:    a.Action,
+			Content:   a.Content,
+			Operator:  a.Operator,
+			CreatedAt: a.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// AgentTimeline types and method
+// ---------------------------------------------------------------------------
+
+// AgentTimelineEntry groups recent actions per agent.
+type AgentTimelineEntry struct {
+	AgentID       string         `json:"agent_id"`
+	AgentName     string         `json:"agent_name"`
+	RecentActions []ActionEvent  `json:"recent_actions"`
+	StatusSummary map[string]int `json:"status_summary"` // "suggested": 3, "approved": 1, etc.
+}
+
+// ActionEvent is a single action row in the timeline.
+type ActionEvent struct {
+	ID         int64    `json:"id"`
+	Title      string   `json:"title"`
+	Status     string   `json:"status"`
+	RiskLevel  string   `json:"risk_level"`
+	Confidence *float64 `json:"confidence,omitempty"`
+	EntityType string   `json:"entity_type"`
+	EntityID   *int64   `json:"entity_id"`
+	CreatedAt  string   `json:"created_at"`
+}
+
+// AgentTimeline returns recent actions grouped by agent, limited to the last N actions.
+func (s *Service) AgentTimeline(limit int) ([]AgentTimelineEntry, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	// 1. Query latest actions from unified_action, ordered by created_at DESC.
+	type rawAction struct {
+		ID                int64
+		Title             string
+		AgentID           string
+		Status            string
+		RiskLevel         string
+		Confidence        *float64
+		BusinessObjectType string
+		BusinessObjectID  string
+		CreatedAt         time.Time
+	}
+	var actions []rawAction
+	if err := s.db.Table("unified_action").
+		Select("id, title, agent_id, status, risk_level, confidence, COALESCE(business_object_type,'') AS business_object_type, COALESCE(business_object_id,'') AS business_object_id, created_at").
+		Order("created_at DESC").
+		Limit(limit * 2). // fetch extra to avoid losing agents due to limit grouping
+		Scan(&actions).Error; err != nil {
+		return nil, err
+	}
+
+	// 2. Group by agent_id, preserving input order.
+	agentMap := make(map[string]*AgentTimelineEntry)
+	var agentOrder []string
+	for _, a := range actions {
+		entry, ok := agentMap[a.AgentID]
+		if !ok {
+			entry = &AgentTimelineEntry{
+				AgentID:       a.AgentID,
+				AgentName:     a.AgentID, // default to ID, override below
+				RecentActions: []ActionEvent{},
+				StatusSummary: make(map[string]int),
+			}
+			agentMap[a.AgentID] = entry
+			agentOrder = append(agentOrder, a.AgentID)
+		}
+
+		var entityID *int64
+		if a.BusinessObjectID != "" {
+			if eid, err := strconv.ParseInt(a.BusinessObjectID, 10, 64); err == nil {
+				entityID = &eid
+			}
+		}
+
+		entry.RecentActions = append(entry.RecentActions, ActionEvent{
+			ID:         a.ID,
+			Title:      a.Title,
+			Status:     a.Status,
+			RiskLevel:  a.RiskLevel,
+			Confidence: a.Confidence,
+			EntityType: a.BusinessObjectType,
+			EntityID:   entityID,
+			CreatedAt:  a.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+		entry.StatusSummary[a.Status]++
+	}
+
+	// 3. Map agent names from registry.
+	result := make([]AgentTimelineEntry, 0, len(agentOrder))
+	for _, agentID := range agentOrder {
+		entry := agentMap[agentID]
+		if spec, ok := s.registry.Get(agentID); ok && spec.Name != "" {
+			entry.AgentName = spec.Name
+		}
+		result = append(result, *entry)
+	}
+
+	return result, nil
 }

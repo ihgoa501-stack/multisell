@@ -4,7 +4,11 @@ import { useState } from 'react';
 import {
   Badge,
   Button,
+  Collapse,
   Col,
+  Descriptions,
+  Divider,
+  Drawer,
   Empty,
   message,
   Row,
@@ -27,6 +31,8 @@ import {
   ApiOutlined,
   ToolOutlined,
   HeartOutlined,
+  RobotOutlined,
+  BranchesOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -84,6 +90,49 @@ interface AutonomyEntry {
 interface WorkItemsResponse {
   items: WorkItem[];
   total: number;
+}
+
+interface AgentTimelineEntry {
+  agent_id: string;
+  agent_name: string;
+  recent_actions: Array<{
+    id: number;
+    title: string;
+    status: string;
+    risk_level: string;
+    confidence: number | null;
+    entity_type: string;
+    entity_id: number | null;
+    created_at: string;
+  }>;
+  status_summary: Record<string, number>;
+}
+
+interface WorkItemDetail {
+  id: number;
+  title: string;
+  agent_id: string;
+  squad_id: string;
+  risk_level: string;
+  status: string;
+  confidence: number | null;
+  proposed_at: string;
+  decision_point: string;
+  reason: string;
+  input_summary: string;
+  output_summary: string;
+  entity_type: string;
+  entity_id: number | null;
+  entity_status: string;
+  approval: {
+    id: number;
+    status: string;
+    risk_level: string;
+  } | null;
+  trace_id: string | null;
+  upstream_items: Array<{ id: number; type: string; title: string; status: string }>;
+  downstream_items: Array<{ id: number; type: string; title: string; status: string }>;
+  audit_logs: Array<{ id: number; action: string; content: string; operator: string; created_at: string }>;
 }
 
 // ---------- Color helpers ----------
@@ -219,7 +268,30 @@ export default function AgentOSPage() {
     qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
     qc.invalidateQueries({ queryKey: ['agentos-autonomy'] });
     qc.invalidateQueries({ queryKey: ['aios-health'] });
+    qc.invalidateQueries({ queryKey: ['agentos-timeline'] });
   };
+
+  // Work item detail drawer
+  const [selectedWorkItemId, setSelectedWorkItemId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const { data: workItemDetail, isLoading: detailLoading } = useQuery({
+    queryKey: ['agentos-work-item-detail', selectedWorkItemId],
+    queryFn: async () => {
+      const res = await apiClient.get<WorkItemDetail>(`/v1/agentos/work-items/${selectedWorkItemId}`);
+      return res.data;
+    },
+    enabled: !!selectedWorkItemId,
+  });
+
+  // Agent timeline
+  const { data: timelineData, isLoading: timelineLoading } = useQuery({
+    queryKey: ['agentos-timeline'],
+    queryFn: async () => {
+      const res = await apiClient.get<AgentTimelineEntry[]>('/v1/agentos/agent-timeline');
+      return res.data ?? [];
+    },
+  });
 
   const workColumns = [
     {
@@ -562,6 +634,13 @@ export default function AgentOSPage() {
                   total: workItemsData?.total ?? 0,
                   showSizeChanger: false,
                 }}
+                onRow={(record) => ({
+                  onClick: () => {
+                    setSelectedWorkItemId(record.id);
+                    setDrawerOpen(true);
+                  },
+                  style: { cursor: 'pointer' },
+                })}
               />
             </div>
           </div>
@@ -640,6 +719,205 @@ export default function AgentOSPage() {
           </div>
         </Col>
       </Row>
+
+      {/* Agent Timeline */}
+      <div
+        style={{
+          background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
+          marginTop: 16,
+        }}
+      >
+        <div style={{
+          padding: '12px 16px', borderBottom: '1px solid var(--bd)',
+          display: 'flex', alignItems: 'center', gap: 8,
+          fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
+        }}>
+          <RobotOutlined /> Agent 活动时间线
+        </div>
+        <div style={{ padding: 16 }}>
+          <Spin spinning={timelineLoading}>
+            {(timelineData ?? []).length === 0 && !timelineLoading ? (
+              <Empty description="暂无时间线数据" />
+            ) : (
+              <Collapse
+                size="small"
+                items={(timelineData ?? []).map((entry) => ({
+                  key: entry.agent_id,
+                  label: (
+                    <Space>
+                      <Text strong>{entry.agent_id}</Text>
+                      <Text type="secondary" style={{ fontSize: '0.75rem' }}>{entry.agent_name}</Text>
+                      {Object.entries(entry.status_summary ?? {}).map(([status, count]) => (
+                        <Tag key={status} color={statusColor(status)}>{status}: {count}</Tag>
+                      ))}
+                    </Space>
+                  ),
+                  children: (
+                    <Table
+                      rowKey="id"
+                      dataSource={entry.recent_actions ?? []}
+                      size="small"
+                      pagination={false}
+                      columns={[
+                        { title: '标题', dataIndex: 'title', ellipsis: true, render: (v: string) => <Text strong>{v || '-'}</Text> },
+                        { title: '类型', dataIndex: 'entity_type', width: 100 },
+                        { title: '状态', dataIndex: 'status', width: 100, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
+                        { title: '风险', dataIndex: 'risk_level', width: 80, render: (v: string) => <Tag color={riskColor(v)}>{v}</Tag> },
+                        {
+                          title: '置信度', dataIndex: 'confidence', width: 80,
+                          render: (v: number | null) => v !== null && v !== undefined
+                            ? <Tag color={v >= 0.8 ? 'green' : v >= 0.5 ? 'orange' : 'red'}>{(v * 100).toFixed(0)}%</Tag>
+                            : '-',
+                        },
+                        { title: '时间', dataIndex: 'created_at', width: 150 },
+                      ]}
+                    />
+                  ),
+                }))}
+              />
+            )}
+          </Spin>
+        </div>
+      </div>
+
+      {/* Work Item Detail Drawer */}
+      <Drawer
+        title={workItemDetail?.title ?? '工作项详情'}
+        open={drawerOpen}
+        onClose={() => {
+          setDrawerOpen(false);
+          setSelectedWorkItemId(null);
+        }}
+        width={640}
+        loading={detailLoading}
+      >
+        {workItemDetail ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Descriptions size="small" column={2} bordered>
+              <Descriptions.Item label="ID">{workItemDetail.id}</Descriptions.Item>
+              <Descriptions.Item label="Agent">{workItemDetail.agent_id}</Descriptions.Item>
+              <Descriptions.Item label="Squad">{workItemDetail.squad_id}</Descriptions.Item>
+              <Descriptions.Item label="风险">
+                <Tag color={riskColor(workItemDetail.risk_level)}>{workItemDetail.risk_level}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Tag color={statusColor(workItemDetail.status)}>{workItemDetail.status}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="置信度">
+                {workItemDetail.confidence !== null ? `${(workItemDetail.confidence * 100).toFixed(0)}%` : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="决策点">{workItemDetail.decision_point}</Descriptions.Item>
+              <Descriptions.Item label="提议时间">{workItemDetail.proposed_at}</Descriptions.Item>
+              <Descriptions.Item label="Trace ID" span={2}>{workItemDetail.trace_id ?? '-'}</Descriptions.Item>
+            </Descriptions>
+
+            {workItemDetail.reason && (
+              <>
+                <Divider>决策理由</Divider>
+                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>
+                  {workItemDetail.reason}
+                </div>
+              </>
+            )}
+
+            {workItemDetail.input_summary && (
+              <>
+                <Divider>输入摘要</Divider>
+                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>
+                  {workItemDetail.input_summary}
+                </div>
+              </>
+            )}
+
+            {workItemDetail.output_summary && (
+              <>
+                <Divider>输出摘要</Divider>
+                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>
+                  {workItemDetail.output_summary}
+                </div>
+              </>
+            )}
+
+            <Divider>实体信息</Divider>
+            <Descriptions size="small" column={2} bordered>
+              <Descriptions.Item label="实体类型">{workItemDetail.entity_type}</Descriptions.Item>
+              <Descriptions.Item label="实体 ID">{workItemDetail.entity_id ?? '-'}</Descriptions.Item>
+              <Descriptions.Item label="实体状态">{workItemDetail.entity_status}</Descriptions.Item>
+            </Descriptions>
+
+            {workItemDetail.approval && (
+              <>
+                <Divider>审批信息</Divider>
+                <Descriptions size="small" column={2} bordered>
+                  <Descriptions.Item label="审批 ID">{workItemDetail.approval.id}</Descriptions.Item>
+                  <Descriptions.Item label="审批状态">
+                    <Tag color={statusColor(workItemDetail.approval.status)}>{workItemDetail.approval.status}</Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="审批风险">
+                    <Tag color={riskColor(workItemDetail.approval.risk_level)}>{workItemDetail.approval.risk_level}</Tag>
+                  </Descriptions.Item>
+                </Descriptions>
+              </>
+            )}
+
+            {(workItemDetail.upstream_items ?? []).length > 0 && (
+              <>
+                <Divider>上游工作项 ({workItemDetail.upstream_items.length})</Divider>
+                <Table
+                  rowKey="id"
+                  dataSource={workItemDetail.upstream_items}
+                  size="small"
+                  pagination={false}
+                  columns={[
+                    { title: 'ID', dataIndex: 'id', width: 60 },
+                    { title: '类型', dataIndex: 'type', width: 80 },
+                    { title: '标题', dataIndex: 'title', ellipsis: true },
+                    { title: '状态', dataIndex: 'status', width: 100, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
+                  ]}
+                />
+              </>
+            )}
+
+            {(workItemDetail.downstream_items ?? []).length > 0 && (
+              <>
+                <Divider>下游工作项 ({workItemDetail.downstream_items.length})</Divider>
+                <Table
+                  rowKey="id"
+                  dataSource={workItemDetail.downstream_items}
+                  size="small"
+                  pagination={false}
+                  columns={[
+                    { title: 'ID', dataIndex: 'id', width: 60 },
+                    { title: '类型', dataIndex: 'type', width: 80 },
+                    { title: '标题', dataIndex: 'title', ellipsis: true },
+                    { title: '状态', dataIndex: 'status', width: 100, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
+                  ]}
+                />
+              </>
+            )}
+
+            {(workItemDetail.audit_logs ?? []).length > 0 && (
+              <>
+                <Divider>审计日志</Divider>
+                <Table
+                  rowKey="id"
+                  dataSource={workItemDetail.audit_logs}
+                  size="small"
+                  pagination={false}
+                  columns={[
+                    { title: '操作', dataIndex: 'action', width: 100 },
+                    { title: '内容', dataIndex: 'content', ellipsis: true },
+                    { title: '操作人', dataIndex: 'operator', width: 80 },
+                    { title: '时间', dataIndex: 'created_at', width: 150 },
+                  ]}
+                />
+              </>
+            )}
+          </Space>
+        ) : (
+          <Empty description={detailLoading ? '加载中...' : '无法加载工作项详情'} />
+        )}
+      </Drawer>
     </div>
   );
 }

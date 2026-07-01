@@ -378,7 +378,20 @@
 | GET | `/api/v1/agentos` | AgentOS 概览 |
 | GET | `/api/v1/agentos/status` | AgentOS 状态 |
 | GET | `/api/v1/agentos/work-items` | 工作项列表 |
+| GET | `/api/v1/agentos/work-items/:id` | 工作项详情（含审批、审计、实体、上下游链） |
+| GET | `/api/v1/agentos/agent-timeline` | Agent 时间线（最近操作 + 状态汇总） |
 | GET | `/api/v1/agentos/autonomy` | 自主化状态 |
+
+### Owner 驾驶舱
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| GET | `/api/v1/owner/risk-summary` | 风险汇总（待审批、低利润、资料不完整、同步异常） |
+| GET | `/api/v1/owner/suggestions` | Agent 建议列表（含审批/任务状态） |
+| POST | `/api/v1/owner/suggestions/:id/feedback` | Owner 反馈（采纳/拒绝） |
+| GET | `/api/v1/owner/platform-sync` | 平台同步状态 |
+| GET | `/api/v1/owner/agent-activity` | Agent 活动摘要（运行中/今日完成/失败） |
+| GET | `/api/v1/owner/pipeline-chain` | Agent 流程管道链健康度 |
 
 ### 信任分 & 熵 & 演化 & 策略
 
