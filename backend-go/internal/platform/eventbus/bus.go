@@ -29,7 +29,11 @@ import (
 type Event struct {
 	ID               string                 `json:"id"`
 	Topic            string                 `json:"topic"`
+	Version          string                 `json:"version"`
 	Source           string                 `json:"source"`
+	Actor            string                 `json:"actor"`
+	EntityID         string                 `json:"entity_id"`
+	EntityType       string                 `json:"entity_type"`
 	Payload          map[string]interface{} `json:"payload"`
 	Priority         int                    `json:"priority"`   // 0=normal, 1=high, 2=critical
 	CreatedAt        time.Time              `json:"created_at"`
@@ -59,6 +63,75 @@ func CorrelationIDFromContext(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+// DefaultEventVersion is the default event schema version used when one is
+// not explicitly set via context.
+const DefaultEventVersion = "1.0"
+
+const actorContextKey contextKey = "eventbus_actor"
+const entityIDContextKey contextKey = "eventbus_entity_id"
+const entityTypeContextKey contextKey = "eventbus_entity_type"
+const eventVersionContextKey contextKey = "eventbus_version"
+
+// WithActor attaches an actor identity to the context for event bus operations.
+// The actor is propagated to published events for tracing and audit compliance.
+func WithActor(ctx context.Context, actor string) context.Context {
+	return context.WithValue(ctx, actorContextKey, actor)
+}
+
+// ActorFromContext extracts the actor identity from the context.
+// Returns empty string if not set.
+func ActorFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(actorContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithEntityID attaches an entity ID to the context for event bus operations.
+// The entity ID is propagated to published events for source identification.
+func WithEntityID(ctx context.Context, entityID string) context.Context {
+	return context.WithValue(ctx, entityIDContextKey, entityID)
+}
+
+// EntityIDFromContext extracts the entity ID from the context.
+// Returns empty string if not set.
+func EntityIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(entityIDContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithEntityType attaches an entity type to the context for event bus operations.
+// The entity type is propagated to published events for source identification.
+func WithEntityType(ctx context.Context, entityType string) context.Context {
+	return context.WithValue(ctx, entityTypeContextKey, entityType)
+}
+
+// EntityTypeFromContext extracts the entity type from the context.
+// Returns empty string if not set.
+func EntityTypeFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(entityTypeContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithEventVersion attaches an event schema version to the context.
+// Overrides DefaultEventVersion for the published event.
+func WithEventVersion(ctx context.Context, version string) context.Context {
+	return context.WithValue(ctx, eventVersionContextKey, version)
+}
+
+// EventVersionFromContext extracts the event schema version from the context.
+// Returns DefaultEventVersion if not set.
+func EventVersionFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(eventVersionContextKey).(string); ok {
+		return v
+	}
+	return DefaultEventVersion
 }
 
 // subscription binds a handler to a topic pattern.
@@ -336,7 +409,11 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 	evt := Event{
 		ID:            uuid.New().String(),
 		Topic:         topic,
+		Version:       EventVersionFromContext(ctx),
 		Source:        source,
+		Actor:         ActorFromContext(ctx),
+		EntityID:      EntityIDFromContext(ctx),
+		EntityType:    EntityTypeFromContext(ctx),
 		Payload:       payload,
 		Priority:      priority,
 		CreatedAt:     time.Now(),
