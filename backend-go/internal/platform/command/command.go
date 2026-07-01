@@ -86,6 +86,50 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload ma
 	return result, nil
 }
 
+// DispatchSafe validates and dispatches an AgentAction through the dispatcher,
+// checking mode, risk level, and approval requirements before executing.
+//
+// Mode rules:
+//   - dry_run: the action is validated (handler must exist) but never executed.
+//   - sandbox: the action executes regardless of risk.
+//   - production: high-risk or approval-required actions need a valid approval_id.
+func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, policy PolicyChecker) (*Result, error) {
+	// Mode: dry_run — validate existence only.
+	if action.Mode == ModeDryRun {
+		d.mu.RLock()
+		_, ok := d.handlers[action.ActionType]
+		d.mu.RUnlock()
+		if !ok {
+			return nil, &HandlerNotFoundError{ActionType: action.ActionType}
+		}
+		return &Result{Success: true, BusinessID: "dry_run"}, nil
+	}
+
+	// Production mode: high-risk or approval-required actions need a valid approval.
+	if action.Mode == ModeProduction && (action.RiskLevel >= RiskHigh || action.ApprovalRequired) {
+		if action.ApprovalID == nil {
+			return nil, ErrApprovalRequired
+		}
+		if policy != nil && !policy.IsApproved(*action.ApprovalID) {
+			return nil, ErrApprovalRequired
+		}
+	}
+
+	// Sandbox and approved production actions execute normally.
+	return d.Dispatch(ctx, action.ActionType, action.Input)
+}
+
+// PolicyChecker checks whether an approval ID is still valid at execution time.
+// The actual policy engine (actionpolicy.Service) lives in the domain layer;
+// this interface lets platform code stay dependency-free.
+type PolicyChecker interface {
+	IsApproved(approvalID int64) bool
+}
+
+// ErrApprovalRequired is returned when a high-risk action is attempted without
+// a valid approval.
+var ErrApprovalRequired = fmt.Errorf("action requires approval before execution")
+
 // RegisteredTypes returns a list of all registered action types.
 func (d *Dispatcher) RegisteredTypes() []string {
 	d.mu.RLock()

@@ -153,3 +153,50 @@ func TestService_LogStructured_Minimal(t *testing.T) {
 		t.Errorf("expected nil ApprovalID, got %v", l.ApprovalID)
 	}
 }
+
+func TestService_LogStructured_AgentActionAudit(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &OperationLog{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	err := svc.LogStructured(&StructuredLogInput{
+		Module:      "agent_action",
+		Action:      "price_update",
+		ResourceID:  "SKU001",
+		Operator:    "A6",
+		Content:     "risk_level=high mode=production suggested_price=29.99",
+		Result:      "pending_approval",
+		TriggerType: "agent",
+		ApprovalID:  int64Ptr(101),
+		EntityType:  "sku",
+		EntityID:    42,
+	})
+	if err != nil {
+		t.Fatalf("LogStructured agent action: %v", err)
+	}
+
+	var all []OperationLog
+	db.Find(&all)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(all))
+	}
+	l := all[0]
+	if l.Module != "agent_action" {
+		t.Errorf("Module = %q", l.Module)
+	}
+	if l.Action != "price_update" {
+		t.Errorf("Action = %q", l.Action)
+	}
+	if l.Operator != "A6" {
+		t.Errorf("Operator = %q", l.Operator)
+	}
+	if l.TriggerType != "agent" {
+		t.Errorf("TriggerType = %q", l.TriggerType)
+	}
+	if l.Result != "pending_approval" {
+		t.Errorf("Result = %q", l.Result)
+	}
+	if l.ApprovalID == nil || *l.ApprovalID != 101 {
+		t.Errorf("ApprovalID = %v", l.ApprovalID)
+	}
+}
