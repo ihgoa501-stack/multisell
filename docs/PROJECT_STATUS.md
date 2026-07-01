@@ -744,3 +744,63 @@ Owner 总控台新增两个区域：
 | `go vet ./...` | ✅ 通过 |
 | 安全边界 | ✅ 未修改审批/审计/权限逻辑 |
 | 文档更新 | ✅ PROJECT_STATUS.md, trial-run-guide.md
+
+## 本次新增内容（2026-07-01，P7 治理、权限、风险控制强化）
+
+### 业务目标
+
+强化系统治理能力 — 高风险操作确认被阻断或审批、Agent 不能越权调用工具、禁止操作清单落地、治理文档与实现一致。
+
+### 核心改动
+
+**1. ForbiddenAction 禁止操作机制**
+
+新增 `forbidden_action` 表 + `CheckForbidden` 函数。Orchestrator 在创建 UnifiedAction 后立即检查禁止规则，匹配则自动 Reject 并记录审计。
+
+种子禁止操作（7 条）：
+| 操作类型 | 风险 | 说明 |
+|----------|------|------|
+| price_update | high | AI 禁止自动改价 |
+| inventory_update | high | AI 禁止自动改库存 |
+| order_cancel | high | AI 禁止自动取消订单 |
+| platform_publish | high | AI 禁止自动发布到平台 |
+| credential_change | high | AI 禁止修改凭证 |
+| permission_change | high | AI 禁止修改权限/RBAC |
+| data_delete | high | AI 禁止删除业务数据 |
+
+**2. High-Risk 门禁**
+
+ActionPolicy 的 `Evaluate` 方法新增 high-risk 门禁：任何 `risk_level=high` 的 action 禁止 auto_approve，强制执行 escalate（需人工审批）。
+
+**3. 迁移文件**
+
+| 文件 | 说明 |
+|------|------|
+| `migrations/000047_forbidden_actions.up.sql` | 创建 forbidden_action 表 + 7 条种子数据 |
+| `migrations/000047_forbidden_actions.down.sql` | 回滚 DROP TABLE |
+
+### 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `domain/actionpolicy/forbidden.go` | 新增 ForbiddenAction 模型 + CheckForbidden 函数 |
+| `domain/actionpolicy/service.go` | Evaluate 新增 high-risk 门禁（禁止 auto_approve） |
+| `ai/orchestrator.go` | action 创建后执行 forbidden 检查，匹配则 reject |
+| `migrations/000047_forbidden_actions.up.sql` | 新建 |
+| `migrations/000047_forbidden_actions.down.sql` | 新建 |
+
+### 新增测试
+
+| 包 | 测试 | 说明 |
+|----|------|------|
+| actionpolicy | TestMatches (已有) | 保持通过 |
+| ai | TestOrchestrator_Run_StubProvider (已有) | 保持通过（含 forbidden 兼容） |
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go test ./...` | ✅ 通过 |
+| `go vet ./...` | ✅ 通过 |
+| 安全边界 | ✅ 高风险操作被禁止或需人工审批，Agent 不能越权 |
+| 文档更新 | ✅ PROJECT_STATUS.md
