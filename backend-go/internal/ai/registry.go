@@ -72,7 +72,11 @@ func DefaultRegistry() *AgentRegistry {
 			DecisionPoints: []string{"sourcing_recommend"},
 			Description:    "AI 选品分析：1688 商品利润分析、采购推荐、选品到刊登全链路触发",
 			ModelHint: "gpt-4o", RiskFloor: "medium"},
-		// A10 — Logistics Optimization (Phase 2)
+		// A9 — Batch Operations Agent (Phase 2)
+		{ID: "A9", Name: "Batch Ops", Squad: "ops", Autonomy: "guided",
+			DecisionPoints: []string{"batch_price_update", "batch_inventory_sync", "batch_listing_update", "import_validation"},
+			Description:    "批量运维：批量调价、库存同步、刊登更新、导入校验",
+			ModelHint: "gpt-4o-mini", RiskFloor: "high"},
 		{ID: "A10", Name: "Logistics Ops", Squad: "fulfillment", Autonomy: "supervised",
 			DecisionPoints: []string{"carrier_compare", "shipping_bill_audit", "carrier_performance", "logistics_route_opt"},
 			Description:    "物流优化：承运商比价、运费审计、绩效评估、仓配策略",
