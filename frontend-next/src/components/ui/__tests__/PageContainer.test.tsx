@@ -25,15 +25,16 @@ describe('PageContainer', () => {
   });
 
   // --- Loading state ---
-  it('shows spinner when loading', () => {
+  it('shows skeleton when loading', () => {
     render(<PageContainer title="Title" loading>Content</PageContainer>);
-    expect(screen.getByText('加载中...')).toBeInTheDocument();
+    expect(screen.getByText('Title')).toBeInTheDocument();
     expect(screen.queryByText('Content')).not.toBeInTheDocument();
   });
 
-  it('shows custom loading description', () => {
-    render(<PageContainer title="Title" loading loadingDesc="拼命加载中...">Content</PageContainer>);
-    expect(screen.getByText('拼命加载中...')).toBeInTheDocument();
+  it('loading skeleton shows title and hides children', () => {
+    render(<PageContainer title="Loading Title" loading loadingDesc="custom desc">Content</PageContainer>);
+    expect(screen.getByText('Loading Title')).toBeInTheDocument();
+    expect(screen.queryByText('Content')).not.toBeInTheDocument();
   });
 
   // --- Empty state ---
@@ -83,7 +84,7 @@ describe('PageContainer', () => {
         Content
       </PageContainer>
     );
-    expect(screen.getByText('加载中...')).toBeInTheDocument();
+    expect(screen.getByText('Title')).toBeInTheDocument();
   });
 
   it('empty takes priority over error', () => {

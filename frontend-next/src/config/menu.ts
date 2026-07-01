@@ -80,6 +80,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/settings/llm', label: 'LLM 配置' },
       { key: '/settings/rbac', label: '权限管理', permission: 'rbac.manage' },
       { key: '/settings/policy', label: '审批策略' },
+      { key: '/design-system', label: '设计系统', status: 'shell' },
     ],
   },
 ];
