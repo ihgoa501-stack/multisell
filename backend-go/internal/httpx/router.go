@@ -551,6 +551,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	api := r.Group("/api/v1")
 
 	// API v1 Health check (public)
+	integrations.RegisterWebhookRoutes(api, bus, logger)
+
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
@@ -733,6 +735,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	importbatch.RegisterRoutes(protected, db, logger)
 	operationlog.RegisterRoutes(protected, db, logger)
 	integrations.RegisterRoutes(protected, db, logger)
+	integrations.RegisterWebhookAdminRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing.RegisterRoutes(protected, db, logger, toolBridge, sourcing.NewAgentEventPublisher(bus))
