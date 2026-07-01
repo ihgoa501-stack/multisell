@@ -3,6 +3,7 @@ package agentos
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/response"
@@ -65,6 +66,10 @@ func (h *Handler) WorkItemDetail(c *gin.Context) {
 	}
 	detail, err := h.service.WorkItemDetail(id)
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			response.Error(c, http.StatusNotFound, err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

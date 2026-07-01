@@ -639,7 +639,7 @@ func (s *Service) PipelineChain() (*PipelineChainResponse, error) {
 				hasFailed = true
 			case "blocked":
 				hasBlocked = true
-			case "completed", "executed", "approved":
+			case "completed":
 				// completed
 			default:
 				allCompleted = false

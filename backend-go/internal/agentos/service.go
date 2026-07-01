@@ -379,7 +379,10 @@ func (s *Service) WorkItemDetail(id int64) (*WorkItemDetailResponse, error) {
 		Where("id = ?", id).
 		Scan(&ra).Error
 	if err != nil {
-		return nil, fmt.Errorf("work item not found: %w", err)
+		return nil, fmt.Errorf("work item query error: %w", err)
+	}
+	if ra.ID == 0 {
+		return nil, fmt.Errorf("work item %d not found", id)
 	}
 
 	result := &WorkItemDetailResponse{
@@ -391,7 +394,7 @@ func (s *Service) WorkItemDetail(id int64) (*WorkItemDetailResponse, error) {
 		Status:   ra.Status,
 		Confidence: ra.Confidence,
 		ProposedAt: ra.ProposedAt.Format("2006-01-02 15:04:05"),
-		DecisionPoint: ra.Description,
+		DecisionPoint: "",
 		Reason:  ra.Description,
 		InputSummary:  "",
 		OutputSummary: "",
@@ -418,7 +421,7 @@ func (s *Service) WorkItemDetail(id int64) (*WorkItemDetailResponse, error) {
 		}
 		var te traceExtra
 		if err := s.db.Table("ai_trace").
-			Select("COALESCE(decision_point,'') AS decision_point, COALESCE(input_context::text,'') AS input_context, COALESCE(final_output::text,'') AS final_output").
+			Select("COALESCE(decision_point,'') AS decision_point, COALESCE(CAST(input_context AS TEXT),'') AS input_context, COALESCE(CAST(final_output AS TEXT),'') AS final_output").
 			Where("trace_id = ?", *ra.TraceID).
 			Scan(&te).Error; err == nil {
 			if te.DecisionPoint != "" {
@@ -581,7 +584,7 @@ func (s *Service) AgentTimeline(limit int) ([]AgentTimelineEntry, error) {
 	if err := s.db.Table("unified_action").
 		Select("id, title, agent_id, status, risk_level, confidence, COALESCE(business_object_type,'') AS business_object_type, COALESCE(business_object_id,'') AS business_object_id, created_at").
 		Order("created_at DESC").
-		Limit(limit * 2). // fetch extra to avoid losing agents due to limit grouping
+		Limit(limit * 2). // fetch extra to avoid losing agents due to limit grouping; ponytail: if single agent exceeds limit*2, other agents are still crowded out
 		Scan(&actions).Error; err != nil {
 		return nil, err
 	}
