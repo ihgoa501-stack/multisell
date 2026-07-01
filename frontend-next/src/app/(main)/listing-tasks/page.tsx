@@ -15,7 +15,6 @@ const statusColorMap: Record<string, string> = {
   cancelled: 'default',
   approved: 'green',
   rejected: 'red',
-  pending_approval: 'orange',
 };
 
 const statusLabelMap: Record<string, string> = {
@@ -28,7 +27,6 @@ const statusLabelMap: Record<string, string> = {
   cancelled: '已取消',
   approved: '已批准',
   rejected: '已拒绝',
-  pending_approval: '待审批',
 };
 
 const statusTooltipMap: Record<string, string> = {
