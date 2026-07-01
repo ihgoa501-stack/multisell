@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS compliance_check_result (
     deleted_at      TIMESTAMPTZ
 );
 
--- Idempotency: one result per (product_id, platform_id, check_type)
+-- Idempotency: one result per (product_id, platform_id, check_type) per scan window
 CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_result_product_platform_type
-    ON compliance_check_result(product_id, COALESCE(platform_id, 0), check_type);
+    ON compliance_check_result(product_id, COALESCE(platform_id, 0), check_type, scanned_at::date);
 
 CREATE INDEX IF NOT EXISTS idx_compliance_result_product
     ON compliance_check_result(product_id);

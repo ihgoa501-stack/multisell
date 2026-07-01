@@ -367,7 +367,7 @@ func registerClosedLoopRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logg
 	// Create services with proper dependency injection
 	opsvc := operationlog.NewService(db, logger)
 	apprSvc := approval.NewService(db, logger, opsvc)
-	loopSvc := loop.NewService(db, logger, nil, false, opsvc)
+	loopSvc := loop.NewService(db, logger, nil, false)
 
 	// Register listing task routes with full dependency chain
 	listingtask.RegisterRoutes(rg, db, logger, nil, false, apprSvc, opsvc, nil, loopSvc)
@@ -376,7 +376,7 @@ func registerClosedLoopRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logg
 	approval.RegisterRoutes(rg, db, logger, opsvc)
 	owner.RegisterRoutes(rg, db, logger)
 	candidate.RegisterRoutes(rg, db, logger)
-	loop.RegisterRoutes(rg, db, logger, nil, false, opsvc)
+	loop.RegisterRoutes(rg, db, logger, nil, false)
 }
 
 // jsonEncodeID encodes an int64 as a JSON number string for path construction.

@@ -1,5 +1,9 @@
 -- Product Lifecycle Orchestration Pipeline
 -- Tracks each step of a product's lifecycle from sourcing through delisting.
+--
+-- Note: numbered 000032 to resolve a merge-collision with 000029_compliance
+-- and 000029_orchestration sharing the same version prefix. Versions 000030
+-- and 000031 already existed, hence the gap (32 instead of 30).
 
 CREATE TABLE IF NOT EXISTS lifecycle_step (
     id BIGSERIAL PRIMARY KEY,
