@@ -13,6 +13,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/realtime"
@@ -347,6 +348,10 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 					action, _ = aiSvc.GetAction(action.ID)
 				}
 			}
+			// If action requires approval and wasn't auto-processed, create approval request.
+			if action != nil && requires {
+				o.ensureApprovalCreated(action)
+			}
 		}
 	}
 
@@ -444,6 +449,34 @@ func (o *Orchestrator) publishDecisionEvent(traceID string, agent AgentSpec, req
 func (o *Orchestrator) persistAction(in *CreateActionInput) (*UnifiedAction, error) {
 	svc := NewService(o.db, o.logger)
 	return svc.CreateAction(in)
+}
+
+// ensureApprovalCreated creates an approval_request for a UnifiedAction that
+// requires human review. The caller already has the action with a fresh status
+// (post-policy-evaluation), so we use it directly to avoid a DB re-read.
+func (o *Orchestrator) ensureApprovalCreated(a *UnifiedAction) {
+	if a.Status != ActionStatusSuggested && a.Status != ActionStatusEscalated {
+		return // already processed by policy (auto-approved, blocked, etc.)
+	}
+	approvalSvc := approval.NewService(o.db, o.logger, nil)
+	_, appErr := approvalSvc.Create(&approval.CreateApprovalInput{
+		ProductID:   0,
+		RequestType: a.ActionType,
+		Requester:   "agent:" + a.AgentID,
+		Reason:      a.Title,
+		RiskLevel:   a.RiskLevel,
+		EntityType:  "unified_action",
+		EntityID:    a.ID,
+	})
+	if appErr != nil {
+		o.logger.Warn("failed to create approval for action",
+			zap.Int64("action_id", a.ID),
+			zap.Error(appErr))
+		return
+	}
+	o.logger.Info("created approval for action",
+		zap.Int64("action_id", a.ID),
+		zap.String("action_type", a.ActionType))
 }
 
 // synthesizeOutput produces the agent's final output. It checks for a concrete
