@@ -5,5 +5,5 @@
 -- but was moved to a standalone migration to avoid in-place edits.
 
 DROP INDEX IF EXISTS idx_compliance_result_product_platform_type;
-CREATE UNIQUE INDEX idx_compliance_result_product_platform_type
+CREATE UNIQUE INDEX IF NOT EXISTS idx_compliance_result_product_platform_type
     ON compliance_check_result(product_id, COALESCE(platform_id, 0), check_type);
