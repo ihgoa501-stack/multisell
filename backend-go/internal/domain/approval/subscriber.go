@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -12,7 +13,7 @@ import (
 // NewAgentDecisionSubscriber creates an event bus handler that listens for
 // agent.decided.* events and auto-creates approval requests when an agent's
 // confidence is below 0.7.
-func NewAgentDecisionSubscriber(db *gorm.DB, logger *zap.Logger) func(ctx context.Context, evt eventbus.Event) error {
+func NewAgentDecisionSubscriber(db *gorm.DB, logger *zap.Logger, oplogSvc *operationlog.Service) func(ctx context.Context, evt eventbus.Event) error {
 	return func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
 		if payload == nil {
@@ -82,7 +83,7 @@ func NewAgentDecisionSubscriber(db *gorm.DB, logger *zap.Logger) func(ctx contex
 			reason = r
 		}
 
-		svc := NewService(db, logger, nil)
+		svc := NewService(db, logger, oplogSvc)
 		input := &CreateApprovalInput{
 			ProductID:   productID,
 			RequestType: requestType,
