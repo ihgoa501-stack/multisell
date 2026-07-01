@@ -129,7 +129,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// ==========================================================
 
 	// Create event bus (with optional outbox persistence).
-	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4))
+	sr := eventbus.NewSchemaRegistry()
+	// TODO: register TopicSchema implementations for each event topic pattern
+	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4), eventbus.WithSchema(sr))
 	busCtx, busCancel := context.WithCancel(context.Background())
 	defer busCancel()
 	bus.Start(busCtx)
@@ -285,6 +287,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// scheduler.tick.A8 → sourcing batch scan
 	bus.Subscribe("scheduler.tick.A8", func(ctx context.Context, evt eventbus.Event) error {
 		return sourcing.HandleSourcingTick(db, logger)(ctx, evt)
+	})
+	// scheduler.tick.A9 → batch ops
+	bus.Subscribe("scheduler.tick.A9", func(ctx context.Context, evt eventbus.Event) error {
+		return nil // A9 is API-driven; auto-tick triggers no-op for now
 	})
 
 	// -------------------------------------------------------
@@ -455,6 +461,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	sched.Register(scheduler.Task{
 		ID: "tick-a8", AgentID: "A8", DecisionPoint: "sourcing_scan",
 		Interval: time.Hour * 1, Description: "选品扫描",
+	})
+	sched.Register(scheduler.Task{
+		ID: "tick-a9", AgentID: "A9", DecisionPoint: "batch_operations",
+		Interval: time.Hour * 2, Description: "批量运维扫描",
 	})
 	sched.Register(scheduler.Task{
 		ID: "tick-m1", AgentID: "M1", DecisionPoint: "excretion_scoring",
