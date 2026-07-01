@@ -67,27 +67,28 @@ func (SpecValue) TableName() string { return "spec_value" }
 
 // Sku maps to the PostgreSQL "sku" table.
 type Sku struct {
-	ID          int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	ProductID   int64           `gorm:"column:product_id;not null" json:"product_id"`
-	Code        string          `gorm:"column:code" json:"code"`
-	Barcode     string          `gorm:"column:barcode" json:"barcode"`
-	SpecDesc    string          `gorm:"column:spec_desc" json:"spec_desc"`
-	SpecValues  json.RawMessage `gorm:"column:spec_values;type:jsonb" json:"spec_values"`
-	Price       decimal.Decimal `gorm:"column:price;type:numeric(10,2);default:0" json:"price"`
-	CostPrice   decimal.Decimal `gorm:"column:cost_price;type:numeric(10,2);default:0" json:"cost_price"`
-	MarketPrice decimal.Decimal `gorm:"column:market_price;type:numeric(10,2);default:0" json:"market_price"`
-	Stock       int             `gorm:"column:stock;default:0" json:"stock"`
-	LockStock   int             `gorm:"column:lock_stock;default:0" json:"lock_stock"`
-	WarningStock int            `gorm:"column:warning_stock;default:0" json:"warning_stock"`
-	Weight      decimal.Decimal `gorm:"column:weight;type:numeric(10,2);default:0" json:"weight"`
-	SkuLengthCm decimal.Decimal `gorm:"column:sku_length_cm;type:numeric(10,2)" json:"sku_length_cm"`
-	SkuWidthCm  decimal.Decimal `gorm:"column:sku_width_cm;type:numeric(10,2)" json:"sku_width_cm"`
-	SkuHeightCm decimal.Decimal `gorm:"column:sku_height_cm;type:numeric(10,2)" json:"sku_height_cm"`
-	SkuWeightKg decimal.Decimal `gorm:"column:sku_weight_kg;type:numeric(10,2)" json:"sku_weight_kg"`
-	Image       string          `gorm:"column:image" json:"image"`
-	Status      int16           `gorm:"column:status;default:1" json:"status"`
-	CreatedAt   time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt   time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	ID               int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ProductID        int64           `gorm:"column:product_id;not null" json:"product_id"`
+	Code             string          `gorm:"column:code" json:"code"`
+	Barcode          string          `gorm:"column:barcode" json:"barcode"`
+	SpecDesc         string          `gorm:"column:spec_desc" json:"spec_desc"`
+	SpecValues       json.RawMessage `gorm:"column:spec_values;type:jsonb" json:"spec_values"`
+	Price            decimal.Decimal `gorm:"column:price;type:numeric(10,2);default:0" json:"price"`
+	CostPrice        decimal.Decimal `gorm:"column:cost_price;type:numeric(10,2);default:0" json:"cost_price"`
+	MarketPrice      decimal.Decimal `gorm:"column:market_price;type:numeric(10,2);default:0" json:"market_price"`
+	Stock            int             `gorm:"column:stock;default:0" json:"stock"`
+	LockStock        int             `gorm:"column:lock_stock;default:0" json:"lock_stock"`
+	WarningStock     int             `gorm:"column:warning_stock;default:0" json:"warning_stock"`
+	Weight           decimal.Decimal `gorm:"column:weight;type:numeric(10,2);default:0" json:"weight"`
+	SkuLengthCm      decimal.Decimal `gorm:"column:sku_length_cm;type:numeric(10,2)" json:"sku_length_cm"`
+	SkuWidthCm       decimal.Decimal `gorm:"column:sku_width_cm;type:numeric(10,2)" json:"sku_width_cm"`
+	SkuHeightCm      decimal.Decimal `gorm:"column:sku_height_cm;type:numeric(10,2)" json:"sku_height_cm"`
+	SkuWeightKg      decimal.Decimal `gorm:"column:sku_weight_kg;type:numeric(10,2)" json:"sku_weight_kg"`
+	Image            string          `gorm:"column:image" json:"image"`
+	Status           int16           `gorm:"column:status;default:1" json:"status"`
+	ComplianceStatus string          `gorm:"column:compliance_status;default:''" json:"compliance_status"`
+	CreatedAt        time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt        time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 // TableName overrides the default table name.
