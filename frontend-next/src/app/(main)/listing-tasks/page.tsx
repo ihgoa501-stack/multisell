@@ -14,7 +14,6 @@ const statusColorMap: Record<string, string> = {
   cancelled: 'default',
   approved: 'green',
   rejected: 'red',
-  pending_approval: 'orange',
 };
 
 const statusLabelMap: Record<string, string> = {
