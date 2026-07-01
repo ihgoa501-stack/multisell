@@ -72,6 +72,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
+	"github.com/lingmirror/backend-go/internal/domain/support"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
@@ -719,6 +720,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	exceptions.RegisterRoutes(protected, db, logger)
 	notification.RegisterRoutes(protected, db, logger)
 	dashboard.RegisterRoutes(protected, db, logger)
+	support.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
 	settings.RegisterRoutes(protected, db, logger)
 	imagegen.RegisterRoutes(protected, db, logger)
