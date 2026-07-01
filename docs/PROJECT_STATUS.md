@@ -2,7 +2,7 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-06-30（P0 基线恢复完成）
+更新时间：2026-07-01（P1 职责卡片完成）
 
 ## 当前结论
 
@@ -459,3 +459,60 @@ ListingTask 的 `ExecuteTask` 方法实现了 6 层执行门禁检查：
 - 新增 Tab 切换：决策队列、审批历史、Agent 评估
 - 审批历史展示已处理的 Agent 建议
 - Agent 评估展示各 Agent 信任分、采纳数、采纳率
+
+## 本次新增内容（2026-07-01，P1 规范职责卡片）
+
+### Agent 规范职责卡片
+
+P1 deliverable（根据 `docs/superpowers/plans/2026-06-30-ai-agentos-final-execution-plan.md` 定义）
+
+新增文档：
+
+| 文档 | 说明 |
+|------|------|
+| `docs/agent-responsibility-cards.md` | 18 个活跃 Agent 的规范职责卡片 |
+
+**覆盖 Agent（18 个）：**
+
+| ID | 名称 |
+|----|------|
+| A1 | 选品助理 |
+| A2 | 商品优化师 |
+| A3 | 广告分析师 |
+| A4 | 客服助理 |
+| A5 | 库存助理 |
+| A6 | 利润看护 |
+| A7 | 合规专员 |
+| A8 | 选品盈利分析 |
+| A9 | 批量运维 |
+| A10 | 物流运费引擎 |
+| A11 | 售后管理 |
+| G0 | 系统健康员 |
+| G1 | 驾驶舱 |
+| G2 | 仓储专员 |
+| G3 | 折扣风控 |
+| trustscore | 信任分计算服务 |
+| entropy | 自净化系统 |
+| M1 | 代谢评分引擎 |
+
+**每个卡片包含：** Business job、Reads（输入数据）、Tools / APIs（工具）、Outputs（输出）、Allowed actions（允许操作）、Approval required（审批条件）、Forbidden actions（禁止操作）、Audit fields（审计字段）、Trigger / schedule（触发方式）、Success metrics（成功指标）
+
+### 修改的权威文档
+
+- `docs/AGENT_CAPABILITIES.md` — Section 5 新增指向职责卡片的链接
+- `docs/INDEX.md` — 快速入门 Tab 新增 `Agent Responsibility Cards` 条目
+- `docs/PROJECT_STATUS.md` — 本更新
+
+### 验证
+
+| 检查 | 结果 |
+|------|------|
+| 所有活跃 Agent 覆盖 | ✅ 18/18 — A1–A11, G0–G3, trustscore, entropy, M1 |
+| Business job 定义 | ✅ 每个 Agent 有业务目标 |
+| 禁止操作定义 | ✅ 每个 Agent 有明确禁止操作 |
+| 审批条件定义 | ✅ 高风险操作标注审批必要 |
+| 后端/前端代码变更 | ✅ 无（纯文档变更） |
+
+### 继续 P2 的条件
+
+P1 验收完成，可以安全进入 P2（Typed Action And Tool Contract）。

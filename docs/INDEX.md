@@ -1,7 +1,7 @@
 # 凌镜 LingMirror — 文档索引
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 更新日期：2026-06-30
+> 更新日期：2026-07-01
 
 ---
 
@@ -16,6 +16,7 @@
 | [模块目录](reference-module-catalog.md) | 🆕 全部 60+ 后端领域模块一览 |
 | [配置参考](reference-configuration.md) | 🆕 config.yaml + 环境变量完整说明 |
 | [Agent Pipeline 解释](explanation-agent-pipeline.md) | 🆕 Agent 间如何通过 EventBus 通信和协作 |
+| [Agent Responsibility Cards](agent-responsibility-cards.md) | 🆕 所有活跃 Agent 的权威职责卡片：业务目标、输入、工具、输出、允许/禁止操作、审批、审计、指标 |
 
 ## 🛠️ 操作指南 (How-to)
 

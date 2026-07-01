@@ -429,6 +429,12 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=deepseek-v4-flash
 
 ## 五、AI Agent 系统
 
+> Canonical Agent Responsibility Cards → [`docs/agent-responsibility-cards.md`](agent-responsibility-cards.md)
+>
+> Each card defines business job, input data, tools/APIs, outputs, allowed actions,
+> approval requirements, forbidden actions, audit fields, trigger/schedule, and
+> success metrics. Cards cover A1–A11, G0–G3, trustscore, entropy, and M1.
+
 ### Agent 花名册
 
 | ID | 名称 | Squad | 决策点 | 自主化等级 |
