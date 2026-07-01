@@ -28,6 +28,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
+	"github.com/lingmirror/backend-go/internal/domain/compliance"
 	"github.com/lingmirror/backend-go/internal/domain/consolidation"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/landedcost"
@@ -688,6 +689,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
+	compliance.RegisterRoutes(protected, db, logger)
 	profit.RegisterRoutes(protected, db, logger)
 	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
 	mock.RegisterRoutes(protected, db, logger)
