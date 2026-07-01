@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"go.uber.org/zap"
@@ -202,5 +203,9 @@ func toJSON(v interface{}) string {
 	if v == nil {
 		return "{}"
 	}
-	return "{}" // placeholder — in production use json.Marshal
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
