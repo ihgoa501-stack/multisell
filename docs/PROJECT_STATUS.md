@@ -117,6 +117,37 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - **后端:** 无变更
 - **UI 设计:** 无变更
 
+<<<<<<< HEAD
+## 本次新增内容（2026-06-30，P1 Agent Responsibility Cards）
+
+### 新增文档
+
+| 文件 | 说明 |
+|------|------|
+| `docs/agent-responsibility-cards.md` | 18 个 Agent 的规范职责卡片：A1-A11、G0-G3、trustscore、entropy、M1 |
+
+每张卡片包含：业务角色（business job）、输入数据、工具/API、输出、允许行为、审批要求、禁止行为、审计字段、调度/触发条件、成功指标。
+
+### 更新文档
+
+| 文件 | 改动 |
+|------|------|
+| `docs/INDEX.md` | 新增 Agent Responsibility Cards 链接到"快速入门"区 |
+| `docs/PROJECT_STATUS.md` | 本次更新 |
+
+### 关键决策
+
+- 所有涉及价格、库存、订单、资金、外部发布的 Agent 行为均为 **审批必需**
+- G1（驾驶舱）为唯一 **只读 Agent**，无审批要求
+- 全局禁止行为清单覆盖所有 Agent
+- 最高风险行为映射表以文档形式记录，确保 Owner 可读
+
+### 代码变更
+
+无。P1 是纯文档阶段。
+
+=======
+>>>>>>> origin/main
 ## 本次修复内容（2026-06-25，4 Agent 并行执行）
 
 ### API 路径一致性 ✅ 已修复

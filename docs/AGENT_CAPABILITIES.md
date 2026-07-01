@@ -431,6 +431,8 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=deepseek-v4-flash
 
 ### Agent 花名册
 
+> 每名 Agent 的业务角色定义（输入、工具、边界、审批要求）参见 [Agent Responsibility Cards](agent-responsibility-cards.md)。
+
 | ID | 名称 | Squad | 决策点 | 自主化等级 |
 |----|------|-------|--------|-----------|
 | A1 | 选品助理 | insight | product_scout, market_analysis | advisory |
