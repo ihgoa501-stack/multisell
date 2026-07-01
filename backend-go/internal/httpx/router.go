@@ -76,6 +76,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
+	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
@@ -720,6 +721,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	price.RegisterRoutes(financeRoutes, db, logger)
 	decision.RegisterRoutes(protected, db, logger)
 	allocation.RegisterRoutes(protected, db, logger)
+	feedback.RegisterRoutes(protected, cfg, db, logger, nil, nil, nil)
 	exceptions.RegisterRoutes(protected, db, logger)
 	notification.RegisterRoutes(protected, db, logger)
 	dashboard.RegisterRoutes(protected, db, logger)
