@@ -76,3 +76,23 @@ func (h *Handler) Feedback(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"message": "feedback recorded"})
 }
+
+// AgentActivity GET /owner/agent-activity
+func (h *Handler) AgentActivity(c *gin.Context) {
+	data, err := h.service.AgentActivity()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, data)
+}
+
+// PipelineChain GET /owner/pipeline-chain
+func (h *Handler) PipelineChain(c *gin.Context) {
+	data, err := h.service.PipelineChain()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, data)
+}

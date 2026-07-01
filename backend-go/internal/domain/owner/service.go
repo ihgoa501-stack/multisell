@@ -460,3 +460,204 @@ func (s *Service) PlatformSyncStatus() ([]map[string]interface{}, error) {
 	}
 	return result, nil
 }
+
+// ---------------------------------------------------------------------------
+// AgentActivity and PipelineChain types and methods
+// ---------------------------------------------------------------------------
+
+// AgentActivityResponse shows what agents are doing.
+type AgentActivityResponse struct {
+	CurrentlyRunning int64           `json:"currently_running"`
+	CompletedToday   int64           `json:"completed_today"`
+	FailedToday      int64           `json:"failed_today"`
+	RecentEvents     []ActivityEvent `json:"recent_events"`
+}
+
+// ActivityEvent is a recent agent event for the Owner dashboard.
+type ActivityEvent struct {
+	ID        int64  `json:"id"`
+	AgentID   string `json:"agent_id"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+	RiskLevel string `json:"risk_level"`
+	CreatedAt string `json:"created_at"`
+	Summary   string `json:"summary"`
+}
+
+// PipelineChainResponse shows pipeline chain health.
+type PipelineChainResponse struct {
+	Chains []ChainStatus `json:"chains"`
+}
+
+// ChainStatus shows one pipeline chain.
+type ChainStatus struct {
+	Name          string      `json:"name"`
+	Steps         []ChainStep `json:"steps"`
+	OverallHealth string      `json:"overall_health"`
+}
+
+// ChainStep is one step in a pipeline chain.
+type ChainStep struct {
+	AgentID     string `json:"agent_id"`
+	Description string `json:"description"`
+	Status      string `json:"status"` // pending, running, completed, failed, blocked
+}
+
+// AgentActivity returns agent activity for the Owner.
+func (s *Service) AgentActivity() (*AgentActivityResponse, error) {
+	resp := &AgentActivityResponse{
+		RecentEvents: []ActivityEvent{},
+	}
+
+	// 1. Count currently_running: actions currently executing.
+	s.db.Table("unified_action").
+		Where("status = ?", "executing").
+		Count(&resp.CurrentlyRunning)
+
+	// 2. Count completed_today: status in ('completed','executed') and created_at > today.
+	todayStart := time.Now().Truncate(24 * time.Hour)
+	s.db.Table("unified_action").
+		Where("status IN ? AND created_at >= ?", []string{"completed", "executed"}, todayStart).
+		Count(&resp.CompletedToday)
+
+	// 3. Count failed_today: status = 'failed' and created_at > today.
+	s.db.Table("unified_action").
+		Where("status = ? AND created_at >= ?", "failed", todayStart).
+		Count(&resp.FailedToday)
+
+	// 4. Get latest 20 actions as recent events.
+	type rawEvent struct {
+		ID          int64
+		AgentID     string
+		Title       string
+		Status      string
+		RiskLevel   string
+		CreatedAt   time.Time
+		Description string
+	}
+	var events []rawEvent
+	if err := s.db.Table("unified_action").
+		Select("id, agent_id, title, status, COALESCE(risk_level,'medium') AS risk_level, created_at, COALESCE(description,'') AS description").
+		Order("created_at DESC").
+		Limit(20).
+		Scan(&events).Error; err != nil {
+		// Log but don't fail — return partial data.
+		s.logger.Warn("agent activity recent events query failed", zap.Error(err))
+	} else {
+		for _, e := range events {
+			summary := e.Description
+			if len(summary) > 150 {
+				summary = summary[:150] + "..."
+			}
+			resp.RecentEvents = append(resp.RecentEvents, ActivityEvent{
+				ID:        e.ID,
+				AgentID:   e.AgentID,
+				Title:     e.Title,
+				Status:    e.Status,
+				RiskLevel: e.RiskLevel,
+				CreatedAt: e.CreatedAt.Format("2006-01-02 15:04:05"),
+				Summary:   summary,
+			})
+		}
+	}
+
+	return resp, nil
+}
+
+// PipelineChain returns pipeline chain health.
+func (s *Service) PipelineChain() (*PipelineChainResponse, error) {
+	// Define known pipeline chains.
+	type chainStepDef struct {
+		AgentID     string
+		Description string
+	}
+	type chainDef struct {
+		Name  string
+		Steps []chainStepDef
+	}
+
+	chains := []chainDef{
+		{
+			Name: "Stock Alert → Discount Check → Profit Watch",
+			Steps: []chainStepDef{
+				{AgentID: "A5", Description: "库存预警检查"},
+				{AgentID: "G3", Description: "促销折扣风险验证"},
+				{AgentID: "A6", Description: "利润监控分析"},
+			},
+		},
+		{
+			Name: "Profit Watch → Listing Optimize",
+			Steps: []chainStepDef{
+				{AgentID: "A6", Description: "利润看护与成本优化"},
+				{AgentID: "A2", Description: "Listing 优化建议"},
+			},
+		},
+		{
+			Name: "System Health → Dashboard Overview",
+			Steps: []chainStepDef{
+				{AgentID: "G0", Description: "系统健康扫描"},
+				{AgentID: "G1", Description: "驾驶舱聚合展示"},
+			},
+		},
+	}
+
+	result := &PipelineChainResponse{
+		Chains: make([]ChainStatus, 0, len(chains)),
+	}
+
+	for _, chain := range chains {
+		cs := ChainStatus{
+			Name:          chain.Name,
+			Steps:         make([]ChainStep, 0, len(chain.Steps)),
+			OverallHealth: "unknown",
+		}
+
+		// For each step, get the latest action status.
+		for _, step := range chain.Steps {
+			var latestStatus string
+			s.db.Table("unified_action").
+				Select("COALESCE(status, 'pending')").
+				Where("agent_id = ?", step.AgentID).
+				Order("created_at DESC").
+				Limit(1).
+				Scan(&latestStatus)
+
+			cs.Steps = append(cs.Steps, ChainStep{
+				AgentID:     step.AgentID,
+				Description: step.Description,
+				Status:      latestStatus,
+			})
+		}
+
+		// Compute overall health: any failed = fail, all completed = ok, any blocked = blocked, else pending.
+		hasFailed := false
+		hasBlocked := false
+		allCompleted := true
+		for _, step := range cs.Steps {
+			switch step.Status {
+			case "failed":
+				hasFailed = true
+			case "blocked":
+				hasBlocked = true
+			case "completed":
+				// completed
+			default:
+				allCompleted = false
+			}
+		}
+		switch {
+		case hasFailed:
+			cs.OverallHealth = "failed"
+		case hasBlocked:
+			cs.OverallHealth = "blocked"
+		case allCompleted:
+			cs.OverallHealth = "ok"
+		default:
+			cs.OverallHealth = "pending"
+		}
+
+		result.Chains = append(result.Chains, cs)
+	}
+
+	return result, nil
+}

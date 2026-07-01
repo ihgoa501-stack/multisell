@@ -3,6 +3,7 @@ package agentos
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/response"
@@ -53,4 +54,35 @@ func (h *Handler) Autonomy(c *gin.Context) {
 // Status GET /agentos/status
 func (h *Handler) Status(c *gin.Context) {
 	response.Success(c, gin.H{"status": "running", "version": "0.1.0"})
+}
+
+// WorkItemDetail GET /agentos/work-items/:id
+func (h *Handler) WorkItemDetail(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid work item id")
+		return
+	}
+	detail, err := h.service.WorkItemDetail(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			response.Error(c, http.StatusNotFound, err.Error())
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, detail)
+}
+
+// AgentTimeline GET /agentos/agent-timeline
+func (h *Handler) AgentTimeline(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	entries, err := h.service.AgentTimeline(limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, entries)
 }

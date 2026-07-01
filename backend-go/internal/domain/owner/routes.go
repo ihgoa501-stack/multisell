@@ -17,5 +17,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		r.GET("/suggestions", h.Suggestions)
 		r.GET("/platform-sync", h.PlatformSyncStatus)
 		r.POST("/suggestions/:id/feedback", h.Feedback)
+		r.GET("/agent-activity", h.AgentActivity)
+		r.GET("/pipeline-chain", h.PipelineChain)
 	}
 }

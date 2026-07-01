@@ -28,6 +28,10 @@ import {
   ThunderboltOutlined,
   ApiOutlined,
   ArrowRightOutlined,
+  BranchesOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -69,6 +73,33 @@ interface PlatformSync {
   fees_sync: string;
   settlements_sync: string;
   last_sync_time: string;
+}
+
+interface AgentActivity {
+  currently_running: number;
+  completed_today: number;
+  failed_today: number;
+  recent_events: Array<{
+    id: number;
+    agent_id: string;
+    title: string;
+    status: string;
+    risk_level: string;
+    created_at: string;
+    summary: string;
+  }>;
+}
+
+interface PipelineChain {
+  chains: Array<{
+    name: string;
+    steps: Array<{
+      agent_id: string;
+      description: string;
+      status: string;
+    }>;
+    overall_health: string;
+  }>;
 }
 
 // ---------- Color helpers ----------
@@ -120,6 +151,16 @@ const confidenceColor = (v: number): string => {
   return 'red';
 };
 
+const statusColor = (status: string): string => {
+  const s = status.toLowerCase();
+  if (s === 'completed' || s === 'success') return 'green';
+  if (s === 'running' || s === 'in_progress' || s === 'processing') return 'blue';
+  if (s === 'failed' || s === 'error') return 'red';
+  if (s === 'pending' || s === 'queued') return 'default';
+  if (s === 'blocked' || s === 'warning') return 'orange';
+  return 'blue';
+};
+
 // ---------- Page ----------
 export default function OwnerPage() {
   const qc = useQueryClient();
@@ -151,6 +192,24 @@ export default function OwnerPage() {
     queryFn: async () => {
       const res = await apiClient.get<PlatformSync[]>('/v1/owner/platform-sync');
       return res.data ?? [];
+    },
+  });
+
+  // Agent activity
+  const { data: agentActivity, isLoading: activityLoading } = useQuery({
+    queryKey: ['owner-agent-activity'],
+    queryFn: async () => {
+      const res = await apiClient.get<AgentActivity>('/v1/owner/agent-activity');
+      return res.data;
+    },
+  });
+
+  // Pipeline chain
+  const { data: pipelineChain, isLoading: pipelineLoading } = useQuery({
+    queryKey: ['owner-pipeline-chain'],
+    queryFn: async () => {
+      const res = await apiClient.get<PipelineChain>('/v1/owner/pipeline-chain');
+      return res.data;
     },
   });
 
@@ -193,6 +252,8 @@ export default function OwnerPage() {
     qc.invalidateQueries({ queryKey: ['owner-risk-summary'] });
     qc.invalidateQueries({ queryKey: ['owner-suggestions'] });
     qc.invalidateQueries({ queryKey: ['owner-platform-sync'] });
+    qc.invalidateQueries({ queryKey: ['owner-agent-activity'] });
+    qc.invalidateQueries({ queryKey: ['owner-pipeline-chain'] });
   };
 
   // Compute stats
@@ -611,6 +672,165 @@ export default function OwnerPage() {
           </div>
         </Col>
       </Row>
+
+      {/* Agent Activity Feed */}
+      <div
+        style={{
+          background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{
+          padding: '12px 16px', borderBottom: '1px solid var(--bd)',
+          display: 'flex', alignItems: 'center', gap: 8,
+          fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
+        }}>
+          <RobotOutlined /> Agent 活动摘要
+          <Tag color="purple" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>Live</Tag>
+        </div>
+        <div style={{ padding: 16 }}>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col xs={8}>
+              <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
+                <Statistic
+                  title="正在运行"
+                  value={agentActivity?.currently_running ?? '-'}
+                  valueStyle={{ color: 'var(--i4)' }}
+                  prefix={<ThunderboltOutlined />}
+                  loading={activityLoading}
+                />
+              </div>
+            </Col>
+            <Col xs={8}>
+              <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
+                <Statistic
+                  title="今日完成"
+                  value={agentActivity?.completed_today ?? '-'}
+                  valueStyle={{ color: 'var(--g4)' }}
+                  prefix={<CheckCircleOutlined />}
+                  loading={activityLoading}
+                />
+              </div>
+            </Col>
+            <Col xs={8}>
+              <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
+                <Statistic
+                  title="今日失败"
+                  value={agentActivity?.failed_today ?? '-'}
+                  valueStyle={{
+                    color: (agentActivity?.failed_today ?? 0) > 0 ? 'var(--r4)' : 'var(--g4)',
+                  }}
+                  prefix={<CloseCircleOutlined />}
+                  loading={activityLoading}
+                />
+              </div>
+            </Col>
+          </Row>
+          <Spin spinning={activityLoading}>
+            {(agentActivity?.recent_events ?? []).length === 0 && !activityLoading ? (
+              <Empty description="暂无活动记录" />
+            ) : (
+              <Table
+                rowKey="id"
+                dataSource={agentActivity?.recent_events ?? []}
+                size="small"
+                pagination={false}
+                columns={[
+                  { title: 'Agent', dataIndex: 'agent_id', width: 100 },
+                  { title: '标题', dataIndex: 'title', ellipsis: true, render: (v: string) => <Text strong>{v || '-'}</Text> },
+                  { title: '状态', dataIndex: 'status', width: 100, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
+                  { title: '风险', dataIndex: 'risk_level', width: 80, render: (v: string) => <Tag color={riskColor(v)}>{v}</Tag> },
+                  { title: '时间', dataIndex: 'created_at', width: 150 },
+                ]}
+              />
+            )}
+          </Spin>
+        </div>
+      </div>
+
+      {/* Pipeline Chain Status */}
+      <div
+        style={{
+          background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{
+          padding: '12px 16px', borderBottom: '1px solid var(--bd)',
+          display: 'flex', alignItems: 'center', gap: 8,
+          fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
+        }}>
+          <BranchesOutlined /> Agent 流程管道
+          <Tag color="purple" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>Live</Tag>
+        </div>
+        <div style={{ padding: 16 }}>
+          <Spin spinning={pipelineLoading}>
+            {(pipelineChain?.chains ?? []).length === 0 && !pipelineLoading ? (
+              <Empty description="暂无管道数据" />
+            ) : (
+              <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                {(pipelineChain?.chains ?? []).map((chain, idx) => (
+                  <div key={idx} style={{
+                    background: 'var(--bg)', border: '1px solid var(--bd)',
+                    borderRadius: 8, padding: 16,
+                  }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+                    }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--t1)' }}>{chain.name}</span>
+                      <Tag color={chain.overall_health === 'ok' ? 'green' : chain.overall_health === 'warn' ? 'orange' : 'red'}>
+                        {chain.overall_health === 'ok' ? '正常' : chain.overall_health === 'warn' ? '警告' : '严重'}
+                      </Tag>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {chain.steps.map((step, si) => (
+                        <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {si > 0 && <ArrowRightOutlined style={{ color: 'var(--t4)', fontSize: '0.7rem' }} />}
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '6px 12px', borderRadius: 6,
+                            background:
+                              step.status === 'completed' ? 'var(--g1)'
+                              : step.status === 'running' ? 'var(--i1)'
+                              : step.status === 'failed' ? 'var(--r1)'
+                              : step.status === 'blocked' ? 'var(--y1)'
+                              : 'var(--s2)',
+                            border: `1px solid ${
+                              step.status === 'completed' ? 'var(--g3)'
+                              : step.status === 'running' ? 'var(--i3)'
+                              : step.status === 'failed' ? 'var(--r3)'
+                              : step.status === 'blocked' ? 'var(--y3)'
+                              : 'var(--bd)'
+                            }`,
+                          }}>
+                            <div style={{
+                              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                              background:
+                                step.status === 'completed' ? 'var(--g4)'
+                                : step.status === 'running' ? 'var(--i4)'
+                                : step.status === 'failed' ? 'var(--r4)'
+                                : step.status === 'blocked' ? 'var(--y4)'
+                                : 'var(--t4)',
+                            }} />
+                            <span style={{ fontWeight: 500, fontSize: '0.72rem', color: 'var(--t1)' }}>
+                              {step.agent_id}
+                            </span>
+                            {step.description && (
+                              <span style={{ fontSize: '0.68rem', color: 'var(--t2)' }}>
+                                ({step.description})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </Space>
+            )}
+          </Spin>
+        </div>
+      </div>
 
       {/* Approval confirmation modal */}
       <Modal
