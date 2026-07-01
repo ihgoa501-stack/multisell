@@ -7,6 +7,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -170,7 +171,7 @@ func (s *Scheduler) runTask(ctx context.Context, task Task) {
 			mu := guard.(*sync.Mutex)
 			if mu.TryLock() {
 				start := time.Now()
-				s.emitTick(task)
+				s.emitTick(ctx, task)
 				elapsed := time.Since(start)
 				schedulerTickDuration.WithLabelValues(task.AgentID, task.DecisionPoint).Observe(elapsed.Seconds())
 				s.lastTickAt.Store(task.ID, &start)
@@ -191,14 +192,16 @@ func (s *Scheduler) runTask(ctx context.Context, task Task) {
 }
 
 // emitTick publishes a scheduler tick event to the event bus.
-func (s *Scheduler) emitTick(task Task) {
+func (s *Scheduler) emitTick(ctx context.Context, task Task) {
 	payload := map[string]interface{}{
 		"agent_id":       task.AgentID,
 		"decision_point": task.DecisionPoint,
 		"schedule_id":    task.ID,
 		"description":    task.Description,
 	}
-	_, err := s.bus.Publish(context.Background(),
+	corrID := fmt.Sprintf("scheduler-%s-%d", task.ID, time.Now().Unix())
+	ctx = eventbus.WithCorrelationID(ctx, corrID)
+	_, err := s.bus.Publish(ctx,
 		"scheduler.tick."+task.AgentID,
 		"scheduler",
 		payload,
