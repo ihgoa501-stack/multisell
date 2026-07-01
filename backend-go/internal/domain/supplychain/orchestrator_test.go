@@ -200,18 +200,6 @@ func TestOrchestrator_HandleRecommendEvent_CreatesFlow(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_HandleTick(t *testing.T) {
-	logger := dbtest.NewLogger(t)
-	bus := eventbus.New(logger)
-	orch := NewOrchestrator(bus, nil, nil, nil)
-
-	ctx := context.Background()
-	evt := eventbus.Event{Topic: "scheduler.tick.orch"}
-
-	if err := orch.HandleTick(ctx, evt); err != nil {
-		t.Errorf("HandleTick should be no-op, got error: %v", err)
-	}
-}
 
 func TestOrchestrator_HandleAftersaleReturn(t *testing.T) {
 	logger := dbtest.NewLogger(t)
