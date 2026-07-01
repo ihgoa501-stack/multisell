@@ -36,6 +36,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { getCurrentOperator } from '@/lib/user';
+import StatCard from '@/components/ui/StatCard';
+import SectionCard from '@/components/ui/SectionCard';
 
 const { Text } = Typography;
 
@@ -303,7 +305,7 @@ export default function OwnerPage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 16,
+          marginBottom: 'var(--space-lg)',
         }}
       >
         <h1 style={{
@@ -321,7 +323,7 @@ export default function OwnerPage() {
       <div
         style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px',
-          marginBottom: 16, borderRadius: 8,
+          marginBottom: 'var(--space-lg)', borderRadius: 8,
           background: 'var(--y1)', border: '1px solid var(--y3)',
         }}
       >
@@ -346,7 +348,7 @@ export default function OwnerPage() {
       <div
         style={{
           display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px',
-          marginBottom: 16, borderRadius: 8,
+          marginBottom: 'var(--space-lg)', borderRadius: 8,
           background: 'var(--s1)', border: '1px solid var(--bd)',
         }}
       >
@@ -393,104 +395,55 @@ export default function OwnerPage() {
       </div>
 
       {/* Risk summary cards */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <Row gutter={16} style={{ marginBottom: 'var(--space-lg)' }}>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
-            <Statistic
-              title="待审批上架"
-              value={riskSummary?.pending_approvals ?? '-'}
-              prefix={<ClockCircleOutlined style={{ color: 'var(--y4)' }} />}
-              valueStyle={{ color: (riskSummary?.pending_approvals ?? 0) > 0 ? 'var(--y4)' : 'var(--g4)' }}
-            />
-          </div>
+          <StatCard title="待审批上架" value={riskSummary?.pending_approvals ?? '-'}
+            prefix={<ClockCircleOutlined style={{ color: 'var(--y4)' }} />}
+            valueStyle={{ color: (riskSummary?.pending_approvals ?? 0) > 0 ? 'var(--y4)' : 'var(--g4)' }} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
-            <Statistic
-              title="低利润商品"
-              value={riskSummary?.low_profit_products ?? '-'}
-              prefix={<WarningOutlined style={{ color: 'var(--r4)' }} />}
-              valueStyle={{ color: (riskSummary?.low_profit_products ?? 0) > 0 ? 'var(--r4)' : 'var(--g4)' }}
-            />
-          </div>
+          <StatCard title="低利润商品" value={riskSummary?.low_profit_products ?? '-'}
+            prefix={<WarningOutlined style={{ color: 'var(--r4)' }} />}
+            valueStyle={{ color: (riskSummary?.low_profit_products ?? 0) > 0 ? 'var(--r4)' : 'var(--g4)' }} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
-            <Statistic
-              title="资料不完整商品"
-              value={riskSummary?.missing_data_products ?? '-'}
-              prefix={<AlertOutlined style={{ color: 'var(--y4)' }} />}
-              valueStyle={{ color: (riskSummary?.missing_data_products ?? 0) > 0 ? 'var(--y4)' : 'var(--g4)' }}
-            />
-          </div>
+          <StatCard title="资料不完整商品" value={riskSummary?.missing_data_products ?? '-'}
+            prefix={<AlertOutlined style={{ color: 'var(--y4)' }} />}
+            valueStyle={{ color: (riskSummary?.missing_data_products ?? 0) > 0 ? 'var(--y4)' : 'var(--g4)' }} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
-            <Statistic
-              title="同步异常"
-              value={riskSummary?.sync_errors ?? '-'}
-              prefix={<ApiOutlined style={{ color: (riskSummary?.sync_errors ?? 0) > 0 ? 'var(--r4)' : 'var(--g4)' }} />}
-              valueStyle={{ color: (riskSummary?.sync_errors ?? 0) > 0 ? 'var(--r4)' : 'var(--g4)' }}
-            />
-          </div>
+          <StatCard title="同步异常" value={riskSummary?.sync_errors ?? '-'}
+            prefix={<ApiOutlined style={{ color: (riskSummary?.sync_errors ?? 0) > 0 ? 'var(--r4)' : 'var(--g4)' }} />}
+            valueStyle={{ color: (riskSummary?.sync_errors ?? 0) > 0 ? 'var(--r4)' : 'var(--g4)' }} />
         </Col>
       </Row>
 
       {/* Secondary summary row */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <Row gutter={16} style={{ marginBottom: 'var(--space-lg)' }}>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
-            <Statistic
-              title="候选商品总数"
-              value={riskSummary?.total_candidates ?? '-'}
-              prefix={<ShoppingOutlined style={{ color: 'var(--i4)' }} />}
-            />
-          </div>
+          <StatCard title="候选商品总数" value={riskSummary?.total_candidates ?? '-'}
+            prefix={<ShoppingOutlined style={{ color: 'var(--i4)' }} />} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
-            <Statistic
-              title="评估建议总数"
-              value={riskSummary?.total_recommendations ?? '-'}
-              prefix={<ThunderboltOutlined style={{ color: 'var(--i4)' }} />}
-            />
-          </div>
+          <StatCard title="评估建议总数" value={riskSummary?.total_recommendations ?? '-'}
+            prefix={<ThunderboltOutlined style={{ color: 'var(--i4)' }} />} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
-            <Statistic
-              title="推荐上架"
-              value={riskSummary?.list_ready_products ?? listReady}
-              prefix={<CheckOutlined style={{ color: 'var(--g4)' }} />}
-              valueStyle={{ color: 'var(--g4)' }}
-            />
-          </div>
+          <StatCard title="推荐上架" value={riskSummary?.list_ready_products ?? listReady}
+            prefix={<CheckOutlined style={{ color: 'var(--g4)' }} />}
+            valueStyle={{ color: 'var(--g4)' }} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16 }}>
-            <Statistic
-              title="演示模式"
-              value="Mock / 模拟"
-              prefix={<DatabaseOutlined style={{ color: 'var(--y4)' }} />}
-            />
-          </div>
+          <StatCard title="演示模式" value="Mock / 模拟"
+            prefix={<DatabaseOutlined style={{ color: 'var(--y4)' }} />} />
         </Col>
       </Row>
 
       <Row gutter={16}>
         {/* Left: Agent suggestions */}
         <Col xs={24} lg={17}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
-            <div style={{
-              padding: '12px 16px', borderBottom: '1px solid var(--bd)',
-              display: 'flex', alignItems: 'center', gap: 8,
-              fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
-            }}>
-              Agent 上架建议
-              <Tag color="orange" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>Mock</Tag>
-            </div>
-            <div style={{ padding: 16 }}>
-              <Space style={{ marginBottom: 12 }}>
+          <SectionCard title={<><RobotOutlined /> Agent 上架建议 <Tag color="orange" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>Mock</Tag></>}>
+              <Space style={{ marginBottom: 'var(--space-md)' }}>
                 <Button
                   size="small"
                   onClick={() => setSuggestionFilter('')}
@@ -610,22 +563,12 @@ export default function OwnerPage() {
                   />
                 )}
               </Spin>
-            </div>
-          </div>
+          </SectionCard>
         </Col>
 
         {/* Right: Platform sync status */}
         <Col xs={24} lg={7}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
-            <div style={{
-              padding: '12px 16px', borderBottom: '1px solid var(--bd)',
-              display: 'flex', alignItems: 'center', gap: 8,
-              fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
-            }}>
-              平台同步状态
-              <Tag color="blue" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>沙箱</Tag>
-            </div>
-            <div style={{ padding: 16 }}>
+          <SectionCard title={<><ApiOutlined /> 平台同步状态 <Tag color="blue" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>沙箱</Tag></>}>
               <Spin spinning={syncLoading}>
                 {(platformSync ?? []).length === 0 && !syncLoading ? (
                   <Empty description="暂无数据" />
@@ -638,28 +581,28 @@ export default function OwnerPage() {
                       }}>
                         <div style={{
                           display: 'flex', justifyContent: 'space-between',
-                          alignItems: 'center', marginBottom: 8,
+                          alignItems: 'center', marginBottom: 'var(--space-sm)',
                         }}>
                           <Text strong>{p.platform_name}</Text>
                           <Tag color={modeColor(p.mode)}>{modeLabel(p.mode)}</Tag>
                         </div>
                         <Space direction="vertical" style={{ width: '100%' }} size={4}>
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>订单</Text>
+                            <Text type="secondary" style={{ fontSize: 'var(--text-small)' }}>订单</Text>
                             <Badge status={p.orders_sync === 'success' ? 'success' : 'error'} text={p.orders_sync} />
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>商品</Text>
+                            <Text type="secondary" style={{ fontSize: 'var(--text-small)' }}>商品</Text>
                             <Badge status={p.products_sync === 'success' ? 'success' : 'error'} text={p.products_sync} />
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>费用</Text>
+                            <Text type="secondary" style={{ fontSize: 'var(--text-small)' }}>费用</Text>
                             <Badge status={p.fees_sync === 'success' ? 'success' : 'error'} text={p.fees_sync} />
                           </div>
                           {p.last_sync_time && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 4 }}>
-                              <Text type="secondary" style={{ fontSize: 11 }}>最后同步</Text>
-                              <Text style={{ fontSize: 11 }}>{p.last_sync_time}</Text>
+                              <Text type="secondary" style={{ fontSize: 'var(--text-small)' }}>最后同步</Text>
+                              <Text style={{ fontSize: 'var(--text-small)' }}>{p.last_sync_time}</Text>
                             </div>
                           )}
                         </Space>
@@ -668,8 +611,7 @@ export default function OwnerPage() {
                   </Space>
                 )}
               </Spin>
-            </div>
-          </div>
+          </SectionCard>
         </Col>
       </Row>
 
@@ -677,7 +619,7 @@ export default function OwnerPage() {
       <div
         style={{
           background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
-          marginBottom: 16,
+          marginBottom: 'var(--space-lg)',
         }}
       >
         <div style={{
@@ -752,7 +694,7 @@ export default function OwnerPage() {
       <div
         style={{
           background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
-          marginBottom: 16,
+          marginBottom: 'var(--space-lg)',
         }}
       >
         <div style={{
