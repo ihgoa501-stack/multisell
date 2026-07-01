@@ -482,10 +482,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Interval: time.Minute * 5, Description: "客服待处理消息检查",
 	})
 	sched.Register(scheduler.Task{
-		ID: "tick-g1", AgentID: "G1", DecisionPoint: "dashboard_overview",
-		Interval: time.Minute * 5, Description: "驾驶舱聚合",
-	})
-	sched.Register(scheduler.Task{
 		ID: "tick-a5", AgentID: "A5", DecisionPoint: "stock_alert",
 		Interval: time.Minute * 15, Description: "库存检查",
 	})
