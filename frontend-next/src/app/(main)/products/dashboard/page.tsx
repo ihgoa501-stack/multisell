@@ -129,8 +129,8 @@ export default function ProductDashboardPage() {
             title="在售商品"
             value={summary.active_products}
             loading={summaryLoading}
-            icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-            iconBgColor="#f6ffed"
+            icon={<CheckCircleOutlined style={{ color: 'var(--g4)' }} />}
+            iconBgColor="var(--s2)"
           />
         </div>
         <div style={{ flex: '1 1 200px', minWidth: 200 }}>
@@ -138,8 +138,8 @@ export default function ProductDashboardPage() {
             title="草稿商品"
             value={summary.draft_products}
             loading={summaryLoading}
-            icon={<EditOutlined style={{ color: '#faad14' }} />}
-            iconBgColor="#fffbe6"
+            icon={<EditOutlined style={{ color: 'var(--y4)' }} />}
+            iconBgColor="var(--s2)"
           />
         </div>
         <div style={{ flex: '1 1 200px', minWidth: 200 }}>

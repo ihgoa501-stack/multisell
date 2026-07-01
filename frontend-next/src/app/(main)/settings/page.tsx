@@ -23,33 +23,33 @@ const CARDS: SettingCard[] = [
     key: 'llm',
     title: 'LLM 配置',
     desc: '管理各 Agent 的模型配置与参数',
-    icon: <RobotOutlined style={{ fontSize: 32, color: '#1677ff' }} />,
+    icon: <RobotOutlined style={{ fontSize: 32, color: 'var(--i4)' }} />,
     path: '/settings/llm',
-    color: '#1677ff',
+    color: 'var(--i4)',
   },
   {
     key: 'rbac',
     title: 'RBAC 权限',
     desc: '角色与权限管理',
-    icon: <SafetyCertificateOutlined style={{ fontSize: 32, color: '#722ed1' }} />,
+    icon: <SafetyCertificateOutlined style={{ fontSize: 32, color: 'var(--i6)' }} />,
     path: '/settings/rbac',
-    color: '#722ed1',
+    color: 'var(--i6)',
   },
   {
     key: 'platform',
     title: '平台对接',
     desc: '电商平台集成与授权',
-    icon: <ApiOutlined style={{ fontSize: 32, color: '#13c2c2' }} />,
+    icon: <ApiOutlined style={{ fontSize: 32, color: 'var(--c4)' }} />,
     path: '/platform-integrations',
-    color: '#13c2c2',
+    color: 'var(--c4)',
   },
   {
     key: 'system',
     title: '系统信息',
     desc: '版本、健康检查与运行状态',
-    icon: <InfoCircleOutlined style={{ fontSize: 32, color: '#fa8c16' }} />,
+    icon: <InfoCircleOutlined style={{ fontSize: 32, color: 'var(--y4)' }} />,
     path: '/settings/system',
-    color: '#fa8c16',
+    color: 'var(--y4)',
   },
 ];
 
@@ -67,9 +67,9 @@ export default function SettingsPage() {
               onClick={() => router.push(c.path)}
               style={{ height: '100%' }}
             >
-              <div style={{ marginBottom: 12 }}>{c.icon}</div>
-              <h2 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: '1rem', marginBottom: 8 }}>{c.title}</h2>
-              <div style={{ color: 'var(--t3)', fontSize: 13 }}>{c.desc}</div>
+              <div style={{ marginBottom: 'var(--space-md)' }}>{c.icon}</div>
+              <h2 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: '1rem', marginBottom: 'var(--space-sm)' }}>{c.title}</h2>
+              <div style={{ color: 'var(--t3)', fontSize: 'var(--text-body)' }}>{c.desc}</div>
             </Card>
           </Col>
         ))}

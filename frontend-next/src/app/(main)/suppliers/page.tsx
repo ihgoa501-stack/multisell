@@ -226,7 +226,7 @@ export default function SuppliersPage() {
       width: 110,
       render: (_: unknown, record: Supplier) => {
         const score = scoreMap.get(record.id);
-        if (!score) return <span style={{ color: '#999' }}>-</span>;
+        if (!score) return <span style={{ color: 'var(--t3)' }}>-</span>;
         return (
           <a
             style={{ color: scoreColor(score.reliability_score), fontWeight: 700 }}

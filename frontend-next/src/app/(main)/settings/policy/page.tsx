@@ -265,14 +265,14 @@ export default function PolicySettingsPage() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 'var(--space-xl)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <Title level={3} style={{ margin: 0 }}>审批策略</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
           新建策略
         </Button>
       </div>
-      <p style={{ color: '#666', marginBottom: 16 }}>
+      <p style={{ color: 'var(--t3)', marginBottom: 'var(--space-lg)' }}>
         审批策略决定 AI Agent 的动作是否需要人工审批、自动批准或阻止执行。
         策略按优先级顺序评估，最严格的结果生效。
       </p>
