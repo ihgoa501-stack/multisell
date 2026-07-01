@@ -237,7 +237,7 @@ func (s *Service) Stats() (*ApprovalStats, error) {
 	// Count escalated (pending > 24h)
 	var escalated int64
 	if err := s.db.Model(&ApprovalRequest{}).
-		Where("status = ? AND created_at < ?", time.Now().Add(-24*time.Hour)).
+		Where("status = ? AND created_at < ?", StatusPending, time.Now().Add(-24*time.Hour)).
 		Count(&escalated).Error; err != nil {
 		return nil, err
 	}
@@ -276,7 +276,7 @@ func (s *Service) FindApprovedByTarget(targetType string, targetID int64, reques
 func (s *Service) AutoEscalate() ([]ApprovalRequest, error) {
 	cutoff := time.Now().Add(-24 * time.Hour)
 	var items []ApprovalRequest
-	if err := s.db.Where("status = ? AND created_at < ?", cutoff).
+	if err := s.db.Where("status = ? AND created_at < ?", StatusPending, cutoff).
 		Order("created_at ASC").
 		Find(&items).Error; err != nil {
 		return nil, err
