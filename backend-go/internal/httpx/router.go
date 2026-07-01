@@ -684,14 +684,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	}
 	approvalSvc := approval.NewService(db, logger, auditSvc)
 	rbacSvc := rbac.NewService(db, logger)
-	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
+	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict, auditSvc)
 	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
 
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
 	compliance.RegisterRoutes(protected, db, logger)
 	profit.RegisterRoutes(protected, db, logger)
-	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict, auditSvc)
 	mock.RegisterRoutes(protected, db, logger)
 	// Auto-seed mock demo data on startup
 	func() {

@@ -14,7 +14,7 @@ import (
 func TestService_GetRecommendations(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil)
 
 	db.Create(&ListingRecommendation{ProductID: 1, Decision: "list", Confidence: 0.85, Reason: "good product"})
 	db.Create(&ListingRecommendation{ProductID: 2, Decision: "skip", Confidence: 0.3, Reason: "bad product"})
@@ -41,7 +41,7 @@ func TestService_GetRecommendations(t *testing.T) {
 func TestService_GetRecommendations_Filtered(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil)
 
 	db.Create(&ListingRecommendation{ProductID: 1, Decision: "list"})
 	db.Create(&ListingRecommendation{ProductID: 2, Decision: "skip"})
@@ -61,14 +61,14 @@ func TestService_GetRecommendations_Filtered(t *testing.T) {
 func TestService_RecordExecutionResult_Success(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil)
 
 	listingTaskID := int64(100)
 	db.Create(&ListingRecommendation{
-		ProductID:          1,
-		Decision:           "list",
+		ProductID:            1,
+		Decision:             "list",
 		CreatedListingTaskID: &listingTaskID,
-		FeedbackStatus:     "adopted",
+		FeedbackStatus:       "adopted",
 	})
 
 	err := svc.RecordExecutionResult(1, 100, true, "")
@@ -86,14 +86,14 @@ func TestService_RecordExecutionResult_Success(t *testing.T) {
 func TestService_RecordExecutionResult_Failure(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil)
 
 	listingTaskID := int64(101)
 	db.Create(&ListingRecommendation{
-		ProductID:          2,
-		Decision:           "list",
+		ProductID:            2,
+		Decision:             "list",
 		CreatedListingTaskID: &listingTaskID,
-		FeedbackStatus:     "adopted",
+		FeedbackStatus:       "adopted",
 	})
 
 	err := svc.RecordExecutionResult(2, 101, false, "platform publish failed")
@@ -108,8 +108,9 @@ func TestService_RecordExecutionResult_Failure(t *testing.T) {
 	}
 	if rec.FeedbackNote != "platform publish failed" {
 		t.Errorf("expected note 'platform publish failed', got '%s'", rec.FeedbackNote)
-		}
 	}
+}
+
 func TestService_EvaluateCreatesBlockedListingTaskAndApproval(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t,
@@ -121,31 +122,31 @@ func TestService_EvaluateCreatesBlockedListingTaskAndApproval(t *testing.T) {
 		&approval.ApprovalRequest{},
 	)
 	logger := dbtest.NewLogger(t)
-	svc := NewService(db, logger, nil, false)
+	svc := NewService(db, logger, nil, false, nil)
 
 	categoryID := int64(1)
 	brandID := int64(1)
 	platformID := int64(1)
 
 	product := candidate.CandidateProduct{
-		Title:             "Test Candidate",
-		Description:       "Complete candidate product for testing purposes",
-		MainImage:         "https://example.test/image.jpg",
-		Images:            []byte(`["https://example.test/img1.jpg"]`),
-		CategoryID:        &categoryID,
-		BrandID:           &brandID,
-		SpecJSON:          []byte(`{"color": "red", "size": "M"}`),
-		PurchasePrice:     10,
-		PurchaseCurrency:  "CNY",
-		PackageWeightKg:   0.4,
-		PackageLengthCm:   10,
-		PackageWidthCm:    8,
-		PackageHeightCm:   6,
-		HSCode:            "1234.56",
-		OriginCountry:     "CN",
-		TargetSalePrice:   30,
-		TargetCurrency:    "USD",
-		TargetPlatformID:  &platformID,
+		Title:              "Test Candidate",
+		Description:        "Complete candidate product for testing purposes",
+		MainImage:          "https://example.test/image.jpg",
+		Images:             []byte(`["https://example.test/img1.jpg"]`),
+		CategoryID:         &categoryID,
+		BrandID:            &brandID,
+		SpecJSON:           []byte(`{"color": "red", "size": "M"}`),
+		PurchasePrice:      10,
+		PurchaseCurrency:   "CNY",
+		PackageWeightKg:    0.4,
+		PackageLengthCm:    10,
+		PackageWidthCm:     8,
+		PackageHeightCm:    6,
+		HSCode:             "1234.56",
+		OriginCountry:      "CN",
+		TargetSalePrice:    30,
+		TargetCurrency:     "USD",
+		TargetPlatformID:   &platformID,
 		DestinationCountry: "RU",
 	}
 	if err := db.Create(&product).Error; err != nil {
@@ -177,5 +178,5 @@ func TestService_EvaluateCreatesBlockedListingTaskAndApproval(t *testing.T) {
 	}
 	if req.Status != "pending" || req.RiskLevel != "high" {
 		t.Fatalf("unexpected approval: %+v", req)
-		}
 	}
+}

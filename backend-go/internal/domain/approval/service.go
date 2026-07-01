@@ -227,7 +227,6 @@ func (s *Service) FindApprovedByTarget(targetType string, targetID int64, reques
 	return &req, nil
 }
 
-
 // AutoEscalate checks for requests pending > 24h and returns their IDs.
 func (s *Service) AutoEscalate() ([]ApprovalRequest, error) {
 	cutoff := time.Now().Add(-24 * time.Hour)

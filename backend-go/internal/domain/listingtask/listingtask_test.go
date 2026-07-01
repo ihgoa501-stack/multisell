@@ -518,18 +518,18 @@ func TestService_Item_ListItems(t *testing.T) {
 func TestService_ExecuteTaskBlocksWithoutApproval(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
 
 	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "blocked", CreatedBy: "A8"}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 
-	_, err := svc.ExecuteTask(task.ID)
+	_, err := svc.ExecuteTask(task.ID, "A8")
 	if err == nil {
-		t.Fatal("expected approval required error")
+		t.Fatal("expected error for unapproved task")
 	}
-	if !strings.Contains(err.Error(), "approval required") {
+	if !strings.Contains(err.Error(), "cannot be executed from status") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -537,9 +537,10 @@ func TestService_ExecuteTaskBlocksWithoutApproval(t *testing.T) {
 func TestService_ExecuteTaskAllowsApprovedBlockedTask(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
 
-	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "blocked", CreatedBy: "A8"}
+	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "approved", CreatedBy: "A8"}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -547,18 +548,22 @@ func TestService_ExecuteTaskAllowsApprovedBlockedTask(t *testing.T) {
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("create item: %v", err)
 	}
-	db.Create(&approval.ApprovalRequest{
+	// Directly create an approved approval request.
+	req := approval.ApprovalRequest{
 		ProductID:   10,
 		RequestType: "publish",
 		Requester:   "A8",
-		Reviewer:    "owner",
 		Status:      "approved",
-		TargetType:  "listing_task",
-		TargetID:    task.ID,
+		EntityType:  "listing_task",
+		EntityID:    task.ID,
 		RiskLevel:   "high",
-	})
+	}
+	if err := db.Create(&req).Error; err != nil {
+		t.Fatalf("create approval: %v", err)
+	}
+	db.Model(&task).Update("approval_id", req.ID)
 
-	updated, err := svc.ExecuteTask(task.ID)
+	updated, err := svc.ExecuteTask(task.ID, "A8")
 	if err != nil {
 		t.Fatalf("ExecuteTask: %v", err)
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -513,22 +512,6 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		return nil, err
 	}
 
-	// Audit: execution started
-	s.writeAudit("listing_task.execute", "started", fmt.Sprintf("%d", taskID), operator,
-		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID))
-
-	oldStatus := task.Status
-
-		if err := s.db.Model(&task).Update("status", "pending").Error; err != nil {
-			return nil, err
-		}
-	}
-
-	// Validation gate
-	if err := s.validateExecutePreconditions(&task); err != nil {
-		return nil, err
-	}
-
 	// Dry-run mode: validate and audit only, skip Prism and platform publish.
 	if task.DryRun {
 		s.logger.Info("listing task dry-run: skipping Prism and platform publish",
@@ -570,10 +553,6 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		return &task, nil
 	}
 
-	// Audit: execution started
-	s.writeAudit("listing_task.execute", "started", fmt.Sprintf("%d", taskID), operator,
-		fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d", task.ID, task.ProductID, task.PlatformID),
-		&task)
 
 	oldStatus := task.Status
 
