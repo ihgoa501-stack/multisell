@@ -370,6 +370,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// event to the operation_log for the full audit trail.
 	// -------------------------------------------------------
 	auditSvc := operationlog.NewService(db, logger)
+	bus.Subscribe("agent.decided.*", approval.NewAgentDecisionSubscriber(db, logger, auditSvc))
 	bus.Subscribe("agent.decided.**", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
 
