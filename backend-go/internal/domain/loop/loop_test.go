@@ -14,7 +14,7 @@ import (
 func TestService_GetRecommendations(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	db.Create(&ListingRecommendation{ProductID: 1, Decision: "list", Confidence: 0.85, Reason: "good product"})
 	db.Create(&ListingRecommendation{ProductID: 2, Decision: "skip", Confidence: 0.3, Reason: "bad product"})
@@ -41,7 +41,7 @@ func TestService_GetRecommendations(t *testing.T) {
 func TestService_GetRecommendations_Filtered(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	db.Create(&ListingRecommendation{ProductID: 1, Decision: "list"})
 	db.Create(&ListingRecommendation{ProductID: 2, Decision: "skip"})
@@ -61,7 +61,7 @@ func TestService_GetRecommendations_Filtered(t *testing.T) {
 func TestService_RecordExecutionResult_Success(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	listingTaskID := int64(100)
 	db.Create(&ListingRecommendation{
@@ -86,7 +86,7 @@ func TestService_RecordExecutionResult_Success(t *testing.T) {
 func TestService_RecordExecutionResult_Failure(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
 
 	listingTaskID := int64(101)
 	db.Create(&ListingRecommendation{
@@ -122,7 +122,7 @@ func TestService_EvaluateCreatesBlockedListingTaskAndApproval(t *testing.T) {
 		&approval.ApprovalRequest{},
 	)
 	logger := dbtest.NewLogger(t)
-	svc := NewService(db, logger, nil, false, nil)
+	svc := NewService(db, logger, nil, false)
 
 	categoryID := int64(1)
 	brandID := int64(1)
