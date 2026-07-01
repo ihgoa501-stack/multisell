@@ -86,6 +86,7 @@ type Sku struct {
 	SkuWeightKg decimal.Decimal `gorm:"column:sku_weight_kg;type:numeric(10,2)" json:"sku_weight_kg"`
 	Image       string          `gorm:"column:image" json:"image"`
 	Status      int16           `gorm:"column:status;default:1" json:"status"`
+	ComplianceStatus string    `gorm:"column:compliance_status;default:''" json:"compliance_status"`
 	CreatedAt   time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
