@@ -10,7 +10,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
-		"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -18,27 +19,26 @@ import (
 
 // Service provides the evaluation loop business logic.
 type Service struct {
-	db            *gorm.DB
-	logger        *zap.Logger
+	db              *gorm.DB
+	logger          *zap.Logger
+	auditSvc        *operationlog.Service
 	completenessSvc *completeness.Service
-	profitSvc     *profit.Service
-	listingtaskSvc *listingtask.Service
-	approvalSvc  *approval.Service
+	profitSvc       *profit.Service
+	listingtaskSvc  *listingtask.Service
+	approvalSvc     *approval.Service
 }
 
 // NewService creates a new evaluation loop service.
 // prismSvc and prismStrict are forwarded to listingtask service.
-func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
+func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool, auditSvc *operationlog.Service) *Service {
 	return &Service{
 		db:              db,
+		auditSvc:        auditSvc,
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
 		profitSvc:       profit.NewService(db, logger),
-		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict),
-		approvalSvc:  approval.NewService(db, logger),
-		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, nil, nil, nil),
-		listingtaskSvc: listingtask.NewService(db, logger, prismSvc, prismStrict, nil, nil, nil),
-		approvalSvc:    approval.NewService(db, logger),
+		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, nil, auditSvc, nil),
+		approvalSvc:     approval.NewService(db, logger, auditSvc),
 	}
 }
 
@@ -84,7 +84,7 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 			}
 			listingTaskID = &task.ID
 
-			as := approval.NewService(tx, s.logger)
+			as := approval.NewService(tx, s.logger, s.auditSvc)
 			_, err = as.Create(&approval.CreateApprovalInput{
 				ProductID:   prod.ID,
 				RequestType: "publish",
@@ -238,7 +238,7 @@ func (s *Service) createListingTask(db *gorm.DB, prod *candidate.CandidateProduc
 	targetMargin := profitResult.ProfitMargin
 	targetPrice := prod.TargetSalePrice
 
-	task, err := listingtask.NewService(db, s.logger, nil, false).Create(&listingtask.CreateTaskInput{
+	task, err := listingtask.NewService(db, s.logger, nil, false, s.approvalSvc, s.auditSvc, nil).Create(&listingtask.CreateTaskInput{
 		ProductID:           prod.ID,
 		PlatformID:          platformID,
 		SourceType:          "campaign",
