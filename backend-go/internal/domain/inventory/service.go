@@ -11,6 +11,11 @@ import (
 
 // ── Cross-Platform Sync ────────────────────────────────────────────────────
 
+// EventPublisher publishes events to the event bus.
+type EventPublisher interface {
+	Publish(ctx context.Context, topic, source string, payload map[string]interface{}) (string, error)
+}
+
 // SyncAcrossPlatforms prevents overselling by checking inventory across all
 // platforms. If total committed stock (sum of active listings across platforms)
 // exceeds available stock, it flags the result.
@@ -115,11 +120,19 @@ func (s *Service) ListOversellReport(ctx context.Context, page, size int) ([]Inv
 type Service struct {
 	db     *gorm.DB
 	logger *zap.Logger
+	events EventPublisher
 }
 
 // NewService creates a new inventory service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
+}
+
+// WithEventBus wires an EventPublisher for publishing stock critical events.
+// If the bus is nil, stock critical detection is a no-op.
+func (s *Service) WithEventBus(ep EventPublisher) *Service {
+	s.events = ep
+	return s
 }
 
 // ── Inventory ─────────────────────────────────────────────────────
@@ -173,14 +186,23 @@ func (s *Service) GetBySkuID(ctx context.Context, skuID int64) (*Inventory, erro
 }
 
 // UpdateStock updates the quantity of an inventory record and logs the change.
+// When the stock drops to or below the safety stock threshold, it publishes a
+// supplychain.stock.critical event so the supply chain orchestrator can trigger
+// A8 sourcing rescan.
 func (s *Service) UpdateStock(ctx context.Context, id int64, newQty int, operator, remark string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var skuID int64
+	var safetyStock int
+	var beforeQty int
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var inv Inventory
 		if err := tx.First(&inv, id).Error; err != nil {
 			return err
 		}
 
-		beforeQty := inv.Quantity
+		skuID = inv.SkuID
+		safetyStock = inv.SafetyStock
+		beforeQty = inv.Quantity
 		changeQty := newQty - beforeQty
 
 		changeType := "adjust"
@@ -207,6 +229,31 @@ func (s *Service) UpdateStock(ctx context.Context, id int64, newQty int, operato
 		}
 		return tx.Create(&log).Error
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// After a successful stock reduction that crosses the safety stock threshold,
+	// publish a supplychain.stock.critical event so the supply chain orchestrator
+	// can trigger A8 sourcing rescan and create an approval-gated replenishment action.
+	if safetyStock > 0 && beforeQty > safetyStock && newQty <= safetyStock && s.events != nil {
+		s.logger.Info("stock dropped below safety threshold, publishing critical event",
+			zap.Int64("sku_id", skuID),
+			zap.Int("before", beforeQty),
+			zap.Int("after", newQty),
+			zap.Int("safety_stock", safetyStock),
+		)
+		if _, pubErr := s.events.Publish(ctx, "supplychain.stock.critical", "inventory", map[string]interface{}{
+			"sku_id":        skuID,
+			"current_stock": newQty,
+			"safety_stock":  safetyStock,
+		}); pubErr != nil {
+			s.logger.Warn("publish supplychain.stock.critical failed", zap.Error(pubErr))
+		}
+	}
+
+	return nil
 }
 
 // LockStock increases the locked_quantity of an inventory record.
