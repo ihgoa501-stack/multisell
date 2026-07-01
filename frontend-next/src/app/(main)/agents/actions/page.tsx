@@ -21,7 +21,7 @@ function StatusTag({ value }: { value: unknown }) {
 export default function AgentsActionsPage() {
   return (
     <CrudListPage
-      resource="/v1/ai/actions"
+      resource="/ai/actions"
       title="Agent Actions"
       singular="Action"
       editable={false}

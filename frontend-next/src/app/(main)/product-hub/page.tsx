@@ -32,7 +32,7 @@ const LIFECYCLE_LABELS: Record<string, string> = {
 export default function ProductHubPage() {
   return (
     <CrudListPage
-      resource="/v1/product-hub"
+      resource="/product-hub"
       title="产品档案"
       singular="产品"
       columns={[
