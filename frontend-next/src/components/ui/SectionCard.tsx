@@ -22,10 +22,12 @@ export default function SectionCard({
 }: SectionCardProps) {
   return (
     <div
+      className="section-card"
       style={{
         background: 'var(--s1)',
         border: '1px solid var(--bd)',
         borderRadius: 8,
+        transition: 'background var(--dur-micro) ease, border-color var(--dur-short) ease',
         ...style,
       }}
     >
@@ -40,6 +42,7 @@ export default function SectionCard({
           fontWeight: 600,
           fontSize: '0.875rem',
           color: 'var(--t1)',
+          transition: 'border-color var(--dur-short) ease',
         }}
       >
         <span>{title}</span>

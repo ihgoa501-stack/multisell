@@ -1,5 +1,14 @@
 'use client';
 
+import type { CSSProperties } from 'react';
+
+const bar = (overrides: CSSProperties = {}): CSSProperties => ({
+  borderRadius: 4,
+  background: 'var(--s3)',
+  animation: 'skeleton-pulse 1.4s ease-in-out infinite',
+  ...overrides,
+});
+
 /**
  * Skeleton loading placeholders that match page layout structure.
  * Replaces bare <Spin> with content-aware loading shapes.
@@ -17,34 +26,10 @@ export function CardSkeleton({ rows = 1 }: { rows?: number }) {
       aria-busy="true"
       aria-label="Loading"
     >
-      <div
-        style={{
-          height: 14,
-          width: '40%',
-          background: 'var(--s3)',
-          borderRadius: 4,
-          marginBottom: 'var(--space-sm)',
-        }}
-      />
-      <div
-        style={{
-          height: 28,
-          width: '60%',
-          background: 'var(--s2)',
-          borderRadius: 4,
-        }}
-      />
+      <div style={bar({ height: 14, width: '40%', marginBottom: 'var(--space-sm)' })} />
+      <div style={bar({ height: 28, width: '60%' })} />
       {Array.from({ length: rows }).map((_, i) => (
-        <div
-          key={i}
-          style={{
-            height: 14,
-            width: '80%',
-            background: 'var(--s3)',
-            borderRadius: 4,
-            marginTop: 'var(--space-sm)',
-          }}
-        />
+        <div key={i} style={bar({ height: 14, width: '80%', marginTop: 'var(--space-sm)' })} />
       ))}
     </div>
   );
@@ -64,7 +49,7 @@ export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
         }}
       >
         {Array.from({ length: cols }).map((_, i) => (
-          <div key={i} style={{ height: 12, background: 'var(--s3)', borderRadius: 4, width: '60%' }} />
+          <div key={i} style={bar({ height: 12, width: '60%' })} />
         ))}
       </div>
       {/* Rows */}
@@ -80,15 +65,7 @@ export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
           }}
         >
           {Array.from({ length: cols }).map((_, c) => (
-            <div
-              key={c}
-              style={{
-                height: 12,
-                background: 'var(--s2)',
-                borderRadius: 4,
-                width: `${50 + Math.random() * 40}%`,
-              }}
-            />
+            <div key={c} style={bar({ height: 12, width: `${50 + (c * 11) % 40}%` })} />
           ))}
         </div>
       ))}
@@ -117,8 +94,8 @@ export function StatRowSkeleton({ count = 6 }: { count?: number }) {
             padding: 'var(--space-lg)',
           }}
         >
-          <div style={{ height: 12, width: '50%', background: 'var(--s3)', borderRadius: 4, marginBottom: 'var(--space-sm)' }} />
-          <div style={{ height: 24, width: '70%', background: 'var(--s2)', borderRadius: 4 }} />
+          <div style={bar({ height: 12, width: '50%', marginBottom: 'var(--space-sm)' })} />
+          <div style={bar({ height: 24, width: '70%' })} />
         </div>
       ))}
     </div>
