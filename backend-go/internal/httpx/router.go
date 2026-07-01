@@ -29,6 +29,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/compliance"
+	"github.com/lingmirror/backend-go/internal/domain/content"
 	"github.com/lingmirror/backend-go/internal/domain/consolidation"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/landedcost"
@@ -727,6 +728,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	settings.RegisterRoutes(protected, db, logger)
 	imagegen.RegisterRoutes(protected, db, logger)
 	importbatch.RegisterRoutes(protected, db, logger)
+	content.RegisterRoutes(protected, db, logger, aiOrch)
 	operationlog.RegisterRoutes(protected, db, logger)
 	integrations.RegisterRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
