@@ -52,8 +52,9 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
+			count := len(h.clients)
 			h.mu.Unlock()
-			h.logger.Debug("client connected", zap.Int("total", len(h.clients)))
+			h.logger.Debug("client connected", zap.Int("total", count))
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -61,11 +62,12 @@ func (h *Hub) Run() {
 				delete(h.clients, client)
 				close(client.Send)
 			}
+			count := len(h.clients)
 			h.mu.Unlock()
-			h.logger.Debug("client disconnected", zap.Int("total", len(h.clients)))
+			h.logger.Debug("client disconnected", zap.Int("total", count))
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
+			h.mu.Lock()
 			for client := range h.clients {
 				select {
 				case client.Send <- message:
@@ -74,7 +76,7 @@ func (h *Hub) Run() {
 					delete(h.clients, client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }
@@ -93,7 +95,7 @@ func (h *Hub) Broadcast(message []byte) {
 // BroadcastAndWait sends a message synchronously by invoking the inner loop's
 // delivery logic directly. Safe to call from any goroutine.
 func (h *Hub) BroadcastAndWait(message []byte) {
-	h.mu.RLock()
+	h.mu.Lock()
 	for client := range h.clients {
 		select {
 		case client.Send <- message:
@@ -102,7 +104,7 @@ func (h *Hub) BroadcastAndWait(message []byte) {
 			delete(h.clients, client)
 		}
 	}
-	h.mu.RUnlock()
+	h.mu.Unlock()
 }
 
 // ClientCount returns the current number of connected clients.
