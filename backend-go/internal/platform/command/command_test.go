@@ -370,7 +370,7 @@ func TestBuiltInInventoryReplenishHandler(t *testing.T) {
 func TestBuiltInPriceAdjustHandler(t *testing.T) {
 	logger := dbtest.NewLogger(t)
 
-	handler := PriceAdjustHandler(nil, logger)
+	handler := PriceAdjustHandler(nil, logger, nil)
 	result, err := handler(context.Background(), map[string]interface{}{
 		"sku_code":       "SKU003",
 		"suggested_price": float64(29.99),
@@ -471,7 +471,7 @@ func TestBuiltInHandlersWithEmptyPayloadNoPanic(t *testing.T) {
 	handlers := []Handler{
 		StockAlertHandler(nil, logger),
 		InventoryReplenishHandler(nil, logger),
-		PriceAdjustHandler(nil, logger),
+		PriceAdjustHandler(nil, logger, nil),
 		ListingDraftHandler(dbtest.NewDB(t), logger),
 		FlagNonCompliantHandler(nil, logger),
 	}

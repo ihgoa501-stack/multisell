@@ -128,6 +128,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
 	// ==========================================================
 
+		// Initialize approval service early for command dispatcher security gates.
+		// auditSvc is set later when it becomes available.
+		approvalSvc := approval.NewService(db, logger, nil)
+
 	// Create event bus (with optional outbox persistence).
 	sr := eventbus.NewSchemaRegistry()
 	// TODO: register TopicSchema implementations for each event topic pattern
@@ -140,10 +144,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	integrations.InitAdapters(db, logger)
 
 	// Create command dispatcher and register Phase 1 handlers.
-	cmd := command.NewDispatcher(logger)
+	cmd := command.NewDispatcher(logger, command.WithApprovalService(approvalSvc))
 	cmd.Register("stock_alert", command.StockAlertHandler(db, logger))
 	cmd.Register("replenish", command.InventoryReplenishHandler(db, logger))
-	cmd.Register("price_review", command.PriceAdjustHandler(db, logger))
+	cmd.Register("price_review", command.PriceAdjustHandler(db, logger, approvalSvc))
 	cmd.Register("listing_optimize", command.ListingDraftHandler(db, logger))
 	cmd.Register("compliance_check", command.FlagNonCompliantHandler(db, logger))
 
@@ -649,7 +653,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	} else {
 		logger.Info("Prism client disabled")
 	}
-	approvalSvc := approval.NewService(db, logger, auditSvc)
+	approvalSvc = approval.NewService(db, logger, auditSvc)
 	rbacSvc := rbac.NewService(db, logger)
 	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
 	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)

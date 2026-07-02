@@ -3,8 +3,10 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -77,8 +79,8 @@ func InventoryReplenishHandler(db *gorm.DB, logger *zap.Logger) Handler {
 }
 
 // PriceAdjustHandler adjusts a SKU's price based on profit_watch recommendations.
-// Expected payload keys: sku_code, suggested_price, reason.
-func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger) Handler {
+// Expected payload keys: sku_code, suggested_price, reason, sku_id (optional).
+func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service) Handler {
 	return func(ctx context.Context, input map[string]interface{}) (*Result, error) {
 		skuCode := stringField(input, "sku_code")
 		newPrice := floatField(input, "suggested_price")
@@ -88,12 +90,43 @@ func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger) Handler {
 			zap.String("sku_code", skuCode),
 			zap.Float64("new_price", newPrice))
 
+		// Security gate: require an approved approval request before adjusting price.
+		if approvalSvc != nil && db != nil {
+			var skuID int64
+			if v := floatField(input, "sku_id"); v != 0 {
+				skuID = int64(v)
+			}
+			if skuID == 0 {
+				_ = db.WithContext(ctx).Raw("SELECT id FROM sku WHERE code = ?", skuCode).Scan(&skuID).Error
+			}
+			if skuID > 0 {
+				_, err := approvalSvc.FindApprovedByTarget("sku", skuID, "price_change")
+				if err != nil {
+					errMsg := fmt.Sprintf("price adjustment not approved for sku %s", skuCode)
+					logger.Warn(errMsg, zap.Int64("sku_id", skuID), zap.Error(err))
+					return nil, fmt.Errorf("%s: %w", errMsg, err)
+				}
+				logger.Info("price_adjust approval verified",
+					zap.Int64("sku_id", skuID),
+					zap.String("sku_code", skuCode))
+			} else {
+				logger.Warn("cannot verify approval for price_adjust: no sku_id found",
+					zap.String("sku_code", skuCode))
+			}
+		}
+
 		if db != nil {
 			_ = db.WithContext(ctx).Exec(
 				`UPDATE sku SET price = ?, updated_at = ? WHERE code = ?`,
 				newPrice, time.Now(), skuCode,
 			).Error
 		}
+
+		// Audit log: record the price change with full details.
+		logger.Info("price_adjust executed",
+			zap.String("sku_code", skuCode),
+			zap.Float64("new_price", newPrice),
+			zap.String("reason", reason))
 
 		return &Result{
 			Success:    true,
