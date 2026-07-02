@@ -2,10 +2,352 @@ package candidate
 
 import (
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 )
+
+func TestComputeCompleteness_AllFieldsPresent(t *testing.T) {
+	t.Parallel()
+	sid := int64(1)
+	p := &CandidateProduct{
+		Title:           "Complete Product",
+		PurchasePrice:   100.0,
+		MainImage:       "https://example.com/img.jpg",
+		PackageWeightKg: 0.5,
+		PackageLengthCm: 10,
+		PackageWidthCm:  8,
+		PackageHeightCm: 6,
+		SupplierID:      &sid,
+	}
+	status, missing := computeCompleteness(p)
+	if status != "ready_for_profit_check" {
+		t.Fatalf("expected ready_for_profit_check, got %s", status)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("expected no missing fields, got %v", missing)
+	}
+}
+
+func TestComputeCompleteness_MissingTitle(t *testing.T) {
+	t.Parallel()
+	sid := int64(1)
+	p := &CandidateProduct{
+		PurchasePrice:   100.0,
+		MainImage:       "https://example.com/img.jpg",
+		PackageWeightKg: 0.5,
+		PackageLengthCm: 10,
+		PackageWidthCm:  8,
+		PackageHeightCm: 6,
+		SupplierID:      &sid,
+	}
+	status, missing := computeCompleteness(p)
+	if status != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", status)
+	}
+	found := false
+	for _, f := range missing {
+		if f == "title" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected title in missing fields")
+	}
+}
+
+func TestComputeCompleteness_ZeroPurchasePrice(t *testing.T) {
+	t.Parallel()
+	sid := int64(1)
+	p := &CandidateProduct{
+		Title:           "Zero Price",
+		PurchasePrice:   0,
+		MainImage:       "https://example.com/img.jpg",
+		PackageWeightKg: 0.5,
+		PackageLengthCm: 10,
+		PackageWidthCm:  8,
+		PackageHeightCm: 6,
+		SupplierID:      &sid,
+	}
+	status, missing := computeCompleteness(p)
+	if status != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", status)
+	}
+	found := false
+	for _, f := range missing {
+		if f == "purchase_price" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected purchase_price in missing fields")
+	}
+}
+
+func TestComputeCompleteness_MissingMainImage(t *testing.T) {
+	t.Parallel()
+	sid := int64(1)
+	p := &CandidateProduct{
+		Title:           "No Image",
+		PurchasePrice:   50.0,
+		MainImage:       "",
+		PackageWeightKg: 0.5,
+		PackageLengthCm: 10,
+		PackageWidthCm:  8,
+		PackageHeightCm: 6,
+		SupplierID:      &sid,
+	}
+	status, missing := computeCompleteness(p)
+	if status != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", status)
+	}
+	found := false
+	for _, f := range missing {
+		if f == "main_image" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected main_image in missing fields")
+	}
+}
+
+func TestComputeCompleteness_MissingDimensions(t *testing.T) {
+	t.Parallel()
+	sid := int64(1)
+	p := &CandidateProduct{
+		Title:           "No Dimensions",
+		PurchasePrice:   50.0,
+		MainImage:       "https://example.com/img.jpg",
+		PackageWeightKg: 0.5,
+		PackageLengthCm: 10,
+		PackageWidthCm:  0,
+		PackageHeightCm: 0,
+		SupplierID:      &sid,
+	}
+	status, missing := computeCompleteness(p)
+	if status != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", status)
+	}
+	dimCount := 0
+	for _, f := range missing {
+		if f == "package_width_cm" || f == "package_height_cm" {
+			dimCount++
+		}
+	}
+	if dimCount != 2 {
+		t.Fatalf("expected 2 dimension missing fields, got %v", missing)
+	}
+}
+
+func TestComputeCompleteness_MissingSupplier(t *testing.T) {
+	t.Parallel()
+	p := &CandidateProduct{
+		Title:           "No Supplier",
+		PurchasePrice:   50.0,
+		MainImage:       "https://example.com/img.jpg",
+		PackageWeightKg: 0.5,
+		PackageLengthCm: 10,
+		PackageWidthCm:  8,
+		PackageHeightCm: 6,
+		SupplierID:      nil,
+	}
+	status, missing := computeCompleteness(p)
+	if status != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", status)
+	}
+	found := false
+	for _, f := range missing {
+		if f == "supplier_id" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected supplier_id in missing fields")
+	}
+}
+
+func TestCreate_SetsCompleteness(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Create a product with minimal fields - should be "incomplete"
+	price := 50.0
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:         "Incomplete Product",
+		PurchasePrice: &price,
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if c.CompletenessStatus != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", c.CompletenessStatus)
+	}
+}
+
+func TestCreate_CompletenessOverride(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:              "Overridden",
+		PurchasePrice:      &price,
+		CreatedBy:          "tester",
+		CompletenessStatus: "ready_for_profit_check",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if c.CompletenessStatus != "ready_for_profit_check" {
+		t.Fatalf("expected ready_for_profit_check, got %s", c.CompletenessStatus)
+	}
+}
+
+func TestCreate_DedupRejectsDuplicateSourceURL(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	url := "https://example.com/product/123"
+	_, err := svc.Create(&CreateCandidateInput{
+		Title:         "First",
+		PurchasePrice: &price,
+		SourceURL:     url,
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+
+	_, err = svc.Create(&CreateCandidateInput{
+		Title:         "Duplicate",
+		PurchasePrice: &price,
+		SourceURL:     url,
+		CreatedBy:     "tester",
+	})
+	if err == nil {
+		t.Fatal("expected error for duplicate source_url")
+	}
+	if err != ErrDuplicateSourceURL {
+		t.Fatalf("expected ErrDuplicateSourceURL, got %v", err)
+	}
+}
+
+func TestCreate_AllowsSameSourceURLAfterDelete(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	url := "https://example.com/product/recycled"
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:         "First",
+		PurchasePrice: &price,
+		SourceURL:     url,
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+
+	if err := svc.Delete(c.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// After soft/hard delete, same URL should be allowed
+	_, err = svc.Create(&CreateCandidateInput{
+		Title:         "Recycled",
+		PurchasePrice: &price,
+		SourceURL:     url,
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("Create after delete: %v", err)
+	}
+}
+
+func TestDedup_EmptyResults(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	results, err := svc.Dedup(2)
+	if err != nil {
+		t.Fatalf("Dedup: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected no results, got %d", len(results))
+	}
+}
+
+func TestDedup_FindsDuplicates(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Insert directly via DB to bypass the duplicate check in Create
+	now := time.Now()
+	records := []CandidateProduct{
+		{Title: "A", PurchasePrice: 50, SourceURL: "https://example.com/dup1", Status: "draft", CreatedBy: "tester", CreatedAt: now, UpdatedAt: now},
+		{Title: "B", PurchasePrice: 50, SourceURL: "https://example.com/dup1", Status: "draft", CreatedBy: "tester", CreatedAt: now, UpdatedAt: now},
+		{Title: "C", PurchasePrice: 50, SourceURL: "https://example.com/unique", Status: "draft", CreatedBy: "tester", CreatedAt: now, UpdatedAt: now},
+	}
+	for _, r := range records {
+		if err := db.Create(&r).Error; err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+
+	results, err := svc.Dedup(2)
+	if err != nil {
+		t.Fatalf("Dedup: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 dup group, got %d", len(results))
+	}
+	if results[0].SourceURL != "https://example.com/dup1" {
+		t.Fatalf("expected dup1 URL, got %s", results[0].SourceURL)
+	}
+	if results[0].Count != 2 {
+		t.Fatalf("expected count 2, got %d", results[0].Count)
+	}
+}
+
+func TestDedup_IgnoresEmptySourceURL(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Insert directly via DB to bypass duplicate check
+	now := time.Now()
+	records := []CandidateProduct{
+		{Title: "A", PurchasePrice: 50, SourceURL: "", Status: "draft", CreatedBy: "tester", CreatedAt: now, UpdatedAt: now},
+		{Title: "B", PurchasePrice: 50, SourceURL: "", Status: "draft", CreatedBy: "tester", CreatedAt: now, UpdatedAt: now},
+	}
+	for _, r := range records {
+		if err := db.Create(&r).Error; err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+
+	results, err := svc.Dedup(2)
+	if err != nil {
+		t.Fatalf("Dedup: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results for empty source_urls, got %d", len(results))
+	}
+}
 
 func TestService_CreateAndGet(t *testing.T) {
 	t.Parallel()
@@ -17,13 +359,13 @@ func TestService_CreateAndGet(t *testing.T) {
 	salePrice := 120.0
 
 	c, err := svc.Create(&CreateCandidateInput{
-		Title:             "Test Product",
-		Description:       "A test product description",
-		PurchasePrice:     &price,
-		PackageWeightKg:   &weight,
-		TargetSalePrice:   &salePrice,
+		Title:              "Test Product",
+		Description:        "A test product description",
+		PurchasePrice:      &price,
+		PackageWeightKg:    &weight,
+		TargetSalePrice:    &salePrice,
 		DestinationCountry: "US",
-		CreatedBy:         "tester",
+		CreatedBy:          "tester",
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)

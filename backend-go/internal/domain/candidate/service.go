@@ -1,6 +1,7 @@
 package candidate
 
 import (
+	"errors"
 	"math/rand"
 	"time"
 
@@ -8,6 +9,9 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// ErrDuplicateSourceURL is returned when a candidate with the same source_url already exists.
+var ErrDuplicateSourceURL = errors.New("candidate with this source_url already exists")
 
 // seedProducts defines the mock candidate products to seed.
 var seedProducts = []struct {
@@ -145,7 +149,22 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 }
 
 // Create inserts a new candidate product.
+// If source_url is provided, it checks for duplicates first.
+// After creation, it computes and persists the completeness status.
 func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
+	// Dedup check: if source_url is set, ensure it doesn't already exist
+	if in.SourceURL != "" {
+		var existing int64
+		if err := s.db.Model(&CandidateProduct{}).
+			Where("source_url = ?", in.SourceURL).
+			Count(&existing).Error; err != nil {
+			return nil, err
+		}
+		if existing > 0 {
+			return nil, ErrDuplicateSourceURL
+		}
+	}
+
 	c := CandidateProduct{
 		Title:              in.Title,
 		Description:        in.Description,
@@ -201,10 +220,12 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 	} else {
 		c.Status = "draft"
 	}
+	// Compute completeness before setting, but allow override via input
 	if in.CompletenessStatus != "" {
 		c.CompletenessStatus = in.CompletenessStatus
 	} else {
-		c.CompletenessStatus = "incomplete"
+		status, _ := computeCompleteness(&c)
+		c.CompletenessStatus = status
 	}
 	if in.SourceURL != "" {
 		now := time.Now()
@@ -349,6 +370,31 @@ func (s *Service) Delete(id int64) error {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// DedupResult represents a duplicate record group by source_url.
+type DedupResult struct {
+	SourceURL string `json:"source_url"`
+	Count     int64  `json:"count"`
+}
+
+// Dedup returns records grouped by source_url that have duplicates,
+// filtered by a minimum count threshold.
+func (s *Service) Dedup(minDup int) ([]DedupResult, error) {
+	if minDup < 2 {
+		minDup = 2
+	}
+	var results []DedupResult
+	if err := s.db.Model(&CandidateProduct{}).
+		Select("source_url, COUNT(*) as count").
+		Where("source_url != ''").
+		Group("source_url").
+		Having("COUNT(*) >= ?", minDup).
+		Order("count DESC").
+		Find(&results).Error; err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 // Count returns the total number of candidate products.
