@@ -22,6 +22,12 @@
       "matches": ["https://detail.1688.com/*", "https://item.taobao.com/*"],
       "js": ["utils.js", "content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.1688.com/*", "*://s.1688.com/*"],
+      "js": ["content-script-list.js"],
+      "exclude_matches": ["*://detail.1688.com/offer/*"],
+      "run_at": "document_idle"
     }
   ],
   "background": {

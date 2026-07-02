@@ -736,20 +736,130 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI routes need the hub for realtime broadcasts.
 	ai.RegisterRoutes(protected, db, logger, hub)
 
-	// Browser Extension WebSocket + A12 Collection Agent
-	extSvc := &hubExtensionService{hub: hub}
-	pluginDrv := drivers.NewPluginDriver(extSvc, 120*time.Second)
-	toolBridge.AddDriver(toolbridge.DriverEntry{
+		// Browser Extension WebSocket + A12 Collection Agent
+		extSvc := &hubExtensionService{hub: hub}
+		pluginDrv := drivers.NewPluginDriver(extSvc, 120*time.Second)
+		toolBridge.AddDriver(toolbridge.DriverEntry{
 		Name:   "plugin",
 		Driver: pluginDrv,
 		Weight: 10,
-	})
-	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret).
-		WithPluginDriver(&extPluginBridge{driver: pluginDrv})
-	r.GET("/ws/extension", extHandler.ServeWS)
-	candSvc := candidate.NewService(db, logger)
-	a12 := impl.NewCollectionAgent(toolBridge, candSvc, logger)
-	aiOrch.RegisterAgent("A12", a12)
+		})
+		candSvc := candidate.NewService(db, logger)
+		extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret).
+		WithPluginDriver(&extPluginBridge{driver: pluginDrv}).
+		OnAutoCollect(func(userID int64, payload json.RawMessage) error {
+			var result struct {
+				ID      string `json:"id"`
+				Payload struct {
+					Status string               `json:"status"`
+					Data   *toolbridge.PageData `json:"data"`
+				} `json:"payload"`
+			}
+			if err := json.Unmarshal(payload, &result); err != nil {
+				return fmt.Errorf("parse auto-collect payload: %w", err)
+			}
+			if result.Payload.Status != "ok" || result.Payload.Data == nil {
+				return nil
+			}
+
+			pd := result.Payload.Data
+			imagesJSON, _ := json.Marshal(pd.Images)
+			rawPayload, _ := json.Marshal(pd)
+			rawMsg := json.RawMessage(rawPayload)
+
+			price := pd.PriceCNY
+			weight := 0.0
+			length := 0.0
+			width := 0.0
+			height := 0.0
+
+			if pd.WeightKg != nil {
+				weight = *pd.WeightKg
+			}
+			if pd.PackageLengthCm != nil {
+				length = *pd.PackageLengthCm
+			}
+			if pd.PackageWidthCm != nil {
+				width = *pd.PackageWidthCm
+			}
+			if pd.PackageHeightCm != nil {
+				height = *pd.PackageHeightCm
+			}
+
+			mainImage := ""
+			if len(pd.Images) > 0 {
+				mainImage = pd.Images[0]
+			}
+
+			now := time.Now()
+			input := &candidate.CreateCandidateInput{
+				Title:            pd.Title,
+				Description:      pd.Description,
+				MainImage:        mainImage,
+				Images:           imagesJSON,
+				PurchasePrice:    &price,
+				PurchaseCurrency: "CNY",
+				PackageWeightKg:  &weight,
+				PackageLengthCm:  &length,
+				PackageWidthCm:   &width,
+				PackageHeightCm:  &height,
+				OriginCountry:    "CN",
+				Status:           "draft",
+				CreatedBy:        "extension_auto",
+				SourceURL:        pd.SourceURL,
+				SourcePlatform:   "1688",
+				RawPayload:       &rawMsg,
+				CollectedAt:      &now,
+			}
+
+			created, err := candSvc.Create(input)
+			if err != nil {
+				return fmt.Errorf("save auto-collected candidate: %w", err)
+			}
+			logger.Info("auto-collect saved candidate",
+				zap.Int64("candidate_id", created.ID),
+				zap.String("source_url", pd.SourceURL))
+			return nil
+		}).
+		OnListCollect(func(userID int64, payload json.RawMessage) error {
+			var result struct {
+				Status string `json:"status"`
+				Data   struct {
+					PageURL     string `json:"page_url"`
+					CollectedAt string `json:"collected_at"`
+					Items       []struct {
+						Title      string `json:"title"`
+						PriceRange string `json:"price_range"`
+						DetailURL  string `json:"detail_url"`
+						ImageURL   string `json:"image_url"`
+					} `json:"items"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(payload, &result); err != nil {
+				return fmt.Errorf("parse list result: %w", err)
+			}
+			if result.Status != "ok" {
+				return nil
+			}
+			for _, item := range result.Data.Items {
+				lead := candidate.CollectLead{
+					Title:         item.Title,
+					PriceRange:    item.PriceRange,
+					DetailURL:     item.DetailURL,
+					ImageURL:      item.ImageURL,
+					SourcePageURL: result.Data.PageURL,
+					Status:        "pending_detail_collect",
+				}
+				if err := candSvc.CreateCollectLead(&lead); err != nil {
+					logger.Warn("create collect lead failed", zap.String("detail_url", item.DetailURL), zap.Error(err))
+				}
+			}
+			logger.Info("list collect saved leads", zap.Int("count", len(result.Data.Items)))
+			return nil
+		})
+		r.GET("/ws/extension", extHandler.ServeWS)
+		a12 := impl.NewCollectionAgent(toolBridge, candSvc, logger)
+		aiOrch.RegisterAgent("A12", a12)
 
 	return r
 }
@@ -793,4 +903,8 @@ type extPluginBridge struct {
 func (b *extPluginBridge) OnFetchProductResult(_ int64, data json.RawMessage) error {
 	b.driver.HandleResponse(data)
 	return nil
+}
+
+func (b *extPluginBridge) HasPending(requestID string) bool {
+	return b.driver.HasPending(requestID)
 }

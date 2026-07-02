@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
@@ -172,6 +173,18 @@ func pageDataToCandidate(pd *toolbridge.PageData, params map[string]interface{})
 		specJSON, _ = json.Marshal(pd.SpecVariants)
 	}
 
+	// Determine source URL from PageData or params.
+	sourceURL := pd.SourceURL
+	if sourceURL == "" {
+		if u, ok := params["url"].(string); ok {
+			sourceURL = u
+		}
+	}
+
+	// Marshal full PageData as raw payload.
+	rawPayload, _ := json.Marshal(pd)
+	rawMsg := json.RawMessage(rawPayload)
+
 	price := pd.PriceCNY
 	weight := 0.0
 	length := 0.0
@@ -215,10 +228,21 @@ func pageDataToCandidate(pd *toolbridge.PageData, params map[string]interface{})
 		PackageWidthCm:   &width,
 		PackageHeightCm:  &height,
 		OriginCountry:    "CN",
+		SourceURL:        sourceURL,
+		SourcePlatform:   "1688",
+		RawPayload:       &rawMsg,
+		CollectedAt:      timePtr(time.Now()),
 		Status:           "draft",
 		CreatedBy:        collectedBy,
 	}
 }
+
+// PageDataToCandidate is the exported version of pageDataToCandidate.
+func PageDataToCandidate(pd *toolbridge.PageData, params map[string]interface{}) *candidate.CreateCandidateInput {
+	return pageDataToCandidate(pd, params)
+}
+
+func timePtr(t time.Time) *time.Time { return &t }
 
 func copyParams(original map[string]interface{}) map[string]interface{} {
 	cp := make(map[string]interface{}, len(original))

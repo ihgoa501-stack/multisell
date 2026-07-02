@@ -24,7 +24,9 @@ let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 let pingInterval: ReturnType<typeof setInterval> | null = null;
-let isConnected = false;
+let authenticated = false;
+let errored = false;
+let connectionStatus: "connected" | "disconnected" | "no_token" | "error" = "disconnected";
 
 const MAX_RECONNECT_DELAY = 30_000; // 30 seconds
 const INITIAL_RECONNECT_DELAY = 1_000; // 1 second
@@ -32,9 +34,10 @@ const PING_INTERVAL = 15_000; // 15 seconds
 
 // ─── Connection status broadcast ───────────────────────────────────────────
 
-function broadcastStatus(
+function setConnectionStatus(
   status: "connected" | "disconnected" | "no_token" | "error"
 ) {
+  connectionStatus = status;
   const msg: StatusResponse = { type: "connection_status", status };
   chrome.runtime.sendMessage(msg).catch(() => {
     // No listeners (popup closed) — that's fine
@@ -49,9 +52,13 @@ async function connect(): Promise<void> {
     return;
   }
 
+  // Reset auth state for fresh connection
+  authenticated = false;
+  errored = false;
+
   const token = await getJWT();
   if (!token) {
-    broadcastStatus("no_token");
+    setConnectionStatus("no_token");
     return;
   }
 
@@ -62,28 +69,41 @@ async function connect(): Promise<void> {
     ws = new WebSocket(wsUrl);
   } catch (err) {
     console.error("[LingMirror] WebSocket creation failed:", err);
-    broadcastStatus("error");
+    setConnectionStatus("error");
     scheduleReconnect();
     return;
   }
 
   ws.onopen = () => {
-    console.log("[LingMirror] WebSocket connected:", wsUrl.replace(/token=.*/, "token=***"));
-    isConnected = true;
+    console.log("[LingMirror] WebSocket connected, sending auth...");
     reconnectAttempt = 0;
-    broadcastStatus("connected");
-
-    // Start heartbeat
-    pingInterval = setInterval(() => {
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "ping" }));
-      }
-    }, PING_INTERVAL);
+    ws?.send(JSON.stringify({ type: "auth", token }));
   };
 
   ws.onmessage = (event: MessageEvent) => {
     try {
       const msg = JSON.parse(event.data);
+
+      // Handle auth response first — before any other message processing
+      if (msg.type === "auth") {
+        if (msg.data === "ok") {
+          console.log("[LingMirror] WebSocket authenticated");
+          authenticated = true;
+          setConnectionStatus("connected");
+          startPing();
+        } else {
+          console.error(
+            "[LingMirror] WebSocket auth failed:",
+            msg.message || "invalid token"
+          );
+          setConnectionStatus("error");
+          ws?.close();
+        }
+        return;
+      }
+
+      // Ignore messages received before authentication
+      if (!authenticated) return;
 
       switch (msg.type) {
         case "pong":
@@ -104,15 +124,19 @@ async function connect(): Promise<void> {
 
   ws.onclose = (event: CloseEvent) => {
     console.log("[LingMirror] WebSocket closed:", event.code, event.reason);
-    isConnected = false;
-    broadcastStatus("disconnected");
+    if (authenticated && !errored) {
+      setConnectionStatus("disconnected");
+    }
+    authenticated = false;
+    errored = false;
     cleanup();
     scheduleReconnect();
   };
 
-  ws.onerror = (event: Event) => {
+  ws.onerror = () => {
     console.error("[LingMirror] WebSocket error");
-    broadcastStatus("error");
+    errored = true;
+    setConnectionStatus("error");
   };
 }
 
@@ -126,6 +150,17 @@ function cleanup(): void {
     reconnectTimer = null;
   }
   ws = null;
+}
+
+function startPing(): void {
+  if (pingInterval) {
+    clearInterval(pingInterval);
+  }
+  pingInterval = setInterval(() => {
+    if (ws?.readyState === WebSocket.OPEN && authenticated) {
+      ws.send(JSON.stringify({ type: "ping" }));
+    }
+  }, PING_INTERVAL);
 }
 
 function scheduleReconnect(): void {
@@ -237,7 +272,7 @@ function forwardResult(
  * Send a message to the backend WebSocket server.
  */
 function sendToServer(msg: WSOutgoingMessage): void {
-  if (ws?.readyState === WebSocket.OPEN) {
+  if (ws?.readyState === WebSocket.OPEN && authenticated) {
     ws.send(JSON.stringify(msg));
   }
 }
@@ -255,17 +290,15 @@ chrome.runtime.onMessage.addListener(
     _sender: chrome.runtime.MessageSender,
     sendResponse: (response?: any) => void
   ) => {
+    // List page auto-extraction result from content script
+    if (message.type === "list_page_result") {
+      sendToServer(message as any);
+      return;
+    }
+
     // Popup status query
     if (message.type === "get_status") {
-      const response: StatusResponse = {
-        type: "connection_status",
-        status: isConnected
-          ? "connected"
-          : ws
-          ? "disconnected"
-          : "no_token",
-      };
-      sendResponse(response);
+      sendResponse({ type: "connection_status", status: connectionStatus });
       return;
     }
 

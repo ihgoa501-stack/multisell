@@ -1,6 +1,7 @@
 package candidate
 
 import (
+	"errors"
 	"math/rand"
 	"time"
 
@@ -161,6 +162,11 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 		TargetCurrency:     in.TargetCurrency,
 		TargetPlatformID:   in.TargetPlatformID,
 		DestinationCountry: in.DestinationCountry,
+		SourceURL:          in.SourceURL,
+		SourcePlatform:     in.SourcePlatform,
+		RawPayload:         in.RawPayload,
+		CompletenessStatus: in.CompletenessStatus,
+		CollectedAt:        in.CollectedAt,
 		CreatedBy:          in.CreatedBy,
 	}
 	if in.PurchasePrice != nil {
@@ -198,6 +204,18 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 	} else {
 		c.Status = "draft"
 	}
+
+	// Compute completeness status
+	if in.CompletenessStatus == "" {
+		if in.Title != "" && (in.PurchasePrice != nil && *in.PurchasePrice > 0) && in.SourceURL != "" && in.MainImage != "" {
+			c.CompletenessStatus = "ready_for_profit_check"
+		} else {
+			c.CompletenessStatus = "incomplete"
+		}
+	} else {
+		c.CompletenessStatus = in.CompletenessStatus
+	}
+
 	if err := s.db.Create(&c).Error; err != nil {
 		return nil, err
 	}
@@ -301,6 +319,18 @@ func (s *Service) Update(id int64, in *UpdateCandidateInput) (*CandidateProduct,
 	if in.DestinationCountry != nil {
 		updates["destination_country"] = *in.DestinationCountry
 	}
+	if in.SourceURL != nil {
+		updates["source_url"] = *in.SourceURL
+	}
+	if in.SourcePlatform != nil {
+		updates["source_platform"] = *in.SourcePlatform
+	}
+	if in.RawPayload != nil {
+		updates["raw_payload"] = *in.RawPayload
+	}
+	if in.CompletenessStatus != nil {
+		updates["completeness_status"] = *in.CompletenessStatus
+	}
 	if in.Status != nil {
 		updates["status"] = *in.Status
 	}
@@ -339,3 +369,54 @@ func (s *Service) Count() (int64, error) {
 	}
 	return total, nil
 }
+
+// CreateCollectLead creates or updates a collect lead.
+func (s *Service) CreateCollectLead(lead *CollectLead) error {
+	var existing CollectLead
+	result := s.db.Where("detail_url = ?", lead.DetailURL).First(&existing)
+	if result.Error == nil {
+		if existing.Status == "pending_detail_collect" {
+			existing.Title = lead.Title
+			existing.PriceRange = lead.PriceRange
+			existing.ImageURL = lead.ImageURL
+			existing.ShopHint = lead.ShopHint
+			existing.SourcePageURL = lead.SourcePageURL
+			return s.db.Save(&existing).Error
+		}
+		return nil
+	}
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		lead.CollectedAt = timePtr(time.Now())
+		return s.db.Create(lead).Error
+	}
+	return result.Error
+}
+
+// computeMissingFields returns a list of field names that are missing from the input.
+func computeMissingFields(input *CreateCandidateInput) []string {
+	var missing []string
+	if input.Title == "" {
+		missing = append(missing, "title")
+	}
+	if input.SourceURL == "" {
+		missing = append(missing, "source_url")
+	}
+	if input.PurchasePrice == nil || *input.PurchasePrice <= 0 {
+		missing = append(missing, "purchase_price")
+	}
+	if input.MainImage == "" {
+		missing = append(missing, "main_image")
+	}
+	if input.Description == "" {
+		missing = append(missing, "description")
+	}
+	if input.PackageWeightKg == nil || *input.PackageWeightKg <= 0 {
+		missing = append(missing, "package_weight_kg")
+	}
+	if input.PackageLengthCm == nil || input.PackageWidthCm == nil || input.PackageHeightCm == nil || (input.PackageLengthCm != nil && *input.PackageLengthCm <= 0) {
+		missing = append(missing, "package_dimensions")
+	}
+	return missing
+}
+
+func timePtr(t time.Time) *time.Time { return &t }
