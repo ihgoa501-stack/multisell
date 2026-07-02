@@ -12,6 +12,7 @@ package impl
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -207,6 +208,7 @@ func (a *ProductScoutAgent) registerTools() {
 		},
 	})
 }
+
 // Decide dispatches to the correct decision handler based on decisionPoint.
 //
 // When a ToolRegistry is configured, the agent delegates via registry.Call(),
@@ -427,13 +429,13 @@ func (a *ProductScoutAgent) productResearch(ctx map[string]interface{}) (output 
 	dataNeeded := uniqueDataNeeds(directions)
 
 	output = map[string]interface{}{
-		"status":                "research_ready",
-		"category":              category,
-		"target_market":         targetMarket,
-		"target_platform":       targetPlatform,
-		"constraints_used":      constraints,
+		"status":                 "research_ready",
+		"category":               category,
+		"target_market":          targetMarket,
+		"target_platform":        targetPlatform,
+		"constraints_used":       constraints,
 		"recommended_directions": directions,
-		"data_needed":           dataNeeded,
+		"data_needed":            dataNeeded,
 		"warnings": []string{
 			"这是调研假设，不是确定经营结论。所有方向需要采集真实数据进行验证。",
 			"This is a research hypothesis, not a business conclusion. All directions require real data collection for validation.",
@@ -445,16 +447,16 @@ func (a *ProductScoutAgent) productResearch(ctx map[string]interface{}) (output 
 // ---------- Decision point: supplier_discovery ----------
 
 var supplierDiscoveryCommonKeywords = map[string][]string{
-	"厨房收纳": {"厨房收纳", "免打孔置物架", "厨房整理架", "锅盖架", "调料架"},
-	"家居收纳": {"收纳盒", "储物箱", "桌面收纳", "化妆品收纳", "抽屉分隔"},
+	"厨房收纳":  {"厨房收纳", "免打孔置物架", "厨房整理架", "锅盖架", "调料架"},
+	"家居收纳":  {"收纳盒", "储物箱", "桌面收纳", "化妆品收纳", "抽屉分隔"},
 	"厨房小工具": {"厨房计时器", "削皮器", "切菜器", "捣蒜器", "开瓶器"},
-	"浴室用品": {"浴室置物架", "牙刷架", "毛巾架", "浴巾", "防滑垫"},
-	"办公用品": {"桌面文具收纳", "笔记本", "便签纸", "笔筒", "文件架"},
-	"手机配件": {"手机壳", "手机支架", "充电线", "车载手机架", "屏幕保护膜"},
-	"家居装饰": {"墙贴", "桌布", "花瓶", "仿真花", "装饰画"},
-	"小家电": {"便携榨汁杯", "迷你加湿器", "USB风扇", "手持挂烫机", "电动牙刷"},
-	"宠物用品": {"猫抓板", "狗玩具", "宠物梳子", "猫碗架", "宠物出行包"},
-	"运动户外": {"瑜伽垫", "阻力带", "运动水壶", "握力器", "跳绳"},
+	"浴室用品":  {"浴室置物架", "牙刷架", "毛巾架", "浴巾", "防滑垫"},
+	"办公用品":  {"桌面文具收纳", "笔记本", "便签纸", "笔筒", "文件架"},
+	"手机配件":  {"手机壳", "手机支架", "充电线", "车载手机架", "屏幕保护膜"},
+	"家居装饰":  {"墙贴", "桌布", "花瓶", "仿真花", "装饰画"},
+	"小家电":   {"便携榨汁杯", "迷你加湿器", "USB风扇", "手持挂烫机", "电动牙刷"},
+	"宠物用品":  {"猫抓板", "狗玩具", "宠物梳子", "猫碗架", "宠物出行包"},
+	"运动户外":  {"瑜伽垫", "阻力带", "运动水壶", "握力器", "跳绳"},
 }
 
 // supplierDiscovery generates actionable collection plans for finding products
@@ -468,15 +470,15 @@ func (a *ProductScoutAgent) supplierDiscovery(ctx map[string]interface{}) (outpu
 
 	if len(keywords) == 0 {
 		return map[string]interface{}{
-			"status":         "needs_keywords",
-			"message":        "需要关键词或选品调研方向来生成搜索页面。请先运行 product_research 或提供 keywords 参数。",
-			"warnings":       []string{"这是调研建议，不是确定经营结论"},
+			"status":   "needs_keywords",
+			"message":  "需要关键词或选品调研方向来生成搜索页面。请先运行 product_research 或提供 keywords 参数。",
+			"warnings": []string{"这是调研建议，不是确定经营结论"},
 		}, 0.0, "low", nil
 	}
 
 	pages := make([]map[string]interface{}, 0, len(keywords))
 	for _, kw := range keywords {
-		encoded := urlEncode(kw)
+		encoded := url.QueryEscape(kw)
 		pages = append(pages, map[string]interface{}{
 			"type":   "search",
 			"url":    "https://s.1688.com/selloffer/offer_search.htm?keywords=" + encoded,
@@ -485,7 +487,7 @@ func (a *ProductScoutAgent) supplierDiscovery(ctx map[string]interface{}) (outpu
 	}
 
 	output = map[string]interface{}{
-		"status":         "collection_plan_ready",
+		"status":          "collection_plan_ready",
 		"source_platform": "1688",
 		"search_keywords": keywords,
 		"suggested_pages": pages,
@@ -663,25 +665,4 @@ func resolveKeywords(ctx map[string]interface{}) []string {
 	}
 
 	return nil
-}
-
-// urlEncode percent-encodes a string for URL query parameters.
-// ponytail: minimal encoding, replace with net/url if completeness matters.
-func urlEncode(s string) string {
-	var out []byte
-	for _, r := range []byte(s) {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' || r == '~' {
-			out = append(out, r)
-		} else {
-			out = append(out, '%', hexChar(r>>4), hexChar(r&0x0f))
-		}
-	}
-	return string(out)
-}
-
-func hexChar(n byte) byte {
-	if n < 10 {
-		return '0' + n
-	}
-	return 'A' + n - 10
 }

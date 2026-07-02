@@ -2,13 +2,14 @@ package impl
 
 import (
 	"context"
+	"net/url"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
-
 
 func nonEmptyStrings(v interface{}) bool {
 
@@ -236,10 +237,10 @@ func TestSourcingAgent_Decide(t *testing.T) {
 	a := NewSourcingAgent()
 	// Viable product.
 	out, conf, risk, err := a.Decide(context.Background(), "sourcing_recommend", map[string]interface{}{
-		"source_url": "https://detail.1688.com/offer/xxx.html",
-		"price_1688": 50.0,
-		"weight_kg":  0.5,
-		"destination": "US",
+		"source_url":   "https://detail.1688.com/offer/xxx.html",
+		"price_1688":   50.0,
+		"weight_kg":    0.5,
+		"destination":  "US",
 		"product_name": "测试商品",
 	})
 	if err != nil {
@@ -283,8 +284,8 @@ func TestProductResearch_Decide(t *testing.T) {
 
 	// Normal case: home category with RU/Ozon.
 	out, conf, risk, err := a.Decide(context.Background(), "product_research", map[string]interface{}{
-		"category":       "家居",
-		"target_market":  "RU",
+		"category":        "家居",
+		"target_market":   "RU",
 		"target_platform": "Ozon",
 	})
 	if err != nil {
@@ -343,8 +344,8 @@ func TestProductResearch_Decide(t *testing.T) {
 
 	// Unknown category should still produce directions (generic fallback).
 	out3, conf3, _, _ := a.Decide(context.Background(), "product_research", map[string]interface{}{
-		"category":       "家具",
-		"target_market":  "US",
+		"category":        "家具",
+		"target_market":   "US",
 		"target_platform": "Amazon",
 	})
 	if out3 == nil || out3["status"] != "research_ready" {
@@ -373,13 +374,13 @@ func TestSupplierDiscovery_Decide(t *testing.T) {
 		t.Errorf("expected source_platform=1688, got %v", out["source_platform"])
 	}
 	if !nonEmptyStrings(out["suggested_pages"]) {
-	// pages is a list of maps, not strings; check differently
-	if raw, ok := out["suggested_pages"].([]map[string]interface{}); !ok || len(raw) == 0 {
-		if raw2, ok2 := out["suggested_pages"].([]interface{}); !ok2 || len(raw2) == 0 {
-			t.Fatal("expected non-empty suggested_pages")
+		// pages is a list of maps, not strings; check differently
+		if raw, ok := out["suggested_pages"].([]map[string]interface{}); !ok || len(raw) == 0 {
+			if raw2, ok2 := out["suggested_pages"].([]interface{}); !ok2 || len(raw2) == 0 {
+				t.Fatal("expected non-empty suggested_pages")
+			}
 		}
 	}
-}
 	for _, p := range getPages(out) {
 		page, ok := p.(map[string]interface{})
 		if !ok {
@@ -392,13 +393,13 @@ func TestSupplierDiscovery_Decide(t *testing.T) {
 			t.Error("page missing reason")
 		}
 	}
-		if !nonEmptyStrings(out["supplier_filter_rules"]) {
+	if !nonEmptyStrings(out["supplier_filter_rules"]) {
 		t.Error("expected supplier_filter_rules")
 	}
-		if !nonEmptyStrings(out["collection_instructions"]) {
+	if !nonEmptyStrings(out["collection_instructions"]) {
 		t.Error("expected collection_instructions")
 	}
-		if !nonEmptyStrings(out["warnings"]) {
+	if !nonEmptyStrings(out["warnings"]) {
 		t.Error("expected warnings")
 	}
 	if conf < 0 || conf > 1 {
@@ -436,8 +437,8 @@ func TestScoutAgent_NoSideEffects(t *testing.T) {
 	for _, dp := range dps {
 		t.Run(dp, func(t *testing.T) {
 			out, conf, risk, err := a.Decide(context.Background(), dp, map[string]interface{}{
-				"category":       "家居",
-				"target_market":  "RU",
+				"category":        "家居",
+				"target_market":   "RU",
 				"target_platform": "Ozon",
 			})
 			if err != nil {
@@ -457,6 +458,42 @@ func TestScoutAgent_NoSideEffects(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSupplierDiscovery_URLEncoding(t *testing.T) {
+	a := NewProductScoutAgent()
+	out, _, _, err := a.Decide(context.Background(), "supplier_discovery", map[string]interface{}{
+		"keywords": []string{"厨房收纳", "USB 风扇"},
+	})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	pages := getPages(out)
+	if len(pages) < 2 {
+		t.Fatal("expected at least 2 suggested_pages")
+	}
+	for _, p := range pages {
+		page, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		u, ok := page["url"].(string)
+		if !ok || u == "" {
+			continue
+		}
+		// URL should contain percent-encoded Chinese characters, not raw UTF-8.
+		if strings.Contains(u, "厨房") {
+			t.Errorf("URL should not contain raw Chinese chars: %s", u)
+		}
+		// URL should start with expected base.
+		if !strings.HasPrefix(u, "https://s.1688.com/selloffer/offer_search.htm?keywords=") {
+			t.Errorf("URL missing expected prefix: %s", u)
+		}
+		// Verify it's parseable.
+		if _, err := url.Parse(u); err != nil {
+			t.Errorf("URL not parseable: %v", err)
+		}
 	}
 }
 
