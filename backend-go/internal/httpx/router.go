@@ -32,7 +32,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/compliance"
 	"github.com/lingmirror/backend-go/internal/domain/content"
 	"github.com/lingmirror/backend-go/internal/domain/consolidation"
-	"github.com/lingmirror/backend-go/internal/domain/content"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/orchestration"
@@ -77,7 +76,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
-	"github.com/lingmirror/backend-go/internal/domain/support"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
@@ -578,7 +576,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
 		return supplyChainOrch.HandleRecommendEvent(ctx, evt)
 	})
-	})
 
 	// Supply chain event: after-sale completed → auto-adjust inventory
 	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
@@ -756,7 +753,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	r.GET("/ws", wsHandler.ServeWS)
 
 	// AI routes need the hub for realtime broadcasts.
-	ai.RegisterRoutes(protected, db, logger, hub)
+	moaCatalog := ai.SchemaCatalog{
+	"A6": {"profit_health"},
+	"A5": {"stock_alert"},
+	"G3": {"compliance_check"},
+}
+	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
+	ai.RegisterRoutes(protected, db, logger, hub, moaCoord)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}
