@@ -65,7 +65,7 @@ func (s *Service) Calculate(productID int64, calculatedBy string) (*ProfitResult
 	// 2. Shipping cost -- try logistics estimate, fallback to default $15
 	shippingCost := s.estimateShipping(&prod)
 
-	// 3. Platform fee — use platformfee module or default 15%
+	// 3. Platform fee -- use platformfee module or default 15%
 	var platformFee float64
 	if prod.TargetPlatformID != nil && *prod.TargetPlatformID > 0 {
 		platformFee = s.calculatePlatformFee(*prod.TargetPlatformID, prod.TargetSalePrice)
@@ -73,10 +73,10 @@ func (s *Service) Calculate(productID int64, calculatedBy string) (*ProfitResult
 		platformFee = prod.TargetSalePrice * 0.15 // default 15%
 	}
 
-	// 4. Tariff — use tariff module or default 5%
+	// 4. Tariff -- use tariff module or default 5%
 	tariffCost := s.calculateTariff(&prod)
 
-	// 5. Other cost (packaging, misc) — 2% of target price
+	// 5. Other cost (packaging, misc) -- 2% of target price
 	otherCost := prod.TargetSalePrice * 0.02
 
 	// 6. Totals
