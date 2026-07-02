@@ -1,14 +1,18 @@
 package ai
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/realtime"
+	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers AI routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub) {
+// moaCoord can be nil; if set, MOA routes are registered.
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, moaCoord *MOACoordinator) {
 	svc := NewService(db, logger)
 	orch := NewOrchestrator(db, logger)
 	streamer := NewStreamer(hub, logger)
@@ -32,5 +36,25 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *r
 		ai.POST("/actions/:id/reject", h.RejectAction)
 		ai.POST("/actions/:id/execute", h.ExecuteAction)
 		ai.POST("/actions/:id/review", h.ReviewAction)
+
+		// MOA multi-agent orchestration (optional).
+		if moaCoord != nil {
+			ai.POST("/moa", func(c *gin.Context) {
+				var req MOARequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					response.Error(c, http.StatusBadRequest, err.Error())
+					return
+				}
+				if req.Mode == "" {
+					req.Mode = "suggestion"
+				}
+				result, err := moaCoord.Run(c.Request.Context(), &req)
+				if err != nil {
+					response.InternalError(c, err)
+					return
+				}
+				response.Success(c, result)
+			})
+		}
 	}
 }

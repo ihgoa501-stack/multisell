@@ -22,24 +22,17 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/aftersales"
 	"github.com/lingmirror/backend-go/internal/domain/agentlearning"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/compliance"
-	"github.com/lingmirror/backend-go/internal/domain/content"
 	"github.com/lingmirror/backend-go/internal/domain/consolidation"
 	"github.com/lingmirror/backend-go/internal/domain/content"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
-	"github.com/lingmirror/backend-go/internal/domain/landedcost"
-	"github.com/lingmirror/backend-go/internal/domain/orchestration"
-	"github.com/lingmirror/backend-go/internal/domain/workflow"
-	"github.com/lingmirror/backend-go/internal/domain/personalrule"
-	"github.com/lingmirror/backend-go/internal/domain/producthub"
-	"github.com/lingmirror/backend-go/internal/domain/sentiment"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
@@ -51,6 +44,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
+	"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
@@ -59,29 +53,33 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/mock"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
+	"github.com/lingmirror/backend-go/internal/domain/orchestration"
 	"github.com/lingmirror/backend-go/internal/domain/order"
 	"github.com/lingmirror/backend-go/internal/domain/orderimport"
 	"github.com/lingmirror/backend-go/internal/domain/owner"
+	"github.com/lingmirror/backend-go/internal/domain/personalrule"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
+	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
+	"github.com/lingmirror/backend-go/internal/domain/sentiment"
 	"github.com/lingmirror/backend-go/internal/domain/settings"
-	"github.com/lingmirror/backend-go/internal/domain/support"
 	"github.com/lingmirror/backend-go/internal/domain/settlement"
 	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
-	"github.com/lingmirror/backend-go/internal/domain/support"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
+	"github.com/lingmirror/backend-go/internal/domain/support"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
+	"github.com/lingmirror/backend-go/internal/domain/workflow"
 	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
@@ -123,7 +121,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Prometheus metrics endpoint
 	if cfg.Metrics.Enabled {
-	r.GET("/metrics", middleware.MetricsHandler())
+		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
 	// ==========================================================
@@ -578,7 +576,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
 		return supplyChainOrch.HandleRecommendEvent(ctx, evt)
 	})
-	})
 
 	// Supply chain event: after-sale completed → auto-adjust inventory
 	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
@@ -756,7 +753,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	r.GET("/ws", wsHandler.ServeWS)
 
 	// AI routes need the hub for realtime broadcasts.
-	ai.RegisterRoutes(protected, db, logger, hub)
+	moaCatalog := ai.SchemaCatalog{
+		"A6": {"profit_health"},
+		"A5": {"stock_alert"},
+		"G3": {"compliance_check"},
+	}
+	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
+	ai.RegisterRoutes(protected, db, logger, hub, moaCoord)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}
