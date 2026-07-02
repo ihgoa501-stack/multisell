@@ -83,6 +83,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
+	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
@@ -143,11 +144,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Initialize platform adapters (Ozon, Shopee, etc.).
 	integrations.InitAdapters(db, logger)
 
-	// Create command dispatcher and register Phase 1 handlers.
-	cmd := command.NewDispatcher(logger, command.WithApprovalService(approvalSvc))
+	// Create command dispatcher with action catalog and register Phase 1 handlers.
+	cat := actioncatalog.Default()
+	cmd := command.NewDispatcher(logger, command.WithApprovalService(approvalSvc), command.WithCatalog(cat))
 	cmd.Register("stock_alert", command.StockAlertHandler(db, logger))
 	cmd.Register("replenish", command.InventoryReplenishHandler(db, logger))
 	cmd.Register("price_review", command.PriceAdjustHandler(db, logger, approvalSvc))
+	cmd.Register("price_update", command.PriceUpdateHandler(db, logger, approvalSvc))
 	cmd.Register("listing_optimize", command.ListingDraftHandler(db, logger))
 	cmd.Register("compliance_check", command.FlagNonCompliantHandler(db, logger))
 
@@ -535,7 +538,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
 
-	// Supply chain event: purchase order received → auto-increment inventory
+	// Supply chain event: purchase order received → auto-increment inventory.
+	// GUARDRAIL: This is a business mutation that bypasses the command
+	// dispatcher. The supply chain orchestrator is responsible for
+	// idempotency via order_no deduplication.
 	bus.Subscribe("supplychain.order.received", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
 		invSvc := inventory.NewService(db, logger)
@@ -581,7 +587,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return nil
 	})
 
-	// Supply chain event: after-sale completed → auto-adjust inventory
+	// Supply chain event: after-sale completed → auto-adjust inventory.
+	// GUARDRAIL: bypasses command dispatcher; aftersale orchestrator
+	// ensures idempotency via return order deduplication.
 	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
 		invSvc := inventory.NewService(db, logger)

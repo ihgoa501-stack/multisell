@@ -114,5 +114,32 @@ func (b *ToolBridge) Route(ctx context.Context, url string) (*PageData, error) {
 	return b.FetchPage(ctx, url)
 }
 
+// ExecuteToolCall executes a ToolCall through the bridge, enforcing approval
+// for production mutation calls. The actual mutation execution is a stub
+// (returns success when validation passes); wire real handlers here when
+// mutation tools are implemented.
+func (b *ToolBridge) ExecuteToolCall(ctx context.Context, tc ToolCall) *ToolResult {
+	if err := tc.Validate(); err != nil {
+		return &ToolResult{
+			Success:      false,
+			ErrorMessage: err.Error(),
+			Mode:         tc.Mode,
+		}
+	}
+	// ponytail: mutation execution is not yet wired; this stub returns
+	// success for any validated call. Wire real domain handlers when
+	// the first mutation tool is implemented.
+	b.logger.Info("toolbridge: execute tool call",
+		zap.String("tool", tc.ToolName),
+		zap.String("category", tc.Category.String()),
+		zap.String("mode", tc.Mode.String()),
+	)
+	return &ToolResult{
+		Success: true,
+		Mode:    tc.Mode,
+		Data:    tc.Input,
+	}
+}
+
 // ErrNoDrivers is returned when FetchPage is called with no registered drivers.
 var ErrNoDrivers = errors.New("toolbridge: no drivers registered")

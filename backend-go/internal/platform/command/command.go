@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"go.uber.org/zap"
 )
 
@@ -34,6 +35,7 @@ type Dispatcher struct {
 	handlers    map[string]Handler
 	logger      *zap.Logger
 	approvalSvc *approval.Service // optional, nil means no dispatch-level approval check
+	catalog     *actioncatalog.Catalog // optional, nil means no catalog enforcement
 }
 
 // DispatcherOption configures a Dispatcher.
@@ -43,6 +45,15 @@ type DispatcherOption func(*Dispatcher)
 func WithApprovalService(svc *approval.Service) DispatcherOption {
 	return func(d *Dispatcher) {
 		d.approvalSvc = svc
+	}
+}
+
+// WithCatalog sets the action catalog for production enforcement.
+// When set, DispatchSafe validates actions against the catalog in
+// production mode — unknown action types are rejected.
+func WithCatalog(cat *actioncatalog.Catalog) DispatcherOption {
+	return func(d *Dispatcher) {
+		d.catalog = cat
 	}
 }
 
@@ -123,11 +134,12 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload ma
 // checking mode, risk level, and approval requirements before executing.
 //
 // Mode rules:
-//   - dry_run: the action is validated (handler must exist) but never executed.
+//   - dry_run: the action is validated (handler must exist, catalog is checked)
+//     but never executed.
 //   - sandbox: the action executes regardless of risk.
-//   - production: high-risk or approval-required actions need a valid approval_id.
+//   - production: catalog, risk, approval, and L4 block checks are enforced.
 func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, policy PolicyChecker) (*Result, error) {
-	// Mode: dry_run — validate existence only.
+	// Dry-run: validate only — check handler and catalog exist, never mutate.
 	if action.Mode == ModeDryRun {
 		d.mu.RLock()
 		_, ok := d.handlers[action.ActionType]
@@ -135,7 +147,20 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 		if !ok {
 			return nil, &HandlerNotFoundError{ActionType: action.ActionType}
 		}
+		if d.catalog != nil {
+			if _, ok := d.catalog.Lookup(action.ActionType); !ok {
+				return nil, fmt.Errorf("dry-run: action type %q is not registered in the action catalog", action.ActionType)
+			}
+		}
 		return &Result{Success: true, BusinessID: "dry_run"}, nil
+	}
+
+	// Production mode: enforce catalog validation.
+	if action.Mode == ModeProduction && d.catalog != nil {
+		hasApproval := action.ApprovalID != nil
+		if err := d.catalog.ValidateProduction(action.ActionType, int(action.RiskLevel), hasApproval); err != nil {
+			return nil, err
+		}
 	}
 
 	// Production mode: high-risk or approval-required actions need a valid approval.
