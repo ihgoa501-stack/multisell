@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strings"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 )
@@ -207,6 +208,38 @@ func (a *ProductScoutAgent) registerTools() {
 			}, nil
 		},
 	})
+
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "first_km_scout",
+		Version:     "1.0.0",
+		Description: "第一公里对话工作流——输入类目和目标市场，连续执行选品调研+供应商发现，输出完整采集指导",
+		Squad:       "growth",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "第一公里工作流参数",
+			Properties: map[string]*toolregistry.Schema{
+				"category":        {Type: "string", Description: "商品类目（如 家居、宠物用品）"},
+				"target_market":   {Type: "string", Description: "目标市场（如 RU/US/JP）"},
+				"target_platform": {Type: "string", Description: "目标平台（如 Ozon/Amazon/Shopee）"},
+				"constraints":     {Type: "string", Description: "约束条件（可选）"},
+			},
+			Required: []string{"category", "target_market", "target_platform"},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "第一公里工作流结果，包含调研方向、1688搜索页、采集指令、下一步操作、结果入口",
+		},
+		RequiredPermissions: []string{"growth:read:first_km_scout"},
+		RiskLevel:           toolregistry.RiskLow,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.firstKMScout(input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
 }
 
 // Decide dispatches to the correct decision handler based on decisionPoint.
@@ -220,6 +253,7 @@ func (a *ProductScoutAgent) registerTools() {
 //   - "market_analysis"
 //   - "product_research" — generate research hypotheses for a category/market
 //   - "supplier_discovery" — generate 1688 collection plans from keywords/directions
+//   - "first_km_scout" — conversational workflow: research → supplier discovery → collection guidance
 func (a *ProductScoutAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	if a.registry != nil {
 		return a.decideViaRegistry(ctx, decisionPoint, params)
@@ -268,6 +302,8 @@ func (a *ProductScoutAgent) decideDirect(decisionPoint string, ctx map[string]in
 		return a.productResearch(ctx)
 	case "supplier_discovery":
 		return a.supplierDiscovery(ctx)
+	case "first_km_scout":
+		return a.firstKMScout(ctx)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",
@@ -512,6 +548,220 @@ func (a *ProductScoutAgent) supplierDiscovery(ctx map[string]interface{}) (outpu
 		},
 	}
 	return output, 0.6, "low", nil
+}
+
+// ---------- Decision point: first_km_scout ----------
+
+// firstKMScout chains product_research → supplier_discovery into a single
+// conversational workflow step. Given a category and target market, it:
+//  1. Runs productResearch to get research directions
+//  2. Feeds those directions into supplierDiscovery to get 1688 search pages
+//  3. Returns the combined envelope with both results + next-action guidance
+//
+// This is the entry point for the "对话式工作流" — one message, full collection plan.
+//
+// Input: message (raw user text) OR explicit category/target_market/target_platform
+// Output: combined research + supplier discovery + next actions + entry points
+func (a *ProductScoutAgent) firstKMScout(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	// Parse structured fields from raw message if not provided directly.
+	category := safeString(ctx["category"], "")
+	targetMarket := safeString(ctx["target_market"], "")
+	targetPlatform := safeString(ctx["target_platform"], "")
+	if category == "" || targetMarket == "" || targetPlatform == "" {
+		msg := safeString(ctx["message"], "")
+		if msg != "" {
+			parsed := parseFirstKMIntent(msg)
+			if category == "" {
+				category = parsed.Category
+			}
+			if targetMarket == "" {
+				targetMarket = parsed.Market
+			}
+			if targetPlatform == "" {
+				targetPlatform = parsed.Platform
+			}
+		}
+	}
+
+	if category == "" || targetMarket == "" || targetPlatform == "" {
+		missing := make([]string, 0)
+		if category == "" {
+			missing = append(missing, "category")
+		}
+		if targetMarket == "" {
+			missing = append(missing, "target_market")
+		}
+		if targetPlatform == "" {
+			missing = append(missing, "target_platform")
+		}
+		return insufficientData("first_km_scout", missing), 0.0, "low", nil
+	}
+
+	// Build research context.
+	researchCtx := map[string]interface{}{
+		"category":        category,
+		"target_market":   targetMarket,
+		"target_platform": targetPlatform,
+	}
+	if constraints := safeString(ctx["constraints"], ""); constraints != "" {
+		researchCtx["constraints"] = constraints
+	}
+
+	// Step 1: product research
+	researchOutput, researchConf, _, _ := a.productResearch(researchCtx)
+
+	// Step 2: supplier discovery — feed research directions as keywords
+	directions, _ := researchOutput["recommended_directions"].([]map[string]interface{})
+	discoveryInput := map[string]interface{}{
+		"directions": directions,
+		"category":   category,
+	}
+	discoveryOutput, discoveryConf, _, _ := a.supplierDiscovery(discoveryInput)
+
+	// Step 3: build combined envelope
+	output = map[string]interface{}{
+		"status":      "collection_guidance_ready",
+		"category":    category,
+		"market":      targetMarket,
+		"platform":    targetPlatform,
+		"research":    researchOutput,
+		"supplier":    discoveryOutput,
+		"next_actions": firstKMNextActions(discoveryOutput),
+		"result_entrypoints": map[string]interface{}{
+			"collect_leads":      "/api/v1/candidates/collect-leads",
+			"candidate_products": "/api/v1/candidates",
+		},
+		"safety_warnings": []string{
+			"这是调研假设，不是确定经营结论",
+			"不会自动发布、改价、改库存或采购",
+			"1688 链接可能随时间失效，采集前请确认页面可访问",
+		},
+	}
+
+	confidence = (researchConf + discoveryConf) / 2
+	return output, confidence, "low", nil
+}
+
+// firstKMIntent holds parsed intent fields from a raw user message.
+type firstKMIntent struct {
+	Category string
+	Market   string
+	Platform string
+}
+
+// parseFirstKMIntent extracts category, market, and platform from a raw message.
+// ponytail: keyword matching, not NLP. Good enough for v1.
+func parseFirstKMIntent(msg string) firstKMIntent {
+	m := strings.ToLower(msg)
+	intent := firstKMIntent{}
+
+	// Market detection.
+	marketMap := map[string][]string{
+		"RU": {"俄罗斯", "russia", "ru", "ozon", "wildberries", "wb"},
+		"US": {"美国", "usa", "united states", "amazon", "walmart", "ebay"},
+		"JP": {"日本", "japan", "jp", "楽天", "rakuten", "yahoo japan"},
+		"EU": {"欧洲", "europe", "eu", "德国", "germany", "france", "法国"},
+		"BR": {"巴西", "brazil", "br", "mercadolivre", "magazine luiza"},
+		"SEA": {"东南亚", "southeast asia", "shopee", "lazada", "tiktok shop"},
+	}
+	for code, keywords := range marketMap {
+		for _, kw := range keywords {
+			if strings.Contains(m, kw) {
+				intent.Market = code
+				break
+			}
+		}
+		if intent.Market != "" {
+			break
+		}
+	}
+
+	// Platform detection.
+	platformMap := map[string][]string{
+		"Ozon":       {"ozon"},
+		"Amazon":     {"amazon"},
+		"Shopee":     {"shopee"},
+		"Lazada":     {"lazada"},
+		"Walmart":    {"walmart"},
+		"eBay":       {"ebay"},
+		"Wildberries": {"wildberries", "wb"},
+		"Rakuten":    {"楽天", "rakuten"},
+		"MercadoLivre": {"mercadolivre", "mercado"},
+		"TikTok Shop": {"tiktok shop", "tiktok"},
+	}
+	for name, keywords := range platformMap {
+		for _, kw := range keywords {
+			if strings.Contains(m, kw) {
+				intent.Platform = name
+				break
+			}
+		}
+		if intent.Platform != "" {
+			break
+		}
+	}
+
+	// Category detection — look for "类目", "品类", or common category names after 调研/做/卖.
+	categoryMap := map[string]string{
+		"家居": "家居", "home": "家居", "家具": "家居", "household": "家居",
+		"宠物": "宠物用品", "pet": "宠物用品",
+		"厨房": "家居", "kitchen": "家居",
+		"浴室": "家居", "bathroom": "家居",
+		"办公": "家居", "office": "家居",
+		"运动": "运动户外", "sports": "运动户外", "户外": "运动户外",
+		"电子": "电子配件", "数码": "电子配件", "electronic": "电子配件",
+		"手机": "手机配件", "phone": "手机配件",
+		"服饰": "服装", "clothing": "服装", "衣服": "服装",
+		"美妆": "美妆个护", "beauty": "美妆个护",
+		"玩具": "玩具", "toy": "玩具",
+		"母婴": "母婴", "baby": "母婴",
+		"汽车": "汽车配件", "auto": "汽车配件", "car": "汽车配件",
+		"食品": "食品", "food": "食品",
+		"工具": "工具", "tool": "工具",
+	}
+	// Try to find category near "类目" or "品类" marker.
+	for marker := range map[string]bool{"类目": true, "品类": true, "做": true, "卖": true, "调研": true} {
+		if idx := strings.Index(m, marker); idx >= 0 {
+			rest := m[idx+len(marker):]
+			for kw, cat := range categoryMap {
+				if strings.Contains(rest, kw) {
+					intent.Category = cat
+					break
+				}
+			}
+			if intent.Category != "" {
+				break
+			}
+		}
+	}
+	// Fallback: scan whole message for category keywords.
+	if intent.Category == "" {
+		for kw, cat := range categoryMap {
+			if strings.Contains(m, kw) {
+				intent.Category = cat
+				break
+			}
+		}
+	}
+
+	return intent
+}
+
+// firstKMNextActions builds the human-readable next-action list from supplier discovery output.
+func firstKMNextActions(supplierOutput map[string]interface{}) []string {
+	actions := []string{
+		"查看上方调研方向，确认是否符合预期",
+	}
+
+	pages, _ := supplierOutput["suggested_pages"].([]map[string]interface{})
+	if len(pages) > 0 {
+		actions = append(actions, "打开推荐的 1688 搜索页面")
+		actions = append(actions, "使用 Chrome 扩展「采集当前页商品列表」采集搜索结果")
+		actions = append(actions, "对感兴趣的商品点开详情页，用扩展采集商品详情")
+		actions = append(actions, "回到系统查看 CollectLead 和 CandidateProduct 列表")
+	}
+
+	return actions
 }
 
 // ---------- Helpers ----------

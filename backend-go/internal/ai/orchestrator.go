@@ -724,6 +724,12 @@ var routeTable = []routeEntry{
 	{Keywords: []string{"利润", "成本", "亏损", "profit", "cost", "margin"}, AgentID: "A6", DecisionPoint: "profit_check"},
 	{Keywords: []string{"listing", "标题", "描述", "优化", "关键词", "keyword"}, AgentID: "A2", DecisionPoint: "listing_optimize"},
 	{Keywords: []string{"广告", "acos", "投放", "ad", "ads", "spend"}, AgentID: "A3", DecisionPoint: "acos_analysis"},
+	// first_km_scout: "调研" + target market → full conversational workflow.
+	// Placed before product_research so it wins when market context is present.
+	// Keywords are market-specific only — "调研" is NOT here so plain "调研家居"
+	// falls through to product_research. When market keywords are present,
+	// first_km_scout wins by having more matches (research + market).
+	{Keywords: []string{"俄罗斯", "russia", "ozon", "wildberries", "目标市场", "target market", "美国", "usa", "amazon", "日本", "japan", "shopee", "lazada"}, AgentID: "A1", DecisionPoint: "first_km_scout"},
 	{Keywords: []string{"调研", "research", "品类调研", "研究方向", "research category"}, AgentID: "A1", DecisionPoint: "product_research"},
 	{Keywords: []string{"选品", "新品", "市场", "scout", "product"}, AgentID: "A1", DecisionPoint: "product_scout"},
 	{Keywords: []string{"供应商", "货源", "1688", "supplier", "供应链", "source product", "采集页面"}, AgentID: "A1", DecisionPoint: "supplier_discovery"},

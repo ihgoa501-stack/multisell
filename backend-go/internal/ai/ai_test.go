@@ -487,3 +487,28 @@ func TestService_ApprovalCreationPattern(t *testing.T) {
 		t.Error("expected HasPendingForEntity to return true for pending approval")
 	}
 }
+
+// ---------- route table tests ----------
+
+func TestRouteChat_FirstKMScout(t *testing.T) {
+	tests := []struct {
+		name   string
+		msg    string
+		wantDP string
+	}{
+		{"家居+俄罗斯+Ozon", "我想调研家居类目，目标俄罗斯 Ozon", "first_km_scout"},
+		{"research+Russia", "research home category for Russia Ozon", "first_km_scout"},
+		{"宠物+Amazon", "调研宠物用品，美国 Amazon", "first_km_scout"},
+		{"plain research no market", "调研家居", "product_research"},
+		{"stock alert", "库存不足", "stock_alert"},
+		{"profit check", "利润分析", "profit_check"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, dp := routeChat(tc.msg)
+			if dp != tc.wantDP {
+				t.Errorf("routeChat(%q) = %q, want %q", tc.msg, dp, tc.wantDP)
+			}
+		})
+	}
+}

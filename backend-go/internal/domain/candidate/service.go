@@ -245,6 +245,28 @@ func (s *Service) CreateCollectLead(lead *CollectLead) error {
 	return s.db.Create(lead).Error
 }
 
+// ListCollectLeads returns recent collect leads, newest first.
+// Read-only — no mutation.
+func (s *Service) ListCollectLeads(limit int) ([]CollectLead, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var items []CollectLead
+	if err := s.db.Order("id DESC").Limit(limit).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// CountCollectLeads returns the total number of collect leads.
+func (s *Service) CountCollectLeads() (int64, error) {
+	var count int64
+	if err := s.db.Model(&CollectLead{}).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // GetByID returns a single candidate product.
 func (s *Service) GetByID(id int64) (*CandidateProduct, error) {
 	var c CandidateProduct

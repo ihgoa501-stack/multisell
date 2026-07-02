@@ -6,6 +6,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"go.uber.org/zap"
 )
 
 func TestComputeCompleteness_AllFieldsPresent(t *testing.T) {
@@ -536,4 +537,53 @@ func TestService_Create_CompletenessStatus(t *testing.T) {
 			t.Fatalf("CompletenessStatus = %q, want incomplete", c.CompletenessStatus)
 		}
 	})
+}
+
+func TestListCollectLeads(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CollectLead{})
+	svc := NewService(db, newTestLogger(t))
+
+	// Empty list.
+	items, err := svc.ListCollectLeads(10)
+	if err != nil {
+		t.Fatalf("ListCollectLeads: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items, got %d", len(items))
+	}
+
+	// Create some leads.
+	for i := 0; i < 3; i++ {
+		err := svc.CreateCollectLead(&CollectLead{
+			Title:   "测试商品",
+			ShopHint: "店铺A",
+		})
+		if err != nil {
+			t.Fatalf("CreateCollectLead: %v", err)
+		}
+	}
+
+	// List with limit.
+	items, err = svc.ListCollectLeads(2)
+	if err != nil {
+		t.Fatalf("ListCollectLeads: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+
+	// Count.
+	count, err := svc.CountCollectLeads()
+	if err != nil {
+		t.Fatalf("CountCollectLeads: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("count = %d, want 3", count)
+	}
+}
+
+func newTestLogger(t *testing.T) *zap.Logger {
+	t.Helper()
+	return zap.NewNop()
 }

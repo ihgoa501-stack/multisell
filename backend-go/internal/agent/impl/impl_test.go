@@ -558,3 +558,233 @@ func TestSafeFloat(t *testing.T) {
 		})
 	}
 }
+
+// ---------- first_km_scout tests ----------
+
+func TestFirstKMScout_FullChain(t *testing.T) {
+	a := NewProductScoutAgent()
+	// Structured input (explicit fields).
+	out, conf, risk, err := a.Decide(context.Background(), "first_km_scout", map[string]interface{}{
+		"category":        "家居",
+		"target_market":   "RU",
+		"target_platform": "Ozon",
+	})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if out == nil {
+		t.Fatal("nil output")
+	}
+	if out["status"] != "collection_guidance_ready" {
+		t.Errorf("status = %v, want collection_guidance_ready", out["status"])
+	}
+	if out["category"] != "家居" {
+		t.Errorf("category = %v, want 家居", out["category"])
+	}
+	if out["market"] != "RU" {
+		t.Errorf("market = %v, want RU", out["market"])
+	}
+
+	// Research section exists.
+	research, ok := out["research"].(map[string]interface{})
+	if !ok {
+		t.Fatal("missing research section")
+	}
+	if research["status"] != "research_ready" {
+		t.Errorf("research.status = %v, want research_ready", research["status"])
+	}
+
+	// Supplier section exists with 1688 URLs.
+	supplier, ok := out["supplier"].(map[string]interface{})
+	if !ok {
+		t.Fatal("missing supplier section")
+	}
+	if supplier["status"] != "collection_plan_ready" {
+		t.Errorf("supplier.status = %v, want collection_plan_ready", supplier["status"])
+	}
+	pages := getPages(supplier)
+	if len(pages) == 0 {
+		t.Error("expected at least one 1688 search page")
+	}
+
+	// Next actions exist.
+	actions, ok := out["next_actions"].([]string)
+	if !ok || len(actions) == 0 {
+		t.Error("expected non-empty next_actions")
+	}
+
+	// Result entrypoints exist.
+	entrypoints, ok := out["result_entrypoints"].(map[string]interface{})
+	if !ok {
+		t.Fatal("missing result_entrypoints")
+	}
+	if entrypoints["collect_leads"] != "/api/v1/candidates/collect-leads" {
+		t.Errorf("collect_leads entrypoint = %v", entrypoints["collect_leads"])
+	}
+	if entrypoints["candidate_products"] != "/api/v1/candidates" {
+		t.Errorf("candidate_products entrypoint = %v", entrypoints["candidate_products"])
+	}
+
+	// Safety warnings exist.
+	warnings, ok := out["safety_warnings"].([]string)
+	if !ok || len(warnings) == 0 {
+		t.Error("expected non-empty safety_warnings")
+	}
+
+	// Confidence in valid range.
+	if conf < 0 || conf > 1 {
+		t.Errorf("confidence = %f, want [0,1]", conf)
+	}
+	if risk != "low" {
+		t.Errorf("risk = %v, want low", risk)
+	}
+}
+
+func TestFirstKMScout_FromMessage(t *testing.T) {
+	a := NewProductScoutAgent()
+	// Chat-style input — only raw message, no structured fields.
+	out, _, _, err := a.Decide(context.Background(), "first_km_scout", map[string]interface{}{
+		"message": "我想调研家居类目，目标俄罗斯 Ozon",
+	})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if out == nil {
+		t.Fatal("nil output")
+	}
+	if out["status"] != "collection_guidance_ready" {
+		t.Errorf("status = %v, want collection_guidance_ready", out["status"])
+	}
+	// Should parse category from message.
+	if out["category"] != "家居" {
+		t.Errorf("category = %v, want 家居", out["category"])
+	}
+	if out["market"] != "RU" {
+		t.Errorf("market = %v, want RU", out["market"])
+	}
+}
+
+func TestFirstKMScout_MissingFields(t *testing.T) {
+	a := NewProductScoutAgent()
+	// Empty message, no structured fields → insufficient data.
+	out, conf, _, _ := a.Decide(context.Background(), "first_km_scout", map[string]interface{}{})
+	if out == nil {
+		t.Fatal("nil output")
+	}
+	if out["status"] != "insufficient_data" {
+		t.Errorf("status = %v, want insufficient_data", out["status"])
+	}
+	if conf != 0 {
+		t.Errorf("confidence = %f, want 0", conf)
+	}
+}
+
+func TestFirstKMScout_PartialMessage(t *testing.T) {
+	a := NewProductScoutAgent()
+	// Message with category but no market → should fail gracefully.
+	out, _, _, _ := a.Decide(context.Background(), "first_km_scout", map[string]interface{}{
+		"message": "我想调研家居",
+	})
+	if out == nil {
+		t.Fatal("nil output")
+	}
+	// Should either succeed (if category parsed) or return insufficient_data.
+	// Both are acceptable — just shouldn't crash.
+	status := out["status"]
+	if status != "collection_guidance_ready" && status != "insufficient_data" {
+		t.Errorf("unexpected status: %v", status)
+	}
+}
+
+func TestFirstKMScout_NoCreateProduct(t *testing.T) {
+	// Verify first_km_scout does NOT create CandidateProduct or modify data.
+	a := NewProductScoutAgent()
+	db := newTestDB(t)
+
+	// Count before.
+	var before int64
+	db.Raw("SELECT COUNT(*) FROM candidate_product").Scan(&before)
+
+	_, _, _, _ = a.Decide(context.Background(), "first_km_scout", map[string]interface{}{
+		"category":        "宠物用品",
+		"target_market":   "RU",
+		"target_platform": "Ozon",
+	})
+
+	// Count after — should be unchanged.
+	var after int64
+	db.Raw("SELECT COUNT(*) FROM candidate_product").Scan(&after)
+	if before != after {
+		t.Errorf("first_km_scout mutated candidate_product: before=%d, after=%d", before, after)
+	}
+}
+
+// ---------- parseFirstKMIntent tests ----------
+
+func TestParseFirstKMIntent(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      string
+		wantCat  string
+		wantMkt  string
+		wantPlat string
+	}{
+		{
+			name:     "家居 + 俄罗斯 + Ozon",
+			msg:      "我想调研家居类目，目标俄罗斯 Ozon",
+			wantCat:  "家居",
+			wantMkt:  "RU",
+			wantPlat: "Ozon",
+		},
+		{
+			name:     "宠物 + Amazon + 美国",
+			msg:      "调研宠物用品，美国 Amazon",
+			wantCat:  "宠物用品",
+			wantMkt:  "US",
+			wantPlat: "Amazon",
+		},
+		{
+			name:     "厨房 in 家居",
+			msg:      "做厨房收纳，目标日本 Rakuten",
+			wantCat:  "家居",
+			wantMkt:  "JP",
+			wantPlat: "Rakuten",
+		},
+		{
+			name:     "运动 + Shopee + 东南亚",
+			msg:      "调研运动户外，东南亚 Shopee",
+			wantCat:  "运动户外",
+			wantMkt:  "SEA",
+			wantPlat: "Shopee",
+		},
+		{
+			name:     "no market",
+			msg:      "调研家居",
+			wantCat:  "家居",
+			wantMkt:  "",
+			wantPlat: "",
+		},
+		{
+			name:     "english home",
+			msg:      "research home category for Russia",
+			wantCat:  "家居",
+			wantMkt:  "RU",
+			wantPlat: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseFirstKMIntent(tc.msg)
+			if got.Category != tc.wantCat {
+				t.Errorf("Category = %q, want %q", got.Category, tc.wantCat)
+			}
+			if got.Market != tc.wantMkt {
+				t.Errorf("Market = %q, want %q", got.Market, tc.wantMkt)
+			}
+			if got.Platform != tc.wantPlat {
+				t.Errorf("Platform = %q, want %q", got.Platform, tc.wantPlat)
+			}
+		})
+	}
+}

@@ -44,6 +44,25 @@ func (h *Handler) List(c *gin.Context) {
 	response.Paginated(c, items, total, p.Page, p.Size)
 }
 
+// ListCollectLeads GET /candidates/collect-leads
+// Read-only endpoint for viewing recent collect leads from the Chrome extension.
+func (h *Handler) ListCollectLeads(c *gin.Context) {
+	limit := 20
+	if l, err := strconv.Atoi(c.DefaultQuery("limit", "20")); err == nil && l > 0 {
+		limit = l
+	}
+	items, err := h.service.ListCollectLeads(limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	total, _ := h.service.CountCollectLeads()
+	response.Success(c, map[string]interface{}{
+		"items": items,
+		"total": total,
+	})
+}
+
 // Get GET /candidates/:id
 func (h *Handler) Get(c *gin.Context) {
 	id, ok := parseID(c)
