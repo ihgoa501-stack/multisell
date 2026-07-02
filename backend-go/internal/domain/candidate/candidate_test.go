@@ -464,3 +464,66 @@ func TestService_Count(t *testing.T) {
 		t.Fatalf("total = %d", total)
 	}
 }
+
+func TestService_Create_CompletenessStatus(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	t.Run("ready_for_profit_check", func(t *testing.T) {
+		price := 100.0
+		now := time.Now()
+		c, err := svc.Create(&CreateCandidateInput{
+			Title:          "测试商品",
+			MainImage:      "https://example.com/img.jpg",
+			PurchasePrice:  &price,
+			SourceURL:      "https://detail.1688.com/offer/123.html",
+			SourcePlatform: "1688",
+			CollectedAt:    &now,
+			CreatedBy:      "extension:1",
+		})
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if c.CompletenessStatus != "ready_for_profit_check" {
+			t.Fatalf("CompletenessStatus = %q, want ready_for_profit_check", c.CompletenessStatus)
+		}
+		if c.SourceURL != "https://detail.1688.com/offer/123.html" {
+			t.Fatalf("SourceURL = %q", c.SourceURL)
+		}
+		if c.PurchasePrice != 100.0 {
+			t.Fatalf("PurchasePrice = %f", c.PurchasePrice)
+		}
+	})
+
+	t.Run("incomplete_missing_title", func(t *testing.T) {
+		price := 100.0
+		c, err := svc.Create(&CreateCandidateInput{
+			PurchasePrice:  &price,
+			SourceURL:      "https://detail.1688.com/offer/456.html",
+			SourcePlatform: "1688",
+			CreatedBy:      "extension:1",
+		})
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if c.CompletenessStatus != "incomplete" {
+			t.Fatalf("CompletenessStatus = %q, want incomplete", c.CompletenessStatus)
+		}
+	})
+
+	t.Run("incomplete_missing_price", func(t *testing.T) {
+		c, err := svc.Create(&CreateCandidateInput{
+			Title:          "无价格商品",
+			SourceURL:      "https://detail.1688.com/offer/789.html",
+			SourcePlatform: "1688",
+			CreatedBy:      "extension:1",
+		})
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if c.CompletenessStatus != "incomplete" {
+			t.Fatalf("CompletenessStatus = %q, want incomplete", c.CompletenessStatus)
+		}
+	})
+}

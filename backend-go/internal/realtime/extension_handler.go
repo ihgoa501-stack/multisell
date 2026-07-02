@@ -2,7 +2,6 @@ package realtime
 
 import (
 	"encoding/json"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -15,20 +14,20 @@ type PluginDriver interface {
 	// OnFetchProductResult is called when a fetch_product_result message
 	// is received from the extension client.
 	OnFetchProductResult(userID int64, data json.RawMessage) error
-	// HasPending returns true if the plugin driver has any pending requests
-	// awaiting responses from the extension.
-	HasPending() bool
+	// HasPending checks if there is a pending request with the given ID.
+	HasPending(requestID string) bool
 }
 
-// ExtensionHandler handles WebSocket connections for the extension.
-// Auth is done via JWT token in the URL query parameter (?token=...),
-// matching the main /ws handler pattern.
+// ExtensionHandler handles WebSocket connections for the A8 Sourcing Agent extension.
+// Unlike the main WebSocket handler, auth is performed via the first message
+// rather than a URL query parameter.
 type ExtensionHandler struct {
 	hub                *Hub
 	logger             *zap.Logger
 	jwtSecret          string
 	pluginDriver       PluginDriver
-	listCollectHandler func(userID int64, data json.RawMessage) error
+	autoCollectHandler func(userID int64, payload json.RawMessage) error
+	listCollectHandler func(userID int64, payload json.RawMessage) error
 }
 
 // NewExtensionHandler creates a new ExtensionHandler.
@@ -46,32 +45,23 @@ func (h *ExtensionHandler) WithPluginDriver(driver PluginDriver) *ExtensionHandl
 	return h
 }
 
-// ServeWS upgrades HTTP connections to WebSocket, validating JWT from URL
-// query parameter (matching the /ws handler pattern).
-// OnListCollect sets a callback for processing list_page_result messages
-// from the extension (list page card extractions).
-func (h *ExtensionHandler) OnListCollect(handler func(userID int64, data json.RawMessage) error) *ExtensionHandler {
-	h.listCollectHandler = handler
+// OnAutoCollect sets a handler for auto-collect (push-style) fetch_product_result
+// messages that have no pending plugin request. When the extension pushes a result
+// and there is no matching pending request, this handler is called instead.
+func (h *ExtensionHandler) OnAutoCollect(hook func(userID int64, payload json.RawMessage) error) *ExtensionHandler {
+	h.autoCollectHandler = hook
+	return h
+}
+
+// OnListCollect sets a handler for list_page_result messages from the extension.
+func (h *ExtensionHandler) OnListCollect(hook func(userID int64, payload json.RawMessage) error) *ExtensionHandler {
+	h.listCollectHandler = hook
 	return h
 }
 
 // ServeWS upgrades HTTP connections to WebSocket. Unlike the main WebSocket
 // handler, auth is deferred to the first WebSocket message.
 func (h *ExtensionHandler) ServeWS(c *gin.Context) {
-	tokenStr := c.Query("token")
-	if tokenStr == "" {
-		h.logger.Warn("extension ws upgrade rejected: missing token")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	userID, valid := h.validateExtensionToken(tokenStr)
-	if !valid {
-		h.logger.Warn("extension ws upgrade rejected: invalid token")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		h.logger.Error("extension websocket upgrade failed", zap.Error(err))
@@ -79,15 +69,14 @@ func (h *ExtensionHandler) ServeWS(c *gin.Context) {
 	}
 
 	client := &Client{
-		Hub:    h.hub,
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
-		UserID: userID,
+		Hub:  h.hub,
+		Conn: conn,
+		Send: make(chan []byte, 256),
 	}
 
 	h.hub.register <- client
-	h.logger.Info("extension websocket client authenticated",
-		zap.Int64("user_id", *userID),
+	h.logger.Info("extension websocket client connected",
+		zap.String("ip", c.ClientIP()),
 		zap.Int("total", h.hub.ClientCount()),
 	)
 
@@ -96,13 +85,40 @@ func (h *ExtensionHandler) ServeWS(c *gin.Context) {
 }
 
 // extensionReadPump reads messages from the extension WebSocket connection.
-// Only fetch_product_result, list_page_result, and ping messages are handled.
+// The first message must be an auth message with a valid JWT token.
+// Only fetch_product_result and ping messages are handled.
 func (h *ExtensionHandler) extensionReadPump(client *Client) {
 	defer func() {
 		h.hub.unregister <- client
 		client.Conn.Close()
 	}()
 
+	// First message must be auth.
+	_, msgBytes, err := client.Conn.ReadMessage()
+	if err != nil {
+		return
+	}
+	var authMsg struct {
+		Type  string `json:"type"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(msgBytes, &authMsg); err != nil || authMsg.Type != "auth" || authMsg.Token == "" {
+		h.logger.Warn("extension ws auth rejected: first message must be auth with token")
+		client.writeJSON(map[string]string{"type": "error", "data": "first message must be auth with token"})
+		return
+	}
+
+	userID, valid := h.validateExtensionToken(authMsg.Token)
+	if !valid {
+		h.logger.Warn("extension ws auth rejected: invalid token")
+		client.writeJSON(map[string]string{"type": "error", "data": "invalid token"})
+		return
+	}
+	client.UserID = userID
+	client.writeJSON(map[string]string{"type": "auth", "data": "ok"})
+	h.logger.Info("extension ws client authenticated", zap.Int64("user_id", *userID))
+
+	// Process subsequent messages.
 	for {
 		_, msgBytes, err := client.Conn.ReadMessage()
 		if err != nil {
@@ -118,11 +134,36 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 		}
 		switch incoming.Type {
 		case "fetch_product_result":
-			h.handleFetchProductResult(client, incoming.Data)
-		case "list_page_result":
-			h.handleListPageResult(client, incoming.Data)
+			var fetchResult struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(incoming.Data, &fetchResult); err != nil {
+				client.writeJSON(map[string]string{"type": "error", "data": "invalid fetch_product_result"})
+				continue
+			}
+			if h.pluginDriver != nil && h.pluginDriver.HasPending(fetchResult.ID) {
+				h.handleFetchProductResult(client, incoming.Data)
+			} else if h.autoCollectHandler != nil && client.UserID != nil {
+				if err := h.autoCollectHandler(*client.UserID, incoming.Data); err != nil {
+					h.logger.Error("auto-collect handler failed", zap.Int64("user_id", *client.UserID), zap.Error(err))
+					client.writeJSON(map[string]string{"type": "error", "data": "auto-collect failed: " + err.Error()})
+				}
+			} else {
+				h.logger.Warn("fetch_product_result dropped: no pending or auto-collect handler", zap.String("request_id", fetchResult.ID))
+			}
 		case "ping":
 			client.writeJSON(map[string]string{"type": "pong"})
+		case "list_page_result":
+			if h.listCollectHandler != nil && client.UserID != nil {
+				if err := h.listCollectHandler(*client.UserID, incoming.Data); err != nil {
+					h.logger.Error("list-collect handler failed", zap.Int64("user_id", *client.UserID), zap.Error(err))
+					client.writeJSON(map[string]string{"type": "error", "data": "list-collect failed: " + err.Error()})
+				} else {
+					client.writeJSON(map[string]string{"type": "list_page_result", "data": "ack"})
+				}
+			} else {
+				h.logger.Warn("list_page_result dropped: no handler")
+			}
 		default:
 			client.writeJSON(map[string]string{"type": "error", "data": "unknown message type: " + incoming.Type})
 		}
@@ -174,26 +215,4 @@ func (h *ExtensionHandler) handleFetchProductResult(client *Client, data json.Ra
 		return
 	}
 	client.writeJSON(map[string]string{"type": "fetch_product_result", "data": "ack"})
-}
-
-// handleListPageResult routes a list_page_result message to the registered
-// list collect handler callback, which saves the extracted cards as CollectLead entries.
-func (h *ExtensionHandler) handleListPageResult(client *Client, data json.RawMessage) {
-	if h.listCollectHandler == nil {
-		h.logger.Warn("extension ws: no list collect handler registered")
-		client.writeJSON(map[string]string{"type": "error", "data": "no list collect handler available"})
-		return
-	}
-	if client.UserID == nil {
-		return
-	}
-	if err := h.listCollectHandler(*client.UserID, data); err != nil {
-		h.logger.Error("extension ws: list collect handler error",
-			zap.Int64("user_id", *client.UserID),
-			zap.Error(err),
-		)
-		client.writeJSON(map[string]string{"type": "error", "data": "list collect handler error"})
-		return
-	}
-	client.writeJSON(map[string]string{"type": "list_page_result", "data": "ack"})
 }

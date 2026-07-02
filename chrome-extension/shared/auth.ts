@@ -38,10 +38,10 @@ export function getLoginUrl(serverUrl: string): string {
   return `${baseUrl}/login`;
 }
 
-/** Build the WebSocket endpoint URL including JWT token. */
-export function getWsUrl(serverUrl: string, token: string): string {
+/** Build the WebSocket endpoint URL (token sent as first message, not in URL). */
+export function getWsUrl(serverUrl: string, _token: string): string {
   const wsBase = serverUrl.endsWith("/ws/extension")
     ? serverUrl
     : `${serverUrl}/ws/extension`;
-  return `${wsBase}?token=${encodeURIComponent(token)}`;
+  return wsBase;
 }

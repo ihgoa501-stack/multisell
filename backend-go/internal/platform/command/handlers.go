@@ -3,7 +3,9 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
@@ -83,8 +85,8 @@ func InventoryReplenishHandler(db *gorm.DB, logger *zap.Logger) Handler {
 }
 
 // PriceAdjustHandler adjusts a SKU's price based on profit_watch recommendations.
-// Expected payload keys: sku_code, suggested_price, reason.
-func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger) Handler {
+// Expected payload keys: sku_code, suggested_price, reason, sku_id (optional).
+func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service) Handler {
 	return func(ctx context.Context, input map[string]interface{}) (*Result, error) {
 		skuCode := stringField(input, "sku_code")
 		newPriceValue := floatField(input, "suggested_price")
@@ -95,6 +97,25 @@ func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger) Handler {
 			zap.String("sku_code", skuCode),
 			zap.Float64("new_price", newPriceValue))
 
+		// Security gate: require an approved approval before adjusting price.
+		if approvalSvc != nil && db != nil {
+			if skuID == 0 {
+				_ = db.WithContext(ctx).Raw("SELECT id FROM sku WHERE code = ?", skuCode).Scan(&skuID).Error
+			}
+			if skuID > 0 {
+				_, err := approvalSvc.FindApprovedByTarget("sku", skuID, "price_change")
+				if err != nil {
+					errMsg := fmt.Sprintf("price adjustment not approved for sku %s", skuCode)
+					logger.Warn(errMsg, zap.Int64("sku_id", skuID), zap.Error(err))
+					return nil, fmt.Errorf("%s: %w", errMsg, err)
+				}
+				logger.Info("price_adjust approval verified",
+					zap.Int64("sku_id", skuID),
+					zap.String("sku_code", skuCode))
+			}
+		}
+
+		// Execute via domain service.
 		if db != nil && skuID > 0 && newPriceValue > 0 {
 			svc := price.NewService(db, logger)
 			err := svc.SetPrice(ctx, &price.Price{
@@ -105,8 +126,15 @@ func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger) Handler {
 			}, "command:price_adjust")
 			if err != nil {
 				logger.Warn("price service rejected adjustment", zap.Error(err))
+				return nil, fmt.Errorf("price service: %w", err)
 			}
 		}
+
+		// Audit log.
+		logger.Info("price_adjust executed",
+			zap.String("sku_code", skuCode),
+			zap.Float64("new_price", newPriceValue),
+			zap.String("reason", reason))
 
 		return &Result{
 			Success:    true,
@@ -155,7 +183,7 @@ func FlagNonCompliantHandler(db *gorm.DB, logger *zap.Logger) Handler {
 			zap.String("sku_code", skuCode),
 			zap.String("risk", risk))
 
-		// Update the SKU compliance_status via the domain service instead of raw SQL.
+		// Update via domain service.
 		if db != nil {
 			skuSvc := sku.NewService(db, logger)
 			var s sku.Sku
