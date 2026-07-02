@@ -49,7 +49,7 @@ go build -o bin/server cmd/server/main.go
 cd frontend-next
 npm run dev -- --hostname 127.0.0.1 --port 3000
 npm run build
-npm run lint                          # eslint, known failures
+npm run lint                          # eslint
 npm test                              # vitest
 
 # E2E (separate sub-project under frontend-next/)
@@ -227,7 +227,7 @@ cd backend-go && go test ./...   # pass
 cd backend-go && go vet ./...    # pass
 cd frontend-next && npm test     # pass
 cd frontend-next && npm run build # pass
-cd frontend-next && npm run lint  # fail — known issue
+cd frontend-next && npm run lint  # pass
 cd frontend-next/e2e && npx playwright test
 ```
 
