@@ -1,6 +1,6 @@
 # 凌镜 LingMirror — 全站功能清单
 
-> 更新时间：2026-06-30
+> 更新时间：2026-07-01
 > 范围：当前活跃新栈 `backend-go/` + `frontend-next/`
 
 ---
@@ -151,15 +151,15 @@
 
 ## 验证快照
 
-2026-06-30：
+2026-07-01（P0 baseline recovery后）：
 
 | 命令 | 结果 |
 |---|---|
 | `cd backend-go && go test ./...` | 通过 |
 | `cd backend-go && go vet ./...` | 通过 |
 | `cd frontend-next && npm test` | 通过，77 tests |
-| `cd frontend-next && npm run build` | **失败**（`src/config/menu.ts` 未解决的合并冲突） |
-| `cd frontend-next && npm run lint` | 12 errors, 22 warnings |
+| `cd frontend-next && npm run build` | 通过（76 routes，Turbopack + TS 均无错误） |
+| `cd frontend-next && npm run lint` | 通过（0 errors，0 warnings） |
 
 ## Production Closed Loop
 

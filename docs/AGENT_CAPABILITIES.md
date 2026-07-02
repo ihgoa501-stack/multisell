@@ -381,6 +381,7 @@
 | GET | `/api/v1/agentos/work-items/:id` | 工作项详情（含审批、审计、实体、上下游链） |
 | GET | `/api/v1/agentos/agent-timeline` | Agent 时间线（最近操作 + 状态汇总） |
 | GET | `/api/v1/agentos/autonomy` | 自主化状态 |
+| GET | `/api/v1/agentos/failures` | 最近失败的 Agent 运行（trace_id、Agent、决策点、错误信息） |
 
 ### Owner 驾驶舱
 
@@ -531,6 +532,10 @@ ToolBridge 将外部工具按副作用分类：
 - `internal/platform/command/action.go` — `AgentAction` 结构体、`RiskLevel`、`ActionMode`
 - `internal/platform/command/command.go` — `DispatchSafe()` 实现了模式检查和审批校验
 - `internal/platform/toolbridge/tool.go` — `ToolCall` 结构体、`ToolCategory`、`Validate()`
+
+### 试运行指南
+
+小范围试运行六步流程、监控要点、常见问题、安全边界说明参见 [`docs/trial-run-guide.md`](trial-run-guide.md)。
 
 ---
 

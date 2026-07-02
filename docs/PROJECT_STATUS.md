@@ -804,3 +804,42 @@ ActionPolicy 的 `Evaluate` 方法新增 high-risk 门禁：任何 `risk_level=h
 | `go vet ./...` | ✅ 通过 |
 | 安全边界 | ✅ 高风险操作被禁止或需人工审批，Agent 不能越权 |
 | 文档更新 | ✅ PROJECT_STATUS.md
+
+## 本次新增内容（2026-07-01，P8 发布准备）
+
+### 业务目标
+
+Pre-release consolidation — 文档清理、QA 回归验证、已知风险清单、发布就绪。
+
+### 核心改动
+
+**1. 文档清理与更新**
+
+| 文档 | 改动 |
+|------|------|
+| `docs/PROJECT_STATUS.md` | 新增 P6/P7/P8 阶段汇总 |
+| `docs/FUNCTION_INVENTORY.md` | 更新验证快照，保持与当前代码一致 |
+| `docs/AGENT_CAPABILITIES.md` | 检查 API 和 Agent 花名册准确性 |
+| `docs/known-risks.md` | **新建** — 安全/功能/技术已知风险清单 |
+
+**2. 已知风险清单**
+
+新建 `docs/known-risks.md`，记录安全风险（AI 建议错误、凭证泄露、RBAC 覆盖、SQL 注入、JWT 密钥）、功能风险（LLM 超时、数据不完整、平台同步延迟、审批积压）和技术风险（迁移失败、性能扩展、内存泄漏），附带缓解措施和状态跟踪。
+
+### 验证状态
+
+| 检查 | 结果 |
+|------|------|
+| `go build ./...` | ✅ 通过 |
+| `go vet ./...` | ✅ 通过 |
+| `go test ./...` | ✅ 通过（93 个包） |
+| `npm run build` | ✅ 通过（76 routes，Compiled 4.8s） |
+| `npm run lint` | ✅ 无新增 error/warning |
+| 文档一致性 | ✅ P0-P8 完整记录，已知风险清单 + 回滚说明就位 |
+
+### P8 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `docs/rollback-guide.md` | 分阶段回滚说明 + 全量回滚命令 + 验证步骤 |
+| `docs/known-risks.md` | 安全/功能/技术 12 条已知风险清单 |
