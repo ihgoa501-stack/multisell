@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -16,9 +17,9 @@ type PluginDriver interface {
 	OnFetchProductResult(userID int64, data json.RawMessage) error
 }
 
-// ExtensionHandler handles WebSocket connections for the A8 Sourcing Agent extension.
-// Unlike the main WebSocket handler, auth is performed via the first message
-// rather than a URL query parameter.
+// ExtensionHandler handles WebSocket connections for the extension.
+// Auth is done via JWT token in the URL query parameter (?token=...),
+// matching the main /ws handler pattern.
 type ExtensionHandler struct {
 	hub          *Hub
 	logger       *zap.Logger
@@ -41,9 +42,23 @@ func (h *ExtensionHandler) WithPluginDriver(driver PluginDriver) *ExtensionHandl
 	return h
 }
 
-// ServeWS upgrades HTTP connections to WebSocket. Unlike the main WebSocket
-// handler, auth is deferred to the first WebSocket message.
+// ServeWS upgrades HTTP connections to WebSocket, validating JWT from URL
+// query parameter (matching the /ws handler pattern).
 func (h *ExtensionHandler) ServeWS(c *gin.Context) {
+	tokenStr := c.Query("token")
+	if tokenStr == "" {
+		h.logger.Warn("extension ws upgrade rejected: missing token")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	userID, valid := h.validateExtensionToken(tokenStr)
+	if !valid {
+		h.logger.Warn("extension ws upgrade rejected: invalid token")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		h.logger.Error("extension websocket upgrade failed", zap.Error(err))
@@ -51,14 +66,15 @@ func (h *ExtensionHandler) ServeWS(c *gin.Context) {
 	}
 
 	client := &Client{
-		Hub:  h.hub,
-		Conn: conn,
-		Send: make(chan []byte, 256),
+		Hub:    h.hub,
+		Conn:   conn,
+		Send:   make(chan []byte, 256),
+		UserID: userID,
 	}
 
 	h.hub.register <- client
-	h.logger.Info("extension websocket client connected",
-		zap.String("ip", c.ClientIP()),
+	h.logger.Info("extension websocket client authenticated",
+		zap.Int64("user_id", *userID),
 		zap.Int("total", h.hub.ClientCount()),
 	)
 
@@ -67,40 +83,13 @@ func (h *ExtensionHandler) ServeWS(c *gin.Context) {
 }
 
 // extensionReadPump reads messages from the extension WebSocket connection.
-// The first message must be an auth message with a valid JWT token.
-// Only fetch_product_result and ping messages are handled.
+// Only fetch_product_result, list_page_result, and ping messages are handled.
 func (h *ExtensionHandler) extensionReadPump(client *Client) {
 	defer func() {
 		h.hub.unregister <- client
 		client.Conn.Close()
 	}()
 
-	// First message must be auth.
-	_, msgBytes, err := client.Conn.ReadMessage()
-	if err != nil {
-		return
-	}
-	var authMsg struct {
-		Type  string `json:"type"`
-		Token string `json:"token"`
-	}
-	if err := json.Unmarshal(msgBytes, &authMsg); err != nil || authMsg.Type != "auth" || authMsg.Token == "" {
-		h.logger.Warn("extension ws auth rejected: first message must be auth with token")
-		client.writeJSON(map[string]string{"type": "error", "data": "first message must be auth with token"})
-		return
-	}
-
-	userID, valid := h.validateExtensionToken(authMsg.Token)
-	if !valid {
-		h.logger.Warn("extension ws auth rejected: invalid token")
-		client.writeJSON(map[string]string{"type": "error", "data": "invalid token"})
-		return
-	}
-	client.UserID = userID
-	client.writeJSON(map[string]string{"type": "auth", "data": "ok"})
-	h.logger.Info("extension ws client authenticated", zap.Int64("user_id", *userID))
-
-	// Process subsequent messages.
 	for {
 		_, msgBytes, err := client.Conn.ReadMessage()
 		if err != nil {
