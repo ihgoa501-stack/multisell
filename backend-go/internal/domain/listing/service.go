@@ -9,6 +9,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -17,13 +18,14 @@ import (
 type Service struct {
 	db              *gorm.DB
 	logger          *zap.Logger
+	eventBus        *eventbus.Bus
 	skuProvider     SKUProvider
 	decisionReader  DecisionReader
 }
 
 // NewService creates a new listing service.
-func NewService(db *gorm.DB, logger *zap.Logger, skuProvider SKUProvider, decisionReader DecisionReader) *Service {
-	return &Service{db: db, logger: logger, skuProvider: skuProvider, decisionReader: decisionReader}
+func NewService(db *gorm.DB, logger *zap.Logger, eventBus *eventbus.Bus, skuProvider SKUProvider, decisionReader DecisionReader) *Service {
+	return &Service{db: db, logger: logger, eventBus: eventBus, skuProvider: skuProvider, decisionReader: decisionReader}
 }
 
 // List returns paginated listings with platform/status filters and search.
@@ -157,6 +159,28 @@ func (s *Service) Publish(id int64, payload json.RawMessage) (*ProductListing, e
 	if err := s.db.First(&l, id).Error; err != nil {
 		return nil, err
 	}
+
+	// Fire listing.published event for the listing -> order -> shipping -> finance chain.
+	eventPayload := map[string]interface{}{
+		"listing_id":   l.ID,
+		"product_id":   l.ProductID,
+		"platform_id":  l.PlatformID,
+		"platform_sku": l.PlatformSKU,
+		"status":       l.Status,
+	}
+	// Attempt to extract price from published_data payload.
+	if len(payload) > 0 {
+		var pd map[string]interface{}
+		if err := json.Unmarshal(payload, &pd); err == nil {
+			if price, ok := pd["price"]; ok {
+				eventPayload["price"] = price
+			}
+		}
+	}
+	if _, err := s.eventBus.Publish(context.Background(), "listing.published", "listing", eventPayload); err != nil {
+		s.logger.Warn("failed to publish listing.published event", zap.Int64("listing_id", id), zap.Error(err))
+	}
+
 	return &l, nil
 }
 

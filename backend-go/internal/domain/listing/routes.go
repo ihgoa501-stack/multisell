@@ -2,13 +2,14 @@ package listing
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers listing routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger, NewSKUProvider(db), NewDecisionReader(db))
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *eventbus.Bus) {
+	svc := NewService(db, logger, bus, NewSKUProvider(db), NewDecisionReader(db))
 	h := NewHandler(svc)
 
 	group := rg.Group("/listings")

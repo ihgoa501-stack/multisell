@@ -621,7 +621,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 
 	platform.RegisterRoutes(protected, db, logger)
-	listing.RegisterRoutes(protected, db, logger)
+	listing.RegisterRoutes(protected, db, logger, bus)
 
 	// Initialize Prism client (config-driven; nil if disabled).
 	var prismSvc prismadapter.PrismService
