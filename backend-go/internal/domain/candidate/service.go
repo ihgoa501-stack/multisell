@@ -162,6 +162,9 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 		TargetPlatformID:   in.TargetPlatformID,
 		DestinationCountry: in.DestinationCountry,
 		CreatedBy:          in.CreatedBy,
+		SourceURL:          in.SourceURL,
+		SourcePlatform:     in.SourcePlatform,
+		RawPayload:         in.RawPayload,
 	}
 	if in.PurchasePrice != nil {
 		c.PurchasePrice = *in.PurchasePrice
@@ -198,10 +201,27 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 	} else {
 		c.Status = "draft"
 	}
+	if in.CompletenessStatus != "" {
+		c.CompletenessStatus = in.CompletenessStatus
+	} else {
+		c.CompletenessStatus = "incomplete"
+	}
+	if in.SourceURL != "" {
+		now := time.Now()
+		c.CollectedAt = &now
+	}
 	if err := s.db.Create(&c).Error; err != nil {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// CreateCollectLead saves a new CollectLead entry and returns its ID.
+// CollectLead entries are list page leads (not full CandidateProducts).
+func (s *Service) CreateCollectLead(lead *CollectLead) error {
+	now := time.Now()
+	lead.CollectedAt = &now
+	return s.db.Create(lead).Error
 }
 
 // GetByID returns a single candidate product.
