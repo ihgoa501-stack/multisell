@@ -766,10 +766,48 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Driver: pluginDrv,
 		Weight: 10,
 	})
-	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret).
-		WithPluginDriver(&extPluginBridge{driver: pluginDrv})
-	r.GET("/ws/extension", extHandler.ServeWS)
 	candSvc := candidate.NewService(db, logger)
+	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret).
+		WithPluginDriver(&extPluginBridge{driver: pluginDrv}).
+		OnListCollect(func(userID int64, data json.RawMessage) error {
+			var payload struct {
+				Status string `json:"status"`
+				Data   struct {
+					PageURL     string `json:"page_url"`
+					CollectedAt string `json:"collected_at"`
+					Items       []struct {
+						Title      string `json:"title"`
+						PriceRange string `json:"price_range"`
+						DetailURL  string `json:"detail_url"`
+						ImageURL   string `json:"image_url"`
+					} `json:"items"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(data, &payload); err != nil {
+				return fmt.Errorf("list_page_result parse: %w", err)
+			}
+			if payload.Status != "ok" {
+				return nil
+			}
+			for _, item := range payload.Data.Items {
+				lead := &candidate.CollectLead{
+					Title:         item.Title,
+					PriceRange:    item.PriceRange,
+					DetailURL:     item.DetailURL,
+					ImageURL:      item.ImageURL,
+					SourcePageURL: payload.Data.PageURL,
+					Status:        "pending_detail_collect",
+				}
+				if err := candSvc.CreateCollectLead(lead); err != nil {
+					logger.Error("extension ws: create collect lead failed",
+						zap.String("title", item.Title),
+						zap.Error(err),
+					)
+				}
+			}
+			return nil
+		})
+	r.GET("/ws/extension", extHandler.ServeWS)
 	a12 := impl.NewCollectionAgent(toolBridge, candSvc, logger)
 	aiOrch.RegisterAgent("A12", a12)
 
@@ -815,4 +853,8 @@ type extPluginBridge struct {
 func (b *extPluginBridge) OnFetchProductResult(_ int64, data json.RawMessage) error {
 	b.driver.HandleResponse(data)
 	return nil
+}
+
+func (b *extPluginBridge) HasPending() bool {
+	return false
 }
