@@ -35,6 +35,48 @@ type PageData struct {
 	Driver      string          `json:"driver"`
 }
 
+// UnmarshalJSON handles both content-script field names (price_1688, price_min, etc.)
+// and canonical toolbridge field names (price_cny, price_min_cny, etc.).
+// ponytail: naive map lookup for aliases — extend as new field names appear
+func (p *PageData) UnmarshalJSON(data []byte) error {
+	type alias PageData // prevent recursion
+	var raw alias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*p = PageData(raw)
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil // partial data still useful
+	}
+	if raw.PriceCNY == 0 {
+		if v, ok := m["price_1688"]; ok {
+			var f float64
+			if json.Unmarshal(v, &f) == nil && f > 0 {
+				p.PriceCNY = f
+			}
+		}
+	}
+	if raw.MOQ == 0 {
+		if v, ok := m["min_order_qty"]; ok {
+			var i int
+			if json.Unmarshal(v, &i) == nil && i > 0 {
+				p.MOQ = i
+			}
+		}
+	}
+	if raw.WeightKg == nil {
+		if v, ok := m["package_weight_kg"]; ok {
+			var f float64
+			if json.Unmarshal(v, &f) == nil && f > 0 {
+				p.WeightKg = &f
+			}
+		}
+	}
+	return nil
+}
+
 // SpecVariant describes a specific variant of a product.
 type SpecVariant struct {
 	Spec  string  `json:"spec"`

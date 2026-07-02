@@ -762,55 +762,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 				return nil
 			}
 
-			pd := result.Payload.Data
-			imagesJSON, _ := json.Marshal(pd.Images)
-			rawPayload, _ := json.Marshal(pd)
-			rawMsg := json.RawMessage(rawPayload)
-
-			price := pd.PriceCNY
-			weight := 0.0
-			length := 0.0
-			width := 0.0
-			height := 0.0
-
-			if pd.WeightKg != nil {
-				weight = *pd.WeightKg
-			}
-			if pd.PackageLengthCm != nil {
-				length = *pd.PackageLengthCm
-			}
-			if pd.PackageWidthCm != nil {
-				width = *pd.PackageWidthCm
-			}
-			if pd.PackageHeightCm != nil {
-				height = *pd.PackageHeightCm
-			}
-
-			mainImage := ""
-			if len(pd.Images) > 0 {
-				mainImage = pd.Images[0]
-			}
-
-			now := time.Now()
-			input := &candidate.CreateCandidateInput{
-				Title:            pd.Title,
-				Description:      pd.Description,
-				MainImage:        mainImage,
-				Images:           imagesJSON,
-				PurchasePrice:    &price,
-				PurchaseCurrency: "CNY",
-				PackageWeightKg:  &weight,
-				PackageLengthCm:  &length,
-				PackageWidthCm:   &width,
-				PackageHeightCm:  &height,
-				OriginCountry:    "CN",
-				Status:           "draft",
-				CreatedBy:        "extension_auto",
-				SourceURL:        pd.SourceURL,
-				SourcePlatform:   "1688",
-				RawPayload:       &rawMsg,
-				CollectedAt:      &now,
-			}
+			input := impl.PageDataToCandidate(result.Payload.Data, map[string]interface{}{
+				"collected_by": fmt.Sprintf("extension:%d", userID),
+				"url":          result.Payload.Data.SourceURL,
+			})
 
 			created, err := candSvc.Create(input)
 			if err != nil {
@@ -818,7 +773,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 			}
 			logger.Info("auto-collect saved candidate",
 				zap.Int64("candidate_id", created.ID),
-				zap.String("source_url", pd.SourceURL))
+				zap.String("source_url", result.Payload.Data.SourceURL))
 			return nil
 		}).
 		OnListCollect(func(userID int64, payload json.RawMessage) error {

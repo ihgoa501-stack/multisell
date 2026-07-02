@@ -392,31 +392,4 @@ func (s *Service) CreateCollectLead(lead *CollectLead) error {
 	return result.Error
 }
 
-// computeMissingFields returns a list of field names that are missing from the input.
-func computeMissingFields(input *CreateCandidateInput) []string {
-	var missing []string
-	if input.Title == "" {
-		missing = append(missing, "title")
-	}
-	if input.SourceURL == "" {
-		missing = append(missing, "source_url")
-	}
-	if input.PurchasePrice == nil || *input.PurchasePrice <= 0 {
-		missing = append(missing, "purchase_price")
-	}
-	if input.MainImage == "" {
-		missing = append(missing, "main_image")
-	}
-	if input.Description == "" {
-		missing = append(missing, "description")
-	}
-	if input.PackageWeightKg == nil || *input.PackageWeightKg <= 0 {
-		missing = append(missing, "package_weight_kg")
-	}
-	if input.PackageLengthCm == nil || input.PackageWidthCm == nil || input.PackageHeightCm == nil || (input.PackageLengthCm != nil && *input.PackageLengthCm <= 0) {
-		missing = append(missing, "package_dimensions")
-	}
-	return missing
-}
-
 func timePtr(t time.Time) *time.Time { return &t }
