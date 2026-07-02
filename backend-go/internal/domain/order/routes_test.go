@@ -9,6 +9,15 @@ import (
 	"github.com/lingmirror/backend-go/internal/response"
 )
 
+// mustJSON marshals v to a JSON string, panicking on error.
+func mustJSON(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
 func TestOrderRoutes_Unauthenticated(t *testing.T) {
 	ts := integrationtest.NewTestServer(t, RegisterRoutes, &Order{}, &OrderItem{}, &OrderStatusLog{})
 	defer ts.Close()
@@ -32,9 +41,9 @@ func TestOrderRoutes_Unauthenticated(t *testing.T) {
 			case http.MethodGet:
 				resp = ts.Get(t, tt.path, "")
 			case http.MethodPost:
-				resp = ts.Post(t, tt.path, nil, "")
+				resp = ts.Post(t, tt.path, "", "")
 			case http.MethodPut:
-				resp = ts.Put(t, tt.path, nil, "")
+				resp = ts.Put(t, tt.path, "", "")
 			case http.MethodDelete:
 				resp = ts.Delete(t, tt.path, "")
 			}
@@ -76,7 +85,7 @@ func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
 		},
 	}
 
-	resp := ts.Post(t, "/api/v1/order", createBody, token)
+	resp := ts.Post(t, "/api/v1/order", mustJSON(createBody), token)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -140,7 +149,7 @@ func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
 	}
 
 	// 4. Update to confirmed (state machine: pending → confirmed)
-	resp = ts.Put(t, "/api/v1/order/"+itoa(orderID), map[string]interface{}{"status": "confirmed"}, token)
+	resp = ts.Put(t, "/api/v1/order/"+itoa(orderID), mustJSON(map[string]interface{}{"status": "confirmed"}), token)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Update to confirmed status = %d, want 200", resp.StatusCode)
@@ -151,7 +160,7 @@ func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
 	updateBody := map[string]interface{}{
 		"status": newStatus,
 	}
-	resp = ts.Put(t, "/api/v1/order/"+itoa(orderID), updateBody, token)
+	resp = ts.Put(t, "/api/v1/order/"+itoa(orderID), mustJSON(updateBody), token)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -194,7 +203,7 @@ func TestOrderRoutes_Create_InvalidInput(t *testing.T) {
 		"status": "pending",
 	}
 
-	resp := ts.Post(t, "/api/v1/order", body, token)
+	resp := ts.Post(t, "/api/v1/order", mustJSON(body), token)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusBadRequest {
