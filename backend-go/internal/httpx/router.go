@@ -179,6 +179,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// and handles reverse logistics via HandleAftersaleReturn).
 	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker)
 
+	// Shared inventory service with event bus wired for stock critical detection.
+	invSvc := inventory.NewService(db, logger).WithEventBus(bus)
+
 	// ==========================================================
 	// Event Bus Subscriptions: agent triggers + pipeline chains
 	// ==========================================================
@@ -536,7 +539,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Supply chain event: purchase order received → auto-increment inventory
 	bus.Subscribe("supplychain.order.received", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
-		invSvc := inventory.NewService(db, logger)
 		items, ok := payload["items"].([]interface{})
 		if !ok {
 			return nil
@@ -581,7 +583,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Supply chain event: after-sale completed → auto-adjust inventory
 	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
-		invSvc := inventory.NewService(db, logger)
 		skuID := int64(payload["sku_id"].(float64))
 		qty := int(payload["quantity"].(float64))
 		inv, err := invSvc.GetBySkuID(ctx, skuID)
