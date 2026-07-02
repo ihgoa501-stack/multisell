@@ -284,6 +284,15 @@ chrome.runtime.onMessage.addListener(
       }
       return;
     }
+
+    // List page extraction result from content script
+    if (message.type === "list_page_result") {
+      sendToServer({
+        type: "list_page_result",
+        payload: (message as any).payload,
+      });
+      return;
+    }
   }
 );
 

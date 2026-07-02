@@ -15,16 +15,20 @@ type PluginDriver interface {
 	// OnFetchProductResult is called when a fetch_product_result message
 	// is received from the extension client.
 	OnFetchProductResult(userID int64, data json.RawMessage) error
+	// HasPending returns true if the plugin driver has any pending requests
+	// awaiting responses from the extension.
+	HasPending() bool
 }
 
 // ExtensionHandler handles WebSocket connections for the extension.
 // Auth is done via JWT token in the URL query parameter (?token=...),
 // matching the main /ws handler pattern.
 type ExtensionHandler struct {
-	hub          *Hub
-	logger       *zap.Logger
-	jwtSecret    string
-	pluginDriver PluginDriver
+	hub                *Hub
+	logger             *zap.Logger
+	jwtSecret          string
+	pluginDriver       PluginDriver
+	listCollectHandler func(userID int64, data json.RawMessage) error
 }
 
 // NewExtensionHandler creates a new ExtensionHandler.
@@ -44,6 +48,15 @@ func (h *ExtensionHandler) WithPluginDriver(driver PluginDriver) *ExtensionHandl
 
 // ServeWS upgrades HTTP connections to WebSocket, validating JWT from URL
 // query parameter (matching the /ws handler pattern).
+// OnListCollect sets a callback for processing list_page_result messages
+// from the extension (list page card extractions).
+func (h *ExtensionHandler) OnListCollect(handler func(userID int64, data json.RawMessage) error) *ExtensionHandler {
+	h.listCollectHandler = handler
+	return h
+}
+
+// ServeWS upgrades HTTP connections to WebSocket. Unlike the main WebSocket
+// handler, auth is deferred to the first WebSocket message.
 func (h *ExtensionHandler) ServeWS(c *gin.Context) {
 	tokenStr := c.Query("token")
 	if tokenStr == "" {
@@ -106,6 +119,8 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 		switch incoming.Type {
 		case "fetch_product_result":
 			h.handleFetchProductResult(client, incoming.Data)
+		case "list_page_result":
+			h.handleListPageResult(client, incoming.Data)
 		case "ping":
 			client.writeJSON(map[string]string{"type": "pong"})
 		default:
@@ -159,4 +174,26 @@ func (h *ExtensionHandler) handleFetchProductResult(client *Client, data json.Ra
 		return
 	}
 	client.writeJSON(map[string]string{"type": "fetch_product_result", "data": "ack"})
+}
+
+// handleListPageResult routes a list_page_result message to the registered
+// list collect handler callback, which saves the extracted cards as CollectLead entries.
+func (h *ExtensionHandler) handleListPageResult(client *Client, data json.RawMessage) {
+	if h.listCollectHandler == nil {
+		h.logger.Warn("extension ws: no list collect handler registered")
+		client.writeJSON(map[string]string{"type": "error", "data": "no list collect handler available"})
+		return
+	}
+	if client.UserID == nil {
+		return
+	}
+	if err := h.listCollectHandler(*client.UserID, data); err != nil {
+		h.logger.Error("extension ws: list collect handler error",
+			zap.Int64("user_id", *client.UserID),
+			zap.Error(err),
+		)
+		client.writeJSON(map[string]string{"type": "error", "data": "list collect handler error"})
+		return
+	}
+	client.writeJSON(map[string]string{"type": "list_page_result", "data": "ack"})
 }

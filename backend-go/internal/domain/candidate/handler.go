@@ -71,6 +71,10 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	item, err := h.service.Create(&in)
 	if err != nil {
+		if errors.Is(err, ErrDuplicateSourceURL) {
+			response.Error(c, http.StatusConflict, err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -125,6 +129,22 @@ func (h *Handler) Count(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"total": total})
+}
+
+// Dedup GET /candidates/dedup
+func (h *Handler) Dedup(c *gin.Context) {
+	minDup := 2
+	if v := c.Query("min_dup"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 1 {
+			minDup = parsed
+		}
+	}
+	results, err := h.service.Dedup(minDup)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, results)
 }
 
 // Seed POST /candidates/seed

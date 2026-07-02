@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
@@ -217,6 +218,33 @@ func pageDataToCandidate(pd *toolbridge.PageData, params map[string]interface{})
 		OriginCountry:    "CN",
 		Status:           "draft",
 		CreatedBy:        collectedBy,
+		SourceURL:        pd.SourceURL,
+		SourcePlatform:   detectPlatform(pd.SourceURL),
+		RawPayload:       pd.RawData,
+	}
+}
+
+// detectPlatform guesses the source platform from a URL.
+func detectPlatform(url string) string {
+	switch {
+	case strings.Contains(url, "1688.com"):
+		return "1688"
+	case strings.Contains(url, "taobao.com"):
+		return "taobao"
+	case strings.Contains(url, "tmall.com"):
+		return "tmall"
+	case strings.Contains(url, "aliexpress.com"):
+		return "aliexpress"
+	case strings.Contains(url, "alibaba.com"):
+		return "alibaba"
+	case strings.Contains(url, "pinduoduo.com"):
+		return "pinduoduo"
+	case strings.Contains(url, "made-in-china.com"):
+		return "made-in-china"
+	case strings.Contains(url, "yiwugo.com"):
+		return "yiwugo"
+	default:
+		return "unknown"
 	}
 }
 
