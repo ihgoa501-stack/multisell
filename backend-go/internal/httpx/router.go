@@ -530,8 +530,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Domain routes (all require authentication)
 	category.RegisterRoutes(protected, db, logger)
 	brand.RegisterRoutes(protected, db, logger)
-	sku.RegisterRoutes(protected, db, logger)
-	inventory.RegisterRoutes(protected, db, logger)
+	productRoutes := protected.Group("", middleware.RequirePermission(db, "product.read"))
+	sku.RegisterRoutes(productRoutes, db, logger)
+	inventoryRoutes := protected.Group("", middleware.RequirePermission(db, "inventory.read"))
+	inventory.RegisterRoutes(inventoryRoutes, db, logger)
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
 
@@ -621,7 +623,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 
 	platform.RegisterRoutes(protected, db, logger)
-	listing.RegisterRoutes(protected, db, logger, bus)
+	listingRoutes := protected.Group("", middleware.RequirePermission(db, "listing.read"))
+	listing.RegisterRoutes(listingRoutes, db, logger, bus)
 
 	// Initialize Prism client (config-driven; nil if disabled).
 	var prismSvc prismadapter.PrismService
@@ -639,7 +642,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	approvalSvc = approval.NewService(db, logger, auditSvc)
 	rbacSvc := rbac.NewService(db, logger)
 	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
-	listingtask.RegisterRoutes(protected, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
+	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
 
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
@@ -662,14 +665,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
 	workflow.RegisterRoutes(protected, db, bus, aiOrch, cmd, logger)
 	personalrule.RegisterRoutes(protected, db, logger)
-	producthub.RegisterRoutes(protected, db, logger)
+	producthub.RegisterRoutes(productRoutes, db, logger)
 	sentiment.RegisterRoutes(protected, db, logger)
 
-	shipping.RegisterRoutes(protected, db, logger)
+	shippingRoutes := protected.Group("", middleware.RequirePermission(db, "shipping.read"))
+	shipping.RegisterRoutes(shippingRoutes, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
-	order.RegisterRoutes(protected, db, logger)
-	orderimport.RegisterRoutes(protected, db, logger)
-	settlement.RegisterRoutes(protected, db, logger)
+	orderRoutes := protected.Group("", middleware.RequirePermission(db, "order.read"))
+	order.RegisterRoutes(orderRoutes, db, logger)
+	orderimport.RegisterRoutes(orderRoutes, db, logger)
+	settlementRoutes := protected.Group("", middleware.RequirePermission(db, "settlement.read"))
+	settlement.RegisterRoutes(settlementRoutes, db, logger)
 	financeRoutes := protected.Group("", middleware.RequirePermission(db, "finance.read"))
 	finance.RegisterRoutes(financeRoutes, db, logger)
 	price.RegisterRoutes(financeRoutes, db, logger)
