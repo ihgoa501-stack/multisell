@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
@@ -12,8 +13,9 @@ import (
 
 // RegisterRoutes registers AI routes on the given router group.
 // moaCoord can be nil; if set, MOA routes are registered.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, moaCoord *MOACoordinator) {
-	svc := NewService(db, logger)
+// cmd can be nil; if set, action execution dispatches through the command handlers.
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, moaCoord *MOACoordinator, cmd *command.Dispatcher) {
+	svc := NewService(db, logger).WithDispatcher(cmd)
 	orch := NewOrchestrator(db, logger)
 	streamer := NewStreamer(hub, logger)
 	h := NewHandler(svc, orch, streamer)

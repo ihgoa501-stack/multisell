@@ -1,10 +1,13 @@
 package ai
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/platform/command"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -14,6 +17,7 @@ type Service struct {
 	db     *gorm.DB
 	logger *zap.Logger
 	traces *TraceWriter
+	cmd    *command.Dispatcher
 }
 
 // NewService creates a new AI service.
@@ -23,6 +27,13 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 		logger: logger,
 		traces: NewTraceWriter(db, logger),
 	}
+}
+
+// WithDispatcher attaches the command dispatcher so that ExecuteAction can
+// dispatch actions through registered command handlers.
+func (s *Service) WithDispatcher(cmd *command.Dispatcher) *Service {
+	s.cmd = cmd
+	return s
 }
 
 // TraceWriter exposes the underlying trace writer for the orchestrator.
@@ -164,7 +175,9 @@ func (s *Service) RejectAction(id int64, operator, reason string) (*UnifiedActio
 	}, "suggested", "pending")
 }
 
-// ExecuteAction transitions an action through "executing" → "executed".
+// ExecuteAction transitions an action through "executing" → "executed" and
+// dispatches the underlying business command via the CommandDispatcher.
+//
 // For low-risk auto-approved actions (RequiresApproval=false) this can be
 // called directly from "suggested"; otherwise the action must first be
 // approved.
@@ -186,7 +199,6 @@ func (s *Service) ExecuteAction(id int64, operator, _ string) (*UnifiedAction, e
 		return nil, &InvalidTransitionError{From: a.Status, To: "executing"}
 	}
 	// If the action claims to require approval but hasn't been approved, refuse.
-	// (Defensive — the status check above should already cover this.)
 	if a.RequiresApproval && a.Status == "suggested" {
 		return nil, ErrApprovalRequired
 	}
@@ -199,13 +211,52 @@ func (s *Service) ExecuteAction(id int64, operator, _ string) (*UnifiedAction, e
 	if err := s.db.Model(&a).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	// Simulate synchronous execution success.
+
+	// Dispatch through CommandDispatcher to execute real business logic.
+	var execErr error
+	var cmdResult *command.Result
+	if s.cmd != nil {
+		payload := map[string]interface{}{}
+		if len(a.Payload) > 0 {
+			_ = json.Unmarshal(a.Payload, &payload)
+		}
+		cmdResult, execErr = s.cmd.Dispatch(context.Background(), a.ActionType, payload)
+		if execErr != nil {
+			s.logger.Warn("command dispatch failed during action execution",
+				zap.Int64("action_id", a.ID),
+				zap.String("action_type", a.ActionType),
+				zap.Error(execErr))
+		}
+	}
+
+	// Build final updates based on the command result.
 	execNow := nowPtr()
-	if err := s.db.Model(&a).Updates(map[string]interface{}{
-		"status":      "executed",
+	finalUpdates := map[string]interface{}{
 		"executed_at": execNow,
 		"updated_at":  execNow,
-	}).Error; err != nil {
+	}
+
+	if execErr != nil || (cmdResult != nil && !cmdResult.Success) {
+		errMsg := ""
+		if execErr != nil {
+			errMsg = execErr.Error()
+		} else if cmdResult != nil {
+			errMsg = cmdResult.ErrorMessage
+		}
+		finalUpdates["status"] = "failed"
+		finalUpdates["failed_at"] = execNow
+		finalUpdates["rejection_reason"] = errMsg
+	} else {
+		finalUpdates["status"] = "executed"
+		// Record the after_snapshot from the command result so the UI can
+		// see what actually changed.
+		if cmdResult != nil && cmdResult.AfterSnapshot != nil {
+			snapJSON, _ := json.Marshal(cmdResult.AfterSnapshot)
+			finalUpdates["after_snapshot"] = snapJSON
+		}
+	}
+
+	if err := s.db.Model(&a).Updates(finalUpdates).Error; err != nil {
 		return nil, err
 	}
 	return &a, nil
