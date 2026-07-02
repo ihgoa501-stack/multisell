@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
+	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
@@ -14,13 +15,31 @@ import (
 
 // Service provides profit summary business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db      *gorm.DB
+	logger  *zap.Logger
+	rateSvc *exchangerate.Service
 }
 
 // NewService creates a new profit summary service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+func NewService(db *gorm.DB, logger *zap.Logger, rateSvc *exchangerate.Service) *Service {
+	return &Service{db: db, logger: logger, rateSvc: rateSvc}
+}
+
+// getCNYRate returns the current CNY->USD exchange rate from the exchangerate module.
+// Falls back to 7.2 if the rate service is unavailable or the lookup fails.
+func (s *Service) getCNYRate() float64 {
+	if s.rateSvc == nil {
+		return 7.2
+	}
+	rate, err := s.rateSvc.GetLatest("CNY", "USD")
+	if err != nil {
+		s.logger.Warn("failed to get CNY/USD exchange rate, using default 7.2", zap.Error(err))
+		return 7.2
+	}
+	if rate.Rate <= 0 {
+		return 7.2
+	}
+	return rate.Rate
 }
 
 // Calculate computes a full profit summary for a candidate product.
@@ -37,13 +56,13 @@ func (s *Service) Calculate(productID int64, calculatedBy string) (*ProfitResult
 		calculatedBy = "system"
 	}
 
-	// 1. Purchase cost (in USD, simplified conversion CNY→USD at 7.2)
+	// 1. Purchase cost (in USD, converts CNY->USD at current exchange rate)
 	purchaseCost := prod.PurchasePrice
 	if prod.PurchaseCurrency == "CNY" && purchaseCost > 0 {
-		purchaseCost = purchaseCost / 7.2
+		purchaseCost = purchaseCost / s.getCNYRate()
 	}
 
-	// 2. Shipping cost — try logistics estimate, fallback to default $15
+	// 2. Shipping cost -- try logistics estimate, fallback to default $15
 	shippingCost := s.estimateShipping(&prod)
 
 	// 3. Platform fee — use platformfee module or default 15%
@@ -138,7 +157,7 @@ func (s *Service) calculatePlatformFee(platformID int64, salePrice float64) floa
 	if err := s.db.Where("platform_id = ?", platformID).Find(&feeRules).Error; err == nil && len(feeRules) > 0 {
 		totalFee := 0.0
 		for _, rule := range feeRules {
-				if rule.FeeType == "commission" {
+			if rule.FeeType == "commission" {
 				totalFee += salePrice * rule.FeeRatePct / 100.0
 			} else if rule.FeeType == "fixed" {
 				totalFee += rule.FixedAmount
@@ -165,11 +184,11 @@ func (s *Service) calculateTariff(prod *candidate.CandidateProduct) float64 {
 			Or("country_code = ? AND hs_code_prefix = ? AND status = ?", dest, prod.HSCode[:minInt(4, len(prod.HSCode))], "active").
 			First(&rule).Error; err == nil {
 			totalRate := rule.DutyRatePct + rule.VatRatePct + rule.OtherTaxRatePct
-			return prod.PurchasePrice / 7.2 * totalRate / 100.0
+			return prod.PurchasePrice / s.getCNYRate() * totalRate / 100.0
 		}
 	}
 	// Default: 5% duty on purchase cost (converted to USD)
-	return (prod.PurchasePrice / 7.2) * 0.05
+	return (prod.PurchasePrice / s.getCNYRate()) * 0.05
 }
 
 // ListSummaries returns paginated profit summaries with optional status filter.
