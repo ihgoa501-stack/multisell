@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
@@ -255,3 +256,10 @@ func copyParams(original map[string]interface{}) map[string]interface{} {
 	}
 	return cp
 }
+
+// PageDataToCandidate is the exported version of pageDataToCandidate.
+func PageDataToCandidate(pd *toolbridge.PageData, params map[string]interface{}) *candidate.CreateCandidateInput {
+	return pageDataToCandidate(pd, params)
+}
+
+func timePtr(t time.Time) *time.Time { return &t }

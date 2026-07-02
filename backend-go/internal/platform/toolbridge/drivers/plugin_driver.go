@@ -102,6 +102,17 @@ func (d *PluginDriver) FetchPage(ctx context.Context, url string) (*toolbridge.P
 	}
 }
 
+// HasPending checks whether a request with the given ID still has a pending
+// channel in the driver's map. The realtime layer calls this to decide whether
+// to route a fetch_product_result through the pending-request handler (plugin)
+// or the auto-collect handler (candidate creation).
+func (d *PluginDriver) HasPending(requestID string) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	_, ok := d.pending[requestID]
+	return ok
+}
+
 // Health checks if the extension service is available by sending a
 // health-check probe.
 func (d *PluginDriver) Health() (available bool, latency time.Duration, err error) {

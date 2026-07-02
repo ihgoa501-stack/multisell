@@ -22,17 +22,23 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/aftersales"
 	"github.com/lingmirror/backend-go/internal/domain/agentlearning"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/compliance"
-	"github.com/lingmirror/backend-go/internal/domain/consolidation"
 	"github.com/lingmirror/backend-go/internal/domain/content"
+	"github.com/lingmirror/backend-go/internal/domain/consolidation"
 	"github.com/lingmirror/backend-go/internal/domain/cost"
+	"github.com/lingmirror/backend-go/internal/domain/landedcost"
+	"github.com/lingmirror/backend-go/internal/domain/orchestration"
+	"github.com/lingmirror/backend-go/internal/domain/workflow"
+	"github.com/lingmirror/backend-go/internal/domain/personalrule"
+	"github.com/lingmirror/backend-go/internal/domain/producthub"
+	"github.com/lingmirror/backend-go/internal/domain/sentiment"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
@@ -44,7 +50,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
-	"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
@@ -53,33 +58,28 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/mock"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
-	"github.com/lingmirror/backend-go/internal/domain/orchestration"
 	"github.com/lingmirror/backend-go/internal/domain/order"
 	"github.com/lingmirror/backend-go/internal/domain/orderimport"
 	"github.com/lingmirror/backend-go/internal/domain/owner"
-	"github.com/lingmirror/backend-go/internal/domain/personalrule"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
-	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
-	"github.com/lingmirror/backend-go/internal/domain/sentiment"
 	"github.com/lingmirror/backend-go/internal/domain/settings"
 	"github.com/lingmirror/backend-go/internal/domain/settlement"
 	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
+	"github.com/lingmirror/backend-go/internal/domain/support"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/supplychain"
-	"github.com/lingmirror/backend-go/internal/domain/support"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
-	"github.com/lingmirror/backend-go/internal/domain/workflow"
 	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/command"
@@ -121,7 +121,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Prometheus metrics endpoint
 	if cfg.Metrics.Enabled {
-		r.GET("/metrics", middleware.MetricsHandler())
+	r.GET("/metrics", middleware.MetricsHandler())
 	}
 
 	// ==========================================================
@@ -176,9 +176,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Supply chain orchestrator (bridges A8 sourcing with A10 logistics quoting,
 	// and handles reverse logistics via HandleAftersaleReturn).
 	supplyChainOrch := supplychain.NewOrchestrator(bus, db, logger, returnRateTracker)
-
-	// Shared inventory service with event bus wired for stock critical detection.
-	invSvc := inventory.NewService(db, logger).WithEventBus(bus)
 
 	// ==========================================================
 	// Event Bus Subscriptions: agent triggers + pipeline chains
@@ -537,6 +534,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Supply chain event: purchase order received → auto-increment inventory
 	bus.Subscribe("supplychain.order.received", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
+		invSvc := inventory.NewService(db, logger)
 		items, ok := payload["items"].([]interface{})
 		if !ok {
 			return nil
@@ -554,9 +552,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 				logger.Warn("supplychain: inventory not found for sku", zap.Int64("sku_id", skuID), zap.Error(err))
 				continue
 			}
-			if err := invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "采购入库: "+orderNo); err != nil {
-				logger.Warn("supplychain: failed to update stock for sku", zap.Int64("sku_id", skuID), zap.Error(err))
-			}
+			_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "采购入库: "+orderNo)
 		}
 		return nil
 	})
@@ -576,10 +572,15 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
 		return supplyChainOrch.HandleRecommendEvent(ctx, evt)
 	})
+	// scheduler.tick.orch → supply chain orchestrator heartbeat (no-op)
+	bus.Subscribe("scheduler.tick.orch", func(ctx context.Context, evt eventbus.Event) error {
+		return nil
+	})
 
 	// Supply chain event: after-sale completed → auto-adjust inventory
 	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
+		invSvc := inventory.NewService(db, logger)
 		skuID := int64(payload["sku_id"].(float64))
 		qty := int(payload["quantity"].(float64))
 		inv, err := invSvc.GetBySkuID(ctx, skuID)
@@ -588,9 +589,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 			return nil
 		}
 		// Aftersales restock adds stock back to inventory
-		if err := invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "售后入库"); err != nil {
-			logger.Warn("supplychain: failed to update stock for aftersale", zap.Int64("sku_id", skuID), zap.Error(err))
-		}
+		_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "售后入库")
 		return nil
 	})
 
@@ -615,21 +614,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Supply chain event: stock critical (A5) → orchestrator triggers A8 sourcing rescan
 	bus.Subscribe("supplychain.stock.critical", func(ctx context.Context, evt eventbus.Event) error {
 		return supplyChainOrch.HandleStockCritical(ctx, evt)
-	})
-
-	// sourcing.rescan → handle rescan requests when stock goes critical
-	bus.Subscribe("sourcing.rescan", sourcing.HandleSourcingRescan(db, logger))
-	// supplychain.quote_requested → A10: carrier_compare
-	// When A8 sourcing recommends a product via sourcing.recommend, the
-	// orchestrator publishes supplychain.quote_requested. A10 compares carriers
-	// by cost, speed, and suitability to quote shipping costs.
-	bus.Subscribe("supplychain.quote_requested", func(ctx context.Context, evt eventbus.Event) error {
-		_, err := aiOrch.Run(&ai.RunAgentRequest{
-			AgentID:       "A10",
-			DecisionPoint: "carrier_compare",
-			Context:       evt.Payload,
-		})
-		return err
 	})
 
 	platform.RegisterRoutes(protected, db, logger)
@@ -694,9 +678,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	support.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
 	settings.RegisterRoutes(protected, db, logger)
-	support.RegisterRoutes(protected, db, logger)
 	imagegen.RegisterRoutes(protected, db, logger)
-	content.RegisterRoutes(protected, db, logger, aiOrch)
 	importbatch.RegisterRoutes(protected, db, logger)
 	content.RegisterRoutes(protected, db, logger, aiOrch)
 	operationlog.RegisterRoutes(protected, db, logger)
@@ -760,19 +742,48 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
 	ai.RegisterRoutes(protected, db, logger, hub, moaCoord)
 
-	// Browser Extension WebSocket + A12 Collection Agent
-	extSvc := &hubExtensionService{hub: hub}
-	pluginDrv := drivers.NewPluginDriver(extSvc, 120*time.Second)
-	toolBridge.AddDriver(toolbridge.DriverEntry{
+		// Browser Extension WebSocket + A12 Collection Agent
+		extSvc := &hubExtensionService{hub: hub}
+		pluginDrv := drivers.NewPluginDriver(extSvc, 120*time.Second)
+		toolBridge.AddDriver(toolbridge.DriverEntry{
 		Name:   "plugin",
 		Driver: pluginDrv,
 		Weight: 10,
-	})
-	candSvc := candidate.NewService(db, logger)
-	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret).
+		})
+		candSvc := candidate.NewService(db, logger)
+		extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret).
 		WithPluginDriver(&extPluginBridge{driver: pluginDrv}).
-		OnListCollect(func(userID int64, data json.RawMessage) error {
-			var payload struct {
+		OnAutoCollect(func(userID int64, payload json.RawMessage) error {
+			var result struct {
+				ID      string `json:"id"`
+				Payload struct {
+					Status string               `json:"status"`
+					Data   *toolbridge.PageData `json:"data"`
+				} `json:"payload"`
+			}
+			if err := json.Unmarshal(payload, &result); err != nil {
+				return fmt.Errorf("parse auto-collect payload: %w", err)
+			}
+			if result.Payload.Status != "ok" || result.Payload.Data == nil {
+				return nil
+			}
+
+			input := impl.PageDataToCandidate(result.Payload.Data, map[string]interface{}{
+				"collected_by": fmt.Sprintf("extension:%d", userID),
+				"url":          result.Payload.Data.SourceURL,
+			})
+
+			created, err := candSvc.Create(input)
+			if err != nil {
+				return fmt.Errorf("save auto-collected candidate: %w", err)
+			}
+			logger.Info("auto-collect saved candidate",
+				zap.Int64("candidate_id", created.ID),
+				zap.String("source_url", result.Payload.Data.SourceURL))
+			return nil
+		}).
+		OnListCollect(func(userID int64, payload json.RawMessage) error {
+			var result struct {
 				Status string `json:"status"`
 				Data   struct {
 					PageURL     string `json:"page_url"`
@@ -785,33 +796,31 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 					} `json:"items"`
 				} `json:"data"`
 			}
-			if err := json.Unmarshal(data, &payload); err != nil {
-				return fmt.Errorf("list_page_result parse: %w", err)
+			if err := json.Unmarshal(payload, &result); err != nil {
+				return fmt.Errorf("parse list result: %w", err)
 			}
-			if payload.Status != "ok" {
+			if result.Status != "ok" {
 				return nil
 			}
-			for _, item := range payload.Data.Items {
-				lead := &candidate.CollectLead{
+			for _, item := range result.Data.Items {
+				lead := candidate.CollectLead{
 					Title:         item.Title,
 					PriceRange:    item.PriceRange,
 					DetailURL:     item.DetailURL,
 					ImageURL:      item.ImageURL,
-					SourcePageURL: payload.Data.PageURL,
+					SourcePageURL: result.Data.PageURL,
 					Status:        "pending_detail_collect",
 				}
-				if err := candSvc.CreateCollectLead(lead); err != nil {
-					logger.Error("extension ws: create collect lead failed",
-						zap.String("title", item.Title),
-						zap.Error(err),
-					)
+				if err := candSvc.CreateCollectLead(&lead); err != nil {
+					logger.Warn("create collect lead failed", zap.String("detail_url", item.DetailURL), zap.Error(err))
 				}
 			}
+			logger.Info("list collect saved leads", zap.Int("count", len(result.Data.Items)))
 			return nil
 		})
-	r.GET("/ws/extension", extHandler.ServeWS)
-	a12 := impl.NewCollectionAgent(toolBridge, candSvc, logger)
-	aiOrch.RegisterAgent("A12", a12)
+		r.GET("/ws/extension", extHandler.ServeWS)
+		a12 := impl.NewCollectionAgent(toolBridge, candSvc, logger)
+		aiOrch.RegisterAgent("A12", a12)
 
 	return r
 }
@@ -857,6 +866,6 @@ func (b *extPluginBridge) OnFetchProductResult(_ int64, data json.RawMessage) er
 	return nil
 }
 
-func (b *extPluginBridge) HasPending() bool {
-	return false
+func (b *extPluginBridge) HasPending(requestID string) bool {
+	return b.driver.HasPending(requestID)
 }

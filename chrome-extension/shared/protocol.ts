@@ -72,11 +72,35 @@ export interface PongMessage {
   type: "pong";
 }
 
+// ─── Auth messages (Extension <-> Backend) ──────────────────────────
+
+/** Extension sends JWT for authentication after WebSocket connects. */
+export interface AuthMessage {
+  type: "auth";
+  token: string;
+}
+
+/** Backend responds with auth success or failure. */
+export interface AuthResponse {
+  type: "auth";
+  data: "ok" | "error";
+  message?: string;
+}
+
 /** Union of all messages the backend can send to the extension. */
-export type WSIncomingMessage = FetchProductMessage | PongMessage;
+export type WSIncomingMessage = FetchProductMessage | PongMessage | AuthResponse;
+
+/** Extension sends a list of product cards extracted from a 1688 search/list page. */
+export interface ListPageResult {
+  type: "list_page_result";
+  payload: { status: string; data: { page_url: string; collected_at: string; items: ListItemData[] } };
+}
+
+/** A single product card found on a search/list page. */
+export interface ListItemData { title: string; price_range: string; detail_url: string; image_url?: string; }
 
 /** Union of all messages the extension can send to the backend. */
-export type WSOutgoingMessage = FetchProductResult | FetchProductError | PingMessage;
+export type WSOutgoingMessage = FetchProductResult | FetchProductError | PingMessage | AuthMessage | ListPageResult;
 
 // ─── Internal extension messaging (Content Script <-> Background) ────────
 
@@ -95,10 +119,17 @@ export interface ContentScriptFetchResult {
     | { code: string; message: string };
 }
 
+/** Content script sends list page extraction result to background. */
+export interface ListPageContentScriptResult {
+  type: "list_page_result";
+  payload: { status: string; data: { page_url: string; collected_at: string; items: ListItemData[] } };
+}
+
 /** Union of all messages exchanged between content script and background. */
 export type ExtensionMessage =
   | ContentScriptFetchRequest
-  | ContentScriptFetchResult;
+  | ContentScriptFetchResult
+  | ListPageContentScriptResult;
 
 // ─── Popup <-> Background messaging ────────────────────────────────────────
 
