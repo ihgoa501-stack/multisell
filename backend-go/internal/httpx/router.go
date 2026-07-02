@@ -619,7 +619,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// sourcing.rescan → handle rescan requests when stock goes critical
 	bus.Subscribe("sourcing.rescan", sourcing.HandleSourcingRescan(db, logger))
-
 	// supplychain.quote_requested → A10: carrier_compare
 	// When A8 sourcing recommends a product via sourcing.recommend, the
 	// orchestrator publishes supplychain.quote_requested. A10 compares carriers
