@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
-import { Spin, Typography } from 'antd';
+import { Typography } from 'antd';
 import EmptyState from './EmptyState';
+import { StatRowSkeleton } from './PageSkeleton';
 
 const { Text } = Typography;
 
@@ -49,10 +50,9 @@ export default function PageContainer({
   // --- Loading state ---
   if (loading) {
     return (
-      <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <Spin size="large" tip={loadingDesc ?? '加载中...'}>
-          <div style={{ padding: 50 }} />
-        </Spin>
+      <div style={{ padding: 'var(--space-lg) var(--space-xl)', background: 'var(--bg)', minHeight: '100%' }}>
+        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', marginBottom: 'var(--space-xl)' }}>{title}</h1>
+        <StatRowSkeleton count={4} />
       </div>
     );
   }
@@ -60,9 +60,9 @@ export default function PageContainer({
   // --- Empty state ---
   if (empty) {
     return (
-      <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+      <div style={{ padding: 'var(--space-lg) var(--space-xl)', background: 'var(--bg)', minHeight: '100%' }}>
         <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)' }}>{title}</h1>
-        <div style={{ marginTop: 16 }} />
+        <div style={{ marginTop: 'var(--space-lg)' }} />
         <EmptyState
           description={emptyDesc ?? '暂无数据'}
           action={emptyAction}
@@ -74,9 +74,9 @@ export default function PageContainer({
   // --- Error state ---
   if (error) {
     return (
-      <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+      <div style={{ padding: 'var(--space-lg) var(--space-xl)', background: 'var(--bg)', minHeight: '100%' }}>
         <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)' }}>{title}</h1>
-        <div style={{ marginTop: 16 }} />
+        <div style={{ marginTop: 'var(--space-lg)' }} />
         <EmptyState
           description={errorMsg ?? '加载失败'}
           subtitle="请检查网络连接后重试"
@@ -88,20 +88,20 @@ export default function PageContainer({
 
   // --- Normal state ---
   return (
-    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
+    <div style={{ padding: 'var(--space-lg) var(--space-xl)', background: 'var(--bg)', minHeight: '100%' }}>
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: subtitle ? 'flex-start' : 'center',
-          marginBottom: 24,
+          marginBottom: 'var(--space-xl)',
           gap: 16,
         }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', margin: 0 }}>{title}</h1>
           {subtitle && (
-            <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+            <Text type="secondary" style={{ display: 'block', marginTop: 'var(--space-xs)' }}>
               {subtitle}
             </Text>
           )}

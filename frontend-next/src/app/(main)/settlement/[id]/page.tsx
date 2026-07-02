@@ -167,14 +167,14 @@ export default function SettlementDetailPage() {
       <Button
         icon={<ArrowLeftOutlined />}
         onClick={() => router.push('/settlement')}
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 'var(--space-lg)' }}
       >
         返回列表
       </Button>
 
       {isLoading ? (
         <Card>
-          <div style={{ textAlign: 'center', padding: 48 }}>
+          <div style={{ textAlign: 'center', padding: 'var(--space-3xl)' }}>
             <Spin tip="加载中..." />
           </div>
         </Card>

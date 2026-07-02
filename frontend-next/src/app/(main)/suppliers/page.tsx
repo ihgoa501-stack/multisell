@@ -81,7 +81,7 @@ function ScoreDetailModal({
       {score && (
         <Descriptions column={2} size="small" bordered>
           <Descriptions.Item label="综合可靠度" span={2}>
-            <span style={{ color: scoreColor(score.reliability_score), fontWeight: 700, fontSize: 18 }}>
+            <span style={{ color: scoreColor(score.reliability_score), fontWeight: 700 }}>
               {score.reliability_score.toFixed(1)}
             </span>
           </Descriptions.Item>
@@ -226,7 +226,7 @@ export default function SuppliersPage() {
       width: 110,
       render: (_: unknown, record: Supplier) => {
         const score = scoreMap.get(record.id);
-        if (!score) return <span style={{ color: '#999' }}>-</span>;
+        if (!score) return <span style={{ color: 'var(--t3)' }}>-</span>;
         return (
           <a
             style={{ color: scoreColor(score.reliability_score), fontWeight: 700 }}
@@ -315,7 +315,7 @@ export default function SuppliersPage() {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: 'var(--space-md)',
       }}>
         <h1 style={{
           fontFamily: 'var(--ds)',

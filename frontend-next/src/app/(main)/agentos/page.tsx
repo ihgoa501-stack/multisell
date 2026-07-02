@@ -6,9 +6,6 @@ import {
   Button,
   Collapse,
   Col,
-  Descriptions,
-  Divider,
-  Drawer,
   Empty,
   message,
   Row,
@@ -37,6 +34,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { getCurrentOperator } from '@/lib/user';
+import StatCard from '@/components/ui/StatCard';
+import SectionCard from '@/components/ui/SectionCard';
+import WorkItemDrawer from './work-item-drawer';
+import type { WorkItemDetail } from './types';
 
 const { Text } = Typography;
 
@@ -106,33 +107,6 @@ interface AgentTimelineEntry {
     created_at: string;
   }>;
   status_summary: Record<string, number>;
-}
-
-interface WorkItemDetail {
-  id: number;
-  title: string;
-  agent_id: string;
-  squad_id: string;
-  risk_level: string;
-  status: string;
-  confidence: number | null;
-  proposed_at: string;
-  decision_point: string;
-  reason: string;
-  input_summary: string;
-  output_summary: string;
-  entity_type: string;
-  entity_id: number | null;
-  entity_status: string;
-  approval: {
-    id: number;
-    status: string;
-    risk_level: string;
-  } | null;
-  trace_id: string | null;
-  upstream_items: Array<{ id: number; type: string; title: string; status: string }>;
-  downstream_items: Array<{ id: number; type: string; title: string; status: string }>;
-  audit_logs: Array<{ id: number; action: string; content: string; operator: string; created_at: string }>;
 }
 
 // ---------- Color helpers ----------
@@ -401,82 +375,40 @@ export default function AgentOSPage() {
       {/* 顶部：统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="待审批总数"
-              value={overview?.pending_total ?? 0}
-              prefix={<ClockCircleOutlined style={{ color: 'var(--y4)' }} />}
-              valueStyle={{ color: 'var(--y4)' }}
-            />
-          </div>
+          <StatCard title="待审批总数" value={overview?.pending_total ?? 0}
+            prefix={<ClockCircleOutlined />} valueStyle={{ color: 'var(--y4)' }} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="SLA 超期"
-              value={overview?.sla_breached ?? 0}
-              prefix={<AlertOutlined style={{ color: 'var(--r4)' }} />}
-              valueStyle={{ color: 'var(--r4)' }}
-            />
-          </div>
+          <StatCard title="SLA 超期" value={overview?.sla_breached ?? 0}
+            prefix={<AlertOutlined />} valueStyle={{ color: 'var(--r4)' }} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="工作队列长度"
-              value={overview?.work_queue_len ?? 0}
-              prefix={<TeamOutlined style={{ color: 'var(--i4)' }} />}
-            />
-          </div>
+          <StatCard title="工作队列长度" value={overview?.work_queue_len ?? 0}
+            prefix={<TeamOutlined />} />
         </Col>
         <Col xs={12} sm={6}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="平均置信度"
-              value={
-                overview?.avg_confidence !== undefined
-                  ? `${(overview.avg_confidence * 100).toFixed(0)}%`
-                  : '-'
-              }
-              prefix={<SafetyCertificateOutlined style={{ color: 'var(--g4)' }} />}
-              valueStyle={{ color: 'var(--g4)' }}
-            />
-          </div>
+          <StatCard title="平均置信度"
+            value={overview?.avg_confidence !== undefined ? `${(overview.avg_confidence * 100).toFixed(0)}%` : '-'}
+            prefix={<SafetyCertificateOutlined />} valueStyle={{ color: 'var(--g4)' }} />
         </Col>
       </Row>
 
       {/* AIOS 系统指标 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={8}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="已注册 Agent"
-              value={aiosHealth?.agents ?? 0}
-              prefix={<ApiOutlined style={{ color: 'var(--i4)' }} />}
-              loading={healthLoading}
-            />
-          </div>
+          <StatCard title="已注册 Agent" value={aiosHealth?.agents ?? 0}
+            prefix={<ApiOutlined />} loading={healthLoading} />
         </Col>
         <Col xs={12} sm={8}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="已注册 Tool"
-              value={aiosHealth?.tools ?? 0}
-              prefix={<ToolOutlined style={{ color: 'var(--g4)' }} />}
-              loading={healthLoading}
-            />
-          </div>
+          <StatCard title="已注册 Tool" value={aiosHealth?.tools ?? 0}
+            prefix={<ToolOutlined />} loading={healthLoading} />
         </Col>
         <Col xs={12} sm={8}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, height: '100%' }}>
-            <Statistic
-              title="系统健康"
-              value={aiosHealth?.status === 'ok' ? '正常' : aiosHealth?.status ?? '-'}
-              prefix={<HeartOutlined style={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }} />}
-              valueStyle={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }}
-              loading={healthLoading}
-            />
-          </div>
+          <StatCard title="系统健康"
+            value={aiosHealth?.status === 'ok' ? '正常' : aiosHealth?.status ?? '-'}
+            prefix={<HeartOutlined />}
+            valueStyle={{ color: aiosHealth?.status === 'ok' ? 'var(--g4)' : 'var(--r4)' }}
+            loading={healthLoading} />
         </Col>
       </Row>
 
@@ -484,11 +416,7 @@ export default function AgentOSPage() {
         {/* 左侧：Squad 健康地图 + 工作队列 */}
         <Col xs={24} lg={17}>
           {/* Squad 健康地图 */}
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8, marginBottom: 16 }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
-              Squad 健康地图
-            </div>
-            <div style={{ padding: 16 }}>
+          <SectionCard title="Squad 健康地图" style={{ marginBottom: 16 }}>
               <Spin spinning={overviewLoading}>
                 {(overview?.squads ?? []).length === 0 && !overviewLoading ? (
                   <Empty description="暂无 Squad 数据" />
@@ -572,15 +500,10 @@ export default function AgentOSPage() {
                   </Space>
                 )}
               </Spin>
-            </div>
-          </div>
+          </SectionCard>
 
           {/* 待审批工作队列 */}
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
-              待审批工作队列
-            </div>
-            <div style={{ padding: 16 }}>
+          <SectionCard title="待审批工作队列" noPadding>
               <Space style={{ marginBottom: 12 }}>
                 <Button
                   size="small"
@@ -642,17 +565,12 @@ export default function AgentOSPage() {
                   style: { cursor: 'pointer' },
                 })}
               />
-            </div>
-          </div>
+          </SectionCard>
         </Col>
 
         {/* 右侧：Autonomy 控制面板 */}
         <Col xs={24} lg={7}>
-          <div style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bd)', fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)' }}>
-              Autonomy 控制面板（只读）
-            </div>
-            <div style={{ padding: 16 }}>
+          <SectionCard title="Autonomy 控制面板（只读）">
               <Spin spinning={autonomyLoading}>
                 {(autonomyData ?? []).length === 0 && !autonomyLoading ? (
                   <Empty description="暂无 Autonomy 配置" />
@@ -688,7 +606,7 @@ export default function AgentOSPage() {
                                 justifyContent: 'space-between',
                               }}
                             >
-                              <Text type="secondary" style={{ fontSize: 12 }}>
+                              <Text type="secondary" style={{ fontSize: 'var(--text-small)' }}>
                                 需要审批
                               </Text>
                               <Tag color={entry.requires_approval ? 'orange' : 'green'}>
@@ -701,10 +619,10 @@ export default function AgentOSPage() {
                                 justifyContent: 'space-between',
                               }}
                             >
-                              <Text type="secondary" style={{ fontSize: 12 }}>
+                              <Text type="secondary" style={{ fontSize: 'var(--text-small)' }}>
                                 每小时上限
                               </Text>
-                              <Text style={{ fontSize: 12 }}>
+                              <Text style={{ fontSize: 'var(--text-small)' }}>
                                 {entry.max_actions_per_hour}
                               </Text>
                             </div>
@@ -715,26 +633,12 @@ export default function AgentOSPage() {
                   </Space>
                 )}
               </Spin>
-            </div>
-          </div>
+          </SectionCard>
         </Col>
       </Row>
 
       {/* Agent Timeline */}
-      <div
-        style={{
-          background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
-          marginTop: 16,
-        }}
-      >
-        <div style={{
-          padding: '12px 16px', borderBottom: '1px solid var(--bd)',
-          display: 'flex', alignItems: 'center', gap: 8,
-          fontFamily: 'var(--ds)', fontWeight: 600, fontSize: '0.875rem', color: 'var(--t1)',
-        }}>
-          <RobotOutlined /> Agent 活动时间线
-        </div>
-        <div style={{ padding: 16 }}>
+      <SectionCard title={<><RobotOutlined /> Agent 活动时间线</>} style={{ marginTop: 16 }}>
           <Spin spinning={timelineLoading}>
             {(timelineData ?? []).length === 0 && !timelineLoading ? (
               <Empty description="暂无时间线数据" />
@@ -777,147 +681,18 @@ export default function AgentOSPage() {
               />
             )}
           </Spin>
-        </div>
-      </div>
+      </SectionCard>
 
       {/* Work Item Detail Drawer */}
-      <Drawer
-        title={workItemDetail?.title ?? '工作项详情'}
+      <WorkItemDrawer
         open={drawerOpen}
+        detail={workItemDetail}
+        loading={detailLoading}
         onClose={() => {
           setDrawerOpen(false);
           setSelectedWorkItemId(null);
         }}
-        width={640}
-        loading={detailLoading}
-      >
-        {workItemDetail ? (
-          <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label="ID">{workItemDetail.id}</Descriptions.Item>
-              <Descriptions.Item label="Agent">{workItemDetail.agent_id}</Descriptions.Item>
-              <Descriptions.Item label="Squad">{workItemDetail.squad_id}</Descriptions.Item>
-              <Descriptions.Item label="风险">
-                <Tag color={riskColor(workItemDetail.risk_level)}>{workItemDetail.risk_level}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="状态">
-                <Tag color={statusColor(workItemDetail.status)}>{workItemDetail.status}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="置信度">
-                {workItemDetail.confidence !== null ? `${(workItemDetail.confidence * 100).toFixed(0)}%` : '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="决策点">{workItemDetail.decision_point}</Descriptions.Item>
-              <Descriptions.Item label="提议时间">{workItemDetail.proposed_at}</Descriptions.Item>
-              <Descriptions.Item label="Trace ID" span={2}>{workItemDetail.trace_id ?? '-'}</Descriptions.Item>
-            </Descriptions>
-
-            {workItemDetail.reason && (
-              <>
-                <Divider>决策理由</Divider>
-                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>
-                  {workItemDetail.reason}
-                </div>
-              </>
-            )}
-
-            {workItemDetail.input_summary && (
-              <>
-                <Divider>输入摘要</Divider>
-                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>
-                  {workItemDetail.input_summary}
-                </div>
-              </>
-            )}
-
-            {workItemDetail.output_summary && (
-              <>
-                <Divider>输出摘要</Divider>
-                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>
-                  {workItemDetail.output_summary}
-                </div>
-              </>
-            )}
-
-            <Divider>实体信息</Divider>
-            <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label="实体类型">{workItemDetail.entity_type}</Descriptions.Item>
-              <Descriptions.Item label="实体 ID">{workItemDetail.entity_id ?? '-'}</Descriptions.Item>
-              <Descriptions.Item label="实体状态">{workItemDetail.entity_status}</Descriptions.Item>
-            </Descriptions>
-
-            {workItemDetail.approval && (
-              <>
-                <Divider>审批信息</Divider>
-                <Descriptions size="small" column={2} bordered>
-                  <Descriptions.Item label="审批 ID">{workItemDetail.approval.id}</Descriptions.Item>
-                  <Descriptions.Item label="审批状态">
-                    <Tag color={statusColor(workItemDetail.approval.status)}>{workItemDetail.approval.status}</Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="审批风险">
-                    <Tag color={riskColor(workItemDetail.approval.risk_level)}>{workItemDetail.approval.risk_level}</Tag>
-                  </Descriptions.Item>
-                </Descriptions>
-              </>
-            )}
-
-            {(workItemDetail.upstream_items ?? []).length > 0 && (
-              <>
-                <Divider>上游工作项 ({workItemDetail.upstream_items.length})</Divider>
-                <Table
-                  rowKey="id"
-                  dataSource={workItemDetail.upstream_items}
-                  size="small"
-                  pagination={false}
-                  columns={[
-                    { title: 'ID', dataIndex: 'id', width: 60 },
-                    { title: '类型', dataIndex: 'type', width: 80 },
-                    { title: '标题', dataIndex: 'title', ellipsis: true },
-                    { title: '状态', dataIndex: 'status', width: 100, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
-                  ]}
-                />
-              </>
-            )}
-
-            {(workItemDetail.downstream_items ?? []).length > 0 && (
-              <>
-                <Divider>下游工作项 ({workItemDetail.downstream_items.length})</Divider>
-                <Table
-                  rowKey="id"
-                  dataSource={workItemDetail.downstream_items}
-                  size="small"
-                  pagination={false}
-                  columns={[
-                    { title: 'ID', dataIndex: 'id', width: 60 },
-                    { title: '类型', dataIndex: 'type', width: 80 },
-                    { title: '标题', dataIndex: 'title', ellipsis: true },
-                    { title: '状态', dataIndex: 'status', width: 100, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
-                  ]}
-                />
-              </>
-            )}
-
-            {(workItemDetail.audit_logs ?? []).length > 0 && (
-              <>
-                <Divider>审计日志</Divider>
-                <Table
-                  rowKey="id"
-                  dataSource={workItemDetail.audit_logs}
-                  size="small"
-                  pagination={false}
-                  columns={[
-                    { title: '操作', dataIndex: 'action', width: 100 },
-                    { title: '内容', dataIndex: 'content', ellipsis: true },
-                    { title: '操作人', dataIndex: 'operator', width: 80 },
-                    { title: '时间', dataIndex: 'created_at', width: 150 },
-                  ]}
-                />
-              </>
-            )}
-          </Space>
-        ) : (
-          <Empty description={detailLoading ? '加载中...' : '无法加载工作项详情'} />
-        )}
-      </Drawer>
+      />
     </div>
   );
 }

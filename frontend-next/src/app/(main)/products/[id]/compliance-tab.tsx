@@ -104,7 +104,7 @@ export default function ComplianceTab({ productId }: { productId: string }) {
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ marginBottom: 'var(--space-lg)', display: 'flex', gap: 8, alignItems: 'center' }}>
         <Button type="primary" loading={scanning} onClick={triggerScan}>
           触发合规检查
         </Button>

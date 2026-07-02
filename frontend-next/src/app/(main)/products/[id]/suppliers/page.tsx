@@ -91,7 +91,7 @@ export default function SupplierComparisonPage() {
 
   return (
     <PageContainer title={`供应商对比 — ${data.product_name}`}>
-      <Button icon={<ArrowLeftOutlined />} onClick={() => router.push(`/products/${id}`)} style={{ marginBottom: 16 }}>
+      <Button icon={<ArrowLeftOutlined />} onClick={() => router.push(`/products/${id}`)} style={{ marginBottom: 'var(--space-lg)' }}>
         返回商品
       </Button>
 

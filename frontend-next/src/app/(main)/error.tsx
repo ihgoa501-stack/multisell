@@ -26,7 +26,7 @@ export default function MainError({
         alignItems: 'center',
         justifyContent: 'center',
         height: '100vh',
-        padding: 24,
+        padding: 'var(--space-xl)',
         textAlign: 'center',
         background: 'var(--bg)',
         color: 'var(--t1)',
@@ -35,7 +35,7 @@ export default function MainError({
       <div
         style={{
           fontSize: '3rem',
-          marginBottom: 16,
+          marginBottom: 'var(--space-lg)',
           lineHeight: 1,
           fontFamily: 'var(--mono)',
         }}
@@ -46,7 +46,7 @@ export default function MainError({
         style={{
           fontSize: '1.1rem',
           fontWeight: 600,
-          marginBottom: 8,
+          marginBottom: 'var(--space-sm)',
           color: 'var(--t1)',
         }}
       >
@@ -56,7 +56,7 @@ export default function MainError({
         style={{
           fontSize: '0.85rem',
           color: 'var(--t3)',
-          marginBottom: 24,
+          marginBottom: 'var(--space-xl)',
           maxWidth: 400,
           lineHeight: 1.5,
         }}

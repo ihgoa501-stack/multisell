@@ -283,7 +283,7 @@ export default function BatchOpsPage() {
   // ── Render ──
   const uploadArea = (
     <div style={{ marginBottom: 0 }}>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 'var(--space-lg)' }}>
         <Typography.Text strong style={{ marginRight: 12 }}>
           批次类型：
         </Typography.Text>
@@ -318,7 +318,7 @@ export default function BatchOpsPage() {
       {uploadResult && (
         <Card
           size="small"
-          style={{ marginTop: 16, background: '#f6ffed', borderColor: '#b7eb8f' }}
+          style={{ marginTop: 16, background: 'var(--s1)', borderColor: 'var(--g4)' }}
         >
           <Space>
             <Tag color="success">已上传</Tag>
@@ -335,7 +335,7 @@ export default function BatchOpsPage() {
   );
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 'var(--space-xl)' }}>
       {/* ── Header ── */}
       <Typography.Title
         level={3}
@@ -353,8 +353,8 @@ export default function BatchOpsPage() {
       <Card
         size="small"
         title="上传批量文件"
-        style={{ marginBottom: 20 }}
-        styles={{ body: { padding: 20 } }}
+        style={{ marginBottom: 'var(--space-lg)' }}
+        styles={{ body: { padding: 'var(--space-lg)' } }}
       >
         {uploadArea}
       </Card>
@@ -456,7 +456,7 @@ export default function BatchOpsPage() {
                     maxHeight: 200,
                     overflow: 'auto',
                     margin: 0,
-                    fontSize: 12,
+                    fontSize: 'var(--text-small)',
                   }}
                 >
                   {detailBatch.error_summary}

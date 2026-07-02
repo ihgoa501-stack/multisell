@@ -29,7 +29,7 @@ export default function SettingsLlmPage() {
       <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', margin: '0 0 16px 0' }}>LLM 配置</h1>
       <Card>
         {isLoading ? (
-          <div style={{ textAlign: 'center', padding: 48 }}>
+          <div style={{ textAlign: 'center', padding: 'var(--space-3xl)' }}>
             <Spin tip="加载中..." />
           </div>
         ) : !data || data.length === 0 ? (

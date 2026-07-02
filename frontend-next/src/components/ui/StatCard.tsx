@@ -7,12 +7,14 @@ const { Text } = Typography;
 export interface StatCardProps {
   title: string;
   value: number | string | undefined | null;
-  /** Prefix before the value (e.g. currency symbol). */
-  prefix?: string;
+  /** Prefix before the value (can be icon or currency symbol). */
+  prefix?: ReactNode;
   /** Suffix after the value (e.g. "%"). */
   suffix?: string;
   /** Precision for decimal values. Default 0. */
   precision?: number;
+  /** Inline style for the value text. */
+  valueStyle?: React.CSSProperties;
   /** Trend indicator. */
   trend?: {
     value: number;
@@ -38,6 +40,7 @@ export default function StatCard({
   prefix,
   suffix,
   precision,
+  valueStyle,
   trend,
   icon,
   iconBgColor = '#f0f5ff',
@@ -45,18 +48,17 @@ export default function StatCard({
   onClick,
   style,
 }: StatCardProps) {
-  const isGoodTrend =
-    trend && trend.value !== 0
+  const isGoodTrend = trend?.value !== undefined
       ? (trend.value > 0 && trend.direction !== 'down') ||
         (trend.value < 0 && trend.direction === 'down')
       : true;
 
   const trendColor =
     !trend || trend.value === 0
-      ? '#d9d9d9'
+      ? 'var(--t4)'
       : isGoodTrend
-        ? '#52c41a'
-        : '#f5222d';
+        ? 'var(--g4)'
+        : 'var(--r4)';
 
   const TrendIcon =
     trend && trend.value > 0
@@ -81,7 +83,7 @@ export default function StatCard({
               width: 48,
               height: 48,
               borderRadius: 12,
-              backgroundColor: iconBgColor,
+              backgroundColor: iconBgColor === '#f0f5ff' ? 'var(--s2)' : iconBgColor,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -100,6 +102,7 @@ export default function StatCard({
             prefix={prefix}
             suffix={suffix}
             loading={loading}
+            valueStyle={valueStyle}
           />
           {trend && TrendIcon && (
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>

@@ -476,7 +476,7 @@ export default function Product360Page() {
   if (isLoading) {
     return (
       <PageContainer title="商品详情">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')} style={{ marginBottom: 16 }}>返回列表</Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')} style={{ marginBottom: 'var(--space-lg)' }}>返回列表</Button>
         <Card><Skeleton active paragraph={{ rows: 10 }} /></Card>
       </PageContainer>
     );
@@ -485,7 +485,7 @@ export default function Product360Page() {
   if (isError || !data) {
     return (
       <PageContainer title="商品详情">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')} style={{ marginBottom: 16 }}>返回列表</Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')} style={{ marginBottom: 'var(--space-lg)' }}>返回列表</Button>
         <Card>
           <Result status="error" title="加载失败" subTitle="无法获取商品360详情，请检查网络后重试" extra={<Button onClick={() => refetch()}>重试</Button>} />
         </Card>
@@ -547,7 +547,7 @@ export default function Product360Page() {
       key: 'basic', label: '基本信息',
       children: (
         <Card>
-          {data.main_image && <div style={{ marginBottom: 16 }}><Image src={data.main_image} alt={data.name} width={200} /></div>}
+          {data.main_image && <div style={{ marginBottom: 'var(--space-lg)' }}><Image src={data.main_image} alt={data.name} width={200} /></div>}
           <Descriptions bordered column={2} size="small">
             <Descriptions.Item label="商品名称">{data.name ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="品牌">{data.brand_name ?? '-'}</Descriptions.Item>
@@ -581,7 +581,7 @@ export default function Product360Page() {
       key: 'profit', label: '成本与利润',
       children: (
         <>
-          <Card style={{ marginBottom: 16 }}>
+          <Card style={{ marginBottom: 'var(--space-lg)' }}>
             <Descriptions bordered column={2} size="small">
               <Descriptions.Item label="成本价">{data.cost_price != null ? fmtMoney(data.cost_price) : '-'}</Descriptions.Item>
               <Descriptions.Item label="利润评分">{data.profit_score != null ? data.profit_score + '/100' : '-'}</Descriptions.Item>
@@ -612,7 +612,7 @@ export default function Product360Page() {
       key: 'compliance', label: '合规与认证',
       children: (
         <>
-          <Card style={{ marginBottom: 16 }}><Descriptions bordered column={1} size="small"><Descriptions.Item label="HS 编码">{data.hs_code ?? '-'}</Descriptions.Item></Descriptions></Card>
+          <Card style={{ marginBottom: 'var(--space-lg)' }}><Descriptions bordered column={1} size="small"><Descriptions.Item label="HS 编码">{data.hs_code ?? '-'}</Descriptions.Item></Descriptions></Card>
           <Card title="各平台合规状态" style={{ marginBottom: 16 }}><Table rowKey="key" dataSource={complianceData} columns={complianceColumns} pagination={false} size="small" /></Card>
           <Card title="认证信息">{(data.certificates ?? []).length > 0 ? <Table rowKey="id" dataSource={data.certificates} columns={certColumns} pagination={false} size="small" /> : <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>暂无认证信息</div>}</Card>
         </>
@@ -650,14 +650,14 @@ export default function Product360Page() {
 
   return (
     <PageContainer title={data.name ?? '商品详情'}>
-      <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ marginBottom: 'var(--space-lg)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/products')}>返回列表</Button>
       </div>
-      <Card style={{ marginBottom: 16 }}>
+      <Card style={{ marginBottom: 'var(--space-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>{data.name}</h1>
-            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ marginTop: 'var(--space-sm)', display: 'flex', gap: 8, alignItems: 'center' }}>
               <Tag color={LIFECYCLE_TAG_COLORS[data.lifecycle_status] ?? 'default'}>{lifecycleLabel(data.lifecycle_status)}</Tag>
               <Tag color={STATUS_COLORS[data.status] ?? 'default'}>{statusLabel(data.status)}</Tag>
             </div>
