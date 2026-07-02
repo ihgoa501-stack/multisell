@@ -3,9 +3,10 @@
 // domain services, bridging the gap between agent decisions and business logic.
 //
 // Usage:
-//   d := command.NewDispatcher(logger)
-//   d.Register("replenish", command.ReplenishHandler(db))
-//   result, err := d.Dispatch(ctx, "replenish", payload)
+//
+//	d := command.NewDispatcher(logger)
+//	d.Register("replenish", command.ReplenishHandler(db))
+//	result, err := d.Dispatch(ctx, "replenish", payload)
 package command
 
 import (
@@ -13,7 +14,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"go.uber.org/zap"
 )
@@ -31,22 +31,14 @@ type Result struct {
 
 // Dispatcher routes action types to registered handler functions.
 type Dispatcher struct {
-	mu          sync.RWMutex
-	handlers    map[string]Handler
-	logger      *zap.Logger
-	approvalSvc *approval.Service // optional, nil means no dispatch-level approval check
-	catalog     *actioncatalog.Catalog // optional, nil means no catalog enforcement
+	mu       sync.RWMutex
+	handlers map[string]Handler
+	logger   *zap.Logger
+	catalog  *actioncatalog.Catalog // optional, nil means no catalog enforcement
 }
 
 // DispatcherOption configures a Dispatcher.
 type DispatcherOption func(*Dispatcher)
-
-// WithApprovalService sets the approval service for high-risk action checking.
-func WithApprovalService(svc *approval.Service) DispatcherOption {
-	return func(d *Dispatcher) {
-		d.approvalSvc = svc
-	}
-}
 
 // WithCatalog sets the action catalog for production enforcement.
 // When set, DispatchSafe validates actions against the catalog in
@@ -99,7 +91,9 @@ var highRiskActionTypes = map[string]string{
 
 // Dispatch executes the handler registered for the given action type.
 // Returns ErrHandlerNotFound if no handler is registered.
-// For high-risk action types, an approved approval must exist before execution.
+//
+// Safety: This is a low-level dispatch function. Callers that need mode,
+// risk, or catalog enforcement should use DispatchSafe instead.
 func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload map[string]interface{}) (*Result, error) {
 	d.mu.RLock()
 	handler, ok := d.handlers[actionType]
@@ -107,13 +101,6 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload ma
 
 	if !ok {
 		return nil, &HandlerNotFoundError{ActionType: actionType}
-	}
-
-	// High-risk action approval gate: verify an approved approval exists.
-	if reqType, isHighRisk := highRiskActionTypes[actionType]; isHighRisk && d.approvalSvc != nil {
-		if err := d.checkHighRiskApproval(ctx, actionType, reqType, payload); err != nil {
-			return nil, err
-		}
 	}
 
 	d.logger.Debug("dispatching command",
@@ -182,41 +169,6 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 // this interface lets platform code stay dependency-free.
 type PolicyChecker interface {
 	IsApproved(approvalID int64) bool
-}
-
-// checkHighRiskApproval verifies that an approved approval request exists for
-// the given action type and target before the handler executes.
-func (d *Dispatcher) checkHighRiskApproval(ctx context.Context, actionType, reqType string, payload map[string]interface{}) error {
-	targetID := extractInt64(payload, "sku_id")
-	if targetID == 0 {
-		targetID = extractInt64(payload, "listing_id")
-	}
-	if targetID == 0 {
-		d.logger.Warn("cannot check approval for high-risk action: no target ID in payload",
-			zap.String("action_type", actionType))
-		return nil
-	}
-	_, err := d.approvalSvc.FindApprovedByTarget("sku", targetID, reqType)
-	if err != nil {
-		return fmt.Errorf("%s requires approved approval: %w", actionType, err)
-	}
-	return nil
-}
-
-// extractInt64 extracts an int64 value from a map by key.
-// Supports float64 (JSON unmarshaling), int64, and int types.
-func extractInt64(m map[string]interface{}, key string) int64 {
-	if v, ok := m[key]; ok {
-		switch n := v.(type) {
-		case float64:
-			return int64(n)
-		case int64:
-			return n
-		case int:
-			return int64(n)
-		}
-	}
-	return 0
 }
 
 // ErrApprovalRequired is returned when a high-risk action is attempted without

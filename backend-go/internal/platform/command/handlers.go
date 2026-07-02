@@ -199,9 +199,9 @@ func FlagNonCompliantHandler(db *gorm.DB, logger *zap.Logger) Handler {
 			Success:    true,
 			BusinessID: skuCode,
 			AfterSnapshot: map[string]interface{}{
-				"flagged":  true,
-				"risk":     risk,
-				"issues":   issues,
+				"flagged": true,
+				"risk":    risk,
+				"issues":  issues,
 			},
 		}, nil
 	}

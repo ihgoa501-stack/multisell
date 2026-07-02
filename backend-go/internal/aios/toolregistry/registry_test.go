@@ -919,3 +919,105 @@ func TestConcurrentAddHook(t *testing.T) {
 
 	wg.Wait()
 }
+
+// -- ApprovalCheckHook --
+
+func TestApprovalCheckHook_AllowsNonProduction(t *testing.T) {
+	hook := NewApprovalCheckHook()
+	tool := newTestTool("test.read", "1.0.0", "default", RiskHigh)
+
+	ctx := context.Background()
+	_, err := hook.Before(ctx, tool, nil)
+	if err != nil {
+		t.Errorf("expected allowed in non-production mode, got %v", err)
+	}
+}
+
+func TestApprovalCheckHook_BlocksMutationInProduction(t *testing.T) {
+	hook := NewApprovalCheckHook()
+
+	t.Run("RiskHigh without approval", func(t *testing.T) {
+		tool := newTestTool("test.high", "1.0.0", "default", RiskHigh)
+		ctx := WithProductionMode(context.Background())
+		_, err := hook.Before(ctx, tool, nil)
+		if err == nil {
+			t.Fatal("expected error for RiskHigh tool in production without approval")
+		}
+	})
+
+	t.Run("RiskCritical without approval", func(t *testing.T) {
+		tool := newTestTool("test.critical", "1.0.0", "default", RiskCritical)
+		ctx := WithProductionMode(context.Background())
+		_, err := hook.Before(ctx, tool, nil)
+		if err == nil {
+			t.Fatal("expected error for RiskCritical tool in production without approval")
+		}
+	})
+
+	t.Run("RiskLow allowed even in production", func(t *testing.T) {
+		tool := newTestTool("test.low", "1.0.0", "default", RiskLow)
+		ctx := WithProductionMode(context.Background())
+		_, err := hook.Before(ctx, tool, nil)
+		if err != nil {
+			t.Errorf("RiskLow should be allowed in production, got %v", err)
+		}
+	})
+}
+
+func TestApprovalCheckHook_AllowsMutationWithApproval(t *testing.T) {
+	hook := NewApprovalCheckHook()
+	tool := newTestTool("test.mutation", "1.0.0", "default", RiskHigh)
+
+	ctx := WithProductionMode(context.Background())
+	ctx = WithApprovalID(ctx, 42)
+	_, err := hook.Before(ctx, tool, nil)
+	if err != nil {
+		t.Errorf("expected allowed with approval ID, got %v", err)
+	}
+}
+
+func TestApprovalCheckHook_ThroughRegistry(t *testing.T) {
+	reg := NewToolRegistry(newTestLogger())
+	reg.AddHook(NewApprovalCheckHook())
+
+	tool := &Tool{
+		Name:      "test.reg.mutation",
+		Version:   "1.0.0",
+		RiskLevel: RiskHigh,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			return "executed", nil
+		},
+	}
+	reg.Register(tool)
+
+	t.Run("production without approval blocked", func(t *testing.T) {
+		ctx := WithProductionMode(context.Background())
+		_, err := reg.Call(ctx, "test.reg.mutation", nil)
+		if err == nil {
+			t.Fatal("expected error for production mutation without approval")
+		}
+	})
+
+	t.Run("production with approval allowed", func(t *testing.T) {
+		ctx := WithProductionMode(context.Background())
+		ctx = WithApprovalID(ctx, 99)
+		out, err := reg.Call(ctx, "test.reg.mutation", nil)
+		if err != nil {
+			t.Fatalf("expected success with approval, got %v", err)
+		}
+		if out != "executed" {
+			t.Errorf("expected 'executed', got %v", out)
+		}
+	})
+
+	t.Run("sandbox mutation allowed", func(t *testing.T) {
+		ctx := context.Background()
+		out, err := reg.Call(ctx, "test.reg.mutation", nil)
+		if err != nil {
+			t.Fatalf("expected success in sandbox, got %v", err)
+		}
+		if out != "executed" {
+			t.Errorf("expected 'executed', got %v", out)
+		}
+	})
+}
