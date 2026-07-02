@@ -619,6 +619,22 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		return supplyChainOrch.HandleStockCritical(ctx, evt)
 	})
 
+	// sourcing.rescan → handle rescan requests when stock goes critical
+	bus.Subscribe("sourcing.rescan", sourcing.HandleSourcingRescan(db, logger))
+
+	// supplychain.quote_requested → A10: carrier_compare
+	// When A8 sourcing recommends a product via sourcing.recommend, the
+	// orchestrator publishes supplychain.quote_requested. A10 compares carriers
+	// by cost, speed, and suitability to quote shipping costs.
+	bus.Subscribe("supplychain.quote_requested", func(ctx context.Context, evt eventbus.Event) error {
+		_, err := aiOrch.Run(&ai.RunAgentRequest{
+			AgentID:       "A10",
+			DecisionPoint: "carrier_compare",
+			Context:       evt.Payload,
+		})
+		return err
+	})
+
 	platform.RegisterRoutes(protected, db, logger)
 	listing.RegisterRoutes(protected, db, logger)
 
