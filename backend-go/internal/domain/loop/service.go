@@ -8,6 +8,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
+	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
@@ -32,11 +33,12 @@ type Service struct {
 func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
 	oplogSvc := operationlog.NewService(db, logger)
 	approvalSvc := approval.NewService(db, logger, oplogSvc)
+	rateSvc := exchangerate.NewService(db, logger)
 	return &Service{
 		db:              db,
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
-		profitSvc:       profit.NewService(db, logger),
+		profitSvc:       profit.NewService(db, logger, rateSvc),
 		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, oplogSvc, nil),
 		approvalSvc:     approvalSvc,
 		oplogSvc:        oplogSvc,

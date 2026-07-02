@@ -9,7 +9,7 @@ import (
 func TestService_ListSummaries(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ProfitSummary{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	db.Create(&ProfitSummary{ProductID: 1, Status: "profitable", EstimatedProfit: 25.0, ProfitMargin: 20.0})
 	db.Create(&ProfitSummary{ProductID: 2, Status: "unprofitable", EstimatedProfit: -5.0, ProfitMargin: -5.0})
@@ -29,7 +29,7 @@ func TestService_ListSummaries(t *testing.T) {
 func TestService_ListSummaries_Filtered(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ProfitSummary{})
-	svc := NewService(db, dbtest.NewLogger(t))
+	svc := NewService(db, dbtest.NewLogger(t), nil)
 
 	db.Create(&ProfitSummary{ProductID: 1, Status: "profitable"})
 	db.Create(&ProfitSummary{ProductID: 2, Status: "unprofitable"})
