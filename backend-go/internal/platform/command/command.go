@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"go.uber.org/zap"
 )
 
@@ -29,17 +30,32 @@ type Result struct {
 
 // Dispatcher routes action types to registered handler functions.
 type Dispatcher struct {
-	mu       sync.RWMutex
-	handlers map[string]Handler
-	logger   *zap.Logger
+	mu          sync.RWMutex
+	handlers    map[string]Handler
+	logger      *zap.Logger
+	approvalSvc *approval.Service // optional, nil means no dispatch-level approval check
+}
+
+// DispatcherOption configures a Dispatcher.
+type DispatcherOption func(*Dispatcher)
+
+// WithApprovalService sets the approval service for high-risk action checking.
+func WithApprovalService(svc *approval.Service) DispatcherOption {
+	return func(d *Dispatcher) {
+		d.approvalSvc = svc
+	}
 }
 
 // NewDispatcher creates a new command dispatcher.
-func NewDispatcher(logger *zap.Logger) *Dispatcher {
-	return &Dispatcher{
+func NewDispatcher(logger *zap.Logger, opts ...DispatcherOption) *Dispatcher {
+	d := &Dispatcher{
 		handlers: make(map[string]Handler),
 		logger:   logger,
 	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
 }
 
 // Register binds an action type to a handler. If a handler already exists
@@ -61,8 +77,18 @@ func (d *Dispatcher) Unregister(actionType string) {
 		zap.String("action_type", actionType))
 }
 
+// highRiskActionTypes maps action types that require an approved approval
+// before their handler executes.
+var highRiskActionTypes = map[string]string{
+	"price_adjust":    "price_change",
+	"price_update":    "price_change",
+	"stock_update":    "stock_update",
+	"listing_publish": "listing_publish",
+}
+
 // Dispatch executes the handler registered for the given action type.
 // Returns ErrHandlerNotFound if no handler is registered.
+// For high-risk action types, an approved approval must exist before execution.
 func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload map[string]interface{}) (*Result, error) {
 	d.mu.RLock()
 	handler, ok := d.handlers[actionType]
@@ -70,6 +96,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload ma
 
 	if !ok {
 		return nil, &HandlerNotFoundError{ActionType: actionType}
+	}
+
+	// High-risk action approval gate: verify an approved approval exists.
+	if reqType, isHighRisk := highRiskActionTypes[actionType]; isHighRisk && d.approvalSvc != nil {
+		if err := d.checkHighRiskApproval(ctx, actionType, reqType, payload); err != nil {
+			return nil, err
+		}
 	}
 
 	d.logger.Debug("dispatching command",
@@ -124,6 +157,41 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 // this interface lets platform code stay dependency-free.
 type PolicyChecker interface {
 	IsApproved(approvalID int64) bool
+}
+
+// checkHighRiskApproval verifies that an approved approval request exists for
+// the given action type and target before the handler executes.
+func (d *Dispatcher) checkHighRiskApproval(ctx context.Context, actionType, reqType string, payload map[string]interface{}) error {
+	targetID := extractInt64(payload, "sku_id")
+	if targetID == 0 {
+		targetID = extractInt64(payload, "listing_id")
+	}
+	if targetID == 0 {
+		d.logger.Warn("cannot check approval for high-risk action: no target ID in payload",
+			zap.String("action_type", actionType))
+		return nil
+	}
+	_, err := d.approvalSvc.FindApprovedByTarget("sku", targetID, reqType)
+	if err != nil {
+		return fmt.Errorf("%s requires approved approval: %w", actionType, err)
+	}
+	return nil
+}
+
+// extractInt64 extracts an int64 value from a map by key.
+// Supports float64 (JSON unmarshaling), int64, and int types.
+func extractInt64(m map[string]interface{}, key string) int64 {
+	if v, ok := m[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return int64(n)
+		case int64:
+			return n
+		case int:
+			return int64(n)
+		}
+	}
+	return 0
 }
 
 // ErrApprovalRequired is returned when a high-risk action is attempted without
