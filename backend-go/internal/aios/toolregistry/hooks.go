@@ -125,13 +125,8 @@ func (h *PermissionHook) After(_ context.Context, _ *Tool, _ map[string]interfac
 
 // --- ApprovalCheckHook ---
 
-// ContextKey is a type for context value keys used by hook infrastructure.
-type ContextKey string
-
-// ModeProdKey is the context key that marks a tool call as production mode.
-const ModeProdKey ContextKey = "approval_context"
-
-// WithProductionMode marks a context as production mode.
+// ApprovalCheckHook blocks mutation-risk tools (RiskHigh, RiskCritical) in
+// production mode when no approval ID is present in the context.
 func WithProductionMode(ctx context.Context) context.Context {
 	return context.WithValue(ctx, executionModeKey, "production")
 }

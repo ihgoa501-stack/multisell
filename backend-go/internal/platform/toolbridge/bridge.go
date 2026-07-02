@@ -114,15 +114,5 @@ func (b *ToolBridge) Route(ctx context.Context, url string) (*PageData, error) {
 	return b.FetchPage(ctx, url)
 }
 
-// ValidateToolCall checks whether a ToolCall can proceed, enforcing the
-// approval gate for production mutation calls. Returns nil if allowed,
-// or an error describing why it is blocked. It does NOT execute the call.
-//
-// This is a pure validation function — callers that want to execute the
-// tool after validation must do so through their own domain handler.
-func (b *ToolBridge) ValidateToolCall(tc ToolCall) error {
-	return tc.Validate()
-}
-
 // ErrNoDrivers is returned when FetchPage is called with no registered drivers.
 var ErrNoDrivers = errors.New("toolbridge: no drivers registered")

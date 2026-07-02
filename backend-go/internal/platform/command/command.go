@@ -106,12 +106,12 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload ma
 	d.logger.Debug("dispatching command",
 		zap.String("action_type", actionType))
 
-	result, err := handler(ctx, payload)
-	if err != nil {
+	result, handlerErr := handler(ctx, payload)
+	if handlerErr != nil {
 		d.logger.Warn("command handler failed",
 			zap.String("action_type", actionType),
-			zap.Error(err))
-		return &Result{Success: false, ErrorMessage: err.Error()}, nil
+			zap.Error(handlerErr))
+		return &Result{Success: false, ErrorMessage: handlerErr.Error()}, nil
 	}
 
 	return result, nil
@@ -119,12 +119,12 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload ma
 
 // DispatchSafe validates and dispatches an AgentAction through the dispatcher,
 // checking mode, risk level, and approval requirements before executing.
+// Unlike raw Dispatch, this fn operates at the AgentAction envelope level
+// and enforces mode-specific rules:
 //
-// Mode rules:
-//   - dry_run: the action is validated (handler must exist, catalog is checked)
-//     but never executed.
-//   - sandbox: the action executes regardless of risk.
-//   - production: catalog, risk, approval, and L4 block checks are enforced.
+//   - dry_run: validate handler + catalog exist, never mutate.
+//   - sandbox: execute regardless of catalog risk.
+//   - production: enforce catalog, approval for L3/L4 actions.
 func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, policy PolicyChecker) (*Result, error) {
 	// Dry-run: validate only — check handler and catalog exist, never mutate.
 	if action.Mode == ModeDryRun {
@@ -142,25 +142,27 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 		return &Result{Success: true, BusinessID: "dry_run"}, nil
 	}
 
-	// Production mode: enforce catalog validation.
-	if action.Mode == ModeProduction && d.catalog != nil {
-		hasApproval := action.ApprovalID != nil
-		if err := d.catalog.ValidateProduction(action.ActionType, int(action.RiskLevel), hasApproval); err != nil {
-			return nil, err
+	// Production mode: enforce catalog + approval for high-risk actions.
+	if action.Mode == ModeProduction {
+		// Catalog validation: reject unknown, L4 blocked, and L3 actions without approval.
+		if d.catalog != nil {
+			hasApproval := action.ApprovalID != nil
+			if err := d.catalog.ValidateProduction(action.ActionType, int(action.RiskLevel), hasApproval); err != nil {
+				return nil, err
+			}
+		}
+		// Approval check for high-risk actions.
+		if action.RiskLevel >= RiskHigh || action.ApprovalRequired {
+			if action.ApprovalID == nil {
+				return nil, ErrApprovalRequired
+			}
+			if policy != nil && !policy.IsApproved(*action.ApprovalID) {
+				return nil, ErrApprovalRequired
+			}
 		}
 	}
 
-	// Production mode: high-risk or approval-required actions need a valid approval.
-	if action.Mode == ModeProduction && (action.RiskLevel >= RiskHigh || action.ApprovalRequired) {
-		if action.ApprovalID == nil {
-			return nil, ErrApprovalRequired
-		}
-		if policy != nil && !policy.IsApproved(*action.ApprovalID) {
-			return nil, ErrApprovalRequired
-		}
-	}
-
-	// Sandbox and approved production actions execute normally.
+	// Sandbox and approved production actions delegate to Dispatch.
 	return d.Dispatch(ctx, action.ActionType, action.Input)
 }
 
@@ -174,6 +176,10 @@ type PolicyChecker interface {
 // ErrApprovalRequired is returned when a high-risk action is attempted without
 // a valid approval.
 var ErrApprovalRequired = fmt.Errorf("action requires approval before execution")
+
+// ErrActionBlocked is returned when an action is rejected by the catalog
+// gate (e.g. L4 blocked actions attempted in any mode).
+var ErrActionBlocked = fmt.Errorf("action blocked by catalog")
 
 // RegisteredTypes returns a list of all registered action types.
 func (d *Dispatcher) RegisteredTypes() []string {
