@@ -169,11 +169,6 @@ func (o *Orchestrator) HandleRecommendEvent(ctx context.Context, evt eventbus.Ev
 	return err
 }
 
-// HandleTick processes scheduler ticks for the orchestrator.
-// Currently a no-op placeholder.
-func (o *Orchestrator) HandleTick(ctx context.Context, evt eventbus.Event) error {
-	return nil
-}
 
 // HandleAftersaleReturn processes supplychain.aftersale.returned events.
 // It creates a reverse supply-chain flow (return -> inspection -> refund/resend),

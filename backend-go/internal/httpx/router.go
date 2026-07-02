@@ -576,9 +576,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
 		return supplyChainOrch.HandleRecommendEvent(ctx, evt)
 	})
-	// scheduler.tick.orch → supply chain orchestrator heartbeat (no-op)
-	bus.Subscribe("scheduler.tick.orch", func(ctx context.Context, evt eventbus.Event) error {
-		return supplyChainOrch.HandleTick(ctx, evt)
 	})
 
 	// Supply chain event: after-sale completed → auto-adjust inventory
