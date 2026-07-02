@@ -2,6 +2,8 @@ package realtime
 
 import (
 	"encoding/json"
+	"sync/atomic"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -18,6 +20,13 @@ type PluginDriver interface {
 	HasPending(requestID string) bool
 }
 
+// authTimeout is the maximum time to wait for the first (auth) message.
+const authTimeout = 10 * time.Second
+
+// maxUnauthConns limits concurrent unauthenticated connections to prevent
+// resource exhaustion via goroutine/heap DoS.
+const maxUnauthConns int64 = 64
+
 // ExtensionHandler handles WebSocket connections for the A8 Sourcing Agent extension.
 // Unlike the main WebSocket handler, auth is performed via the first message
 // rather than a URL query parameter.
@@ -28,6 +37,7 @@ type ExtensionHandler struct {
 	pluginDriver       PluginDriver
 	autoCollectHandler func(userID int64, payload json.RawMessage) error
 	listCollectHandler func(userID int64, payload json.RawMessage) error
+	unauthConns        atomic.Int64 // tracks unauthenticated connections for rate limiting
 }
 
 // NewExtensionHandler creates a new ExtensionHandler.
@@ -68,6 +78,17 @@ func (h *ExtensionHandler) ServeWS(c *gin.Context) {
 		return
 	}
 
+	// Rate-limit unauthenticated connections to prevent resource exhaustion.
+	// An attacker can open WS connections without sending auth; this caps
+	// the damage at maxUnauthConns concurrent goroutine pairs.
+	if h.unauthConns.Load() >= maxUnauthConns {
+		h.logger.Warn("extension ws rejected: too many unauthenticated connections",
+			zap.Int64("current", h.unauthConns.Load()))
+		conn.Close()
+		return
+	}
+	h.unauthConns.Add(1)
+
 	client := &Client{
 		Hub:  h.hub,
 		Conn: conn,
@@ -93,17 +114,27 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 		client.Conn.Close()
 	}()
 
+	// Set a read deadline for the auth message. If the client doesn't
+	// authenticate within authTimeout, the connection is closed. This
+	// prevents resource exhaustion from unauthenticated idle connections.
+	_ = client.Conn.SetReadDeadline(time.Now().Add(authTimeout))
+
 	// First message must be auth.
 	_, msgBytes, err := client.Conn.ReadMessage()
 	if err != nil {
+		h.unauthConns.Add(-1)
 		return
 	}
+	// Clear the deadline — subsequent reads have no timeout (idle connections
+	// are managed by the hub's own ping/pong mechanism).
+	_ = client.Conn.SetReadDeadline(time.Time{})
 	var authMsg struct {
 		Type  string `json:"type"`
 		Token string `json:"token"`
 	}
 	if err := json.Unmarshal(msgBytes, &authMsg); err != nil || authMsg.Type != "auth" || authMsg.Token == "" {
 		h.logger.Warn("extension ws auth rejected: first message must be auth with token")
+		h.unauthConns.Add(-1)
 		client.writeJSON(map[string]string{"type": "error", "data": "first message must be auth with token"})
 		return
 	}
@@ -111,11 +142,13 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 	userID, valid := h.validateExtensionToken(authMsg.Token)
 	if !valid {
 		h.logger.Warn("extension ws auth rejected: invalid token")
+		h.unauthConns.Add(-1)
 		client.writeJSON(map[string]string{"type": "error", "data": "invalid token"})
 		return
 	}
 	client.UserID = userID
 	client.writeJSON(map[string]string{"type": "auth", "data": "ok"})
+	h.unauthConns.Add(-1)
 	h.logger.Info("extension ws client authenticated", zap.Int64("user_id", *userID))
 
 	// Process subsequent messages.

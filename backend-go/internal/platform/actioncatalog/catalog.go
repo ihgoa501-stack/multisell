@@ -97,6 +97,8 @@ func (c *Catalog) Must(actionType string) Entry {
 
 // ValidateProduction checks whether an action can execute in production mode.
 // Returns nil if allowed, or an error describing why it is blocked.
+// riskLevel is the caller's assessed risk; the catalog enforces a floor:
+// actions may not execute below their catalog risk level.
 func (c *Catalog) ValidateProduction(actionType string, riskLevel int, hasApproval bool) error {
 	spec, ok := c.Lookup(actionType)
 	if !ok {
@@ -107,6 +109,10 @@ func (c *Catalog) ValidateProduction(actionType string, riskLevel int, hasApprov
 	}
 	if spec.RequireApproval && !hasApproval {
 		return fmt.Errorf("%w: action %q requires approval for production execution", ErrApprovalRequired, actionType)
+	}
+	if riskLevel > 0 && riskLevel < spec.RiskLevel {
+		return fmt.Errorf("%w: caller risk level %d is below catalog requirement %d for action %q",
+			ErrApprovalRequired, riskLevel, spec.RiskLevel, actionType)
 	}
 	return nil
 }

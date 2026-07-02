@@ -445,7 +445,16 @@ func (e *Engine) execCommand(ctx context.Context, runID int64, def StepDef) (map
 		return def.Inputs, nil
 	}
 
-	_, err := e.cmd.Dispatch(ctx, def.Command, def.Inputs)
+	// Use DispatchSafe with ModeProduction to enforce catalog, approval,
+	// and risk-level checks. This prevents the workflow engine from being
+	// an unguarded execution path for agent commands.
+	action := command.AgentAction{
+		ActionType: def.Command,
+		AgentID:    def.AgentID,
+		Mode:       command.ModeProduction,
+		Input:      def.Inputs,
+	}
+	_, err := e.cmd.DispatchSafe(ctx, action, nil)
 	if err != nil {
 		return nil, fmt.Errorf("command %s: %w", def.Command, err)
 	}

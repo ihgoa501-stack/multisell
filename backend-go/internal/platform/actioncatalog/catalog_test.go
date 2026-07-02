@@ -165,6 +165,36 @@ func TestHasAction(t *testing.T) {
 	}
 }
 
+func TestValidateProduction_RiskLevelFloor(t *testing.T) {
+	c := Default()
+	// listing_optimize is RiskMedium (2). Caller claims RiskLow (1) → should fail.
+	err := c.ValidateProduction("listing_optimize", RiskLow, false)
+	if err == nil {
+		t.Fatal("expected error: caller risk level below catalog requirement")
+	}
+
+	// Caller matches catalog risk → should pass.
+	err = c.ValidateProduction("listing_optimize", RiskMedium, false)
+	if err != nil {
+		t.Errorf("caller risk matches catalog, should pass: %v", err)
+	}
+
+	// Caller above catalog risk → should pass.
+	err = c.ValidateProduction("listing_optimize", RiskHigh, false)
+	if err != nil {
+		t.Errorf("caller above catalog risk should pass: %v", err)
+	}
+}
+
+func TestValidateProduction_RiskLevelZeroSkipsFloorCheck(t *testing.T) {
+	c := Default()
+	// riskLevel=0 means "not assessed" → floor check is skipped.
+	err := c.ValidateProduction("stock_alert", 0, false)
+	if err != nil {
+		t.Errorf("riskLevel=0 should skip floor check: %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Error helpers
 // ---------------------------------------------------------------------------
