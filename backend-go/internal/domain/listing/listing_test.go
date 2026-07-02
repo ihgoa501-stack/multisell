@@ -6,6 +6,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +18,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 func newService(t *testing.T) *Service {
 	t.Helper()
 	db := newTestDB(t)
-	return NewService(db, dbtest.NewLogger(t), NewSKUProvider(db), NewDecisionReader(db))
+	return NewService(db, dbtest.NewLogger(t), eventbus.New(dbtest.NewLogger(t)), NewSKUProvider(db), NewDecisionReader(db))
 }
 
 func TestListing_Create(t *testing.T) {
