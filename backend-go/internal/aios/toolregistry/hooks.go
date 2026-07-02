@@ -127,14 +127,26 @@ func (h *PermissionHook) After(_ context.Context, _ *Tool, _ map[string]interfac
 
 // ApprovalCheckHook blocks mutation-risk tools (RiskHigh, RiskCritical) in
 // production mode when no approval ID is present in the context.
+// When no mode is explicitly set, production is assumed (fail-closed).
 func WithProductionMode(ctx context.Context) context.Context {
 	return context.WithValue(ctx, executionModeKey, "production")
+}
+
+// WithSandboxMode marks a context as sandbox mode (no approval needed).
+func WithSandboxMode(ctx context.Context) context.Context {
+	return context.WithValue(ctx, executionModeKey, "sandbox")
 }
 
 // IsProductionMode checks if the context is in production mode.
 func IsProductionMode(ctx context.Context) bool {
 	v, _ := ctx.Value(executionModeKey).(string)
 	return v == "production"
+}
+
+// IsSandboxMode checks if the context is explicitly in sandbox mode.
+func IsSandboxMode(ctx context.Context) bool {
+	v, _ := ctx.Value(executionModeKey).(string)
+	return v == "sandbox"
 }
 
 // WithApprovalID attaches an approval ID to the context.
@@ -159,10 +171,12 @@ func NewApprovalCheckHook() *ApprovalCheckHook {
 }
 
 // Before checks the tool's risk level and blocks mutation tools in production
-// mode without a valid approval ID.
+// mode without a valid approval ID. When no mode is set in the context
+// (the common case), production mode is assumed — this is fail-closed.
 func (h *ApprovalCheckHook) Before(ctx context.Context, tool *Tool, _ map[string]interface{}) (context.Context, error) {
-	if !IsProductionMode(ctx) {
-		return ctx, nil // sandbox/dry-run: no approval needed
+	// Explicit sandbox/dry-run: skip approval check.
+	if IsSandboxMode(ctx) {
+		return ctx, nil
 	}
 	if tool.RiskLevel.IsMutationRisk() && GetApprovalID(ctx) == 0 {
 		return ctx, fmt.Errorf("%w: tool %q requires approval in production mode", ErrMutationRequiresApproval, tool.Name)

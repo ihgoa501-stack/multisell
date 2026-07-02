@@ -926,10 +926,23 @@ func TestApprovalCheckHook_AllowsNonProduction(t *testing.T) {
 	hook := NewApprovalCheckHook()
 	tool := newTestTool("test.read", "1.0.0", "default", RiskHigh)
 
-	ctx := context.Background()
+	// Explicit sandbox mode: should allow mutation tools without approval.
+	ctx := WithSandboxMode(context.Background())
 	_, err := hook.Before(ctx, tool, nil)
 	if err != nil {
-		t.Errorf("expected allowed in non-production mode, got %v", err)
+		t.Errorf("expected allowed in sandbox mode, got %v", err)
+	}
+}
+
+func TestApprovalCheckHook_DefaultsToProduction(t *testing.T) {
+	hook := NewApprovalCheckHook()
+	tool := newTestTool("test.read", "1.0.0", "default", RiskHigh)
+
+	// No mode set: should default to production (fail-closed).
+	ctx := context.Background()
+	_, err := hook.Before(ctx, tool, nil)
+	if err == nil {
+		t.Fatal("expected blocked when mode is unset (fail-closed to production)")
 	}
 }
 
@@ -1011,7 +1024,7 @@ func TestApprovalCheckHook_ThroughRegistry(t *testing.T) {
 	})
 
 	t.Run("sandbox mutation allowed", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := WithSandboxMode(context.Background())
 		out, err := reg.Call(ctx, "test.reg.mutation", nil)
 		if err != nil {
 			t.Fatalf("expected success in sandbox, got %v", err)
