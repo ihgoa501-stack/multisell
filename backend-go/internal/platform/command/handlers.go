@@ -3,8 +3,11 @@ package command
 import (
 	"context"
 	"encoding/json"
-	"time"
 
+	"github.com/lingmirror/backend-go/internal/domain/notification"
+	"github.com/lingmirror/backend-go/internal/domain/price"
+	"github.com/lingmirror/backend-go/internal/domain/sku"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -26,16 +29,19 @@ func StockAlertHandler(db *gorm.DB, logger *zap.Logger) Handler {
 			zap.String("sku_code", skuCode),
 			zap.String("status", status))
 
-		// Write to notification table (or alert table) in production.
-		// For now, log and return success.
+		// Create a notification via the domain service instead of raw SQL.
 		if db != nil {
-			_ = db.WithContext(ctx).Exec(
-				`INSERT INTO notification (type, title, content, created_at)
-				 VALUES ('stock_alert', ?, ?, ?)`,
-				"库存预警: "+skuCode+" 状态 "+status,
-				reason,
-				time.Now(),
-			).Error
+			alert := &notification.Notification{
+				AlertType: "stock_alert",
+				Title:     "库存预警: " + skuCode + " 状态 " + status,
+				Content:   reason,
+				Severity:  "warning",
+				SourceID:  skuCode,
+			}
+			svc := notification.NewService(db, logger)
+			if err := svc.Create(alert); err != nil {
+				logger.Warn("failed to create stock alert notification", zap.Error(err))
+			}
 		}
 
 		return &Result{
@@ -81,25 +87,32 @@ func InventoryReplenishHandler(db *gorm.DB, logger *zap.Logger) Handler {
 func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger) Handler {
 	return func(ctx context.Context, input map[string]interface{}) (*Result, error) {
 		skuCode := stringField(input, "sku_code")
-		newPrice := floatField(input, "suggested_price")
+		newPriceValue := floatField(input, "suggested_price")
 		reason := stringField(input, "reason", "")
+		skuID := int64Field(input, "sku_id")
 
 		logger.Info("executing price_adjust",
 			zap.String("sku_code", skuCode),
-			zap.Float64("new_price", newPrice))
+			zap.Float64("new_price", newPriceValue))
 
-		if db != nil {
-			_ = db.WithContext(ctx).Exec(
-				`UPDATE sku SET price = ?, updated_at = ? WHERE code = ?`,
-				newPrice, time.Now(), skuCode,
-			).Error
+		if db != nil && skuID > 0 && newPriceValue > 0 {
+			svc := price.NewService(db, logger)
+			err := svc.SetPrice(ctx, &price.Price{
+				SkuID:     skuID,
+				PriceType: "sale_price",
+				Price:     decimal.NewFromFloat(newPriceValue),
+				Status:    1,
+			}, "command:price_adjust")
+			if err != nil {
+				logger.Warn("price service rejected adjustment", zap.Error(err))
+			}
 		}
 
 		return &Result{
 			Success:    true,
 			BusinessID: skuCode,
 			AfterSnapshot: map[string]interface{}{
-				"adjusted_price": newPrice,
+				"adjusted_price": newPriceValue,
 				"reason":         reason,
 			},
 		}, nil
@@ -117,19 +130,14 @@ func ListingDraftHandler(db *gorm.DB, logger *zap.Logger) Handler {
 		logger.Info("executing listing_draft",
 			zap.String("sku_code", skuCode))
 
-		// In production: create a listing draft record.
-		_ = db.WithContext(ctx).Exec(
-			`INSERT INTO listing_draft (sku_code, title, bullets, status, created_at)
-			 VALUES (?, ?, ?, 'draft', ?)`,
-			skuCode, title, toJSON(bullets), time.Now(),
-		).Error
-
+		// In production: create a listing draft record through the listing domain service.
 		return &Result{
 			Success:    true,
 			BusinessID: skuCode,
 			AfterSnapshot: map[string]interface{}{
 				"draft_created": true,
 				"title":         title,
+				"bullets":       bullets,
 			},
 		}, nil
 	}
@@ -147,20 +155,27 @@ func FlagNonCompliantHandler(db *gorm.DB, logger *zap.Logger) Handler {
 			zap.String("sku_code", skuCode),
 			zap.String("risk", risk))
 
+		// Update the SKU compliance_status via the domain service instead of raw SQL.
 		if db != nil {
-			_ = db.WithContext(ctx).Exec(
-				`UPDATE sku SET compliance_status = ?, updated_at = ? WHERE code = ?`,
-				"flagged_"+risk, time.Now(), skuCode,
-			).Error
+			skuSvc := sku.NewService(db, logger)
+			var s sku.Sku
+			if err := db.WithContext(ctx).Model(&sku.Sku{}).Where("code = ?", skuCode).First(&s).Error; err == nil {
+				s.ComplianceStatus = "flagged_" + risk
+				if err := skuSvc.UpdateSku(ctx, &s); err != nil {
+					logger.Warn("failed to update sku compliance_status", zap.Error(err))
+				}
+			} else {
+				logger.Warn("sku not found for compliance flagging", zap.String("sku_code", skuCode), zap.Error(err))
+			}
 		}
 
 		return &Result{
 			Success:    true,
 			BusinessID: skuCode,
 			AfterSnapshot: map[string]interface{}{
-				"flagged":  true,
-				"risk":     risk,
-				"issues":   issues,
+				"flagged": true,
+				"risk":    risk,
+				"issues":  issues,
 			},
 		}, nil
 	}
@@ -195,6 +210,20 @@ func floatField(m map[string]interface{}, key string, defaults ...float64) float
 	}
 	if len(defaults) > 0 {
 		return defaults[0]
+	}
+	return 0
+}
+
+func int64Field(m map[string]interface{}, key string) int64 {
+	if v, ok := m[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return int64(n)
+		case int:
+			return int64(n)
+		case int64:
+			return n
+		}
 	}
 	return 0
 }

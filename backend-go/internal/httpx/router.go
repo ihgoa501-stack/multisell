@@ -759,7 +759,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		"G3": {"compliance_check"},
 	}
 	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
-	ai.RegisterRoutes(protected, db, logger, hub, moaCoord)
+	ai.RegisterRoutes(protected, db, logger, hub, moaCoord, cmd)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}

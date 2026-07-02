@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/domain/notification"
 )
 
 // ---------------------------------------------------------------------------
@@ -491,16 +492,8 @@ func TestBuiltInStockAlertWithDB(t *testing.T) {
 	db := dbtest.NewDB(t)
 	logger := dbtest.NewLogger(t)
 
-	// Create notification table.
-	if err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS notification (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			type TEXT NOT NULL,
-			title TEXT NOT NULL DEFAULT '',
-			content TEXT NOT NULL DEFAULT '',
-			created_at DATETIME
-		)
-	`).Error; err != nil {
+	// Create notification table via GORM auto-migrate.
+	if err := db.AutoMigrate(&notification.Notification{}); err != nil {
 		t.Fatalf("failed to create notification table: %v", err)
 	}
 
