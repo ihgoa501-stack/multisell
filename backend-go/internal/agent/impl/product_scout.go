@@ -144,8 +144,69 @@ func (a *ProductScoutAgent) registerTools() {
 			}, nil
 		},
 	})
-}
 
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "product_research",
+		Version:     "1.0.0",
+		Description: "选品调研——给定类目和目标市场，生成调研假设方向、关键词建议、风险提示和待采集数据清单",
+		Squad:       "growth",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "选品调研参数",
+			Properties: map[string]*toolregistry.Schema{
+				"category":        {Type: "string", Description: "商品类目"},
+				"target_market":   {Type: "string", Description: "目标市场（如 US/RU/JP/EU）"},
+				"target_platform": {Type: "string", Description: "目标平台（如 Ozon/Amazon/Shopee）"},
+				"constraints":     {Type: "string", Description: "约束条件（可选，如低重量/小件）"},
+			},
+			Required: []string{"category", "target_market", "target_platform"},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "选品调研结果，包含推荐方向、理由、风险、关键词、待采集数据和警告",
+		},
+		RequiredPermissions: []string{"growth:read:product_research"},
+		RiskLevel:           toolregistry.RiskLow,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.productResearch(input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+
+	a.registry.Register(&toolregistry.Tool{
+		Name:        "supplier_discovery",
+		Version:     "1.0.0",
+		Description: "供应商发现——根据调研方向或关键词生成 1688 搜索页面、采集指令和供应商筛选规则",
+		Squad:       "growth",
+		Parameters: &toolregistry.Schema{
+			Type:        "object",
+			Description: "供应商发现参数",
+			Properties: map[string]*toolregistry.Schema{
+				"keywords":   {Type: "array", Items: &toolregistry.Schema{Type: "string"}, Description: "搜索关键词列表"},
+				"directions": {Type: "array", Items: &toolregistry.Schema{Type: "object"}, Description: "来自 product_research 的方向列表（含 name 字段）"},
+				"category":   {Type: "string", Description: "类目名称（当无关键词时的回退）"},
+			},
+		},
+		Returns: &toolregistry.Schema{
+			Type:        "object",
+			Description: "供应商发现结果，包含 1688 搜索页面 URL、采集指令、筛选规则",
+		},
+		RequiredPermissions: []string{"growth:read:supplier_discovery"},
+		RiskLevel:           toolregistry.RiskLow,
+		Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+			output, confidence, riskLevel, _ := a.supplierDiscovery(input)
+			return map[string]interface{}{
+				"output":     output,
+				"confidence": confidence,
+				"risk_level": riskLevel,
+			}, nil
+		},
+	})
+}
 // Decide dispatches to the correct decision handler based on decisionPoint.
 //
 // When a ToolRegistry is configured, the agent delegates via registry.Call(),
@@ -155,6 +216,8 @@ func (a *ProductScoutAgent) registerTools() {
 // Supported decision points:
 //   - "product_scout"
 //   - "market_analysis"
+//   - "product_research" — generate research hypotheses for a category/market
+//   - "supplier_discovery" — generate 1688 collection plans from keywords/directions
 func (a *ProductScoutAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
 	if a.registry != nil {
 		return a.decideViaRegistry(ctx, decisionPoint, params)
@@ -199,6 +262,10 @@ func (a *ProductScoutAgent) decideDirect(decisionPoint string, ctx map[string]in
 		return a.scout(ctx)
 	case "market_analysis":
 		return a.analyzeMarket(ctx)
+	case "product_research":
+		return a.productResearch(ctx)
+	case "supplier_discovery":
+		return a.supplierDiscovery(ctx)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",
@@ -325,4 +392,296 @@ func (a *ProductScoutAgent) analyzeMarket(ctx map[string]interface{}) (output ma
 		"confidence":           0.80,
 	}
 	return output, 0.80, "low", nil
+}
+
+// ---------- Decision point: product_research ----------
+
+// productRequiredFields are the fields needed for productResearch.
+var productResearchRequiredFields = []string{"category", "target_market", "target_platform"}
+
+// productResearch generates structured research directions for a given category
+// and target market. It does not access real market data — it produces research
+// hypotheses with explicit confidence levels and uncertainty notes.
+//
+// Input: category, target_market, target_platform, constraints (optional)
+// Output: recommended directions with reasoning, risks, keywords, data gaps, confidence
+//
+// Ponytail: rule-based category→direction mapping for initial coverage.
+// Replace with LLM-driven research when real market data feeds are available.
+func (a *ProductScoutAgent) productResearch(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	if missing := missingFields(ctx, productResearchRequiredFields); len(missing) > 0 {
+		return insufficientData("product_research", missing), 0.0, "low", nil
+	}
+
+	category := safeString(ctx["category"], "")
+	targetMarket := safeString(ctx["target_market"], "US")
+	targetPlatform := safeString(ctx["target_platform"], "")
+	constraints := safeString(ctx["constraints"], "")
+
+	// Build directions based on category heuristics.
+	// ponytail: static direction templates, expand with LLM/research when real
+	// category→direction mappings from market analysis are available.
+	directions := defaultDirections(category, targetMarket, targetPlatform)
+
+	// Collect data needs across all directions.
+	dataNeeded := uniqueDataNeeds(directions)
+
+	output = map[string]interface{}{
+		"status":                "research_ready",
+		"category":              category,
+		"target_market":         targetMarket,
+		"target_platform":       targetPlatform,
+		"constraints_used":      constraints,
+		"recommended_directions": directions,
+		"data_needed":           dataNeeded,
+		"warnings": []string{
+			"这是调研假设，不是确定经营结论。所有方向需要采集真实数据进行验证。",
+			"This is a research hypothesis, not a business conclusion. All directions require real data collection for validation.",
+		},
+	}
+	return output, 0.65, "low", nil
+}
+
+// ---------- Decision point: supplier_discovery ----------
+
+var supplierDiscoveryCommonKeywords = map[string][]string{
+	"厨房收纳": {"厨房收纳", "免打孔置物架", "厨房整理架", "锅盖架", "调料架"},
+	"家居收纳": {"收纳盒", "储物箱", "桌面收纳", "化妆品收纳", "抽屉分隔"},
+	"厨房小工具": {"厨房计时器", "削皮器", "切菜器", "捣蒜器", "开瓶器"},
+	"浴室用品": {"浴室置物架", "牙刷架", "毛巾架", "浴巾", "防滑垫"},
+	"办公用品": {"桌面文具收纳", "笔记本", "便签纸", "笔筒", "文件架"},
+	"手机配件": {"手机壳", "手机支架", "充电线", "车载手机架", "屏幕保护膜"},
+	"家居装饰": {"墙贴", "桌布", "花瓶", "仿真花", "装饰画"},
+	"小家电": {"便携榨汁杯", "迷你加湿器", "USB风扇", "手持挂烫机", "电动牙刷"},
+	"宠物用品": {"猫抓板", "狗玩具", "宠物梳子", "猫碗架", "宠物出行包"},
+	"运动户外": {"瑜伽垫", "阻力带", "运动水壶", "握力器", "跳绳"},
+}
+
+// supplierDiscovery generates actionable collection plans for finding products
+// on 1688 based on research directions. Output is meant for human execution
+// through the browser extension (#186/#191 flow).
+//
+// Input: directions (from product_research), or keywords directly
+// Output: 1688 search URLs, supplier filter rules, collection instructions
+func (a *ProductScoutAgent) supplierDiscovery(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	keywords := resolveKeywords(ctx)
+
+	if len(keywords) == 0 {
+		return map[string]interface{}{
+			"status":         "needs_keywords",
+			"message":        "需要关键词或选品调研方向来生成搜索页面。请先运行 product_research 或提供 keywords 参数。",
+			"warnings":       []string{"这是调研建议，不是确定经营结论"},
+		}, 0.0, "low", nil
+	}
+
+	pages := make([]map[string]interface{}, 0, len(keywords))
+	for _, kw := range keywords {
+		encoded := urlEncode(kw)
+		pages = append(pages, map[string]interface{}{
+			"type":   "search",
+			"url":    "https://s.1688.com/selloffer/offer_search.htm?keywords=" + encoded,
+			"reason": "搜索「" + kw + "」候选商品",
+		})
+	}
+
+	output = map[string]interface{}{
+		"status":         "collection_plan_ready",
+		"source_platform": "1688",
+		"search_keywords": keywords,
+		"suggested_pages": pages,
+		"supplier_filter_rules": []string{
+			"优先看有成交记录的店铺（显示成交笔数）",
+			"优先看支持小起订量（如 2-10 件起批）",
+			"优先看主图和规格完整的商品",
+			"优先看店铺评分 4.5 以上的卖家",
+			"优先看有实力商家/诚信通标识的店铺",
+			"注意商品是否支持跨境/一件代发",
+		},
+		"collection_instructions": []string{
+			"由用户手动打开上述 1688 搜索页面",
+			"使用 Chrome 扩展「采集当前页商品列表」采集合集结果（#191 流程）",
+			"列表页结果进入 CollectLead 待处理",
+			"对感兴趣的商品点开详情页，用扩展采集商品详情（#186 流程）",
+			"详情页结果进入 CandidateProduct 进行完整度评估",
+		},
+		"warnings": []string{
+			"这是调研假设，不是确定经营结论。所有页面需要人工确认后再采集。",
+			"1688 链接可能随时间失效，需要在采集前确认页面可访问。",
+		},
+	}
+	return output, 0.6, "low", nil
+}
+
+// ---------- Helpers ----------
+
+// defaultDirections returns research directions for a given category.
+// ponytail: static map, load from config or DB when direction catalog grows.
+func defaultDirections(category, market, platform string) []map[string]interface{} {
+	switch category {
+	case "家居", "home", "家居用品":
+		return []map[string]interface{}{
+			{
+				"name":              "厨房收纳小件",
+				"why":               "厨房收纳是跨境电商长尾刚需，SKU丰富，重量轻适合小包直邮，体积小运费低，客单价适中（$5-20）",
+				"target_price_band": "$5-$20 (零售)",
+				"risk_notes":        []string{"部分品类竞争激烈（如调料架）", "需确认目标市场的厨房标准尺寸（美标/欧标）", "部分商品可能有专利风险"},
+				"keywords":          []string{"kitchen storage", "kitchen organizer", "spice rack", "cabinet organizer", "over sink dish rack"},
+				"data_needed":       []string{"1688 采购价", "重量", "尺寸", "平台竞品价格和评价数", "品类搜索趋势"},
+				"confidence":        0.65,
+			},
+			{
+				"name":              "浴室收纳与配件",
+				"why":               "浴室收纳与厨房收纳同源供应链，重量轻体积小，跨境物流友好。客单价和利润空间与厨房收纳类似",
+				"target_price_band": "$5-$25 (零售)",
+				"risk_notes":        []string{"需确认材质是否防锈防水", "部分商品的包装尺寸可能导致物流成本偏高", "品牌商品专利风险"},
+				"keywords":          []string{"bathroom storage", "shower caddy", "toothbrush holder", "soap dispenser", "bath mat"},
+				"data_needed":       []string{"1688 采购价", "重量", "尺寸", "平台竞品价格", "材质选择"},
+				"confidence":        0.55,
+			},
+			{
+				"name":              "桌面收纳与办公小件",
+				"why":               "收纳类延伸品类，供应链成熟。适合 With 办公/学生场景，与家居收纳联合采购降低单位物流成本",
+				"target_price_band": "$3-$15 (零售)",
+				"risk_notes":        []string{"低价位商品利润空间有限", "需靠多件组合提升客单价", "部分商品需要 FBA 物流方案"},
+				"keywords":          []string{"desk organizer", "pencil case", "document holder", "cable organizer", "phone stand"},
+				"data_needed":       []string{"1688 采购价", "重量", "组合装可能性"},
+				"confidence":        0.5,
+			},
+		}
+	case "宠物用品", "pet", "pets":
+		return []map[string]interface{}{
+			{
+				"name":              "猫用品小件",
+				"why":               "宠物用品在 Ozon 等新兴平台增长快，中国供应链优势明显。猫咪用品客单价适中，重复购买率高",
+				"target_price_band": "$5-$30 (零售)",
+				"risk_notes":        []string{"需确认材质安全认证", "部分商品有运输尺寸限制", "需关注目的国宠物用品进口规定"},
+				"keywords":          []string{"cat toys", "cat bed", "cat scratching post", "cat bowl", "pet grooming"},
+				"data_needed":       []string{"1688 采购价", "重量", "材质认证要求", "平台相关品类增长数据"},
+				"confidence":        0.55,
+			},
+			{
+				"name":              "狗出行配件",
+				"why":               "狗出行配件（牵引绳、胸背带、便携水碗等）是高频需求，重量轻，适合跨境小包",
+				"target_price_band": "$8-$25 (零售)",
+				"risk_notes":        []string{"尺寸规格多，管理复杂度高", "需确认安全标准", "品牌配件需避免侵权"},
+				"keywords":          []string{"dog leash", "dog harness", "dog collar", "dog travel bowl", "pet carrier"},
+				"data_needed":       []string{"1688 采购价", "重量", "规格 SKU 管理"},
+				"confidence":        0.5,
+			},
+		}
+	default:
+		return []map[string]interface{}{
+			{
+				"name":              category + " 子类目调研方向",
+				"why":               "通用类目需要更多市场数据来确定具体方向。建议先采集该品类在目标平台的搜索结果，了解市场供给情况",
+				"target_price_band": "待采集后确定",
+				"risk_notes":        []string{"该品类暂无预设方向", "建议先运行品类关键词搜索采集"},
+				"keywords":          []string{category},
+				"data_needed":       []string{"平台搜索结果", "竞品价格区间", "商品数量统计"},
+				"confidence":        0.3,
+			},
+		}
+	}
+}
+
+// uniqueDataNeeds collects unique data-needed strings across directions.
+func uniqueDataNeeds(directions []map[string]interface{}) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, d := range directions {
+		if raw, ok := d["data_needed"].([]string); ok {
+			for _, item := range raw {
+				if !seen[item] {
+					seen[item] = true
+					out = append(out, item)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// resolveKeywords extracts search keywords from context.
+// Prefers explicit "keywords" param, then falls back to direction names,
+// finally maps to common keyword list.
+func resolveKeywords(ctx map[string]interface{}) []string {
+	// Explicit keywords override.
+	if kw, ok := ctx["keywords"].([]string); ok && len(kw) > 0 {
+		return kw
+	}
+	if raw, ok := ctx["keywords"].([]interface{}); ok && len(raw) > 0 {
+		kw := make([]string, 0, len(raw))
+		for _, r := range raw {
+			if s, ok := r.(string); ok {
+				kw = append(kw, s)
+			}
+		}
+		if len(kw) > 0 {
+			return kw
+		}
+	}
+
+	// Try to extract direction names from research output.
+	if dirs, ok := ctx["directions"].([]map[string]interface{}); ok {
+		kw := make([]string, 0, len(dirs))
+		for _, d := range dirs {
+			if n, ok := d["name"].(string); ok {
+				kw = append(kw, n)
+			}
+		}
+		if len(kw) > 0 {
+			return kw
+		}
+	}
+	if raw, ok := ctx["directions"].([]interface{}); ok {
+		kw := make([]string, 0, len(raw))
+		for _, r := range raw {
+			if m, ok := r.(map[string]interface{}); ok {
+				if n, ok := m["name"].(string); ok {
+					kw = append(kw, n)
+				}
+			}
+		}
+		if len(kw) > 0 {
+			return kw
+		}
+	}
+
+	// Try to extract from category.
+	category := safeString(ctx["category"], "")
+	if category != "" {
+		if kw, ok := supplierDiscoveryCommonKeywords[category]; ok {
+			return kw
+		}
+		// Use category as keyword itself.
+		return []string{category}
+	}
+
+	// As a fallback, try "message" field.
+	if msg := safeString(ctx["message"], ""); msg != "" {
+		return []string{msg}
+	}
+
+	return nil
+}
+
+// urlEncode percent-encodes a string for URL query parameters.
+// ponytail: minimal encoding, replace with net/url if completeness matters.
+func urlEncode(s string) string {
+	var out []byte
+	for _, r := range []byte(s) {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' || r == '~' {
+			out = append(out, r)
+		} else {
+			out = append(out, '%', hexChar(r>>4), hexChar(r&0x0f))
+		}
+	}
+	return string(out)
+}
+
+func hexChar(n byte) byte {
+	if n < 10 {
+		return '0' + n
+	}
+	return 'A' + n - 10
 }

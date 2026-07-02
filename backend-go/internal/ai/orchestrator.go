@@ -725,6 +725,8 @@ var routeTable = []routeEntry{
 	{Keywords: []string{"listing", "标题", "描述", "优化", "关键词", "keyword"}, AgentID: "A2", DecisionPoint: "listing_optimize"},
 	{Keywords: []string{"广告", "acos", "投放", "ad", "ads", "spend"}, AgentID: "A3", DecisionPoint: "acos_analysis"},
 	{Keywords: []string{"选品", "新品", "市场", "scout", "product"}, AgentID: "A1", DecisionPoint: "product_scout"},
+		{Keywords: []string{"调研", "research", "品类调研", "研究方向", "research category"}, AgentID: "A1", DecisionPoint: "product_research"},
+		{Keywords: []string{"供应商", "货源", "1688", "supplier", "供应链", "source product", "采集页面"}, AgentID: "A1", DecisionPoint: "supplier_discovery"},
 	{Keywords: []string{"客服", "回复", "意图", "customer", "service", "退款", "退货"}, AgentID: "A4", DecisionPoint: "auto_reply"},
 	{Keywords: []string{"合规", "认证", "禁售", "compliance", "regulation", "cert"}, AgentID: "A7", DecisionPoint: "compliance_check"},
 	{Keywords: []string{"折扣", "促销", "价格底线", "discount", "promotion", "coupon"}, AgentID: "G3", DecisionPoint: "discount_check"},

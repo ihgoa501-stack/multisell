@@ -455,7 +455,7 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=deepseek-v4-flash
 
 | ID | 名称 | Squad | 决策点 | 自主化等级 |
 |----|------|-------|--------|-----------|
-| A1 | 选品助理 | insight | product_scout, market_analysis | advisory |
+| A1 | 选品助理 | insight | product_scout, market_analysis, product_research, supplier_discovery | advisory |
 | A2 | 商品优化师 | insight | listing_optimize, keyword_research | advisory |
 | A3 | 广告分析师 | insight | acos_analysis, ad_optimization | advisory |
 | A4 | 客服助理 | ops | auto_reply, intent_classify | guided |
