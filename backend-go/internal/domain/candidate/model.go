@@ -89,6 +89,7 @@ type CreateCandidateInput struct {
 	SourcePlatform     string          `json:"source_platform"`
 	RawPayload         json.RawMessage `json:"raw_payload"`
 	CompletenessStatus string          `json:"completeness_status"`
+	CollectedAt        *time.Time      `json:"collected_at"`
 }
 
 // UpdateCandidateInput allows partial updates.
