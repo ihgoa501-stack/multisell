@@ -11,19 +11,20 @@ import (
 
 // DLEvent represents an event that has been moved to the dead-letter queue.
 type DLEvent struct {
-	ID               uint      `json:"id" gorm:"primaryKey"`
-	OriginalEventID  string    `json:"original_event_id" gorm:"column:original_event_id;type:varchar(36);not null"`
-	Topic            string    `json:"topic" gorm:"column:topic;type:varchar(100);not null"`
-	Source           string    `json:"source" gorm:"column:source;type:varchar(50);not null"`
-	Payload          string    `json:"payload" gorm:"column:payload;type:jsonb;not null;default:'{}'"`
-	Priority         int       `json:"priority" gorm:"column:priority;not null;default:0"`
-	CorrelationID    string    `json:"correlation_id" gorm:"column:correlation_id;type:varchar(36);default:''"`
-	ErrorMessage     string    `json:"error_message" gorm:"column:error_message;type:text;default:''"`
-	DeliveryAttempts int       `json:"delivery_attempts" gorm:"column:delivery_attempts;not null;default:0"`
-	LastAttemptAt    time.Time `json:"last_attempt_at" gorm:"column:last_attempt_at;type:timestamptz"`
-	CreatedAt        time.Time `json:"created_at" gorm:"column:created_at;type:timestamptz;not null;default:now()"`
+	ID               uint       `json:"id" gorm:"primaryKey"`
+	OriginalEventID  string     `json:"original_event_id" gorm:"column:original_event_id;type:varchar(36);not null"`
+	IdempotencyKey   string     `json:"idempotency_key" gorm:"column:idempotency_key;type:varchar(255);default:''"`
+	Topic            string     `json:"topic" gorm:"column:topic;type:varchar(100);not null"`
+	Source           string     `json:"source" gorm:"column:source;type:varchar(50);not null"`
+	Payload          string     `json:"payload" gorm:"column:payload;type:jsonb;not null;default:'{}'"`
+	Priority         int        `json:"priority" gorm:"column:priority;not null;default:0"`
+	CorrelationID    string     `json:"correlation_id" gorm:"column:correlation_id;type:varchar(36);default:''"`
+	ErrorMessage     string     `json:"error_message" gorm:"column:error_message;type:text;default:''"`
+	DeliveryAttempts int        `json:"delivery_attempts" gorm:"column:delivery_attempts;not null;default:0"`
+	LastAttemptAt    time.Time  `json:"last_attempt_at" gorm:"column:last_attempt_at;type:timestamptz"`
+	CreatedAt        time.Time  `json:"created_at" gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	ReplayedAt       *time.Time `json:"replayed_at" gorm:"column:replayed_at;type:timestamptz"`
-	ReplayedBy       string    `json:"replayed_by" gorm:"column:replayed_by;type:varchar(100);default:''"`
+	ReplayedBy       string     `json:"replayed_by" gorm:"column:replayed_by;type:varchar(100);default:''"`
 }
 
 // TableName overrides the default table name for DLEvent.
@@ -52,6 +53,7 @@ func (m *DLQManager) MoveToDLQ(evt Event, lastError string, attempts int) {
 
 	dlEvent := DLEvent{
 		OriginalEventID:  evt.ID,
+		IdempotencyKey:   evt.IdempotencyKey,
 		Topic:            evt.Topic,
 		Source:           evt.Source,
 		Payload:          string(payloadBytes),
@@ -88,12 +90,13 @@ func (m *DLQManager) ReplayEvents(ids []uint, publishFn func(Event) error) (int,
 		}
 
 		evt := Event{
-			ID:            dl.OriginalEventID,
-			Topic:         dl.Topic,
-			Source:        dl.Source,
-			Payload:       payload,
-			Priority:      dl.Priority,
-			CorrelationID: dl.CorrelationID,
+			ID:             dl.OriginalEventID,
+			IdempotencyKey: dl.IdempotencyKey,
+			Topic:          dl.Topic,
+			Source:         dl.Source,
+			Payload:        payload,
+			Priority:       dl.Priority,
+			CorrelationID:  dl.CorrelationID,
 		}
 
 		if err := publishFn(evt); err != nil {
@@ -118,7 +121,11 @@ func (m *DLQManager) ReplayEvents(ids []uint, publishFn func(Event) error) (int,
 // Uses the Bus's Publish function to re-queue events.
 func (m *DLQManager) ReplayEventsByIDs(bus *Bus, ids []uint) (int, error) {
 	return m.ReplayEvents(ids, func(evt Event) error {
-			_, err := bus.PublishWithPriority(context.Background(), evt.Topic, evt.Source, evt.Payload, evt.Priority)
+		ctx := context.Background()
+		if evt.IdempotencyKey != "" {
+			ctx = WithIdempotencyKey(ctx, evt.IdempotencyKey)
+		}
+		_, err := bus.PublishWithPriority(ctx, evt.Topic, evt.Source, evt.Payload, evt.Priority)
 		return err
 	})
 }

@@ -2,6 +2,7 @@ package shipping
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -389,6 +390,40 @@ func (h *Handler) DeleteBillBatch(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"id": id})
+
+}
+
+// ImportBill POST /shipping/bill-batches/import
+func (h *Handler) ImportBill(c *gin.Context) {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "file is required")
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to open uploaded file")
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to read file")
+		return
+	}
+
+	createdBy := c.PostForm("created_by")
+	if createdBy == "" {
+		createdBy = "system"
+	}
+
+	batch, err := h.service.ImportBillCSV(data, fileHeader.Filename, createdBy)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, batch)
 }
 
 // ListBillItems GET /shipping/bill-batches/:id/items
@@ -404,4 +439,272 @@ func (h *Handler) ListBillItems(c *gin.Context) {
 		return
 	}
 	response.Paginated(c, items, total, p.Page, p.Size)
+}
+
+// ---- Phase 1: Fulfillment Intelligence OS Handlers ----
+
+// QuoteUnified POST /shipping/quote-unified
+func (h *Handler) QuoteUnified(c *gin.Context) {
+	var req QuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	resp, err := h.service.QuoteUnified(&req)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, resp)
+}
+
+// CreateSnapshot POST /shipping/snapshots
+func (h *Handler) CreateSnapshot(c *gin.Context) {
+	var req CreateSnapshotInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	snap, err := h.service.CreateSnapshot(&req)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, snap)
+}
+
+// GetSnapshot GET /shipping/snapshots/:orderId
+func (h *Handler) GetSnapshot(c *gin.Context) {
+	orderID, err := strconv.ParseInt(c.Param("orderId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid order_id")
+		return
+	}
+	snap, err := h.service.GetSnapshotByOrderID(orderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "snapshot not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, snap)
+}
+
+// ListSnapshots GET /shipping/snapshots
+func (h *Handler) ListSnapshots(c *gin.Context) {
+	p := common.ParsePagination(c)
+	items, total, err := h.service.ListSnapshots(&p)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, items, total, p.Page, p.Size)
+}
+
+// ReconcileBillBatch POST /shipping/bill-batches/:id/reconcile
+func (h *Handler) ReconcileBillBatch(c *gin.Context) {
+	batchID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid batch_id")
+		return
+	}
+	result, err := h.service.ReconcileBillBatch(batchID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// ListBillAnomalies GET /shipping/bill-batches/:id/anomalies
+func (h *Handler) ListBillAnomalies(c *gin.Context) {
+	batchID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid batch_id")
+		return
+	}
+	items, err := h.service.ListBillAnomalies(batchID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, items)
+}
+
+// ReviewBillItem PUT /shipping/bill-items/:id/review
+func (h *Handler) ReviewBillItem(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid item_id")
+		return
+	}
+	var req struct {
+		ReviewStatus string `json:"review_status" binding:"required"`
+		Note         string `json:"note"`
+		ResolvedBy   string `json:"resolved_by" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.service.ReviewBillItem(id, req.ReviewStatus, req.Note, req.ResolvedBy); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"status": "ok"})
+}
+
+// ListRuleVersions GET /shipping/rules/:id/versions
+func (h *Handler) ListRuleVersions(c *gin.Context) {
+	channelID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid channel_id")
+		return
+	}
+	rules, total, err := h.service.ListRuleVersions(channelID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, rules, total, 1, int(total))
+}
+
+// ===== Phase 3: Fulfillment Tracking =====
+
+func (h *Handler) CreateTracking(c *gin.Context) {
+	var req CreateTrackingInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	t, err := h.service.CreateTracking(&req)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, t)
+}
+
+func (h *Handler) GetTracking(c *gin.Context) {
+	orderID, err := strconv.ParseInt(c.Param("orderId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid order_id")
+		return
+	}
+	t, err := h.service.GetTrackingByOrderID(orderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "tracking not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, t)
+}
+
+// ListTracking GET /shipping/tracking
+func (h *Handler) ListTracking(c *gin.Context) {
+	p := common.ParsePagination(c)
+	items, total, err := h.service.ListTracking(&p)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, items, total, p.Page, p.Size)
+}
+
+func (h *Handler) UpdateTrackingEvent(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid tracking_id")
+		return
+	}
+	var req struct {
+		Event  TrackingEvent `json:"event" binding:"required"`
+		Status string        `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	t, err := h.service.UpdateTrackingEvent(id, req.Event, req.Status)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, t)
+}
+
+func (h *Handler) MarkTrackingException(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid tracking_id")
+		return
+	}
+	var req struct {
+		IsLost     bool   `json:"is_lost"`
+		IsReturned bool   `json:"is_returned"`
+		IsDamaged  bool   `json:"is_damaged"`
+		Note       string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.service.MarkTrackingException(id, req.IsLost, req.IsReturned, req.IsDamaged, req.Note); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"status": "ok"})
+
+}
+
+// CarrierInfo is the response for ListCarriers.
+type CarrierInfo struct {
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+// ListCarriers returns available carrier adapters.
+func (h *Handler) ListCarriers(c *gin.Context) {
+	response.Success(c, []CarrierInfo{
+		{Code: "mock_carrier", Name: "模拟承运商 (测试用)", Status: "sandbox"},
+	})
+}
+
+// CarrierQuote requests a real-time quote from a carrier via adapter.
+func (h *Handler) CarrierQuote(c *gin.Context) {
+	code := c.Param("code")
+	var req CarrierQuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	mode := CarrierAPIMode(c.DefaultQuery("mode", "sandbox"))
+	if code != "mock_carrier" {
+		response.Error(c, http.StatusNotFound, "carrier not found")
+		return
+	}
+	adapter := &MockCarrierAdapter{}
+	resp, err := adapter.GetQuote(c.Request.Context(), mode, &req)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, resp)
+}
+
+// GetCarrierPerformance returns carrier performance stats.
+func (h *Handler) GetCarrierPerformance(c *gin.Context) {
+	p := common.ParsePagination(c)
+	stats, err := h.service.GetCarrierPerformance(p.Size)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, stats)
 }

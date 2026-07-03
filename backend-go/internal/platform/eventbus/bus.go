@@ -15,8 +15,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,9 +35,10 @@ type Event struct {
 	EntityID         string                 `json:"entity_id"`
 	EntityType       string                 `json:"entity_type"`
 	Payload          map[string]interface{} `json:"payload"`
-	Priority         int                    `json:"priority"`   // 0=normal, 1=high, 2=critical
+	Priority         int                    `json:"priority"` // 0=normal, 1=high, 2=critical
 	CreatedAt        time.Time              `json:"created_at"`
 	CorrelationID    string                 `json:"correlation_id"`
+	IdempotencyKey   string                 `json:"idempotency_key,omitempty"`
 	DeliveryAttempts int                    `json:"delivery_attempts"`
 }
 
@@ -73,6 +74,7 @@ const actorContextKey contextKey = "eventbus_actor"
 const entityIDContextKey contextKey = "eventbus_entity_id"
 const entityTypeContextKey contextKey = "eventbus_entity_type"
 const eventVersionContextKey contextKey = "eventbus_version"
+const idempotencyKeyContextKey contextKey = "eventbus_idempotency_key"
 
 // WithActor attaches an actor identity to the context for event bus operations.
 // The actor is propagated to published events for tracing and audit compliance.
@@ -133,6 +135,29 @@ func EventVersionFromContext(ctx context.Context) string {
 	}
 	return DefaultEventVersion
 }
+
+// WithIdempotencyKey attaches an idempotency key to the context for event bus operations.
+// The key is propagated to published events and used for deduplication at the bus level:
+// duplicate events with the same key are skipped during worker dispatch.
+//
+// Choose keys that are unique per business-logical operation:
+//
+//	purchase order received → fmt.Sprintf("purchase_order_received:%s", orderNo)
+//	aftersale processed     → fmt.Sprintf("aftersale_processed:%d", aftersaleID)
+func WithIdempotencyKey(ctx context.Context, key string) context.Context {
+	return context.WithValue(ctx, idempotencyKeyContextKey, key)
+}
+
+// IdempotencyKeyFromContext extracts the idempotency key from the context.
+// Returns empty string if not set.
+func IdempotencyKeyFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(idempotencyKeyContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// subscription binds a handler to a topic pattern.
 
 // subscription binds a handler to a topic pattern.
 type subscription struct {
@@ -407,17 +432,18 @@ func (b *Bus) Publish(ctx context.Context, topic string, source string, payload 
 // 0=normal, 1=high, 2=critical.
 func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, payload map[string]interface{}, priority int) (string, error) {
 	evt := Event{
-		ID:            uuid.New().String(),
-		Topic:         topic,
-		Version:       EventVersionFromContext(ctx),
-		Source:        source,
-		Actor:         ActorFromContext(ctx),
-		EntityID:      EntityIDFromContext(ctx),
-		EntityType:    EntityTypeFromContext(ctx),
-		Payload:       payload,
-		Priority:      priority,
-		CreatedAt:     time.Now(),
-		CorrelationID: CorrelationIDFromContext(ctx),
+		ID:             uuid.New().String(),
+		Topic:          topic,
+		Version:        EventVersionFromContext(ctx),
+		Source:         source,
+		Actor:          ActorFromContext(ctx),
+		EntityID:       EntityIDFromContext(ctx),
+		EntityType:     EntityTypeFromContext(ctx),
+		Payload:        payload,
+		Priority:       priority,
+		CreatedAt:      time.Now(),
+		CorrelationID:  CorrelationIDFromContext(ctx),
+		IdempotencyKey: IdempotencyKeyFromContext(ctx),
 	}
 
 	// Validate against schema registry if configured.
@@ -504,6 +530,91 @@ func (b *Bus) DLQ() *DLQManager {
 	return b.dlq
 }
 
+// claimIdempotency atomically claims the idempotency key before handler dispatch.
+//
+// State machine:
+//
+//	processing → handler is executing (INSERT claimed before dispatch)
+//	succeeded  → handler completed successfully (after handler return)
+//	failed     → handler exhausted retries, event in DLQ (set before DLQ move)
+//
+// Returns true if the event should proceed to the handler.
+//
+//   - First claim (no row) → INSERT succeeds → returns true.
+//   - Retry (same event_id, existing 'processing') → returns true.
+//   - Concurrent duplicate (different event_id, existing 'processing') → returns false.
+//   - Already succeeded → returns false.
+//   - DLQ replay (existing 'failed') → UPDATE reclaims → returns true.
+func (b *Bus) claimIdempotency(ctx context.Context, evt Event) (bool, error) {
+	// Phase 1: Atomic INSERT — the true claim.
+	// If this succeeds, we own the key. No other worker can also own it.
+	res := b.db.WithContext(ctx).Exec(
+		`INSERT INTO event_processed (idempotency_key, topic, event_id, state, created_at)
+		 VALUES (?, ?, ?, 'processing', CURRENT_TIMESTAMP)
+		 ON CONFLICT (idempotency_key) DO NOTHING`,
+		evt.IdempotencyKey, evt.Topic, evt.ID,
+	)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected > 0 {
+		return true, nil // First claim: we own this key
+	}
+
+	// Phase 2: Key already exists. Read current state to decide action.
+	var existing struct {
+		EventID string
+		State   string
+	}
+	if err := b.db.WithContext(ctx).
+		Raw(`SELECT event_id, state FROM event_processed WHERE idempotency_key = ?`, evt.IdempotencyKey).
+		Scan(&existing).Error; err != nil {
+		return false, err
+	}
+
+	switch existing.State {
+	case "succeeded":
+		return false, nil // Already completed
+	case "processing":
+		return existing.EventID == evt.ID, nil // Same event = retry, different = duplicate
+	case "failed":
+		// DLQ replay: reclaim from failed state. The UPDATE is safe because
+		// the INSERT above serialized concurrent claimers — only this worker
+		// reached the state-read path for this key.
+		res = b.db.WithContext(ctx).Exec(
+			`UPDATE event_processed SET state='processing', event_id=?, processed_at=NULL
+			 WHERE idempotency_key=? AND state='failed'`,
+			evt.ID, evt.IdempotencyKey,
+		)
+		if res.Error != nil {
+			return false, res.Error
+		}
+		return res.RowsAffected > 0, nil
+	default:
+		return true, nil // Unknown state → fail-open, let through
+	}
+}
+
+// succeedIdempotency marks an idempotency key as successfully processed.
+// Called after all handlers complete without error.
+func (b *Bus) succeedIdempotency(ctx context.Context, evt Event) {
+	b.db.WithContext(ctx).Exec(
+		`UPDATE event_processed SET state='succeeded', event_id=?, processed_at=CURRENT_TIMESTAMP
+		 WHERE idempotency_key=? AND state='processing'`,
+		evt.ID, evt.IdempotencyKey,
+	)
+}
+
+// failIdempotency marks an idempotency key as failed (event moved to DLQ).
+// This allows DLQ replay with the same key to reclaim the key and re-attempt.
+func (b *Bus) failIdempotency(ctx context.Context, evt Event) {
+	b.db.WithContext(ctx).Exec(
+		`UPDATE event_processed SET state='failed', event_id=?
+		 WHERE idempotency_key=? AND state='processing'`,
+		evt.ID, evt.IdempotencyKey,
+	)
+}
+
 // workerLoop pops events from the given pool's backend and dispatches them to
 // matching subscribers. Failed events are retried (up to maxRetries) and then
 // moved to the dead-letter queue if configured.
@@ -535,7 +646,27 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 		}
 
 		// Propagate correlation ID to handler context.
-	handlerCtx := WithCorrelationID(ctx, evt.CorrelationID)
+		handlerCtx := WithCorrelationID(ctx, evt.CorrelationID)
+
+		// Idempotency check: claim the key atomically before dispatch.
+		// The INSERT is the atomic claim — only one worker wins per key.
+		if evt.IdempotencyKey != "" && b.db != nil {
+			proceed, claimErr := b.claimIdempotency(ctx, evt)
+			if claimErr != nil {
+				b.logger.Warn("idempotency claim failed, letting event through",
+					zap.String("event_id", evt.ID),
+					zap.String("idempotency_key", evt.IdempotencyKey),
+					zap.Error(claimErr))
+				// fail open: let the event through on DB error
+			} else if !proceed {
+				b.logger.Info("skipping duplicate event",
+					zap.String("event_id", evt.ID),
+					zap.String("topic", evt.Topic),
+					zap.String("idempotency_key", evt.IdempotencyKey))
+				eventsSkipped.WithLabelValues(evt.Topic, "duplicate").Inc()
+				continue
+			}
+		}
 
 		// Dispatch to all matching subscribers with panic recovery per handler.
 		var panicked bool
@@ -584,6 +715,11 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 					evt.ID,
 				)
 				eventsPublished.WithLabelValues(evt.Topic, "delivered").Inc()
+
+				// Mark idempotency succeeded only after handler success.
+				if evt.IdempotencyKey != "" {
+					b.succeedIdempotency(ctx, evt)
+				}
 			}
 		}
 
@@ -597,6 +733,10 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 		if panicked || lastErr != "" {
 			evt.DeliveryAttempts++
 			if evt.DeliveryAttempts >= b.maxRetries && b.dlq != nil {
+				// Mark idempotency as failed so DLQ replay can reclaim the key.
+				if evt.IdempotencyKey != "" {
+					b.failIdempotency(ctx, evt)
+				}
 				b.dlq.MoveToDLQ(evt, lastErr, evt.DeliveryAttempts)
 				b.logger.Warn("event moved to DLQ after max retries",
 					zap.String("event_id", evt.ID),

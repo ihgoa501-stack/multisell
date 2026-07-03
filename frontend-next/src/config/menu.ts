@@ -51,6 +51,7 @@ export const menuGroups: MenuGroup[] = [
     items: [
       { key: '/orders', icon: 'FileTextOutlined', label: '订单', permission: 'order.read' },
       { key: '/shipping', label: '物流' },
+      { key: '/fulfillment', icon: 'ControlOutlined', label: '履约中枢', status: 'sandbox' },
       { key: '/supplychain', icon: 'ApartmentOutlined', label: '供应链追踪' },
       { key: '/aftersales', label: '售后' },
       { key: '/platform-fees', label: '平台费用' },

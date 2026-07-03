@@ -378,21 +378,7 @@
 | GET | `/api/v1/agentos` | AgentOS 概览 |
 | GET | `/api/v1/agentos/status` | AgentOS 状态 |
 | GET | `/api/v1/agentos/work-items` | 工作项列表 |
-| GET | `/api/v1/agentos/work-items/:id` | 工作项详情（含审批、审计、实体、上下游链） |
-| GET | `/api/v1/agentos/agent-timeline` | Agent 时间线（最近操作 + 状态汇总） |
 | GET | `/api/v1/agentos/autonomy` | 自主化状态 |
-| GET | `/api/v1/agentos/failures` | 最近失败的 Agent 运行（trace_id、Agent、决策点、错误信息） |
-
-### Owner 驾驶舱
-
-| 方法 | 路径 | 用途 |
-|------|------|------|
-| GET | `/api/v1/owner/risk-summary` | 风险汇总（待审批、低利润、资料不完整、同步异常） |
-| GET | `/api/v1/owner/suggestions` | Agent 建议列表（含审批/任务状态） |
-| POST | `/api/v1/owner/suggestions/:id/feedback` | Owner 反馈（采纳/拒绝） |
-| GET | `/api/v1/owner/platform-sync` | 平台同步状态 |
-| GET | `/api/v1/owner/agent-activity` | Agent 活动摘要（运行中/今日完成/失败） |
-| GET | `/api/v1/owner/pipeline-chain` | Agent 流程管道链健康度 |
 
 ### 信任分 & 熵 & 演化 & 策略
 
@@ -443,15 +429,7 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=deepseek-v4-flash
 
 ## 五、AI Agent 系统
 
-> Canonical Agent Responsibility Cards → [`docs/agent-responsibility-cards.md`](agent-responsibility-cards.md)
->
-> Each card defines business job, input data, tools/APIs, outputs, allowed actions,
-> approval requirements, forbidden actions, audit fields, trigger/schedule, and
-> success metrics. Cards cover A1–A11, G0–G3, trustscore, entropy, and M1.
-
 ### Agent 花名册
-
-> 每名 Agent 的业务角色定义（输入、工具、边界、审批要求）参见 [Agent Responsibility Cards](agent-responsibility-cards.md)。
 
 | ID | 名称 | Squad | 决策点 | 自主化等级 |
 |----|------|-------|--------|-----------|
@@ -500,42 +478,11 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 
 ### Action 风险等级
 
-Agent 系统将每个 Action 分为三个风险等级，决定是否需要审批。
-
-| 风险等级 | 定义 | 业务示例 | 需审批 |
-|---------|------|---------|--------|
-| **low** | 只读或纯推荐，无数据变更 | stock_alert, keyword_research, dashboard_summary, product_scout, fetch_page | 否 |
-| **medium** | 有限变更或建议，对业务数据无直接影响 | listing_draft, compliance_flag, analyze_price_trend, replenishment_plan | 否（suggestion） |
-| **high** | 直接修改关键业务数据或外部系统 | price_update, inventory_change, order_cancel, platform_publish, credential_change, sync_inventory | **是** |
-
-### Tool 类型
-
-ToolBridge 将外部工具按副作用分类：
-
-| 类型 | 副作用 | 示例 | 生产环境需审批 |
-|------|--------|------|--------------|
-| **read** | 无 | search_product, fetch_page, inspect_listing | 否 |
-| **suggestion** | 无 | analyze_price_trend, summarize_reviews, recommend_keyword | 否 |
-| **mutation** | 创建/更新/删除/发布/同步外部数据 | publish_listing, sync_inventory, update_price, create_order | **是** |
-
-### Action 执行模式
-
-每个 Action 或 Tool 调用可以在三种模式下执行：
-
-| 模式 | 行为 |
-|------|------|
-| **dry_run** | 验证输入、检查 handler 是否存在，但不执行任何变更 |
-| **sandbox** | 在测试沙箱环境执行，不产生外部影响 |
-| **production** | 完整执行，high-risk actions 需要已审批的 approval_id |
-
-代码参考:
-- `internal/platform/command/action.go` — `AgentAction` 结构体、`RiskLevel`、`ActionMode`
-- `internal/platform/command/command.go` — `DispatchSafe()` 实现了模式检查和审批校验
-- `internal/platform/toolbridge/tool.go` — `ToolCall` 结构体、`ToolCategory`、`Validate()`
-
-### 试运行指南
-
-小范围试运行六步流程、监控要点、常见问题、安全边界说明参见 [`docs/trial-run-guide.md`](trial-run-guide.md)。
+| 等级 | 示例 | 需审批 |
+|------|------|--------|
+| **low** | listing_optimize, keyword_research, product_scout | 否 |
+| **medium** | stock_alert, profit_check, replenishment_plan | 是 |
+| **high** | profit_watch, discount_check, compliance_check | 是 |
 
 ---
 

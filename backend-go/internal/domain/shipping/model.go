@@ -75,6 +75,13 @@ type ShippingQuoteRule struct {
 	RoundingIncrement *float64       `gorm:"column:rounding_increment" json:"rounding_increment,omitempty"`
 	Remark           string          `gorm:"column:remark" json:"remark"`
 	Status           int16           `gorm:"column:status;default:1" json:"status"`
+
+	// Version tracking (Phase 1: Fulfillment Intelligence OS)
+	EffectiveStartTime *time.Time `gorm:"column:effective_start_time" json:"effective_start_time,omitempty"`
+	EffectiveEndTime   *time.Time `gorm:"column:effective_end_time" json:"effective_end_time,omitempty"`
+	RuleVersion        int         `gorm:"column:rule_version;default:1" json:"rule_version"`
+	ImportBatch        string      `gorm:"column:import_batch" json:"import_batch,omitempty"`
+
 	CreatedAt       time.Time        `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time        `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
@@ -120,6 +127,12 @@ type ShippingBillItem struct {
 	MatchedSnapshotID *int64          `gorm:"column:matched_snapshot_id" json:"matched_snapshot_id,omitempty"`
 	SnapshotShippingFee *float64      `gorm:"column:snapshot_shipping_fee" json:"snapshot_shipping_fee,omitempty"`
 	VarianceAmount    *float64        `gorm:"column:variance_amount" json:"variance_amount,omitempty"`
+
+	// Phase 1: Fulfillment Intelligence OS — enhanced reconciliation
+	VariancePct       *float64        `gorm:"column:variance_pct" json:"variance_pct,omitempty"`
+	AnomalyType       string          `gorm:"column:anomaly_type" json:"anomaly_type,omitempty"`
+	ReviewStatus      string          `gorm:"column:review_status;default:pending" json:"review_status,omitempty"`
+
 	RawPayload        json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload,omitempty"`
 	Note              string          `gorm:"column:note" json:"note"`
 	ResolvedBy        string          `gorm:"column:resolved_by" json:"resolved_by"`
@@ -130,6 +143,8 @@ type ShippingBillItem struct {
 func (ShippingBillItem) TableName() string { return "shipping_bill_item" }
 
 // SalesOrderShippingSnapshot maps to "sales_order_shipping_snapshot".
+// This record is IMMUTABLE once created — never modify a snapshot after insertion.
+// Rate changes do NOT affect historical snapshots.
 type SalesOrderShippingSnapshot struct {
 	ID                  int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	OrderID             int64     `gorm:"column:order_id;not null;uniqueIndex" json:"order_id"`
@@ -156,8 +171,14 @@ type SalesOrderShippingSnapshot struct {
 	FuelSurchargeFee    float64   `gorm:"column:fuel_surcharge_fee;default:0" json:"fuel_surcharge_fee"`
 	TotalShippingFee    float64   `gorm:"column:total_shipping_fee;not null" json:"total_shipping_fee"`
 	CalculationDetail   string    `gorm:"column:calculation_detail" json:"calculation_detail"`
+
+	// Rule version reference (Phase 1: Fulfillment Intelligence OS)
+	RuleVersionID  *int64 `gorm:"column:rule_version_id" json:"rule_version_id,omitempty"`
+	RuleVersion    int    `gorm:"column:rule_version;default:1" json:"rule_version"`
+	QuotedBy       string `gorm:"column:quoted_by" json:"quoted_by,omitempty"`
+	SourceTrigger  string `gorm:"column:source_trigger;default:manual" json:"source_trigger,omitempty"`
+
 	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt           time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (SalesOrderShippingSnapshot) TableName() string { return "sales_order_shipping_snapshot" }
@@ -244,6 +265,43 @@ type CreateBillBatchInput struct {
 	CreatedBy      string `json:"created_by"`
 }
 
+
+// Phase 3: Fulfillment Tracking
+type FulfillmentTracking struct {
+	ID                int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OrderID           int64           `gorm:"column:order_id;not null;index" json:"order_id"`
+	TrackingNumber    string          `gorm:"column:tracking_number;not null" json:"tracking_number"`
+	CarrierCode       string          `gorm:"column:carrier_code" json:"carrier_code,omitempty"`
+	CarrierName       string          `gorm:"column:carrier_name" json:"carrier_name,omitempty"`
+	Status            string          `gorm:"column:status;default:pending" json:"status"`
+	TrackingEvents    json.RawMessage `gorm:"column:tracking_events;type:jsonb;default:'[]'" json:"tracking_events,omitempty"`
+	EstimatedDelivery *time.Time      `gorm:"column:estimated_delivery" json:"estimated_delivery,omitempty"`
+	DeliveredAt       *time.Time      `gorm:"column:delivered_at" json:"delivered_at,omitempty"`
+	IsLost            bool            `gorm:"column:is_lost;default:false" json:"is_lost"`
+	IsReturned        bool            `gorm:"column:is_returned;default:false" json:"is_returned"`
+	IsDamaged         bool            `gorm:"column:is_damaged;default:false" json:"is_damaged"`
+	Note              string          `gorm:"column:note" json:"note"`
+	CreatedAt         time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt         time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+func (FulfillmentTracking) TableName() string { return "fulfillment_tracking" }
+
+type CreateTrackingInput struct {
+	OrderID        int64  `json:"order_id" binding:"required"`
+	TrackingNumber string `json:"tracking_number" binding:"required"`
+	CarrierCode    string `json:"carrier_code"`
+	CarrierName    string `json:"carrier_name"`
+	Status         string `json:"status"`
+	Note           string `json:"note"`
+}
+
+type TrackingEvent struct {
+	Timestamp string `json:"timestamp"`
+	Status    string `json:"status"`
+	Location  string `json:"location,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
 // QuoteRequest is the payload for POST /shipping/quote.
 type QuoteRequest struct {
 	Mode                string  `json:"mode"`             // "sku" | "manual"
@@ -277,4 +335,76 @@ type QuoteResult struct {
 // QuoteResponse aggregates results across channels.
 type QuoteResponse struct {
 	Results []QuoteResult `json:"results"`
+}
+
+// ── Phase 1: Fulfillment Intelligence OS — DTOs ────────────────────────
+
+// CreateRuleInputV2 extends CreateQuoteRuleInput with versioning fields.
+type CreateRuleInputV2 struct {
+	CreateQuoteRuleInput
+	EffectiveStartTime *time.Time `json:"effective_start_time"`
+	EffectiveEndTime   *time.Time `json:"effective_end_time"`
+	RuleVersion        *int       `json:"rule_version"`
+	ImportBatch        string     `json:"import_batch"`
+}
+
+// CreateSnapshotInput is the payload for creating a shipping snapshot.
+type CreateSnapshotInput struct {
+	OrderID            int64   `json:"order_id" binding:"required"`
+	SkuID              int64   `json:"sku_id" binding:"required"`
+	Quantity           int     `json:"quantity"`
+	DestinationCountry string  `json:"destination_country" binding:"required"`
+	PostalCode         string  `json:"postal_code"`
+	CargoType          string  `json:"cargo_type"`
+	PackageSource      string  `json:"package_source"`
+	PackageLengthCm    float64 `json:"package_length_cm" binding:"required"`
+	PackageWidthCm     float64 `json:"package_width_cm" binding:"required"`
+	PackageHeightCm    float64 `json:"package_height_cm" binding:"required"`
+	PackageWeightKg    float64 `json:"package_weight_kg" binding:"required"`
+	ProviderID          int64  `json:"provider_id" binding:"required"`
+	ProviderName        string `json:"provider_name"`
+	ChannelID           int64  `json:"channel_id" binding:"required"`
+	ChannelName         string `json:"channel_name"`
+	Currency            string `json:"currency"`
+	ActualWeightKg      float64 `json:"actual_weight_kg" binding:"required"`
+	VolumetricWeightKg float64 `json:"volumetric_weight_kg"`
+	ChargeableWeightKg float64 `json:"chargeable_weight_kg" binding:"required"`
+	BaseShippingFee     float64 `json:"base_shipping_fee" binding:"required"`
+	SurchargeFee        float64 `json:"surcharge_fee"`
+	FuelSurchargeFee    float64 `json:"fuel_surcharge_fee"`
+	TotalShippingFee    float64 `json:"total_shipping_fee" binding:"required"`
+	CalculationDetail   string  `json:"calculation_detail"`
+	RuleVersionID       *int64  `json:"rule_version_id"`
+	RuleVersion         int     `json:"rule_version"`
+	QuotedBy            string  `json:"quoted_by"`
+	SourceTrigger       string  `json:"source_trigger"`
+}
+
+// ReconcileBatchInput is the payload for triggering batch reconciliation.
+type ReconcileBatchInput struct {
+	BatchID int64 `json:"batch_id" binding:"required"`
+}
+
+// BillReconciliationResult is the output of reconciliation service.
+type BillReconciliationResult struct {
+	TotalItems       int `json:"total_items"`
+	MatchedItems     int `json:"matched_items"`
+	UnmatchedItems   int `json:"unmatched_items"`
+	AnomalousItems   int `json:"anomalous_items"`
+	TotalVariance    float64 `json:"total_variance"`
+	Currency         string  `json:"currency"`
+}
+
+// A10Advice is the structured output for A10 fulfillment recommendations.
+type A10Advice struct {
+	AdviceType       string `json:"advice_type"`        // "bill_discrepancy" | "channel_performance" | "route_optimization"
+	Reason           string `json:"reason"`             // why this advice was generated
+	DataBasis        string `json:"data_basis"`         // what data it's based on
+	RiskLevel        string `json:"risk_level"`         // "low" | "medium" | "high"
+	SuggestedAction  string `json:"suggested_action"`   // what to do
+	NeedsApproval    bool   `json:"needs_approval"`     // whether human approval is required
+	OrderID          *int64 `json:"order_id,omitempty"`
+	ChannelID        *int64 `json:"channel_id,omitempty"`
+	ProviderID       *int64 `json:"provider_id,omitempty"`
+	Confidence       float64 `json:"confidence"`        // 0.0–1.0
 }

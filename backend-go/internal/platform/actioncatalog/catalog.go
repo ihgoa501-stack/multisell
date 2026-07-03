@@ -265,6 +265,38 @@ func DefaultEntries() []Entry {
 			AutonomousBlocked: false,
 		},
 
+		// ── System Actions (L3) — event-bus triggered business mutations ──
+		// These are registered system actions that execute as explicit,
+		// documented, audited side effects of EventBus event handlers.
+		// They bypass the agent-initiated action approval path because they
+		// are deterministic system-internal state transitions, but they are
+		// subject to the mutation guard audit layer and the EventBus
+		// idempotency claim/state model.
+		// Any addition here requires an update to the EventBus mutation
+		// audit or the mutation guard in internal/platform/eventbus/guard.go.
+		{
+			ActionType:       "system.inventory.receive",
+			Name:             "系统库存接收",
+			Description:      "EventBus supplychain.order.received 触发的库存自动增加。采购入库确认后，系统自动增加对应 SKU 的库存数量。",
+			RiskLevel:        RiskHigh,
+			Level:            Level3,
+			RequireApproval:  false, // system-internal, deterministic transition
+			TargetTypes:      []string{"inventory", "sku"},
+			HandlerRequired:  false,
+			AutonomousBlocked: false,
+		},
+		{
+			ActionType:       "system.inventory.aftersale_restock",
+			Name:             "系统售后入库",
+			Description:      "EventBus supplychain.aftersale.completed 触发的售后入库库存增加。退货完成后，系统自动增加对应 SKU 的库存数量。",
+			RiskLevel:        RiskHigh,
+			Level:            Level3,
+			RequireApproval:  false,
+			TargetTypes:      []string{"inventory", "sku"},
+			HandlerRequired:  false,
+			AutonomousBlocked: false,
+		},
+
 		// ── Autonomous Execution (L4) — blocked by default ─────────────
 		{
 			ActionType:        "auto_publish",

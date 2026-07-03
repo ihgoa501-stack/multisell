@@ -165,12 +165,13 @@ type PolicyChecker interface {
 }
 
 // ErrApprovalRequired is returned when a high-risk action is attempted without
-// a valid approval.
-var ErrApprovalRequired = fmt.Errorf("action requires approval before execution")
+// a valid approval. Re-exported from actioncatalog so callers can use
+// errors.Is(err, command.ErrApprovalRequired) from either gate.
+var ErrApprovalRequired = actioncatalog.ErrApprovalRequired
 
 // ErrActionBlocked is returned when an action is rejected by the catalog
 // gate (e.g. L4 blocked actions attempted in any mode).
-var ErrActionBlocked = fmt.Errorf("action blocked by catalog")
+var ErrActionBlocked = actioncatalog.ErrAutonomousBlocked
 
 // RegisteredTypes returns a list of all registered action types.
 func (d *Dispatcher) RegisteredTypes() []string {

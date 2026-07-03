@@ -1,15 +1,52 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Alert, Badge, Button, Card, Input, Modal, message, Space, Table, Tag, Tabs, Typography, Select
+  Alert,
+  Badge,
+  Button,
+  Card,
+  message,
+  Progress,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
 } from 'antd';
-import { DatabaseOutlined, PlayCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import {
+  DatabaseOutlined,
+  PlayCircleOutlined,
+  ThunderboltOutlined,
+  CloseOutlined,
+} from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import dayjs from 'dayjs';
+import PageContainer from '@/components/ui/PageContainer';
 
-// ── Types ──────────────────────────────────────────────────────────
+const { Text } = Typography;
+
+const completenessColorMap: Record<string, string> = {
+  incomplete: 'default',
+  needs_review: 'warning',
+  research_ready: 'processing',
+  listing_ready: 'success',
+};
+
+const completenessLabelMap: Record<string, string> = {
+  incomplete: '不完整',
+  needs_review: '待补充',
+  research_ready: '可调研',
+  listing_ready: '可上架',
+};
+
+const completenessHintMap: Record<string, string> = {
+  incomplete: '缺少核心信息（标题、采购价、主图），补充后才能继续',
+  needs_review: '已有关键信息，补充供应商和包装信息后可进入调研',
+  research_ready: '信息基本完整，可以执行利润分析和选品调研',
+  listing_ready: '所有信息完整，可以准备上架草稿',
+};
 
 interface CandidateProduct {
   id: number;
@@ -21,33 +58,35 @@ interface CandidateProduct {
   package_weight_kg: number;
   target_sale_price: number;
   target_currency: string;
-  completeness_status: string;
-  source_platform: string;
-  source_url: string;
   target_platform_id: number | null;
   destination_country: string;
   hs_code: string;
   origin_country: string;
   status: string;
+  completeness_status: string;
   is_seed_data: boolean;
   created_by: string;
   created_at: string;
 }
 
-interface CollectLead {
-  id: number;
-  title: string;
-  price_range: string;
-  detail_url: string;
-  image_url: string;
-  shop_hint: string;
-  source_page_url: string;
-  status: string;
-  collected_at: string;
-  created_at: string;
+interface CompletenessDimension {
+  dimension: string;
+  label: string;
+  score: number;
+  weight: number;
+  complete: boolean;
+  reason: string;
 }
 
-type EvaluateResult = {
+interface CompletenessCheckResult {
+  product_id: number;
+  score: number;
+  status: string;
+  dimensions: CompletenessDimension[];
+  missing_items: string[];
+}
+
+interface EvaluateResult {
   product_id: number;
   title: string;
   completeness_score: number;
@@ -61,130 +100,44 @@ type EvaluateResult = {
   reason: string;
   risk_flags: string[];
   listing_task_id?: number | null;
-};
-
-// ── Maps ────────────────────────────────────────────────────────────
-
-const statusColorMap: Record<string, string> = {
-  draft: 'default', in_review: 'processing', approved: 'success', rejected: 'error',
-};
-const statusLabelMap: Record<string, string> = {
-  draft: '草稿', in_review: '审核中', approved: '已通过', rejected: '已拒绝',
-};
-const completenessColorMap: Record<string, string> = {
-  collected: 'default', incomplete: 'warning', ready_for_profit_check: 'success', rejected: 'error',
-};
-const completenessLabelMap: Record<string, string> = {
-  collected: '已采集', incomplete: '资料不完整', ready_for_profit_check: '可测算利润', rejected: '已拒绝',
-};
-const platformLabelMap: Record<string, string> = {
-  '1': 'Ozon', '2': 'Shopee', '3': 'Lazada',
-};
-const leadStatusLabelMap: Record<string, string> = {
-  pending_detail_collect: '待采集详情', collecting: '采集中', collected: '已采集', skipped: '已跳过',
-};
-
-// ── Components ─────────────────────────────────────────────────────
-
-/** CollectLead list tab */
-function CollectLeadTable() {
-  const [items, setItems] = useState<CollectLead[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
-  const [detail, setDetail] = useState<CollectLead | null>(null);
-
-  const doFetch = async (p: number, ps: number, st?: string) => {
-    setLoading(true);
-    try {
-      const params: Record<string, string> = { page: String(p), size: String(ps) };
-      if (st) params.status = st;
-      const res = await apiClient.get('/v1/candidates/collect-leads', params);
-      const body = res as unknown as { data: CollectLead[]; total: number };
-      setItems(body.data || []);
-      setTotal(body.total || 0);
-    } catch { message.error('加载采集线索失败'); }
-    finally { setLoading(false); }
-  };
-
-  // eslint-disable-next-line -- standard data-fetching pattern, setState on async resolve
-  useEffect(() => { doFetch(page, pageSize, statusFilter); }, [page, pageSize, statusFilter]);
-
-  const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: '标题', dataIndex: 'title', ellipsis: true, render: (v: string) => v || '-' },
-    { title: '价格', dataIndex: 'price_range', width: 110, render: (v: string) => v || '-' },
-    {
-      title: '来源',
-      width: 160, ellipsis: true,
-      render: (_: unknown, r: CollectLead) => (
-        <a href={r.source_page_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
-          {r.source_page_url ? '打开列表页' : '-'}
-        </a>
-      ),
-    },
-    {
-      title: '详情页',
-      width: 160, ellipsis: true,
-      render: (_: unknown, r: CollectLead) => (
-        <a href={r.detail_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
-          {r.detail_url ? '打开详情' : '-'}
-        </a>
-      ),
-    },
-    {
-      title: '状态', dataIndex: 'status', width: 120,
-      render: (s: string) => <Tag>{leadStatusLabelMap[s] || s}</Tag>,
-    },
-    {
-      title: '采集时间', dataIndex: 'collected_at', width: 160,
-      render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-',
-    },
-  ];
-
-  return (
-    <>
-      <Card size="small" style={{ marginBottom: 'var(--space-lg)' }} styles={{ body: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } }}>
-        <Select allowClear placeholder="线索状态" style={{ width: 150 }} value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
-          options={[
-            { value: 'pending_detail_collect', label: '待采集详情' },
-            { value: 'collecting', label: '采集中' },
-            { value: 'collected', label: '已采集' },
-            { value: 'skipped', label: '已跳过' },
-          ]} />
-      </Card>
-      <Card size="small" styles={{ body: { padding: 0 } }}>
-        <Table<CollectLead>
-          rowKey="id" columns={columns} dataSource={items} loading={loading}
-          onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
-          pagination={{
-            current: page, pageSize, total, showSizeChanger: true, showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, ps) => { setPage(p); setPageSize(ps); },
-          }}
-          scroll={{ x: 800 }}
-        />
-      </Card>
-      <Modal title={detail ? `采集线索 #${detail.id}` : ''} open={!!detail} onCancel={() => setDetail(null)} footer={null} width={560}>
-        {detail && (
-          <div style={{ lineHeight: 2 }}>
-            <div><strong>标题：</strong>{detail.title || '-'}</div>
-            <div><strong>价格：</strong>{detail.price_range || '-'}</div>
-            <div><strong>店铺：</strong>{detail.shop_hint || '-'}</div>
-            {detail.detail_url && <div><strong>详情页：</strong><a href={detail.detail_url} target="_blank" rel="noopener noreferrer">打开</a></div>}
-            {detail.source_page_url && <div><strong>列表页：</strong><a href={detail.source_page_url} target="_blank" rel="noopener noreferrer">打开</a></div>}
-            <div><strong>状态：</strong>{leadStatusLabelMap[detail.status] || detail.status}</div>
-            <div><strong>采集时间：</strong>{detail.collected_at ? dayjs(detail.collected_at).format('YYYY-MM-DD HH:mm') : '-'}</div>
-          </div>
-        )}
-      </Modal>
-    </>
-  );
 }
 
-/** CandidateProduct list tab */
-function CandidateProductTable() {
+const SUGGESTIONS: Record<string, string> = {
+  '商品标题': '添加包含核心卖点和搜索关键词的标题，至少10个字符。',
+  '商品描述': '编写包含功能、材质、尺寸信息的描述，至少20个字符。',
+  '主图': '上传高清白底主图，清晰展示商品正面。',
+  '多图': '添加多角度图片，含细节特写和使用场景。',
+  '类目': '选择准确的商品类目，有助于买家搜索。',
+  '品牌': '填写品牌信息，无品牌可填 OEM。',
+  '规格参数（颜色/尺寸/重量）': '填写完整规格参数，包括颜色、尺寸、重量。',
+  '采购成本': '填写准确的采购成本用于利润计算。',
+  '包装信息（重量/尺寸）': '填写包装重量和尺寸用于物流成本核算。',
+  'HS编码': '填写HS编码用于关税计算和海关申报。',
+  '目标售价': '设置覆盖成本和利润的目标售价。',
+  '原产地': '填写商品原产地信息。',
+};
+
+const statusColorMap: Record<string, string> = {
+  draft: 'default',
+  in_review: 'processing',
+  approved: 'success',
+  rejected: 'error',
+};
+
+const statusLabelMap: Record<string, string> = {
+  draft: '草稿',
+  in_review: '审核中',
+  approved: '已通过',
+  rejected: '已拒绝',
+};
+
+const platformLabelMap: Record<string, string> = {
+  '1': 'Ozon',
+  '2': 'Shopee',
+  '3': 'Lazada',
+};
+
+export default function CandidatesPage() {
   const router = useRouter();
   const [data, setData] = useState<CandidateProduct[]>([]);
   const [loading, setLoading] = useState(false);
@@ -194,185 +147,611 @@ function CandidateProductTable() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [detailModal, setDetailModal] = useState<CandidateProduct | null>(null);
-  const [search, setSearch] = useState('');
-  const [csFilter, setCsFilter] = useState<string | undefined>();
-  const [spFilter, setSpFilter] = useState<string | undefined>();
+  const [detailProduct, setDetailProduct] = useState<CandidateProduct | null>(null);
+  const [completenessResult, setCompletenessResult] = useState<CompletenessCheckResult | null>(null);
+  const [completenessLoading, setCompletenessLoading] = useState(false);
+  const [completenessFilter, setCompletenessFilter] = useState<string>('');
 
-  const doFetchCandidates = async (p: number, ps: number) => {
+  const fetchCandidates = useCallback(async (p: number, ps: number) => {
     setLoading(true);
     try {
       const params: Record<string, string> = { page: String(p), size: String(ps) };
-      if (csFilter) params.completeness_status = csFilter;
-      if (spFilter) params.source_platform = spFilter;
-      if (search) params.search = search;
-      const res = await apiClient.get('/v1/candidates', params);
+      if (completenessFilter) params.completeness_status = completenessFilter;
+      const res = await apiClient.get<CandidateProduct[]>('/v1/candidates', params);
       const body = res as unknown as { data: CandidateProduct[]; total: number };
       setData(body.data || []);
       setTotal(body.total || 0);
-    } catch { message.error('加载候选商品列表失败'); }
-    finally { setLoading(false); }
-  };
+    } catch {
+      message.error('加载候选商品列表失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [completenessFilter]);
 
-  // eslint-disable-next-line -- standard data-fetching pattern
-  useEffect(() => { doFetchCandidates(page, pageSize); }, [page, pageSize, csFilter, spFilter, search]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchCandidates(page, pageSize);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [fetchCandidates, page, pageSize]);
 
   const handleEvaluate = async (productId: number) => {
     setEvaluating(productId);
     setLastEvaluation(null);
     try {
       const res = await apiClient.post<EvaluateResult>(`/v1/loop/evaluate/${productId}`);
-      if (res.data) { setLastEvaluation(res.data); message.success('评估完成'); }
-      else { message.error(res.message || '评估失败'); }
-    } catch { message.error('评估请求失败'); }
-    finally { setEvaluating(null); }
+      if (res.data) {
+        setLastEvaluation(res.data);
+        message.success('评估完成');
+      } else {
+        message.error(res.message || '评估失败');
+      }
+    } catch {
+      message.error('评估请求失败');
+    } finally {
+      setEvaluating(null);
+    }
   };
 
   const handleSeed = async () => {
     setSeeding(true);
     try {
       const res = await apiClient.post('/v1/candidates/seed');
-      if (res.code === 0) { message.success('种子数据生成成功'); await doFetchCandidates(page, pageSize); }
-      else { message.error(res.message || '种子数据生成失败'); }
-    } catch { message.error('种子数据请求失败'); }
-    finally { setSeeding(false); }
+      if (res.code === 0) {
+        message.success('种子数据生成成功');
+        await fetchCandidates(page, pageSize);
+      } else {
+        message.error(res.message || '种子数据生成失败');
+      }
+    } catch {
+      message.error('种子数据请求失败');
+    } finally {
+      setSeeding(false);
+    }
   };
 
+  const handleOpenDetail = useCallback(async (product: CandidateProduct) => {
+    setDetailProduct(product);
+    setCompletenessResult(null);
+    setCompletenessLoading(true);
+    try {
+      const res = await apiClient.post<CompletenessCheckResult>(
+        `/v1/completeness/check/${product.id}`,
+      );
+      if (res.data) {
+        setCompletenessResult(res.data);
+      }
+    } catch {
+      // completeness endpoint may not be reachable; degrade to product-info-only view
+    } finally {
+      setCompletenessLoading(false);
+    }
+  }, []);
+
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: '标题', dataIndex: 'title', ellipsis: true },
     {
-      title: '来源平台', dataIndex: 'source_platform', width: 90,
-      render: (v: string) => v ? <Tag>{v}</Tag> : '-',
-    },
-    { title: '采购价', dataIndex: 'purchase_price', width: 90, render: (p: number) => p != null ? `¥${p.toFixed(2)}` : '-' },
-    { title: '目标售价', dataIndex: 'target_sale_price', width: 100, render: (p: number) => p != null ? `$${p.toFixed(2)}` : '-' },
-    {
-      title: '目标平台', dataIndex: 'target_platform_id', width: 90,
-      render: (id: number | null) => id != null ? platformLabelMap[String(id)] || `#${id}` : '-',
+      title: 'ID',
+      dataIndex: 'id',
+      width: 70,
     },
     {
-      title: '完整度', dataIndex: 'completeness_status', width: 110,
-      render: (s: string) => s ? (
-        <Badge status={(completenessColorMap[s] || 'default') as 'success' | 'error' | 'processing' | 'warning' | 'default'} text={completenessLabelMap[s] || s} />
-      ) : '-',
+      title: '标题',
+      dataIndex: 'title',
+      ellipsis: true,
     },
     {
-      title: '状态', dataIndex: 'status', width: 80,
-      render: (s: string) => (
-        <Badge status={(statusColorMap[s] || 'default') as 'success' | 'error' | 'processing' | 'warning' | 'default'} text={statusLabelMap[s] || s} />
+      title: '完整度',
+      dataIndex: 'completeness_status',
+      width: 100,
+      render: (s: string) =>
+        s ? (
+          <Tag color={completenessColorMap[s] || 'default'}>
+            {completenessLabelMap[s] || s}
+          </Tag>
+        ) : (
+          <Tag>未检查</Tag>
+        ),
+    },
+    {
+      title: '采购价',
+      dataIndex: 'purchase_price',
+      width: 100,
+      render: (price: number) => (price != null ? `¥${price.toFixed(2)}` : '-'),
+    },
+    {
+      title: '目标售价',
+      dataIndex: 'target_sale_price',
+      width: 110,
+      render: (price: number) => (price != null ? `$${price.toFixed(2)}` : '-'),
+    },
+    {
+      title: '目标平台',
+      dataIndex: 'target_platform_id',
+      width: 100,
+      render: (id: number) =>
+        id ? platformLabelMap[String(id)] || `平台 #${id}` : '-',
+    },
+    {
+      title: '目的国',
+      dataIndex: 'destination_country',
+      width: 80,
+    },
+    {
+      title: '重量',
+      dataIndex: 'package_weight_kg',
+      width: 80,
+      render: (w: number) => (w != null ? `${w.toFixed(2)}kg` : '-'),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 100,
+      render: (status: string) => (
+        <Badge
+          status={
+            (statusColorMap[status] || 'default') as
+              | 'success'
+              | 'error'
+              | 'processing'
+              | 'warning'
+              | 'default'
+          }
+          text={statusLabelMap[status] || status}
+        />
       ),
     },
     {
-      title: '操作', width: 140,
-      render: (_: unknown, r: CandidateProduct) => (
+      title: '操作',
+      width: 190,
+      render: (_: unknown, record: CandidateProduct) => (
         <Space size="small">
-          <Button type="link" size="small" onClick={(e) => { e.stopPropagation(); setDetailModal(r); }}>详情</Button>
-          <Button size="small" icon={<PlayCircleOutlined />} loading={evaluating === r.id}
-            onClick={(e) => { e.stopPropagation(); handleEvaluate(r.id); }}>评估</Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenDetail(record);
+            }}
+          >
+            详情
+          </Button>
+          <Button
+            size="small"
+            icon={<PlayCircleOutlined />}
+            loading={evaluating === record.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEvaluate(record.id);
+            }}
+          >
+            评估
+          </Button>
         </Space>
       ),
     },
   ];
 
   return (
-    <>
-      {/* Toolbar */}
-      <Card size="small" style={{ marginBottom: 'var(--space-lg)' }} styles={{ body: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } }}>
-        <Button type="primary" icon={<DatabaseOutlined />} onClick={handleSeed} loading={seeding}>生成种子数据</Button>
-        <Input.Search allowClear placeholder="搜索标题/描述" style={{ width: 220 }} value={search}
-          onChange={e => setSearch(e.target.value)}
-          onSearch={v => { setSearch(v); setPage(1); }} />
-        <Select allowClear placeholder="完整度" style={{ width: 140 }} value={csFilter} onChange={v => { setCsFilter(v); setPage(1); }}
-          options={[
-            { value: 'collected', label: '已采集' },
-            { value: 'incomplete', label: '资料不完整' },
-            { value: 'ready_for_profit_check', label: '可测算利润' },
-          ]} />
-        <Select allowClear placeholder="来源平台" style={{ width: 110 }} value={spFilter} onChange={v => { setSpFilter(v); setPage(1); }}
-          options={[
-            { value: '1688', label: '1688' },
-            { value: 'chrome_extension', label: 'Chrome扩展' },
-          ]} />
-      </Card>
-
-      {/* Evaluation result */}
+    <PageContainer
+      title="候选商品"
+      extra={
+        <Button
+          type="primary"
+          icon={<DatabaseOutlined />}
+          onClick={handleSeed}
+          loading={seeding}
+        >
+          生成种子数据
+        </Button>
+      }
+    >
+      {/* Evaluation result banner */}
       {lastEvaluation && (
-        <Card size="small" style={{ marginBottom: 16 }}>
+        <Card size="small" style={{ marginBottom: 'var(--space-lg)' }}>
           <Alert
-            type={lastEvaluation.decision === 'list' ? 'success' : lastEvaluation.decision === 'cautious' ? 'warning' : 'error'}
-            message={lastEvaluation.decision === 'list' ? '系统建议上架，但仍需 Owner 审批' : lastEvaluation.decision === 'cautious' ? '系统建议谨慎处理' : '系统不建议上架'}
-            description={lastEvaluation.reason} showIcon
-            style={{ marginBottom: lastEvaluation.listing_task_id ? 12 : 0 }}
+            type={
+              lastEvaluation.decision === 'list'
+                ? 'success'
+                : lastEvaluation.decision === 'cautious'
+                  ? 'warning'
+                  : 'error'
+            }
+            message={
+              lastEvaluation.decision === 'list'
+                ? '系统建议上架，但仍需 Owner 审批'
+                : lastEvaluation.decision === 'cautious'
+                  ? '系统建议谨慎处理'
+                  : '系统不建议上架'
+            }
+            description={lastEvaluation.reason}
+            showIcon
           />
           {lastEvaluation.listing_task_id && (
             <Space style={{ marginTop: 'var(--space-md)' }}>
               <Tag color="orange">待审批</Tag>
-              <Typography.Text>已生成刊登任务 #{lastEvaluation.listing_task_id}，审批通过前不会执行发布。</Typography.Text>
-              <Button type="primary" onClick={() => router.push('/approval')}>去审批</Button>
-              <Button onClick={() => router.push(`/listing-tasks/${lastEvaluation.listing_task_id}`)}>查看任务</Button>
+              <Text>
+                已生成刊登任务 #{lastEvaluation.listing_task_id}
+                ，审批通过前不会执行发布。
+              </Text>
+              <Button
+                type="primary"
+                size="small"
+                onClick={() => router.push('/approval')}
+              >
+                去审批
+              </Button>
+              <Button
+                size="small"
+                onClick={() =>
+                  router.push(
+                    `/listing-tasks/${lastEvaluation.listing_task_id}`,
+                  )
+                }
+              >
+                查看任务
+              </Button>
             </Space>
           )}
         </Card>
       )}
 
       {/* Table */}
+      <Card
+        size="small"
+        styles={{ body: { padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 12 } }}
+        style={{ marginBottom: 'var(--space-sm)' }}
+      >
+        <div style={{ flex: 1 }} />
+        <Select
+          allowClear
+          placeholder="按完整度筛选"
+          style={{ width: 160 }}
+          value={completenessFilter || undefined}
+          onChange={(val) => {
+            setCompletenessFilter(val || '');
+            setPage(1);
+          }}
+          options={[
+            { value: 'incomplete', label: '不完整' },
+            { value: 'needs_review', label: '待补充' },
+            { value: 'research_ready', label: '可调研' },
+            { value: 'listing_ready', label: '可上架' },
+          ]}
+        />
+      </Card>
       <Card size="small" styles={{ body: { padding: 0 } }}>
-        <Table<CandidateProduct> rowKey="id" columns={columns} dataSource={data} loading={loading}
-          onRow={(r) => ({ onClick: () => setDetailModal(r), style: { cursor: 'pointer' } })}
-          pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, ps) => { setPage(p); setPageSize(ps); } }}
-          scroll={{ x: 900 }}
+        <Table<CandidateProduct>
+          rowKey="id"
+          columns={columns}
+          dataSource={data}
+          loading={loading}
+          onRow={(record) => ({
+            onClick: () => handleOpenDetail(record),
+            style: { cursor: 'pointer' },
+          })}
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: (p, ps) => {
+              setPage(p);
+              setPageSize(ps);
+            },
+          }}
+          scroll={{ x: 850 }}
         />
       </Card>
 
-      {/* Detail Modal */}
-      <Modal title={detailModal ? `候选商品 #${detailModal.id}` : ''} open={!!detailModal}
-        onCancel={() => setDetailModal(null)} footer={null} width={640}>
-        {detailModal && (
-          <div style={{ lineHeight: 2 }}>
-            <Typography.Title level={5} style={{ marginTop: 0 }}>{detailModal.title}</Typography.Title>
-            <div>
-              <strong>来源平台：</strong>{detailModal.source_platform || '-'}
-              {detailModal.source_url && <> · <a href={detailModal.source_url} target="_blank" rel="noopener noreferrer">打开原始来源</a></>}
+      {/* Detail card */}
+      {detailProduct && (
+        <Card
+          size="small"
+          style={{ marginTop: 'var(--space-lg)' }}
+          title={
+            <Space>
+              <Text strong>候选商品 #{detailProduct.id} 详情</Text>
+              {completenessLoading && (
+                <Text type="secondary" style={{ fontSize: '0.85rem' }}>
+                  加载完整度数据...
+                </Text>
+              )}
+            </Space>
+          }
+          extra={
+            <Space size="small">
+              <Button
+                type="primary"
+                size="small"
+                icon={<ThunderboltOutlined />}
+                loading={evaluating === detailProduct.id}
+                onClick={() => handleEvaluate(detailProduct.id)}
+              >
+                执行完整度+利润评估
+              </Button>
+              <Button
+                size="small"
+                icon={<CloseOutlined />}
+                onClick={() => setDetailProduct(null)}
+              />
+            </Space>
+          }
+        >
+          {/* Product info */}
+          <div
+            style={{
+              marginBottom: 'var(--space-md)',
+              color: 'var(--t2)',
+              lineHeight: 1.8,
+            }}
+          >
+            <Text
+              strong
+              style={{
+                fontSize: 'var(--text-body-b)',
+                color: 'var(--t1)',
+              }}
+            >
+              {detailProduct.title}
+            </Text>
+            <div style={{ marginTop: 'var(--space-sm)' }}>
+              采购价：¥{detailProduct.purchase_price?.toFixed(2)}
+              <span style={{ marginLeft: 20 }}>
+                目标售价：${detailProduct.target_sale_price?.toFixed(2)}
+              </span>
+              <span style={{ marginLeft: 20 }}>
+                目标平台：
+                {detailProduct.target_platform_id
+                  ? platformLabelMap[
+                      String(detailProduct.target_platform_id)
+                    ] || `平台 #${detailProduct.target_platform_id}`
+                  : '-'}
+              </span>
             </div>
-            <div><strong>完整度：</strong>
-              <Badge status={(completenessColorMap[detailModal.completeness_status] || 'default') as 'success' | 'error' | 'processing' | 'warning' | 'default'}
-                text={completenessLabelMap[detailModal.completeness_status] || detailModal.completeness_status} />
+            <div style={{ marginTop: 'var(--space-xs)' }}>
+              包装：{detailProduct.package_weight_kg?.toFixed(2)}kg
+              <span style={{ marginLeft: 20 }}>
+                HS编码：{detailProduct.hs_code || '-'}
+              </span>
+              <span style={{ marginLeft: 20 }}>
+                状态：
+                <Tag
+                  color={
+                    statusColorMap[detailProduct.status] || 'default'
+                  }
+                >
+                  {statusLabelMap[detailProduct.status] ||
+                    detailProduct.status}
+                </Tag>
+                {detailProduct.is_seed_data && (
+                  <Tag color="orange" style={{ marginLeft: 4 }}>
+                    种子数据
+                  </Tag>
+                )}
+              </span>
             </div>
-            <div><strong>采购价：</strong>¥{detailModal.purchase_price?.toFixed(2) || '-'}</div>
-            <div><strong>包装：</strong>{detailModal.package_weight_kg ? `${detailModal.package_weight_kg.toFixed(2)}kg` : '-'}</div>
-            {detailModal.source_url && <div><strong>来源：</strong><a href={detailModal.source_url} target="_blank" rel="noopener noreferrer">{detailModal.source_url}</a></div>}
-            <div><strong>状态：</strong><Tag color={statusColorMap[detailModal.status] || 'default'}>{statusLabelMap[detailModal.status] || detailModal.status}</Tag>
-              {detailModal.is_seed_data && <Tag color="orange" style={{ marginLeft: 8 }}>种子数据</Tag>}
+            <div style={{ marginTop: 'var(--space-xs)' }}>
+              来源：{detailProduct.created_by || '-'}
+              <span style={{ marginLeft: 20 }}>
+                创建时间：
+                {detailProduct.created_at
+                  ? dayjs(detailProduct.created_at).format(
+                      'YYYY-MM-DD HH:mm:ss',
+                    )
+                  : '-'}
+              </span>
             </div>
-            <div><strong>创建时间：</strong>{detailModal.created_at ? dayjs(detailModal.created_at).format('YYYY-MM-DD HH:mm:ss') : '-'}</div>
-            <Button type="primary" icon={<ThunderboltOutlined />} style={{ marginTop: 12 }}
-              onClick={() => { handleEvaluate(detailModal.id); setDetailModal(null); }}>
-              执行完整度+利润评估
-            </Button>
           </div>
-        )}
-      </Modal>
-    </>
-  );
-}
 
-// ── Page ────────────────────────────────────────────────────────────
+          {/* Completeness breakdown */}
+          {completenessResult && (
+            <>
+              {/* Score header */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 8,
+                  marginBottom: 'var(--space-md)',
+                }}
+              >
+                <Text strong>完整度评分：</Text>
+                <Text
+                  style={{
+                    fontSize: 'var(--text-h2)',
+                    fontWeight: 700,
+                    color:
+                      completenessResult.score >= 80
+                        ? 'var(--g4)'
+                        : completenessResult.score >= 50
+                          ? 'var(--y4)'
+                          : 'var(--r4)',
+                  }}
+                >
+                  {completenessResult.score.toFixed(0)}
+                </Text>
+                <Text type="secondary">/ 100</Text>
+                <Tag
+                  color={
+                    completenessResult.status === 'complete'
+                      ? 'green'
+                      : 'orange'
+                  }
+                >
+                  {completenessResult.status === 'complete'
+                    ? '完整'
+                    : '不完整'}
+                </Tag>
+              </div>
 
-export default function CandidatesPage() {
-  return (
-    <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
-      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', margin: '0 0 16px 0' }}>
-        候选商品
-      </h1>
-      <Tabs
-        defaultActiveKey="candidates"
-        items={[
-          { key: 'leads', label: '采集线索', children: <CollectLeadTable /> },
-          { key: 'candidates', label: '候选商品', children: <CandidateProductTable /> },
-        ]}
-      />
-    </div>
+              {/* Missing items with suggestions */}
+              {completenessResult.missing_items.length > 0 && (
+                <Card
+                  size="small"
+                  type="inner"
+                  title="缺失项与改进建议"
+                  style={{ marginBottom: 'var(--space-md)' }}
+                >
+                  {completenessResult.missing_items.map((item) => (
+                    <div
+                      key={item}
+                      style={{ marginBottom: 'var(--space-sm)' }}
+                    >
+                      <Tag color="error" style={{ marginRight: 8 }}>
+                        {item}
+                      </Tag>
+                      <Text type="secondary">
+                        {SUGGESTIONS[item] || '请补充此项信息'}
+                      </Text>
+                    </div>
+                  ))}
+                </Card>
+              )}
+
+              {/* Dimension breakdown */}
+              <Card size="small" type="inner" title="各维度评分明细">
+                {completenessResult.dimensions.map((dim) => (
+                  <div
+                    key={dim.dimension}
+                    style={{ marginBottom: dim.reason ? 12 : 8 }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 150,
+                          flexShrink: 0,
+                          fontSize: '0.85rem',
+                          color: 'var(--t2)',
+                        }}
+                      >
+                        {dim.label}
+                      </div>
+                      <Progress
+                        percent={Math.round(dim.score)}
+                        size="small"
+                        style={{ flex: 1, marginBottom: 0 }}
+                        strokeColor={
+                          dim.complete ? 'var(--g4)' : 'var(--y4)'
+                        }
+                      />
+                      <Tag
+                        color={dim.complete ? 'green' : 'orange'}
+                        style={{
+                          flexShrink: 0,
+                          margin: 0,
+                          fontSize: '0.72rem',
+                        }}
+                      >
+                        {dim.complete ? 'OK' : '缺'}
+                      </Tag>
+                    </div>
+                    {!dim.complete && dim.reason && (
+                      <div
+                        style={{
+                          paddingLeft: 162,
+                          fontSize: '0.78rem',
+                          color: 'var(--t3)',
+                          lineHeight: 1.4,
+                          marginTop: 2,
+                        }}
+                      >
+                        {dim.reason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </Card>
+
+              {/* Next step suggestion */}
+              <Card size="small" type="inner" title="下一步建议" style={{ marginTop: 'var(--space-md)' }}>
+                <Text>
+                  {completenessHintMap[detailProduct.completeness_status] ||
+                    (completenessResult.score >= 80
+                      ? '所有信息完整，可以准备上架草稿。'
+                      : completenessResult.score >= 60
+                        ? '信息基本完整，可以执行利润分析和选品调研。'
+                        : completenessResult.score >= 40
+                          ? '已有关键信息，补充供应商和包装信息后可进入调研。'
+                          : '缺少核心信息（标题、采购价、主图），补充后才能继续。')}
+                </Text>
+              </Card>
+            </>
+          )}
+
+          {/* Last evaluation result inline when it matches the selected product */}
+          {lastEvaluation &&
+            lastEvaluation.product_id === detailProduct.id && (
+              <div style={{ marginTop: 'var(--space-md)' }}>
+                <Card size="small" type="inner" title="评估结果">
+                  <div style={{ color: 'var(--t2)', lineHeight: 1.8 }}>
+                    <div>
+                      决策：
+                      <Tag
+                        color={
+                          lastEvaluation.decision === 'list'
+                            ? 'green'
+                            : lastEvaluation.decision === 'cautious'
+                              ? 'orange'
+                              : 'red'
+                        }
+                      >
+                        {lastEvaluation.decision === 'list'
+                          ? '建议上架'
+                          : lastEvaluation.decision === 'cautious'
+                            ? '谨慎处理'
+                            : '不建议上架'}
+                      </Tag>
+                      <span style={{ marginLeft: 20 }}>
+                        置信度：
+                        {(lastEvaluation.confidence * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div>
+                      利润率：{lastEvaluation.profit_margin.toFixed(2)}%
+                      <span style={{ marginLeft: 20 }}>
+                        预估利润：$
+                        {lastEvaluation.estimated_profit.toFixed(2)}
+                      </span>
+                      <span style={{ marginLeft: 20 }}>
+                        利润状态：
+                        <Tag
+                          color={
+                            lastEvaluation.profit_status === 'profitable'
+                              ? 'green'
+                              : 'orange'
+                          }
+                        >
+                          {lastEvaluation.profit_status}
+                        </Tag>
+                      </span>
+                    </div>
+                    <div>
+                      评估理由：{lastEvaluation.reason}
+                    </div>
+                    {lastEvaluation.risk_flags.length > 0 && (
+                      <div>
+                        风险标记：
+                        {lastEvaluation.risk_flags.map((flag) => (
+                          <Tag key={flag} color="red" style={{ marginTop: 4 }}>
+                            {flag}
+                          </Tag>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            )}
+        </Card>
+      )}
+    </PageContainer>
   );
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/supplyevent"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -308,7 +309,9 @@ func (s *Service) publishOrderReceived(o *PurchaseOrder) {
 		s.logger.Warn("failed to serialize OrderReceived event", zap.Error(err))
 		return
 	}
-	if _, err := s.events.Publish(context.Background(), "supplychain.order.received", "purchase", payload); err != nil {
+	if _, err := s.events.Publish(
+		eventbus.WithIdempotencyKey(context.Background(), "purchase_order_received:"+o.OrderNo),
+		"supplychain.order.received", "purchase", payload); err != nil {
 		s.logger.Warn("failed to publish OrderReceived event", zap.Error(err))
 	}
 }

@@ -1,6 +1,6 @@
 # 凌镜 LingMirror — 全站功能清单
 
-> 更新时间：2026-07-01
+> 更新时间：2026-06-30
 > 范围：当前活跃新栈 `backend-go/` + `frontend-next/`
 
 ---
@@ -116,7 +116,7 @@
 |---|---|
 | AI chat、run、trace、action | `ai` |
 | Agent 列表、详情、执行入口 | `agent` |
-| AgentOS 总控台、工作队列、工作项详情、Agent 时间线、自治概览 | `agentos` |
+| AgentOS 总控台、工作队列、自治概览 | `agentos` |
 | Agent 规则 | `agentrule` |
 | Action policy | `actionpolicy` |
 | 熵监控与防御 | `entropy` |
@@ -151,27 +151,12 @@
 
 ## 验证快照
 
-2026-07-01（P0 baseline recovery后）：
+2026-06-30：
 
 | 命令 | 结果 |
 |---|---|
 | `cd backend-go && go test ./...` | 通过 |
 | `cd backend-go && go vet ./...` | 通过 |
 | `cd frontend-next && npm test` | 通过，77 tests |
-| `cd frontend-next && npm run build` | 通过（76 routes，Turbopack + TS 均无错误） |
-| `cd frontend-next && npm run lint` | 通过（0 errors，0 warnings） |
-
-## Production Closed Loop
-
-The first production-hardening target is the candidate-to-listing approval loop. It uses candidate, completeness, profit, loop, listingtask, approval, operationlog, and owner modules. Agent recommendations remain suggestions until Owner approval.
-
-核心业务流：`/owner` → `/candidates` → 评估候选商品 → 生成 blocked listing task → 生成 pending approval → `/approval` → Owner 批准/拒绝 → `/listing-tasks/[id]` → 审批通过后才允许执行任务。
-
-### 高风险边界（强制保留）
-- Agent 只能建议和创建待审批动作。
-- 不能绕过 Owner 审批执行真实发布、改价、库存、订单、退款或外部平台动作。
-- `blocked` listing task 没有 `approved` approval_request 时，后端 `ExecuteTask` 必须拒绝。
-- `/owner` 不能直接修改 listing task 状态，必须引导到 `/approval`。
-
-### 新增迁移
-- `000030_approval_target_fields` — approval_request 表新增 target_type, target_id, risk_level 列
+| `cd frontend-next && npm run build` | **失败**（`src/config/menu.ts` 未解决的合并冲突） |
+| `cd frontend-next && npm run lint` | 12 errors, 22 warnings |

@@ -21,10 +21,13 @@ func TestComputeCompleteness_AllFieldsPresent(t *testing.T) {
 		PackageWidthCm:  8,
 		PackageHeightCm: 6,
 		SupplierID:      &sid,
+		HSCode:          "847130",
+		TargetSalePrice: 25.99,
+		OriginCountry:   "CN",
 	}
 	status, missing := computeCompleteness(p)
-	if status != "ready_for_profit_check" {
-		t.Fatalf("expected ready_for_profit_check, got %s", status)
+	if status != "listing_ready" {
+		t.Fatalf("expected listing_ready, got %s", status)
 	}
 	if len(missing) != 0 {
 		t.Fatalf("expected no missing fields, got %v", missing)
@@ -131,8 +134,8 @@ func TestComputeCompleteness_MissingDimensions(t *testing.T) {
 		SupplierID:      &sid,
 	}
 	status, missing := computeCompleteness(p)
-	if status != "incomplete" {
-		t.Fatalf("expected incomplete, got %s", status)
+	if status != "research_ready" {
+		t.Fatalf("expected research_ready, got %s", status)
 	}
 	dimCount := 0
 	for _, f := range missing {
@@ -158,8 +161,8 @@ func TestComputeCompleteness_MissingSupplier(t *testing.T) {
 		SupplierID:      nil,
 	}
 	status, missing := computeCompleteness(p)
-	if status != "incomplete" {
-		t.Fatalf("expected incomplete, got %s", status)
+	if status != "needs_review" {
+		t.Fatalf("expected needs_review, got %s", status)
 	}
 	found := false
 	for _, f := range missing {
@@ -401,7 +404,7 @@ func TestService_List(t *testing.T) {
 	svc.Create(&CreateCandidateInput{Title: "Prod C", PurchasePrice: &price, CreatedBy: "tester"})
 
 	p := common.Pagination{Page: 1, Size: 10}
-	items, total, err := svc.List(&p, "", "", "", "")
+	items, total, err := svc.List(&p, &ListCandidateFilter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -471,7 +474,7 @@ func TestService_Create_CompletenessStatus(t *testing.T) {
 	db := dbtest.NewDB(t, &CandidateProduct{})
 	svc := NewService(db, dbtest.NewLogger(t))
 
-	t.Run("ready_for_profit_check", func(t *testing.T) {
+	t.Run("research_ready", func(t *testing.T) {
 		price := 100.0
 		weight := 0.5
 		lengthCm := 10.0
@@ -496,8 +499,8 @@ func TestService_Create_CompletenessStatus(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if c.CompletenessStatus != "ready_for_profit_check" {
-			t.Fatalf("CompletenessStatus = %q, want ready_for_profit_check", c.CompletenessStatus)
+		if c.CompletenessStatus != "research_ready" {
+			t.Fatalf("CompletenessStatus = %q, want research_ready", c.CompletenessStatus)
 		}
 		if c.SourceURL != "https://detail.1688.com/offer/123.html" {
 			t.Fatalf("SourceURL = %q", c.SourceURL)
@@ -543,9 +546,9 @@ func TestListCollectLeads(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &CollectLead{})
 	svc := NewService(db, newTestLogger(t))
+
 	// Empty list.
-	p := common.Pagination{Page: 1, Size: 10}
-	items, total, err := svc.ListCollectLeads(&p, "")
+	items, err := svc.ListCollectLeads(10)
 	if err != nil {
 		t.Fatalf("ListCollectLeads: %v", err)
 	}
@@ -565,8 +568,7 @@ func TestListCollectLeads(t *testing.T) {
 	}
 
 	// List with limit.
-	p2 := common.Pagination{Page: 1, Size: 2}
-	items, total, err = svc.ListCollectLeads(&p2, "")
+	items, err = svc.ListCollectLeads(2)
 	if err != nil {
 		t.Fatalf("ListCollectLeads: %v", err)
 	}
@@ -574,12 +576,207 @@ func TestListCollectLeads(t *testing.T) {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
 
-	// Total from pagination.
-	if total != 3 {
-		t.Errorf("total = %d, want 3", total)
+	// Count.
+	count, err := svc.CountCollectLeads()
+	if err != nil {
+		t.Fatalf("CountCollectLeads: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("count = %d, want 3", count)
+	}
+}
+
+
+func TestComputeCompleteness_NeedsReview(t *testing.T) {
+	t.Parallel()
+	p := &CandidateProduct{
+		Title:           "Has Core Fields",
+		PurchasePrice:   100.0,
+		MainImage:       "https://example.com/img.jpg",
+		// Missing: supplier_id, package info
+	}
+	status, missing := computeCompleteness(p)
+	if status != "needs_review" {
+		t.Fatalf("expected needs_review, got %s", status)
+	}
+	checked := make(map[string]bool)
+	for _, f := range missing {
+		checked[f] = true
+	}
+	if !checked["supplier_id"] {
+		t.Fatal("expected supplier_id in missing fields")
+	}
+}
+
+func TestComputeCompleteness_ResearchReady(t *testing.T) {
+	t.Parallel()
+	sid := int64(1)
+	p := &CandidateProduct{
+		Title:           "Research Ready",
+		PurchasePrice:   100.0,
+		MainImage:       "https://example.com/img.jpg",
+		SupplierID:      &sid,
+		PackageWeightKg: 0.5,
+		// Missing: HSCode, target_sale_price, origin_country
+	}
+	status, missing := computeCompleteness(p)
+	if status != "research_ready" {
+		t.Fatalf("expected research_ready, got %s", status)
+	}
+	if len(missing) == 0 {
+		t.Fatal("expected missing fields")
+	}
+}
+
+func TestComputeCompleteness_ListingReady(t *testing.T) {
+	t.Parallel()
+	sid := int64(1)
+	p := &CandidateProduct{
+		Title:           "Listing Ready",
+		PurchasePrice:   100.0,
+		MainImage:       "https://example.com/img.jpg",
+		SupplierID:      &sid,
+		PackageWeightKg: 0.5,
+		PackageLengthCm: 10,
+		PackageWidthCm:  8,
+		PackageHeightCm: 6,
+		HSCode:          "847130",
+		TargetSalePrice: 25.99,
+		OriginCountry:   "CN",
+	}
+	status, missing := computeCompleteness(p)
+	if status != "listing_ready" {
+		t.Fatalf("expected listing_ready, got %s", status)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("expected no missing fields, got %v", missing)
+	}
+}
+
+func TestComputeCompleteness_ZeroPrice(t *testing.T) {
+	t.Parallel()
+	p := &CandidateProduct{
+		Title:     "Zero Price",
+		MainImage: "https://example.com/img.jpg",
+		// PurchasePrice is 0 (default) — incomplete
+	}
+	status, missing := computeCompleteness(p)
+	if status != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", status)
+	}
+	found := false
+	for _, f := range missing {
+		if f == "purchase_price" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected purchase_price in missing fields")
+	}
+}
+
+func TestComputeCompleteness_AllEmpty(t *testing.T) {
+	t.Parallel()
+	p := &CandidateProduct{}
+	status, missing := computeCompleteness(p)
+	if status != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", status)
+	}
+	if len(missing) == 0 {
+		t.Fatal("expected missing fields for empty product")
+	}
+}
+
+func TestService_List_FilterByCompletenessStatus(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Create several products with different completeness
+	// Insert directly to bypass Create's auto-calculation
+	now := time.Now()
+	records := []CandidateProduct{
+		{Title: "A", PurchasePrice: 50, MainImage: "img.jpg", CompletenessStatus: "research_ready", Status: "draft", CreatedBy: "tester", CreatedAt: now, UpdatedAt: now},
+		{Title: "B", PurchasePrice: 0, CompletenessStatus: "incomplete", Status: "draft", CreatedBy: "tester", CreatedAt: now, UpdatedAt: now},
+		{Title: "C", PurchasePrice: 50, MainImage: "img.jpg", CompletenessStatus: "research_ready", Status: "draft", CreatedBy: "tester", CreatedAt: now, UpdatedAt: now},
+	}
+	for _, r := range records {
+		if err := db.Create(&r).Error; err != nil {
+			t.Fatalf("insert: %v", err)
+		}
 	}
 
+	p := common.Pagination{Page: 1, Size: 10}
+	items, total, err := svc.List(&p, &ListCandidateFilter{CompletenessStatus: "research_ready"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected 2 research_ready, got %d", total)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
 }
+
+func TestService_Update_RecalculatesCompleteness(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Create a minimal product — should be "incomplete"
+	price := 50.0
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:         "To Update",
+		PurchasePrice: &price,
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if c.CompletenessStatus != "incomplete" {
+		t.Fatalf("expected incomplete, got %s", c.CompletenessStatus)
+	}
+
+	// Add main_image — should promote to needs_review
+	img := "https://example.com/img.jpg"
+	updated, err := svc.Update(c.ID, &UpdateCandidateInput{MainImage: &img})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.CompletenessStatus != "needs_review" {
+		t.Fatalf("expected needs_review after adding main_image, got %s", updated.CompletenessStatus)
+	}
+}
+
+func TestService_GetDetail_ReturnsMissingFields(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:         "Detail Test",
+		PurchasePrice: &price,
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	detail, err := svc.GetDetail(c.ID)
+	if err != nil {
+		t.Fatalf("GetDetail: %v", err)
+	}
+	if len(detail.MissingFields) == 0 {
+		t.Fatal("expected missing fields for incomplete product")
+	}
+	if detail.ID != c.ID {
+		t.Fatal("ID mismatch")
+	}
+}
+
 func newTestLogger(t *testing.T) *zap.Logger {
 	t.Helper()
 	return zap.NewNop()

@@ -221,6 +221,7 @@ func pageDataToCandidate(pd *toolbridge.PageData, params map[string]interface{})
 		SourceURL:        pd.SourceURL,
 		SourcePlatform:   detectPlatform(pd.SourceURL),
 		RawPayload:       pd.RawData,
+		CollectedAt:       timePtr(time.Now()),
 	}
 }
 

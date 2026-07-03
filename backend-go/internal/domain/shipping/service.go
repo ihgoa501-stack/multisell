@@ -1,13 +1,18 @@
 package shipping
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/logistics"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -21,6 +26,26 @@ type Service struct {
 // NewService creates a new shipping service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
+}
+
+// ValidateCarrierAction checks that production mutations carry a valid approvalID.
+func (s *Service) ValidateCarrierAction(mode CarrierAPIMode, approvalID int64) error {
+	if mode == CarrierModeProduction && approvalID <= 0 {
+		return errors.New("production mode requires a valid approval_id")
+	}
+	return nil
+}
+
+// ValidateLabelURL enforces that carrier label URLs use HTTPS (SSRF prevention).
+func ValidateLabelURL(labelURL string) error {
+	u, err := url.Parse(labelURL)
+	if err != nil {
+		return fmt.Errorf("invalid label URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("label URL must use HTTPS, got %q", u.Scheme)
+	}
+	return nil
 }
 
 // ---------- ShippingProvider ----------
@@ -292,24 +317,24 @@ func (s *Service) ListRules(c *common.Pagination, channelID *int64) ([]ShippingQ
 
 func (s *Service) CreateRule(in *CreateQuoteRuleInput) (*ShippingQuoteRule, error) {
 	r := ShippingQuoteRule{
-		ChannelID:          in.ChannelID,
-		ZoneID:             in.ZoneID,
-		RuleType:           in.RuleType,
-		Priority:           0,
-		MinWeightKg:        in.MinWeightKg,
-		MaxWeightKg:        in.MaxWeightKg,
-		FirstKg:            in.FirstKg,
-		FirstPrice:         in.FirstPrice,
-		AdditionalKg:       in.AdditionalKg,
-		AdditionalPrice:    in.AdditionalPrice,
-		FixedFee:           in.FixedFee,
+		ChannelID:         in.ChannelID,
+		ZoneID:            in.ZoneID,
+		RuleType:          in.RuleType,
+		Priority:          0,
+		MinWeightKg:       in.MinWeightKg,
+		MaxWeightKg:       in.MaxWeightKg,
+		FirstKg:           in.FirstKg,
+		FirstPrice:        in.FirstPrice,
+		AdditionalKg:      in.AdditionalKg,
+		AdditionalPrice:   in.AdditionalPrice,
+		FixedFee:          in.FixedFee,
 		PerKgPrice:        in.PerKgPrice,
-		MinimumCharge:      in.MinimumCharge,
-		TierConfig:         in.TierConfig,
+		MinimumCharge:     in.MinimumCharge,
+		TierConfig:        in.TierConfig,
 		SurchargeFixed:    in.SurchargeFixed,
 		FuelSurchargePct:  in.FuelSurchargePct,
 		RoundingIncrement: in.RoundingIncrement,
-		Remark:             in.Remark,
+		Remark:            in.Remark,
 	}
 	if in.Priority != nil {
 		r.Priority = *in.Priority
@@ -393,6 +418,84 @@ func (s *Service) DeleteBillBatch(id int64) error {
 	return nil
 }
 
+// ImportBillCSV parses a carrier bill CSV and creates batch + items.
+func (s *Service) ImportBillCSV(data []byte, filename, createdBy string) (*ShippingBillBatch, error) {
+	reader := csv.NewReader(strings.NewReader(string(data)))
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CSV: %w", err)
+	}
+	if len(records) < 2 {
+		return nil, errors.New("CSV must have header row and at least one data row")
+	}
+
+	batch := ShippingBillBatch{
+		SourceFilename: filename,
+		RowCount:       len(records) - 1,
+		Status:         "imported",
+		CreatedBy:      createdBy,
+	}
+	if err := s.db.Create(&batch).Error; err != nil {
+		return nil, err
+	}
+
+	var items []ShippingBillItem
+	for i, row := range records[1:] {
+		item := ShippingBillItem{
+			BatchID:              batch.ID,
+			RowNumber:            i + 1,
+			ReconciliationStatus: "unmatched_bill",
+			OrderNo:              col(row, 0),
+			TrackingNumber:       col(row, 1),
+			ProviderName:         col(row, 2),
+			ChannelName:          col(row, 3),
+			DestinationCountry:   col(row, 4),
+		}
+		if v := col(row, 5); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				item.BilledWeightKg = &f
+			}
+		}
+		if v := col(row, 6); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				item.ActualShippingFee = &f
+			}
+		}
+		if v := col(row, 7); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				item.TotalActualFee = &f
+			}
+		}
+		item.Currency = col(row, 8)
+		if v := col(row, 9); v != "" {
+			if t, err := time.Parse("2006-01-02", v); err == nil {
+				item.BilledAt = &t
+			}
+		}
+		item.Note = col(row, 10) // carrier_code stored in note
+		items = append(items, item)
+	}
+
+	if err := s.db.Create(&items).Error; err != nil {
+		return nil, err
+	}
+
+	if len(items) > 0 && items[0].Currency != "" {
+		batch.Currency = items[0].Currency
+		s.db.Model(&batch).Update("currency", items[0].Currency)
+	}
+
+	return &batch, nil
+}
+
+// col returns trimmed column value or empty string if index out of range.
+func col(row []string, idx int) string {
+	if idx < len(row) {
+		return strings.TrimSpace(row[idx])
+	}
+	return ""
+}
+
 func (s *Service) ListBillItems(c *common.Pagination, batchID int64) ([]ShippingBillItem, int64, error) {
 	var items []ShippingBillItem
 	var total int64
@@ -425,12 +528,12 @@ func (s *Service) Quote(req *QuoteRequest) (*QuoteResponse, error) {
 	if req.Mode == "sku" && req.SkuID != nil {
 		// Load SKU package info
 		var sku struct {
-			ProductID      int64   `gorm:"column:product_id"`
-			SkuWeightKg    *float64 `gorm:"column:sku_weight_kg"`
-			SkuLengthCm    *float64 `gorm:"column:sku_length_cm"`
-			SkuWidthCm     *float64 `gorm:"column:sku_width_cm"`
-			SkuHeightCm    *float64 `gorm:"column:sku_height_cm"`
-			Weight         *float64 `gorm:"column:weight"`
+			ProductID   int64    `gorm:"column:product_id"`
+			SkuWeightKg *float64 `gorm:"column:sku_weight_kg"`
+			SkuLengthCm *float64 `gorm:"column:sku_length_cm"`
+			SkuWidthCm  *float64 `gorm:"column:sku_width_cm"`
+			SkuHeightCm *float64 `gorm:"column:sku_height_cm"`
+			Weight      *float64 `gorm:"column:weight"`
 		}
 		if err := s.db.Table("sku").Select("product_id, sku_weight_kg, sku_length_cm, sku_width_cm, sku_height_cm, weight").
 			Where("id = ?", *req.SkuID).Scan(&sku).Error; err != nil {
@@ -460,10 +563,10 @@ func (s *Service) Quote(req *QuoteRequest) (*QuoteResponse, error) {
 		// Fall back to product packaging if SKU packaging incomplete
 		if lengthCm == 0 || widthCm == 0 || heightCm == 0 {
 			var prod struct {
-				PackageLengthCm  *float64 `gorm:"column:package_length_cm"`
-				PackageWidthCm   *float64 `gorm:"column:package_width_cm"`
-				PackageHeightCm  *float64 `gorm:"column:package_height_cm"`
-				PackageWeightKg  *float64 `gorm:"column:package_weight_kg"`
+				PackageLengthCm *float64 `gorm:"column:package_length_cm"`
+				PackageWidthCm  *float64 `gorm:"column:package_width_cm"`
+				PackageHeightCm *float64 `gorm:"column:package_height_cm"`
+				PackageWeightKg *float64 `gorm:"column:package_weight_kg"`
 			}
 			s.db.Table("product").Select("package_length_cm, package_width_cm, package_height_cm, package_weight_kg").
 				Where("id = ?", sku.ProductID).Scan(&prod)
@@ -575,10 +678,10 @@ func (s *Service) Quote(req *QuoteRequest) (*QuoteResponse, error) {
 
 		results = append(results, QuoteResult{
 			ChannelID:          ch.ID,
-			ChannelName:         ch.Name,
-			ProviderName:        providerName,
+			ChannelName:        ch.Name,
+			ProviderName:       providerName,
 			ActualWeightKg:     roundTo(totalActualWeight, 4),
-			VolumetricWeightKg:  roundTo(volumetricWeight, 4),
+			VolumetricWeightKg: roundTo(volumetricWeight, 4),
 			ChargeableWeightKg: roundTo(rounded, 4),
 			BaseShippingFee:    roundTo(baseFee, 2),
 			SurchargeFee:       roundTo(surcharge, 2),
@@ -638,9 +741,9 @@ func applyRule(rule *ShippingQuoteRule, chargeableWeight float64) float64 {
 			return 0
 		}
 		var tiers []struct {
-			MinKg  *float64 `json:"min_kg"`
-			MaxKg  *float64 `json:"max_kg"`
-			Price  *float64 `json:"price"`
+			MinKg *float64 `json:"min_kg"`
+			MaxKg *float64 `json:"max_kg"`
+			Price *float64 `json:"price"`
 		}
 		if err := json.Unmarshal(rule.TierConfig, &tiers); err != nil {
 			return 0
@@ -736,4 +839,494 @@ func sortResults(results []QuoteResult) {
 			results[j], results[j-1] = results[j-1], results[j]
 		}
 	}
+}
+
+// ---- Phase 1: Fulfillment Intelligence OS ----
+
+// QuoteUnified computes shipping costs using the unified logistics.RateEngine.
+// All quote calculation goes through a single code path:
+// DB models -> logistics.RateTableEntry -> logistics.RateEngine.
+func (s *Service) QuoteUnified(req *QuoteRequest) (*QuoteResponse, error) {
+	qty := req.Quantity
+	if qty <= 0 {
+		qty = 1
+	}
+	var actualWeight, lengthCm, widthCm, heightCm float64
+	cargoType := req.CargoType
+	if cargoType == "" {
+		cargoType = "normal"
+	}
+	if req.Mode == "sku" && req.SkuID != nil {
+		var sku struct {
+			ProductID   int64
+			SkuWeightKg *float64 `gorm:"column:sku_weight_kg"`
+			SkuLengthCm *float64 `gorm:"column:sku_length_cm"`
+			SkuWidthCm  *float64 `gorm:"column:sku_width_cm"`
+			SkuHeightCm *float64 `gorm:"column:sku_height_cm"`
+			Weight      *float64 `gorm:"column:weight"`
+		}
+		if err := s.db.Table("sku").Select("product_id, sku_weight_kg, sku_length_cm, sku_width_cm, sku_height_cm, weight").
+			Where("id = ?", *req.SkuID).Scan(&sku).Error; err != nil {
+			return nil, err
+		}
+		if sku.SkuWeightKg != nil && *sku.SkuWeightKg > 0 {
+			actualWeight = *sku.SkuWeightKg
+		} else if sku.Weight != nil {
+			actualWeight = *sku.Weight
+		}
+		if sku.SkuLengthCm != nil {
+			lengthCm = *sku.SkuLengthCm
+		}
+		if sku.SkuWidthCm != nil {
+			widthCm = *sku.SkuWidthCm
+		}
+		if sku.SkuHeightCm != nil {
+			heightCm = *sku.SkuHeightCm
+		}
+		if lengthCm == 0 || widthCm == 0 || heightCm == 0 {
+			var prod struct {
+				PackageLengthCm *float64 `gorm:"column:package_length_cm"`
+				PackageWidthCm  *float64 `gorm:"column:package_width_cm"`
+				PackageHeightCm *float64 `gorm:"column:package_height_cm"`
+				PackageWeightKg *float64 `gorm:"column:package_weight_kg"`
+			}
+			s.db.Table("product").Select("package_length_cm, package_width_cm, package_height_cm, package_weight_kg").
+				Where("id = ?", sku.ProductID).Scan(&prod)
+			if lengthCm == 0 && prod.PackageLengthCm != nil {
+				lengthCm = *prod.PackageLengthCm
+			}
+			if widthCm == 0 && prod.PackageWidthCm != nil {
+				widthCm = *prod.PackageWidthCm
+			}
+			if heightCm == 0 && prod.PackageHeightCm != nil {
+				heightCm = *prod.PackageHeightCm
+			}
+			if actualWeight == 0 && prod.PackageWeightKg != nil {
+				actualWeight = *prod.PackageWeightKg
+			}
+		}
+	} else {
+		if req.ManualWeightKg != nil {
+			actualWeight = *req.ManualWeightKg
+		}
+		if req.ManualLengthCM != nil {
+			lengthCm = *req.ManualLengthCM
+		}
+		if req.ManualWidthCM != nil {
+			widthCm = *req.ManualWidthCM
+		}
+		if req.ManualHeightCM != nil {
+			heightCm = *req.ManualHeightCM
+		}
+	}
+
+	totalActualWeight := actualWeight * float64(qty)
+
+	var tables []logistics.RateTableEntry
+	var channels []ShippingChannel
+	if err := s.db.Where("status = 1").Order("sort_order ASC, id ASC").Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	for _, ch := range channels {
+		var zone ShippingZone
+		if err := s.db.Where("channel_id = ? AND country_code = ? AND status = 1", ch.ID, req.DestinationCountry).First(&zone).Error; err != nil {
+			continue
+		}
+		var rules []ShippingQuoteRule
+		q := s.db.Where("channel_id = ? AND status = 1", ch.ID)
+		q = q.Where("(zone_id = ? OR zone_id IS NULL)", zone.ID)
+		if err := q.Order("priority ASC, id ASC").Find(&rules).Error; err != nil || len(rules) == 0 {
+			continue
+		}
+		providerName := ""
+		var prov ShippingProvider
+		if err := s.db.Select("name").Where("id = ?", ch.ProviderID).First(&prov).Error; err == nil {
+			providerName = prov.Name
+		}
+		for _, rule := range rules {
+			entry := ToRateTableEntry(&ch, &rule, &zone)
+			entry.ProviderName = providerName
+			tables = append(tables, entry)
+		}
+	}
+	if len(tables) == 0 {
+		return &QuoteResponse{Results: []QuoteResult{}}, nil
+	}
+
+	engine := logistics.NewRateEngine(tables)
+	cargo := logistics.Cargo{
+		ActualWeightKg: totalActualWeight,
+		LengthCm:       lengthCm,
+		WidthCm:        widthCm,
+		HeightCm:       heightCm,
+	}
+	resp, err := engine.CalculateRate(cargo, req.DestinationCountry, cargoType)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]QuoteResult, 0, len(resp.Results))
+	for _, r := range resp.Results {
+		qr := ToQuoteResult(r)
+		for _, ch := range channels {
+			if ch.Name == r.ChannelName {
+				qr.ChannelID = ch.ID
+				break
+			}
+		}
+		results = append(results, qr)
+	}
+	return &QuoteResponse{Results: results}, nil
+}
+
+// CreateSnapshot creates an immutable shipping snapshot for an order.
+func (s *Service) CreateSnapshot(in *CreateSnapshotInput) (*SalesOrderShippingSnapshot, error) {
+	snap := SalesOrderShippingSnapshot{
+		OrderID: in.OrderID, SkuID: in.SkuID, Quantity: in.Quantity,
+		DestinationCountry: in.DestinationCountry, PostalCode: in.PostalCode, CargoType: in.CargoType,
+		PackageSource:   in.PackageSource,
+		PackageLengthCm: in.PackageLengthCm, PackageWidthCm: in.PackageWidthCm, PackageHeightCm: in.PackageHeightCm,
+		PackageWeightKg: in.PackageWeightKg,
+		ProviderID:      in.ProviderID, ProviderName: in.ProviderName, ChannelID: in.ChannelID, ChannelName: in.ChannelName,
+		Currency:       in.Currency,
+		ActualWeightKg: in.ActualWeightKg, VolumetricWeightKg: in.VolumetricWeightKg,
+		ChargeableWeightKg: in.ChargeableWeightKg,
+		BaseShippingFee:    in.BaseShippingFee, SurchargeFee: in.SurchargeFee, FuelSurchargeFee: in.FuelSurchargeFee,
+		TotalShippingFee: in.TotalShippingFee, CalculationDetail: in.CalculationDetail,
+		RuleVersionID: in.RuleVersionID, RuleVersion: in.RuleVersion,
+		QuotedBy: in.QuotedBy, SourceTrigger: in.SourceTrigger,
+	}
+	if snap.Quantity <= 0 {
+		snap.Quantity = 1
+	}
+	if snap.Currency == "" {
+		snap.Currency = "CNY"
+	}
+	if snap.CargoType == "" {
+		snap.CargoType = "normal"
+	}
+	if snap.SourceTrigger == "" {
+		snap.SourceTrigger = "manual"
+	}
+	if snap.QuotedBy == "" {
+		snap.QuotedBy = "system"
+	}
+	if err := s.db.Create(&snap).Error; err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
+// GetSnapshotByOrderID retrieves the snapshot for an order.
+func (s *Service) GetSnapshotByOrderID(orderID int64) (*SalesOrderShippingSnapshot, error) {
+	var snap SalesOrderShippingSnapshot
+	if err := s.db.Where("order_id = ?", orderID).First(&snap).Error; err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
+// ListSnapshots returns paginated shipping snapshots.
+func (s *Service) ListSnapshots(c *common.Pagination) ([]SalesOrderShippingSnapshot, int64, error) {
+	var items []SalesOrderShippingSnapshot
+	var total int64
+	q := s.db.Model(&SalesOrderShippingSnapshot{})
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := q.Order("id DESC").Offset(c.Offset()).Limit(c.Size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// ReconcileBillBatch matches bill items to order shipping snapshots and computes variances.
+func (s *Service) ReconcileBillBatch(batchID int64) (*BillReconciliationResult, error) {
+	var items []ShippingBillItem
+	if err := s.db.Where("batch_id = ?", batchID).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	result := &BillReconciliationResult{TotalItems: len(items), Currency: "CNY"}
+	for i, item := range items {
+		matched := false
+		if item.OrderNo != "" {
+			var orderID int64
+			if _, err := fmt.Sscanf(item.OrderNo, "%d", &orderID); err == nil && orderID > 0 {
+				var snap SalesOrderShippingSnapshot
+				if err := s.db.Where("order_id = ?", orderID).First(&snap).Error; err == nil {
+					matchedID := snap.ID
+					fee := snap.TotalShippingFee
+					variance := 0.0
+					if item.TotalActualFee != nil {
+						variance = *item.TotalActualFee - snap.TotalShippingFee
+					}
+					variancePct := 0.0
+					if snap.TotalShippingFee > 0 {
+						variancePct = (variance / snap.TotalShippingFee) * 100
+					}
+					anomalyType := ""
+					if variancePct > 5 {
+						anomalyType = "overcharge"
+					} else if variancePct < -5 {
+						anomalyType = "undercharge"
+					}
+					items[i].MatchedOrderID = &snap.OrderID
+					items[i].MatchedSnapshotID = &matchedID
+					items[i].SnapshotShippingFee = &fee
+					items[i].VarianceAmount = &variance
+					items[i].VariancePct = &variancePct
+					items[i].AnomalyType = anomalyType
+					items[i].ReconciliationStatus = "matched"
+					if variancePct > 5 || variancePct < -5 {
+						result.AnomalousItems++
+					}
+					result.MatchedItems++
+					result.TotalVariance += variance
+					s.db.Save(&items[i])
+					matched = true
+				}
+			}
+		}
+		if !matched {
+			items[i].ReconciliationStatus = "unmatched_order"
+			result.UnmatchedItems++
+			s.db.Save(&items[i])
+		}
+	}
+	var batch ShippingBillBatch
+	if err := s.db.First(&batch, batchID).Error; err == nil {
+		batch.RowCount = result.TotalItems
+		batch.MatchedCount = result.MatchedItems
+		batch.MismatchCount = result.AnomalousItems
+		batch.UnmatchedCount = result.UnmatchedItems
+		if result.UnmatchedItems == 0 && result.AnomalousItems == 0 {
+			batch.Status = "reconciled"
+		} else if result.AnomalousItems > 0 {
+			batch.Status = "has_anomalies"
+		} else {
+			batch.Status = "partial"
+		}
+		s.db.Save(&batch)
+	}
+	return result, nil
+}
+
+// GetActiveRulesAtTime returns rules effective at a given time.
+func (s *Service) GetActiveRulesAtTime(channelID *int64, at time.Time) ([]ShippingQuoteRule, error) {
+	var rules []ShippingQuoteRule
+	q := s.db.Where("status = 1").
+		Where("(effective_start_time IS NULL OR effective_start_time <= ?)", at).
+		Where("(effective_end_time IS NULL OR effective_end_time >= ?)", at)
+	if channelID != nil {
+		q = q.Where("channel_id = ?", *channelID)
+	}
+	if err := q.Order("priority ASC, rule_version DESC").Find(&rules).Error; err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+// ListRuleVersions lists all versions for a given channel's rules.
+func (s *Service) ListRuleVersions(channelID int64) ([]ShippingQuoteRule, int64, error) {
+	var rules []ShippingQuoteRule
+	var total int64
+	q := s.db.Model(&ShippingQuoteRule{}).Where("channel_id = ?", channelID)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := q.Order("rule_version DESC, created_at DESC").Find(&rules).Error; err != nil {
+		return nil, 0, err
+	}
+	return rules, total, nil
+}
+
+// ReviewBillItem updates the review status and notes on a bill item.
+func (s *Service) ReviewBillItem(id int64, reviewStatus string, note string, resolvedBy string) error {
+	updates := map[string]interface{}{
+		"review_status": reviewStatus,
+		"note":          note,
+		"resolved_by":   resolvedBy,
+	}
+	if reviewStatus == "resolved" || reviewStatus == "confirmed" {
+		now := time.Now()
+		updates["resolved_at"] = &now
+	}
+	return s.db.Model(&ShippingBillItem{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// ListBillAnomalies returns bill items with anomalies for a batch.
+func (s *Service) ListBillAnomalies(batchID int64) ([]ShippingBillItem, error) {
+	var items []ShippingBillItem
+	if err := s.db.Where("batch_id = ? AND anomaly_type != ''", batchID).
+		Order("variance_pct DESC").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// ===== Phase 3: Fulfillment Tracking =====
+
+func (s *Service) CreateTracking(in *CreateTrackingInput) (*FulfillmentTracking, error) {
+	t := FulfillmentTracking{
+		OrderID:        in.OrderID,
+		TrackingNumber: in.TrackingNumber,
+		CarrierCode:    in.CarrierCode,
+		CarrierName:    in.CarrierName,
+		Status:         in.Status,
+		Note:           in.Note,
+		TrackingEvents: json.RawMessage("[]"),
+	}
+	if t.Status == "" {
+		t.Status = "pending"
+	}
+	if err := s.db.Create(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (s *Service) GetTrackingByOrderID(orderID int64) (*FulfillmentTracking, error) {
+	var t FulfillmentTracking
+	if err := s.db.Where("order_id = ?", orderID).First(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// ListTracking returns paginated fulfillment tracking records.
+func (s *Service) ListTracking(c *common.Pagination) ([]FulfillmentTracking, int64, error) {
+	var items []FulfillmentTracking
+	var total int64
+	q := s.db.Model(&FulfillmentTracking{})
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := q.Order("id DESC").Offset(c.Offset()).Limit(c.Size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+func (s *Service) UpdateTrackingEvent(trackingID int64, event TrackingEvent, status string) (*FulfillmentTracking, error) {
+	var t FulfillmentTracking
+	if err := s.db.First(&t, trackingID).Error; err != nil {
+		return nil, err
+	}
+	var events []TrackingEvent
+	if len(t.TrackingEvents) > 0 {
+		json.Unmarshal(t.TrackingEvents, &events)
+	}
+	events = append(events, event)
+	raw, _ := json.Marshal(events)
+	t.TrackingEvents = raw
+	if status != "" {
+		t.Status = status
+	}
+	if status == "delivered" {
+		now := time.Now()
+		t.DeliveredAt = &now
+	}
+	if err := s.db.Save(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (s *Service) MarkTrackingException(id int64, lost, returned, damaged bool, note string) error {
+	updates := map[string]interface{}{
+		"is_lost": lost, "is_returned": returned, "is_damaged": damaged,
+		"note": note, "status": "exception",
+	}
+	return s.db.Model(&FulfillmentTracking{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// ===== Phase 4: Carrier Performance =====
+
+// CarrierPerformanceStats holds aggregate performance for a carrier/channel.
+type CarrierPerformanceStats struct {
+	ProviderName   string  `json:"provider_name"`
+	TotalOrders    int     `json:"total_orders"`
+	OnTimeCount    int     `json:"on_time_count"`
+	OnTimeRate     float64 `json:"on_time_rate"`
+	LostCount      int     `json:"lost_count"`
+	LostRate       float64 `json:"lost_rate"`
+	ReturnedCount  int     `json:"returned_count"`
+	ReturnedRate   float64 `json:"returned_rate"`
+	DamagedCount   int     `json:"damaged_count"`
+	DamagedRate    float64 `json:"damaged_rate"`
+	AvgVariancePct float64 `json:"avg_variance_pct"`
+	Score          float64 `json:"score"`
+}
+
+// GetCarrierPerformance returns performance stats aggregated from tracking + bill data.
+func (s *Service) GetCarrierPerformance(daysBack int) ([]CarrierPerformanceStats, error) {
+	if daysBack <= 0 {
+		daysBack = 90
+	}
+	since := time.Now().AddDate(0, 0, -daysBack)
+
+	// Aggregate from fulfillment_tracking
+	type trackRow struct {
+		CarrierName string
+		Total       int
+		OnTime      int
+		Lost        int
+		Returned    int
+		Damaged     int
+	}
+	var trackRows []trackRow
+	s.db.Table("fulfillment_tracking").
+		Select("COALESCE(carrier_name, 'unknown') as carrier_name, COUNT(*) as total, SUM(CASE WHEN status = 'delivered' AND delivered_at <= estimated_delivery THEN 1 ELSE 0 END) as on_time, SUM(CASE WHEN is_lost THEN 1 ELSE 0 END) as lost, SUM(CASE WHEN is_returned THEN 1 ELSE 0 END) as returned, SUM(CASE WHEN is_damaged THEN 1 ELSE 0 END) as damaged").
+		Where("created_at >= ?", since).
+		Group("carrier_name").
+		Scan(&trackRows)
+
+	// Aggregate from shipping_bill_item
+	type billRow struct {
+		ProviderName string
+		AvgVarPct    float64
+	}
+	var billRows []billRow
+	s.db.Table("shipping_bill_item").
+		Select("provider_name, COALESCE(AVG(ABS(variance_pct)), 0) as avg_var_pct").
+		Where("created_at >= ? AND variance_pct IS NOT NULL", since).
+		Group("provider_name").
+		Scan(&billRows)
+
+	billMap := make(map[string]float64)
+	for _, b := range billRows {
+		billMap[b.ProviderName] = b.AvgVarPct
+	}
+
+	var results []CarrierPerformanceStats
+	for _, tr := range trackRows {
+		st := CarrierPerformanceStats{
+			ProviderName:  tr.CarrierName,
+			TotalOrders:   tr.Total,
+			OnTimeCount:   tr.OnTime,
+			LostCount:     tr.Lost,
+			ReturnedCount: tr.Returned,
+			DamagedCount:  tr.Damaged,
+		}
+		if tr.Total > 0 {
+			st.OnTimeRate = roundTo(float64(tr.OnTime)/float64(tr.Total)*100, 1)
+			st.LostRate = roundTo(float64(tr.Lost)/float64(tr.Total)*100, 1)
+			st.ReturnedRate = roundTo(float64(tr.Returned)/float64(tr.Total)*100, 1)
+			st.DamagedRate = roundTo(float64(tr.Damaged)/float64(tr.Total)*100, 1)
+		}
+		if v, ok := billMap[tr.CarrierName]; ok {
+			st.AvgVariancePct = roundTo(v, 1)
+		}
+		// Composite score: higher is better, 0-100
+		score := st.OnTimeRate * 0.4
+		score -= st.LostRate * 1.0
+		score -= st.ReturnedRate * 0.5
+		score -= st.DamagedRate * 0.5
+		score -= st.AvgVariancePct * 0.3
+		if score < 0 {
+			score = 0
+		}
+		st.Score = roundTo(score, 1)
+		results = append(results, st)
+	}
+	return results, nil
 }
