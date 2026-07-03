@@ -2,8 +2,12 @@ package shipping
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
@@ -846,3 +850,107 @@ func TestProvider_DefaultStatusOnCreate(t *testing.T) {
 
 func intPtr(v int) *int       { return &v }
 func floatPtr(v float64) *float64 { return &v }
+
+// ---------- Carrier API Handler Tests ----------
+
+func TestListCarriers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	h := &Handler{service: nil} // ListCarriers doesn't touch the service
+
+	h.ListCarriers(c)
+
+	var resp struct {
+		Code int            `json:"code"`
+		Data []CarrierInfo  `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Code != 0 {
+		t.Errorf("expected code 0, got %d", resp.Code)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 carrier, got %d", len(resp.Data))
+	}
+	if resp.Data[0].Code != "mock_carrier" {
+		t.Errorf("expected mock_carrier, got %s", resp.Data[0].Code)
+	}
+	if resp.Data[0].Status != "sandbox" {
+		t.Errorf("expected status sandbox, got %s", resp.Data[0].Status)
+	}
+}
+
+func TestCarrierQuote_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "code", Value: "nonexistent_carrier"}}
+	c.Request = httptest.NewRequest("POST", "/", strings.NewReader(`{}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h := &Handler{service: nil}
+	h.CarrierQuote(c)
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestCarrierQuote_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "code", Value: "mock_carrier"}}
+	c.Request = httptest.NewRequest("POST", "/", strings.NewReader(`{
+		"origin_country": "CN", "destination_country": "RU",
+		"weight_kg": 1.0
+	}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h := &Handler{service: nil}
+	h.CarrierQuote(c)
+
+	var resp struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Code != 0 {
+		t.Errorf("expected code 0, got %d", resp.Code)
+	}
+	if resp.Data == nil {
+		t.Fatal("expected data, got nil")
+	}
+	fee, ok := resp.Data["total_fee"].(float64)
+	if !ok || fee != 15.0 {
+		t.Errorf("expected total_fee 15.0, got %v", resp.Data["total_fee"])
+	}
+}
+
+func TestCarrierQuote_BadRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "code", Value: "mock_carrier"}}
+	// Invalid JSON body
+	c.Request = httptest.NewRequest("POST", "/", strings.NewReader(`{invalid}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h := &Handler{service: nil}
+	h.CarrierQuote(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad JSON, got %d", w.Code)
+	}
+}

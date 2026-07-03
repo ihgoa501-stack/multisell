@@ -46,5 +46,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		g.POST("/bill-batches", h.CreateBillBatch)
 		g.DELETE("/bill-batches/:id", h.DeleteBillBatch)
 		g.GET("/bill-batches/:id/items", h.ListBillItems)
+
+		// Phase 5: Carrier API endpoints (mock-backed)
+		g.GET("/carriers", h.ListCarriers)
+		g.POST("/carriers/:code/quote", h.CarrierQuote)
 	}
 }

@@ -405,3 +405,40 @@ func (h *Handler) ListBillItems(c *gin.Context) {
 	}
 	response.Paginated(c, items, total, p.Page, p.Size)
 }
+
+// Phase 5 handlers (mock-backed)
+
+// CarrierInfo is the response for ListCarriers.
+type CarrierInfo struct {
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+func (h *Handler) ListCarriers(c *gin.Context) {
+	response.Success(c, []CarrierInfo{
+		{Code: "mock_carrier", Name: "模拟承运商 (测试用)", Status: "sandbox"},
+	})
+}
+
+func (h *Handler) CarrierQuote(c *gin.Context) {
+	code := c.Param("code")
+	var req CarrierQuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	mode := CarrierAPIMode(c.DefaultQuery("mode", "sandbox"))
+
+	if code != "mock_carrier" {
+		response.Error(c, http.StatusNotFound, "carrier not found: "+code)
+		return
+	}
+
+	resp, err := (&MockCarrierAdapter{}).GetQuote(c.Request.Context(), mode, &req)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, resp)
+}
