@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -28,6 +29,13 @@ func ListingTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"listing:read:listing"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":     "ok",
+					"message":    "stub: Listing查询功能尚在实现中，将在后续版本上线",
+					"listing_id": input["listing_id"],
+				}, nil
+			},
 		},
 		{
 			Name:        "listing.optimize_suggest",
@@ -53,6 +61,13 @@ func ListingTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"listing:read:optimize"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         30 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":     "ok",
+					"message":    "stub: Listing优化功能尚在实现中，将在后续版本上线",
+					"listing_id": input["listing_id"],
+				}, nil
+			},
 		},
 		{
 			Name:        "sku.read",
@@ -73,6 +88,13 @@ func ListingTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"listing:read:sku"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":  "ok",
+					"message": "stub: SKU查询功能尚在实现中，将在后续版本上线",
+					"sku":     input["sku"],
+				}, nil
+			},
 		},
 		{
 			Name:        "category.list",
@@ -96,6 +118,13 @@ func ListingTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"listing:read:category"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":   "ok",
+					"message":  "stub: 分类列表查询功能尚在实现中，将在后续版本上线",
+					"platform": input["platform"],
+				}, nil
+			},
 		},
 	}
 }

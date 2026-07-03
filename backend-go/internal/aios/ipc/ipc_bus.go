@@ -12,6 +12,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// CapabilityChecker queries which agent IDs can handle a given capability.
+// Implementations can inspect the ToolRegistry, agent manifests, or any
+// other capability index at query time. A nil return is treated as empty.
+type CapabilityChecker func(ctx context.Context, capability string) []string
+
 // Handler processes an IPC message and optionally returns a response.
 // For request-type messages (Request, Delegate, Gather, Consensus),
 // a non-nil response with the same SessionID is routed back to the caller.
@@ -367,4 +372,22 @@ func (ipc *IPC) Consensus(ctx context.Context, question string, agents []string)
 	}
 
 	return computeConsensus(results), nil
+}
+
+// FindByCapability returns agent IDs that can handle the given capability.
+// It uses the provided CapabilityChecker when non-nil — this lets callers
+// query a ToolRegistry, agent manifest index, or any other capability store.
+// When checker is nil, it falls back to listing all registered handler topics.
+func (ipc *IPC) FindByCapability(ctx context.Context, capability string, checker CapabilityChecker) []string {
+	if checker != nil {
+		return checker(ctx, capability)
+	}
+	// Fallback: scan registered handler topics.
+	ipc.mu.RLock()
+	defer ipc.mu.RUnlock()
+	agents := make([]string, 0, len(ipc.handlers))
+	for topic := range ipc.handlers {
+		agents = append(agents, topic)
+	}
+	return agents
 }

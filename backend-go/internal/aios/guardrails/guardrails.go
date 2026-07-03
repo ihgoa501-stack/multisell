@@ -198,6 +198,18 @@ func (c *Chain) ToolCallCheck() func(ctx context.Context, toolName string, toolI
 	}
 }
 
+// RollbackGuard returns the RollbackGuard instance from the chain, or nil
+// if none is registered. This allows wiring code to access the rollback
+// guard for recording compensating actions directly.
+func (c *Chain) RollbackGuard() *RollbackGuard {
+	for _, g := range c.guardrails {
+		if rg, ok := g.(*RollbackGuard); ok {
+			return rg
+		}
+	}
+	return nil
+}
+
 // Context key strings matching toolregistry's keys. String keys avoid import
 // cycles — both packages read/write the same context values.
 const (

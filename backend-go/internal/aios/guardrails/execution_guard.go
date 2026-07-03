@@ -124,6 +124,38 @@ func (g *ExecutionGuard) Rules() []ExecutionRule {
 	return out
 }
 
+// SyncFromActionPolicy converts a list of action-policy-like rules to
+// ExecutionRule format and replaces the current rule set.
+// Each rule is a map with optional keys: "name"(string), "max_amount"(float64),
+// "max_quantity"(int), "action_types"([]string), "risk_levels"([]string),
+// "require_approval"(bool).
+func (g *ExecutionGuard) SyncFromActionPolicy(rules []map[string]interface{}) {
+	converted := make([]ExecutionRule, 0, len(rules))
+	for _, r := range rules {
+		er := ExecutionRule{}
+		if v, ok := r["name"].(string); ok {
+			er.Name = v
+		}
+		if v, ok := r["max_amount"].(float64); ok {
+			er.MaxAmount = v
+		}
+		if v, ok := r["max_quantity"].(int); ok {
+			er.MaxQuantity = v
+		}
+		if v, ok := r["require_approval"].(bool); ok {
+			er.RequireApproval = v
+		}
+		if v, ok := r["action_types"].([]string); ok {
+			er.ActionTypes = v
+		}
+		if v, ok := r["risk_levels"].([]string); ok {
+			er.RiskLevels = v
+		}
+		converted = append(converted, er)
+	}
+	g.SetRules(converted)
+}
+
 // Name returns "execution_guard".
 func (g *ExecutionGuard) Name() string {
 	return "execution_guard"

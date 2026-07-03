@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -35,6 +36,14 @@ func ShippingTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"shipping:read:carrier"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         15 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":      "ok",
+					"message":     "stub: 承运商比价功能尚在实现中，将在后续版本上线",
+					"from_country": input["from_country"],
+					"to_country":   input["to_country"],
+				}, nil
+			},
 		},
 		{
 			Name:        "shipping.track",
@@ -56,6 +65,13 @@ func ShippingTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"shipping:read:track"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":      "ok",
+					"message":     "stub: 物流轨迹查询功能尚在实现中，将在后续版本上线",
+					"tracking_no": input["tracking_no"],
+				}, nil
+			},
 		},
 		{
 			Name:        "shipping.bill.audit",
@@ -79,6 +95,13 @@ func ShippingTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"shipping:write:bill"},
 			RiskLevel:           toolregistry.RiskMedium,
 			MaxDuration:         30 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":  "ok",
+					"message": "stub: 运费审计功能尚在实现中，将在后续版本上线",
+					"bill_id": input["bill_id"],
+				}, nil
+			},
 		},
 	}
 }

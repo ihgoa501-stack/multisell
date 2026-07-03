@@ -7,6 +7,7 @@ package setup
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/ai"
@@ -70,7 +71,7 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 
 	// 2. Create Runtime and register all canonical AI agents from DefaultRegistry.
 	rt := runtime.New(logger, bus)
-	registerAllAgents(rt, logger)
+	registerAllAgents(rt, reg, logger)
 
 	// 3. Create Guardrails Chain (L1-L5) and populate PermissionGuard.
 	chain := guardrails.NewChainWithLogger(logger)
@@ -80,6 +81,7 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 	chain.Add(guardrails.NewOutputGuard())
 	chain.Add(guardrails.NewExecutionGuard())
 	chain.Add(guardrails.NewRollbackGuard(logger))
+	tools.SetRollbackGuard(chain.RollbackGuard())
 
 	// Populate PermissionGuard with tool -> required permissions from registry.
 	for _, t := range reg.List() {
@@ -126,6 +128,11 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 	// 10. Create Observability Collector.
 	obs := observability.NewCollector(logger)
 
+	// IPC is wired with EventBus (see ipc_bus.go) — the bus parameter is passed
+	// to ipc.New via the New(logger, bus) constructor. The IPC bus does not
+	// currently integrate with ToolRegistry for capability-based discovery;
+	// that integration is available via IPC.FindByCapability when needed.
+
 	return &Config{
 		Runtime:       rt,
 		Bus:           bus,
@@ -143,7 +150,7 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 
 // registerAllAgents converts the canonical AI agent roster into Runtime
 // AgentManifest entries and registers each one.
-func registerAllAgents(rt *runtime.Runtime, logger *zap.Logger) {
+func registerAllAgents(rt *runtime.Runtime, reg *toolregistry.ToolRegistry, logger *zap.Logger) {
 	roster := ai.DefaultRegistry()
 	for _, spec := range roster.Agents {
 		manifest := &runtime.AgentManifest{
@@ -152,6 +159,7 @@ func registerAllAgents(rt *runtime.Runtime, logger *zap.Logger) {
 			Squad:       squadForAgent(spec.Squad),
 			Version:     "1.0.0",
 			Description: spec.Description,
+			AllowedTools: squadToolPrefixes(spec.Squad, reg),
 			Triggers: []runtime.TriggerDef{
 				{Type: "event", DecisionPoint: spec.PrimaryDecisionPoint()},
 			},
@@ -184,20 +192,55 @@ func squadForAgent(squad string) string {
 	}
 }
 
+// squadToolPrefixes returns the list of tool names whose name starts with any
+// of the prefixes mapped to the given squad. For ops and general squads
+// (unrestricted), it returns all registered tools.
+func squadToolPrefixes(squad string, reg *toolregistry.ToolRegistry) []string {
+	squadPrefixes := map[string][]string{
+		"growth":      {"listing.", "sourcing.", "supplier.", "product_scout", "market_analysis", "acos.", "ad.", "customer_service.", "aftersales.", "dashboard.", "sku.", "category.", "platform_fee."},
+		"fulfillment": {"inventory.", "purchase_order.", "shipping."},
+		"risk":        {"finance.", "discount.", "compliance."},
+		"governance":  {"dashboard."},
+		"settle":      {"order.", "finance."},
+	}
+
+	prefixes, ok := squadPrefixes[squad]
+	if !ok {
+		// ops, general: all tools
+		all := reg.List()
+		names := make([]string, len(all))
+		for i, t := range all {
+			names[i] = t.Name
+		}
+		return names
+	}
+
+	var names []string
+	for _, t := range reg.List() {
+		for _, p := range prefixes {
+			if strings.HasPrefix(t.Name, p) {
+				names = append(names, t.Name)
+				break
+			}
+		}
+	}
+	return names
+}
+
 // agentToolCheckerBySquad returns an AgentToolChecker that allows an agent to
-// call tools whose Squad matches the agent's squad. Returns nil (all allowed)
-// when the agent is not found.
+// call only the tools listed in its manifest's AllowedTools. Returns nil (all
+// allowed) when the agent is not found or has no restrictions configured.
 func agentToolCheckerBySquad(rt *runtime.Runtime) toolregistry.AgentToolChecker {
 	return func(_ context.Context, agentID string) (map[string]bool, error) {
 		inst, ok := rt.GetInstance(agentID)
-		if !ok {
-			return nil, nil // unknown agent → allow all
+		if !ok || inst.Manifest == nil || len(inst.Manifest.AllowedTools) == 0 {
+			return nil, nil // unknown or unrestricted → allow all
 		}
-		if inst.Manifest == nil {
-			return nil, nil
+		allowed := make(map[string]bool, len(inst.Manifest.AllowedTools))
+		for _, t := range inst.Manifest.AllowedTools {
+			allowed[t] = true
 		}
-		// nil means no restrictions at this level (squad-level access).
-		return nil, nil // ponytail: squad-level filtering, add granular allowlist when needed
+		return allowed, nil
 	}
 }
 

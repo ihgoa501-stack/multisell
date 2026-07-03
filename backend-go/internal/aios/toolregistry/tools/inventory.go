@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
 	"gorm.io/gorm"
@@ -14,11 +15,19 @@ import (
 // ── Package-level state for inventory tool handlers ──────────────────
 
 var inventoryDB *gorm.DB
+var rollbackGuard *guardrails.RollbackGuard
 
 // SetInventoryDB sets the database connection for inventory tool handlers.
 // Must be called during server initialization.
 func SetInventoryDB(db *gorm.DB) {
 	inventoryDB = db
+}
+
+// SetRollbackGuard sets the rollback guard for inventory tool handlers.
+// Tool handlers that perform mutating operations can record rollback entries
+// for compensatable actions. Must be called during server initialization.
+func SetRollbackGuard(rg *guardrails.RollbackGuard) {
+	rollbackGuard = rg
 }
 
 func InventoryTools() []toolregistry.Tool {
@@ -203,13 +212,13 @@ func InventoryTools() []toolregistry.Tool {
 				}
 
 				return map[string]interface{}{
-					"status":   "created",
-					"rule_id":  rule.ID,
-					"sku_id":   rule.SkuID,
+					"status":    "created",
+					"rule_id":   rule.ID,
+					"sku_id":    rule.SkuID,
 					"min_level": rule.MinLevel,
 					"max_level": rule.MaxLevel,
-					"enabled":  rule.Enabled,
-					"message":  fmt.Sprintf("SKU %d 的库存预警规则已创建", skuID),
+					"enabled":   rule.Enabled,
+					"message":   fmt.Sprintf("SKU %d 的库存预警规则已创建", skuID),
 				}, nil
 			},
 		},
@@ -300,11 +309,24 @@ func InventoryTools() []toolregistry.Tool {
 					})
 				}
 
+				// Register a compensatable rollback entry for the transfer.
+				if rollbackGuard != nil {
+					rollbackGuard.Record(guardrails.RollbackEntry{
+						ActionID:   fmt.Sprintf("transfer-%d", time.Now().UnixNano()),
+						ActionType: "inventory.transfer",
+						OriginalState: map[string]interface{}{
+							"from_warehouse": input["from_warehouse"],
+							"to_warehouse":   input["to_warehouse"],
+							"items":          input["items"],
+						},
+					})
+				}
+
 				return map[string]interface{}{
-					"status":   "created",
-					"count":    len(created),
+					"status":    "created",
+					"count":     len(created),
 					"transfers": created,
-					"message":  fmt.Sprintf("已创建 %d 条调拨记录", len(created)),
+					"message":   fmt.Sprintf("已创建 %d 条调拨记录", len(created)),
 				}, nil
 			},
 		},
@@ -370,15 +392,15 @@ func InventoryTools() []toolregistry.Tool {
 				items := make([]map[string]interface{}, len(ts))
 				for i, t := range ts {
 					m := map[string]interface{}{
-						"id":            t.ID,
+						"id":             t.ID,
 						"from_warehouse": t.FromWarehouse,
-						"to_warehouse":  t.ToWarehouse,
-						"sku_id":        t.SkuID,
-						"quantity":      t.Quantity,
-						"status":        t.Status,
-						"note":          t.Note,
-						"created_at":    t.CreatedAt.Format(time.RFC3339),
-						"updated_at":    t.UpdatedAt.Format(time.RFC3339),
+						"to_warehouse":   t.ToWarehouse,
+						"sku_id":         t.SkuID,
+						"quantity":       t.Quantity,
+						"status":         t.Status,
+						"note":           t.Note,
+						"created_at":     t.CreatedAt.Format(time.RFC3339),
+						"updated_at":     t.UpdatedAt.Format(time.RFC3339),
 					}
 					if t.Carrier != "" {
 						m["carrier"] = t.Carrier
