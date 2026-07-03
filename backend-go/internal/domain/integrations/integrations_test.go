@@ -199,7 +199,7 @@ func TestListAccounts_WithSearchFilter(t *testing.T) {
 		// SQLite does not support the ILIKE operator, so this test is
 		// PostgreSQL-specific. Skip gracefully rather than fail.
 		if strings.Contains(err.Error(), "ILIKE") {
-			t.Skipf("ILIKE not supported by test database (SQLite): %v", err)
+			t.Skipf("ponytail: ILIKE not supported by test database (SQLite): %v", err)
 		}
 		t.Fatalf("List with search: %v", err)
 	}

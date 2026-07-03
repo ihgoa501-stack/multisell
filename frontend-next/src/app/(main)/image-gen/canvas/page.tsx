@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Card, Empty, Input, InputNumber, message, Modal, Space, Table, Tag, Typography } from 'antd';
 import {
   PlusOutlined,
@@ -97,20 +97,7 @@ function LayerEditModal({
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
 
-  useEffect(() => {
-    if (!layer) {
-      setText(''); setFontSize(24); setColor('#000000');
-      setSrc(''); setImgW(200); setImgH(200); setX(0); setY(0);
-      return;
-    }
-    setX(layer.x); setY(layer.y);
-    if (layer.type === 'text') {
-      setText(layer.text); setFontSize(layer.fontSize); setColor(layer.color);
-    } else {
-      setSrc(layer.src); setImgW(layer.width); setImgH(layer.height);
-    }
-  }, [layer]);
-
+  // ponytail: Modal key+destroyOnClose remounts on layer change, no useEffect needed
   const handleOk = () => {
     if (!layer) return;
     if (layer.type === 'text') {
@@ -123,7 +110,7 @@ function LayerEditModal({
   };
 
   return (
-    <Modal title={layer?.type === 'text' ? '编辑文本' : '编辑图片'} open={open} onOk={handleOk} onCancel={onCancel} width={440} destroyOnClose>
+    <Modal key={layer?.id ?? 'reset'} title={layer?.type === 'text' ? '编辑文本' : '编辑图片'} open={open} onOk={handleOk} onCancel={onCancel} width={440} destroyOnClose>
       <Space direction="vertical" style={{ width: '100%' }} size="small">
         <div style={{ display: 'flex', gap: 12 }}>
           <div><Typography.Text type="secondary">X</Typography.Text><InputNumber value={x} onChange={(v) => setX(v ?? 0)} style={{ width: 80 }} /></div>
