@@ -1,5 +1,5 @@
 -- ============================================================
--- Rollback migration 000051: Inventory subtables
+-- Rollback migration 000059: Inventory subtables
 -- Drops inventory_alert, inventory_alert_rule,
 -- inventory_transfer, and bin_location tables.
 -- ============================================================

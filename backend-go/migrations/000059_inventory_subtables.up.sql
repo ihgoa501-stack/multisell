@@ -1,5 +1,5 @@
 -- ============================================================
--- Migration 000051: Inventory subtables
+-- Migration 000059: Inventory subtables
 -- Creates inventory_alert, inventory_alert_rule,
 -- inventory_transfer, and bin_location tables.
 -- ============================================================
