@@ -238,11 +238,11 @@ function CandidateProductTable() {
       title: '来源平台', dataIndex: 'source_platform', width: 90,
       render: (v: string) => v ? <Tag>{v}</Tag> : '-',
     },
-    { title: '采购价', dataIndex: 'purchase_price', width: 90, render: (p: number) => p ? `¥${p.toFixed(2)}` : '-' },
-    { title: '目标售价', dataIndex: 'target_sale_price', width: 100, render: (p: number) => p ? `$${p.toFixed(2)}` : '-' },
+    { title: '采购价', dataIndex: 'purchase_price', width: 90, render: (p: number) => p != null ? `¥${p.toFixed(2)}` : '-' },
+    { title: '目标售价', dataIndex: 'target_sale_price', width: 100, render: (p: number) => p != null ? `$${p.toFixed(2)}` : '-' },
     {
       title: '目标平台', dataIndex: 'target_platform_id', width: 90,
-      render: (id: number) => id ? platformLabelMap[String(id)] || `#${id}` : '-',
+      render: (id: number | null) => id != null ? platformLabelMap[String(id)] || `#${id}` : '-',
     },
     {
       title: '完整度', dataIndex: 'completeness_status', width: 110,
