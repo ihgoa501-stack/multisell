@@ -151,13 +151,12 @@ func (h *Handler) TrafficSummary(c *gin.Context) {
 // InterceptedActions GET /agentos/intercepted-actions
 func (h *Handler) InterceptedActions(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	items, err := h.service.InterceptedActions(limit, offset)
+	items, total, err := h.service.InterceptedActions(limit)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(c, items)
+	response.Success(c, gin.H{"items": items, "total": total})
 }
 
 // AuditReplay GET /agentos/audit-replay/:correlation_id
