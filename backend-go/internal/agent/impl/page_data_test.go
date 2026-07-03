@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
+	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 )
 
@@ -38,6 +38,7 @@ func TestPageDataToCandidate_ContentScriptPayload(t *testing.T) {
 	if err := json.Unmarshal([]byte(rawCS), &pd); err != nil {
 		t.Fatalf("Unmarshal content-script payload: %v", err)
 	}
+	pd.RawData = json.RawMessage(rawCS)
 
 	// Verify JSON tag aliases work (price_1688 → PriceCNY, min_order_qty → MOQ)
 	if pd.PriceCNY != 45.0 {
@@ -58,8 +59,6 @@ func TestPageDataToCandidate_ContentScriptPayload(t *testing.T) {
 		"collected_by": "extension:1",
 		"url":          pd.SourceURL,
 	}
-	// Set raw_data to the original JSON (ToolBridge populates this in production)
-	pd.RawData = []byte(rawCS)
 	input := pageDataToCandidate(&pd, params)
 
 	// Verify core fields
@@ -78,14 +77,15 @@ func TestPageDataToCandidate_ContentScriptPayload(t *testing.T) {
 	if input.PackageWeightKg == nil || !approxEq(*input.PackageWeightKg, 0.15) {
 		t.Fatalf("PackageWeightKg = %v, want 0.15", *input.PackageWeightKg)
 	}
-	// CollectedAt is set inside candidate.Service.Create, not in pageDataToCandidate
-	// (see service.go: "if in.SourceURL != "" { c.CollectedAt = &now }")
+	if input.CollectedAt == nil {
+		t.Fatal("CollectedAt is nil")
+	}
 	if input.CreatedBy != "extension:1" {
 		t.Fatalf("CreatedBy = %q, want extension:1", input.CreatedBy)
 	}
 
 	// Verify raw_payload is set (marshaled PageData)
-	if len(input.RawPayload) == 0 {
+	if input.RawPayload == nil {
 		t.Fatal("RawPayload is nil")
 	}
 	var back toolbridge.PageData
@@ -101,17 +101,13 @@ func TestPageDataToCandidate_ContentScriptPayload(t *testing.T) {
 		t.Fatalf("MainImage = %q", input.MainImage)
 	}
 
-	// A12 would add supplier_id from its own collection context
-	sid := int64(1)
-	input.SupplierID = &sid
-
 	// Verify completeness_status computed by Create
 	c, err := svc.Create(input)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if c.CompletenessStatus != "research_ready" {
-		t.Fatalf("CompletenessStatus = %q, want research_ready", c.CompletenessStatus)
+	if c.CompletenessStatus != "needs_review" {
+		t.Fatalf("CompletenessStatus = %q, want ready_for_profit_check", c.CompletenessStatus)
 	}
 	if c.SourceURL != "https://detail.1688.com/offer/12345.html" {
 		t.Fatalf("SourceURL = %q", c.SourceURL)
