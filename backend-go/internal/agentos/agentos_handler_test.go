@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -281,6 +282,55 @@ func TestInterceptedActions(t *testing.T) {
 	}
 	if len(resp.Data.Items) != 2 {
 		t.Fatalf("items count = %d, want 2", len(resp.Data.Items))
+	}
+}
+
+func TestAgentMetrics(t *testing.T) {
+	h, r := newTestHandler(t)
+	db := h.service.db
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS unified_action (
+		id INTEGER PRIMARY KEY, title TEXT, agent_id TEXT, squad_id TEXT,
+		risk_level TEXT, status TEXT, confidence REAL, proposed_at TIMESTAMP,
+		description TEXT, trace_id TEXT, correlation_id TEXT,
+		block_reason TEXT, action_type TEXT, created_at TIMESTAMP
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS ai_trace (
+		id INTEGER PRIMARY KEY, trace_id TEXT, agent_id TEXT,
+		decision_point TEXT, status TEXT, final_output TEXT,
+		started_at TIMESTAMP, completed_at TIMESTAMP
+	)`)
+
+	db.Exec(`INSERT INTO unified_action (id, title, agent_id, status, risk_level, created_at) VALUES (1, 'A1', 'A2', 'completed', 'low', datetime('now'))`)
+	db.Exec(`INSERT INTO unified_action (id, title, agent_id, status, risk_level, created_at) VALUES (2, 'A2', 'A2', 'approved', 'medium', datetime('now'))`)
+	db.Exec(`INSERT INTO unified_action (id, title, agent_id, status, risk_level, created_at) VALUES (3, 'A3', 'A5', 'failed', 'high', datetime('now'))`)
+	db.Exec(`INSERT INTO unified_action (id, title, agent_id, status, risk_level, created_at) VALUES (4, 'A4', 'A5', 'blocked', 'critical', datetime('now'))`)
+	db.Exec(`INSERT INTO ai_trace (id, trace_id, agent_id, decision_point, status, started_at, completed_at) VALUES (1, 't1', 'A2', 'listing', 'completed', datetime('now', '-1 hour'), datetime('now'))`)
+	db.Exec(`INSERT INTO ai_trace (id, trace_id, agent_id, decision_point, status, started_at, completed_at) VALUES (2, 't2', 'A5', 'stock', 'completed', datetime('now', '-2 hour'), datetime('now', '-1 hour'))`)
+
+	r.GET("/agentos/agent-metrics", h.AgentMetrics)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/agentos/agent-metrics", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "agents") {
+		t.Fatalf("response body does not contain 'agents': %s", w.Body.String())
+	}
+}
+
+func TestExternalHealth(t *testing.T) {
+	h, r := newTestHandler(t)
+
+	r.GET("/agentos/external-health", h.ExternalHealth)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/agentos/external-health", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
 }
 

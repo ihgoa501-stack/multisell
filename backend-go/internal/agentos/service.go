@@ -901,6 +901,121 @@ func (s *Service) AuditReplay(correlationID string) (*AuditReplayResponse, error
 	return resp, nil
 }
 
+// ---------------------------------------------------------------------------
+// AgentMetrics types and method
+// ---------------------------------------------------------------------------
+
+// AgentMetrics is the per-agent health and performance snapshot.
+type AgentMetrics struct {
+	AgentID             string  `json:"agent_id"`
+	RunCount            int64   `json:"run_count"`
+	SuccessCount        int64   `json:"success_count"`
+	FailureCount        int64   `json:"failure_count"`
+	BlockedCount        int64   `json:"blocked_count"`
+	ApprovalRate        float64 `json:"approval_rate"`
+	OwnerAcceptanceRate float64 `json:"owner_acceptance_rate"`
+	AvgLatencyMs        float64 `json:"avg_latency_ms"`
+	ExternalFailureRate float64 `json:"external_failure_rate"`
+	Health              string  `json:"health"`
+}
+
+// AgentMetrics returns per-agent metrics aggregated from unified_action and ai_trace.
+func (s *Service) AgentMetrics() ([]AgentMetrics, error) {
+	type rawMetrics struct {
+		AgentID   string
+		RunCount  int64
+		Succeeded int64
+		Failed    int64
+		Blocked   int64
+	}
+
+	var actions []rawMetrics
+	s.db.Table("unified_action").
+		Select(`
+			agent_id,
+			COUNT(*) AS run_count,
+			COUNT(*) FILTER (WHERE status = 'completed') AS succeeded,
+			COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+			COUNT(*) FILTER (WHERE status = 'blocked') AS blocked
+		`).
+		Group("agent_id").
+		Scan(&actions)
+
+	type latRow struct {
+		AgentID string
+		AvgLat  float64
+	}
+	var latencies []latRow
+	s.db.Table("ai_trace").
+		Select("agent_id, COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(completed_at, started_at) - started_at))), 0) AS avg_lat").
+		Where("completed_at IS NOT NULL").
+		Group("agent_id").
+		Scan(&latencies)
+	latMap := make(map[string]float64, len(latencies))
+	for _, l := range latencies {
+		latMap[l.AgentID] = l.AvgLat * 1000
+	}
+
+	type accRow struct {
+		AgentID  string
+		Approved int64
+		Rejected int64
+	}
+	var accRates []accRow
+	s.db.Table("unified_action").
+		Select(`
+			agent_id,
+			COUNT(*) FILTER (WHERE status = 'approved') AS approved,
+			COUNT(*) FILTER (WHERE status = 'rejected') AS rejected
+		`).
+		Group("agent_id").
+		Scan(&accRates)
+	accMap := make(map[string]float64, len(accRates))
+	for _, a := range accRates {
+		total := a.Approved + a.Rejected
+		if total > 0 {
+			accMap[a.AgentID] = float64(a.Approved) / float64(total)
+		}
+	}
+
+	result := make([]AgentMetrics, 0, len(actions))
+	for _, a := range actions {
+		total := a.Succeeded + a.Failed + a.Blocked
+		extFailRate := 0.0
+		if a.Failed > 0 && total > 0 {
+			extFailRate = float64(a.Failed) / float64(total)
+		}
+		lat := latMap[a.AgentID]
+
+		health := "ok"
+		if extFailRate > 0.2 || a.Failed > 10 {
+			health = "warn"
+		}
+		if extFailRate > 0.5 || a.Failed > 50 {
+			health = "critical"
+		}
+
+		result = append(result, AgentMetrics{
+			AgentID:             a.AgentID,
+			RunCount:            a.RunCount,
+			SuccessCount:        a.Succeeded,
+			FailureCount:        a.Failed,
+			BlockedCount:        a.Blocked,
+			ApprovalRate:        accMap[a.AgentID],
+			OwnerAcceptanceRate: accMap[a.AgentID],
+			AvgLatencyMs:        lat,
+			ExternalFailureRate: extFailRate,
+			Health:              health,
+		})
+	}
+	return result, nil
+}
+
+// ExternalHealth returns a generic external service health check for the cockpit.
+func (s *Service) ExternalHealth() []interface{} {
+	return []interface{}{}
+}
+
 // FailedRun represents a failed agent run with error context.
 type FailedRun struct {
 	ID            int64  `json:"id"`

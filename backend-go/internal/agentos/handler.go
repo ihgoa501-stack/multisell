@@ -159,6 +159,21 @@ func (h *Handler) InterceptedActions(c *gin.Context) {
 	response.Success(c, gin.H{"items": items, "total": total})
 }
 
+// AgentMetrics GET /agentos/agent-metrics
+func (h *Handler) AgentMetrics(c *gin.Context) {
+	metrics, err := h.service.AgentMetrics()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"agents": metrics})
+}
+
+// ExternalHealth GET /agentos/external-health
+func (h *Handler) ExternalHealth(c *gin.Context) {
+	response.Success(c, h.service.ExternalHealth())
+}
+
 // AuditReplay GET /agentos/audit-replay/:correlation_id
 func (h *Handler) AuditReplay(c *gin.Context) {
 	correlationID := c.Param("correlation_id")
