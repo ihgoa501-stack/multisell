@@ -115,8 +115,8 @@ jobs:
   # CD: 自动部署到生产（仅合并到 main 时触发）
   # ==========================================
   deploy:
-    if: github.ref == 'refs/heads/infra-q3-buildout' && github.event_name == 'push'
-    needs: [go-lint, go-test, next-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [go-lint, go-test, next-build, e2e-test]
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH

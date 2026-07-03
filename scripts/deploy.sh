@@ -30,12 +30,12 @@ info "目录: $DEPLOY_DIR"
 info "Step 1/5: 拉取最新代码 ..."
 git fetch origin
 LOCAL=$(git rev-parse HEAD)
-REMOTE=$(git rev-parse origin/infra-q3-buildout)
+REMOTE=$(git rev-parse origin/main)
 
 if [[ "$LOCAL" == "$REMOTE" ]]; then
     info "  已是最新版本 ($(echo $LOCAL | cut -c1-8))，跳过 pull"
 else
-    git pull origin infra-q3-buildout
+    git pull origin main
     ok "  代码已更新: $(echo $LOCAL | cut -c1-8) → $(echo $REMOTE | cut -c1-8)"
 fi
 
@@ -92,8 +92,16 @@ deploy_service "backend" "8080" "http://localhost:8080/api/health" || {
 deploy_service "frontend" "3000" || true
 deploy_service "caddy" "80" || true
 
-# ---- Step 5: 验证全链路 ----------------------------------------------------
-info "Step 5/5: 验证部署 ..."
+# ---- Step 5: 启动监控栈 ----------------------------------------------------
+info "Step 5/7: 启动监控栈 ..."
+if docker compose $COMPOSE_FILES $MONITORING_FILES up -d --no-deps prometheus grafana alertmanager 2>&1; then
+    ok "  监控栈已启动"
+else
+    warn "  监控栈启动失败（不影响主服务），检查: docker compose $MONITORING_FILES logs"
+fi
+
+# ---- Step 6: 验证全链路 ----------------------------------------------------
+info "Step 6/7: 验证部署 ..."
 
 sleep 3
 
@@ -117,5 +125,5 @@ info "当前版本: $(git rev-parse --short HEAD)"
 info "部署时间: $(date '+%Y-%m-%d %H:%M:%S')"
 info ""
 info "查看日志: docker compose $COMPOSE_FILES logs --tail=50 -f backend"
-info "监控面板: http://localhost:3001 (Grafana)"
+info "监控面板: http://localhost:3001 (Grafana)，用户名 admin"
 info "回滚命令: ./scripts/rollback.sh"
