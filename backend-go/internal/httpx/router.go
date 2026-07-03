@@ -150,7 +150,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	cmd.Register("stock_alert", command.StockAlertHandler(db, logger))
 	cmd.Register("replenish", command.InventoryReplenishHandler(db, logger))
 	cmd.Register("price_review", command.PriceAdjustHandler(db, logger, approvalSvc))
-	cmd.Register("price_update", command.PriceUpdateHandler(db, logger, approvalSvc))
+	cmd.Register("price_update", command.PriceAdjustHandler(db, logger, approvalSvc))
 	cmd.Register("listing_optimize", command.ListingDraftHandler(db, logger))
 	cmd.Register("compliance_check", command.FlagNonCompliantHandler(db, logger))
 

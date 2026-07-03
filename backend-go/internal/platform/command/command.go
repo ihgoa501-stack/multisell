@@ -80,15 +80,6 @@ func (d *Dispatcher) Unregister(actionType string) {
 		zap.String("action_type", actionType))
 }
 
-// highRiskActionTypes maps action types that require an approved approval
-// before their handler executes.
-var highRiskActionTypes = map[string]string{
-	"price_adjust":    "price_change",
-	"price_update":    "price_change",
-	"stock_update":    "stock_update",
-	"listing_publish": "listing_publish",
-}
-
 // Dispatch executes the handler registered for the given action type.
 // Returns ErrHandlerNotFound if no handler is registered.
 //
@@ -174,12 +165,13 @@ type PolicyChecker interface {
 }
 
 // ErrApprovalRequired is returned when a high-risk action is attempted without
-// a valid approval.
-var ErrApprovalRequired = fmt.Errorf("action requires approval before execution")
+// a valid approval. Re-exported from actioncatalog so callers can use
+// errors.Is(err, command.ErrApprovalRequired) from either gate.
+var ErrApprovalRequired = actioncatalog.ErrApprovalRequired
 
 // ErrActionBlocked is returned when an action is rejected by the catalog
 // gate (e.g. L4 blocked actions attempted in any mode).
-var ErrActionBlocked = fmt.Errorf("action blocked by catalog")
+var ErrActionBlocked = actioncatalog.ErrAutonomousBlocked
 
 // RegisteredTypes returns a list of all registered action types.
 func (d *Dispatcher) RegisteredTypes() []string {
