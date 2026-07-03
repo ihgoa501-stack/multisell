@@ -689,6 +689,12 @@ func (h *Handler) CarrierQuote(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, "carrier not found")
 		return
 	}
+	// ponytail: approvalID from query param, wire when CreateShipment/CancelShipment handlers exist
+	approvalID, _ := strconv.ParseInt(c.Query("approval_id"), 10, 64)
+	if err := h.service.ValidateCarrierAction(mode, approvalID); err != nil {
+		response.Error(c, http.StatusForbidden, err.Error())
+		return
+	}
 	adapter := &MockCarrierAdapter{}
 	resp, err := adapter.GetQuote(c.Request.Context(), mode, &req)
 	if err != nil {
