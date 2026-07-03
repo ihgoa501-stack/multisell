@@ -1,4 +1,4 @@
--- 000056_fulfillment_phase1.up.sql
+-- 000058_fulfillment_phase1.up.sql
 -- Phase 1 of Fulfillment Intelligence OS:
 -- Rule versioning, snapshot enhancements, bill reconciliation fields
 --
