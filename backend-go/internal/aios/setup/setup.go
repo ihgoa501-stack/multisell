@@ -65,6 +65,8 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 	}
 	toolregistry.DefaultRegistry = reg
 	tools.SetAftersalesDB(db)
+	tools.SetInventoryDB(db)
+	tools.SetPurchaseDB(db)
 
 	// 2. Create Runtime and register all canonical AI agents from DefaultRegistry.
 	rt := runtime.New(logger, bus)
