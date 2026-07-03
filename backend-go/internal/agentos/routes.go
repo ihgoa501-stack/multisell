@@ -2,13 +2,14 @@ package agentos
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers AgentOS routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	svc := NewService(db, logger)
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, tracker *toolbridge.ExternalCallTracker) {
+	svc := NewService(db, logger, tracker)
 	h := NewHandler(svc)
 
 	agentos := rg.Group("/agentos")

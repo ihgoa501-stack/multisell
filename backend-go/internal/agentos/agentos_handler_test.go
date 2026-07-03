@@ -20,7 +20,7 @@ func newTestHandler(t *testing.T) (*Handler, *gin.Engine) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), nil)
 	h := NewHandler(svc)
 	r := gin.New()
 	return h, r
@@ -73,7 +73,7 @@ func TestService_WorkItemDetail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), nil)
 
 	db.Exec(`CREATE TABLE IF NOT EXISTS unified_action (
 		id INTEGER PRIMARY KEY, title TEXT, agent_id TEXT, squad_id TEXT,
@@ -113,7 +113,7 @@ func TestService_WorkItemDetail_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), nil)
 	db.Exec(`CREATE TABLE IF NOT EXISTS unified_action (id INTEGER PRIMARY KEY)`)
 
 	_, err = svc.WorkItemDetail(999)
@@ -128,7 +128,7 @@ func TestService_AgentTimeline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), nil)
 
 	db.Exec(`CREATE TABLE IF NOT EXISTS unified_action (
 		id INTEGER PRIMARY KEY, title TEXT, agent_id TEXT, squad_id TEXT,
@@ -172,7 +172,7 @@ func TestService_FailedRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	svc := NewService(db, zap.NewNop())
+	svc := NewService(db, zap.NewNop(), nil)
 
 	db.Exec(`CREATE TABLE IF NOT EXISTS ai_trace (
 		id INTEGER PRIMARY KEY, trace_id TEXT, agent_id TEXT,

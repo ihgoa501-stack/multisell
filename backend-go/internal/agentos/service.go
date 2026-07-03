@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/lingmirror/backend-go/internal/ai"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 )
 
 // Service provides AgentOS cockpit aggregation.
@@ -16,14 +17,16 @@ type Service struct {
 	db       *gorm.DB
 	logger   *zap.Logger
 	registry *ai.AgentRegistry
+	tracker  *toolbridge.ExternalCallTracker
 }
 
 // NewService creates a new AgentOS service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
+func NewService(db *gorm.DB, logger *zap.Logger, tracker *toolbridge.ExternalCallTracker) *Service {
 	return &Service{
 		db:       db,
 		logger:   logger,
 		registry: ai.DefaultRegistry(),
+		tracker:  tracker,
 	}
 }
 
@@ -1012,8 +1015,11 @@ func (s *Service) AgentMetrics() ([]AgentMetrics, error) {
 }
 
 // ExternalHealth returns a generic external service health check for the cockpit.
-func (s *Service) ExternalHealth() []interface{} {
-	return []interface{}{}
+func (s *Service) ExternalHealth() []toolbridge.PlatformStatsSnapshot {
+	if s.tracker != nil {
+		return s.tracker.Stats()
+	}
+	return []toolbridge.PlatformStatsSnapshot{}
 }
 
 // FailedRun represents a failed agent run with error context.
