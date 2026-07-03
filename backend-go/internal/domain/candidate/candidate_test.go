@@ -1,6 +1,7 @@
 package candidate
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -780,4 +781,258 @@ func TestService_GetDetail_ReturnsMissingFields(t *testing.T) {
 func newTestLogger(t *testing.T) *zap.Logger {
 	t.Helper()
 	return zap.NewNop()
+}
+
+func TestComputeCompleteness_RespectsSkippedFields(t *testing.T) {
+	t.Parallel()
+	sid := int64(1)
+	p := &CandidateProduct{
+		Title:           "Skipped Fields",
+		PurchasePrice:   100.0,
+		MainImage:       "https://example.com/img.jpg",
+		SupplierID:      &sid,
+		PackageWeightKg: 0.5,
+		PackageLengthCm: 10,
+		PackageWidthCm:  8,
+		PackageHeightCm: 6,
+	}
+	status, missing := computeCompleteness(p)
+	if status != "research_ready" {
+		t.Fatalf("expected research_ready, got %s", status)
+	}
+	if len(missing) == 0 {
+		t.Fatal("expected missing fields")
+	}
+	p.SkippedFields = []byte(`["hs_code","target_sale_price","origin_country"]`)
+	status, missing = computeCompleteness(p)
+	if status != "listing_ready" {
+		t.Fatalf("expected listing_ready after skipping, got %s", status)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("expected no missing fields after skip, got %v", missing)
+	}
+}
+
+func TestComputeCompleteness_SkippedCoreField(t *testing.T) {
+	t.Parallel()
+	// Skipping all core fields moves past "incomplete" since the user
+	// has acknowledged the gap. The skipped fields are excluded from
+	// missing_fields output.
+	p := &CandidateProduct{
+		Title: "Core Skipped",
+	}
+	p.SkippedFields = []byte(`["purchase_price","main_image"]`)
+	status, missing := computeCompleteness(p)
+	// hasCore = true because both skipped fields are treated as present
+	// but supplier & package are missing -> needs_review
+	if status != "needs_review" {
+		t.Fatalf("expected needs_review, got %s", status)
+	}
+	for _, f := range missing {
+		if f == "purchase_price" || f == "main_image" {
+			t.Fatalf("skipped field %q should not appear in missing fields", f)
+		}
+	}
+}
+
+func TestService_ManualFillFields(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:         "Fill Test",
+		PurchasePrice: &price,
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	detail, err := svc.ManualFillFields(c.ID, &FillFieldsInput{
+		Fields: []FillField{
+			{Field: "main_image", Value: "https://example.com/img.jpg"},
+			{Field: "hs_code", Value: "847130"},
+			{Field: "target_sale_price", Value: 25.99},
+			{Field: "origin_country", Value: "CN"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ManualFillFields: %v", err)
+	}
+	if detail.HSCode != "847130" {
+		t.Fatalf("HSCode = %q", detail.HSCode)
+	}
+	if detail.TargetSalePrice != 25.99 {
+		t.Fatalf("TargetSalePrice = %f", detail.TargetSalePrice)
+	}
+	if detail.CompletenessStatus != "needs_review" {
+		t.Fatalf("expected needs_review, got %s", detail.CompletenessStatus)
+	}
+}
+
+func TestService_ManualFillFields_RejectsUnknownField(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, _ := svc.Create(&CreateCandidateInput{Title: "Reject", PurchasePrice: &price, CreatedBy: "tester"})
+
+	_, err := svc.ManualFillFields(c.ID, &FillFieldsInput{
+		Fields: []FillField{{Field: "bogus_field", Value: "xyz"}},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown field")
+	}
+	if !errors.Is(err, ErrFieldNotRecognized) {
+		t.Fatalf("expected ErrFieldNotRecognized, got %v", err)
+	}
+}
+
+func TestService_SkipField(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:         "Skip Test",
+		PurchasePrice: &price,
+		MainImage:     "https://example.com/img.jpg",
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	detail, err := svc.SkipField(c.ID, "supplier_id")
+	if err != nil {
+		t.Fatalf("SkipField: %v", err)
+	}
+	for _, f := range detail.MissingFields {
+		if f == "supplier_id" {
+			t.Fatal("supplier_id should not appear in missing_fields after skip")
+		}
+	}
+	reloaded, err := svc.GetByID(c.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if len(reloaded.SkippedFields) == 0 {
+		t.Fatal("skipped_fields should not be empty")
+	}
+
+	detail2, err := svc.SkipField(c.ID, "supplier_id")
+	if err != nil {
+		t.Fatalf("SkipField again: %v", err)
+	}
+	if len(detail2.MissingFields) != len(detail.MissingFields) {
+		t.Fatal("re-skip should be a no-op")
+	}
+}
+
+func TestService_SkipField_RejectsUnknownField(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, _ := svc.Create(&CreateCandidateInput{Title: "Reject", PurchasePrice: &price, CreatedBy: "tester"})
+
+	_, err := svc.SkipField(c.ID, "nonexistent_field")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrFieldNotRecognized) {
+		t.Fatalf("expected ErrFieldNotRecognized, got %v", err)
+	}
+}
+
+func TestService_Rescrape_NoSourceURL(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, _ := svc.Create(&CreateCandidateInput{Title: "No URL", PurchasePrice: &price, CreatedBy: "tester"})
+
+	_, err := svc.Rescrape(c.ID)
+	if err == nil {
+		t.Fatal("expected error for missing source URL")
+	}
+	if !errors.Is(err, ErrRescrapeNoSource) {
+		t.Fatalf("expected ErrRescrapeNoSource, got %v", err)
+	}
+}
+
+func TestService_Rescrape_WithSourceURL(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	price := 50.0
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:         "Has URL",
+		PurchasePrice: &price,
+		SourceURL:     "https://example.com/product/1",
+		CreatedBy:     "tester",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	detail, err := svc.Rescrape(c.ID)
+	if err != nil {
+		t.Fatalf("Rescrape: %v", err)
+	}
+	if detail.ID != c.ID {
+		t.Fatal("ID mismatch")
+	}
+}
+
+func TestService_FillAndPromoteToComplete(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	sid := int64(1)
+	price := 100.0
+	weight := 0.5
+	lengthCm := 10.0
+	widthCm := 8.0
+	heightCm := 6.0
+
+	c, err := svc.Create(&CreateCandidateInput{
+		Title:           "Promote Test",
+		MainImage:       "https://example.com/img.jpg",
+		PurchasePrice:   &price,
+		SupplierID:      &sid,
+		PackageWeightKg: &weight,
+		PackageLengthCm: &lengthCm,
+		PackageWidthCm:  &widthCm,
+		PackageHeightCm: &heightCm,
+		CreatedBy:       "tester",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if c.CompletenessStatus != "research_ready" {
+		t.Fatalf("expected research_ready, got %s", c.CompletenessStatus)
+	}
+
+	detail, err := svc.ManualFillFields(c.ID, &FillFieldsInput{
+		Fields: []FillField{
+			{Field: "hs_code", Value: "847130"},
+			{Field: "target_sale_price", Value: 29.99},
+			{Field: "origin_country", Value: "CN"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ManualFillFields: %v", err)
+	}
+	if detail.CompletenessStatus != "listing_ready" {
+		t.Fatalf("expected listing_ready after fill, got %s", detail.CompletenessStatus)
+	}
 }

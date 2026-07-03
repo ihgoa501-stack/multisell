@@ -23,5 +23,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		r.GET("/count", h.Count)
 		r.GET("/dedup", h.Dedup)
 		r.POST("/seed", h.Seed)
+
+		// Field completion actions
+		r.PUT("/:id/fields", h.FillFields)
+		r.POST("/:id/skip-field", h.SkipField)
+		r.POST("/:id/rescrape", h.Rescrape)
 	}
 }

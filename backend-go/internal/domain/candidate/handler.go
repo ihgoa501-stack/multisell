@@ -196,3 +196,82 @@ func (h *Handler) Seed(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"seeded": count, "message": "种子数据生成成功"})
 }
+
+// FillFields PUT /candidates/:id/fields
+// Manually fill one or more completeness fields and recalculate status.
+func (h *Handler) FillFields(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var in FillFieldsInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := h.service.ManualFillFields(id, &in)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "candidate product not found")
+			return
+		}
+		if errors.Is(err, ErrFieldNotRecognized) {
+			response.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, item)
+}
+
+// SkipField POST /candidates/:id/skip-field
+// Mark a field as intentionally skipped (cannot be provided), recalculate status.
+func (h *Handler) SkipField(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var in SkipFieldInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := h.service.SkipField(id, in.Field)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "candidate product not found")
+			return
+		}
+		if errors.Is(err, ErrFieldNotRecognized) {
+			response.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, item)
+}
+
+// Rescrape POST /candidates/:id/rescrape
+// Trigger re-collection from the source URL, then recalculate status.
+func (h *Handler) Rescrape(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.Rescrape(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "candidate product not found")
+			return
+		}
+		if errors.Is(err, ErrRescrapeNoSource) {
+			response.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, item)
+}

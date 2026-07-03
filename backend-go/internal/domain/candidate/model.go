@@ -5,6 +5,15 @@ import (
 	"time"
 )
 
+// completenessFieldNames is the set of fields checked by computeCompleteness.
+// Used for validation in field fill/skip operations.
+var completenessFieldNames = map[string]bool{
+	"title": true, "purchase_price": true, "main_image": true,
+	"supplier_id": true,
+	"package_weight_kg": true, "package_length_cm": true, "package_width_cm": true, "package_height_cm": true,
+	"hs_code": true, "target_sale_price": true, "origin_country": true,
+}
+
 // CandidateProduct maps to the "candidate_product" table.
 type CandidateProduct struct {
 	ID                 int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
@@ -34,6 +43,7 @@ type CandidateProduct struct {
 	SourcePlatform     string          `gorm:"column:source_platform;size:64;default:''" json:"source_platform"`
 	RawPayload         json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload,omitempty"`
 	CompletenessStatus string          `gorm:"column:completeness_status;size:32;default:incomplete" json:"completeness_status"`
+	SkippedFields      json.RawMessage `gorm:"column:skipped_fields;type:jsonb" json:"skipped_fields,omitempty"`
 	CollectedAt        *time.Time      `gorm:"column:collected_at" json:"collected_at,omitempty"`
 	CreatedBy          string          `gorm:"column:created_by" json:"created_by"`
 	UpdatedBy          string          `gorm:"column:updated_by" json:"updated_by"`
@@ -129,4 +139,20 @@ type ListCandidateFilter struct {
 	Status             string
 	Search             string
 	CompletenessStatus string
+}
+
+// FillField describes one field to fill manually.
+type FillField struct {
+	Field string      `json:"field" binding:"required"`
+	Value interface{} `json:"value" binding:"required"`
+}
+
+// FillFieldsInput is the payload for manual field fill.
+type FillFieldsInput struct {
+	Fields []FillField `json:"fields" binding:"required"`
+}
+
+// SkipFieldInput is the payload for marking a field as skipped.
+type SkipFieldInput struct {
+	Field string `json:"field" binding:"required"`
 }

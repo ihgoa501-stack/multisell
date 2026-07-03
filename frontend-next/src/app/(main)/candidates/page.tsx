@@ -6,19 +6,26 @@ import {
   Badge,
   Button,
   Card,
+  Input,
+  InputNumber,
   message,
   Progress,
   Select,
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import {
-  DatabaseOutlined,
-  PlayCircleOutlined,
-  ThunderboltOutlined,
+  CheckOutlined,
   CloseOutlined,
+  DatabaseOutlined,
+  EditOutlined,
+  PlayCircleOutlined,
+  StopOutlined,
+  ThunderboltOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
@@ -48,6 +55,36 @@ const completenessHintMap: Record<string, string> = {
   listing_ready: '所有信息完整，可以准备上架草稿',
 };
 
+// Field label map: internal field name -> Chinese label
+const FIELD_LABELS: Record<string, string> = {
+  title: '标题',
+  purchase_price: '采购价',
+  main_image: '主图',
+  supplier_id: '供应商',
+  package_weight_kg: '包装重量',
+  package_length_cm: '包装长度',
+  package_width_cm: '包装宽度',
+  package_height_cm: '包装高度',
+  hs_code: 'HS编码',
+  target_sale_price: '目标售价',
+  origin_country: '原产地',
+};
+
+// Field type map: internal field name -> input type
+const FIELD_TYPES: Record<string, 'string' | 'number'> = {
+  title: 'string',
+  purchase_price: 'number',
+  main_image: 'string',
+  supplier_id: 'number',
+  package_weight_kg: 'number',
+  package_length_cm: 'number',
+  package_width_cm: 'number',
+  package_height_cm: 'number',
+  hs_code: 'string',
+  target_sale_price: 'number',
+  origin_country: 'string',
+};
+
 interface CandidateProduct {
   id: number;
   title: string;
@@ -67,6 +104,10 @@ interface CandidateProduct {
   is_seed_data: boolean;
   created_by: string;
   created_at: string;
+}
+
+interface CandidateDetail extends CandidateProduct {
+  missing_fields: string[];
 }
 
 interface CompletenessDimension {
@@ -148,9 +189,13 @@ export default function CandidatesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [detailProduct, setDetailProduct] = useState<CandidateProduct | null>(null);
+  const [detailMissingFields, setDetailMissingFields] = useState<string[]>([]);
   const [completenessResult, setCompletenessResult] = useState<CompletenessCheckResult | null>(null);
   const [completenessLoading, setCompletenessLoading] = useState(false);
   const [completenessFilter, setCompletenessFilter] = useState<string>('');
+  const [fillingField, setFillingField] = useState<string | null>(null);
+  const [fillValues, setFillValues] = useState<Record<string, string>>({});
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   const fetchCandidates = useCallback(async (p: number, ps: number) => {
     setLoading(true);
@@ -211,23 +256,115 @@ export default function CandidatesPage() {
     }
   };
 
-  const handleOpenDetail = useCallback(async (product: CandidateProduct) => {
-    setDetailProduct(product);
-    setCompletenessResult(null);
-    setCompletenessLoading(true);
+  const refreshDetail = useCallback(async (productId: number) => {
     try {
-      const res = await apiClient.post<CompletenessCheckResult>(
-        `/v1/completeness/check/${product.id}`,
-      );
-      if (res.data) {
-        setCompletenessResult(res.data);
+      const [detailRes, completenessRes] = await Promise.all([
+        apiClient.get<CandidateDetail>(`/v1/candidates/${productId}`),
+        apiClient.post<CompletenessCheckResult>(`/v1/completeness/check/${productId}`),
+      ]);
+      if (detailRes.data) {
+        setDetailProduct(detailRes.data);
+        setDetailMissingFields(detailRes.data.missing_fields || []);
+      }
+      if (completenessRes.data) {
+        setCompletenessResult(completenessRes.data);
       }
     } catch {
-      // completeness endpoint may not be reachable; degrade to product-info-only view
+      // partial failure — degrade gracefully
+    }
+  }, []);
+
+  const handleOpenDetail = useCallback(async (product: CandidateProduct) => {
+    setDetailProduct(product);
+    setDetailMissingFields([]);
+    setCompletenessResult(null);
+    setCompletenessLoading(true);
+    setFillingField(null);
+    setFillValues({});
+    try {
+      const [detailRes, completenessRes] = await Promise.all([
+        apiClient.get<CandidateDetail>(`/v1/candidates/${product.id}`),
+        apiClient.post<CompletenessCheckResult>(`/v1/completeness/check/${product.id}`),
+      ]);
+      if (detailRes.data) {
+        setDetailProduct(detailRes.data);
+        setDetailMissingFields(detailRes.data.missing_fields || []);
+      }
+      if (completenessRes.data) {
+        setCompletenessResult(completenessRes.data);
+      }
+    } catch {
+      message.error('加载详情失败');
     } finally {
       setCompletenessLoading(false);
     }
   }, []);
+
+  const handleFillField = useCallback(async (productId: number, field: string) => {
+    const value = fillValues[field];
+    if (!value) {
+      message.warning('请输入值');
+      return;
+    }
+    setActionLoading((prev) => ({ ...prev, [field]: true }));
+    try {
+      const parsedValue = FIELD_TYPES[field] === 'number' ? Number(value) : value;
+      const res = await apiClient.put(`/v1/candidates/${productId}/fields`, {
+        fields: [{ field, value: parsedValue }],
+      });
+      if (res.code === 0) {
+        message.success(`"${FIELD_LABELS[field] || field}" 已更新`);
+        setFillingField(null);
+        setFillValues((prev) => ({ ...prev, [field]: '' }));
+        await refreshDetail(productId);
+      } else {
+        message.error(res.message || '更新失败');
+      }
+    } catch {
+      message.error('更新请求失败');
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [field]: false }));
+    }
+  }, [fillValues, refreshDetail]);
+
+  const handleSkipField = useCallback(async (productId: number, field: string) => {
+    setActionLoading((prev) => ({ ...prev, [field]: true }));
+    try {
+      const res = await apiClient.post(`/v1/candidates/${productId}/skip-field`, { field });
+      if (res.code === 0) {
+        message.success(`"${FIELD_LABELS[field] || field}" 已标记为无法补齐`);
+        await refreshDetail(productId);
+      } else {
+        message.error(res.message || '操作失败');
+      }
+    } catch {
+      message.error('操作请求失败');
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [field]: false }));
+    }
+  }, [refreshDetail]);
+
+  const handleRescrape = useCallback(async (productId: number) => {
+    setActionLoading((prev) => ({ ...prev, _rescrape: true }));
+    try {
+      const res = await apiClient.post(`/v1/candidates/${productId}/rescrape`);
+      if (res.code === 0) {
+        message.success('已尝试重新采集');
+        await refreshDetail(productId);
+      } else {
+        message.error(res.message || '重新采集失败');
+      }
+    } catch {
+      message.error('重新采集请求失败');
+    } finally {
+      setActionLoading((prev) => ({ ...prev, _rescrape: false }));
+    }
+  }, [refreshDetail]);
+
+  const handleStartFill = (field: string) => {
+    setFillingField(field);
+    setFillValues((prev) => ({ ...prev, [field]: '' }));
+  };
 
   const columns = [
     {
@@ -586,25 +723,124 @@ export default function CandidatesPage() {
                 </Tag>
               </div>
 
-              {/* Missing items with suggestions */}
-              {completenessResult.missing_items.length > 0 && (
+              {/* Missing fields with action buttons */}
+              {detailMissingFields.length > 0 && (
                 <Card
                   size="small"
                   type="inner"
-                  title="缺失项与改进建议"
+                  title="缺失字段补全"
                   style={{ marginBottom: 'var(--space-md)' }}
                 >
-                  {completenessResult.missing_items.map((item) => (
+                  {detailMissingFields.map((field) => (
                     <div
-                      key={item}
-                      style={{ marginBottom: 'var(--space-sm)' }}
+                      key={field}
+                      style={{
+                        marginBottom: 'var(--space-sm)',
+                        padding: 'var(--space-sm)',
+                        background: 'var(--bg-component)',
+                        borderRadius: 6,
+                      }}
                     >
-                      <Tag color="error" style={{ marginRight: 8 }}>
-                        {item}
-                      </Tag>
-                      <Text type="secondary">
-                        {SUGGESTIONS[item] || '请补充此项信息'}
-                      </Text>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <Tag color="error" style={{ marginRight: 4 }}>
+                          {FIELD_LABELS[field] || field}
+                        </Tag>
+                        <Text type="secondary" style={{ fontSize: '0.78rem', flex: 1 }}>
+                          {SUGGESTIONS[FIELD_LABELS[field] || field] || '请补充此项信息'}
+                        </Text>
+
+                        {/* Rescrape button */}
+                        <Tooltip title="重新从来源采集此字段">
+                          <Button
+                            size="small"
+                            type="link"
+                            icon={<ReloadOutlined />}
+                            loading={actionLoading[field] || actionLoading['_rescrape']}
+                            onClick={() => handleRescrape(detailProduct.id)}
+                          >
+                            重新采集
+                          </Button>
+                        </Tooltip>
+
+                        {/* Manual fill button / inline editor */}
+                        {fillingField === field ? (
+                          <Space size="small">
+                            {FIELD_TYPES[field] === 'number' ? (
+                              <InputNumber
+                                size="small"
+                                style={{ width: 140 }}
+                                value={fillValues[field] as unknown as number}
+                                onChange={(v) =>
+                                  setFillValues((prev) => ({
+                                    ...prev,
+                                    [field]: v != null ? String(v) : '',
+                                  }))
+                                }
+                                onPressEnter={() => handleFillField(detailProduct.id, field)}
+                              />
+                            ) : (
+                              <Input
+                                size="small"
+                                style={{ width: 160 }}
+                                value={fillValues[field]}
+                                placeholder={`输入${FIELD_LABELS[field] || field}`}
+                                onChange={(e) =>
+                                  setFillValues((prev) => ({
+                                    ...prev,
+                                    [field]: e.target.value,
+                                  }))
+                                }
+                                onPressEnter={() => handleFillField(detailProduct.id, field)}
+                              />
+                            )}
+                            <Button
+                              size="small"
+                              type="primary"
+                              icon={<CheckOutlined />}
+                              loading={actionLoading[field]}
+                              onClick={() => handleFillField(detailProduct.id, field)}
+                            />
+                            <Button
+                              size="small"
+                              icon={<CloseOutlined />}
+                              onClick={() => {
+                                setFillingField(null);
+                                setFillValues((prev) => ({ ...prev, [field]: '' }));
+                              }}
+                            />
+                          </Space>
+                        ) : (
+                          <Button
+                            size="small"
+                            type="link"
+                            icon={<EditOutlined />}
+                            onClick={() => handleStartFill(field)}
+                          >
+                            补录
+                          </Button>
+                        )}
+
+                        {/* Skip button */}
+                        <Tooltip title="标记为此字段无法补齐，不再提示">
+                          <Button
+                            size="small"
+                            type="link"
+                            danger
+                            icon={<StopOutlined />}
+                            loading={actionLoading[field]}
+                            onClick={() => handleSkipField(detailProduct.id, field)}
+                          >
+                            无法补齐
+                          </Button>
+                        </Tooltip>
+                      </div>
                     </div>
                   ))}
                 </Card>

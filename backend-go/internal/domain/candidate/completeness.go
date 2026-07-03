@@ -1,6 +1,9 @@
 package candidate
 
-// computeCompleteness evaluates a CandidateProduct's field completeness.
+import "encoding/json"
+
+// computeCompleteness evaluates a CandidateProduct's field completeness,
+// respecting any fields the user has marked as intentionally skipped.
 // Returns the overall status and a list of missing field names.
 //
 // Status progression:
@@ -8,12 +11,28 @@ package candidate
 //	incomplete     — missing core fields (title, purchase_price, main_image)
 //	needs_review   — has core fields, missing supplier or package info
 //	research_ready — has core + supplier + package, can proceed to profit check
-//	listing_ready  — all 11 fields present
+//	listing_ready  — all 11 fields present (or skipped)
 func computeCompleteness(p *CandidateProduct) (status string, missingFields []string) {
+	// Parse skipped fields from the model
+	skipped := make(map[string]bool)
+	if len(p.SkippedFields) > 0 {
+		var fields []string
+		if err := json.Unmarshal(p.SkippedFields, &fields); err == nil {
+			for _, f := range fields {
+				skipped[f] = true
+			}
+		}
+	}
+
+	// Helper: a field "exists" if it has a value OR the user skipped it.
+	exists := func(key string, hasValue bool) bool {
+		return hasValue || skipped[key]
+	}
+
 	// Check all 11 fields
 	checks := []struct {
-		key    string
-		exists bool
+		key      string
+		hasValue bool
 	}{
 		{"title", p.Title != ""},
 		{"purchase_price", p.PurchasePrice > 0},
@@ -29,15 +48,20 @@ func computeCompleteness(p *CandidateProduct) (status string, missingFields []st
 	}
 
 	for _, c := range checks {
-		if !c.exists {
+		if !exists(c.key, c.hasValue) {
 			missingFields = append(missingFields, c.key)
 		}
 	}
 
 	// 3-tier classification
-	hasCore := p.Title != "" && p.PurchasePrice > 0 && p.MainImage != ""
-	hasSupplier := p.SupplierID != nil && *p.SupplierID > 0
-	hasPackage := p.PackageWeightKg > 0 || (p.PackageLengthCm > 0 && p.PackageWidthCm > 0 && p.PackageHeightCm > 0)
+	hasCore := exists("title", p.Title != "") &&
+		exists("purchase_price", p.PurchasePrice > 0) &&
+		exists("main_image", p.MainImage != "")
+	hasSupplier := exists("supplier_id", p.SupplierID != nil && *p.SupplierID > 0)
+	hasPackage := exists("package_weight_kg", p.PackageWeightKg > 0) ||
+		(exists("package_length_cm", p.PackageLengthCm > 0) &&
+			exists("package_width_cm", p.PackageWidthCm > 0) &&
+			exists("package_height_cm", p.PackageHeightCm > 0))
 	hasAll := len(missingFields) == 0
 
 	switch {

@@ -1,8 +1,11 @@
 package candidate
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -54,7 +57,6 @@ func (s *Service) Seed() (int, error) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	count := 0
 	for _, sp := range seedProducts {
-		// json.RawMessage for images — provide a minimal valid JSON array
 		imagesJSON := `["https://via.placeholder.com/600x600.png?text=` + sp.Title + `"]`
 		specJSON := `{"weight_g":"` + sp.Title + `","color":"Black"}`
 
@@ -81,8 +83,6 @@ func (s *Service) Seed() (int, error) {
 			DestinationCountry: sp.DestCountry,
 			CreatedBy:          "system",
 		}
-
-		// Set a varied status so some products are incomplete
 		input.Status = sp.Status
 
 		c := CandidateProduct{
@@ -152,7 +152,6 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 // If source_url is provided, it checks for duplicates first.
 // After creation, it computes and persists the completeness status.
 func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
-	// Dedup check: if source_url is set, ensure it doesn't already exist
 	if in.SourceURL != "" {
 		var existing int64
 		if err := s.db.Model(&CandidateProduct{}).
@@ -220,7 +219,6 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 	} else {
 		c.Status = "draft"
 	}
-	// Compute completeness before setting, but allow override via input
 	if in.CompletenessStatus != "" {
 		c.CompletenessStatus = in.CompletenessStatus
 	} else {
@@ -238,7 +236,6 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 }
 
 // CreateCollectLead saves a new CollectLead entry and returns its ID.
-// CollectLead entries are list page leads (not full CandidateProducts).
 func (s *Service) CreateCollectLead(lead *CollectLead) error {
 	now := time.Now()
 	lead.CollectedAt = &now
@@ -246,7 +243,6 @@ func (s *Service) CreateCollectLead(lead *CollectLead) error {
 }
 
 // ListCollectLeads returns recent collect leads, newest first.
-// Read-only — no mutation.
 func (s *Service) ListCollectLeads(limit int) ([]CollectLead, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -404,7 +400,6 @@ func (s *Service) Update(id int64, in *UpdateCandidateInput) (*CandidateProduct,
 	if err := s.db.First(&c, id).Error; err != nil {
 		return nil, err
 	}
-	// Recalculate completeness based on current state
 	status, _ := computeCompleteness(&c)
 	if status != c.CompletenessStatus {
 		s.db.Model(&c).Update("completeness_status", status)
@@ -431,8 +426,7 @@ type DedupResult struct {
 	Count     int64  `json:"count"`
 }
 
-// Dedup returns records grouped by source_url that have duplicates,
-// filtered by a minimum count threshold.
+// Dedup returns records grouped by source_url that have duplicates.
 func (s *Service) Dedup(minDup int) ([]DedupResult, error) {
 	if minDup < 2 {
 		minDup = 2
@@ -457,4 +451,160 @@ func (s *Service) Count() (int64, error) {
 		return 0, err
 	}
 	return total, nil
+}
+
+// ErrFieldNotRecognized is returned when a field name is not a completeness field.
+var ErrFieldNotRecognized = errors.New("field not recognized")
+
+// ErrRescrapeNoSource is returned when there is no source URL to re-scrape.
+var ErrRescrapeNoSource = errors.New("no source URL configured for this candidate")
+
+// recalcCompleteness recalculates completeness_status for a product and persists it if changed.
+func (s *Service) recalcCompleteness(c *CandidateProduct) ([]string, error) {
+	status, missing := computeCompleteness(c)
+	if status != c.CompletenessStatus {
+		if err := s.db.Model(c).Update("completeness_status", status).Error; err != nil {
+			return nil, err
+		}
+		c.CompletenessStatus = status
+	}
+	return missing, nil
+}
+
+// ManualFillFields fills one or more fields on a candidate product.
+// Valid field names come from completenessFieldNames.
+// After applying updates, it recalculates completeness_status.
+func (s *Service) ManualFillFields(id int64, in *FillFieldsInput) (*CandidateDetail, error) {
+	var c CandidateProduct
+	if err := s.db.First(&c, id).Error; err != nil {
+		return nil, err
+	}
+
+	updates := map[string]interface{}{}
+	for _, f := range in.Fields {
+		if !completenessFieldNames[f.Field] {
+			return nil, fmt.Errorf("%w: %s", ErrFieldNotRecognized, f.Field)
+		}
+		val, err := typedValue(f.Field, f.Value)
+		if err != nil {
+			return nil, err
+		}
+		updates[f.Field] = val
+	}
+
+	if len(updates) == 0 {
+		_, missing := computeCompleteness(&c)
+		return &CandidateDetail{CandidateProduct: c, MissingFields: missing}, nil
+	}
+
+	if err := s.db.Model(&c).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.First(&c, id).Error; err != nil {
+		return nil, err
+	}
+
+	missing, err := s.recalcCompleteness(&c)
+	if err != nil {
+		return nil, err
+	}
+	return &CandidateDetail{CandidateProduct: c, MissingFields: missing}, nil
+}
+
+// SkipField marks a completeness field as intentionally skipped (cannot be provided).
+// The field is added to the skipped_fields JSONB array and completeness is recalculated.
+func (s *Service) SkipField(id int64, field string) (*CandidateDetail, error) {
+	if !completenessFieldNames[field] {
+		return nil, fmt.Errorf("%w: %s", ErrFieldNotRecognized, field)
+	}
+
+	var c CandidateProduct
+	if err := s.db.First(&c, id).Error; err != nil {
+		return nil, err
+	}
+
+	skipped := []string{}
+	if len(c.SkippedFields) > 0 {
+		_ = json.Unmarshal(c.SkippedFields, &skipped)
+	}
+
+	alreadySkipped := false
+	for _, f := range skipped {
+		if f == field {
+			alreadySkipped = true
+			break
+		}
+	}
+	if !alreadySkipped {
+		skipped = append(skipped, field)
+	}
+
+	raw, _ := json.Marshal(skipped)
+	if err := s.db.Model(&c).Update("skipped_fields", raw).Error; err != nil {
+		return nil, err
+	}
+	c.SkippedFields = raw
+
+	missing, err := s.recalcCompleteness(&c)
+	if err != nil {
+		return nil, err
+	}
+	return &CandidateDetail{CandidateProduct: c, MissingFields: missing}, nil
+}
+
+// Rescrape triggers a mock re-collection from the source URL.
+// ponytail: no real scraper yet — just recalc and return current state.
+func (s *Service) Rescrape(id int64) (*CandidateDetail, error) {
+	var c CandidateProduct
+	if err := s.db.First(&c, id).Error; err != nil {
+		return nil, err
+	}
+	if c.SourceURL == "" {
+		return nil, ErrRescrapeNoSource
+	}
+	missing, err := s.recalcCompleteness(&c)
+	if err != nil {
+		return nil, err
+	}
+	return &CandidateDetail{CandidateProduct: c, MissingFields: missing}, nil
+}
+
+// typedValue converts a generic JSON value to the correct Go type for a completeness field.
+func typedValue(field string, val interface{}) (interface{}, error) {
+	switch field {
+	case "title", "main_image", "hs_code", "origin_country":
+		s, ok := val.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string for field %q", field)
+		}
+		return s, nil
+	case "purchase_price", "package_weight_kg", "package_length_cm", "package_width_cm", "package_height_cm", "target_sale_price":
+		switch v := val.(type) {
+		case float64:
+			return v, nil
+		case string:
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid number for field %q: %s", field, v)
+			}
+			return f, nil
+		default:
+			return nil, fmt.Errorf("expected number for field %q, got %T", field, val)
+		}
+	case "supplier_id":
+		switch v := val.(type) {
+		case float64:
+			return int64(v), nil
+		case string:
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid integer for field %q: %s", field, v)
+			}
+			return n, nil
+		default:
+			return nil, fmt.Errorf("expected integer for field %q, got %T", field, val)
+		}
+	default:
+		return nil, fmt.Errorf("%w: %s", ErrFieldNotRecognized, field)
+	}
 }
