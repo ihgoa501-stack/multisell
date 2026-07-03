@@ -104,7 +104,7 @@ export default function BatchOpsPage() {
   const loadBatches = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiClient.getPage<ImportBatch>('/v1/importbatch', {
+      const res = await apiClient.getPage<ImportBatch>('/v1/import-batch', {
         page: String(page),
         size: String(pageSize),
       });
@@ -135,7 +135,7 @@ export default function BatchOpsPage() {
 
       for (const b of processingBatches) {
         try {
-          const res = await apiClient.get<ImportBatch>(`/v1/importbatch/${b.id}`);
+          const res = await apiClient.get<ImportBatch>(`/v1/import-batch/${b.id}`);
           if (res.data) {
             updated.set(b.id, res.data);
           }
@@ -165,7 +165,7 @@ export default function BatchOpsPage() {
     formData.append('source_type', batchType);
 
     try {
-      const result = await apiClient.upload<ImportBatch>('/v1/importbatch/upload', formData);
+      const result = await apiClient.upload<ImportBatch>('/v1/import-batch/upload', formData);
 
       if (result.data) {
         message.success(`上传成功！批次 #${result.data.id}`);

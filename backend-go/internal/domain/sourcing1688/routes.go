@@ -11,7 +11,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	svc := NewService(db, logger)
 	h := NewHandler(svc)
 
-	group := rg.Group("/sourcing1688")
+	group := rg.Group("/sourcing-1688")
 	{
 		group.GET("", h.List)
 		group.GET("/summary", h.Summary)

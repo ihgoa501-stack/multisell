@@ -47,7 +47,7 @@ export default function ProductsPage() {
   return (
     <>
       <CrudListPage
-        resource="/products"
+        resource="/product-master"
         title="商品"
         singular="商品"
         searchPlaceholder="搜索商品名称 / 编码 / 副标题..."

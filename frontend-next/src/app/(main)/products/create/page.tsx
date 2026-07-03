@@ -24,7 +24,7 @@ export default function ProductCreatePage() {
 
   const createMutation = useMutation({
     mutationFn: async (values: Record<string, unknown>) =>
-      apiClient.post('/v1/products', values),
+      apiClient.post('/v1/product-master', values),
     onSuccess: () => {
       message.success('已创建商品');
       router.push('/products');

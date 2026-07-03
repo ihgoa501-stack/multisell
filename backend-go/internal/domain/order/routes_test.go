@@ -93,7 +93,7 @@ func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
 	}
 	var createResult struct {
 		response.Result
-		Data Order `json:"data"`
+		Data OrderResponse `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&createResult); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -118,7 +118,7 @@ func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
 	}
 	var getResult struct {
 		response.Result
-		Data OrderDetail `json:"data"`
+		Data OrderDetailResponse `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&getResult); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -139,7 +139,7 @@ func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
 	}
 	var listResult struct {
 		response.PageResult
-		Data []Order `json:"data"`
+		Data []OrderResponse `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&listResult); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -168,7 +168,7 @@ func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
 	}
 	var updateResult struct {
 		response.Result
-		Data Order `json:"data"`
+		Data OrderResponse `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&updateResult); err != nil {
 		t.Fatalf("decode: %v", err)

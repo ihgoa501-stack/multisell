@@ -19,7 +19,7 @@ const STATUS_OPTIONS = [
 export default function ImportBatchesPage() {
   return (
     <CrudListPage
-      resource="/importbatch"
+      resource="/import-batch"
       title="导入批次"
       singular="导入批次"
       searchPlaceholder="搜索文件名..."

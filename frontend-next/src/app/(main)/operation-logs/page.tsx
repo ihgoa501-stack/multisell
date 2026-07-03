@@ -5,7 +5,7 @@ import CrudListPage, { fmtDate } from '@/components/crud/CrudListPage';
 export default function OperationLogsPage() {
   return (
     <CrudListPage
-      resource="/operationlog"
+      resource="/operation-log"
       title="操作日志"
       singular="日志"
       editable={false}

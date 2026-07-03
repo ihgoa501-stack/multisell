@@ -172,7 +172,7 @@ export default function SupplyChainDetailPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['supplychain', 'flow-events', id],
     queryFn: async () => {
-      const res = await apiClient.get<FlowEventsResponse>(`/v1/supplychain/flows/${id}/events`);
+      const res = await apiClient.get<FlowEventsResponse>(`/v1/supply-chain/flows/${id}/events`);
       return res.data;
     },
   });
@@ -209,7 +209,7 @@ export default function SupplyChainDetailPage() {
           marginBottom: 24,
           cursor: 'pointer',
         }}
-        onClick={() => router.push('/supplychain')}
+        onClick={() => router.push('/supply-chain')}
       >
         <ArrowLeftOutlined />
         <Title level={4} style={{ margin: 0 }}>
