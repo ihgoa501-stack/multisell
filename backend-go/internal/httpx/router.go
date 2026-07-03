@@ -754,6 +754,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			return fmt.Errorf("load SKUs for product %d: %w", t.ProductID, err)
 		}
 		// Find first active account for this platform.
+		// ponytail: picks the first active account by insertion order.
+		// Add account_id to ListingTask if multi-store routing becomes needed.
 		var acct integrations.PlatformIntegrationAccount
 		if err := db.Where("platform_id = ? AND status = ?", t.PlatformID, "active").First(&acct).Error; err != nil {
 			return fmt.Errorf("no active account for platform %d: %w", t.PlatformID, err)
@@ -795,9 +797,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		if err != nil {
 			return fmt.Errorf("platform %s publish failed: %w", plat.Code, err)
 		}
-		// Record platform result — clear the error and store product IDs.
+		// Merge platform publish result into existing item result
+		// (which already contains Prism compliance data from ExecuteTask).
 		resultJSON, _ := json.Marshal(result)
-		db.Model(&listingtask.ListingTaskItem{}).Where("task_id = ?", taskID).Update("result", resultJSON)
+		db.Exec(`UPDATE listing_task_item SET result = COALESCE(result, '{}')::jsonb || ?::jsonb WHERE task_id = ?`,
+			string(resultJSON), taskID)
 
 		logger.Info("listing task platform publish succeeded",
 			zap.Int64("task_id", taskID),

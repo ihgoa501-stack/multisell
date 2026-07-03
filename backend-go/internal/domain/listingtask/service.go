@@ -655,20 +655,22 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 
 	// Platform publish hook: push product to the platform adapter.
 	// Called after the DB transaction commits so a platform failure
-	// doesn't roll back the completion. On error, set last_error.
+	// doesn't roll back the completion. On error, revert to "failed"
+	// so the user can retry via the existing RetryFailed/RetryItem APIs.
 	if s.publishHook != nil {
 		if pubErr := s.publishHook(task.ID); pubErr != nil {
-			s.logger.Error("platform publish failed after task completed",
+			s.logger.Error("platform publish failed after task completed, reverting to failed",
 				zap.Int64("task_id", task.ID),
 				zap.Error(pubErr),
 			)
-			if err := s.db.Model(&ListingTask{}).Where("id = ?", task.ID).
-				Update("last_error", pubErr.Error()).Error; err != nil {
-				s.logger.Error("failed to persist publish error on task",
-					zap.Int64("task_id", task.ID),
-					zap.Error(err),
-				)
-			}
+			s.db.Model(&ListingTask{}).Where("id = ?", task.ID).
+				Updates(map[string]interface{}{
+					"status":     "failed",
+					"last_error": pubErr.Error(),
+				})
+			s.db.Model(&ListingTaskItem{}).Where("task_id = ?", task.ID).
+				Where("error_message = '' OR error_message IS NULL").
+				Update("error_message", pubErr.Error())
 		}
 	}
 
