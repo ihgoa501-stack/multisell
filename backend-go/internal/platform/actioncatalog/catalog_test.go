@@ -9,6 +9,7 @@ func TestDefault_CoversKnownActions(t *testing.T) {
 		"listing_optimize", "compliance_check", "replenish", "discount_risk_check",
 		"price_update", "price_review", "listing_publish", "inventory_change",
 		"auto_publish", "auto_reply", "profit_watch",
+		"system.inventory.receive", "system.inventory.aftersale_restock",
 	}
 	for _, name := range known {
 		if _, ok := c.Lookup(name); !ok {

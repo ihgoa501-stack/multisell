@@ -47,6 +47,30 @@ Rules:
   5. On final failure (DLQ), the row transitions to `state='failed'`.
   6. DLQ replay may reclaim a `failed` row back to `state='processing'` with `processed_at=NULL`.
 
+- **Mutation Guard**: every EventBus subscriber that mutates business state MUST use
+  `eventbus.MutationGuard.Guard()` to wrap the handler. The guard enforces:
+
+  1. The mutation's `SystemAction` is registered in the ActionCatalog
+     (`actioncatalog.DefaultEntries`) as a `system.*` action type.
+  2. A structured audit entry (`pending` -> `executed`|`failed`) is written to
+     `operation_log` with `trigger_type='eventbus'` before and after handler execution.
+  3. The mutation's domain, operator, and correlation ID are captured in the audit trail.
+
+  Mutations that bypass `MutationGuard` but still write to business tables (inventory,
+  order, finance, purchase, aftersales) are governance violations.
+
+- **System Actions**: business-mutating EventBus handlers must have a corresponding
+  `system.*` entry in `actioncatalog.DefaultEntries()`. These are L3 (production mutation)
+  with `RequireApproval=false` because they are deterministic system-internal transitions,
+  not agent-initiated decisions. The audit trail via MutationGuard replaces the
+  DispatchSafe approval gate.
+
+- **Registration Map**: new mutating event handlers must:
+
+  1. Add a `system.*` entry to the ActionCatalog.
+  2. Wrap the handler with `mutationGuard.Guard()`.
+  3. The `MutationInfo.SystemAction` must match the catalog entry's `ActionType` exactly.
+
   Key format:
 
   ```
