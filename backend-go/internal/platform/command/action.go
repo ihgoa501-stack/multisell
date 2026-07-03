@@ -3,6 +3,8 @@ package command
 import (
 	"errors"
 	"fmt"
+
+	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 )
 
 // ---------------------------------------------------------------------------
@@ -186,19 +188,17 @@ func (a AgentAction) Validate() error {
 }
 
 // HighRiskActions returns the canonical list of action types that are
-// considered high risk by default. Used by command and policy enforcement.
+// considered high risk by default. Derived from the action catalog so the
+// two sources never drift.
 func HighRiskActions() []string {
-	return []string{
-		"price_update",
-		"inventory_change",
-		"order_cancel",
-		"refund_issue",
-		"platform_publish",
-		"sync_inventory",
-		"credential_change",
-		"permission_change",
-		"destructive_data_change",
+	entries := actioncatalog.DefaultEntries()
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.RiskLevel >= actioncatalog.RiskHigh {
+			out = append(out, e.ActionType)
+		}
 	}
+	return out
 }
 
 // AuditContext returns a structured map suitable for operation log audit.

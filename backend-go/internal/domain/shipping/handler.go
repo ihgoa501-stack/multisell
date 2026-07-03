@@ -690,6 +690,7 @@ func (h *Handler) CarrierQuote(c *gin.Context) {
 		return
 	}
 	// ponytail: approvalID from query param, wire when CreateShipment/CancelShipment handlers exist
+	// TODO: route this through command.DispatchSafe (PR#255) for unified approval pipeline
 	approvalID, _ := strconv.ParseInt(c.Query("approval_id"), 10, 64)
 	if err := h.service.ValidateCarrierAction(mode, approvalID); err != nil {
 		response.Error(c, http.StatusForbidden, err.Error())
