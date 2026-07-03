@@ -14,8 +14,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	r := rg.Group("/candidates")
 	{
 		r.GET("", h.List)
-		r.GET("/collect-leads", h.ListCollectLeads)
-			r.GET("/collect-leads/:id", h.GetCollectLead)
+		r.GET("/collect-leads", h.ListCollectLeads) // before /:id to avoid conflict
 		r.GET("/:id", h.Get)
 		r.POST("", h.Create)
 		r.PUT("/:id", h.Update)

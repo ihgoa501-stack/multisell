@@ -36,9 +36,7 @@ func (h *Handler) List(c *gin.Context) {
 	p := common.ParsePagination(c)
 	status := c.Query("status")
 	search := c.Query("search")
-	sourcePlatform := c.Query("source_platform")
-	completenessStatus := c.Query("completeness_status")
-	items, total, err := h.service.List(&p, status, search, sourcePlatform, completenessStatus)
+	items, total, err := h.service.List(&p, status, search)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -48,34 +46,21 @@ func (h *Handler) List(c *gin.Context) {
 
 // ListCollectLeads GET /candidates/collect-leads
 // Read-only endpoint for viewing recent collect leads from the Chrome extension.
-// Supports pagination (page, size) and status filter.
 func (h *Handler) ListCollectLeads(c *gin.Context) {
-	p := common.ParsePagination(c)
-	status := c.Query("status")
-	items, total, err := h.service.ListCollectLeads(&p, status)
+	limit := 20
+	if l, err := strconv.Atoi(c.DefaultQuery("limit", "20")); err == nil && l > 0 {
+		limit = l
+	}
+	items, err := h.service.ListCollectLeads(limit)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Paginated(c, items, total, p.Page, p.Size)
-}
-
-// GetCollectLead GET /candidates/collect-leads/:id
-func (h *Handler) GetCollectLead(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	item, err := h.service.GetCollectLeadByID(id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "collect lead not found")
-			return
-		}
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, item)
+	total, _ := h.service.CountCollectLeads()
+	response.Success(c, map[string]interface{}{
+		"items": items,
+		"total": total,
+	})
 }
 
 // Get GET /candidates/:id
