@@ -530,43 +530,36 @@ func (b *Bus) DLQ() *DLQManager {
 	return b.dlq
 }
 
-// checkIdempotency returns true if the event should be skipped (duplicate),
-// using an atomic INSERT-or-detect pattern backed by the DB's UNIQUE constraint
-// on event_processed.idempotency_key.
+// checkIdempotency returns true if the event should be skipped (duplicate).
+// It is a read-only check: the event_processed row is written only after the
+// handler succeeds (see markProcessed), so retries and DLQ replays for the same
+// key pass through.
 //
-// - First event with this key → INSERT succeeds → returns (false, nil)
-// - Retry (same event_id) → INSERT conflicts → reads existing event_id → same → (false, nil)
-// - Duplicate (different event_id, same key) → INSERT conflicts → reads existing → different → (true, nil)
+// - No row for this key yet → returns (false, nil), handler will run
+// - Existing row has same event_id → returns (false, nil), retry passes through
+// - Existing row has different event_id → returns (true, nil), duplicate skipped
 func (b *Bus) checkIdempotency(ctx context.Context, evt Event) (bool, error) {
 	var existingID string
-	err := b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Exec(
-			`INSERT INTO event_processed (idempotency_key, topic, event_id, processed_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (idempotency_key) DO NOTHING`,
-			evt.IdempotencyKey, evt.Topic, evt.ID,
-		)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected > 0 {
-			// We claimed the key — first event with this idempotency key.
-			existingID = evt.ID
-			return nil
-		}
-		// Key already exists — read the previously stored event_id.
-		var row struct{ EventID string }
-		if err := tx.
-			Raw(`SELECT event_id FROM event_processed WHERE idempotency_key = ?`, evt.IdempotencyKey).
-			Scan(&row).Error; err != nil {
-			return err
-		}
-		existingID = row.EventID
-		return nil
-	})
-	if err != nil {
+	if err := b.db.WithContext(ctx).
+		Raw(`SELECT COALESCE(event_id, '') FROM event_processed WHERE idempotency_key = ?`, evt.IdempotencyKey).
+		Scan(&existingID).Error; err != nil {
 		return false, err
 	}
-	// Skip dispatch if a different event with the same key was already processed.
-	return existingID != evt.ID, nil
+	if existingID == "" {
+		return false, nil // first time seeing this key
+	}
+	return existingID != evt.ID, nil // skip if different event_id already processed successfully
+}
+
+// markProcessed records a successful handler completion for idempotency tracking.
+// Called after all handlers succeed so that processed_at reflects actual completion
+// time, not dispatch start. This allows failed events and DLQ replays with the
+// same idempotency_key to reach handlers.
+func (b *Bus) markProcessed(ctx context.Context, evt Event) {
+	b.db.WithContext(ctx).Exec(
+		`INSERT INTO event_processed (idempotency_key, topic, event_id, processed_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (idempotency_key) DO NOTHING`,
+		evt.IdempotencyKey, evt.Topic, evt.ID,
+	)
 }
 
 // workerLoop pops events from the given pool's backend and dispatches them to
@@ -603,9 +596,9 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 	handlerCtx := WithCorrelationID(ctx, evt.CorrelationID)
 
 		// Idempotency check: skip duplicate events with the same idempotency_key.
-		// The UNIQUE constraint on event_processed.idempotency_key acts as an atomic
-		// lock. Retries (same event ID) are distinguished from duplicates (different
-		// event ID) by comparing the stored event_id.
+		// The row in event_processed is written only AFTER handler success (see
+		// markProcessed), so retries (same event_id) and DLQ replays (same key)
+		// always pass through to the handler.
 		if evt.IdempotencyKey != "" && b.db != nil {
 			skip, checkErr := b.checkIdempotency(handlerCtx, evt)
 			if checkErr != nil {
@@ -671,6 +664,11 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 					evt.ID,
 				)
 				eventsPublished.WithLabelValues(evt.Topic, "delivered").Inc()
+
+				// Mark idempotency processed only after handler success.
+				if evt.IdempotencyKey != "" {
+					b.markProcessed(ctx, evt)
+				}
 			}
 		}
 

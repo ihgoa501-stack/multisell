@@ -606,7 +606,11 @@ func TestIdempotencyKey_SameEventRetried(t *testing.T) {
 	b := New(logger, WithDB(db), WithMaxRetries(3))
 
 	var callCount atomic.Int32
+	var firstEventID string
 	b.Subscribe("idemp.*", func(ctx context.Context, evt Event) error {
+		if firstEventID == "" {
+			firstEventID = evt.ID
+		}
 		callCount.Add(1)
 		// Fail first two attempts to trigger retries, succeed on third.
 		if callCount.Load() < 3 {
@@ -629,12 +633,25 @@ func TestIdempotencyKey_SameEventRetried(t *testing.T) {
 		t.Fatalf("Publish returned error: %v", err)
 	}
 
-	// Allow retries to complete.
-	time.Sleep(time.Second)
-
 	// Retries should NOT be blocked by the idempotency check (same event_id).
-	if got := callCount.Load(); got != 3 {
-		t.Errorf("expected 3 handler calls (2 retries + 1 success), got %d", got)
+	poll(t, 3*time.Second, "3 handler calls (2 retries + 1 success)", func() bool {
+		return callCount.Load() >= 3
+	})
+
+	// Verify the event_processed row was created AFTER handler success.
+	var row struct {
+		EventID     string
+		ProcessedAt time.Time
+	}
+	db.Raw(`SELECT event_id, processed_at FROM event_processed WHERE idempotency_key = ?`, "retry-test-key").Scan(&row)
+	if row.EventID == "" {
+		t.Fatal("expected event_processed row after handler success, got empty")
+	}
+	if row.EventID != firstEventID {
+		t.Errorf("expected event_id %s in event_processed, got %s", firstEventID, row.EventID)
+	}
+	if row.ProcessedAt.IsZero() {
+		t.Error("expected non-zero processed_at")
 	}
 }
 
@@ -647,7 +664,11 @@ func TestIdempotencyKey_DuplicateSkipped(t *testing.T) {
 	b := New(logger, WithDB(db))
 
 	var callCount atomic.Int32
+	var firstEventID string
 	b.Subscribe("idemp.*", func(ctx context.Context, evt Event) error {
+		if firstEventID == "" {
+			firstEventID = evt.ID
+		}
 		callCount.Add(1)
 		return nil
 	})
@@ -668,10 +689,25 @@ func TestIdempotencyKey_DuplicateSkipped(t *testing.T) {
 		t.Fatalf("first Publish returned error: %v", err)
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	poll(t, 2*time.Second, "first handler call", func() bool {
+		return callCount.Load() >= 1
+	})
 
 	if got := callCount.Load(); got != 1 {
 		t.Errorf("expected 1 handler call for first event, got %d", got)
+	}
+
+	// Verify event_processed row for the first event.
+	var row struct {
+		EventID     string
+		ProcessedAt time.Time
+	}
+	db.Raw(`SELECT event_id, processed_at FROM event_processed WHERE idempotency_key = ?`, key).Scan(&row)
+	if row.EventID != firstEventID {
+		t.Errorf("expected event_id %s in event_processed, got %s", firstEventID, row.EventID)
+	}
+	if row.ProcessedAt.IsZero() {
+		t.Error("expected non-zero processed_at")
 	}
 
 	// Second event with same key, different auto-generated ID: should be skipped.
@@ -685,6 +721,13 @@ func TestIdempotencyKey_DuplicateSkipped(t *testing.T) {
 	// Handler should NOT have been called again.
 	if got := callCount.Load(); got != 1 {
 		t.Errorf("expected 1 handler call total (duplicate skipped), got %d", got)
+	}
+
+	// Verify event_processed still has the first event's ID (not updated).
+	var row2 struct{ EventID string }
+	db.Raw(`SELECT event_id FROM event_processed WHERE idempotency_key = ?`, key).Scan(&row2)
+	if row2.EventID != firstEventID {
+		t.Errorf("expected event_processed event_id %s (unchanged), got %s", firstEventID, row2.EventID)
 	}
 }
 
@@ -719,7 +762,9 @@ func TestIdempotencyKey_NoDB_EventsPassThrough(t *testing.T) {
 		}
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	poll(t, 2*time.Second, "2 handler calls (no DB = no dedup)", func() bool {
+		return callCount.Load() >= 2
+	})
 
 	if got := callCount.Load(); got != 2 {
 		t.Errorf("expected 2 handler calls (no DB = no dedup), got %d", got)
@@ -757,13 +802,142 @@ func TestIdempotencyKey_DifferentKeysPass(t *testing.T) {
 		}
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	poll(t, 2*time.Second, "2 handler calls (different keys)", func() bool {
+		return callCount.Load() >= 2
+	})
 
 	if got := callCount.Load(); got != 2 {
 		t.Errorf("expected 2 handler calls (different keys), got %d", got)
 	}
+
+	// Verify both keys have event_processed rows.
+	for i := 0; i < 2; i++ {
+		var count int64
+		db.Model(&struct{}{}).Table("event_processed").
+			Where("idempotency_key = ?", fmt.Sprintf("distinct-key-%d", i)).
+			Count(&count)
+		if count != 1 {
+			t.Errorf("expected 1 event_processed row for key %q, got %d", fmt.Sprintf("distinct-key-%d", i), count)
+		}
+	}
 }
 
+// TestIdempotencyKey_DLQReplay verifies that an event that fails and moves to
+// DLQ can be replayed with the same idempotency_key and reach the handler.
+// The event_processed row must NOT exist until the handler succeeds, so DLQ
+// replay is not blocked.
+func TestIdempotencyKey_DLQReplay(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createEventProcessedTable(t, db)
+	createDLQTable(t, db)
+	logger, _ := zap.NewDevelopment()
+	b := New(logger, WithDB(db), WithDLQ(db), WithMaxRetries(1))
+
+	var callCount atomic.Int32
+	b.Subscribe("idemp-dlq.*", func(ctx context.Context, evt Event) error {
+		callCount.Add(1)
+		return errors.New("handler error")
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	ctxID := WithIdempotencyKey(context.Background(), "dlq-replay-key")
+	_, err := b.Publish(ctxID, "idemp-dlq.test", "test", nil)
+	if err != nil {
+		t.Fatalf("Publish returned error: %v", err)
+	}
+
+	// Wait for the event to fail and reach DLQ (maxRetries=1 means 1 attempt, then DLQ).
+	poll(t, 3*time.Second, "handler called at least once", func() bool {
+		return callCount.Load() >= 1
+	})
+
+	// Verify NO event_processed row exists (handler never succeeded).
+	var processedCount int64
+	db.Model(&struct{}{}).Table("event_processed").
+		Where("idempotency_key = ?", "dlq-replay-key").
+		Count(&processedCount)
+	if processedCount != 0 {
+		t.Errorf("expected 0 event_processed rows (handler never succeeded), got %d", processedCount)
+	}
+
+	// Verify DLQ event was persisted.
+	var dlqCount int64
+	db.Model(&DLEvent{}).Count(&dlqCount)
+	if dlqCount == 0 {
+		t.Fatal("expected DLQ event, got 0")
+	}
+
+	// Get DLQ events and replay them.
+	events, _, err := b.DLQ().ListDLQ(1, 10)
+	if err != nil {
+		t.Fatalf("ListDLQ returned error: %v", err)
+	}
+	if len(events) == 0 {
+		t.Skip("no DLQ events to replay")
+	}
+
+	// Unsubscribe the original erroring handler and subscribe a new one that succeeds.
+	ids := make([]uint, len(events))
+	for i, e := range events {
+		ids[i] = e.ID
+	}
+
+	// Remove the original error subscription; keep it from interfering with replay.
+	// We find it by re-subscribing with a no-op to get the old subscription ID
+	// (since Subscribe returned IDs aren't easily stored — we unsubscribe *),
+	// but it's simpler to just remove subscriptions by subscribing fresh.
+	// Instead, track the original subscription ID and unsubscribe it.
+	var origSubID string
+	b.mu.RLock()
+	for _, sub := range b.subs {
+		if sub.topic == "idemp-dlq.*" {
+			origSubID = sub.id
+		}
+	}
+	b.mu.RUnlock()
+	if origSubID != "" {
+		b.Unsubscribe(origSubID)
+	}
+
+	// Subscribe with a handler that succeeds on replay.
+	var replayCallCount atomic.Int32
+	b.Subscribe("idemp-dlq.*", func(ctx context.Context, evt Event) error {
+		replayCallCount.Add(1)
+		return nil // succeed on replay
+	})
+
+	replayed, err := b.DLQ().ReplayEventsByIDs(b, ids)
+	if err != nil {
+		t.Fatalf("ReplayEventsByIDs returned error: %v", err)
+	}
+	if replayed == 0 {
+		t.Fatal("expected at least 1 replayed event")
+	}
+
+	poll(t, 3*time.Second, "replay handler to be invoked", func() bool {
+		return replayCallCount.Load() >= 1
+	})
+
+	if got := replayCallCount.Load(); got == 0 {
+		t.Fatal("expected replay handler to be invoked")
+	}
+
+	// Verify event_processed row was created after replay handler succeeded.
+	var processedCount2 int64
+	db.Model(&struct{}{}).Table("event_processed").
+		Where("idempotency_key = ?", "dlq-replay-key").
+		Count(&processedCount2)
+	if processedCount2 != 1 {
+		t.Errorf("expected 1 event_processed row after replay success, got %d", processedCount2)
+	}
+}
 
 // createDLQTable creates the event_dlq table with SQLite-compatible DDL.
 func createDLQTable(t *testing.T, db *gorm.DB) {
@@ -772,6 +946,7 @@ func createDLQTable(t *testing.T, db *gorm.DB) {
 		CREATE TABLE IF NOT EXISTS event_dlq (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			original_event_id TEXT NOT NULL,
+			idempotency_key TEXT NOT NULL DEFAULT '',
 			topic TEXT NOT NULL,
 			source TEXT NOT NULL DEFAULT '',
 			payload TEXT NOT NULL DEFAULT '{}',
@@ -802,5 +977,21 @@ func createEventProcessedTable(t *testing.T, db *gorm.DB) {
 		)
 	`).Error; err != nil {
 		t.Fatalf("failed to create event_processed table: %v", err)
+	}
+}
+
+// poll waits up to timeout for cond to return true, calling t.Fatal on timeout.
+func poll(t *testing.T, timeout time.Duration, desc string, cond func() bool) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		if cond() {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timeout waiting for: %s", desc)
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 }

@@ -37,9 +37,11 @@ Rules:
 - Subscribers must be safe to retry or must document non-idempotent behavior.
 - **Idempotency**: events that carry business-state mutations (inventory, order, financial)
   MUST set an `idempotency_key` via `eventbus.WithIdempotencyKey(ctx, key)` on the Publish
-  context. The bus workerLoop enforces single-processing: if an event with the same
-  key was already delivered (different event_id), the duplicate is skipped. Retries
-  (same event_id, same key) are allowed through. The mapping is:
+  context. The event_processed row is written ONLY after all handlers succeed
+  (`processed_at` = handler completion time), so retries (same event_id, same key)
+  and DLQ replays (same key, handler never succeeded) always pass through to the
+  handler. A duplicate with a different event_id that was already processed
+  successfully is skipped. The mapping is:
 
 	```
 	key format: "{business_action}:{business_id}"
