@@ -14,15 +14,20 @@ import (
 
 // Handler handles product version HTTP requests.
 type Handler struct {
-	service   *Service
-	version   *VersionService
-	freshness FreshnessService
-	relation  *RelationService
+	service    *Service
+	version    *VersionService
+	freshness  FreshnessService
+	relation   *RelationService
+	variant    *VariantService
+	offer      *SupplierOfferService
+	sample     *SampleService
+	cost       *CostVersionService
+	db         *gorm.DB
 }
 
 // NewHandler creates a new producthub handler.
-func NewHandler(service *Service, version *VersionService, freshness FreshnessService, relation *RelationService) *Handler {
-	return &Handler{service: service, version: version, freshness: freshness, relation: relation}
+func NewHandler(service *Service, version *VersionService, freshness FreshnessService, relation *RelationService, variant *VariantService, offer *SupplierOfferService, sample *SampleService, cost *CostVersionService, db *gorm.DB) *Handler {
+	return &Handler{service: service, version: version, freshness: freshness, relation: relation, variant: variant, offer: offer, sample: sample, cost: cost, db: db}
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -251,4 +256,161 @@ func (h *Handler) AutoDiscoverRelations(c *gin.Context) {
 		return
 	}
 	response.Success(c, result)
+}
+
+// ---------- Sub-resource handlers (extracted from anonymous inline) ----------
+
+func (h *Handler) ListVariants(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	items, err := h.variant.ListByMaster(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *Handler) CreateVariant(c *gin.Context) {
+	var v ProductVariant
+	if err := c.ShouldBindJSON(&v); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.variant.Create(c.Request.Context(), &v); err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, v)
+}
+
+func (h *Handler) ListOffers(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	items, err := h.offer.ListByMaster(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *Handler) CreateOffer(c *gin.Context) {
+	var o SupplierOffer
+	if err := c.ShouldBindJSON(&o); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.offer.Create(c.Request.Context(), &o); err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, o)
+}
+
+func (h *Handler) ListSamples(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	items, err := h.sample.ListByMaster(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *Handler) CreateSample(c *gin.Context) {
+	var sr SampleRequest
+	if err := c.ShouldBindJSON(&sr); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.sample.Create(c.Request.Context(), &sr); err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, sr)
+}
+
+func (h *Handler) ListCosts(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	items, err := h.cost.ListByMaster(c.Request.Context(), id)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *Handler) CreateCost(c *gin.Context) {
+	var cv CostVersion
+	if err := c.ShouldBindJSON(&cv); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.cost.Create(c.Request.Context(), &cv); err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, cv)
+}
+
+func (h *Handler) ConfirmCost(c *gin.Context) {
+	costID, err := strconv.ParseInt(c.Param("costId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid cost id")
+		return
+	}
+	if err := h.cost.Confirm(c.Request.Context(), costID); err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"id": costID, "status": "confirmed"})
+}
+
+func (h *Handler) GetProductSummary(c *gin.Context) {
+	var total, active, draft int64
+	h.db.Model(&ProductMaster{}).Count(&total)
+	h.db.Model(&ProductMaster{}).Where("lifecycle_status = ?", "active").Count(&active)
+	h.db.Model(&ProductMaster{}).Where("lifecycle_status IN ?",
+		[]string{"idea", "researching", "sampling", "approved"},
+	).Count(&draft)
+	// ponytail: low_stock + expiring_certificates return 0 —
+	//  need inventory + compliance module integration for real data
+	response.Success(c, gin.H{
+		"total_products":        total,
+		"active_products":       active,
+		"draft_products":        draft,
+		"low_stock_products":    0,
+		"expiring_certificates": 0,
+	})
+}
+
+func (h *Handler) ListRecentDecisions(c *gin.Context) {
+	type decisionRow struct {
+		ID        int64     `json:"id"`
+		ProductID int64     `json:"product_id"`
+		Action    string    `json:"action"`
+		Reason    string    `json:"reason"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	var rows []decisionRow
+	if err := h.db.Table("pre_listing_decision").
+		Select("id, sku_id AS product_id, recommendation AS action, reasoning AS reason, created_at").
+		Order("created_at DESC").
+		Limit(10).
+		Find(&rows).Error; err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, rows)
 }

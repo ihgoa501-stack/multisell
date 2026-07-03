@@ -38,12 +38,6 @@ interface Order {
   total_amount: number;
   shipping_fee: number;
   pay_amount: number;
-  platform_fee: number;
-  payment_fee: number;
-  other_fee: number;
-  product_cost: number;
-  profit_amount: number;
-  profit_margin: number;
   payment_method: string;
   remark: string;
   created_at: string;
@@ -136,20 +130,11 @@ export default function OrderDetailPage() {
             </Descriptions>
           </Card>
 
-          <Card title="费用与利润">
+          <Card title="款项信息">
             <Descriptions bordered column={3} size="small">
               <Descriptions.Item label="商品总额">¥{order?.total_amount?.toFixed(2)}</Descriptions.Item>
               <Descriptions.Item label="运费">¥{order?.shipping_fee?.toFixed(2)}</Descriptions.Item>
               <Descriptions.Item label="实付金额">¥{order?.pay_amount?.toFixed(2)}</Descriptions.Item>
-              <Descriptions.Item label="平台扣费">¥{order?.platform_fee?.toFixed(2)}</Descriptions.Item>
-              <Descriptions.Item label="支付扣费">¥{order?.payment_fee?.toFixed(2)}</Descriptions.Item>
-              <Descriptions.Item label="其它费用">¥{order?.other_fee?.toFixed(2)}</Descriptions.Item>
-              <Descriptions.Item label="商品成本">¥{order?.product_cost?.toFixed(2)}</Descriptions.Item>
-              <Descriptions.Item label="预估利润" span={2}>
-                <span style={{ color: (order?.profit_amount || 0) >= 0 ? '#52c41a' : '#ff4d4f', fontWeight: 'bold' }}>
-                  ¥{order?.profit_amount?.toFixed(2)} (利润率: {order?.profit_margin?.toFixed(2)}%)
-                </span>
-              </Descriptions.Item>
             </Descriptions>
           </Card>
 

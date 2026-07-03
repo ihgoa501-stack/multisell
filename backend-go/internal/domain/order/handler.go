@@ -55,7 +55,11 @@ func (h *Handler) List(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Paginated(c, items, total, p.Page, p.Size)
+	resp := make([]OrderResponse, len(items))
+	for i, o := range items {
+		resp[i] = orderToResponse(o)
+	}
+	response.Paginated(c, resp, total, p.Page, p.Size)
 }
 
 // Get GET /order/:id
@@ -73,7 +77,11 @@ func (h *Handler) Get(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(c, detail)
+	response.Success(c, OrderDetailResponse{
+		Order:      orderToResponse(detail.Order),
+		Items:      detail.Items,
+		StatusLogs: detail.StatusLogs,
+	})
 }
 
 // Create POST /order
@@ -88,7 +96,7 @@ func (h *Handler) Create(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(c, o)
+	response.Success(c, orderToResponse(*o))
 }
 
 // Update PUT /order/:id
@@ -107,7 +115,7 @@ func (h *Handler) Update(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(c, o)
+	response.Success(c, orderToResponse(*o))
 }
 
 // Delete DELETE /order/:id

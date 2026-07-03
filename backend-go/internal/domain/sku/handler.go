@@ -23,7 +23,7 @@ func NewHandler(service *Service) *Handler {
 // ── Product handlers ─────────────────────────────────────────────
 
 // ListProducts returns a paginated list of products.
-// GET /api/v1/products?page=1&size=20&search=xxx&category_id=&brand_id=&status=
+// GET /api/v1/product-master?page=1&size=20&search=xxx&category_id=&brand_id=&status=
 func (h *Handler) ListProducts(c *gin.Context) {
 	p := common.ParsePagination(c)
 	search := c.Query("search")
@@ -48,7 +48,7 @@ func (h *Handler) ListProducts(c *gin.Context) {
 }
 
 // GetProduct returns a single product by ID.
-// GET /api/v1/products/:id
+// GET /api/v1/product-master/:id
 func (h *Handler) GetProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -70,7 +70,7 @@ func (h *Handler) GetProduct(c *gin.Context) {
 }
 
 // CreateProduct creates a new product.
-// POST /api/v1/products
+// POST /api/v1/product-master
 func (h *Handler) CreateProduct(c *gin.Context) {
 	var p Product
 	if err := c.ShouldBindJSON(&p); err != nil {
@@ -87,7 +87,7 @@ func (h *Handler) CreateProduct(c *gin.Context) {
 }
 
 // UpdateProduct updates an existing product.
-// PUT /api/v1/products/:id
+// PUT /api/v1/product-master/:id
 func (h *Handler) UpdateProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -111,7 +111,7 @@ func (h *Handler) UpdateProduct(c *gin.Context) {
 }
 
 // DeleteProduct deletes a product.
-// DELETE /api/v1/products/:id
+// DELETE /api/v1/product-master/:id
 func (h *Handler) DeleteProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -130,7 +130,7 @@ func (h *Handler) DeleteProduct(c *gin.Context) {
 // ── SpecName handlers ────────────────────────────────────────────
 
 // ListSpecs returns spec names (with values) for a product.
-// GET /api/v1/products/:id/specs
+// GET /api/v1/product-master/:id/specs
 func (h *Handler) ListSpecs(c *gin.Context) {
 	productID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -148,7 +148,7 @@ func (h *Handler) ListSpecs(c *gin.Context) {
 }
 
 // CreateSpec creates a new spec name.
-// POST /api/v1/products/:id/specs
+// POST /api/v1/product-master/:id/specs
 func (h *Handler) CreateSpec(c *gin.Context) {
 	productID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -172,7 +172,7 @@ func (h *Handler) CreateSpec(c *gin.Context) {
 }
 
 // UpdateSpec updates a spec name.
-// PUT /api/v1/products/:id/specs/:spec_id
+// PUT /api/v1/product-master/:id/specs/:spec_id
 func (h *Handler) UpdateSpec(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("spec_id"), 10, 64)
 	if err != nil {
@@ -196,7 +196,7 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 }
 
 // DeleteSpec deletes a spec name.
-// DELETE /api/v1/products/:id/specs/:spec_id
+// DELETE /api/v1/product-master/:id/specs/:spec_id
 func (h *Handler) DeleteSpec(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("spec_id"), 10, 64)
 	if err != nil {
@@ -215,7 +215,7 @@ func (h *Handler) DeleteSpec(c *gin.Context) {
 // ── SpecValue handlers ────────────────────────────────────────────
 
 // CreateSpecValue creates a new spec value.
-// POST /api/v1/products/:id/specs/:spec_id/values
+// POST /api/v1/product-master/:id/specs/:spec_id/values
 func (h *Handler) CreateSpecValue(c *gin.Context) {
 	productID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -304,7 +304,7 @@ func (h *Handler) ListSkus(c *gin.Context) {
 }
 
 // ListSkusByProduct returns all SKUs for a product.
-// GET /api/v1/products/:id/skus
+// GET /api/v1/product-master/:id/skus
 func (h *Handler) ListSkusByProduct(c *gin.Context) {
 	productID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

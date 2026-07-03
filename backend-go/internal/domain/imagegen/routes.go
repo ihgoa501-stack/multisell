@@ -11,7 +11,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	svc := NewService(db, logger)
 	h := NewHandler(svc)
 
-	group := rg.Group("/imagegen")
+	group := rg.Group("/image-gen")
 	{
 		// Product image generation records
 		group.GET("", h.ListImageGens)
