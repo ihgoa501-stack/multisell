@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/aios/runtime"
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"go.uber.org/zap"
 )
@@ -48,26 +49,56 @@ func RegisterAIOSRoutes(rg *gin.RouterGroup, cfg *Config) {
 	})
 
 	// GET /api/v1/aios/tools — list all registered tools.
+	// Supports ?agent_id=X to filter by agent squad.
+	// Supports ?squad=X to filter by squad directly.
 	rg.GET("/aios/tools", func(c *gin.Context) {
-		toolList := cfg.Registry.List()
-		type toolView struct {
-			Name        string `json:"name"`
-			Version     string `json:"version"`
-			Description string `json:"description"`
-			Squad       string `json:"squad"`
-			RiskLevel   string `json:"risk_level"`
+		agentID := c.Query("agent_id")
+		squad := c.Query("squad")
+
+		var toolList []*toolregistry.Tool
+		if squad != "" {
+			toolList = cfg.Registry.List(squad)
+		} else {
+			toolList = cfg.Registry.List()
 		}
+
+		type toolView struct {
+			Name        string               `json:"name"`
+			Version     string               `json:"version"`
+			Description string               `json:"description"`
+			Squad       string               `json:"squad"`
+			RiskLevel   string               `json:"risk_level"`
+			Permissions []string             `json:"permissions,omitempty"`
+			Parameters  *toolregistry.Schema  `json:"parameters,omitempty"`
+			Returns     *toolregistry.Schema  `json:"returns,omitempty"`
+		}
+
+		// If agent_id is set, look up the agent's squad for filtering.
+		agentSquad := squad
+		if agentID != "" && agentSquad == "" {
+			if inst, ok := cfg.Runtime.GetInstance(agentID); ok && inst.Manifest != nil {
+				agentSquad = inst.Manifest.Squad
+			}
+		}
+
 		view := make([]toolView, 0, len(toolList))
 		for _, t := range toolList {
+			// If agent squad is set, skip tools not from that squad.
+			if agentSquad != "" && t.Squad != agentSquad {
+				continue
+			}
 			view = append(view, toolView{
 				Name:        t.Name,
 				Version:     t.Version,
 				Description: t.Description,
 				Squad:       t.Squad,
 				RiskLevel:   string(t.RiskLevel),
+				Permissions: t.RequiredPermissions,
+				Parameters:  t.Parameters,
+				Returns:     t.Returns,
 			})
 		}
-		c.JSON(200, gin.H{"tools": view, "count": len(toolList)})
+		c.JSON(200, gin.H{"tools": view, "count": len(view)})
 	})
 }
 

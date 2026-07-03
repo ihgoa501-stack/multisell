@@ -180,3 +180,27 @@ func (c *Chain) Check(ctx context.Context, input *GuardInput) (*GuardResult, err
 		Risk:    "low",
 	}, nil
 }
+
+// ToolCallCheck returns a function that runs the guardrail chain against a
+// tool invocation. It builds a GuardInput using shared string keys so values
+// set by toolregistry.WithAgentID / WithUserID are readable across packages.
+func (c *Chain) ToolCallCheck() func(ctx context.Context, toolName string, toolInput map[string]interface{}) (*GuardResult, error) {
+	return func(ctx context.Context, toolName string, toolInput map[string]interface{}) (*GuardResult, error) {
+		agentID, _ := ctx.Value(ctxAgentID).(string)
+		userID, _ := ctx.Value(ctxUserID).(int64)
+		inp := &GuardInput{
+			AgentID:   agentID,
+			ToolName:  toolName,
+			ToolInput: toolInput,
+			UserID:    userID,
+		}
+		return c.Check(ctx, inp)
+	}
+}
+
+// Context key strings matching toolregistry's keys. String keys avoid import
+// cycles — both packages read/write the same context values.
+const (
+	ctxAgentID = "toolregistry-agent-id"
+	ctxUserID  = "toolregistry-user-id"
+)

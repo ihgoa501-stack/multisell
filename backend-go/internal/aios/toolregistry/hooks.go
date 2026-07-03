@@ -123,34 +123,58 @@ func (h *PermissionHook) After(_ context.Context, _ *Tool, _ map[string]interfac
 	return nil
 }
 
+// --- AgentPermissionHook ---
+
+// AgentToolChecker returns the set of tool names an agent is permitted to call.
+// Return nil/nil for "no restrictions" (squad-level access).
+type AgentToolChecker func(ctx context.Context, agentID string) (allowed map[string]bool, err error)
+
+// AgentPermissionHook checks that the calling agent (extracted from context)
+// is allowed to invoke the requested tool. It delegates to a caller-provided
+// AgentToolChecker function to resolve the agent's permissions.
+//
+// Register order: place this before ApprovalCheckHook so permission-denied
+// calls are rejected before the production-mode approval check.
+type AgentPermissionHook struct {
+	checker AgentToolChecker
+}
+
+// NewAgentPermissionHook creates an AgentPermissionHook with the given checker.
+func NewAgentPermissionHook(checker AgentToolChecker) *AgentPermissionHook {
+	return &AgentPermissionHook{checker: checker}
+}
+
+// Before checks whether the calling agent is allowed to use this tool.
+func (h *AgentPermissionHook) Before(ctx context.Context, tool *Tool, _ map[string]interface{}) (context.Context, error) {
+	agentID := GetAgentID(ctx)
+	if agentID == "" {
+		return ctx, nil // no agent identity — skip agent-level check
+	}
+	if h.checker == nil {
+		return ctx, nil // no checker configured — allow
+	}
+	allowed, err := h.checker(ctx, agentID)
+	if err != nil {
+		return ctx, fmt.Errorf("agent permission check failed for %q: %w", agentID, err)
+	}
+	if allowed == nil {
+		return ctx, nil // nil means no restrictions (allow all by squad)
+	}
+	if !allowed[tool.Name] {
+		return ctx, ErrPermissionDenied{Name: tool.Name, Permission: "agent:" + agentID}
+	}
+	return ctx, nil
+}
+
+// After is a no-op.
+func (h *AgentPermissionHook) After(_ context.Context, _ *Tool, _ map[string]interface{}, _ interface{}, _ error) error {
+	return nil
+}
+
 // --- ApprovalCheckHook ---
 
 // ApprovalCheckHook blocks mutation-risk tools (RiskHigh, RiskCritical) in
 // production mode when no approval ID is present in the context.
-func WithProductionMode(ctx context.Context) context.Context {
-	return context.WithValue(ctx, executionModeKey, "production")
-}
-
-// IsProductionMode checks if the context is in production mode.
-func IsProductionMode(ctx context.Context) bool {
-	v, _ := ctx.Value(executionModeKey).(string)
-	return v == "production"
-}
-
-// WithApprovalID attaches an approval ID to the context.
-func WithApprovalID(ctx context.Context, id int64) context.Context {
-	return context.WithValue(ctx, approvalIDKey, id)
-}
-
-// GetApprovalID retrieves the approval ID from context. Returns 0 if not set.
-func GetApprovalID(ctx context.Context) int64 {
-	v, _ := ctx.Value(approvalIDKey).(int64)
-	return v
-}
-
-// ApprovalCheckHook blocks mutation-risk tools (RiskHigh, RiskCritical) in
-// production mode when no approval ID is present in the context.
-// Add this to the registry before any callers that should enforce approval.
 type ApprovalCheckHook struct{}
 
 // NewApprovalCheckHook creates an ApprovalCheckHook.
@@ -161,7 +185,7 @@ func NewApprovalCheckHook() *ApprovalCheckHook {
 // Before checks the tool's risk level and blocks mutation tools in production
 // mode without a valid approval ID.
 func (h *ApprovalCheckHook) Before(ctx context.Context, tool *Tool, _ map[string]interface{}) (context.Context, error) {
-	if !IsProductionMode(ctx) {
+	if GetExecutionMode(ctx) != "production" {
 		return ctx, nil // sandbox/dry-run: no approval needed
 	}
 	if tool.RiskLevel.IsMutationRisk() && GetApprovalID(ctx) == 0 {

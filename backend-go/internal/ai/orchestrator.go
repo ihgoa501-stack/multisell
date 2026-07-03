@@ -13,6 +13,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/agent/impl"
 	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
+	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
@@ -244,7 +245,9 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 
 	// Synthesize final output. If a real LLM provider is configured, call it;
 	// otherwise fall back to the deterministic stub.
-	output, confidence, riskLevel, err := o.synthesizeOutput(context.Background(), agent, req.DecisionPoint, req.Context)
+	// Build a context with agent identity so tool calls carry caller info.
+	agentCtx := toolregistry.WithAgentID(context.Background(), agent.ID)
+	output, confidence, riskLevel, err := o.synthesizeOutput(agentCtx, agent, req.DecisionPoint, req.Context)
 	if err != nil {
 		// Complete the trace with failed status so the failure is recorded, not silent.
 		errMsg := err.Error()

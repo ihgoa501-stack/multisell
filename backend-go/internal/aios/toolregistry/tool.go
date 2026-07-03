@@ -37,14 +37,6 @@ func (r RiskLevel) IsMutationRisk() bool {
 // executed in production mode without a valid approval ID.
 var ErrMutationRequiresApproval = errors.New("toolregistry: mutation tools require approval in production mode")
 
-// contextKey is an unexported type for context value keys to avoid collisions.
-type contextKey int
-
-const (
-	executionModeKey contextKey = iota
-	approvalIDKey
-)
-
 // Schema represents a simplified JSON Schema definition for tool parameters
 // and return values. This subset is sufficient for LLM function calling schema
 // generation and agent discovery.
