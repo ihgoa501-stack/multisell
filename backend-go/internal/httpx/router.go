@@ -724,7 +724,90 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	approvalSvc = approval.NewService(db, logger, auditSvc).WithBus(bus)
 	rbacSvc := rbac.NewService(db, logger)
 	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
-	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
+	// Build platform publish hook for listing task execution.
+	// After ExecuteTask completes, this pushes the product to the platform API.
+	publishHook := func(taskID int64) error {
+		var t listingtask.ListingTask
+		if err := db.First(&t, taskID).Error; err != nil {
+			return fmt.Errorf("load listing task %d: %w", taskID, err)
+		}
+		// Resolve platform code → adapter.
+		var plat struct{ Code string }
+		if err := db.Table("platform").Select("code").Where("id = ?", t.PlatformID).Scan(&plat).Error; err != nil {
+			return fmt.Errorf("load platform %d: %w", t.PlatformID, err)
+		}
+		adapter, ok := integrations.GetAdapter(plat.Code)
+		if !ok {
+			return fmt.Errorf("no adapter for platform %q", plat.Code)
+		}
+		// Load product data.
+		var prod sku.Product
+		if err := db.First(&prod, t.ProductID).Error; err != nil {
+			return fmt.Errorf("load product %d: %w", t.ProductID, err)
+		}
+		type skuRow struct {
+			ID   int64
+			Code string
+		}
+		var skus []skuRow
+		if err := db.Table("sku").Where("product_id = ?", t.ProductID).Find(&skus).Error; err != nil {
+			return fmt.Errorf("load SKUs for product %d: %w", t.ProductID, err)
+		}
+		// Find first active account for this platform.
+		var acct integrations.PlatformIntegrationAccount
+		if err := db.Where("platform_id = ? AND status = ?", t.PlatformID, "active").First(&acct).Error; err != nil {
+			return fmt.Errorf("no active account for platform %d: %w", t.PlatformID, err)
+		}
+		prices := make(map[int64]string)
+		inventories := make(map[int64]int)
+		publishSKUs := make([]integrations.PublishSKU, 0, len(skus))
+		for _, sk := range skus {
+			publishSKUs = append(publishSKUs, integrations.PublishSKU{SkuID: sk.ID, SkuCode: sk.Code})
+			if t.TargetSalePrice != nil {
+				prices[sk.ID] = fmt.Sprintf("%.2f", *t.TargetSalePrice)
+			}
+			var s sku.Sku
+			if err := db.First(&s, sk.ID).Error; err == nil {
+				inventories[sk.ID] = s.Stock
+			}
+		}
+		pkgH, _ := prod.PackageHeightCm.Float64()
+		pkgW, _ := prod.PackageWidthCm.Float64()
+		pkgL, _ := prod.PackageLengthCm.Float64()
+		pkgWt, _ := prod.PackageWeightKg.Float64()
+
+		result, err := adapter.Publish(context.Background(), &integrations.PublishInput{
+			ProductID:      t.ProductID,
+			PlatformID:     t.PlatformID,
+			AccountID:      acct.ID,
+			SKUs:           publishSKUs,
+			Prices:         prices,
+			Inventories:    inventories,
+			ProductName:    prod.Name,
+			Description:    prod.Description,
+			CategoryID:     prod.CategoryID,
+			MainImage:      prod.MainImage,
+			PackageHeight:  pkgH,
+			PackageWidth:   pkgW,
+			PackageLength:  pkgL,
+			PackageWeight:  pkgWt,
+		})
+		if err != nil {
+			return fmt.Errorf("platform %s publish failed: %w", plat.Code, err)
+		}
+		// Record platform result — clear the error and store product IDs.
+		resultJSON, _ := json.Marshal(result)
+		db.Model(&listingtask.ListingTaskItem{}).Where("task_id = ?", taskID).Update("result", resultJSON)
+
+		logger.Info("listing task platform publish succeeded",
+			zap.Int64("task_id", taskID),
+			zap.String("platform", plat.Code),
+			zap.String("platform_product_id", result.PlatformProductID),
+			zap.String("platform_url", result.PlatformURL),
+		)
+		return nil
+	}
+	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc, publishHook)
 
 	// Closed-loop: approval approved for listing_task → execute the task.
 	bus.Subscribe("approval.approved.listing_task",

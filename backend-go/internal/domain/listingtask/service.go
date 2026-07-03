@@ -16,6 +16,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// PublishHook is an optional callback called after ExecuteTask successfully
+// transitions a listing task to "completed". The hook calls the platform
+// adapter's Publish to push the product live. If it returns an error, the
+// task status stays "completed" but last_error is set for operator visibility.
+type PublishHook func(taskID int64) error
+
 // Service provides listing task business logic.
 type Service struct {
 	db          *gorm.DB
@@ -25,6 +31,7 @@ type Service struct {
 	approvalSvc *approval.Service
 	oplogSvc    *operationlog.Service
 	loopRec     LoopRecorder
+	publishHook PublishHook // nil = skip platform publish, task stays "completed"
 }
 
 // LoopRecorder is the interface for recording feedback back to the evaluation loop.
@@ -645,6 +652,26 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 	if s.loopRec != nil {
 		_ = s.loopRec.RecordExecutionResult(task.ProductID, task.ID, true, "")
 	}
+
+	// Platform publish hook: push product to the platform adapter.
+	// Called after the DB transaction commits so a platform failure
+	// doesn't roll back the completion. On error, set last_error.
+	if s.publishHook != nil {
+		if pubErr := s.publishHook(task.ID); pubErr != nil {
+			s.logger.Error("platform publish failed after task completed",
+				zap.Int64("task_id", task.ID),
+				zap.Error(pubErr),
+			)
+			if err := s.db.Model(&ListingTask{}).Where("id = ?", task.ID).
+				Update("last_error", pubErr.Error()).Error; err != nil {
+				s.logger.Error("failed to persist publish error on task",
+					zap.Int64("task_id", task.ID),
+					zap.Error(err),
+				)
+			}
+		}
+	}
+
 	return &task, nil
 }
 
