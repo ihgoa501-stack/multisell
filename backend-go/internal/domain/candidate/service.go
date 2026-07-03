@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"strconv"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -531,23 +530,22 @@ func (s *Service) SkipField(id int64, field string) (*CandidateDetail, error) {
 		return nil, err
 	}
 
-	skipped := []string{}
-	if len(c.SkippedFields) > 0 {
-		_ = json.Unmarshal(c.SkippedFields, &skipped)
-	}
-
-	alreadySkipped := false
-	for _, f := range skipped {
-		if f == field {
-			alreadySkipped = true
-			break
+	skipped := parseSkippedFields(&c)
+	if skipped[field] {
+		// Already skipped — no-op, just recalc.
+		missing, err := s.recalcCompleteness(&c)
+		if err != nil {
+			return nil, err
 		}
-	}
-	if !alreadySkipped {
-		skipped = append(skipped, field)
+		return &CandidateDetail{CandidateProduct: c, MissingFields: missing}, nil
 	}
 
-	raw, _ := json.Marshal(skipped)
+	var list []string
+	if len(c.SkippedFields) > 0 {
+		_ = json.Unmarshal(c.SkippedFields, &list)
+	}
+	list = append(list, field)
+	raw, _ := json.Marshal(list)
 	if err := s.db.Model(&c).Update("skipped_fields", raw).Error; err != nil {
 		return nil, err
 	}
@@ -581,37 +579,23 @@ func (s *Service) Rescrape(id int64) (*CandidateDetail, error) {
 func typedValue(field string, val interface{}) (interface{}, error) {
 	switch field {
 	case "title", "main_image", "hs_code", "origin_country":
-		s, ok := val.(string)
-		if !ok {
+		s := common.ToString(val)
+		if s == "" && val != nil {
 			return nil, fmt.Errorf("expected string for field %q", field)
 		}
 		return s, nil
 	case "purchase_price", "package_weight_kg", "package_length_cm", "package_width_cm", "package_height_cm", "target_sale_price":
-		switch v := val.(type) {
-		case float64:
-			return v, nil
-		case string:
-			f, err := strconv.ParseFloat(v, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid number for field %q: %s", field, v)
-			}
-			return f, nil
-		default:
-			return nil, fmt.Errorf("expected number for field %q, got %T", field, val)
+		f, err := common.ToFloat64(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid number for field %q: got %T", field, val)
 		}
+		return f, nil
 	case "supplier_id":
-		switch v := val.(type) {
-		case float64:
-			return int64(v), nil
-		case string:
-			n, err := strconv.ParseInt(v, 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid integer for field %q: %s", field, v)
-			}
-			return n, nil
-		default:
-			return nil, fmt.Errorf("expected integer for field %q, got %T", field, val)
+		n, err := common.ToInt64(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer for field %q: got %T", field, val)
 		}
+		return n, nil
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrFieldNotRecognized, field)
 	}

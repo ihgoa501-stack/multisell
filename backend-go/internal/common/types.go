@@ -1,6 +1,7 @@
 package common
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -54,4 +55,53 @@ func ParseSort(c *gin.Context) Sort {
 		s.Order = o
 	}
 	return s
+}
+
+// ToFloat64 converts an interface{} to float64. Handles float64, json.Number,
+// string, int, and int64 — the common types JSON unmarshaling produces.
+func ToFloat64(v interface{}) (float64, error) {
+	switch val := v.(type) {
+	case float64:
+		return val, nil
+	case string:
+		return strconv.ParseFloat(val, 64)
+	case int:
+		return float64(val), nil
+	case int64:
+		return float64(val), nil
+	default:
+		return 0, convertError("float64", v)
+	}
+}
+
+// ToInt64 converts an interface{} to int64. Handles float64 (truncation), string,
+// int, and int64.
+func ToInt64(v interface{}) (int64, error) {
+	switch val := v.(type) {
+	case float64:
+		return int64(val), nil
+	case string:
+		return strconv.ParseInt(val, 10, 64)
+	case int:
+		return int64(val), nil
+	case int64:
+		return val, nil
+	default:
+		return 0, convertError("int64", v)
+	}
+}
+
+// ToString converts an interface{} to string. Returns the empty string for nil.
+func ToString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func convertError(typ string, v interface{}) error {
+	return fmt.Errorf("cannot convert %T to %s", v, typ)
 }
