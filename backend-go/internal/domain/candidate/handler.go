@@ -66,6 +66,24 @@ func (h *Handler) ListCollectLeads(c *gin.Context) {
 	})
 }
 
+// GetCollectLead GET /candidates/collect-leads/:id
+func (h *Handler) GetCollectLead(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.GetCollectLeadByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "collect lead not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, item)
+}
+
 // Get GET /candidates/:id
 func (h *Handler) Get(c *gin.Context) {
 	id, ok := parseID(c)
