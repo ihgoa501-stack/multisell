@@ -858,13 +858,17 @@ func TestIdempotencyKey_DLQReplay(t *testing.T) {
 		return callCount.Load() >= 1
 	})
 
-	// Verify NO event_processed row exists (handler never succeeded).
-	var processedCount int64
-	db.Model(&struct{}{}).Table("event_processed").
-		Where("idempotency_key = ?", "dlq-replay-key").
-		Count(&processedCount)
-	if processedCount != 0 {
-		t.Errorf("expected 0 event_processed rows (handler never succeeded), got %d", processedCount)
+	// Verify event_processed row has state='failed' (set by failIdempotency before DLQ move).
+	var processedRow struct {
+		EventID string
+		State   string
+	}
+	db.Raw(`SELECT event_id, state FROM event_processed WHERE idempotency_key = ?`, "dlq-replay-key").Scan(&processedRow)
+	if processedRow.EventID == "" {
+		t.Fatal("expected event_processed row after claim, got empty")
+	}
+	if processedRow.State != "failed" {
+		t.Errorf("expected state='failed' (handler never succeeded), got %q", processedRow.State)
 	}
 
 	// Verify DLQ event was persisted.
@@ -939,6 +943,84 @@ func TestIdempotencyKey_DLQReplay(t *testing.T) {
 	}
 }
 
+// TestIdempotencyKey_ConcurrentDuplicate verifies that two events published
+// rapidly with the same idempotency_key and different event_ids result in the
+// handler running exactly once, even with multiple bus workers (default 4).
+//
+// This tests the core atomic claim fix: only one worker wins the INSERT claim;
+// the other worker's INSERT conflicts and the event is atomically rejected.
+func TestIdempotencyKey_ConcurrentDuplicate(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createEventProcessedTable(t, db)
+	logger, _ := zap.NewDevelopment()
+	// Default pool has 4 workers — the race condition reproduces here.
+	b := New(logger, WithDB(db))
+
+	var (
+		callCount      atomic.Int32
+		handlerStarted = make(chan struct{})
+	)
+
+	b.Subscribe("concurrent-dup.*", func(ctx context.Context, evt Event) error {
+		c := callCount.Add(1)
+		if c == 1 {
+			close(handlerStarted)
+		}
+		// Block briefly so the second event (if it sneaks through) would
+		// arrive while this handler is still executing. With the atomic
+		// claim, the second worker's INSERT should conflict and be rejected.
+		time.Sleep(250 * time.Millisecond)
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	// Publish two events with the same idempotency key as rapidly as possible.
+	key := "concurrent-dup-key"
+	ctxID := WithIdempotencyKey(context.Background(), key)
+	_, err := b.Publish(ctxID, "concurrent-dup.test", "test", nil)
+	if err != nil {
+		t.Fatalf("first publish: %v", err)
+	}
+	_, err = b.Publish(ctxID, "concurrent-dup.test", "test", nil)
+	if err != nil {
+		t.Fatalf("second publish: %v", err)
+	}
+
+	// Wait for the handler to start (at least once).
+	select {
+	case <-handlerStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for handler to start")
+	}
+
+	// Give enough time for a potential second invocation to complete.
+	time.Sleep(500 * time.Millisecond)
+
+	if got := callCount.Load(); got != 1 {
+		t.Errorf("expected handler to run exactly once (atomic claim), got %d", got)
+	}
+
+	// Verify the event_processed row reflects successful processing.
+	var row struct {
+		EventID string
+		State   string
+	}
+	db.Raw(`SELECT event_id, state FROM event_processed WHERE idempotency_key = ?`, key).Scan(&row)
+	if row.EventID == "" {
+		t.Fatal("expected event_processed row after claim, got empty")
+	}
+	if row.State != "succeeded" {
+		t.Errorf("expected state='succeeded', got %q", row.State)
+	}
+}
+
 // createDLQTable creates the event_dlq table with SQLite-compatible DDL.
 func createDLQTable(t *testing.T, db *gorm.DB) {
 	t.Helper()
@@ -966,6 +1048,11 @@ func createDLQTable(t *testing.T, db *gorm.DB) {
 
 // createEventProcessedTable creates the event_processed table with
 // SQLite-compatible DDL for idempotency testing.
+// The state column supports the atomic claim model:
+//
+//	processing → claimed before handler dispatch
+//	succeeded  → handler completed successfully
+//	failed     → handler exhausted retries, moved to DLQ
 func createEventProcessedTable(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Exec(`
@@ -973,7 +1060,9 @@ func createEventProcessedTable(t *testing.T, db *gorm.DB) {
 			idempotency_key TEXT PRIMARY KEY,
 			topic TEXT NOT NULL,
 			event_id TEXT NOT NULL,
-			processed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			state TEXT NOT NULL DEFAULT 'processing',
+			processed_at DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
 	`).Error; err != nil {
 		t.Fatalf("failed to create event_processed table: %v", err)

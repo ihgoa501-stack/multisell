@@ -63,5 +63,4 @@ var (
 		},
 		[]string{"topic", "reason"},
 	)
-
 )
