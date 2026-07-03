@@ -267,6 +267,15 @@ func (s *Service) CountCollectLeads() (int64, error) {
 	return count, nil
 }
 
+// GetCollectLeadByID returns a single collect lead.
+func (s *Service) GetCollectLeadByID(id int64) (*CollectLead, error) {
+	var lead CollectLead
+	if err := s.db.First(&lead, id).Error; err != nil {
+		return nil, err
+	}
+	return &lead, nil
+}
+
 // GetByID returns a single candidate product.
 func (s *Service) GetByID(id int64) (*CandidateProduct, error) {
 	var c CandidateProduct
