@@ -40,6 +40,16 @@
         Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: wss:; frame-ancestors 'none'; form-action 'self'"
     }
 
+    # ── Metrics endpoint (internal only) ───────────────────────────
+    # Prometheus scrapes /metrics from the Docker network. Block external access.
+    handle /metrics {
+        @denied {
+            not remote_ip 127.0.0.1 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+        }
+        respond @denied "Forbidden" 403
+        reverse_proxy backend:8080
+    }
+
     # ── WebSocket endpoint ──────────────────────────────────────────
     # Backend serves WebSocket at /ws. Caddy auto-upgrades to WebSocket.
     handle /ws {

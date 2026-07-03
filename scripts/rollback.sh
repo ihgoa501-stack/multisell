@@ -23,10 +23,13 @@ cd "$DEPLOY_DIR"
 info "开始回滚 LingMirror ..."
 
 # ---- Step 1: 获取上一个版本 ----------------------------------------------------
-PREV=$(git reflog --format="%H" | sed -n '2p')
+# Prefer latest git tag (set by release workflow), fall back to HEAD~1.
+PREV=$(git describe --tags --abbrev=0 2>/dev/null) || PREV=""
 if [[ -z "$PREV" ]]; then
-    error "找不到上一个版本，无法回滚"
-    exit 1
+    PREV=$(git rev-parse HEAD~1 2>/dev/null) || {
+        error "找不到上一个版本，无法回滚"
+        exit 1
+    }
 fi
 info "目标版本: $(echo $PREV | cut -c1-8)"
 

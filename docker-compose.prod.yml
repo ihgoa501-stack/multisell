@@ -1,6 +1,12 @@
 # 凌镜 LingMirror — 生产部署覆写
 # 使用: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   migrate:
     image: migrate/migrate:v4.18.1
@@ -11,12 +17,14 @@ services:
       - ./backend-go/migrations:/migrations
     command:
       -path /migrations
-      -database "postgresql://${DB_USER:?required}:${DB_PASSWORD:?required}@db:5432/${DB_NAME:?required}?sslmode=require"
+      -database "postgresql://${DB_USER:?required}:${DB_PASSWORD:?required}@db:5432/${DB_NAME:?required}?sslmode=disable"
       up
     restart: "no"
+    logging: *default-logging
 
   backend:
     build: ./backend-go
+    logging: *default-logging
     environment:
       GIN_MODE: release
       DB_HOST: db
@@ -34,6 +42,14 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health >/dev/null"]
       interval: 30s
@@ -42,6 +58,16 @@ services:
       start_period: 10s
 
   db:
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -53,15 +79,25 @@ services:
       context: ./frontend-next
       args:
         NEXT_PUBLIC_API_URL: /api
+    logging: *default-logging
     environment:
       NEXT_PUBLIC_API_URL: /api
     depends_on:
       - backend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
   # ── BEGIN: Caddy reverse proxy (unified entry point with auto TLS) ──
   caddy:
     image: caddy:2-alpine
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -76,6 +112,10 @@ services:
       - backend
       - frontend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
   # ── END: Caddy reverse proxy ──
 
 volumes:
