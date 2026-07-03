@@ -147,14 +147,6 @@ func PriceAdjustHandler(db *gorm.DB, logger *zap.Logger, approvalSvc *approval.S
 	}
 }
 
-// PriceUpdateHandler is the canonical handler for price mutations.
-// It delegates to PriceAdjustHandler with the same approval gating.
-// Use this instead of PriceAdjustHandler for new registrations; the catalog
-// treats price_update as a Level 3 action requiring production approval.
-func PriceUpdateHandler(db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service) Handler {
-	return PriceAdjustHandler(db, logger, approvalSvc)
-}
-
 // ListingDraftHandler creates a listing draft from an optimization recommendation.
 // Expected payload keys: sku_code, optimized_title, optimized_bullets, keywords.
 func ListingDraftHandler(db *gorm.DB, logger *zap.Logger) Handler {

@@ -23,17 +23,15 @@ func nonEmptyStrings(v interface{}) bool {
 }
 
 func getPages(out map[string]interface{}) []interface{} {
-	if raw, ok := out["suggested_pages"].([]interface{}); ok {
-		return raw
+	raw, ok := out["suggested_pages"].([]map[string]interface{})
+	if !ok {
+		return nil
 	}
-	if raw, ok := out["suggested_pages"].([]map[string]interface{}); ok {
-		pages := make([]interface{}, len(raw))
-		for i, r := range raw {
-			pages[i] = r
-		}
-		return pages
+	pages := make([]interface{}, len(raw))
+	for i, r := range raw {
+		pages[i] = r
 	}
-	return nil
+	return pages
 }
 
 func newTestDB(t *testing.T) *gorm.DB {
