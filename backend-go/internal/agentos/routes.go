@@ -20,5 +20,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		agentos.GET("/work-items/:id", h.WorkItemDetail)
 		agentos.GET("/agent-timeline", h.AgentTimeline)
 		agentos.GET("/failures", h.FailedRuns)
+		agentos.GET("/traffic-summary", h.TrafficSummary)
+		agentos.GET("/intercepted-actions", h.InterceptedActions)
+		agentos.GET("/audit-replay/:correlation_id", h.AuditReplay)
 	}
 }

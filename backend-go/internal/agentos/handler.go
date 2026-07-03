@@ -137,3 +137,40 @@ func (h *Handler) FailedRuns(c *gin.Context) {
 	}
 	response.Success(c, items)
 }
+
+// TrafficSummary GET /agentos/traffic-summary
+func (h *Handler) TrafficSummary(c *gin.Context) {
+	summary, err := h.service.TrafficSummary()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, summary)
+}
+
+// InterceptedActions GET /agentos/intercepted-actions
+func (h *Handler) InterceptedActions(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	items, err := h.service.InterceptedActions(limit, offset)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, items)
+}
+
+// AuditReplay GET /agentos/audit-replay/:correlation_id
+func (h *Handler) AuditReplay(c *gin.Context) {
+	correlationID := c.Param("correlation_id")
+	if correlationID == "" {
+		response.Error(c, http.StatusBadRequest, "correlation_id is required")
+		return
+	}
+	replay, err := h.service.AuditReplay(correlationID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, replay)
+}

@@ -2,6 +2,7 @@ package agentos
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -639,8 +640,323 @@ func (s *Service) AgentTimeline(limit int) ([]AgentTimelineEntry, error) {
 }
 
 // ---------------------------------------------------------------------------
-// FailedRun types and method
+// TrafficSummary types and method
 // ---------------------------------------------------------------------------
+
+// TrafficSummaryResponse is the traffic funnel / status distribution payload.
+type TrafficSummaryResponse struct {
+	StatusDistribution map[string]int64            `json:"status_distribution"`
+	InterceptedTotal   int64                       `json:"intercepted_total"`
+	Funnel             map[string]int64            `json:"funnel"`
+	ByRisk             map[string]map[string]int64 `json:"by_risk"`
+}
+
+// TrafficSummary returns the action status distribution funnel for the cockpit.
+func (s *Service) TrafficSummary() (*TrafficSummaryResponse, error) {
+	result := &TrafficSummaryResponse{
+		StatusDistribution: make(map[string]int64),
+		Funnel:             make(map[string]int64),
+		ByRisk:             make(map[string]map[string]int64),
+	}
+
+	// 1. Status distribution — group by status.
+	type statusCount struct {
+		Status string
+		Count  int64
+	}
+	var sc []statusCount
+	if err := s.db.Table("unified_action").
+		Select("status, COUNT(*) AS count").
+		Group("status").
+		Scan(&sc).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range sc {
+		result.StatusDistribution[row.Status] = row.Count
+	}
+
+	// 2. Intercepted total = escalated (policy-blocked) + rejected (owner-blocked).
+	if err := s.db.Table("unified_action").
+		Select("COUNT(*) AS count").
+		Where("status IN ?", []string{"rejected", "escalated"}).
+		Scan(&result.InterceptedTotal).Error; err != nil {
+		return nil, err
+	}
+
+	// 3. Funnel — derived from status distribution.
+	for status, count := range result.StatusDistribution {
+		result.Funnel["produced"] += count
+		switch status {
+		case "approved", "executing", "executed", "reviewed":
+			result.Funnel["approved"] += count
+		}
+		switch status {
+		case "executed", "reviewed":
+			result.Funnel["executed"] += count
+		}
+		if status == "rejected" {
+			result.Funnel["rejected_by_owner"] += count
+		}
+		if status == "escalated" {
+			result.Funnel["blocked_by_policy"] += count
+		}
+	}
+
+	// 4. By risk — group by risk_level, status.
+	type riskStatusCount struct {
+		RiskLevel string
+		Status    string
+		Count     int64
+	}
+	var rsc []riskStatusCount
+	if err := s.db.Table("unified_action").
+		Select("risk_level, status, COUNT(*) AS count").
+		Group("risk_level, status").
+		Scan(&rsc).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rsc {
+		if _, ok := result.ByRisk[row.RiskLevel]; !ok {
+			result.ByRisk[row.RiskLevel] = make(map[string]int64)
+		}
+		result.ByRisk[row.RiskLevel][row.Status] = row.Count
+	}
+
+	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// InterceptedActions types and method
+// ---------------------------------------------------------------------------
+
+// InterceptedActionsResponse is the blocked/rejected action list payload.
+type InterceptedActionsResponse struct {
+	Items []InterceptedActionItem `json:"items"`
+	Total int64                   `json:"total"`
+}
+
+// InterceptedActionItem is a single blocked or rejected action row.
+type InterceptedActionItem struct {
+	ID            int64  `json:"id"`
+	ActionType    string `json:"action_type"`
+	AgentID       string `json:"agent_id"`
+	RiskLevel     string `json:"risk_level"`
+	BlockReason   string `json:"block_reason"`
+	BlockedAt     string `json:"blocked_at"`
+	TargetSummary string `json:"target_summary"`
+}
+
+// InterceptedActions lists blocked/rejected actions, newest first.
+func (s *Service) InterceptedActions(limit, offset int) (*InterceptedActionsResponse, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	type row struct {
+		ID              int64
+		ActionType      string
+		AgentID         string
+		RiskLevel       string
+		RejectionReason string
+		Description     string
+		CreatedAt       time.Time
+	}
+
+	// Total count.
+	var total int64
+	if err := s.db.Table("unified_action").
+		Where("status IN ?", []string{"rejected", "escalated"}).
+		Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	// Items.
+	var rows []row
+	if err := s.db.Table("unified_action").
+		Select("id, action_type, agent_id, risk_level, COALESCE(rejection_reason,'') AS rejection_reason, COALESCE(description,'') AS description, created_at").
+		Where("status IN ?", []string{"rejected", "escalated"}).
+		Order("created_at DESC").
+		Limit(limit).Offset(offset).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	items := make([]InterceptedActionItem, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, InterceptedActionItem{
+			ID:            r.ID,
+			ActionType:    r.ActionType,
+			AgentID:       r.AgentID,
+			RiskLevel:     r.RiskLevel,
+			BlockReason:   r.RejectionReason,
+			BlockedAt:     r.CreatedAt.Format("2006-01-02 15:04:05"),
+			TargetSummary: r.Description,
+		})
+	}
+
+	return &InterceptedActionsResponse{Items: items, Total: total}, nil
+}
+
+// ---------------------------------------------------------------------------
+// AuditReplay types and method
+// ---------------------------------------------------------------------------
+
+// AuditReplayResponse is the full audit timeline for a correlation_id (trace_id).
+type AuditReplayResponse struct {
+	CorrelationID string       `json:"correlation_id"`
+	Events        []AuditEvent `json:"events"`
+}
+
+// AuditEvent is one entry in the audit timeline.
+type AuditEvent struct {
+	Type       string `json:"type"`
+	Name       string `json:"name,omitempty"`
+	AgentID    string `json:"agent_id,omitempty"`
+	ActionType string `json:"action_type,omitempty"`
+	ActionID   int64  `json:"action_id,omitempty"`
+	Status     string `json:"status,omitempty"`
+	RiskLevel  string `json:"risk_level,omitempty"`
+	At         string `json:"at,omitempty"`
+	ApprovalID int64  `json:"approval_id,omitempty"`
+	Reviewer   string `json:"reviewer,omitempty"`
+	Command    string `json:"command,omitempty"`
+	Result     string `json:"result,omitempty"`
+	AuditID    int64  `json:"audit_id,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+}
+
+// eventWithTS wraps AuditEvent with a timestamp for sorting.
+type eventWithTS struct {
+	event AuditEvent
+	ts    time.Time
+}
+
+// AuditReplay returns the full timeline for a correlation_id (trace_id).
+// Events are collected from ai_trace, unified_action, approval_request, and operation_log,
+// then sorted chronologically.
+func (s *Service) AuditReplay(correlationID string) (*AuditReplayResponse, error) {
+	result := &AuditReplayResponse{
+		CorrelationID: correlationID,
+		Events:        []AuditEvent{},
+	}
+
+	var collected []eventWithTS
+
+	// 1. Agent decision event from ai_trace.
+	type traceRow struct {
+		AgentID       string
+		DecisionPoint string
+		StartedAt     time.Time
+	}
+	var tr traceRow
+	if err := s.db.Table("ai_trace").
+		Select("agent_id, decision_point, started_at").
+		Where("trace_id = ?", correlationID).
+		Scan(&tr).Error; err != nil {
+		return nil, err
+	}
+	if tr.AgentID != "" {
+		collected = append(collected, eventWithTS{
+			event: AuditEvent{
+				Type:    "agent_decision",
+				AgentID: tr.AgentID,
+				Name:    tr.DecisionPoint,
+			},
+			ts: tr.StartedAt,
+		})
+	}
+
+	// 2. Unified actions sharing this trace_id.
+	type actionRow struct {
+		ID          int64
+		ActionType  string
+		Status      string
+		RiskLevel   string
+		Description string
+		CreatedAt   time.Time
+	}
+	var actions []actionRow
+	s.db.Table("unified_action").
+		Select("id, action_type, status, risk_level, COALESCE(description,'') AS description, created_at").
+		Where("trace_id = ?", correlationID).
+		Order("created_at ASC").
+		Scan(&actions)
+
+	for _, a := range actions {
+		collected = append(collected, eventWithTS{
+			event: AuditEvent{
+				Type:       "action",
+				ActionID:   a.ID,
+				ActionType: a.ActionType,
+				Status:     a.Status,
+				RiskLevel:  a.RiskLevel,
+				Detail:     a.Description,
+			},
+			ts: a.CreatedAt,
+		})
+
+		// 2a. Linked approval_request for this action.
+		type approvalRow struct {
+			ID        int64
+			Status    string
+			Reviewer  string
+			UpdatedAt time.Time
+		}
+		var ar approvalRow
+		if err := s.db.Table("approval_request").
+			Select("id, COALESCE(status,'') AS status, COALESCE(reviewer,'') AS reviewer, updated_at").
+			Where("entity_type = 'unified_action' AND entity_id = ?", a.ID).
+			Order("updated_at DESC").Limit(1).
+			Scan(&ar).Error; err == nil && ar.ID > 0 {
+			collected = append(collected, eventWithTS{
+				event: AuditEvent{
+					Type:       "approval",
+					ApprovalID: ar.ID,
+					Status:     ar.Status,
+					Reviewer:   ar.Reviewer,
+				},
+				ts: ar.UpdatedAt,
+			})
+		}
+
+		// 2b. Audit entries from operation_log for this action.
+		type auditRow struct {
+			ID        int64
+			Action    string
+			Content   string
+			CreatedAt time.Time
+		}
+		var auditRows []auditRow
+		s.db.Table("operation_log").
+			Select("id, COALESCE(action,'') AS action, COALESCE(content,'') AS content, created_at").
+			Where("resource_id = ?", fmt.Sprintf("%d", a.ID)).
+			Order("created_at ASC").
+			Scan(&auditRows)
+		for _, al := range auditRows {
+			collected = append(collected, eventWithTS{
+				event: AuditEvent{
+					Type:    "audit",
+					AuditID: al.ID,
+					Name:    al.Action,
+					Detail:  al.Content,
+				},
+				ts: al.CreatedAt,
+			})
+		}
+	}
+
+	// 3. Sort all events chronologically.
+	sort.Slice(collected, func(i, j int) bool {
+		return collected[i].ts.Before(collected[j].ts)
+	})
+
+	for _, ev := range collected {
+		ev.event.At = ev.ts.Format("2006-01-02 15:04:05")
+		result.Events = append(result.Events, ev.event)
+	}
+
+	return result, nil
+}
 
 // FailedRun represents a failed agent run with error context.
 type FailedRun struct {
