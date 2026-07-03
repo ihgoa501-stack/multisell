@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/lingmirror/backend-go/internal/domain/approval"
@@ -262,15 +261,4 @@ func int64Field(m map[string]interface{}, key string) int64 {
 		}
 	}
 	return 0
-}
-
-func toJSON(v interface{}) string {
-	if v == nil {
-		return "{}"
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "{}"
-	}
-	return string(b)
 }
