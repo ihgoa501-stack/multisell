@@ -825,11 +825,13 @@ func (s *Service) AuditReplay(correlationID string) (*AuditReplayResponse, error
 		CreatedAt  time.Time
 	}
 	var actions []actionRow
-	s.db.Table("unified_action").
+	if err := s.db.Table("unified_action").
 		Select("id, action_type, agent_id, status, created_at").
 		Where("correlation_id = ?", correlationID).
 		Order("created_at ASC").
-		Scan(&actions)
+		Scan(&actions).Error; err != nil {
+		s.logger.Warn("audit replay: unified_action query failed", zap.Error(err))
+	}
 	for _, a := range actions {
 		aid := a.ID
 		resp.Events = append(resp.Events, AuditReplayEvent{
@@ -855,11 +857,13 @@ func (s *Service) AuditReplay(correlationID string) (*AuditReplayResponse, error
 			UpdatedAt time.Time
 		}
 		var approvals []appRow
-		s.db.Table("approval_request").
+		if err := s.db.Table("approval_request").
 			Select("id, status, COALESCE(reviewer,'') AS reviewer, updated_at").
 			Where("entity_type = 'unified_action' AND entity_id IN ?", ids).
 			Order("updated_at ASC").
-			Scan(&approvals)
+			Scan(&approvals).Error; err != nil {
+			s.logger.Warn("audit replay: approval_request query failed", zap.Error(err))
+		}
 		for _, ap := range approvals {
 			resp.Events = append(resp.Events, AuditReplayEvent{
 				Type:      "approval",
@@ -878,11 +882,13 @@ func (s *Service) AuditReplay(correlationID string) (*AuditReplayResponse, error
 		CreatedAt time.Time
 	}
 	var logs []logRow
-	s.db.Table("operation_log").
+	if err := s.db.Table("operation_log").
 		Select("action, COALESCE(content,'') AS content, created_at").
 		Where("correlation_id = ?", correlationID).
 		Order("created_at ASC").
-		Scan(&logs)
+		Scan(&logs).Error; err != nil {
+		s.logger.Warn("audit replay: operation_log query failed", zap.Error(err))
+	}
 	for _, l := range logs {
 		resp.Events = append(resp.Events, AuditReplayEvent{
 			Type:      "audit",
