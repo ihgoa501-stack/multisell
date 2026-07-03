@@ -75,3 +75,18 @@ func computeCompleteness(p *CandidateProduct) (status string, missingFields []st
 		return "research_ready", missingFields
 	}
 }
+
+// parseSkippedFields converts the raw JSONB skipped_fields column
+// into a lookup set for efficient O(1) membership checks.
+func parseSkippedFields(p *CandidateProduct) map[string]bool {
+	skipped := make(map[string]bool)
+	if len(p.SkippedFields) > 0 {
+		var fields []string
+		if err := json.Unmarshal(p.SkippedFields, &fields); err == nil {
+			for _, f := range fields {
+				skipped[f] = true
+			}
+		}
+	}
+	return skipped
+}
