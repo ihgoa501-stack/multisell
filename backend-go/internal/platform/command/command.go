@@ -31,10 +31,11 @@ type Result struct {
 
 // Dispatcher routes action types to registered handler functions.
 type Dispatcher struct {
-	mu       sync.RWMutex
-	handlers map[string]Handler
-	logger   *zap.Logger
-	catalog  *actioncatalog.Catalog // optional, nil means no catalog enforcement
+	mu            sync.RWMutex
+	handlers      map[string]Handler
+	logger        *zap.Logger
+	catalog       *actioncatalog.Catalog // optional, nil means no catalog enforcement
+	auditRecorder AuditRecorder           // optional, nil means no audit logging
 }
 
 // DispatcherOption configures a Dispatcher.
@@ -46,6 +47,14 @@ type DispatcherOption func(*Dispatcher)
 func WithCatalog(cat *actioncatalog.Catalog) DispatcherOption {
 	return func(d *Dispatcher) {
 		d.catalog = cat
+	}
+}
+
+// WithAuditRecorder sets an optional audit callback that is invoked after
+// successful production execution of high-risk agent actions.
+func WithAuditRecorder(ar AuditRecorder) DispatcherOption {
+	return func(d *Dispatcher) {
+		d.auditRecorder = ar
 	}
 }
 
@@ -159,8 +168,22 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 	}
 
 	// Sandbox and approved production actions delegate to Dispatch.
-	return d.Dispatch(ctx, action.ActionType, action.Input)
+	result, dispatchErr := d.Dispatch(ctx, action.ActionType, action.Input)
+
+	// Audit: record high-risk production mutations after successful execution.
+	if dispatchErr == nil && result != nil && result.Success &&
+		action.Mode == ModeProduction && action.RiskLevel >= RiskHigh &&
+		d.auditRecorder != nil {
+		d.auditRecorder(ctx, action, result)
+	}
+
+	return result, dispatchErr
 }
+
+// AuditRecorder is an optional callback invoked after a high-risk production
+// action is successfully dispatched. It carries the action envelope and the
+// result so the caller can persist an audit record.
+type AuditRecorder func(ctx context.Context, action AgentAction, result *Result)
 
 // PolicyChecker checks whether an approval ID is still valid at execution time.
 // The actual policy engine (actionpolicy.Service) lives in the domain layer;

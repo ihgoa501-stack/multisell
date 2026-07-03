@@ -684,3 +684,161 @@ func TestDispatchSafe_Production_StockAlertNoApprovalNeeded(t *testing.T) {
 		t.Error("handler was not executed")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// P2: Audit recorder — high-risk production actions trigger audit.
+// ---------------------------------------------------------------------------
+
+func TestDispatchSafe_AuditRecorder_CalledForHighRiskProduction(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	var recorded bool
+	var recordedAction AgentAction
+	var recordedResult *Result
+
+	auditRecorder := func(_ context.Context, action AgentAction, result *Result) {
+		recorded = true
+		recordedAction = action
+		recordedResult = result
+	}
+
+	d := NewDispatcher(logger, WithAuditRecorder(auditRecorder))
+	approvalID := int64(42)
+	d.Register("price_update", okHandler)
+
+	action := AgentAction{
+		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: true,
+		ApprovalID:       &approvalID,
+		Mode:             ModeProduction,
+		Input:            map[string]interface{}{"price": 29.99},
+	}
+	result, err := d.DispatchSafe(context.Background(), action, &mockPolicyChecker{approved: true})
+	if err != nil {
+		t.Fatalf("DispatchSafe with valid approval should succeed, got: %v", err)
+	}
+	if !recorded {
+		t.Error("audit recorder should have been called for high-risk production action")
+	}
+	if recordedAction.ActionType != "price_update" {
+		t.Errorf("expected action_type price_update in audit, got %s", recordedAction.ActionType)
+	}
+	if recordedResult != result {
+		t.Error("recorded result should match the dispatch result")
+	}
+}
+
+func TestDispatchSafe_AuditRecorder_NotCalledForLowRiskProduction(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	var recorded bool
+	auditRecorder := func(_ context.Context, _ AgentAction, _ *Result) {
+		recorded = true
+	}
+
+	d := NewDispatcher(logger, WithAuditRecorder(auditRecorder))
+	d.Register("stock_alert", okHandler)
+
+	action := AgentAction{
+		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
+		RiskLevel:  RiskLow,
+		Mode:       ModeProduction,
+	}
+	_, err := d.DispatchSafe(context.Background(), action, nil)
+	if err != nil {
+		t.Fatalf("low-risk dispatch should succeed, got: %v", err)
+	}
+	if recorded {
+		t.Error("audit recorder should NOT be called for low-risk action")
+	}
+}
+
+func TestDispatchSafe_AuditRecorder_NotCalledForDryRun(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	var recorded bool
+	auditRecorder := func(_ context.Context, _ AgentAction, _ *Result) {
+		recorded = true
+	}
+
+	d := NewDispatcher(logger, WithAuditRecorder(auditRecorder))
+	d.Register("price_update", okHandler)
+
+	action := AgentAction{
+		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: true,
+		Mode:             ModeDryRun,
+	}
+	_, err := d.DispatchSafe(context.Background(), action, nil)
+	if err != nil {
+		t.Fatalf("dry-run should succeed, got: %v", err)
+	}
+	if recorded {
+		t.Error("audit recorder should NOT be called for dry-run")
+	}
+}
+
+func TestDispatchSafe_AuditRecorder_NotCalledForFailedExecution(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	var recorded bool
+	auditRecorder := func(_ context.Context, _ AgentAction, _ *Result) {
+		recorded = true
+	}
+
+	d := NewDispatcher(logger, WithAuditRecorder(auditRecorder))
+	approvalID := int64(42)
+	d.Register("price_update", func(_ context.Context, _ map[string]interface{}) (*Result, error) {
+		return &Result{Success: false, ErrorMessage: "handler failed"}, nil
+	})
+
+	action := AgentAction{
+		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: true,
+		ApprovalID:       &approvalID,
+		Mode:             ModeProduction,
+	}
+	_, err := d.DispatchSafe(context.Background(), action, &mockPolicyChecker{approved: true})
+	if err != nil {
+		t.Fatalf("DispatchSafe should return result even on handler failure, got: %v", err)
+	}
+	if recorded {
+		t.Error("audit recorder should NOT be called for failed high-risk execution")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// P2: Production PolicyChecker with approval — end-to-end validation.
+// ---------------------------------------------------------------------------
+
+func TestDispatchSafe_Production_HighRisk_RequiresValidApproval(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	d := NewDispatcher(logger)
+	d.Register("price_update", okHandler)
+
+	// An approval exists but was rejected by policy — action must be blocked.
+	// The mock simulates what ApprovalPolicyChecker does.
+	approvalID := int64(42)
+	action := AgentAction{
+		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: true,
+		ApprovalID:       &approvalID,
+		Mode:             ModeProduction,
+	}
+	// Policy says rejected — should fail.
+	mockPolicy := &mockPolicyChecker{approved: false}
+	_, err := d.DispatchSafe(context.Background(), action, mockPolicy)
+	if err != ErrApprovalRequired {
+		t.Errorf("expected ErrApprovalRequired when policy rejects, got %v", err)
+	}
+}

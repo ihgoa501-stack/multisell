@@ -378,6 +378,35 @@ false_alert_rate
 - [x] invalid action missing required identity/mode/risk cannot execute
 - [x] duplicate idempotency_key — TODO documented
 
+### P2 ✅ 审批与审计闭环 (2026-07-03)
+
+已实现：
+- **ApprovalPolicyChecker** — 基于 `approval_request` 表的 PolicyChecker 实现：
+  - 验证 approval_id 在 DB 中存在且 status=approved
+  - 验证审批未过期（ExpiresAt 检查）
+  - 返回 false 不会导致 DispatchSafe 返回 ErrApprovalRequired
+- **AuditRecorder** — 高风险 production mutation 执行成功后自动调用：
+  - 通过 `WithAuditRecorder()` 可选的 DispatcherOption 注入
+  - 仅在生产模式 + 高风险 + 执行成功时触发
+  - 不触发于 dry_run、sandbox、低风险或执行失败的场景
+- 审批过期、拒绝、不存在或 pending → DispatchSafe 拦截执行
+
+关键验收点验证：
+- [x] approval approved → command can execute (ApprovalPolicyChecker)
+- [x] approval rejected → is not IsApproved (PolicyChecker 返回 false)
+- [x] approval expired → is not IsApproved（过期检测）
+- [x] nonexistent approval ID → returns false
+- [x] high-risk production success → audit recorder called
+- [x] low-risk production → audit recorder NOT called
+- [x] dry_run → audit recorder NOT called
+- [x] execution failure → audit recorder NOT called
+
+### P2 生产环境接入说明
+
+要启用生产环境的审批检查和审计记录，在创建 Command Dispatcher 的代码中传入：
+1. `ApprovalPolicyChecker(approvalSvc)` 作为 `DispatchSafe` 调用的 policy 参数
+2. `WithAuditRecorder(func(ctx, action, result) { ... })` 写入 operation_log
+
 ## 14. 完成定义
 
 AI Traffic System 变成系统事实的最低标准：
