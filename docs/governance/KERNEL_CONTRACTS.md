@@ -136,60 +136,7 @@ error_code:
 
 Commands involving price, inventory, order state, money, external publishing, account permissions, credentials, or destructive changes require approval and audit unless a written policy explicitly allows otherwise.
 
-## 4. Agent Action Contract
-
-Agent Actions are the canonical typed envelope for everything an Agent proposes or executes. Every action must be representable as a structured record, not free-form model output.
-
-Rules:
-
-- Every action must have a name, version, risk level, approval requirement, and mode.
-- Actions must distinguish dry_run (validate only), sandbox (execute on test data), and production (execute with guardrails).
-- High-risk actions (RiskLevel ≥ high) require approval before production execution.
-- Actions must carry audit context: agent identity, actor, target, risk level, and mode.
-- Idempotency keys must be provided for mutation actions where duplicate execution is harmful.
-- Rollback notes should be captured when an action is reversible.
-
-### Canonical Action Shape
-
-```text
-action_type:       string               // e.g. "price_update", "stock_alert"
-version:           string               // semantic version of the action schema
-agent_id:          string               // who proposed the action
-actor:             string               // system or user identity executing
-tenant_id:         string               // optional tenant scope
-target_type:       string               // "sku", "product", "order", "listing"
-target_id:         string
-risk_level:        low | medium | high  // business impact
-approval_required: bool
-approval_id:       int64 | nil          // set when an approval is obtained
-mode:              dry_run | sandbox | production
-idempotency_key:   string               // prevents duplicate execution
-input:             map                  // action parameters
-rollback_note:     string               // human guidance for reversing
-```
-
-### Risk Level Categories
-
-| Risk Level | Business Examples                               | Approval Needed |
-|------------|------------------------------------------------|-----------------|
-| low        | stock_alert, dashboard_summary, read_data      | No              |
-| medium     | listing_draft, compliance_flag, suggest_price  | No (suggestion) |
-| high       | price_update, inventory_change, order_cancel, platform_publish, credential_change | Yes |
-
-### Execution Mode Rules
-
-| Mode       | Behavior                                                       |
-|------------|---------------------------------------------------------------|
-| dry_run    | Validate handler exists and inputs are parseable. Never mutate. |
-| sandbox    | Execute against test/stub data. No external side effects.      |
-| production | Full execution with guardrails: high-risk actions need approval. |
-
-### Code Reference
-
-- `internal/platform/command/action.go` — `AgentAction` struct, `RiskLevel` type, `ActionMode` type.
-- `internal/platform/command/command.go` — `DispatchSafe` method enforces mode and approval rules.
-
-## 5. Scheduler Contract
+## 4. Scheduler Contract
 
 Scheduler triggers periodic or delayed work. It must not hide business decisions.
 
@@ -214,7 +161,7 @@ audit trail:
 failure behavior:
 ```
 
-## 6. ToolBridge Contract
+## 5. ToolBridge Contract
 
 ToolBridge lets Agents use external tools through drivers or plugins.
 
@@ -227,45 +174,15 @@ Rules:
 - External failures must degrade safely and return actionable errors.
 - Tools must not bypass approval for critical actions.
 
-### Tool Categories
+Tool categories:
 
-| Category     | Side Effects                          | Example                     | Risk Level |
-|-------------|---------------------------------------|-----------------------------|------------|
-| read        | None. Search, fetch, inspect.         | search_product, fetch_page  | low        |
-| suggestion  | None. Analyse and recommend.          | analyze_price_trend         | low        |
-| mutation    | Create, update, delete, publish, sync.| publish_listing, sync_inventory | high   |
+- Read-only tools: search, fetch, inspect, summarize.
+- Suggestion tools: analyze and recommend.
+- Mutation tools: create, update, delete, publish, sync, push.
 
-### Canonical Tool Call Shape
+Mutation tools are high risk unless explicitly scoped to local test data.
 
-```text
-tool_name:         string               // unique tool identifier
-version:           string               // schema version
-category:          read | suggestion | mutation
-mode:              dry_run | sandbox | production
-input:             map                  // tool-specific parameters
-approval_id:       int64 | nil          // required in production for mutation tools
-idempotency_key:   string               // prevents duplicate external calls
-correlation_id:    string               // ties to agent workflow trace
-```
-
-### Validation Rules
-
-| Category | Mode        | Approval Required | Notes                                   |
-|----------|-------------|-------------------|-----------------------------------------|
-| read     | any         | No                | Always allowed.                         |
-| suggestion | any       | No                | Always allowed. Produces recommendations. |
-| mutation | dry_run     | No                | Validated but not executed.             |
-| mutation | sandbox     | No                | Executed against test/sandbox endpoints.|
-| mutation | production  | Yes               | Requires a valid approval_id.           |
-
-Mutation tools in production mode without a valid approval_id return `ErrMutationRequiresApproval`.
-
-### Code Reference
-
-- `internal/platform/toolbridge/tool.go` — `ToolCall` struct, `ToolCategory` type, `Validate()` method.
-- `internal/platform/toolbridge/bridge.go` — existing `FetchPage` and `Route` for read-only tools.
-
-## 7. Approval Contract
+## 6. Approval Contract
 
 Approval controls whether a proposed action may execute.
 
@@ -288,15 +205,7 @@ Approval is required by default for:
 - Destructive data changes.
 - Autonomous Agent execution of business mutations.
 
-### UnifiedAction ↔ Approval Linkage (P5)
-
-Agent UnifiedActions that require approval are automatically linked to `approval_request` records:
-
-- When the Orchestrator creates a UnifiedAction with `requires_approval=true` and the policy outcome is "needs human review", an `approval_request` is created with `entity_type="unified_action"` and `entity_id=<action.ID>`.
-- When the approval is reviewed (approved/rejected), the linked UnifiedAction's status, reviewer, and timestamp fields are synced automatically.
-- This applies to all scheduled agents (A5 stock_alert, A6 profit_watch, A7 compliance_check, G3 discount_risk_check, etc.) that run through the Orchestrator with autonomy level `supervised` or `guided`.
-
-## 8. Audit Contract
+## 7. Audit Contract
 
 Audit records what changed and why.
 
@@ -326,7 +235,7 @@ result:
 created_at:
 ```
 
-## 9. Auth and RBAC Contract
+## 8. Auth and RBAC Contract
 
 Auth verifies identity. RBAC determines allowed actions.
 
@@ -340,7 +249,7 @@ Rules:
 
 Permission changes are high risk when they expand access.
 
-## 10. Observability Contract
+## 9. Observability Contract
 
 Platform behavior must be observable enough to diagnose and trust.
 
@@ -363,7 +272,7 @@ For Agent workflows, the system should be able to answer:
 - What changed?
 - What failed?
 
-## 11. Migration Contract
+## 10. Migration Contract
 
 Database changes are high risk when they affect existing data, critical tables, or production rollout.
 
@@ -375,7 +284,7 @@ Rules:
 - Model changes must align with API and UI expectations.
 - Tests should cover affected domain behavior.
 
-## 12. Contract Change Rules
+## 11. Contract Change Rules
 
 When changing Kernel contracts:
 
