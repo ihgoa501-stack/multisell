@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "match": "backend-go/**/*.go",
+        "command": "cd backend-go && golangci-lint run --fix $CLAUDE_FILE 2>/dev/null || true",
+        "alwaysRun": false,
+        "description": "Auto-lint Go files after edit",
+        "timeoutMs": 15000
+      }
+    ]
+  }
+}
