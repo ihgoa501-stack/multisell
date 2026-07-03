@@ -245,26 +245,34 @@ func (s *Service) CreateCollectLead(lead *CollectLead) error {
 	return s.db.Create(lead).Error
 }
 
-// ListCollectLeads returns recent collect leads, newest first.
+// ListCollectLeads returns paginated collect leads, newest first.
 // Read-only — no mutation.
-func (s *Service) ListCollectLeads(limit int) ([]CollectLead, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
+func (s *Service) ListCollectLeads(p *common.Pagination, status string) ([]CollectLead, int64, error) {
 	var items []CollectLead
-	if err := s.db.Order("id DESC").Limit(limit).Find(&items).Error; err != nil {
-		return nil, err
+	var total int64
+	q := s.db.Model(&CollectLead{})
+	if status != "" {
+		q = q.Where("status = ?", status)
 	}
-	return items, nil
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if p == nil {
+		p = &common.Pagination{Page: 1, Size: 20}
+	}
+	if err := q.Order("id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
-// CountCollectLeads returns the total number of collect leads.
-func (s *Service) CountCollectLeads() (int64, error) {
-	var count int64
-	if err := s.db.Model(&CollectLead{}).Count(&count).Error; err != nil {
-		return 0, err
+// GetCollectLeadByID returns a single collect lead.
+func (s *Service) GetCollectLeadByID(id int64) (*CollectLead, error) {
+	var lead CollectLead
+	if err := s.db.First(&lead, id).Error; err != nil {
+		return nil, err
 	}
-	return count, nil
+	return &lead, nil
 }
 
 // GetByID returns a single candidate product.
@@ -277,7 +285,7 @@ func (s *Service) GetByID(id int64) (*CandidateProduct, error) {
 }
 
 // List returns paginated candidate products with optional filters.
-func (s *Service) List(p *common.Pagination, status, search string) ([]CandidateProduct, int64, error) {
+func (s *Service) List(p *common.Pagination, status, search, sourcePlatform, completenessStatus string) ([]CandidateProduct, int64, error) {
 	var items []CandidateProduct
 	var total int64
 	q := s.db.Model(&CandidateProduct{})
@@ -287,6 +295,12 @@ func (s *Service) List(p *common.Pagination, status, search string) ([]Candidate
 	if search != "" {
 		like := "%" + search + "%"
 		q = q.Where("title ILIKE ? OR description ILIKE ?", like, like)
+	}
+	if sourcePlatform != "" {
+		q = q.Where("source_platform = ?", sourcePlatform)
+	}
+	if completenessStatus != "" {
+		q = q.Where("completeness_status = ?", completenessStatus)
 	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err

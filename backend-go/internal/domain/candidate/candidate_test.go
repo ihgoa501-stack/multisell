@@ -401,7 +401,7 @@ func TestService_List(t *testing.T) {
 	svc.Create(&CreateCandidateInput{Title: "Prod C", PurchasePrice: &price, CreatedBy: "tester"})
 
 	p := common.Pagination{Page: 1, Size: 10}
-	items, total, err := svc.List(&p, "", "")
+	items, total, err := svc.List(&p, "", "", "", "")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -543,9 +543,9 @@ func TestListCollectLeads(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &CollectLead{})
 	svc := NewService(db, newTestLogger(t))
-
 	// Empty list.
-	items, err := svc.ListCollectLeads(10)
+	p := common.Pagination{Page: 1, Size: 10}
+	items, total, err := svc.ListCollectLeads(&p, "")
 	if err != nil {
 		t.Fatalf("ListCollectLeads: %v", err)
 	}
@@ -565,7 +565,8 @@ func TestListCollectLeads(t *testing.T) {
 	}
 
 	// List with limit.
-	items, err = svc.ListCollectLeads(2)
+	p2 := common.Pagination{Page: 1, Size: 2}
+	items, total, err = svc.ListCollectLeads(&p2, "")
 	if err != nil {
 		t.Fatalf("ListCollectLeads: %v", err)
 	}
@@ -573,16 +574,12 @@ func TestListCollectLeads(t *testing.T) {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
 
-	// Count.
-	count, err := svc.CountCollectLeads()
-	if err != nil {
-		t.Fatalf("CountCollectLeads: %v", err)
+	// Total from pagination.
+	if total != 3 {
+		t.Errorf("total = %d, want 3", total)
 	}
-	if count != 3 {
-		t.Errorf("count = %d, want 3", count)
-	}
-}
 
+}
 func newTestLogger(t *testing.T) *zap.Logger {
 	t.Helper()
 	return zap.NewNop()
