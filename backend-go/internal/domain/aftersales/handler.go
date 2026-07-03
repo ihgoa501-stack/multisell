@@ -224,6 +224,14 @@ func (h *Handler) Refund(c *gin.Context) {
 	response.Success(c, o)
 }
 
+// AutoDecide POST /aftersales/:id/auto-decide
+func (h *Handler) AutoDecide(c *gin.Context) {
+	response.Success(c, gin.H{
+		"status":  "unavailable",
+		"message": "售后 Agent 自动处理功能开发中",
+	})
+}
+
 // Summary GET /aftersales/summary
 func (h *Handler) Summary(c *gin.Context) {
 	sum, err := h.service.Summary()
