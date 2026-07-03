@@ -559,6 +559,8 @@ func TestDispatchSafe_Production_PriceReviewWithApproval(t *testing.T) {
 	approvalID := int64(42)
 	action := AgentAction{
 		ActionType:       "price_review",
+		AgentID:          "A5",
+		Actor:            "system",
 		Mode:             ModeProduction,
 		RiskLevel:        RiskHigh,
 		ApprovalRequired: true,
@@ -581,6 +583,8 @@ func TestDispatchSafe_Production_UnknownActionRejected(t *testing.T) {
 
 	action := AgentAction{
 		ActionType: "nonexistent_action",
+		AgentID:    "A5",
+		Actor:      "system",
 		Mode:       ModeProduction,
 		RiskLevel:  RiskLow,
 	}
@@ -603,6 +607,8 @@ func TestDispatchSafe_Sandbox_UnknownActionAllowed(t *testing.T) {
 
 	action := AgentAction{
 		ActionType: "custom_action",
+		AgentID:    "A5",
+		Actor:      "system",
 		Mode:       ModeSandbox,
 		RiskLevel:  RiskLow,
 	}
@@ -623,7 +629,10 @@ func TestDispatchSafe_DryRun_ChecksCatalog(t *testing.T) {
 	d.Register("stock_alert", okHandler)
 	action := AgentAction{
 		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
 		Mode:       ModeDryRun,
+		RiskLevel:  RiskLow,
 	}
 	result, err := d.DispatchSafe(context.Background(), action, nil)
 	if err != nil {
@@ -636,6 +645,8 @@ func TestDispatchSafe_DryRun_ChecksCatalog(t *testing.T) {
 	d.Register("ad_hoc_action", okHandler)
 	action2 := AgentAction{
 		ActionType: "ad_hoc_action",
+		AgentID:    "A5",
+		Actor:      "system",
 		Mode:       ModeDryRun,
 	}
 	_, err2 := d.DispatchSafe(context.Background(), action2, nil)
@@ -657,6 +668,8 @@ func TestDispatchSafe_Production_StockAlertNoApprovalNeeded(t *testing.T) {
 
 	action := AgentAction{
 		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
 		Mode:       ModeProduction,
 		RiskLevel:  RiskLow,
 	}

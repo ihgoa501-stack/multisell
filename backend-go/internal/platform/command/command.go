@@ -117,6 +117,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionType string, payload ma
 //   - sandbox: execute regardless of catalog risk.
 //   - production: enforce catalog, approval for L3/L4 actions.
 func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, policy PolicyChecker) (*Result, error) {
+	// Structural validation — reject actions missing required identity, mode, risk.
+	if err := action.Validate(); err != nil {
+		return nil, err
+	}
+
 	// Dry-run: validate only — check handler and catalog exist, never mutate.
 	if action.Mode == ModeDryRun {
 		d.mu.RLock()

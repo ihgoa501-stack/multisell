@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
@@ -52,6 +53,8 @@ func TestDispatchSafe_DryRun_NoExecution(t *testing.T) {
 
 	action := AgentAction{
 		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
 		Mode:       ModeDryRun,
 		RiskLevel:  RiskLow,
 	}
@@ -73,7 +76,10 @@ func TestDispatchSafe_DryRun_UnregisteredHandler(t *testing.T) {
 
 	action := AgentAction{
 		ActionType: "nonexistent",
+		AgentID:    "A5",
+		Actor:      "system",
 		Mode:       ModeDryRun,
+		RiskLevel:  RiskLow,
 	}
 	_, err := d.DispatchSafe(context.Background(), action, nil)
 	if !IsHandlerNotFound(err) {
@@ -94,6 +100,8 @@ func TestDispatchSafe_Production_HighRisk_RequiresApproval(t *testing.T) {
 	// High-risk action without approval — should be blocked.
 	action := AgentAction{
 		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
 		Mode:             ModeProduction,
 		RiskLevel:        RiskHigh,
 		ApprovalRequired: true,
@@ -115,6 +123,8 @@ func TestDispatchSafe_Production_HighRisk_Approved(t *testing.T) {
 	approvalID := int64(42)
 	action := AgentAction{
 		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
 		Mode:             ModeProduction,
 		RiskLevel:        RiskHigh,
 		ApprovalRequired: true,
@@ -139,6 +149,8 @@ func TestDispatchSafe_Production_ApprovalNotInPolicy(t *testing.T) {
 	approvalID := int64(99)
 	action := AgentAction{
 		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
 		Mode:             ModeProduction,
 		RiskLevel:        RiskHigh,
 		ApprovalRequired: true,
@@ -167,6 +179,8 @@ func TestDispatchSafe_Sandbox_HighRisk_NoApprovalNeeded(t *testing.T) {
 
 	action := AgentAction{
 		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
 		Mode:             ModeSandbox,
 		RiskLevel:        RiskHigh,
 		ApprovalRequired: true,
@@ -199,6 +213,8 @@ func TestDispatchSafe_Production_LowRisk_NoApproval(t *testing.T) {
 
 	action := AgentAction{
 		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
 		Mode:       ModeProduction,
 		RiskLevel:  RiskLow,
 	}
@@ -270,6 +286,297 @@ func TestParseRiskLevel(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("ParseRiskLevel(%q) = %v, want %v", tc.input, got, tc.want)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AgentAction.Validate — required identity, mode, risk checks enforcement.
+// ---------------------------------------------------------------------------
+
+func TestAgentActionValidate_MissingActionType(t *testing.T) {
+	action := AgentAction{
+		AgentID:    "A5",
+		Actor:      "system",
+		RiskLevel:  RiskLow,
+		Mode:       ModeDryRun,
+	}
+	err := action.Validate()
+	if err == nil {
+		t.Fatal("expected error for missing action_type")
+	}
+	if !errors.Is(err, ErrActionValidation) {
+		t.Errorf("expected ErrActionValidation, got %v", err)
+	}
+}
+
+func TestAgentActionValidate_MissingAgentID(t *testing.T) {
+	action := AgentAction{
+		ActionType: "stock_alert",
+		Actor:      "system",
+		RiskLevel:  RiskLow,
+		Mode:       ModeDryRun,
+	}
+	err := action.Validate()
+	if err == nil {
+		t.Fatal("expected error for missing agent_id")
+	}
+}
+
+func TestAgentActionValidate_MissingActor(t *testing.T) {
+	action := AgentAction{
+		ActionType: "stock_alert",
+		AgentID:    "A5",
+		RiskLevel:  RiskLow,
+		Mode:       ModeDryRun,
+	}
+	err := action.Validate()
+	if err == nil {
+		t.Fatal("expected error for missing actor")
+	}
+}
+
+func TestAgentActionValidate_InvalidMode(t *testing.T) {
+	action := AgentAction{
+		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
+		RiskLevel:  RiskLow,
+		Mode:       ActionMode(99),
+	}
+	err := action.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid mode")
+	}
+}
+
+func TestAgentActionValidate_InvalidRiskLevel(t *testing.T) {
+	action := AgentAction{
+		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
+		RiskLevel:  RiskLevel(99),
+		Mode:       ModeDryRun,
+	}
+	err := action.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid risk_level")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestAgentActionValidate_HighRiskDefaultApprovalRequired — high risk action
+// without approval_required=true must be rejected.
+// ---------------------------------------------------------------------------
+
+func TestAgentActionValidate_HighRiskDefaultApprovalRequired(t *testing.T) {
+	action := AgentAction{
+		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: false, // violation — high risk must set approval_required=true
+		Mode:             ModeProduction,
+	}
+	err := action.Validate()
+	if err == nil {
+		t.Fatal("expected error: high risk action must set approval_required=true")
+	}
+}
+
+func TestAgentActionValidate_HighRiskWithApprovalRequiredPasses(t *testing.T) {
+	approvalID := int64(42)
+	action := AgentAction{
+		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: true,
+		ApprovalID:       &approvalID,
+		Mode:             ModeProduction,
+		Input:            map[string]interface{}{"price": 29.99},
+	}
+	err := action.Validate()
+	if err != nil {
+		t.Fatalf("expected no error for valid high-risk action, got: %v", err)
+	}
+}
+
+func TestAgentActionValidate_DryRunWithApprovalID(t *testing.T) {
+	approvalID := int64(1)
+	action := AgentAction{
+		ActionType:       "price_update",
+		AgentID:          "A5",
+		Actor:            "system",
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: true,
+		ApprovalID:       &approvalID,
+		Mode:             ModeDryRun, // dry_run must not carry approval
+	}
+	err := action.Validate()
+	if err == nil {
+		t.Fatal("expected error: dry_run must not carry approval_id")
+	}
+}
+
+func TestAgentActionValidate_ValidLowRisk(t *testing.T) {
+	action := AgentAction{
+		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
+		RiskLevel:  RiskLow,
+		Mode:       ModeProduction,
+	}
+	err := action.Validate()
+	if err != nil {
+		t.Fatalf("expected no error for valid low-risk action, got: %v", err)
+	}
+}
+
+func TestAgentActionValidate_ValidDryRun(t *testing.T) {
+	action := AgentAction{
+		ActionType: "stock_alert",
+		AgentID:    "A5",
+		Actor:      "system",
+		RiskLevel:  RiskLow,
+		Mode:       ModeDryRun,
+	}
+	err := action.Validate()
+	if err != nil {
+		t.Fatalf("expected no error for valid dry_run action, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ActionStatus.String — all statuses produce correct labels.
+// ---------------------------------------------------------------------------
+
+func TestActionStatus_String(t *testing.T) {
+	tests := []struct {
+		status ActionStatus
+		want   string
+	}{
+		{StatusSuggested, "suggested"},
+		{StatusPendingApproval, "pending_approval"},
+		{StatusApproved, "approved"},
+		{StatusRejected, "rejected"},
+		{StatusExecuting, "executing"},
+		{StatusCompleted, "completed"},
+		{StatusFailed, "failed"},
+		{StatusBlocked, "blocked"},
+	}
+	for _, tc := range tests {
+		if got := tc.status.String(); got != tc.want {
+			t.Errorf("ActionStatus(%d).String() = %q, want %q", tc.status, got, tc.want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HighRiskActions returns the canonical list.
+// ---------------------------------------------------------------------------
+
+func TestHighRiskActions(t *testing.T) {
+	actions := HighRiskActions()
+	expected := []string{
+		"price_update",
+		"inventory_change",
+		"order_cancel",
+		"refund_issue",
+		"platform_publish",
+		"sync_inventory",
+		"credential_change",
+		"permission_change",
+		"destructive_data_change",
+	}
+	if len(actions) != len(expected) {
+		t.Fatalf("expected %d high-risk actions, got %d", len(expected), len(actions))
+	}
+	seen := make(map[string]bool)
+	for _, a := range actions {
+		seen[a] = true
+	}
+	for _, e := range expected {
+		if !seen[e] {
+			t.Errorf("missing expected high-risk action: %s", e)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency key — record as TODO. The current system does not have an
+// idempotency store, so duplicate execution is not yet prevented at the
+// platform layer. This test documents the known gap.
+// ---------------------------------------------------------------------------
+
+func TestIdempotencyKey_NotYetImplemented(t *testing.T) {
+	// ponytail: idempotency storage is not implemented yet. The AgentAction
+	// carries the idempotency_key field so callers can generate a key, but
+	// duplicate detection requires a persisted store (e.g. Redis or DB table).
+	// Add when dedup is a measurable requirement.
+	t.Skip("TODO: idempotency dedup not yet implemented — requires persisted store")
+}
+
+// ---------------------------------------------------------------------------
+// DispatchSafe — structural validation integrated with dispatch.
+// ---------------------------------------------------------------------------
+
+func TestDispatchSafe_MissingAgentID_Rejected(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	d := NewDispatcher(logger)
+	d.Register("stock_alert", okHandler)
+
+	action := AgentAction{
+		ActionType: "stock_alert",
+		Actor:      "system",
+		RiskLevel:  RiskLow,
+		Mode:       ModeProduction,
+		// missing AgentID
+	}
+	_, err := d.DispatchSafe(context.Background(), action, nil)
+	if err == nil {
+		t.Fatal("expected error for missing agent_id")
+	}
+}
+
+func TestDispatchSafe_MissingActor_Rejected(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	d := NewDispatcher(logger)
+	d.Register("stock_alert", okHandler)
+
+	action := AgentAction{
+		ActionType: "stock_alert",
+		AgentID:    "A5",
+		RiskLevel:  RiskLow,
+		Mode:       ModeProduction,
+		// missing Actor
+	}
+	_, err := d.DispatchSafe(context.Background(), action, nil)
+	if err == nil {
+		t.Fatal("expected error for missing actor")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DispatchSafe — high-risk production action without approval is blocked
+// (also tested via Validate path).
+// ---------------------------------------------------------------------------
+
+func TestDispatchSafe_Production_HighRisk_DefaultApprovalRequired(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	d := NewDispatcher(logger)
+	d.Register("order_cancel", okHandler)
+
+	action := AgentAction{
+		ActionType:       "order_cancel",
+		AgentID:          "A5",
+		Actor:            "system",
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: false, // violation — must be true for high risk
+		Mode:             ModeProduction,
+	}
+	_, err := d.DispatchSafe(context.Background(), action, nil)
+	if err == nil {
+		t.Fatal("expected error: high risk action without approval_required should be rejected")
 	}
 }
 

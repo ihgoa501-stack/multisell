@@ -136,7 +136,63 @@ error_code:
 
 Commands involving price, inventory, order state, money, external publishing, account permissions, credentials, or destructive changes require approval and audit unless a written policy explicitly allows otherwise.
 
-## 4. Scheduler Contract
+## 4. Agent Action Contract
+
+Agent Actions are the canonical typed envelope for everything an Agent proposes or executes. Every action must be representable as a structured record, not free-form model output.
+
+Rules:
+
+- Every action must have a name, version, risk level, approval requirement, and mode.
+- Actions must distinguish dry_run (validate only), sandbox (execute on test data), and production (execute with guardrails).
+- High-risk actions (RiskLevel ≥ high) require approval before production execution.
+- Actions must carry audit context: agent identity, actor, target, risk level, and mode.
+- Idempotency keys must be provided for mutation actions where duplicate execution is harmful.
+- Rollback notes should be captured when an action is reversible.
+
+### Canonical Action Shape
+
+```text
+action_type:       string               // e.g. "price_update", "stock_alert"
+version:           string               // semantic version of the action schema
+agent_id:          string               // who proposed the action
+actor:             string               // system or user identity executing
+tenant_id:         string               // optional tenant scope
+target_type:       string               // "sku", "product", "order", "listing"
+target_id:         string
+risk_level:        low | medium | high  // business impact
+approval_required: bool
+approval_id:       int64 | nil          // set when an approval is obtained
+mode:              dry_run | sandbox | production
+status:            suggested | pending_approval | approved | rejected | executing | completed | failed | blocked
+idempotency_key:   string               // prevents duplicate execution
+correlation_id:    string               // ties to agent workflow trace
+audit_id:          string               // audit record reference
+input:             map                  // action parameters
+rollback_note:     string               // human guidance for reversing
+```
+
+### Risk Level Categories
+
+| Risk Level | Business Examples                               | Approval Needed |
+|------------|------------------------------------------------|-----------------|
+| low        | stock_alert, dashboard_summary, read_data      | No              |
+| medium     | listing_draft, compliance_flag, suggest_price  | No (suggestion) |
+| high       | price_update, inventory_change, order_cancel, platform_publish, credential_change | Yes |
+
+### Execution Mode Rules
+
+| Mode       | Behavior                                                       |
+|------------|---------------------------------------------------------------|
+| dry_run    | Validate handler exists and inputs are parseable. Never mutate. |
+| sandbox    | Execute against test/stub data. No external side effects.      |
+| production | Full execution with guardrails: high-risk actions need approval. |
+
+### Code Reference
+
+- `internal/platform/command/action.go` — `AgentAction` struct, `RiskLevel` type, `ActionMode` type.
+- `internal/platform/command/command.go` — `DispatchSafe` method enforces mode and approval rules.
+
+## 5. Scheduler Contract
 
 Scheduler triggers periodic or delayed work. It must not hide business decisions.
 
@@ -161,7 +217,7 @@ audit trail:
 failure behavior:
 ```
 
-## 5. ToolBridge Contract
+## 6. ToolBridge Contract
 
 ToolBridge lets Agents use external tools through drivers or plugins.
 
@@ -182,7 +238,7 @@ Tool categories:
 
 Mutation tools are high risk unless explicitly scoped to local test data.
 
-## 6. Approval Contract
+## 7. Approval Contract
 
 Approval controls whether a proposed action may execute.
 
@@ -205,7 +261,7 @@ Approval is required by default for:
 - Destructive data changes.
 - Autonomous Agent execution of business mutations.
 
-## 7. Audit Contract
+## 8. Audit Contract
 
 Audit records what changed and why.
 
@@ -235,7 +291,7 @@ result:
 created_at:
 ```
 
-## 8. Auth and RBAC Contract
+## 9. Auth and RBAC Contract
 
 Auth verifies identity. RBAC determines allowed actions.
 
@@ -249,7 +305,7 @@ Rules:
 
 Permission changes are high risk when they expand access.
 
-## 9. Observability Contract
+## 10. Observability Contract
 
 Platform behavior must be observable enough to diagnose and trust.
 
@@ -272,7 +328,7 @@ For Agent workflows, the system should be able to answer:
 - What changed?
 - What failed?
 
-## 10. Migration Contract
+## 11. Migration Contract
 
 Database changes are high risk when they affect existing data, critical tables, or production rollout.
 
@@ -284,7 +340,7 @@ Rules:
 - Model changes must align with API and UI expectations.
 - Tests should cover affected domain behavior.
 
-## 11. Contract Change Rules
+## 12. Contract Change Rules
 
 When changing Kernel contracts:
 
