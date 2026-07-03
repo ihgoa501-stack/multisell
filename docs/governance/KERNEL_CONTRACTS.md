@@ -118,7 +118,10 @@ risk_level:        low | medium | high  // business impact
 approval_required: bool
 approval_id:       int64 | nil          // set when an approval is obtained
 mode:              dry_run | sandbox | production
+status:            suggested | pending_approval | approved | rejected | executing | completed | failed | blocked
 idempotency_key:   string               // prevents duplicate execution
+correlation_id:    string               // ties to agent workflow trace
+audit_id:          string               // audit record reference
 input:             map                  // action parameters
 rollback_note:     string               // human guidance for reversing
 ```

@@ -9,6 +9,9 @@ func TestDefault_CoversKnownActions(t *testing.T) {
 		"listing_optimize", "compliance_check", "replenish", "discount_risk_check",
 		"price_update", "price_review", "listing_publish", "inventory_change",
 		"auto_publish", "auto_reply", "profit_watch",
+		// P1 high-risk additions
+		"order_cancel", "refund_issue", "sync_inventory",
+		"credential_change", "permission_change", "destructive_data_change",
 	}
 	for _, name := range known {
 		if _, ok := c.Lookup(name); !ok {
@@ -53,7 +56,9 @@ func TestDefault_L2ActionsNoApproval(t *testing.T) {
 
 func TestDefault_L3ActionsRequireApproval(t *testing.T) {
 	c := Default()
-	l3 := []string{"price_update", "price_review", "listing_publish", "inventory_change"}
+	l3 := []string{"price_update", "price_review", "listing_publish", "inventory_change",
+		"order_cancel", "refund_issue", "sync_inventory",
+		"credential_change", "permission_change", "destructive_data_change"}
 	for _, name := range l3 {
 		entry, ok := c.Lookup(name)
 		if !ok {
