@@ -278,3 +278,12 @@ type QuoteResult struct {
 type QuoteResponse struct {
 	Results []QuoteResult `json:"results"`
 }
+
+// ---------- Carrier API ----------
+
+// TrackingEvent represents a single tracking event from a carrier.
+type TrackingEvent struct {
+	Timestamp string `json:"timestamp"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+}

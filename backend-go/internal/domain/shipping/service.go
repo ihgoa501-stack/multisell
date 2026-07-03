@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strings"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -21,6 +22,26 @@ type Service struct {
 // NewService creates a new shipping service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
+}
+
+// ValidateCarrierAction checks that production mutations carry a valid approvalID.
+func (s *Service) ValidateCarrierAction(mode CarrierAPIMode, approvalID int64) error {
+	if mode == CarrierModeProduction && approvalID <= 0 {
+		return errors.New("production mode requires a valid approval_id")
+	}
+	return nil
+}
+
+// ValidateLabelURL enforces that carrier label URLs use HTTPS (SSRF prevention).
+func ValidateLabelURL(labelURL string) error {
+	u, err := url.Parse(labelURL)
+	if err != nil {
+		return fmt.Errorf("invalid label URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("label URL must use HTTPS, got %q", u.Scheme)
+	}
+	return nil
 }
 
 // ---------- ShippingProvider ----------
