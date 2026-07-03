@@ -477,34 +477,6 @@ func TestActionStatus_String(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ActionStatus.String edge cases — explicit test by brief spec.
-// ---------------------------------------------------------------------------
-
-func TestActionStatus_String_EdgeCases(t *testing.T) {
-	tests := []struct {
-		s    ActionStatus
-		want string
-	}{
-		{StatusSuggested, "suggested"},
-		{StatusPendingApproval, "pending_approval"},
-		{StatusApproved, "approved"},
-		{StatusRejected, "rejected"},
-		{StatusExecuting, "executing"},
-		{StatusCompleted, "completed"},
-		{StatusFailed, "failed"},
-		{StatusBlocked, "blocked"},
-	}
-	for _, tt := range tests {
-		if got := tt.s.String(); got != tt.want {
-			t.Errorf("ActionStatus(%d).String() = %q, want %q", tt.s, got, tt.want)
-		}
-	}
-	if got := ActionStatus(99).String(); got != "status(99)" {
-		t.Errorf("unknown status: got %q, want status(99)", got)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // RiskLevel.String — correct labels for all levels.
 // ---------------------------------------------------------------------------
 
