@@ -3,6 +3,7 @@ package shipping
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/logistics"
@@ -24,7 +25,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&ShippingProvider{}, &ShippingChannel{}, &ShippingZone{}, &ShippingQuoteRule{}, &ShippingBillBatch{}, &ShippingBillItem{}, &SalesOrderShippingSnapshot{}); err != nil {
+	if err := db.AutoMigrate(&ShippingProvider{}, &ShippingChannel{}, &ShippingZone{}, &ShippingQuoteRule{}, &ShippingBillBatch{}, &ShippingBillItem{}, &SalesOrderShippingSnapshot{}, &FulfillmentTracking{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -845,8 +846,552 @@ func TestProvider_DefaultStatusOnCreate(t *testing.T) {
 	}
 }
 
-func intPtr(v int) *int       { return &v }
+func intPtr(v int) *int           { return &v }
 func floatPtr(v float64) *float64 { return &v }
+func stringPtr(v string) *string  { return &v }
+
+// ══════════════════════════════════════════════════════════════════════
+// Phase 1–5: Additional Fulfillment tests
+// ══════════════════════════════════════════════════════════════════════
+
+func TestImportBillCSV(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	csvData := `order_no,tracking,provider,channel,country,billed_weight,shipping_fee,total_fee,currency,billed_date,note
+ORD001,TRK001,承运商A,渠道X,RU,1.5,20.0,25.0,CNY,2026-06-01,
+ORD002,TRK002,承运商A,渠道X,RU,2.0,30.0,35.0,CNY,2026-06-01,`
+
+	batch, err := svc.ImportBillCSV([]byte(csvData), "test_bill.csv", "admin")
+	if err != nil {
+		t.Fatalf("ImportBillCSV failed: %v", err)
+	}
+	if batch.ID == 0 {
+		t.Fatal("expected non-zero batch ID")
+	}
+	if batch.Status != "imported" {
+		t.Errorf("expected status imported, got %s", batch.Status)
+	}
+	if batch.RowCount != 2 {
+		t.Errorf("expected 2 rows, got %d", batch.RowCount)
+	}
+
+	items, total, err := svc.ListBillItems(&common.Pagination{Page: 1, Size: 10}, batch.ID)
+	if err != nil {
+		t.Fatalf("ListBillItems failed: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("expected 2 items, got %d", total)
+	}
+	if items[0].OrderNo != "ORD001" {
+		t.Errorf("expected ORD001, got %s", items[0].OrderNo)
+	}
+	if items[0].ReconciliationStatus != "unmatched_bill" {
+		t.Errorf("expected unmatched_bill, got %s", items[0].ReconciliationStatus)
+	}
+	if items[0].TotalActualFee == nil || *items[0].TotalActualFee != 25.0 {
+		t.Errorf("expected TotalActualFee 25.0, got %v", items[0].TotalActualFee)
+	}
+}
+
+func TestReconcileBillBatch_Anomalies(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	// Create a snapshot for order 100
+	snap := SalesOrderShippingSnapshot{
+		OrderID: 100, SkuID: 1, Quantity: 1, DestinationCountry: "RU",
+		PackageLengthCm: 10, PackageWidthCm: 10, PackageHeightCm: 10, PackageWeightKg: 1.0,
+		ProviderID: 1, ProviderName: "承运商A", ChannelID: 1, ChannelName: "渠道X",
+		ActualWeightKg: 1.0, VolumetricWeightKg: 0, ChargeableWeightKg: 1.0,
+		BaseShippingFee: 20.0, TotalShippingFee: 20.0, Currency: "CNY",
+	}
+	db.Create(&snap)
+
+	// Import bill CSV with order 100 — overcharge (actual=30 vs snapshot=20 → variance=50% > 5%)
+	csvData := `order_no,tracking,provider,channel,country,billed_weight,shipping_fee,total_fee,currency,billed_date
+100,TRK001,承运商A,渠道X,RU,1.5,25.0,30.0,CNY,2026-06-01`
+	batch, err := svc.ImportBillCSV([]byte(csvData), "bill.csv", "admin")
+	if err != nil {
+		t.Fatalf("ImportBillCSV failed: %v", err)
+	}
+
+	result, err := svc.ReconcileBillBatch(batch.ID)
+	if err != nil {
+		t.Fatalf("ReconcileBillBatch failed: %v", err)
+	}
+	if result.MatchedItems != 1 {
+		t.Errorf("expected 1 matched, got %d", result.MatchedItems)
+	}
+	if result.AnomalousItems != 1 {
+		t.Errorf("expected 1 anomalous, got %d", result.AnomalousItems)
+	}
+	if result.TotalVariance != 10.0 {
+		t.Errorf("expected variance 10.0, got %.2f", result.TotalVariance)
+	}
+
+	// Check batch status updated
+	batchUpdated, _, _ := svc.GetBillBatch(batch.ID)
+	if batchUpdated.Status != "has_anomalies" {
+		t.Errorf("expected has_anomalies, got %s", batchUpdated.Status)
+	}
+	if batchUpdated.MismatchCount != 1 {
+		t.Errorf("expected mismatch count 1, got %d", batchUpdated.MismatchCount)
+	}
+
+	// Check anomaly list
+	anomalies, err := svc.ListBillAnomalies(batch.ID)
+	if err != nil {
+		t.Fatalf("ListBillAnomalies failed: %v", err)
+	}
+	if len(anomalies) == 0 {
+		t.Fatal("expected at least 1 anomaly")
+	}
+	if anomalies[0].AnomalyType != "overcharge" {
+		t.Errorf("expected overcharge, got %s", anomalies[0].AnomalyType)
+	}
+
+	// Review an anomaly
+	err = svc.ReviewBillItem(anomalies[0].ID, "confirmed", "差额已确认", "admin")
+	if err != nil {
+		t.Fatalf("ReviewBillItem failed: %v", err)
+	}
+}
+
+func TestReconcileBillBatch_UnmatchedOrder(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	csvData := `order_no,tracking,provider,channel,country,billed_weight,shipping_fee,total_fee,currency,billed_date
+ORD999,TRK999,承运商B,渠道Y,RU,1.0,10.0,15.0,CNY,2026-06-01`
+	batch, _ := svc.ImportBillCSV([]byte(csvData), "bill.csv", "admin")
+
+	// No snapshot for ORD999
+	result, err := svc.ReconcileBillBatch(batch.ID)
+	if err != nil {
+		t.Fatalf("ReconcileBillBatch failed: %v", err)
+	}
+	if result.UnmatchedItems != 1 {
+		t.Errorf("expected 1 unmatched, got %d", result.UnmatchedItems)
+	}
+
+	// Batch status should be partial (unmatched but not anomalous)
+	batchUpdated, _, _ := svc.GetBillBatch(batch.ID)
+	if batchUpdated.Status != "partial" {
+		t.Errorf("expected partial, got %s", batchUpdated.Status)
+	}
+}
+
+func TestCreateSnapshot_WithVersionInfo(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	ruleVersionID := int64(42)
+	snap, err := svc.CreateSnapshot(&CreateSnapshotInput{
+		OrderID: 200, SkuID: 1, Quantity: 1,
+		DestinationCountry: "RU",
+		PackageLengthCm: 10, PackageWidthCm: 10, PackageHeightCm: 10, PackageWeightKg: 1.0,
+		ProviderID: 1, ProviderName: "承运商", ChannelID: 1, ChannelName: "渠道",
+		ActualWeightKg: 1.0, VolumetricWeightKg: 0, ChargeableWeightKg: 1.0,
+		BaseShippingFee: 15.0, TotalShippingFee: 15.0, Currency: "CNY",
+		RuleVersionID: &ruleVersionID, RuleVersion: 3,
+		QuotedBy: "A10", SourceTrigger: "order_placement",
+	})
+	if err != nil {
+		t.Fatalf("CreateSnapshot failed: %v", err)
+	}
+	if snap.RuleVersionID == nil || *snap.RuleVersionID != 42 {
+		t.Errorf("expected RuleVersionID 42, got %v", snap.RuleVersionID)
+	}
+	if snap.RuleVersion != 3 {
+		t.Errorf("expected RuleVersion 3, got %d", snap.RuleVersion)
+	}
+	if snap.QuotedBy != "A10" {
+		t.Errorf("expected QuotedBy A10, got %s", snap.QuotedBy)
+	}
+	if snap.SourceTrigger != "order_placement" {
+		t.Errorf("expected SourceTrigger order_placement, got %s", snap.SourceTrigger)
+	}
+
+	// Verify retrieval
+	got, err := svc.GetSnapshotByOrderID(200)
+	if err != nil {
+		t.Fatalf("GetSnapshotByOrderID failed: %v", err)
+	}
+	if got.RuleVersion != 3 {
+		t.Errorf("expected rule version 3 from get, got %d", got.RuleVersion)
+	}
+}
+
+func TestCreateTracking_FullCycle(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	// Create
+	track, err := svc.CreateTracking(&CreateTrackingInput{
+		OrderID: 300, TrackingNumber: "TRK300",
+		CarrierCode: "DHL", CarrierName: "DHL Express",
+		Status: "picked_up", Note: "已揽收",
+	})
+	if err != nil {
+		t.Fatalf("CreateTracking failed: %v", err)
+	}
+	if track.ID == 0 {
+		t.Fatal("expected non-zero ID")
+	}
+	if track.Status != "picked_up" {
+		t.Errorf("expected picked_up, got %s", track.Status)
+	}
+
+	// Get by order ID
+	got, err := svc.GetTrackingByOrderID(300)
+	if err != nil {
+		t.Fatalf("GetTrackingByOrderID failed: %v", err)
+	}
+	if got.TrackingNumber != "TRK300" {
+		t.Errorf("expected TRK300, got %s", got.TrackingNumber)
+	}
+
+	// Update with event
+	updated, err := svc.UpdateTrackingEvent(track.ID, TrackingEvent{
+		Timestamp: "2026-06-15T10:00:00Z", Status: "in_transit", Location: "枢纽A", Message: "到达中转站",
+	}, "in_transit")
+	if err != nil {
+		t.Fatalf("UpdateTrackingEvent failed: %v", err)
+	}
+	if updated.Status != "in_transit" {
+		t.Errorf("expected in_transit, got %s", updated.Status)
+	}
+
+	// Mark delivered
+	delivered, err := svc.UpdateTrackingEvent(track.ID, TrackingEvent{
+		Timestamp: "2026-06-20T14:00:00Z", Status: "delivered", Location: "客户地址",
+	}, "delivered")
+	if err != nil {
+		t.Fatalf("UpdateTrackingEvent delivered failed: %v", err)
+	}
+	if delivered.Status != "delivered" {
+		t.Errorf("expected delivered, got %s", delivered.Status)
+	}
+	if delivered.DeliveredAt == nil {
+		t.Error("expected DeliveredAt to be set")
+	}
+}
+
+func TestMarkTrackingException(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	track, _ := svc.CreateTracking(&CreateTrackingInput{
+		OrderID: 400, TrackingNumber: "TRK400",
+	})
+
+	// Mark lost
+	err := svc.MarkTrackingException(track.ID, true, false, false, "包裹丢失")
+	if err != nil {
+		t.Fatalf("MarkTrackingException failed: %v", err)
+	}
+
+	got, err := svc.GetTrackingByOrderID(400)
+	if err != nil {
+		t.Fatalf("GetTrackingByOrderID failed: %v", err)
+	}
+	if !got.IsLost {
+		t.Error("expected IsLost true")
+	}
+	if got.Status != "exception" {
+		t.Errorf("expected status exception, got %s", got.Status)
+	}
+
+	// Also test damaged + returned
+	track2, _ := svc.CreateTracking(&CreateTrackingInput{OrderID: 401, TrackingNumber: "TRK401"})
+	err = svc.MarkTrackingException(track2.ID, false, true, true, "破损退回")
+	if err != nil {
+		t.Fatalf("MarkTrackingException failed: %v", err)
+	}
+	got2, _ := svc.GetTrackingByOrderID(401)
+	if !got2.IsReturned || !got2.IsDamaged {
+		t.Error("expected returned and damaged")
+	}
+}
+
+func TestGetCarrierPerformance_Aggregation(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	// Insert tracking records via raw SQL to ensure CreatedAt is set
+	now := time.Now()
+	db.Exec("INSERT INTO fulfillment_tracking (order_id, tracking_number, carrier_name, status, created_at) VALUES (1, 'T1', '承运商A', 'delivered', ?)", now)
+	db.Exec("INSERT INTO fulfillment_tracking (order_id, tracking_number, carrier_name, status, is_lost, created_at) VALUES (2, 'T2', '承运商A', 'delivered', 1, ?)", now)
+	db.Exec("INSERT INTO fulfillment_tracking (order_id, tracking_number, carrier_name, status, is_returned, created_at) VALUES (3, 'T3', '承运商A', 'in_transit', 1, ?)", now)
+	db.Exec("INSERT INTO fulfillment_tracking (order_id, tracking_number, carrier_name, status, created_at) VALUES (4, 'T4', '承运商B', 'delivered', ?)", now)
+
+	// Bill item for variance
+	db.Exec("INSERT INTO shipping_bill_item (batch_id, row_number, provider_name, reconciliation_status, variance_pct, created_at) VALUES (1, 1, '承运商A', 'matched', 8.0, ?)", now)
+
+	stats, err := svc.GetCarrierPerformance(365)
+	if err != nil {
+		t.Fatalf("GetCarrierPerformance failed: %v", err)
+	}
+	if len(stats) < 2 {
+		t.Fatalf("expected at least 2 carrier stats, got %d", len(stats))
+	}
+
+	var carrierA, carrierB CarrierPerformanceStats
+	for _, s := range stats {
+		if s.ProviderName == "承运商A" {
+			carrierA = s
+		}
+		if s.ProviderName == "承运商B" {
+			carrierB = s
+		}
+	}
+	if carrierA.TotalOrders != 3 {
+		t.Errorf("expected carrier A total 3, got %d", carrierA.TotalOrders)
+	}
+	if carrierA.LostCount != 1 {
+		t.Errorf("expected carrier A lost 1, got %d", carrierA.LostCount)
+	}
+	if carrierA.ReturnedCount != 1 {
+		t.Errorf("expected carrier A returned 1, got %d", carrierA.ReturnedCount)
+	}
+	if carrierB.TotalOrders != 1 {
+		t.Errorf("expected carrier B total 1, got %d", carrierB.TotalOrders)
+	}
+}
+
+func TestMockCarrierQuote(t *testing.T) {
+	adapter := &MockCarrierAdapter{}
+	if adapter.Name() != "mock_carrier" {
+		t.Errorf("expected mock_carrier, got %s", adapter.Name())
+	}
+
+	quote, err := adapter.GetQuote(nil, CarrierModeDryRun, &CarrierQuoteRequest{
+		DestinationCountry: "RU", WeightKg: 1.0,
+	})
+	if err != nil {
+		t.Fatalf("GetQuote failed: %v", err)
+	}
+	if quote.TotalFee != 15.0 {
+		t.Errorf("expected total fee 15.0, got %.2f", quote.TotalFee)
+	}
+	if quote.ServiceName != "Mock Standard" {
+		t.Errorf("expected Mock Standard, got %s", quote.ServiceName)
+	}
+}
+
+func TestMockCarrierCreateShipment_MutationRequiresApproval(t *testing.T) {
+	adapter := &MockCarrierAdapter{}
+
+	// Dry run: no approval needed
+	s, err := adapter.CreateShipment(nil, CarrierModeDryRun, &CarrierShipmentRequest{TrackingNumber: "T1"}, 0)
+	if err != nil {
+		t.Fatalf("dry run CreateShipment should succeed without approval_id: %v", err)
+	}
+	if s.ShipmentID == "" {
+		t.Error("expected non-empty shipment ID")
+	}
+
+	// Production without approval: must fail
+	_, err = adapter.CreateShipment(nil, CarrierModeProduction, &CarrierShipmentRequest{TrackingNumber: "T2"}, 0)
+	if err == nil {
+		t.Fatal("expected error for production mode without approval_id")
+	}
+
+	// Production with approval: must succeed
+	s2, err := adapter.CreateShipment(nil, CarrierModeProduction, &CarrierShipmentRequest{TrackingNumber: "T3"}, 42)
+	if err != nil {
+		t.Fatalf("production CreateShipment with approval_id should succeed: %v", err)
+	}
+	if s2.ShipmentID != "mock-T3" {
+		t.Errorf("expected mock-T3, got %s", s2.ShipmentID)
+	}
+}
+
+func TestMockCarrierCancelShipment_RequiresApproval(t *testing.T) {
+	adapter := &MockCarrierAdapter{}
+
+	if err := adapter.CancelShipment(nil, CarrierModeDryRun, "S1", 0); err != nil {
+		t.Fatalf("dry run CancelShipment should succeed: %v", err)
+	}
+	if err := adapter.CancelShipment(nil, CarrierModeProduction, "S2", 0); err == nil {
+		t.Fatal("expected error for production CancelShipment without approval_id")
+	}
+	if err := adapter.CancelShipment(nil, CarrierModeProduction, "S3", 99); err != nil {
+		t.Fatalf("production CancelShipment with approval_id should succeed: %v", err)
+	}
+}
+
+func TestQuoteUnified_FixedPlusPerKg_PreservesTotal(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	prov, _ := svc.CreateProvider(&CreateProviderInput{Name: "承运商", Code: "C"})
+	ch, _ := svc.CreateChannel(&CreateChannelInput{
+		ProviderID: prov.ID, Name: "标准",
+		VolumetricDivisor: intPtr(6000),
+	})
+	zone, _ := svc.CreateZone(&CreateZoneInput{ChannelID: ch.ID, CountryCode: "RU"})
+
+	fixedFee := 10.0
+	perKg := 5.0
+	svc.CreateRule(&CreateQuoteRuleInput{
+		ChannelID: ch.ID, ZoneID: &zone.ID,
+		RuleType: "fixed_plus_per_kg", FixedFee: &fixedFee,
+		PerKgPrice: &perKg, Status: statusPtr(1),
+	})
+
+	// 2kg: via old Quote: total = 10 + 2*5 = 20
+	// via QuoteUnified: per_kg = 2*5 = 10, surcharge from fixed = 10, total = 20
+	req := &QuoteRequest{
+		Mode: "manual", DestinationCountry: "RU",
+		ManualWeightKg: floatPtr(2.0), ManualLengthCM: floatPtr(10),
+		ManualWidthCM: floatPtr(10), ManualHeightCM: floatPtr(10),
+	}
+
+	oldResp, _ := svc.Quote(req)
+	newResp, _ := svc.QuoteUnified(req)
+
+	if len(oldResp.Results) == 0 || len(newResp.Results) == 0 {
+		t.Fatal("expected results from both quote methods")
+	}
+
+	oldTotal := oldResp.Results[0].TotalShippingFee
+	newTotal := newResp.Results[0].TotalShippingFee
+	if oldTotal != newTotal {
+		t.Errorf("total fee mismatch: old Quote=%.2f, QuoteUnified=%.2f (fixed_plus_per_kg must preserve total)", oldTotal, newTotal)
+	}
+
+	newSurcharge := newResp.Results[0].SurchargeFee
+	if newSurcharge == 0 {
+		t.Errorf("expected non-zero surcharge fee when fixed_plus_per_kg has fixed fee, got 0 (fixed fee was lost)")
+	}
+}
+
+func TestListRuleVersions(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	prov, _ := svc.CreateProvider(&CreateProviderInput{Name: "承运商", Code: "C"})
+	ch, _ := svc.CreateChannel(&CreateChannelInput{ProviderID: prov.ID, Name: "标准"})
+
+	fixed := 10.0
+	perKg := 5.0
+	svc.CreateRule(&CreateQuoteRuleInput{
+		ChannelID: ch.ID, RuleType: "fixed_plus_per_kg",
+		FixedFee: &fixed, PerKgPrice: &perKg, Status: statusPtr(1),
+	})
+
+	rules, total, err := svc.ListRuleVersions(ch.ID)
+	if err != nil {
+		t.Fatalf("ListRuleVersions failed: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("expected 1 rule version, got %d", total)
+	}
+	if len(rules) != 1 {
+		t.Errorf("expected 1 rule, got %d", len(rules))
+	}
+	if rules[0].RuleVersion != 1 {
+		t.Errorf("expected default RuleVersion 1, got %d", rules[0].RuleVersion)
+	}
+}
+
+func TestGetActiveRulesAtTime(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	prov, _ := svc.CreateProvider(&CreateProviderInput{Name: "承运商", Code: "C"})
+	ch, _ := svc.CreateChannel(&CreateChannelInput{ProviderID: prov.ID, Name: "标准"})
+
+	// Create a time-bound rule via direct DB insert (avoids CreateRule creating an unconstrained one)
+	past := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	future := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	fixed := 10.0
+	perKg := 5.0
+	var status int16 = 1
+	rule := ShippingQuoteRule{
+		ChannelID: ch.ID, RuleType: "fixed_plus_per_kg",
+		FixedFee: &fixed, PerKgPrice: &perKg, Status: status,
+		EffectiveStartTime: &past, EffectiveEndTime: &future,
+	}
+	db.Create(&rule)
+
+	// June 2026: should be active
+	rules, err := svc.GetActiveRulesAtTime(&ch.ID, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("GetActiveRulesAtTime failed: %v", err)
+	}
+	if len(rules) == 0 {
+		t.Fatal("expected active rules at June 2026")
+	}
+
+	// 2025 (before effective_start): should NOT be active
+	rules2025, _ := svc.GetActiveRulesAtTime(&ch.ID, time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
+	for _, r := range rules2025 {
+		if r.ID == rule.ID {
+			t.Error("expected rule to be excluded at 2025 (before effective_start_time)")
+		}
+	}
+
+	// 2028 (after effective_end): should NOT be active
+	rules2028, _ := svc.GetActiveRulesAtTime(&ch.ID, time.Date(2028, 6, 1, 0, 0, 0, 0, time.UTC))
+	for _, r := range rules2028 {
+		if r.ID == rule.ID {
+			t.Error("expected rule to be excluded at 2028 (after effective_end_time)")
+		}
+	}
+}
+
+func TestReconcileBillBatch_NoAnomalies(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	snap := SalesOrderShippingSnapshot{
+		OrderID: 500, SkuID: 1, Quantity: 1, DestinationCountry: "RU",
+		PackageLengthCm: 10, PackageWidthCm: 10, PackageHeightCm: 10, PackageWeightKg: 1.0,
+		ProviderID: 1, ProviderName: "承运商A", ChannelID: 1, ChannelName: "渠道X",
+		ActualWeightKg: 1.0, VolumetricWeightKg: 0, ChargeableWeightKg: 1.0,
+		BaseShippingFee: 20.0, TotalShippingFee: 20.0, Currency: "CNY",
+	}
+	db.Create(&snap)
+
+	// Bill matches exactly (variance 0%)
+	csvData := `order_no,tracking,provider,channel,country,billed_weight,shipping_fee,total_fee,currency,billed_date
+500,TRK500,承运商A,渠道X,RU,1.0,20.0,20.0,CNY,2026-06-01`
+	batch, _ := svc.ImportBillCSV([]byte(csvData), "bill.csv", "admin")
+
+	result, err := svc.ReconcileBillBatch(batch.ID)
+	if err != nil {
+		t.Fatalf("ReconcileBillBatch failed: %v", err)
+	}
+	if result.AnomalousItems != 0 {
+		t.Errorf("expected 0 anomalous, got %d", result.AnomalousItems)
+	}
+	if result.UnmatchedItems != 0 {
+		t.Errorf("expected 0 unmatched, got %d", result.UnmatchedItems)
+	}
+
+	batchUpdated, _, _ := svc.GetBillBatch(batch.ID)
+	if batchUpdated.Status != "reconciled" {
+		t.Errorf("expected reconciled, got %s", batchUpdated.Status)
+	}
+}
+
+func TestTracking_DefaultStatus(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	track, err := svc.CreateTracking(&CreateTrackingInput{
+		OrderID: 600, TrackingNumber: "TRK600",
+	})
+	if err != nil {
+		t.Fatalf("CreateTracking failed: %v", err)
+	}
+	if track.Status != "pending" {
+		t.Errorf("expected default status pending, got %s", track.Status)
+	}
+}
 
 // ══════════════════════════════════════════════════════════════════════
 // Phase 1: Fulfillment Intelligence OS Tests
