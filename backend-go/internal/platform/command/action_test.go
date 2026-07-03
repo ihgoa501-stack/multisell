@@ -470,6 +470,97 @@ func TestActionStatus_String(t *testing.T) {
 			t.Errorf("ActionStatus(%d).String() = %q, want %q", tc.status, got, tc.want)
 		}
 	}
+	// Unknown value
+	if got := ActionStatus(99).String(); got != "status(99)" {
+		t.Errorf("unknown status: got %q, want status(99)", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ActionStatus.String edge cases — explicit test by brief spec.
+// ---------------------------------------------------------------------------
+
+func TestActionStatus_String_EdgeCases(t *testing.T) {
+	tests := []struct {
+		s    ActionStatus
+		want string
+	}{
+		{StatusSuggested, "suggested"},
+		{StatusPendingApproval, "pending_approval"},
+		{StatusApproved, "approved"},
+		{StatusRejected, "rejected"},
+		{StatusExecuting, "executing"},
+		{StatusCompleted, "completed"},
+		{StatusFailed, "failed"},
+		{StatusBlocked, "blocked"},
+	}
+	for _, tt := range tests {
+		if got := tt.s.String(); got != tt.want {
+			t.Errorf("ActionStatus(%d).String() = %q, want %q", tt.s, got, tt.want)
+		}
+	}
+	if got := ActionStatus(99).String(); got != "status(99)" {
+		t.Errorf("unknown status: got %q, want status(99)", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RiskLevel.String — correct labels for all levels.
+// ---------------------------------------------------------------------------
+
+func TestRiskLevel_String(t *testing.T) {
+	tests := []struct {
+		r    RiskLevel
+		want string
+	}{
+		{RiskNone, "none"},
+		{RiskLow, "low"},
+		{RiskMedium, "medium"},
+		{RiskHigh, "high"},
+	}
+	for _, tt := range tests {
+		if got := tt.r.String(); got != tt.want {
+			t.Errorf("RiskLevel(%d).String() = %q, want %q", tt.r, got, tt.want)
+		}
+	}
+	if got := RiskLevel(99).String(); got != "unknown(99)" {
+		t.Errorf("unknown risk: got %q, want unknown(99)", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ActionMode.String — correct labels for all modes.
+// ---------------------------------------------------------------------------
+
+func TestActionMode_String(t *testing.T) {
+	tests := []struct {
+		m    ActionMode
+		want string
+	}{
+		{ModeDryRun, "dry_run"},
+		{ModeSandbox, "sandbox"},
+		{ModeProduction, "production"},
+	}
+	for _, tt := range tests {
+		if got := tt.m.String(); got != tt.want {
+			t.Errorf("ActionMode(%d).String() = %q, want %q", tt.m, got, tt.want)
+		}
+	}
+	if got := ActionMode(99).String(); got != "mode(99)" {
+		t.Errorf("unknown mode: got %q, want mode(99)", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HandlerNotFoundError.Error — correct message format.
+// ---------------------------------------------------------------------------
+
+func TestHandlerNotFoundError_Error(t *testing.T) {
+	err := &HandlerNotFoundError{ActionType: "test_action"}
+	want := "no handler registered for action type: test_action"
+	if got := err.Error(); got != want {
+		t.Errorf("HandlerNotFoundError.Error() = %q, want %q", got, want)
+	}
 }
 
 // ---------------------------------------------------------------------------
