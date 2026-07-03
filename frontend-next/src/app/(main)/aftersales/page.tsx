@@ -1,14 +1,15 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Button, Form, Input, InputNumber, Modal, Space, message } from 'antd';
+import { useRouter } from 'next/navigation';
+import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Statistic, message } from 'antd';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   DollarOutlined,
   RollbackOutlined,
 } from '@ant-design/icons';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import CrudListPage, { fmtDate, fmtMoney } from '@/components/crud/CrudListPage';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -81,6 +82,20 @@ const STATUS_ACTIONS: Record<string, ActionConfig[]> = {
 
 export default function AftersalesPage() {
   const qc = useQueryClient();
+  const router = useRouter();
+
+  // ---------- Summary stats ----------
+
+  const { data: summary } = useQuery<Record<string, unknown>>({
+    queryKey: ['aftersales-summary'],
+    queryFn: async () => {
+      const res = await apiClient.get<Record<string, unknown>>('/v1/aftersales/summary');
+      return res.data ?? {};
+    },
+    refetchInterval: 30_000,
+  });
+
+  const byStatus = (summary?.by_status as Record<string, number>) || {};
 
   // Modal action state (approve / reject)
   const [modalAction, setModalAction] = useState<ModalActionState | null>(null);
@@ -193,13 +208,21 @@ export default function AftersalesPage() {
 
   return (
     <>
+      <Card size="small" style={{ margin: '0 0 16px' }}>
+        <Row gutter={24}>
+          <Col span={6}><Statistic title="售后单总数" value={summary?.total as number || 0} /></Col>
+          <Col span={6}><Statistic title="待审核" value={byStatus.pending || 0} valueStyle={{ color: '#faad14' }} /></Col>
+          <Col span={6}><Statistic title="已审核" value={byStatus.approved || 0} valueStyle={{ color: '#1677ff' }} /></Col>
+          <Col span={6}><Statistic title="累计退款" value={summary?.total_refunded as number || 0} prefix="¥" precision={2} valueStyle={{ color: '#cf1322' }} /></Col>
+        </Row>
+      </Card>
       <CrudListPage
         resource="/aftersales"
         title="售后"
         singular="售后单"
         searchPlaceholder="搜索订单ID / SKU ID / 原因..."
         columns={[
-          { title: 'ID', dataIndex: 'id', width: 70 },
+          { title: 'ID', dataIndex: 'id', width: 70, render: (v: unknown, r: Record<string, unknown>) => <a onClick={() => router.push(`/aftersales/${r.id}`)}>{v as number}</a> },
           { title: '订单ID', dataIndex: 'order_id', width: 100 },
           { title: 'SKU ID', dataIndex: 'sku_id', width: 90 },
           { title: '退货数量', dataIndex: 'return_quantity', width: 100 },
