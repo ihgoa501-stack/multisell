@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
@@ -68,15 +67,15 @@ func (a *CollectionAgent) scrapeSupplier(ctx context.Context, params map[string]
 			return nil, 0, "error", err
 		}
 		return map[string]interface{}{
-			"collected":     1,
-			"product_ids":   []int64{pid},
-			"supplier_url":  url,
+			"collected":    1,
+			"product_ids":  []int64{pid},
+			"supplier_url": url,
 		}, 1.0, "low", nil
 	}
 	return map[string]interface{}{
-		"scraped":        false,
-		"supplier_url":   url,
-		"message":        "supplier discovery only (collection deferred)",
+		"scraped":      false,
+		"supplier_url": url,
+		"message":      "supplier discovery only (collection deferred)",
 	}, 1.0, "low", nil
 }
 
@@ -120,12 +119,12 @@ func (a *CollectionAgent) collectProducts(ctx context.Context, params map[string
 	}
 
 	return map[string]interface{}{
-		"collected":    successCount,
-		"failed":       failCount,
-		"product_ids":  productIDs,
-		"total_urls":   len(urls),
-		"agent_id":     "A12",
-		"decision":     "product_collect",
+		"collected":   successCount,
+		"failed":      failCount,
+		"product_ids": productIDs,
+		"total_urls":  len(urls),
+		"agent_id":    "A12",
+		"decision":    "product_collect",
 	}, 1.0, "low", nil
 }
 
@@ -261,5 +260,3 @@ func copyParams(original map[string]interface{}) map[string]interface{} {
 func PageDataToCandidate(pd *toolbridge.PageData, params map[string]interface{}) *candidate.CreateCandidateInput {
 	return pageDataToCandidate(pd, params)
 }
-
-func timePtr(t time.Time) *time.Time { return &t }
