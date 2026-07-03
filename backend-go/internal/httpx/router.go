@@ -136,7 +136,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Create event bus (with optional outbox persistence).
 	sr := eventbus.NewSchemaRegistry()
-	// TODO: register TopicSchema implementations for each event topic pattern
+	// ponytail: register known payload schemas; add more as event contracts stabilize
+	sr.Register("stock.alert", eventbus.StockAlertPayload{})
+	sr.Register("profit.*", eventbus.ProfitWatchPayload{})
+	sr.Register("compliance.*", eventbus.ComplianceCheckPayload{})
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4), eventbus.WithSchema(sr))
 	busCtx, busCancel := context.WithCancel(context.Background())
 	defer busCancel()

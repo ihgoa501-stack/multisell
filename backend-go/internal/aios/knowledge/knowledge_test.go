@@ -203,7 +203,7 @@ func TestRegisterPattern(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if respBefore.Confidence != 0 {
-		t.Skip("built-in pattern may already cover this; skipping before-check")
+		t.Skip("ponytail: built-in pattern may already cover this; skipping before-check")
 	}
 
 	// Register a new pattern for exchange rates.

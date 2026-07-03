@@ -508,17 +508,12 @@ func TestHighRiskActions(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Idempotency key — record as TODO. The current system does not have an
-// idempotency store, so duplicate execution is not yet prevented at the
-// platform layer. This test documents the known gap.
+// Idempotency key — known gap.
 // ---------------------------------------------------------------------------
 
 func TestIdempotencyKey_NotYetImplemented(t *testing.T) {
-	// ponytail: idempotency storage is not implemented yet. The AgentAction
-	// carries the idempotency_key field so callers can generate a key, but
-	// duplicate detection requires a persisted store (e.g. Redis or DB table).
-	// Add when dedup is a measurable requirement.
-	t.Skip("TODO: idempotency dedup not yet implemented — requires persisted store")
+	// ponytail: idempotency storage is not implemented yet.
+	t.Skip("ponytail: idempotency dedup not yet implemented — requires persisted store")
 }
 
 // ---------------------------------------------------------------------------

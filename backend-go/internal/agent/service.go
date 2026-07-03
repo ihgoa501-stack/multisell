@@ -24,8 +24,7 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	}
 }
 
-// Registry exposes the agent registry.
-func (s *Service) Registry() *ai.AgentRegistry { return s.registry }
+// ponytail: registry field kept for future external access; accessor removed until needed
 
 // AgentSummary is the legacy-compatible agent view.
 type AgentSummary struct {

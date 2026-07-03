@@ -51,7 +51,7 @@ func TestService_Search(t *testing.T) {
 	// ILIKE is PG-specific; SQLite does not support it
 	results, err := svc.Search("iPhone", 20)
 	if err != nil {
-		t.Skip("ILIKE not supported by SQLite; skip search test")
+		t.Skip("ponytail: ILIKE not supported by SQLite; skip search test")
 	}
 	if len(results) == 0 {
 		t.Fatal("expected results")

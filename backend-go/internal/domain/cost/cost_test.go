@@ -17,7 +17,7 @@ func TestService_GetDashboard_Empty(t *testing.T) {
 		// GetDashboard calls GetDailySummary which uses PG-specific INTERVAL syntax.
 		// Skip on SQLite rather than marking as failure.
 		if strings.Contains(err.Error(), "syntax error") || strings.Contains(err.Error(), "near") {
-			t.Skip("GetDashboard requires PG-specific SQL:", err)
+			t.Skip("ponytail: GetDashboard requires PG-specific SQL:", err)
 		}
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestService_GetDashboard_WithTodayData(t *testing.T) {
 	dash, err := svc.GetDashboard(50.0)
 	if err != nil {
 		if strings.Contains(err.Error(), "syntax error") || strings.Contains(err.Error(), "near") {
-			t.Skip("GetDashboard requires PG-specific SQL:", err)
+			t.Skip("ponytail: GetDashboard requires PG-specific SQL:", err)
 		}
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestService_GetDashboard_ZeroBudget(t *testing.T) {
 	dash, err := svc.GetDashboard(0)
 	if err != nil {
 		if strings.Contains(err.Error(), "syntax error") || strings.Contains(err.Error(), "near") {
-			t.Skip("GetDashboard requires PG-specific SQL:", err)
+			t.Skip("ponytail: GetDashboard requires PG-specific SQL:", err)
 		}
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
