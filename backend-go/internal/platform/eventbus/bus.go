@@ -38,6 +38,7 @@ type Event struct {
 	Priority         int                    `json:"priority"`   // 0=normal, 1=high, 2=critical
 	CreatedAt        time.Time              `json:"created_at"`
 	CorrelationID    string                 `json:"correlation_id"`
+	IdempotencyKey   string                 `json:"idempotency_key,omitempty"`
 	DeliveryAttempts int                    `json:"delivery_attempts"`
 }
 
@@ -73,6 +74,7 @@ const actorContextKey contextKey = "eventbus_actor"
 const entityIDContextKey contextKey = "eventbus_entity_id"
 const entityTypeContextKey contextKey = "eventbus_entity_type"
 const eventVersionContextKey contextKey = "eventbus_version"
+const idempotencyKeyContextKey contextKey = "eventbus_idempotency_key"
 
 // WithActor attaches an actor identity to the context for event bus operations.
 // The actor is propagated to published events for tracing and audit compliance.
@@ -133,6 +135,29 @@ func EventVersionFromContext(ctx context.Context) string {
 	}
 	return DefaultEventVersion
 }
+
+// WithIdempotencyKey attaches an idempotency key to the context for event bus operations.
+// The key is propagated to published events and used for deduplication at the bus level:
+// duplicate events with the same key are skipped during worker dispatch.
+//
+// Choose keys that are unique per business-logical operation:
+//
+//	purchase order received → fmt.Sprintf("purchase_order_received:%s", orderNo)
+//	aftersale processed     → fmt.Sprintf("aftersale_processed:%d", aftersaleID)
+func WithIdempotencyKey(ctx context.Context, key string) context.Context {
+	return context.WithValue(ctx, idempotencyKeyContextKey, key)
+}
+
+// IdempotencyKeyFromContext extracts the idempotency key from the context.
+// Returns empty string if not set.
+func IdempotencyKeyFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(idempotencyKeyContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// subscription binds a handler to a topic pattern.
 
 // subscription binds a handler to a topic pattern.
 type subscription struct {
@@ -407,17 +432,18 @@ func (b *Bus) Publish(ctx context.Context, topic string, source string, payload 
 // 0=normal, 1=high, 2=critical.
 func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, payload map[string]interface{}, priority int) (string, error) {
 	evt := Event{
-		ID:            uuid.New().String(),
-		Topic:         topic,
-		Version:       EventVersionFromContext(ctx),
-		Source:        source,
-		Actor:         ActorFromContext(ctx),
-		EntityID:      EntityIDFromContext(ctx),
-		EntityType:    EntityTypeFromContext(ctx),
-		Payload:       payload,
-		Priority:      priority,
-		CreatedAt:     time.Now(),
-		CorrelationID: CorrelationIDFromContext(ctx),
+		ID:             uuid.New().String(),
+		Topic:          topic,
+		Version:        EventVersionFromContext(ctx),
+		Source:         source,
+		Actor:          ActorFromContext(ctx),
+		EntityID:       EntityIDFromContext(ctx),
+		EntityType:     EntityTypeFromContext(ctx),
+		Payload:        payload,
+		Priority:       priority,
+		CreatedAt:      time.Now(),
+		CorrelationID:  CorrelationIDFromContext(ctx),
+		IdempotencyKey: IdempotencyKeyFromContext(ctx),
 	}
 
 	// Validate against schema registry if configured.
@@ -504,6 +530,45 @@ func (b *Bus) DLQ() *DLQManager {
 	return b.dlq
 }
 
+// checkIdempotency returns true if the event should be skipped (duplicate),
+// using an atomic INSERT-or-detect pattern backed by the DB's UNIQUE constraint
+// on event_processed.idempotency_key.
+//
+// - First event with this key → INSERT succeeds → returns (false, nil)
+// - Retry (same event_id) → INSERT conflicts → reads existing event_id → same → (false, nil)
+// - Duplicate (different event_id, same key) → INSERT conflicts → reads existing → different → (true, nil)
+func (b *Bus) checkIdempotency(ctx context.Context, evt Event) (bool, error) {
+	var existingID string
+	err := b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec(
+			`INSERT INTO event_processed (idempotency_key, topic, event_id, processed_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (idempotency_key) DO NOTHING`,
+			evt.IdempotencyKey, evt.Topic, evt.ID,
+		)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			// We claimed the key — first event with this idempotency key.
+			existingID = evt.ID
+			return nil
+		}
+		// Key already exists — read the previously stored event_id.
+		var row struct{ EventID string }
+		if err := tx.
+			Raw(`SELECT event_id FROM event_processed WHERE idempotency_key = ?`, evt.IdempotencyKey).
+			Scan(&row).Error; err != nil {
+			return err
+		}
+		existingID = row.EventID
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	// Skip dispatch if a different event with the same key was already processed.
+	return existingID != evt.ID, nil
+}
+
 // workerLoop pops events from the given pool's backend and dispatches them to
 // matching subscribers. Failed events are retried (up to maxRetries) and then
 // moved to the dead-letter queue if configured.
@@ -536,6 +601,28 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 
 		// Propagate correlation ID to handler context.
 	handlerCtx := WithCorrelationID(ctx, evt.CorrelationID)
+
+		// Idempotency check: skip duplicate events with the same idempotency_key.
+		// The UNIQUE constraint on event_processed.idempotency_key acts as an atomic
+		// lock. Retries (same event ID) are distinguished from duplicates (different
+		// event ID) by comparing the stored event_id.
+		if evt.IdempotencyKey != "" && b.db != nil {
+			skip, checkErr := b.checkIdempotency(handlerCtx, evt)
+			if checkErr != nil {
+				b.logger.Warn("idempotency check failed, letting event through",
+					zap.String("event_id", evt.ID),
+					zap.String("idempotency_key", evt.IdempotencyKey),
+					zap.Error(checkErr))
+				// fail open: let the event through on DB error
+			} else if skip {
+				b.logger.Info("skipping duplicate event",
+					zap.String("event_id", evt.ID),
+					zap.String("topic", evt.Topic),
+					zap.String("idempotency_key", evt.IdempotencyKey))
+				eventsSkipped.WithLabelValues(evt.Topic, "duplicate").Inc()
+				continue
+			}
+		}
 
 		// Dispatch to all matching subscribers with panic recovery per handler.
 		var panicked bool

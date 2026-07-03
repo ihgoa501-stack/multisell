@@ -35,6 +35,18 @@ Rules:
 - Events should include enough identity to trace source and affected entity.
 - Events must not silently perform business mutations by themselves.
 - Subscribers must be safe to retry or must document non-idempotent behavior.
+- **Idempotency**: events that carry business-state mutations (inventory, order, financial)
+  MUST set an `idempotency_key` via `eventbus.WithIdempotencyKey(ctx, key)` on the Publish
+  context. The bus workerLoop enforces single-processing: if an event with the same
+  key was already delivered (different event_id), the duplicate is skipped. Retries
+  (same event_id, same key) are allowed through. The mapping is:
+
+	```
+	key format: "{business_action}:{business_id}"
+	Examples:
+	  purchase_order_received:PO-2024-001
+	  aftersale_processed:42
+	```
 
 Recommended event payload fields:
 
@@ -49,6 +61,7 @@ tenant_id:
 entity_type:
 entity_id:
 correlation_id:
+idempotency_key:  // set via WithIdempotencyKey(ctx, key) — bus-level dedup
 payload:
 ```
 
