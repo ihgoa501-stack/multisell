@@ -2,11 +2,13 @@ package ipc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 )
 
@@ -16,22 +18,34 @@ import (
 type Handler func(ctx context.Context, msg *Message) (*Message, error)
 
 // IPC is the inter-agent communication bus.
-// It manages topic-based handlers, pending request/response tracking,
-// and supports multiple communication patterns: direct send, request/reply,
-// broadcast, delegation, gather, and consensus.
+// It uses EventBus as the underlying transport layer: Send publishes to
+// "ipc.agent.{target}" topics, and a wildcard subscriber dispatches
+// incoming messages to locally-registered handlers.
+// Reply channels (sync.Map of sessionID -> chan *Message) handle the
+// request/response pattern independently of the transport.
 type IPC struct {
 	handlers map[string]Handler
 	pending  sync.Map // sessionID -> chan *Message
+	bus      *eventbus.Bus
 	logger   *zap.Logger
 	mu       sync.RWMutex
+	subID    string // EventBus subscription ID
 }
 
-// New creates a new IPC bus.
-func New(logger *zap.Logger) *IPC {
-	return &IPC{
+// New creates a new IPC bus with EventBus as the transport layer.
+// It subscribes to "ipc.agent.*" on the given bus to receive inter-agent messages.
+func New(logger *zap.Logger, bus *eventbus.Bus) *IPC {
+	ipc := &IPC{
 		handlers: make(map[string]Handler),
+		bus:      bus,
 		logger:   logger,
 	}
+
+	// Subscribe to all IPC agent messages on EventBus.
+	subID := bus.Subscribe("ipc.agent.*", ipc.handleEventBusEvent)
+	ipc.subID = subID
+
+	return ipc
 }
 
 // RegisterHandler registers a handler for the given topic (typically an agent ID or squad name).
@@ -56,48 +70,89 @@ func isRequestType(t MsgType) bool {
 		t == MsgTypeGather || t == MsgTypeConsensus
 }
 
-// Send delivers a message to the handler registered for msg.To.
-// The handler is invoked asynchronously in a goroutine.
-// For request-type messages, if the handler returns a response, it is
-// routed to the pending channel associated with the session ID.
+// Send delivers a message to the target agent by publishing to
+// the EventBus topic "ipc.agent.{msg.To}". The event payload is the
+// serialized Message -- a wildcard subscriber handleEventBusEvent
+// receives it, dispatches to the registered handler, and routes any
+// response back through the pending channel.
 func (ipc *IPC) Send(ctx context.Context, msg *Message) error {
 	if msg == nil {
 		return fmt.Errorf("ipc: cannot send nil message")
 	}
 
-	handler, ok := ipc.getHandler(msg.To)
-	if !ok {
+	// Pre-check: verify a handler is registered for this target.
+	if _, ok := ipc.getHandler(msg.To); !ok {
 		return fmt.Errorf("ipc: no handler registered for topic %q", msg.To)
 	}
 
-	// Invoke the handler asynchronously so that request/response
-	// timeout and context cancellation work correctly.
-	go func() {
-		resp, err := handler(ctx, msg)
-		if err != nil {
-			ipc.logger.Error("ipc handler error",
-				zap.String("topic", msg.To),
-				zap.Error(err),
-			)
-			return
+	// Serialize the Message into the EventBus payload via JSON round-trip.
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("ipc: failed to serialize message: %w", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return fmt.Errorf("ipc: failed to serialize message payload: %w", err)
+	}
+
+	// Publish to EventBus.
+	_, err = ipc.bus.Publish(ctx, "ipc.agent."+msg.To, "ipc", payload)
+	if err != nil {
+		return fmt.Errorf("ipc: event bus publish error: %w", err)
+	}
+
+	return nil
+}
+
+// handleEventBusEvent is the EventBus subscriber for "ipc.agent.*" topics.
+// It deserializes the event payload into an IPC Message, looks up the
+// registered handler for the target agent, invokes it, and routes any
+// response back through the pending channel.
+func (ipc *IPC) handleEventBusEvent(ctx context.Context, evt eventbus.Event) error {
+	// Deserialize EventBus payload into IPC Message.
+	data, err := json.Marshal(evt.Payload)
+	if err != nil {
+		ipc.logger.Warn("ipc: failed to marshal event payload", zap.Error(err))
+		return nil
+	}
+	var msg Message
+	if err := json.Unmarshal(data, &msg); err != nil {
+		ipc.logger.Warn("ipc: failed to unmarshal IPC message from event payload", zap.Error(err))
+		return nil
+	}
+
+	handler, ok := ipc.getHandler(msg.To)
+	if !ok {
+		ipc.logger.Warn("ipc: no handler registered for agent",
+			zap.String("agent_id", msg.To))
+		return nil
+	}
+
+	resp, err := handler(ctx, &msg)
+	if err != nil {
+		ipc.logger.Error("ipc handler error",
+			zap.String("agent_id", msg.To),
+			zap.Error(err),
+		)
+		return nil
+	}
+
+	// Route the response back to the caller's pending channel.
+	if resp != nil && isRequestType(msg.Type) {
+		sessionID := resp.SessionID
+		if sessionID == "" {
+			sessionID = msg.SessionID
 		}
-		if resp != nil && isRequestType(msg.Type) {
-			sessionID := resp.SessionID
-			if sessionID == "" {
-				sessionID = msg.SessionID
-			}
-			if ch, loaded := ipc.pending.Load(sessionID); loaded {
-				select {
-				case ch.(chan *Message) <- resp:
-				default:
-					// Channel full or closed; discard to avoid blocking.
-					ipc.logger.Warn("ipc: response dropped, channel full",
-						zap.String("session_id", sessionID),
-					)
-				}
+		if ch, loaded := ipc.pending.Load(sessionID); loaded {
+			select {
+			case ch.(chan *Message) <- resp:
+			default:
+				ipc.logger.Warn("ipc: response dropped, channel full",
+					zap.String("session_id", sessionID),
+				)
 			}
 		}
-	}()
+	}
 
 	return nil
 }
@@ -287,7 +342,7 @@ func (ipc *IPC) Gather(ctx context.Context, targets []string, task TaskDef) ([]*
 	}
 
 	if len(messages) == 0 {
-		return nil, fmt.Errorf("ipc: gather failed — all %d targets returned errors", len(targets))
+		return nil, fmt.Errorf("ipc: gather failed -- all %d targets returned errors", len(targets))
 	}
 
 	return messages, nil

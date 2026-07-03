@@ -118,7 +118,7 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 	mem := memory.NewWorkingMemoryBucket("aios", "global", 15*time.Minute, logger)
 
 	// 8. Create IPC (inter-agent communication bus).
-	ipcBus := ipc.New(logger)
+	ipcBus := ipc.New(logger, bus)
 
 	// 9. Create Pipeline Engine (serial, fan-out, self-correct, fallback).
 	pl := pipeline.New(logger)

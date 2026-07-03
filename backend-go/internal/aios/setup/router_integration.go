@@ -99,6 +99,14 @@ func RegisterAIOSRoutes(rg *gin.RouterGroup, cfg *Config) {
 			})
 		}
 		c.JSON(200, gin.H{"tools": view, "count": len(view)})
+		})
+
+	// GET /api/v1/aios/ipc/health — IPC subsystem health.
+	rg.GET("/aios/ipc/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status":    "ok",
+			"transport": "eventbus",
+		})
 	})
 }
 
