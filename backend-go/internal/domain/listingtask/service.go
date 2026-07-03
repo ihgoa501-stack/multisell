@@ -19,7 +19,12 @@ import (
 // PublishHook is an optional callback called after ExecuteTask successfully
 // transitions a listing task to "completed". The hook calls the platform
 // adapter's Publish to push the product live. If it returns an error, the
-// task status stays "completed" but last_error is set for operator visibility.
+// task status reverts to "failed" so the operator can retry.
+//
+// ponytail: synchronous, no idempotency key. If the adapter.Publish call
+// succeeds but the network response is lost, a retry may publish the
+// product twice on the platform. Upgrade to EventBus + WithIdempotencyKey
+// when duplicate-safety matters for the target platform.
 type PublishHook func(taskID int64) error
 
 // Service provides listing task business logic.
@@ -671,6 +676,7 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 			s.db.Model(&ListingTaskItem{}).Where("task_id = ?", task.ID).
 				Where("error_message = '' OR error_message IS NULL").
 				Update("error_message", pubErr.Error())
+				s.db.First(&task, task.ID)
 		}
 	}
 

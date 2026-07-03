@@ -794,6 +794,26 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			PackageLength:  pkgL,
 			PackageWeight:  pkgWt,
 		})
+		auditContent := fmt.Sprintf("publish product %d to platform %s (account %d)", t.ProductID, plat.Code, acct.ID)
+		if err != nil {
+			auditContent = fmt.Sprintf("publish product %d to platform %s failed: %v", t.ProductID, plat.Code, err)
+		}
+		auditSvc.LogStructured(&operationlog.StructuredLogInput{
+			Module:      "platform_publish",
+			Action:      "publish",
+			ResourceID:  fmt.Sprintf("listing_task:%d", taskID),
+			Operator:    "system",
+			Content:     auditContent,
+			Result:      func() string {
+				if err != nil {
+					return "failure"
+				}
+				return "success"
+			}(),
+			TriggerType: "system",
+			EntityType:  "listing_task",
+			EntityID:    taskID,
+		})
 		if err != nil {
 			return fmt.Errorf("platform %s publish failed: %w", plat.Code, err)
 		}
