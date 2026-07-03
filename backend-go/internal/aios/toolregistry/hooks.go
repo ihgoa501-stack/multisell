@@ -2,6 +2,7 @@ package toolregistry
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -119,6 +120,58 @@ func (h *PermissionHook) Before(ctx context.Context, tool *Tool, _ map[string]in
 
 // After is a no-op for PermissionHook.
 func (h *PermissionHook) After(_ context.Context, _ *Tool, _ map[string]interface{}, _ interface{}, _ error) error {
+	return nil
+}
+
+// --- ApprovalCheckHook ---
+
+// ApprovalCheckHook blocks mutation-risk tools (RiskHigh, RiskCritical) in
+// production mode when no approval ID is present in the context.
+func WithProductionMode(ctx context.Context) context.Context {
+	return context.WithValue(ctx, executionModeKey, "production")
+}
+
+// IsProductionMode checks if the context is in production mode.
+func IsProductionMode(ctx context.Context) bool {
+	v, _ := ctx.Value(executionModeKey).(string)
+	return v == "production"
+}
+
+// WithApprovalID attaches an approval ID to the context.
+func WithApprovalID(ctx context.Context, id int64) context.Context {
+	return context.WithValue(ctx, approvalIDKey, id)
+}
+
+// GetApprovalID retrieves the approval ID from context. Returns 0 if not set.
+func GetApprovalID(ctx context.Context) int64 {
+	v, _ := ctx.Value(approvalIDKey).(int64)
+	return v
+}
+
+// ApprovalCheckHook blocks mutation-risk tools (RiskHigh, RiskCritical) in
+// production mode when no approval ID is present in the context.
+// Add this to the registry before any callers that should enforce approval.
+type ApprovalCheckHook struct{}
+
+// NewApprovalCheckHook creates an ApprovalCheckHook.
+func NewApprovalCheckHook() *ApprovalCheckHook {
+	return &ApprovalCheckHook{}
+}
+
+// Before checks the tool's risk level and blocks mutation tools in production
+// mode without a valid approval ID.
+func (h *ApprovalCheckHook) Before(ctx context.Context, tool *Tool, _ map[string]interface{}) (context.Context, error) {
+	if !IsProductionMode(ctx) {
+		return ctx, nil // sandbox/dry-run: no approval needed
+	}
+	if tool.RiskLevel.IsMutationRisk() && GetApprovalID(ctx) == 0 {
+		return ctx, fmt.Errorf("%w: tool %q requires approval in production mode", ErrMutationRequiresApproval, tool.Name)
+	}
+	return ctx, nil
+}
+
+// After is a no-op.
+func (h *ApprovalCheckHook) After(_ context.Context, _ *Tool, _ map[string]interface{}, _ interface{}, _ error) error {
 	return nil
 }
 

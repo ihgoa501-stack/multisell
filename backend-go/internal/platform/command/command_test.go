@@ -8,6 +8,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
+	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 )
 
 // ---------------------------------------------------------------------------
@@ -373,9 +374,9 @@ func TestBuiltInPriceAdjustHandler(t *testing.T) {
 
 	handler := PriceAdjustHandler(nil, logger, nil)
 	result, err := handler(context.Background(), map[string]interface{}{
-		"sku_code":       "SKU003",
+		"sku_code":        "SKU003",
 		"suggested_price": float64(29.99),
-		"reason":         "Competitor price drop",
+		"reason":          "Competitor price drop",
 	})
 	if err != nil {
 		t.Fatalf("PriceAdjustHandler returned error: %v", err)
@@ -530,4 +531,143 @@ func mustDispatch(t *testing.T, d *Dispatcher, actionType string, payload map[st
 		t.Fatalf("Dispatch(%q) returned error: %v", actionType, err)
 	}
 	return result
+}
+
+func TestDispatchSafe_Production_PriceReviewRejectedByCatalog(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	cat := actioncatalog.Default()
+	d := NewDispatcher(logger, WithCatalog(cat))
+	d.Register("price_review", okHandler)
+
+	action := AgentAction{
+		ActionType: "price_review",
+		Mode:       ModeProduction,
+		RiskLevel:  RiskHigh,
+	}
+	_, err := d.DispatchSafe(context.Background(), action, nil)
+	if err == nil {
+		t.Fatal("expected error: price_review requires approval per catalog")
+	}
+}
+
+func TestDispatchSafe_Production_PriceReviewWithApproval(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	cat := actioncatalog.Default()
+	d := NewDispatcher(logger, WithCatalog(cat))
+	d.Register("price_review", okHandler)
+
+	approvalID := int64(42)
+	action := AgentAction{
+		ActionType:       "price_review",
+		Mode:             ModeProduction,
+		RiskLevel:        RiskHigh,
+		ApprovalRequired: true,
+		ApprovalID:       &approvalID,
+	}
+	mockPolicy := &mockPolicyChecker{approved: true}
+	result, err := d.DispatchSafe(context.Background(), action, mockPolicy)
+	if err != nil {
+		t.Fatalf("price_review with approval should pass, got: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected Success=true")
+	}
+}
+
+func TestDispatchSafe_Production_UnknownActionRejected(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	cat := actioncatalog.Default()
+	d := NewDispatcher(logger, WithCatalog(cat))
+
+	action := AgentAction{
+		ActionType: "nonexistent_action",
+		Mode:       ModeProduction,
+		RiskLevel:  RiskLow,
+	}
+	_, err := d.DispatchSafe(context.Background(), action, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown action type in production mode")
+	}
+}
+
+func TestDispatchSafe_Sandbox_UnknownActionAllowed(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	cat := actioncatalog.Default()
+	d := NewDispatcher(logger, WithCatalog(cat))
+
+	var executed bool
+	d.Register("custom_action", func(_ context.Context, _ map[string]interface{}) (*Result, error) {
+		executed = true
+		return &Result{Success: true}, nil
+	})
+
+	action := AgentAction{
+		ActionType: "custom_action",
+		Mode:       ModeSandbox,
+		RiskLevel:  RiskLow,
+	}
+	_, err := d.DispatchSafe(context.Background(), action, nil)
+	if err != nil {
+		t.Fatalf("sandbox should allow unknown actions, got: %v", err)
+	}
+	if !executed {
+		t.Error("handler was not executed in sandbox mode")
+	}
+}
+
+func TestDispatchSafe_DryRun_ChecksCatalog(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	cat := actioncatalog.Default()
+	d := NewDispatcher(logger, WithCatalog(cat))
+
+	d.Register("stock_alert", okHandler)
+	action := AgentAction{
+		ActionType: "stock_alert",
+		Mode:       ModeDryRun,
+	}
+	result, err := d.DispatchSafe(context.Background(), action, nil)
+	if err != nil {
+		t.Fatalf("dry-run of catalog action should pass, got: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected Success=true for dry run")
+	}
+
+	d.Register("ad_hoc_action", okHandler)
+	action2 := AgentAction{
+		ActionType: "ad_hoc_action",
+		Mode:       ModeDryRun,
+	}
+	_, err2 := d.DispatchSafe(context.Background(), action2, nil)
+	if err2 == nil {
+		t.Fatal("dry-run should reject actions not in catalog")
+	}
+}
+
+func TestDispatchSafe_Production_StockAlertNoApprovalNeeded(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+	cat := actioncatalog.Default()
+	d := NewDispatcher(logger, WithCatalog(cat))
+
+	var executed bool
+	d.Register("stock_alert", func(_ context.Context, _ map[string]interface{}) (*Result, error) {
+		executed = true
+		return &Result{Success: true}, nil
+	})
+
+	action := AgentAction{
+		ActionType: "stock_alert",
+		Mode:       ModeProduction,
+		RiskLevel:  RiskLow,
+	}
+	result, err := d.DispatchSafe(context.Background(), action, nil)
+	if err != nil {
+		t.Fatalf("L1 stock_alert should pass in production: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected Success=true")
+	}
+	if !executed {
+		t.Error("handler was not executed")
+	}
 }

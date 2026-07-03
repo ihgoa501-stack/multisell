@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PreToolUse": {
+      "matcher": "Edit|Write",
+      "command": "bash",
+      "args": ["-c", "echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '(^|[\\\"])config\\.yaml|[\\\"]\\.env[\\\"]|docker-compose\\.(yml|yaml)[\\\"]' && echo '⚠️ 阻止编辑敏感配置文件（.env / config.yaml / docker-compose），需要改的话跟我说一声让我走安全审查流程' && exit 1 || exit 0"]
+    },
+    "PostToolUse": {
+      "matcher": "Edit|Write",
+      "command": "bash",
+      "args": ["-c", "
+        file=\"$CLAUDE_EDITED_FILE\"
+        case \"$file\" in
+          */backend-go/*.go)
+            pkg=$(echo \"$file\" | sed -n 's|.*/backend-go/internal/\\(domain/[^/]*\\).*|./internal/\\1|p')
+            if [ -n \"$pkg\" ]; then
+              cd /Users/lc/multisell/backend-go && go vet \"$pkg\" 2>&1 | sed 's/^/go vet: /'
+            fi
+            ;;
+        esac
+      "]
+    }
+  }
+}
