@@ -11,6 +11,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/common"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ErrDuplicateSourceURL is returned when a candidate with the same source_url already exists.
@@ -394,10 +395,7 @@ func (s *Service) Update(id int64, in *UpdateCandidateInput) (*CandidateProduct,
 	if len(updates) == 0 {
 		return &c, nil
 	}
-	if err := s.db.Model(&c).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	if err := s.db.First(&c, id).Error; err != nil {
+	if err := s.updateAndReturn(&c, id, updates); err != nil {
 		return nil, err
 	}
 	status, _ := computeCompleteness(&c)
@@ -471,6 +469,19 @@ func (s *Service) recalcCompleteness(c *CandidateProduct) ([]string, error) {
 	return missing, nil
 }
 
+// updateAndReturn runs an UPDATE with RETURNING to hydrate the model
+// in a single round-trip instead of UPDATE + SELECT.
+func (s *Service) updateAndReturn(c *CandidateProduct, id int64, updates map[string]interface{}) error {
+	if err := s.db.Clauses(clause.Returning{}).Model(c).Updates(updates).Error; err != nil {
+		return err
+	}
+	// Re-read to ensure full model hydration (safety net for older GORM).
+	if err := s.db.First(c, id).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
 // ManualFillFields fills one or more fields on a candidate product.
 // Valid field names come from completenessFieldNames.
 // After applying updates, it recalculates completeness_status.
@@ -497,10 +508,7 @@ func (s *Service) ManualFillFields(id int64, in *FillFieldsInput) (*CandidateDet
 		return &CandidateDetail{CandidateProduct: c, MissingFields: missing}, nil
 	}
 
-	if err := s.db.Model(&c).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	if err := s.db.First(&c, id).Error; err != nil {
+	if err := s.updateAndReturn(&c, id, updates); err != nil {
 		return nil, err
 	}
 

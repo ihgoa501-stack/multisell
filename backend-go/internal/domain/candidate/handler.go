@@ -197,6 +197,20 @@ func (h *Handler) Seed(c *gin.Context) {
 	response.Success(c, gin.H{"seeded": count, "message": "种子数据生成成功"})
 }
 
+// respondErr maps common candidate errors to HTTP responses.
+// Returns true if the error was handled (response already written).
+func (h *Handler) respondErr(c *gin.Context, err error) bool {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		response.Error(c, http.StatusNotFound, "candidate product not found")
+		return true
+	}
+	if errors.Is(err, ErrFieldNotRecognized) || errors.Is(err, ErrRescrapeNoSource) {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return true
+	}
+	return false
+}
+
 // FillFields PUT /candidates/:id/fields
 // Manually fill one or more completeness fields and recalculate status.
 func (h *Handler) FillFields(c *gin.Context) {
@@ -211,12 +225,7 @@ func (h *Handler) FillFields(c *gin.Context) {
 	}
 	item, err := h.service.ManualFillFields(id, &in)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "candidate product not found")
-			return
-		}
-		if errors.Is(err, ErrFieldNotRecognized) {
-			response.Error(c, http.StatusBadRequest, err.Error())
+		if h.respondErr(c, err) {
 			return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -239,12 +248,7 @@ func (h *Handler) SkipField(c *gin.Context) {
 	}
 	item, err := h.service.SkipField(id, in.Field)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "candidate product not found")
-			return
-		}
-		if errors.Is(err, ErrFieldNotRecognized) {
-			response.Error(c, http.StatusBadRequest, err.Error())
+		if h.respondErr(c, err) {
 			return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -262,12 +266,7 @@ func (h *Handler) Rescrape(c *gin.Context) {
 	}
 	item, err := h.service.Rescrape(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "candidate product not found")
-			return
-		}
-		if errors.Is(err, ErrRescrapeNoSource) {
-			response.Error(c, http.StatusBadRequest, err.Error())
+		if h.respondErr(c, err) {
 			return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
