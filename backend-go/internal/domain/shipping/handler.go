@@ -492,6 +492,17 @@ func (h *Handler) GetSnapshot(c *gin.Context) {
 	response.Success(c, snap)
 }
 
+// ListSnapshots GET /shipping/snapshots
+func (h *Handler) ListSnapshots(c *gin.Context) {
+	p := common.ParsePagination(c)
+	items, total, err := h.service.ListSnapshots(&p)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, items, total, p.Page, p.Size)
+}
+
 // ReconcileBillBatch POST /shipping/bill-batches/:id/reconcile
 func (h *Handler) ReconcileBillBatch(c *gin.Context) {
 	batchID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -592,6 +603,17 @@ func (h *Handler) GetTracking(c *gin.Context) {
 		return
 	}
 	response.Success(c, t)
+}
+
+// ListTracking GET /shipping/tracking
+func (h *Handler) ListTracking(c *gin.Context) {
+	p := common.ParsePagination(c)
+	items, total, err := h.service.ListTracking(&p)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, items, total, p.Page, p.Size)
 }
 
 func (h *Handler) UpdateTrackingEvent(c *gin.Context) {

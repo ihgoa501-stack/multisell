@@ -53,12 +53,14 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		// Phase 1: Fulfillment Intelligence OS
 		g.POST("/quote-unified", h.QuoteUnified)
 		g.POST("/snapshots", h.CreateSnapshot)
+		g.GET("/snapshots", h.ListSnapshots)
 		g.GET("/snapshots/:orderId", h.GetSnapshot)
 		g.PUT("/bill-items/:id/review", h.ReviewBillItem)
 		g.GET("/rules/:id/versions", h.ListRuleVersions)
 
 		// Phase 3: Fulfillment tracking
 		g.POST("/tracking", h.CreateTracking)
+		g.GET("/tracking", h.ListTracking)
 		g.GET("/tracking/:orderId", h.GetTracking)
 		g.PUT("/tracking/:id/event", h.UpdateTrackingEvent)
 		g.PUT("/tracking/:id/exception", h.MarkTrackingException)
