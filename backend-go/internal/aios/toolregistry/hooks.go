@@ -137,11 +137,20 @@ type AgentToolChecker func(ctx context.Context, agentID string) (allowed map[str
 // calls are rejected before the production-mode approval check.
 type AgentPermissionHook struct {
 	checker AgentToolChecker
+	logger  *zap.Logger
 }
 
-// NewAgentPermissionHook creates an AgentPermissionHook with the given checker.
-func NewAgentPermissionHook(checker AgentToolChecker) *AgentPermissionHook {
-	return &AgentPermissionHook{checker: checker}
+// NewAgentPermissionHook creates an AgentPermissionHook with the given checker
+// and an optional logger for debug logging. Callers that don't pass a logger
+// will have logging silently discarded (zap.NewNop).
+func NewAgentPermissionHook(checker AgentToolChecker, logger ...*zap.Logger) *AgentPermissionHook {
+	var l *zap.Logger
+	if len(logger) > 0 && logger[0] != nil {
+		l = logger[0]
+	} else {
+		l = zap.NewNop()
+	}
+	return &AgentPermissionHook{checker: checker, logger: l}
 }
 
 // Before checks whether the calling agent is allowed to use this tool.
@@ -161,6 +170,10 @@ func (h *AgentPermissionHook) Before(ctx context.Context, tool *Tool, _ map[stri
 		return ctx, nil // nil means no restrictions (allow all by squad)
 	}
 	if !allowed[tool.Name] {
+		h.logger.Debug("agent permission denied",
+			zap.String("agent_id", agentID),
+			zap.String("tool", tool.Name),
+		)
 		return ctx, ErrPermissionDenied{Name: tool.Name, Permission: "agent:" + agentID}
 	}
 	return ctx, nil

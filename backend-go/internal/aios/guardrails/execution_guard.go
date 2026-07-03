@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 )
 
 // ExecutionRule defines a single threshold check in the execution guard.
@@ -46,6 +47,7 @@ type ExecutionRule struct {
 //   - "action_type" (string) to match against rule ActionTypes
 //   - "risk_level" (string) to match against rule RiskLevels
 type ExecutionGuard struct {
+	mu    sync.RWMutex
 	rules []ExecutionRule
 }
 
@@ -102,6 +104,26 @@ func NewExecutionGuardWithRules(rules []ExecutionRule) *ExecutionGuard {
 	}
 }
 
+// SetRules replaces the current rule set. Thread-safe.
+func (g *ExecutionGuard) SetRules(rules []ExecutionRule) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if rules == nil {
+		g.rules = []ExecutionRule{}
+		return
+	}
+	g.rules = rules
+}
+
+// Rules returns a copy of the current rules. Thread-safe.
+func (g *ExecutionGuard) Rules() []ExecutionRule {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	out := make([]ExecutionRule, len(g.rules))
+	copy(out, g.rules)
+	return out
+}
+
 // Name returns "execution_guard".
 func (g *ExecutionGuard) Name() string {
 	return "execution_guard"
@@ -109,6 +131,9 @@ func (g *ExecutionGuard) Name() string {
 
 // Check evaluates all rules against the action parameters in ToolInput.
 func (g *ExecutionGuard) Check(ctx context.Context, input *GuardInput) (*GuardResult, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
 	if input.ToolInput == nil || len(input.ToolInput) == 0 {
 		return &GuardResult{
 			Pass:    true,
