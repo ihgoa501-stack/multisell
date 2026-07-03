@@ -8,6 +8,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/supplyevent"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -362,7 +363,9 @@ func (s *Service) publishAfterSaleProcessed(o *AfterSalesOrder) {
 		s.logger.Warn("failed to serialize AfterSaleProcessed event", zap.Error(err))
 		return
 	}
-	if _, err := s.events.Publish(context.Background(), "supplychain.aftersale.completed", "aftersales", payload); err != nil {
+	if _, err := s.events.Publish(
+		eventbus.WithIdempotencyKey(context.Background(), fmt.Sprintf("aftersale_processed:%d", o.ID)),
+		"supplychain.aftersale.completed", "aftersales", payload); err != nil {
 		s.logger.Warn("failed to publish AfterSaleProcessed event", zap.Error(err))
 	}
 }

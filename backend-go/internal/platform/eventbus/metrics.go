@@ -54,4 +54,13 @@ var (
 		Help: "Total events delivered to handlers.",
 	})
 
+	// eventsSkipped tracks events that were skipped due to idempotency dedup,
+	// labeled by topic and reason (currently just "duplicate").
+	eventsSkipped = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "multisell_events_skipped_total",
+			Help: "Total events skipped (idempotency dedup, etc.).",
+		},
+		[]string{"topic", "reason"},
+	)
 )

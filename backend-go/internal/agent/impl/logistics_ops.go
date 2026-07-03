@@ -45,6 +45,7 @@ func NewLogisticsOpsAgent(db *gorm.DB, logger *zap.Logger) *LogisticsOpsAgent {
 		toolReg: toolregistry.NewToolRegistry(logger),
 	}
 	a.registerTools()
+	a.registerFulfillmentAdvice()
 	return a
 }
 

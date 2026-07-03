@@ -66,8 +66,8 @@ func TestSchemaRegistryRegisterAndLookup(t *testing.T) {
 func TestStockAlertPayload_Valid(t *testing.T) {
 	s := StockAlertPayload{}
 	err := s.Validate(map[string]interface{}{
-		"sku_id":   "SKU-001",
-		"quantity": 5,
+		"sku_id":    "SKU-001",
+		"quantity":  5,
 		"threshold": 10,
 	})
 	if err != nil {
@@ -89,8 +89,8 @@ func TestStockAlertPayload_MissingField(t *testing.T) {
 func TestStockAlertPayload_WrongType(t *testing.T) {
 	s := StockAlertPayload{}
 	err := s.Validate(map[string]interface{}{
-		"sku_id":   123, // should be string
-		"quantity": "five",
+		"sku_id":    123, // should be string
+		"quantity":  "five",
 		"threshold": 10,
 	})
 	if err == nil {
@@ -103,8 +103,8 @@ func TestStockAlertPayload_Float64AsInt(t *testing.T) {
 	// the validator should accept whole-number float64 for int fields.
 	s := StockAlertPayload{}
 	err := s.Validate(map[string]interface{}{
-		"sku_id":   "SKU-001",
-		"quantity": float64(5),
+		"sku_id":    "SKU-001",
+		"quantity":  float64(5),
 		"threshold": float64(10),
 	})
 	if err != nil {
@@ -116,8 +116,8 @@ func TestStockAlertPayload_NonIntegerFloat(t *testing.T) {
 	// Non-whole-number float64 should NOT be accepted for int fields.
 	s := StockAlertPayload{}
 	err := s.Validate(map[string]interface{}{
-		"sku_id":   "SKU-001",
-		"quantity": 5.7,
+		"sku_id":    "SKU-001",
+		"quantity":  5.7,
 		"threshold": 10,
 	})
 	if err == nil {
@@ -200,8 +200,8 @@ func TestBusWithSchema_ValidPayloadAccepted(t *testing.T) {
 	})
 
 	_, err := b.Publish(context.Background(), "stock.alert", "test", map[string]interface{}{
-		"sku_id":   "SKU-001",
-		"quantity": 10,
+		"sku_id":    "SKU-001",
+		"quantity":  10,
 		"threshold": 5,
 	})
 	if err != nil {
@@ -227,8 +227,8 @@ func TestBusWithSchema_InvalidPayloadRejected(t *testing.T) {
 
 	// quantity is a string instead of int
 	_, err := b.Publish(context.Background(), "stock.alert", "test", map[string]interface{}{
-		"sku_id":   "SKU-001",
-		"quantity": "ten",
+		"sku_id":    "SKU-001",
+		"quantity":  "ten",
 		"threshold": 5,
 	})
 	if err == nil {
