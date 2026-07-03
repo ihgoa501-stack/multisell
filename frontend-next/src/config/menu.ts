@@ -54,6 +54,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/fulfillment', icon: 'ControlOutlined', label: '履约中枢', status: 'sandbox' },
       { key: '/supplychain', icon: 'ApartmentOutlined', label: '供应链追踪' },
       { key: '/aftersales', label: '售后' },
+      { key: '/aftersales/disputes', label: '争议管理' },
       { key: '/platform-fees', label: '平台费用' },
       { key: '/purchase', icon: 'ShoppingCartOutlined', label: '采购订单' },
       { key: '/purchase/suggestions', label: '采购建议' },

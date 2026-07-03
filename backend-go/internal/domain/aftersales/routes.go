@@ -33,6 +33,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, events
 		group.POST("", h.Create)
 		group.PUT("/:id", h.Update)
 		group.DELETE("/:id", h.Delete)
+		group.POST("/:id/auto-decide", h.AutoDecide)
 		group.POST("/:id/approve", h.Approve)
 		group.POST("/:id/reject", h.Reject)
 		group.POST("/:id/receive", h.Receive)
