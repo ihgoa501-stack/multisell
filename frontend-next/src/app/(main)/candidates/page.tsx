@@ -152,7 +152,7 @@ export default function CandidatesPage() {
   const [completenessLoading, setCompletenessLoading] = useState(false);
   const [completenessFilter, setCompletenessFilter] = useState<string>('');
 
-  const fetchCandidates = async (p: number, ps: number) => {
+  const fetchCandidates = useCallback(async (p: number, ps: number) => {
     setLoading(true);
     try {
       const params: Record<string, string> = { page: String(p), size: String(ps) };
@@ -166,11 +166,15 @@ export default function CandidatesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [completenessFilter]);
 
   useEffect(() => {
-    fetchCandidates(page, pageSize);
-  }, [page, pageSize, completenessFilter]);
+    const timer = window.setTimeout(() => {
+      void fetchCandidates(page, pageSize);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [fetchCandidates, page, pageSize]);
 
   const handleEvaluate = async (productId: number) => {
     setEvaluating(productId);
@@ -669,13 +673,14 @@ export default function CandidatesPage() {
               {/* Next step suggestion */}
               <Card size="small" type="inner" title="下一步建议" style={{ marginTop: 'var(--space-md)' }}>
                 <Text>
-                  {completenessResult.score >= 80
-                    ? '✅ 所有信息完整，可以准备上架草稿。'
-                    : completenessResult.score >= 60
-                      ? '🔍 信息基本完整，可以执行利润分析和选品调研。'
-                      : completenessResult.score >= 40
-                        ? '📝 已有关键信息，补充供应商和包装信息后可进入调研。'
-                        : '⚠️ 缺少核心信息（标题、采购价、主图），补充后才能继续。'}
+                  {completenessHintMap[detailProduct.completeness_status] ||
+                    (completenessResult.score >= 80
+                      ? '所有信息完整，可以准备上架草稿。'
+                      : completenessResult.score >= 60
+                        ? '信息基本完整，可以执行利润分析和选品调研。'
+                        : completenessResult.score >= 40
+                          ? '已有关键信息，补充供应商和包装信息后可进入调研。'
+                          : '缺少核心信息（标题、采购价、主图），补充后才能继续。')}
                 </Text>
               </Card>
             </>
