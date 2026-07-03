@@ -117,3 +117,16 @@ type UpdateCandidateInput struct {
 	Status            *string          `json:"status"`
 	UpdatedBy         *string          `json:"updated_by"`
 }
+
+// CandidateDetail enriches CandidateProduct with computed completeness info.
+type CandidateDetail struct {
+	CandidateProduct
+	MissingFields []string `json:"missing_fields"`
+}
+
+// ListCandidateFilter holds optional filters for listing candidate products.
+type ListCandidateFilter struct {
+	Status             string
+	Search             string
+	CompletenessStatus string
+}

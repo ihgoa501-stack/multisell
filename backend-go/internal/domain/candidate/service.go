@@ -276,16 +276,32 @@ func (s *Service) GetByID(id int64) (*CandidateProduct, error) {
 	return &c, nil
 }
 
+// GetDetail returns a candidate product with computed missing fields.
+func (s *Service) GetDetail(id int64) (*CandidateDetail, error) {
+	var c CandidateProduct
+	if err := s.db.First(&c, id).Error; err != nil {
+		return nil, err
+	}
+	_, missing := computeCompleteness(&c)
+	return &CandidateDetail{
+		CandidateProduct: c,
+		MissingFields:    missing,
+	}, nil
+}
+
 // List returns paginated candidate products with optional filters.
-func (s *Service) List(p *common.Pagination, status, search string) ([]CandidateProduct, int64, error) {
+func (s *Service) List(p *common.Pagination, filter *ListCandidateFilter) ([]CandidateProduct, int64, error) {
 	var items []CandidateProduct
 	var total int64
 	q := s.db.Model(&CandidateProduct{})
-	if status != "" {
-		q = q.Where("status = ?", status)
+	if filter.Status != "" {
+		q = q.Where("status = ?", filter.Status)
 	}
-	if search != "" {
-		like := "%" + search + "%"
+	if filter.CompletenessStatus != "" {
+		q = q.Where("completeness_status = ?", filter.CompletenessStatus)
+	}
+	if filter.Search != "" {
+		like := "%" + filter.Search + "%"
 		q = q.Where("title ILIKE ? OR description ILIKE ?", like, like)
 	}
 	if err := q.Count(&total).Error; err != nil {
@@ -378,6 +394,12 @@ func (s *Service) Update(id int64, in *UpdateCandidateInput) (*CandidateProduct,
 	}
 	if err := s.db.First(&c, id).Error; err != nil {
 		return nil, err
+	}
+	// Recalculate completeness based on current state
+	status, _ := computeCompleteness(&c)
+	if status != c.CompletenessStatus {
+		s.db.Model(&c).Update("completeness_status", status)
+		c.CompletenessStatus = status
 	}
 	return &c, nil
 }

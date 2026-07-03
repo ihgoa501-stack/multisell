@@ -110,8 +110,8 @@ func TestPageDataToCandidate_ContentScriptPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if c.CompletenessStatus != "ready_for_profit_check" {
-		t.Fatalf("CompletenessStatus = %q, want ready_for_profit_check", c.CompletenessStatus)
+	if c.CompletenessStatus != "research_ready" {
+		t.Fatalf("CompletenessStatus = %q, want research_ready", c.CompletenessStatus)
 	}
 	if c.SourceURL != "https://detail.1688.com/offer/12345.html" {
 		t.Fatalf("SourceURL = %q", c.SourceURL)

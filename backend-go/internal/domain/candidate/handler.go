@@ -34,9 +34,12 @@ func parseID(c *gin.Context) (int64, bool) {
 // List GET /candidates
 func (h *Handler) List(c *gin.Context) {
 	p := common.ParsePagination(c)
-	status := c.Query("status")
-	search := c.Query("search")
-	items, total, err := h.service.List(&p, status, search)
+	filter := &ListCandidateFilter{
+		Status:             c.Query("status"),
+		Search:             c.Query("search"),
+		CompletenessStatus: c.Query("completeness_status"),
+	}
+	items, total, err := h.service.List(&p, filter)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -69,7 +72,7 @@ func (h *Handler) Get(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.service.GetByID(id)
+	item, err := h.service.GetDetail(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "candidate product not found")
