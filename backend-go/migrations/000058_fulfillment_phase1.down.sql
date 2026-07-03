@@ -1,4 +1,4 @@
--- 000056_fulfillment_phase1.down.sql
+-- 000058_fulfillment_phase1.down.sql
 
 BEGIN;
 

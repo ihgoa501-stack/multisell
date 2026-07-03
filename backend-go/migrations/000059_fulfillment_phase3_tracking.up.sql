@@ -1,4 +1,4 @@
--- 000057_fulfillment_phase3_tracking.up.sql
+-- 000059_fulfillment_phase3_tracking.up.sql
 -- Phase 3: Fulfillment tracking — tracking numbers, events, lost/returned/damaged flags
 
 BEGIN;

@@ -596,6 +596,6 @@ A10 输出：
 | `backend-go/internal/agent/impl/fulfillment_advice.go` | 新增 |
 | `backend-go/internal/agent/impl/logistics_ops.go` | 注册新决策点 |
 | `backend-go/internal/domain/shipping/shipping_test.go` | 7 个新测试 |
-| `backend-go/migrations/000056_fulfillment_phase1.{up,down}.sql` | 新增 |
+| `backend-go/migrations/000058_fulfillment_phase1.{up,down}.sql` | 新增 |
 | `docs/features/fulfillment-intelligence-os.md` | 更新 |
 | `docs/logistics-guide.md` | 更新 |
