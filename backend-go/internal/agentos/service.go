@@ -830,7 +830,7 @@ func (s *Service) AuditReplay(correlationID string) (*AuditReplayResponse, error
 		Where("correlation_id = ?", correlationID).
 		Order("created_at ASC").
 		Scan(&actions).Error; err != nil {
-		s.logger.Warn("audit replay: unified_action query failed", zap.Error(err))
+		return nil, err
 	}
 	for _, a := range actions {
 		aid := a.ID
