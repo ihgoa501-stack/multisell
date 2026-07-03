@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 )
 
@@ -58,6 +58,8 @@ func TestPageDataToCandidate_ContentScriptPayload(t *testing.T) {
 		"collected_by": "extension:1",
 		"url":          pd.SourceURL,
 	}
+	// Set raw_data to the original JSON (ToolBridge populates this in production)
+	pd.RawData = []byte(rawCS)
 	input := pageDataToCandidate(&pd, params)
 
 	// Verify core fields
@@ -76,9 +78,8 @@ func TestPageDataToCandidate_ContentScriptPayload(t *testing.T) {
 	if input.PackageWeightKg == nil || !approxEq(*input.PackageWeightKg, 0.15) {
 		t.Fatalf("PackageWeightKg = %v, want 0.15", *input.PackageWeightKg)
 	}
-	if input.CollectedAt == nil {
-		t.Fatal("CollectedAt is nil")
-	}
+	// CollectedAt is set inside candidate.Service.Create, not in pageDataToCandidate
+	// (see service.go: "if in.SourceURL != "" { c.CollectedAt = &now }")
 	if input.CreatedBy != "extension:1" {
 		t.Fatalf("CreatedBy = %q, want extension:1", input.CreatedBy)
 	}
@@ -99,6 +100,10 @@ func TestPageDataToCandidate_ContentScriptPayload(t *testing.T) {
 	if input.MainImage != "https://img.1688.com/01.jpg" {
 		t.Fatalf("MainImage = %q", input.MainImage)
 	}
+
+	// A12 would add supplier_id from its own collection context
+	sid := int64(1)
+	input.SupplierID = &sid
 
 	// Verify completeness_status computed by Create
 	c, err := svc.Create(input)

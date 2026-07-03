@@ -472,15 +472,25 @@ func TestService_Create_CompletenessStatus(t *testing.T) {
 
 	t.Run("ready_for_profit_check", func(t *testing.T) {
 		price := 100.0
+		weight := 0.5
+		lengthCm := 10.0
+		widthCm := 8.0
+		heightCm := 6.0
+		supplierID := int64(1)
 		now := time.Now()
 		c, err := svc.Create(&CreateCandidateInput{
-			Title:          "测试商品",
-			MainImage:      "https://example.com/img.jpg",
-			PurchasePrice:  &price,
-			SourceURL:      "https://detail.1688.com/offer/123.html",
-			SourcePlatform: "1688",
-			CollectedAt:    &now,
-			CreatedBy:      "extension:1",
+			Title:           "测试商品",
+			MainImage:       "https://example.com/img.jpg",
+			PurchasePrice:   &price,
+			PackageWeightKg: &weight,
+			PackageLengthCm: &lengthCm,
+			PackageWidthCm:  &widthCm,
+			PackageHeightCm: &heightCm,
+			SupplierID:      &supplierID,
+			SourceURL:       "https://detail.1688.com/offer/123.html",
+			SourcePlatform:  "1688",
+			CollectedAt:     &now,
+			CreatedBy:       "extension:1",
 		})
 		if err != nil {
 			t.Fatalf("Create: %v", err)
