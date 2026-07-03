@@ -3,6 +3,7 @@ package eventbus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -595,6 +596,174 @@ func TestMetricsIncrement(t *testing.T) {
 	}
 }
 
+// TestIdempotencyKey_SameEventRetried verifies that a retry (same event ID, same
+// idempotency key) is NOT blocked — only truly duplicate events are skipped.
+func TestIdempotencyKey_SameEventRetried(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createEventProcessedTable(t, db)
+	logger, _ := zap.NewDevelopment()
+	// maxRetries=3 means initial delivery + 2 retries = 3 handler attempts.
+	b := New(logger, WithDB(db), WithMaxRetries(3))
+
+	var callCount atomic.Int32
+	b.Subscribe("idemp.*", func(ctx context.Context, evt Event) error {
+		callCount.Add(1)
+		// Fail first two attempts to trigger retries, succeed on third.
+		if callCount.Load() < 3 {
+			return errors.New("transient error")
+		}
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	ctxID := WithIdempotencyKey(context.Background(), "retry-test-key")
+	_, err := b.Publish(ctxID, "idemp.test", "test", nil)
+	if err != nil {
+		t.Fatalf("Publish returned error: %v", err)
+	}
+
+	// Allow retries to complete.
+	time.Sleep(time.Second)
+
+	// Retries should NOT be blocked by the idempotency check (same event_id).
+	if got := callCount.Load(); got != 3 {
+		t.Errorf("expected 3 handler calls (2 retries + 1 success), got %d", got)
+	}
+}
+
+// TestIdempotencyKey_DuplicateSkipped verifies that a second event with the
+// same idempotency key but different event ID is skipped entirely.
+func TestIdempotencyKey_DuplicateSkipped(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createEventProcessedTable(t, db)
+	logger, _ := zap.NewDevelopment()
+	b := New(logger, WithDB(db))
+
+	var callCount atomic.Int32
+	b.Subscribe("idemp.*", func(ctx context.Context, evt Event) error {
+		callCount.Add(1)
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	// First event: should be delivered.
+	key := "dup-test-key"
+	ctxID := WithIdempotencyKey(context.Background(), key)
+	_, err := b.Publish(ctxID, "idemp.test", "test", nil)
+	if err != nil {
+		t.Fatalf("first Publish returned error: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if got := callCount.Load(); got != 1 {
+		t.Errorf("expected 1 handler call for first event, got %d", got)
+	}
+
+	// Second event with same key, different auto-generated ID: should be skipped.
+	_, err = b.Publish(ctxID, "idemp.test", "test", nil)
+	if err != nil {
+		t.Fatalf("second Publish returned error: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Handler should NOT have been called again.
+	if got := callCount.Load(); got != 1 {
+		t.Errorf("expected 1 handler call total (duplicate skipped), got %d", got)
+	}
+}
+
+// TestIdempotencyKey_NoDB_EventsPassThrough verifies that when no DB is
+// configured, idempotency keys are silently ignored (fail-open behavior).
+func TestIdempotencyKey_NoDB_EventsPassThrough(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	// No WithDB → no idempotency tracking.
+	b := New(logger)
+
+	var callCount atomic.Int32
+	b.Subscribe("idemp.*", func(ctx context.Context, evt Event) error {
+		callCount.Add(1)
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	// Publish same key twice — both should go through since no DB.
+	key := "no-db-key"
+	ctxID := WithIdempotencyKey(context.Background(), key)
+	for i := 0; i < 2; i++ {
+		_, err := b.Publish(ctxID, "idemp.test", "test", nil)
+		if err != nil {
+			t.Fatalf("Publish returned error: %v", err)
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if got := callCount.Load(); got != 2 {
+		t.Errorf("expected 2 handler calls (no DB = no dedup), got %d", got)
+	}
+}
+
+// TestIdempotencyKey_DifferentKeysPass verifies that different idempotency keys
+// are processed independently.
+func TestIdempotencyKey_DifferentKeysPass(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createEventProcessedTable(t, db)
+	logger, _ := zap.NewDevelopment()
+	b := New(logger, WithDB(db))
+
+	var callCount atomic.Int32
+	b.Subscribe("idemp.*", func(ctx context.Context, evt Event) error {
+		callCount.Add(1)
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		b.Stop()
+	})
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	// Two events with different keys — both should be delivered.
+	for i := 0; i < 2; i++ {
+		ctxID := WithIdempotencyKey(context.Background(), fmt.Sprintf("distinct-key-%d", i))
+		_, err := b.Publish(ctxID, "idemp.test", "test", nil)
+		if err != nil {
+			t.Fatalf("Publish returned error: %v", err)
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if got := callCount.Load(); got != 2 {
+		t.Errorf("expected 2 handler calls (different keys), got %d", got)
+	}
+}
+
 
 // createDLQTable creates the event_dlq table with SQLite-compatible DDL.
 func createDLQTable(t *testing.T, db *gorm.DB) {
@@ -617,5 +786,21 @@ func createDLQTable(t *testing.T, db *gorm.DB) {
 		)
 	`).Error; err != nil {
 		t.Fatalf("failed to create event_dlq table: %v", err)
+	}
+}
+
+// createEventProcessedTable creates the event_processed table with
+// SQLite-compatible DDL for idempotency testing.
+func createEventProcessedTable(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS event_processed (
+			idempotency_key TEXT PRIMARY KEY,
+			topic TEXT NOT NULL,
+			event_id TEXT NOT NULL,
+			processed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`).Error; err != nil {
+		t.Fatalf("failed to create event_processed table: %v", err)
 	}
 }
