@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  Badge,
+  Alert, Badge,
   Button,
   Collapse,
   Col,
@@ -148,6 +148,30 @@ interface AuditReplayResponse {
   events: AuditReplayEvent[];
 }
 
+// Agent metrics
+interface AgentMetricsEntry {
+  agent_id: string;
+  run_count: number;
+  success_count: number;
+  failure_count: number;
+  blocked_count: number;
+  approval_rate: number;
+  owner_acceptance_rate: number;
+  avg_latency_ms: number;
+  external_failure_rate: number;
+  health: string;
+}
+
+interface ExternalPlatformHealth {
+  platform: string;
+  total_calls: number;
+  failed_calls: number;
+  consecutive_failures: number;
+  degraded: boolean;
+  last_failure_at: string;
+  last_error: string;
+}
+
 // ---------- Color helpers ----------
 const riskColor = (level: string): string => {
   if (level === 'high' || level === 'critical') return 'red';
@@ -284,6 +308,8 @@ export default function AgentOSPage() {
     qc.invalidateQueries({ queryKey: ['agentos-timeline'] });
     qc.invalidateQueries({ queryKey: ['traffic-summary'] });
     qc.invalidateQueries({ queryKey: ['intercepted-actions'] });
+    qc.invalidateQueries({ queryKey: ['agent-metrics'] });
+    qc.invalidateQueries({ queryKey: ['external-health'] });
   };
 
   // Work item detail drawer
@@ -321,6 +347,22 @@ export default function AgentOSPage() {
     queryFn: async () => {
       const res = await apiClient.get<{items: InterceptedAction[], total: number}>('/v1/agentos/intercepted-actions');
       return res.data;
+    },
+  });
+
+  const { data: agentMetricsData, isLoading: metricsLoading } = useQuery({
+    queryKey: ['agent-metrics'],
+    queryFn: async () => {
+      const res = await apiClient.get<{agents: AgentMetricsEntry[]}>('/v1/agentos/agent-metrics');
+      return res.data?.agents ?? [];
+    },
+  });
+
+  const { data: externalHealthData, isLoading: extHealthLoading } = useQuery({
+    queryKey: ['external-health'],
+    queryFn: async () => {
+      const res = await apiClient.get<ExternalPlatformHealth[]>('/v1/agentos/external-health');
+      return res.data ?? [];
     },
   });
 
@@ -448,6 +490,28 @@ export default function AgentOSPage() {
           刷新
         </Button>
       </div>
+
+      {/* Congestion alert banner */}
+      {(() => {
+        const blocked = trafficSummary?.funnel?.blocked_by_policy ?? 0;
+        const unhealthy = (agentMetricsData ?? []).filter(m => m.health !== 'ok').length;
+        if (blocked > 0 || unhealthy > 0) {
+          return (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={
+                <Space>
+                  {blocked > 0 && <span>{'\u{1F6AB}'} {blocked} 个动作被拦截</span>}
+                  {unhealthy > 0 && <span>{'\u{26A0}\u{FE0F}'} {unhealthy} 个 Agent 异常</span>}
+                </Space>
+              }
+            />
+          );
+        }
+        return null;
+      })()}
 
       {/* 顶部：统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -652,6 +716,80 @@ export default function AgentOSPage() {
                 },
                 { title: '时间', dataIndex: 'blocked_at', width: 150 },
                 { title: '目标', dataIndex: 'target_summary', ellipsis: true },
+              ]}
+            />
+          </SectionCard>
+
+          {/* Agent Health Cards */}
+          <SectionCard title="Agent 健康" style={{ marginBottom: 16 }}>
+            <Spin spinning={metricsLoading}>
+              {agentMetricsData && agentMetricsData.length > 0 ? (
+                <Row gutter={[12, 12]}>
+                  {agentMetricsData.map((m) => (
+                    <Col xs={24} sm={12} lg={8} key={m.agent_id}>
+                      <div style={{
+                        background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
+                        borderLeft: `4px solid ${m.health === 'ok' ? 'var(--g4)' : m.health === 'warn' ? 'var(--y4)' : 'var(--r4)'}`,
+                        padding: 12,
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <Text strong>{m.agent_id}</Text>
+                          <Tag color={healthColor(m.health)}>{m.health}</Tag>
+                        </div>
+                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">运行</Text>
+                            <Text>{m.run_count}</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">成功/失败/拦截</Text>
+                            <Text>{m.success_count}/{m.failure_count}/{m.blocked_count}</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">采纳率</Text>
+                            <Text>{(m.owner_acceptance_rate * 100).toFixed(0)}%</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">平均延迟</Text>
+                            <Text>{(m.avg_latency_ms / 1000).toFixed(1)}s</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">外部失败率</Text>
+                            <Tag color={m.external_failure_rate > 0.2 ? 'red' : 'green'}>
+                              {(m.external_failure_rate * 100).toFixed(0)}%
+                            </Tag>
+                          </div>
+                        </Space>
+                      </div>
+                    </Col>
+                  ))}
+                </Row>
+              ) : !metricsLoading ? (
+                <Empty description="暂无 Agent 指标数据" />
+              ) : null}
+            </Spin>
+          </SectionCard>
+
+          {/* External Platform Health */}
+          <SectionCard title="外部平台健康" style={{ marginBottom: 16 }}>
+            <Table
+              rowKey="platform"
+              dataSource={externalHealthData ?? []}
+              size="small"
+              pagination={false}
+              columns={[
+                { title: '平台', dataIndex: 'platform', width: 120 },
+                { title: '调用总数', dataIndex: 'total_calls', width: 100 },
+                { title: '失败数', dataIndex: 'failed_calls', width: 80 },
+                { title: '连续失败', dataIndex: 'consecutive_failures', width: 100 },
+                {
+                  title: '状态', dataIndex: 'degraded', width: 100,
+                  render: (v: boolean) => v
+                    ? <Tag color="red">降级</Tag>
+                    : <Tag color="green">正常</Tag>
+                },
+                { title: '最后失败', dataIndex: 'last_failure_at', width: 160 },
+                { title: '错误', dataIndex: 'last_error', ellipsis: true },
               ]}
             />
           </SectionCard>
