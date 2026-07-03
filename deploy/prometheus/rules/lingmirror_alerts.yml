@@ -1,0 +1,36 @@
+groups:
+  - name: lingmirror
+    interval: 30s
+    rules:
+      - alert: BackendDown
+        expr: up{job="lingmirror-backend"} == 0
+        for: 1m
+        annotations:
+          summary: "Backend is down"
+          description: "Backend service has been unreachable for >1m"
+
+      - alert: HighErrorRate
+        expr: |
+          rate(multisell_http_requests_total{status=~"5.."}[5m])
+          /
+          rate(multisell_http_requests_total[5m])
+          > 0.05
+        for: 3m
+        annotations:
+          summary: "High error rate ({{ $value | humanizePercentage }})"
+          description: "5xx error rate exceeds 5% over 5m window"
+
+      - alert: HighGCHeap
+        expr: go_memstats_next_gc_bytes / go_memstats_heap_alloc_bytes < 1.5
+        for: 5m
+        annotations:
+          summary: "GC pressure high"
+          description: "Heap is within 50% of GC trigger — investigate memory leaks"
+
+      - alert: DLQNonEmpty
+        expr: multisell_eventbus_queue_depth{topic="dlq"} > 0
+        for: 5m
+        annotations:
+          summary: "Dead-letter queue is not empty"
+          description: "DLQ has {{ $value }} messages — inspect eventbus handlers"
+# ponytail: DB pool exhaustion via pg_stat_activity exporter, add when deployed.
