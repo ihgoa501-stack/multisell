@@ -108,6 +108,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Prometheus metrics (before recovery to capture all requests)
 	if cfg.Metrics.Enabled {
 		r.Use(middleware.Metrics())
+		middleware.RegisterDBMetrics(db)
 	}
 	r.Use(middleware.RecoveryWithSentry(cfg, logger))
 	r.Use(middleware.Audit(db, logger))

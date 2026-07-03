@@ -128,3 +128,60 @@ jobs:
           script: |
             cd /opt/multisell
             ./scripts/deploy.sh
+
+  # ==========================================
+  # Push Docker images to GitHub Container Registry
+  # ==========================================
+  push-images:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [go-lint, go-test, next-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set image tags
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-8)
+          V=$(cat VERSION 2>/dev/null || echo "0.0.0")
+          echo "backend=ghcr.io/${{ github.repository }}/backend:v${V}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${{ github.repository }}/frontend:v${V}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: backend-go
+          push: true
+          tags: ${{ steps.meta.outputs.backend }}
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend-next
+          push: true
+          tags: ${{ steps.meta.outputs.frontend }}
+
+  # ==========================================
+  # Deploy notification
+  # ==========================================
+  notify:
+    if: always()
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Slack
+        uses: slackapi/slack-github-action@v1
+        if: secrets.SLACK_WEBHOOK_URL
+        with:
+          payload: |
+            {
+              "text": "LingMirror deploy ${{ needs.deploy.result == 'success' && 'succeeded' || needs.deploy.result == 'failure' && 'failed' || 'skipped' }} — ${{ github.sha }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

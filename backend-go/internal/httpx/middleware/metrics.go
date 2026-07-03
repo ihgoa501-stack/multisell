@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gorm.io/gorm"
 )
 
 var (
@@ -77,4 +78,48 @@ func MetricsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		h.ServeHTTP(c.Writer, c.Request)
 	}
+}
+
+// RegisterDBMetrics registers database connection pool gauges with Prometheus.
+// Call once at startup after the DB connection is established.
+func RegisterDBMetrics(db *gorm.DB) {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return
+	}
+
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "multisell_db_open_connections",
+		Help: "Current number of open database connections.",
+	}, func() float64 {
+		return float64(sqlDB.Stats().OpenConnections)
+	})
+
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "multisell_db_in_use_connections",
+		Help: "Current number of in-use database connections.",
+	}, func() float64 {
+		return float64(sqlDB.Stats().InUse)
+	})
+
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "multisell_db_idle_connections",
+		Help: "Current number of idle database connections.",
+	}, func() float64 {
+		return float64(sqlDB.Stats().Idle)
+	})
+
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "multisell_db_wait_count_total",
+		Help: "Total number of connections waited for.",
+	}, func() float64 {
+		return float64(sqlDB.Stats().WaitCount)
+	})
+
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "multisell_db_wait_duration_seconds_total",
+		Help: "Total time waiting for a new connection in seconds.",
+	}, func() float64 {
+		return sqlDB.Stats().WaitDuration.Seconds()
+	})
 }
