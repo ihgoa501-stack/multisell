@@ -46,5 +46,14 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		g.POST("/bill-batches", h.CreateBillBatch)
 		g.DELETE("/bill-batches/:id", h.DeleteBillBatch)
 		g.GET("/bill-batches/:id/items", h.ListBillItems)
-	}
+			g.POST("/bill-batches/:id/reconcile", h.ReconcileBillBatch)
+			g.GET("/bill-batches/:id/anomalies", h.ListBillAnomalies)
+
+			// Phase 1: Fulfillment Intelligence OS
+			g.POST("/quote-unified", h.QuoteUnified)
+			g.POST("/snapshots", h.CreateSnapshot)
+			g.GET("/snapshots/:orderId", h.GetSnapshot)
+			g.PUT("/bill-items/:id/review", h.ReviewBillItem)
+			g.GET("/rules/:id/versions", h.ListRuleVersions)
+		}
 }

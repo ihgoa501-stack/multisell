@@ -99,19 +99,10 @@ func ToRateTableEntry(ch *ShippingChannel, rule *ShippingQuoteRule, zone *Shippi
 		e.CargoType = "normal"
 	}
 
-	// Handle per_kg pricing: the shipping model stores fixed+per_kg in two fields.
-	// logistics per_kg only uses PerKgPrice, so we combine them.
+	// Handle fixed_plus_per_kg: add fixed fee as surcharge (always added to total).
 	if rule.RuleType == "fixed_plus_per_kg" {
-		// Per_kg in logistics doesn't have a separate fixed fee,
-		// so we add the fixed into per_kg price (effectively same as minimum charge).
-		// ponytail: this works because fixed_plus_per_kg = fixed + weight * per_kg.
-		// The logistics engine does base = weight * per_kg + surcharges.
-		// We approximate by setting per_kg_price to the normal value
-		// and the fixed fee is handled via minimum_charge approximation.
-		e.PerKgPrice = safeFloatVal(rule.PerKgPrice)
-		if e.MinimumCharge <= 0 && safeFloatVal(rule.FixedFee) > 0 {
-			// Use fixed fee as minimum charge to prevent undercharging
-			e.MinimumCharge = safeFloatVal(rule.FixedFee) + e.PerKgPrice*0.01
+		if fixed := safeFloatVal(rule.FixedFee); fixed > 0 {
+			e.SurchargeFixed += fixed
 		}
 	}
 

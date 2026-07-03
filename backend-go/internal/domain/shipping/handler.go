@@ -405,3 +405,122 @@ func (h *Handler) ListBillItems(c *gin.Context) {
 	}
 	response.Paginated(c, items, total, p.Page, p.Size)
 }
+
+// ---- Phase 1: Fulfillment Intelligence OS Handlers ----
+
+// QuoteUnified POST /shipping/quote-unified
+func (h *Handler) QuoteUnified(c *gin.Context) {
+	var req QuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	resp, err := h.service.QuoteUnified(&req)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, resp)
+}
+
+// CreateSnapshot POST /shipping/snapshots
+func (h *Handler) CreateSnapshot(c *gin.Context) {
+	var req CreateSnapshotInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	snap, err := h.service.CreateSnapshot(&req)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, snap)
+}
+
+// GetSnapshot GET /shipping/snapshots/:orderId
+func (h *Handler) GetSnapshot(c *gin.Context) {
+	orderID, err := strconv.ParseInt(c.Param("orderId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid order_id")
+		return
+	}
+	snap, err := h.service.GetSnapshotByOrderID(orderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "snapshot not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, snap)
+}
+
+// ReconcileBillBatch POST /shipping/bill-batches/:id/reconcile
+func (h *Handler) ReconcileBillBatch(c *gin.Context) {
+	batchID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid batch_id")
+		return
+	}
+	result, err := h.service.ReconcileBillBatch(batchID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// ListBillAnomalies GET /shipping/bill-batches/:id/anomalies
+func (h *Handler) ListBillAnomalies(c *gin.Context) {
+	batchID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid batch_id")
+		return
+	}
+	items, err := h.service.ListBillAnomalies(batchID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, items)
+}
+
+// ReviewBillItem PUT /shipping/bill-items/:id/review
+func (h *Handler) ReviewBillItem(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid item_id")
+		return
+	}
+	var req struct {
+		ReviewStatus string `json:"review_status" binding:"required"`
+		Note         string `json:"note"`
+		ResolvedBy   string `json:"resolved_by" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.service.ReviewBillItem(id, req.ReviewStatus, req.Note, req.ResolvedBy); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"status": "ok"})
+}
+
+// ListRuleVersions GET /shipping/rules/:id/versions
+func (h *Handler) ListRuleVersions(c *gin.Context) {
+	channelID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid channel_id")
+		return
+	}
+	rules, total, err := h.service.ListRuleVersions(channelID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, rules, total, 1, int(total))
+}
