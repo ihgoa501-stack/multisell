@@ -261,9 +261,8 @@ func (h *Handler) AutoDiscoverRelations(c *gin.Context) {
 // ---------- Sub-resource handlers (extracted from anonymous inline) ----------
 
 func (h *Handler) ListVariants(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid id")
+	id, ok := parseID(c)
+	if !ok {
 		return
 	}
 	items, err := h.variant.ListByMaster(c.Request.Context(), id)
@@ -288,9 +287,8 @@ func (h *Handler) CreateVariant(c *gin.Context) {
 }
 
 func (h *Handler) ListOffers(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid id")
+	id, ok := parseID(c)
+	if !ok {
 		return
 	}
 	items, err := h.offer.ListByMaster(c.Request.Context(), id)
@@ -315,9 +313,8 @@ func (h *Handler) CreateOffer(c *gin.Context) {
 }
 
 func (h *Handler) ListSamples(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid id")
+	id, ok := parseID(c)
+	if !ok {
 		return
 	}
 	items, err := h.sample.ListByMaster(c.Request.Context(), id)
@@ -342,9 +339,8 @@ func (h *Handler) CreateSample(c *gin.Context) {
 }
 
 func (h *Handler) ListCosts(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid id")
+	id, ok := parseID(c)
+	if !ok {
 		return
 	}
 	items, err := h.cost.ListByMaster(c.Request.Context(), id)

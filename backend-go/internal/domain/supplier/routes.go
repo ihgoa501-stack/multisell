@@ -31,10 +31,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		ps.POST("", h.CreateProductSupplier)
 		ps.PUT("/:id", h.UpdateProductSupplier)
 		ps.DELETE("/:id", h.DeleteProductSupplier)
+
+		// Product comparison - side-by-side suppliers for a product
+		ps.GET("/comparison", h.GetSupplierComparison)
 	}
-
-	// Product comparison — side-by-side suppliers for a product
-	ps.GET("/comparison", h.GetSupplierComparison)
 }
-
-// (removed old /products group to avoid cross-module route collision)

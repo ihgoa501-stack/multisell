@@ -22,7 +22,6 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
-import type { Result } from '@/types/api';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -65,8 +64,6 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   inventory: '库存',
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
 
 // ─────────────────────────────────────────────────────────
 // Helpers
