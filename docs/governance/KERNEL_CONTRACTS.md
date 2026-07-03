@@ -49,12 +49,12 @@ Rules:
 
   Key format:
 
-  	```
-  	{business_action}:{business_id}
-  	Examples:
-  	  purchase_order_received:PO-2024-001
-  	  aftersale_processed:42
-  	```
+  ```
+  {business_action}:{business_id}
+  Examples:
+    purchase_order_received:PO-2024-001
+    aftersale_processed:42
+  ```
 
 Recommended event payload fields:
 
