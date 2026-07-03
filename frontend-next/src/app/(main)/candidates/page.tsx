@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Alert, Badge, Button, Card, Modal, message, Space, Table, Tag, Tabs, Typography, Select
+  Alert, Badge, Button, Card, Input, Modal, message, Space, Table, Tag, Tabs, Typography, Select
 } from 'antd';
 import { DatabaseOutlined, PlayCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -93,9 +93,7 @@ function CollectLeadTable() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [statusFilter, _setStatusFilter] = useState<string | undefined>();
-  // ponytail: status filter dropdown added when CollectLead volume justifies it
-  // const setStatusFilter = _setStatusFilter;
+  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [detail, setDetail] = useState<CollectLead | null>(null);
 
   const doFetch = async (p: number, ps: number, st?: string) => {
@@ -148,6 +146,15 @@ function CollectLeadTable() {
 
   return (
     <>
+      <Card size="small" style={{ marginBottom: 'var(--space-lg)' }} styles={{ body: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } }}>
+        <Select allowClear placeholder="线索状态" style={{ width: 150 }} value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
+          options={[
+            { value: 'pending_detail_collect', label: '待采集详情' },
+            { value: 'collecting', label: '采集中' },
+            { value: 'collected', label: '已采集' },
+            { value: 'skipped', label: '已跳过' },
+          ]} />
+      </Card>
       <Card size="small" styles={{ body: { padding: 0 } }}>
         <Table<CollectLead>
           rowKey="id" columns={columns} dataSource={items} loading={loading}
@@ -165,8 +172,8 @@ function CollectLeadTable() {
             <div><strong>标题：</strong>{detail.title || '-'}</div>
             <div><strong>价格：</strong>{detail.price_range || '-'}</div>
             <div><strong>店铺：</strong>{detail.shop_hint || '-'}</div>
-            {detail.detail_url && <div><strong>详情页：</strong><a href={detail.detail_url} target="_blank">打开</a></div>}
-            {detail.source_page_url && <div><strong>列表页：</strong><a href={detail.source_page_url} target="_blank">打开</a></div>}
+            {detail.detail_url && <div><strong>详情页：</strong><a href={detail.detail_url} target="_blank" rel="noopener noreferrer">打开</a></div>}
+            {detail.source_page_url && <div><strong>列表页：</strong><a href={detail.source_page_url} target="_blank" rel="noopener noreferrer">打开</a></div>}
             <div><strong>状态：</strong>{leadStatusLabelMap[detail.status] || detail.status}</div>
             <div><strong>采集时间：</strong>{detail.collected_at ? dayjs(detail.collected_at).format('YYYY-MM-DD HH:mm') : '-'}</div>
           </div>
@@ -273,6 +280,9 @@ function CandidateProductTable() {
       {/* Toolbar */}
       <Card size="small" style={{ marginBottom: 'var(--space-lg)' }} styles={{ body: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } }}>
         <Button type="primary" icon={<DatabaseOutlined />} onClick={handleSeed} loading={seeding}>生成种子数据</Button>
+        <Input.Search allowClear placeholder="搜索标题/描述" style={{ width: 220 }} value={search}
+          onChange={e => setSearch(e.target.value)}
+          onSearch={v => { setSearch(v); setPage(1); }} />
         <Select allowClear placeholder="完整度" style={{ width: 140 }} value={csFilter} onChange={v => { setCsFilter(v); setPage(1); }}
           options={[
             { value: 'collected', label: '已采集' },
@@ -324,7 +334,7 @@ function CandidateProductTable() {
             <Typography.Title level={5} style={{ marginTop: 0 }}>{detailModal.title}</Typography.Title>
             <div>
               <strong>来源平台：</strong>{detailModal.source_platform || '-'}
-              {detailModal.source_url && <> · <a href={detailModal.source_url} target="_blank">打开原始来源</a></>}
+              {detailModal.source_url && <> · <a href={detailModal.source_url} target="_blank" rel="noopener noreferrer">打开原始来源</a></>}
             </div>
             <div><strong>完整度：</strong>
               <Badge status={(completenessColorMap[detailModal.completeness_status] || 'default') as 'success' | 'error' | 'processing' | 'warning' | 'default'}
@@ -332,7 +342,7 @@ function CandidateProductTable() {
             </div>
             <div><strong>采购价：</strong>¥{detailModal.purchase_price?.toFixed(2) || '-'}</div>
             <div><strong>包装：</strong>{detailModal.package_weight_kg ? `${detailModal.package_weight_kg.toFixed(2)}kg` : '-'}</div>
-            {detailModal.source_url && <div><strong>来源：</strong><a href={detailModal.source_url} target="_blank">{detailModal.source_url}</a></div>}
+            {detailModal.source_url && <div><strong>来源：</strong><a href={detailModal.source_url} target="_blank" rel="noopener noreferrer">{detailModal.source_url}</a></div>}
             <div><strong>状态：</strong><Tag color={statusColorMap[detailModal.status] || 'default'}>{statusLabelMap[detailModal.status] || detailModal.status}</Tag>
               {detailModal.is_seed_data && <Tag color="orange" style={{ marginLeft: 8 }}>种子数据</Tag>}
             </div>
