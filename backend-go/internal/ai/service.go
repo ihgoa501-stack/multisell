@@ -199,7 +199,6 @@ func (s *Service) ExecuteAction(id int64, operator, _ string) (*UnifiedAction, e
 		return nil, &InvalidTransitionError{From: a.Status, To: "executing"}
 	}
 	// If the action claims to require approval but hasn't been approved, refuse.
-	// (Defensive — the status check above should already cover this.)
 	if a.RequiresApproval && a.Status == "suggested" {
 		return nil, ErrApprovalRequired
 	}
