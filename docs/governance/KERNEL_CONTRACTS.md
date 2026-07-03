@@ -1,6 +1,6 @@
 # Kernel Contracts
 
-Last updated: 2026-07-01
+Last updated: 2026-07-03
 
 This document defines the expected contracts for LingMirror Platform Kernel. It is intentionally higher level than code. It exists so Agents can extend the platform without inventing new incompatible patterns.
 
@@ -35,6 +35,26 @@ Rules:
 - Events should include enough identity to trace source and affected entity.
 - Events must not silently perform business mutations by themselves.
 - Subscribers must be safe to retry or must document non-idempotent behavior.
+- **Idempotency**: events that carry business-state mutations (inventory, order, financial)
+  MUST set an `idempotency_key` via `eventbus.WithIdempotencyKey(ctx, key)` on the Publish
+  context. The event bus uses an atomic claim/state model:
+
+  1. A row is INSERTed into `event_processed` with `state='processing'` BEFORE handler dispatch
+     (the INSERT is the atomic claim — only one worker wins per key).
+  2. Concurrent duplicates (different `event_id`, existing `processing` row) are skipped.
+  3. Retries (same `event_id`, existing `processing` row) pass through.
+  4. On handler success, the row transitions to `state='succeeded'` with `processed_at` set.
+  5. On final failure (DLQ), the row transitions to `state='failed'`.
+  6. DLQ replay may reclaim a `failed` row back to `state='processing'` with `processed_at=NULL`.
+
+  Key format:
+
+  ```
+  {business_action}:{business_id}
+  Examples:
+    purchase_order_received:PO-2024-001
+    aftersale_processed:42
+  ```
 
 Recommended event payload fields:
 
@@ -49,6 +69,7 @@ tenant_id:
 entity_type:
 entity_id:
 correlation_id:
+idempotency_key:  // set via WithIdempotencyKey(ctx, key) — bus-level dedup
 payload:
 ```
 
