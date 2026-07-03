@@ -1,6 +1,7 @@
 package entropy
 
 import (
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -211,6 +212,52 @@ func (s *Service) GetChangeLog(userID int64, sourceType string, page, pageSize i
 		})
 	}
 	return entries, total, nil
+}
+
+// AgentMetricsSnapshot is a minimal metrics input for entropy processing.
+type AgentMetricsSnapshot struct {
+	AgentID             string
+	RunCount            int64
+	FailureCount        int64
+	BlockedCount        int64
+	ExternalFailureRate float64
+	AvgLatencyMs        float64
+}
+
+// AnomalousAgent represents an agent flagged as anomalous with a reason and severity.
+type AnomalousAgent struct {
+	AgentID  string `json:"agent_id"`
+	Reason   string `json:"reason"`
+	Severity string `json:"severity"` // "warn" or "critical"
+}
+
+// ConsumeAgentMetrics processes agent metrics for anomaly detection.
+func (s *Service) ConsumeAgentMetrics(metrics []AgentMetricsSnapshot) []AnomalousAgent {
+	var anomalies []AnomalousAgent
+	for _, m := range metrics {
+		if m.ExternalFailureRate > 0.2 {
+			anomalies = append(anomalies, AnomalousAgent{
+				AgentID:  m.AgentID,
+				Reason:   fmt.Sprintf("external failure rate %.0f%% exceeds threshold (20%%)", m.ExternalFailureRate*100),
+				Severity: "warn",
+			})
+		}
+		if m.FailureCount > 20 && m.BlockedCount > 10 {
+			anomalies = append(anomalies, AnomalousAgent{
+				AgentID:  m.AgentID,
+				Reason:   fmt.Sprintf("high failure (%d) and blocked (%d) count", m.FailureCount, m.BlockedCount),
+				Severity: "critical",
+			})
+		}
+		if m.AvgLatencyMs > 10000 {
+			anomalies = append(anomalies, AnomalousAgent{
+				AgentID:  m.AgentID,
+				Reason:   fmt.Sprintf("avg latency %.0fms exceeds 10s threshold", m.AvgLatencyMs),
+				Severity: "warn",
+			})
+		}
+	}
+	return anomalies
 }
 
 // round4 rounds to 4 decimal places.
