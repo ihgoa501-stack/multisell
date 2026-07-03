@@ -392,6 +392,7 @@ func (h *Handler) DeleteBillBatch(c *gin.Context) {
 	response.Success(c, gin.H{"id": id})
 
 }
+
 // ImportBill POST /shipping/bill-batches/import
 func (h *Handler) ImportBill(c *gin.Context) {
 	fileHeader, err := c.FormFile("file")
@@ -424,7 +425,6 @@ func (h *Handler) ImportBill(c *gin.Context) {
 	}
 	response.Success(c, batch)
 }
-
 
 // ListBillItems GET /shipping/bill-batches/:id/items
 func (h *Handler) ListBillItems(c *gin.Context) {
@@ -639,10 +639,18 @@ func (h *Handler) MarkTrackingException(c *gin.Context) {
 	response.Success(c, gin.H{"status": "ok"})
 
 }
+
+// CarrierInfo is the response for ListCarriers.
+type CarrierInfo struct {
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
 // ListCarriers returns available carrier adapters.
 func (h *Handler) ListCarriers(c *gin.Context) {
-	response.Success(c, []map[string]interface{}{
-		{"code": "mock_carrier", "name": "Mock Carrier (test only)", "status": "sandbox"},
+	response.Success(c, []CarrierInfo{
+		{Code: "mock_carrier", Name: "模拟承运商 (测试用)", Status: "sandbox"},
 	})
 }
 

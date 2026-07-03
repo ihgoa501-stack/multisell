@@ -2,6 +2,10 @@ package shipping
 
 import (
 	"encoding/json"
+	"github.com/gin-gonic/gin"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -274,11 +278,11 @@ func TestQuoteRule_CRUD(t *testing.T) {
 
 	r, err := svc.CreateRule(&CreateQuoteRuleInput{
 		ChannelID: ch.ID, ZoneID: &zone.ID,
-		RuleType:     "fixed_plus_per_kg",
-		FixedFee:     &fixedFee,
-		PerKgPrice:   &perKg,
+		RuleType:      "fixed_plus_per_kg",
+		FixedFee:      &fixedFee,
+		PerKgPrice:    &perKg,
 		MinimumCharge: &minCharge,
-		Status:       statusPtr(1),
+		Status:        statusPtr(1),
 	})
 	if err != nil {
 		t.Fatalf("CreateRule failed: %v", err)
@@ -449,12 +453,12 @@ func TestQuote_Manual_WithVolumetricWeight(t *testing.T) {
 	if r.VolumetricWeightKg < 10.6 || r.VolumetricWeightKg > 10.7 {
 		t.Errorf("expected volumetric weight ~10.67, got %.4f", r.VolumetricWeightKg)
 	}
-		if r.ChargeableWeightKg != 10.7 {
-			t.Errorf("expected chargeable weight 10.7, got %.4f", r.ChargeableWeightKg)
+	if r.ChargeableWeightKg != 10.7 {
+		t.Errorf("expected chargeable weight 10.7, got %.4f", r.ChargeableWeightKg)
 	}
-		// base = 10 + 10.7*5 = 63.5 (rounded to 0.1kg increments)
-		if r.BaseShippingFee != 63.5 {
-			t.Errorf("expected base fee 63.5, got %.2f", r.BaseShippingFee)
+	// base = 10 + 10.7*5 = 63.5 (rounded to 0.1kg increments)
+	if r.BaseShippingFee != 63.5 {
+		t.Errorf("expected base fee 63.5, got %.2f", r.BaseShippingFee)
 	}
 }
 
@@ -475,13 +479,13 @@ func TestQuote_Manual_FirstWeightPlusIncrement(t *testing.T) {
 	addPrice := 8.0
 	svc.CreateRule(&CreateQuoteRuleInput{
 		ChannelID: ch.ID, ZoneID: &zone.ID,
-		RuleType:        "first_weight_plus_increment",
-		FirstKg:        &firstKg,
-		FirstPrice:     &firstPrice,
-		AdditionalKg:   &addKg,
-		AdditionalPrice: &addPrice,
+		RuleType:          "first_weight_plus_increment",
+		FirstKg:           &firstKg,
+		FirstPrice:        &firstPrice,
+		AdditionalKg:      &addKg,
+		AdditionalPrice:   &addPrice,
 		RoundingIncrement: floatPtr(0.1),
-		Status:         statusPtr(1),
+		Status:            statusPtr(1),
 	})
 
 	// 1.2kg: first 0.5kg = 15, remaining 0.7kg / 0.5 = 1.4 => ceil=2 increments => 2*8=16 => total=31
@@ -535,7 +539,7 @@ func TestQuote_Manual_TieredWeight(t *testing.T) {
 		{"min_kg": 2, "price": 35}
 	]`)
 	svc.CreateRule(&CreateQuoteRuleInput{
-		ChannelID:  ch.ID, ZoneID: &zone.ID,
+		ChannelID: ch.ID, ZoneID: &zone.ID,
 		RuleType:   "tiered_weight",
 		TierConfig: tierConfig,
 		Status:     statusPtr(1),
@@ -623,12 +627,12 @@ func TestQuote_Manual_Surcharges(t *testing.T) {
 	fuelPct := 10.0
 	svc.CreateRule(&CreateQuoteRuleInput{
 		ChannelID: ch.ID, ZoneID: &zone.ID,
-		RuleType:       "fixed_plus_per_kg",
-		FixedFee:       &fixedFee,
-		PerKgPrice:     &perKg,
-		SurchargeFixed: &surcharge,
+		RuleType:         "fixed_plus_per_kg",
+		FixedFee:         &fixedFee,
+		PerKgPrice:       &perKg,
+		SurchargeFixed:   &surcharge,
 		FuelSurchargePct: &fuelPct,
-		Status:         statusPtr(1),
+		Status:           statusPtr(1),
 	})
 
 	// 2kg: base=10+2*5=20, surcharge=3, fuel=(20+3)*0.1=2.3, total=25.3
@@ -672,7 +676,7 @@ func TestQuote_Manual_MultipleChannels_Sorted(t *testing.T) {
 	zone2, _ := svc.CreateZone(&CreateZoneInput{ChannelID: ch2.ID, CountryCode: "RU"})
 
 	econFixed := 10.0
-	econPerKg := 5.0  // 2kg => base=20, total=20
+	econPerKg := 5.0 // 2kg => base=20, total=20
 	svc.CreateRule(&CreateQuoteRuleInput{
 		ChannelID: ch1.ID, ZoneID: &zone1.ID,
 		RuleType: "fixed_plus_per_kg", FixedFee: &econFixed,
@@ -680,7 +684,7 @@ func TestQuote_Manual_MultipleChannels_Sorted(t *testing.T) {
 	})
 
 	fastFixed := 20.0
-	fastPerKg := 8.0  // 2kg => base=36, total=36
+	fastPerKg := 8.0 // 2kg => base=36, total=36
 	svc.CreateRule(&CreateQuoteRuleInput{
 		ChannelID: ch2.ID, ZoneID: &zone2.ID,
 		RuleType: "fixed_plus_per_kg", FixedFee: &fastFixed,
@@ -738,7 +742,7 @@ func TestQuote_ChannelNotServingCountry(t *testing.T) {
 	perKg := 5.0
 	svc.CreateRule(&CreateQuoteRuleInput{
 		ChannelID: ch.ID,
-		RuleType: "fixed_plus_per_kg", FixedFee: &fixedFee,
+		RuleType:  "fixed_plus_per_kg", FixedFee: &fixedFee,
 		PerKgPrice: &perKg, Status: statusPtr(1),
 	})
 
@@ -990,7 +994,7 @@ func TestCreateSnapshot_WithVersionInfo(t *testing.T) {
 	snap, err := svc.CreateSnapshot(&CreateSnapshotInput{
 		OrderID: 200, SkuID: 1, Quantity: 1,
 		DestinationCountry: "RU",
-		PackageLengthCm: 10, PackageWidthCm: 10, PackageHeightCm: 10, PackageWeightKg: 1.0,
+		PackageLengthCm:    10, PackageWidthCm: 10, PackageHeightCm: 10, PackageWeightKg: 1.0,
 		ProviderID: 1, ProviderName: "承运商", ChannelID: 1, ChannelName: "渠道",
 		ActualWeightKg: 1.0, VolumetricWeightKg: 0, ChargeableWeightKg: 1.0,
 		BaseShippingFee: 15.0, TotalShippingFee: 15.0, Currency: "CNY",
@@ -1180,42 +1184,46 @@ func TestMockCarrierQuote(t *testing.T) {
 	}
 }
 
-func TestMockCarrierCreateShipment_MutationRequiresApproval(t *testing.T) {
+func TestMockCarrierCreateShipment_AlwaysSucceeds(t *testing.T) {
 	adapter := &MockCarrierAdapter{}
 
-	// Dry run: no approval needed
+	// Validation is centralized in service layer (ValidateCarrierAction).
+	// The mock adapter always succeeds for all modes.
 	s, err := adapter.CreateShipment(nil, CarrierModeDryRun, &CarrierShipmentRequest{TrackingNumber: "T1"}, 0)
 	if err != nil {
-		t.Fatalf("dry run CreateShipment should succeed without approval_id: %v", err)
+		t.Fatalf("dry run CreateShipment should succeed: %v", err)
 	}
 	if s.ShipmentID == "" {
 		t.Error("expected non-empty shipment ID")
 	}
 
-	// Production without approval: must fail
-	_, err = adapter.CreateShipment(nil, CarrierModeProduction, &CarrierShipmentRequest{TrackingNumber: "T2"}, 0)
-	if err == nil {
-		t.Fatal("expected error for production mode without approval_id")
+	s2, err := adapter.CreateShipment(nil, CarrierModeProduction, &CarrierShipmentRequest{TrackingNumber: "T2"}, 0)
+	if err != nil {
+		t.Fatalf("production CreateShipment should succeed (validation in service layer): %v", err)
+	}
+	if s2.ShipmentID != "mock-T2" {
+		t.Errorf("expected mock-T2, got %s", s2.ShipmentID)
 	}
 
-	// Production with approval: must succeed
-	s2, err := adapter.CreateShipment(nil, CarrierModeProduction, &CarrierShipmentRequest{TrackingNumber: "T3"}, 42)
+	s3, err := adapter.CreateShipment(nil, CarrierModeProduction, &CarrierShipmentRequest{TrackingNumber: "T3"}, 42)
 	if err != nil {
 		t.Fatalf("production CreateShipment with approval_id should succeed: %v", err)
 	}
-	if s2.ShipmentID != "mock-T3" {
-		t.Errorf("expected mock-T3, got %s", s2.ShipmentID)
+	if s3.ShipmentID != "mock-T3" {
+		t.Errorf("expected mock-T3, got %s", s3.ShipmentID)
 	}
 }
 
-func TestMockCarrierCancelShipment_RequiresApproval(t *testing.T) {
+func TestMockCarrierCancelShipment_AlwaysSucceeds(t *testing.T) {
 	adapter := &MockCarrierAdapter{}
 
+	// Validation is centralized in service layer (ValidateCarrierAction).
+	// The mock adapter always succeeds.
 	if err := adapter.CancelShipment(nil, CarrierModeDryRun, "S1", 0); err != nil {
 		t.Fatalf("dry run CancelShipment should succeed: %v", err)
 	}
-	if err := adapter.CancelShipment(nil, CarrierModeProduction, "S2", 0); err == nil {
-		t.Fatal("expected error for production CancelShipment without approval_id")
+	if err := adapter.CancelShipment(nil, CarrierModeProduction, "S2", 0); err != nil {
+		t.Fatalf("production CancelShipment should succeed (validation in service layer): %v", err)
 	}
 	if err := adapter.CancelShipment(nil, CarrierModeProduction, "S3", 99); err != nil {
 		t.Fatalf("production CancelShipment with approval_id should succeed: %v", err)
@@ -1579,9 +1587,9 @@ func TestCreateSnapshot_Immutable(t *testing.T) {
 	snap := SalesOrderShippingSnapshot{
 		OrderID: 1, SkuID: 1, Quantity: 1,
 		DestinationCountry: "RU",
-		PackageLengthCm: 10, PackageWidthCm: 10, PackageHeightCm: 10,
+		PackageLengthCm:    10, PackageWidthCm: 10, PackageHeightCm: 10,
 		PackageWeightKg: 1.0,
-		ProviderID: 1, ProviderName: "承运商", ChannelID: 1, ChannelName: "渠道",
+		ProviderID:      1, ProviderName: "承运商", ChannelID: 1, ChannelName: "渠道",
 		ActualWeightKg: 1.0, VolumetricWeightKg: 0, ChargeableWeightKg: 1.0,
 		BaseShippingFee: 20.0, TotalShippingFee: 20.0,
 		Currency: "CNY",
@@ -1656,5 +1664,107 @@ func TestToQuoteResult_Conversion(t *testing.T) {
 	}
 	if sr.TotalShippingFee != 13.0 {
 		t.Errorf("expected TotalShippingFee 13.0, got %.2f", sr.TotalShippingFee)
+	}
+}
+
+// ---------- Carrier API Handler Tests ----------
+
+func TestListCarriers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	h := &Handler{service: nil} // ListCarriers doesn't touch the service
+
+	h.ListCarriers(c)
+
+	var resp struct {
+		Code int           `json:"code"`
+		Data []CarrierInfo `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Code != 0 {
+		t.Errorf("expected code 0, got %d", resp.Code)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 carrier, got %d", len(resp.Data))
+	}
+	if resp.Data[0].Code != "mock_carrier" {
+		t.Errorf("expected mock_carrier, got %s", resp.Data[0].Code)
+	}
+	if resp.Data[0].Status != "sandbox" {
+		t.Errorf("expected status sandbox, got %s", resp.Data[0].Status)
+	}
+}
+
+func TestCarrierQuote_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "code", Value: "nonexistent_carrier"}}
+	c.Request = httptest.NewRequest("POST", "/", strings.NewReader("{}"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h := &Handler{service: nil}
+	h.CarrierQuote(c)
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestCarrierQuote_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "code", Value: "mock_carrier"}}
+	body := `{"origin_country": "CN", "destination_country": "RU", "weight_kg": 1.0}`
+	c.Request = httptest.NewRequest("POST", "/", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h := &Handler{service: nil}
+	h.CarrierQuote(c)
+
+	var resp struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Code != 0 {
+		t.Errorf("expected code 0, got %d", resp.Code)
+	}
+	if resp.Data == nil {
+		t.Fatal("expected data, got nil")
+	}
+	fee, ok := resp.Data["total_fee"].(float64)
+	if !ok || fee != 15.0 {
+		t.Errorf("expected total_fee 15.0, got %v", resp.Data["total_fee"])
+	}
+}
+
+func TestCarrierQuote_BadRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "code", Value: "mock_carrier"}}
+	// Invalid JSON body
+	c.Request = httptest.NewRequest("POST", "/", strings.NewReader("{invalid}"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h := &Handler{service: nil}
+	h.CarrierQuote(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad JSON, got %d", w.Code)
 	}
 }
