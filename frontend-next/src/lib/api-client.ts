@@ -307,6 +307,26 @@ export class ApiClient {
   async delete<T>(path: string): Promise<Result<T>> {
     return this.request<Result<T>>('DELETE', path);
   }
+
+  /**
+   * Upload a file via multipart/form-data (FormData).
+   * Unlike JSON methods, this does NOT set Content-Type — the browser
+   * sets the correct multipart boundary automatically.
+   */
+  async upload<T>(path: string, formData: FormData): Promise<Result<T>> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    const token = typeof window !== 'undefined' ? getToken() : null;
+    const headers: HeadersInit = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const options: RequestInit = {
+      method: 'POST',
+      headers,
+      body: formData,
+    };
+
+    return this.executeWithRefresh<Result<T>>(url, options);
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE);

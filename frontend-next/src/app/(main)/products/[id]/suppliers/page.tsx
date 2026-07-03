@@ -67,7 +67,7 @@ export default function SupplierComparisonPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['product-supplier-comparison', id],
     queryFn: async () => {
-      const res = await apiClient.get<ComparisonData>(`/v1/products/${id}/supplier-comparison`);
+      const res = await apiClient.get<ComparisonData>(`/v1/product-suppliers/comparison?product_id=${id}`);
       return res.data;
     },
     retry: false,

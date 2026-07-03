@@ -27,7 +27,7 @@ type WebhookLog struct {
 	ID           int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	Platform     string          `gorm:"column:platform" json:"platform"`
 	EventType    string          `gorm:"column:event_type" json:"event_type"`
-	RawPayload   json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload"`
+	RawPayload   json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload,omitempty"`
 	Status       string          `gorm:"column:status;default:received" json:"status"`
 	MappedEvent  string          `gorm:"column:mapped_event" json:"mapped_event"`
 	CreatedAt    time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`

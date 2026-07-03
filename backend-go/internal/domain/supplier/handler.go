@@ -250,9 +250,9 @@ func (h *Handler) ListScoreboard(c *gin.Context) {
 }
 
 // GetSupplierComparison returns a product vs its suppliers side-by-side.
-// GET /api/v1/products/:id/supplier-comparison
+// GET /api/v1/product-suppliers/comparison?product_id=
 func (h *Handler) GetSupplierComparison(c *gin.Context) {
-	productID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	productID, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid product id")
 		return
