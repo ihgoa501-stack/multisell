@@ -8,6 +8,7 @@ import {
   Card,
   message,
   Progress,
+  Select,
   Space,
   Table,
   Tag,
@@ -26,6 +27,27 @@ import PageContainer from '@/components/ui/PageContainer';
 
 const { Text } = Typography;
 
+const completenessColorMap: Record<string, string> = {
+  incomplete: 'default',
+  needs_review: 'warning',
+  research_ready: 'processing',
+  listing_ready: 'success',
+};
+
+const completenessLabelMap: Record<string, string> = {
+  incomplete: '不完整',
+  needs_review: '待补充',
+  research_ready: '可调研',
+  listing_ready: '可上架',
+};
+
+const completenessHintMap: Record<string, string> = {
+  incomplete: '缺少核心信息（标题、采购价、主图），补充后才能继续',
+  needs_review: '已有关键信息，补充供应商和包装信息后可进入调研',
+  research_ready: '信息基本完整，可以执行利润分析和选品调研',
+  listing_ready: '所有信息完整，可以准备上架草稿',
+};
+
 interface CandidateProduct {
   id: number;
   title: string;
@@ -41,6 +63,7 @@ interface CandidateProduct {
   hs_code: string;
   origin_country: string;
   status: string;
+  completeness_status: string;
   is_seed_data: boolean;
   created_by: string;
   created_at: string;
@@ -127,14 +150,14 @@ export default function CandidatesPage() {
   const [detailProduct, setDetailProduct] = useState<CandidateProduct | null>(null);
   const [completenessResult, setCompletenessResult] = useState<CompletenessCheckResult | null>(null);
   const [completenessLoading, setCompletenessLoading] = useState(false);
+  const [completenessFilter, setCompletenessFilter] = useState<string>('');
 
   const fetchCandidates = async (p: number, ps: number) => {
     setLoading(true);
     try {
-      const res = await apiClient.get<CandidateProduct[]>('/v1/candidates', {
-        page: String(p),
-        size: String(ps),
-      });
+      const params: Record<string, string> = { page: String(p), size: String(ps) };
+      if (completenessFilter) params.completeness_status = completenessFilter;
+      const res = await apiClient.get<CandidateProduct[]>('/v1/candidates', params);
       const body = res as unknown as { data: CandidateProduct[]; total: number };
       setData(body.data || []);
       setTotal(body.total || 0);
@@ -147,7 +170,7 @@ export default function CandidatesPage() {
 
   useEffect(() => {
     fetchCandidates(page, pageSize);
-  }, [page, pageSize]);
+  }, [page, pageSize, completenessFilter]);
 
   const handleEvaluate = async (productId: number) => {
     setEvaluating(productId);
@@ -212,6 +235,19 @@ export default function CandidatesPage() {
       title: '标题',
       dataIndex: 'title',
       ellipsis: true,
+    },
+    {
+      title: '完整度',
+      dataIndex: 'completeness_status',
+      width: 100,
+      render: (s: string) =>
+        s ? (
+          <Tag color={completenessColorMap[s] || 'default'}>
+            {completenessLabelMap[s] || s}
+          </Tag>
+        ) : (
+          <Tag>未检查</Tag>
+        ),
     },
     {
       title: '采购价',
@@ -357,6 +393,29 @@ export default function CandidatesPage() {
       )}
 
       {/* Table */}
+      <Card
+        size="small"
+        styles={{ body: { padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 12 } }}
+        style={{ marginBottom: 'var(--space-sm)' }}
+      >
+        <div style={{ flex: 1 }} />
+        <Select
+          allowClear
+          placeholder="按完整度筛选"
+          style={{ width: 160 }}
+          value={completenessFilter || undefined}
+          onChange={(val) => {
+            setCompletenessFilter(val || '');
+            setPage(1);
+          }}
+          options={[
+            { value: 'incomplete', label: '不完整' },
+            { value: 'needs_review', label: '待补充' },
+            { value: 'research_ready', label: '可调研' },
+            { value: 'listing_ready', label: '可上架' },
+          ]}
+        />
+      </Card>
       <Card size="small" styles={{ body: { padding: 0 } }}>
         <Table<CandidateProduct>
           rowKey="id"
@@ -605,6 +664,19 @@ export default function CandidatesPage() {
                     )}
                   </div>
                 ))}
+              </Card>
+
+              {/* Next step suggestion */}
+              <Card size="small" type="inner" title="下一步建议" style={{ marginTop: 'var(--space-md)' }}>
+                <Text>
+                  {completenessResult.score >= 80
+                    ? '✅ 所有信息完整，可以准备上架草稿。'
+                    : completenessResult.score >= 60
+                      ? '🔍 信息基本完整，可以执行利润分析和选品调研。'
+                      : completenessResult.score >= 40
+                        ? '📝 已有关键信息，补充供应商和包装信息后可进入调研。'
+                        : '⚠️ 缺少核心信息（标题、采购价、主图），补充后才能继续。'}
+                </Text>
               </Card>
             </>
           )}
