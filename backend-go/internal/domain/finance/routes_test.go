@@ -15,15 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// mustJSON marshals v to a JSON string, panicking on error.
-func mustJSON(v interface{}) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return string(b)
-}
-
 func TestFinanceRoutes_Unauthenticated(t *testing.T) {
 	ts := integrationtest.NewTestServer(t,
 		func(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
@@ -53,9 +44,9 @@ func TestFinanceRoutes_Unauthenticated(t *testing.T) {
 			case http.MethodGet:
 				resp = ts.Get(t, tt.path, "")
 			case http.MethodPost:
-				resp = ts.Post(t, tt.path, "", "")
+				resp = ts.Post(t, tt.path, nil, "")
 			case http.MethodPut:
-				resp = ts.Put(t, tt.path, "", "")
+				resp = ts.Put(t, tt.path, nil, "")
 			case http.MethodDelete:
 				resp = ts.Delete(t, tt.path, "")
 			}
@@ -94,7 +85,7 @@ func TestFinanceRoutes_AccountCRUD(t *testing.T) {
 		"balance":      10000.00,
 	}
 
-	resp := ts.Post(t, "/api/v1/finance/accounts", mustJSON(createBody), token)
+	resp := ts.Post(t, "/api/v1/finance/accounts", createBody, token)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -159,7 +150,7 @@ func TestFinanceRoutes_AccountCRUD(t *testing.T) {
 	updateBody := map[string]interface{}{
 		"name": newName,
 	}
-	resp = ts.Put(t, "/api/v1/finance/accounts/"+dbtest.IToA(accountID), mustJSON(updateBody), token)
+	resp = ts.Put(t, "/api/v1/finance/accounts/"+dbtest.IToA(accountID), updateBody, token)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -205,7 +196,7 @@ func TestFinanceRoutes_CreateAccount_InvalidInput(t *testing.T) {
 	// Missing required name and account_type
 	body := map[string]interface{}{}
 
-	resp := ts.Post(t, "/api/v1/finance/accounts", mustJSON(body), token)
+	resp := ts.Post(t, "/api/v1/finance/accounts", body, token)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusBadRequest {
