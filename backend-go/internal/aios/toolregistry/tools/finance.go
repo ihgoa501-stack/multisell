@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -27,6 +28,13 @@ func FinanceTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"finance:read:profit"},
 			RiskLevel:           toolregistry.RiskMedium,
 			MaxDuration:         15 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":   "ok",
+					"message":  "stub: 单笔利润计算功能尚在实现中，将在后续版本上线",
+					"order_id": input["order_id"],
+				}, nil
+			},
 		},
 		{
 			Name:        "finance.profit.summary",
@@ -51,6 +59,14 @@ func FinanceTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"finance:read:profit"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         15 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":     "ok",
+					"message":    "stub: 利润汇总功能尚在实现中，将在后续版本上线",
+					"start_date": input["start_date"],
+					"end_date":   input["end_date"],
+				}, nil
+			},
 		},
 		{
 			Name:        "finance.settlement.import",
@@ -78,6 +94,13 @@ func FinanceTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"finance:write:settlement"},
 			RiskLevel:           toolregistry.RiskHigh,
 			MaxDuration:         60 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":   "ok",
+					"message":  "stub: 结算单导入功能尚在实现中，将在后续版本上线",
+					"platform": input["platform"],
+				}, nil
+			},
 		},
 		{
 			Name:        "finance.settlement.reconcile",
@@ -99,6 +122,13 @@ func FinanceTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"finance:write:settlement"},
 			RiskLevel:           toolregistry.RiskHigh,
 			MaxDuration:         60 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":        "ok",
+					"message":       "stub: 结算对账功能尚在实现中，将在后续版本上线",
+					"settlement_id": input["settlement_id"],
+				}, nil
+			},
 		},
 	}
 }

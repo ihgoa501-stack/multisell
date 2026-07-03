@@ -531,6 +531,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Agent routes (wired through the AI orchestrator)
 	agent.RegisterRoutes(protected, db, logger, aiOrch)
 
+	// AIOS routes (tool registry, runtime, guardrails health)
+	setup.RegisterAIOSRoutes(protected, aiosCfg)
+
 	// AgentOS routes
 	agentos.RegisterRoutes(protected, db, logger)
 

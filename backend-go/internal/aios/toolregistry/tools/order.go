@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -27,6 +28,14 @@ func OrderTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"order:read:order"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":             "ok",
+					"message":            "stub: 订单查询功能尚在实现中，将在后续版本上线",
+					"order_id":           input["order_id"],
+					"platform_order_no":  input["platform_order_no"],
+				}, nil
+			},
 		},
 		{
 			Name:        "order.modify_address",
@@ -54,6 +63,13 @@ func OrderTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"order:write:address"},
 			RiskLevel:           toolregistry.RiskHigh,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":   "ok",
+					"message":  "stub: 订单地址修改功能尚在实现中，将在后续版本上线",
+					"order_id": input["order_id"],
+				}, nil
+			},
 		},
 		{
 			Name:        "order.modify_logistics",
@@ -76,6 +92,13 @@ func OrderTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"order:write:logistics"},
 			RiskLevel:           toolregistry.RiskHigh,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":   "ok",
+					"message":  "stub: 物流方式修改功能尚在实现中，将在后续版本上线",
+					"order_id": input["order_id"],
+				}, nil
+			},
 		},
 		{
 			Name:        "order.split",
@@ -108,6 +131,13 @@ func OrderTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"order:write:split"},
 			RiskLevel:           toolregistry.RiskHigh,
 			MaxDuration:         15 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":   "ok",
+					"message":  "stub: 订单拆分功能尚在实现中，将在后续版本上线",
+					"order_id": input["order_id"],
+				}, nil
+			},
 		},
 		{
 			Name:        "order.merge",
@@ -132,6 +162,13 @@ func OrderTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"order:write:merge"},
 			RiskLevel:           toolregistry.RiskHigh,
 			MaxDuration:         15 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":   "ok",
+					"message":  "stub: 订单合并功能尚在实现中，将在后续版本上线",
+					"order_ids": input["order_ids"],
+				}, nil
+			},
 		},
 	}
 }

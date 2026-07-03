@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -45,6 +46,14 @@ func ProductScoutTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"growth:read:product_scout"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":      "ok",
+					"message":     "stub: 选品评分功能尚在实现中，将在后续版本上线",
+					"category":    input["category"],
+					"marketplace": input["marketplace"],
+				}, nil
+			},
 		},
 		{
 			Name:        "market_analysis",
@@ -68,6 +77,13 @@ func ProductScoutTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"growth:read:market_analysis"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":   "ok",
+					"message":  "stub: 市场分析功能尚在实现中，将在后续版本上线",
+					"category": input["category"],
+				}, nil
+			},
 		},
 	}
 }

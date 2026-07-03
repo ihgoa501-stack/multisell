@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -43,6 +44,13 @@ func AdAdviceTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"ad:read:acos"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         5 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":      "ok",
+					"message":     "stub: ACoS分析功能尚在实现中，将在后续版本上线",
+					"campaign_id": input["campaign_id"],
+				}, nil
+			},
 		},
 		{
 			Name:        "ad.optimize",
@@ -81,6 +89,13 @@ func AdAdviceTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"ad:write:optimize"},
 			RiskLevel:           toolregistry.RiskMedium,
 			MaxDuration:         5 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":      "ok",
+					"message":     "stub: 广告优化功能尚在实现中，将在后续版本上线",
+					"campaign_id": input["campaign_id"],
+				}, nil
+			},
 		},
 	}
 }
