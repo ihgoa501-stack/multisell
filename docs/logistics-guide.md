@@ -198,3 +198,29 @@ Shipping Service.QuoteUnified()
 - **needs_approval**: 是否需要审批（高风险操作需要）
 
 ⚠️ A10 建议仅为建议，不自动修改订单/物流/价格/库存。
+
+---
+
+## Phase 6: 履约工作台 Fulfillment Cockpit（2026-07-03）
+
+### 新增 API 端点
+
+| 端点 | 方法 | 用途 |
+|------|------|------|
+| `GET /api/v1/shipping/snapshots` | 分页 | 订单运费快照列表 |
+| `GET /api/v1/shipping/tracking` | 分页 | 运单追踪列表 |
+
+### 工作台视图
+
+前端路径：`frontend-next/src/app/(main)/fulfillment/page.tsx`
+
+1. **订单运费快照 Tab** — 调用 `GET /api/v1/shipping/snapshots?page=1&size=50`，展示订单级运费明细
+2. **账单对账异常 Tab** — 调用 `GET /api/v1/shipping/bill-batches` 列批次，点击批次后 `GET /api/v1/shipping/bill-batches/:id/anomalies` 看差异明细
+3. **履约追踪 Tab** — 调用 `GET /api/v1/shipping/tracking?page=1&size=50`，展示运单号、状态、异常标记
+4. **承运商绩效 Tab** — 调用 `GET /api/v1/shipping/carrier-performance`，展示 KPI 卡片 + 绩效表格
+
+### 限制说明
+
+- 工作台为只读查看，不含发货、改单、定价等操作
+- 所有数据均为系统内部记录或 mock/sandbox 数据
+- 如需复核账单，可通过 `PUT /api/v1/shipping/bill-items/:id/review` 更新复核状态

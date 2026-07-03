@@ -577,6 +577,41 @@ A10 输出：
 - [ ] 阶段 4：承运商绩效评分（按国家、品类维度）
 - [ ] 阶段 5：真实物流商 API（面单、创建物流单、查询轨迹）
 
+---
+
+## Phase 6 实施状态（2026-07-03）
+
+### 已完成
+
+- [x] **履约工作台 Fulfillment Cockpit**：新增前端页面 `frontend-next/src/app/(main)/fulfillment/page.tsx`，包含 4 个视图 Tab。
+- [x] **订单运费快照视图**：查看订单运费快照列表（`GET /shipping/snapshots`），展示计费重、基础运费、附加费、燃油费、规则版本、触发来源。
+- [x] **账单对账异常视图**：查看账单批次列表和对应异常的详细差异（`GET /shipping/bill-batches` + `GET /shipping/bill-batches/:id/anomalies`）。支持 `PUT /shipping/bill-items/:id/review` 复核。
+- [x] **履约追踪视图**：查看运单列表（`GET /shipping/tracking`），包括运单号、承运商、物流状态、丢件/退件/破损标记。
+- [x] **承运商绩效视图**：查看各承运商的准时率、丢件率、退件率、破损率、账单偏差率、综合评分（`GET /shipping/carrier-performance`）。
+- [x] **轻量只读列表 API**：新增 `GET /shipping/snapshots` 和 `GET /shipping/tracking` 分页列表。
+- [x] **Sidebar 菜单**："订单与履约" 组新增「履约中枢」菜单项（标记 `sandbox`）。
+- [x] **Mock/Sandbox 标记**：全页面明确标注 "mock/sandbox，非生产发货"。
+- [x] **高风险按钮禁用**：工作台不包含任何发货、改单、定价等高风险动作按钮。
+- [x] **验证**：`go vet` 通过，`go test` 17 个测试通过，`npm run lint` 无新增错误，`npm run build` 通过。
+
+### 未完成（后续阶段）
+
+- [ ] 阶段 7：A10 Agent 建议嵌入工作台视图
+- [ ] 阶段 7：对接真实物流商 tracking API
+- [ ] 阶段 7：按国家、品类维度展示承运商绩效
+
+### 涉及的文件（Phase 6）
+
+| 文件 | 变更 |
+|------|------|
+| `backend-go/internal/domain/shipping/service.go` | 新增 `ListSnapshots`、`ListTracking` 服务方法 |
+| `backend-go/internal/domain/shipping/handler.go` | 新增 `ListSnapshots`、`ListTracking` 处理器 |
+| `backend-go/internal/domain/shipping/routes.go` | 注册 `GET /shipping/snapshots`、`GET /shipping/tracking` 路由 |
+| `frontend-next/src/app/(main)/fulfillment/page.tsx` | 新增履约工作台页面（含 4 个 Tab） |
+| `frontend-next/src/config/menu.ts` | 新增「履约中枢」菜单项 |
+| `docs/features/fulfillment-intelligence-os.md` | 更新 |
+| `docs/logistics-guide.md` | 更新 |
+
 ### 明确排除
 
 - ❌ 不接入真实物流商生产 API

@@ -1025,6 +1025,20 @@ func (s *Service) GetSnapshotByOrderID(orderID int64) (*SalesOrderShippingSnapsh
 	return &snap, nil
 }
 
+// ListSnapshots returns paginated shipping snapshots.
+func (s *Service) ListSnapshots(c *common.Pagination) ([]SalesOrderShippingSnapshot, int64, error) {
+	var items []SalesOrderShippingSnapshot
+	var total int64
+	q := s.db.Model(&SalesOrderShippingSnapshot{})
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := q.Order("id DESC").Offset(c.Offset()).Limit(c.Size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // ReconcileBillBatch matches bill items to order shipping snapshots and computes variances.
 func (s *Service) ReconcileBillBatch(batchID int64) (*BillReconciliationResult, error) {
 	var items []ShippingBillItem
@@ -1176,6 +1190,20 @@ func (s *Service) GetTrackingByOrderID(orderID int64) (*FulfillmentTracking, err
 		return nil, err
 	}
 	return &t, nil
+}
+
+// ListTracking returns paginated fulfillment tracking records.
+func (s *Service) ListTracking(c *common.Pagination) ([]FulfillmentTracking, int64, error) {
+	var items []FulfillmentTracking
+	var total int64
+	q := s.db.Model(&FulfillmentTracking{})
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := q.Order("id DESC").Offset(c.Offset()).Limit(c.Size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 func (s *Service) UpdateTrackingEvent(trackingID int64, event TrackingEvent, status string) (*FulfillmentTracking, error) {
