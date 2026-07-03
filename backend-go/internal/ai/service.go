@@ -175,7 +175,7 @@ func (s *Service) RejectAction(id int64, operator, reason string) (*UnifiedActio
 	}, "suggested", "pending")
 }
 
-// ExecuteAction transitions an action through "executing" → "executed" and
+// ExecuteAction transitions an action through "executing" → "executed"/"failed" and
 // dispatches the underlying business command via the CommandDispatcher.
 //
 // For low-risk auto-approved actions (RequiresApproval=false) this can be
@@ -213,6 +213,9 @@ func (s *Service) ExecuteAction(id int64, operator, _ string) (*UnifiedAction, e
 	}
 
 	// Dispatch through CommandDispatcher to execute real business logic.
+	// The cmd field may be nil; in that case the command is not dispatched
+	// but the action still transitions to "executed" (the caller has opted
+	// out of command dispatch entirely, not just this command).
 	var execErr error
 	var cmdResult *command.Result
 	if s.cmd != nil {

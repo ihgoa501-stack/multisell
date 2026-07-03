@@ -116,4 +116,6 @@ func (tc ToolCall) Validate() error {
 
 // ErrMutationRequiresApproval is returned when a production mutation tool call
 // is attempted without a valid approval ID.
+// NOTE: toolregistry also defines ErrMutationRequiresApproval; these are
+// separate packages. Use the one from your import context.
 var ErrMutationRequiresApproval = errors.New("toolbridge: mutation tools require approval in production mode")

@@ -46,9 +46,9 @@ func (s *stubProvider) Name() string { return "stub" }
 
 func (s *stubProvider) Chat(_ context.Context, req *llmgateway.Request) (*llmgateway.Response, error) {
 	return &llmgateway.Response{
-		Content: "stub response for " + req.AgentID,
+		Content:   "stub response for " + req.AgentID,
 		ModelUsed: "stub-v1",
-		Cached:  false,
+		Cached:    false,
 	}, nil
 }
 
@@ -58,11 +58,13 @@ func (s *stubProvider) Chat(_ context.Context, req *llmgateway.Request) (*llmgat
 // into the existing Go backend — call RegisterAIOSRoutes and
 // SetupSchedulerAgentTriggers with it.
 func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
-	// 1. Create ToolRegistry and register all domain tools.
+	// 1. Create ToolRegistry and register all domain tools, then
+	//    add the production approval gate hook.
 	reg := toolregistry.NewToolRegistry(logger)
 	for _, t := range tools.AllTools() {
 		reg.Register(&t)
 	}
+	reg.AddHook(toolregistry.NewApprovalCheckHook())
 	toolregistry.DefaultRegistry = reg
 	tools.SetAftersalesDB(db)
 

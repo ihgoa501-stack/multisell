@@ -8,6 +8,7 @@ package toolregistry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -24,6 +25,24 @@ const (
 	RiskHigh RiskLevel = "high"
 	// RiskCritical indicates financial, legal, or system-critical operations.
 	RiskCritical RiskLevel = "critical"
+)
+
+// IsMutationRisk returns true if the risk level suggests a tool that modifies
+// state — i.e. RiskHigh or RiskCritical.
+func (r RiskLevel) IsMutationRisk() bool {
+	return r == RiskHigh || r == RiskCritical
+}
+
+// ErrMutationRequiresApproval is returned when a mutation-level tool is
+// executed in production mode without a valid approval ID.
+var ErrMutationRequiresApproval = errors.New("toolregistry: mutation tools require approval in production mode")
+
+// contextKey is an unexported type for context value keys to avoid collisions.
+type contextKey int
+
+const (
+	executionModeKey contextKey = iota
+	approvalIDKey
 )
 
 // Schema represents a simplified JSON Schema definition for tool parameters
