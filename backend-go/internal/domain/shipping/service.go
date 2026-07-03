@@ -296,24 +296,24 @@ func (s *Service) ListRules(c *common.Pagination, channelID *int64) ([]ShippingQ
 
 func (s *Service) CreateRule(in *CreateQuoteRuleInput) (*ShippingQuoteRule, error) {
 	r := ShippingQuoteRule{
-		ChannelID:          in.ChannelID,
-		ZoneID:             in.ZoneID,
-		RuleType:           in.RuleType,
-		Priority:           0,
-		MinWeightKg:        in.MinWeightKg,
-		MaxWeightKg:        in.MaxWeightKg,
-		FirstKg:            in.FirstKg,
-		FirstPrice:         in.FirstPrice,
-		AdditionalKg:       in.AdditionalKg,
-		AdditionalPrice:    in.AdditionalPrice,
-		FixedFee:           in.FixedFee,
+		ChannelID:         in.ChannelID,
+		ZoneID:            in.ZoneID,
+		RuleType:          in.RuleType,
+		Priority:          0,
+		MinWeightKg:       in.MinWeightKg,
+		MaxWeightKg:       in.MaxWeightKg,
+		FirstKg:           in.FirstKg,
+		FirstPrice:        in.FirstPrice,
+		AdditionalKg:      in.AdditionalKg,
+		AdditionalPrice:   in.AdditionalPrice,
+		FixedFee:          in.FixedFee,
 		PerKgPrice:        in.PerKgPrice,
-		MinimumCharge:      in.MinimumCharge,
-		TierConfig:         in.TierConfig,
+		MinimumCharge:     in.MinimumCharge,
+		TierConfig:        in.TierConfig,
 		SurchargeFixed:    in.SurchargeFixed,
 		FuelSurchargePct:  in.FuelSurchargePct,
 		RoundingIncrement: in.RoundingIncrement,
-		Remark:             in.Remark,
+		Remark:            in.Remark,
 	}
 	if in.Priority != nil {
 		r.Priority = *in.Priority
@@ -397,7 +397,6 @@ func (s *Service) DeleteBillBatch(id int64) error {
 	return nil
 }
 
-
 // ImportBillCSV parses a carrier bill CSV and creates batch + items.
 func (s *Service) ImportBillCSV(data []byte, filename, createdBy string) (*ShippingBillBatch, error) {
 	reader := csv.NewReader(strings.NewReader(string(data)))
@@ -422,14 +421,14 @@ func (s *Service) ImportBillCSV(data []byte, filename, createdBy string) (*Shipp
 	var items []ShippingBillItem
 	for i, row := range records[1:] {
 		item := ShippingBillItem{
-			BatchID:               batch.ID,
-			RowNumber:             i + 1,
-			ReconciliationStatus:  "unmatched_bill",
-			OrderNo:               col(row, 0),
-			TrackingNumber:        col(row, 1),
-			ProviderName:          col(row, 2),
-			ChannelName:           col(row, 3),
-			DestinationCountry:    col(row, 4),
+			BatchID:              batch.ID,
+			RowNumber:            i + 1,
+			ReconciliationStatus: "unmatched_bill",
+			OrderNo:              col(row, 0),
+			TrackingNumber:       col(row, 1),
+			ProviderName:         col(row, 2),
+			ChannelName:          col(row, 3),
+			DestinationCountry:   col(row, 4),
 		}
 		if v := col(row, 5); v != "" {
 			if f, err := strconv.ParseFloat(v, 64); err == nil {
@@ -508,12 +507,12 @@ func (s *Service) Quote(req *QuoteRequest) (*QuoteResponse, error) {
 	if req.Mode == "sku" && req.SkuID != nil {
 		// Load SKU package info
 		var sku struct {
-			ProductID      int64   `gorm:"column:product_id"`
-			SkuWeightKg    *float64 `gorm:"column:sku_weight_kg"`
-			SkuLengthCm    *float64 `gorm:"column:sku_length_cm"`
-			SkuWidthCm     *float64 `gorm:"column:sku_width_cm"`
-			SkuHeightCm    *float64 `gorm:"column:sku_height_cm"`
-			Weight         *float64 `gorm:"column:weight"`
+			ProductID   int64    `gorm:"column:product_id"`
+			SkuWeightKg *float64 `gorm:"column:sku_weight_kg"`
+			SkuLengthCm *float64 `gorm:"column:sku_length_cm"`
+			SkuWidthCm  *float64 `gorm:"column:sku_width_cm"`
+			SkuHeightCm *float64 `gorm:"column:sku_height_cm"`
+			Weight      *float64 `gorm:"column:weight"`
 		}
 		if err := s.db.Table("sku").Select("product_id, sku_weight_kg, sku_length_cm, sku_width_cm, sku_height_cm, weight").
 			Where("id = ?", *req.SkuID).Scan(&sku).Error; err != nil {
@@ -543,10 +542,10 @@ func (s *Service) Quote(req *QuoteRequest) (*QuoteResponse, error) {
 		// Fall back to product packaging if SKU packaging incomplete
 		if lengthCm == 0 || widthCm == 0 || heightCm == 0 {
 			var prod struct {
-				PackageLengthCm  *float64 `gorm:"column:package_length_cm"`
-				PackageWidthCm   *float64 `gorm:"column:package_width_cm"`
-				PackageHeightCm  *float64 `gorm:"column:package_height_cm"`
-				PackageWeightKg  *float64 `gorm:"column:package_weight_kg"`
+				PackageLengthCm *float64 `gorm:"column:package_length_cm"`
+				PackageWidthCm  *float64 `gorm:"column:package_width_cm"`
+				PackageHeightCm *float64 `gorm:"column:package_height_cm"`
+				PackageWeightKg *float64 `gorm:"column:package_weight_kg"`
 			}
 			s.db.Table("product").Select("package_length_cm, package_width_cm, package_height_cm, package_weight_kg").
 				Where("id = ?", sku.ProductID).Scan(&prod)
@@ -658,10 +657,10 @@ func (s *Service) Quote(req *QuoteRequest) (*QuoteResponse, error) {
 
 		results = append(results, QuoteResult{
 			ChannelID:          ch.ID,
-			ChannelName:         ch.Name,
-			ProviderName:        providerName,
+			ChannelName:        ch.Name,
+			ProviderName:       providerName,
 			ActualWeightKg:     roundTo(totalActualWeight, 4),
-			VolumetricWeightKg:  roundTo(volumetricWeight, 4),
+			VolumetricWeightKg: roundTo(volumetricWeight, 4),
 			ChargeableWeightKg: roundTo(rounded, 4),
 			BaseShippingFee:    roundTo(baseFee, 2),
 			SurchargeFee:       roundTo(surcharge, 2),
@@ -721,9 +720,9 @@ func applyRule(rule *ShippingQuoteRule, chargeableWeight float64) float64 {
 			return 0
 		}
 		var tiers []struct {
-			MinKg  *float64 `json:"min_kg"`
-			MaxKg  *float64 `json:"max_kg"`
-			Price  *float64 `json:"price"`
+			MinKg *float64 `json:"min_kg"`
+			MaxKg *float64 `json:"max_kg"`
+			Price *float64 `json:"price"`
 		}
 		if err := json.Unmarshal(rule.TierConfig, &tiers); err != nil {
 			return 0
@@ -963,14 +962,14 @@ func (s *Service) CreateSnapshot(in *CreateSnapshotInput) (*SalesOrderShippingSn
 	snap := SalesOrderShippingSnapshot{
 		OrderID: in.OrderID, SkuID: in.SkuID, Quantity: in.Quantity,
 		DestinationCountry: in.DestinationCountry, PostalCode: in.PostalCode, CargoType: in.CargoType,
-		PackageSource: in.PackageSource,
+		PackageSource:   in.PackageSource,
 		PackageLengthCm: in.PackageLengthCm, PackageWidthCm: in.PackageWidthCm, PackageHeightCm: in.PackageHeightCm,
 		PackageWeightKg: in.PackageWeightKg,
-		ProviderID: in.ProviderID, ProviderName: in.ProviderName, ChannelID: in.ChannelID, ChannelName: in.ChannelName,
-		Currency: in.Currency,
+		ProviderID:      in.ProviderID, ProviderName: in.ProviderName, ChannelID: in.ChannelID, ChannelName: in.ChannelName,
+		Currency:       in.Currency,
 		ActualWeightKg: in.ActualWeightKg, VolumetricWeightKg: in.VolumetricWeightKg,
 		ChargeableWeightKg: in.ChargeableWeightKg,
-		BaseShippingFee: in.BaseShippingFee, SurchargeFee: in.SurchargeFee, FuelSurchargeFee: in.FuelSurchargeFee,
+		BaseShippingFee:    in.BaseShippingFee, SurchargeFee: in.SurchargeFee, FuelSurchargeFee: in.FuelSurchargeFee,
 		TotalShippingFee: in.TotalShippingFee, CalculationDetail: in.CalculationDetail,
 		RuleVersionID: in.RuleVersionID, RuleVersion: in.RuleVersion,
 		QuotedBy: in.QuotedBy, SourceTrigger: in.SourceTrigger,
@@ -1252,12 +1251,12 @@ func (s *Service) GetCarrierPerformance(daysBack int) ([]CarrierPerformanceStats
 	var results []CarrierPerformanceStats
 	for _, tr := range trackRows {
 		st := CarrierPerformanceStats{
-			ProviderName: tr.CarrierName,
-			TotalOrders:  tr.Total,
-			OnTimeCount:  tr.OnTime,
-			LostCount:    tr.Lost,
+			ProviderName:  tr.CarrierName,
+			TotalOrders:   tr.Total,
+			OnTimeCount:   tr.OnTime,
+			LostCount:     tr.Lost,
 			ReturnedCount: tr.Returned,
-			DamagedCount: tr.Damaged,
+			DamagedCount:  tr.Damaged,
 		}
 		if tr.Total > 0 {
 			st.OnTimeRate = roundTo(float64(tr.OnTime)/float64(tr.Total)*100, 1)
