@@ -317,6 +317,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// event to the operation_log for the full audit trail.
 	// -------------------------------------------------------
 	auditSvc := operationlog.NewService(db, logger)
+
+	mutationGuard := eventbus.NewMutationGuard(logger, &auditAdapter{svc: auditSvc})
+
 	bus.Subscribe("agent.decided.*", approval.NewAgentDecisionSubscriber(db, logger, auditSvc))
 	bus.Subscribe("agent.decided.**", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
@@ -541,41 +544,37 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	purchase.RegisterRoutes(protected, db, logger, bus)
 
 	// Supply chain event: purchase order received → auto-increment inventory.
-	// GUARDRAIL (enforceable): mutation recorded in operation_log.
+	// GUARDRAIL (mutation guard): audited via MutationGuard, registered as system.inventory.receive.
 	// Idempotency delegated to supply chain orchestrator via order_no.
-	bus.Subscribe("supplychain.order.received", func(ctx context.Context, evt eventbus.Event) error {
-		payload := evt.Payload
-		invSvc := inventory.NewService(db, logger)
-		items, ok := payload["items"].([]interface{})
-		if !ok {
-			return nil
-		}
-		orderNo, _ := payload["order_no"].(string)
-		_ = auditSvc.LogStructured(&operationlog.StructuredLogInput{
-			Module:      "supplychain",
-			Action:      "inventory.received",
-			ResourceID:  orderNo,
-			Operator:    "system:supplychain",
-			Content:     "inventory mutation via supplychain.order.received, correlation=" + eventbus.CorrelationIDFromContext(ctx),
-			Result:      "executed",
-			TriggerType: "eventbus",
-		})
-		for _, item := range items {
-			m, ok := item.(map[string]interface{})
+	bus.Subscribe("supplychain.order.received",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.inventory.receive",
+			Domain:       "inventory",
+			Description:  "采购入库确认后自动增加对应 SKU 的库存数量",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			payload := evt.Payload
+			invSvc := inventory.NewService(db, logger)
+			items, ok := payload["items"].([]interface{})
 			if !ok {
-				continue
+				return nil
 			}
-			skuID := int64(m["sku_id"].(float64))
-			qty := int(m["qty"].(float64))
-			inv, err := invSvc.GetBySkuID(ctx, skuID)
-			if err != nil {
-				logger.Warn("supplychain: inventory not found for sku", zap.Int64("sku_id", skuID), zap.Error(err))
-				continue
+			orderNo, _ := payload["order_no"].(string)
+			for _, item := range items {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				skuID := int64(m["sku_id"].(float64))
+				qty := int(m["qty"].(float64))
+				inv, err := invSvc.GetBySkuID(ctx, skuID)
+				if err != nil {
+					logger.Warn("supplychain: inventory not found for sku", zap.Int64("sku_id", skuID), zap.Error(err))
+					continue
+				}
+				_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "采购入库: "+orderNo)
 			}
-			_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "采购入库: "+orderNo)
-		}
-		return nil
-	})
+			return nil
+		}))
 	// sourcing.recommend (A8) -> A2 listing_optimize for high-score products
 	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
 		// Process recommendation through the handler (logging, etc.)
@@ -598,31 +597,27 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	})
 
 	// Supply chain event: after-sale completed → auto-adjust inventory.
-	// GUARDRAIL (enforceable): mutation recorded in operation_log.
+	// GUARDRAIL (mutation guard): audited via MutationGuard, registered as system.inventory.aftersale_restock.
 	// Idempotency delegated to aftersale orchestrator via return order dedup.
-	bus.Subscribe("supplychain.aftersale.completed", func(ctx context.Context, evt eventbus.Event) error {
-		payload := evt.Payload
-		invSvc := inventory.NewService(db, logger)
-		skuID := int64(payload["sku_id"].(float64))
-		qty := int(payload["quantity"].(float64))
-		inv, err := invSvc.GetBySkuID(ctx, skuID)
-		if err != nil {
-			logger.Warn("supplychain: inventory not found for sku in aftersale", zap.Int64("sku_id", skuID), zap.Error(err))
+	bus.Subscribe("supplychain.aftersale.completed",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.inventory.aftersale_restock",
+			Domain:       "inventory",
+			Description:  "售后入库: 退货完成后自动增加对应 SKU 的库存数量",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			payload := evt.Payload
+			invSvc := inventory.NewService(db, logger)
+			skuID := int64(payload["sku_id"].(float64))
+			qty := int(payload["quantity"].(float64))
+			inv, err := invSvc.GetBySkuID(ctx, skuID)
+			if err != nil {
+				logger.Warn("supplychain: inventory not found for sku in aftersale", zap.Int64("sku_id", skuID), zap.Error(err))
+				return nil
+			}
+			// Aftersales restock adds stock back to inventory
+			_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "售后入库")
 			return nil
-		}
-		// Aftersales restock adds stock back to inventory
-		_ = auditSvc.LogStructured(&operationlog.StructuredLogInput{
-			Module:      "supplychain",
-			Action:      "inventory.aftersale_restock",
-			ResourceID:  fmt.Sprintf("%d", skuID),
-			Operator:    "system:aftersale",
-			Content:     "inventory mutation via supplychain.aftersale.completed, correlation=" + eventbus.CorrelationIDFromContext(ctx),
-			Result:      "executed",
-			TriggerType: "eventbus",
-		})
-		_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "售后入库")
-		return nil
-	})
+		}))
 
 	// Supply chain event: after-sale return initiated -> create reverse logistics flow
 	bus.Subscribe("supplychain.aftersale.returned", func(ctx context.Context, evt eventbus.Event) error {
@@ -870,6 +865,26 @@ func runAgentWithTimeout(orch *ai.Orchestrator, agentID, decisionPoint string, c
 		Context:       ctx,
 	})
 	return err
+}
+
+// auditAdapter bridges eventbus.MutationAuditInput -> operationlog.StructuredLogInput.
+type auditAdapter struct {
+	svc *operationlog.Service
+}
+
+func (a *auditAdapter) LogStructured(input *eventbus.MutationAuditInput) error {
+	if a == nil || a.svc == nil {
+		return nil
+	}
+	return a.svc.LogStructured(&operationlog.StructuredLogInput{
+		Module:      input.Module,
+		Action:      input.Action,
+		ResourceID:  input.ResourceID,
+		Operator:    input.Operator,
+		Content:     input.Content,
+		Result:      input.Result,
+		TriggerType: input.TriggerType,
+	})
 }
 
 // ── Extension WebSocket adapter types ────────────────────────────────
