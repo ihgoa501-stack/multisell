@@ -72,6 +72,60 @@ type OrderDetail struct {
 	StatusLogs []OrderStatusLog `json:"status_logs"`
 }
 
+// OrderResponse is the public API representation of an order, excluding internal financial data.
+type OrderResponse struct {
+	ID              int64      `json:"id"`
+	OrderNo         string     `json:"order_no"`
+	PlatformID      *int64     `json:"platform_id,omitempty"`
+	Status          string     `json:"status"`
+	TrackingNumber  string     `json:"tracking_number"`
+	RecipientName   string     `json:"recipient_name"`
+	RecipientPhone  string     `json:"recipient_phone"`
+	ShippingAddress string     `json:"shipping_address"`
+	TotalAmount     float64    `json:"total_amount"`
+	ShippingFee     float64    `json:"shipping_fee"`
+	PayAmount       float64    `json:"pay_amount"`
+	PaymentMethod   string     `json:"payment_method"`
+	Remark          string     `json:"remark"`
+	PaidAt          *time.Time `json:"paid_at,omitempty"`
+	ShippedAt       *time.Time `json:"shipped_at,omitempty"`
+	DeliveredAt     *time.Time `json:"delivered_at,omitempty"`
+	CancelledAt     *time.Time `json:"cancelled_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// OrderDetailResponse is the public composite detail payload.
+type OrderDetailResponse struct {
+	Order      OrderResponse    `json:"order"`
+	Items      []OrderItem      `json:"items"`
+	StatusLogs []OrderStatusLog `json:"status_logs"`
+}
+
+func orderToResponse(o Order) OrderResponse {
+	return OrderResponse{
+		ID:              o.ID,
+		OrderNo:         o.OrderNo,
+		PlatformID:      o.PlatformID,
+		Status:          o.Status,
+		TrackingNumber:  o.TrackingNumber,
+		RecipientName:   o.RecipientName,
+		RecipientPhone:  o.RecipientPhone,
+		ShippingAddress: o.ShippingAddress,
+		TotalAmount:     o.TotalAmount,
+		ShippingFee:     o.ShippingFee,
+		PayAmount:       o.PayAmount,
+		PaymentMethod:   o.PaymentMethod,
+		Remark:          o.Remark,
+		PaidAt:          o.PaidAt,
+		ShippedAt:       o.ShippedAt,
+		DeliveredAt:     o.DeliveredAt,
+		CancelledAt:     o.CancelledAt,
+		CreatedAt:       o.CreatedAt,
+		UpdatedAt:       o.UpdatedAt,
+	}
+}
+
 // CreateOrderInput is the payload for POST /order.
 type CreateOrderInput struct {
 	OrderNo        string  `json:"order_no" binding:"required"`

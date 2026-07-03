@@ -34,3 +34,67 @@ groups:
           summary: "Dead-letter queue is not empty"
           description: "DLQ has {{ $value }} messages — inspect eventbus handlers"
 # ponytail: DB pool exhaustion via pg_stat_activity exporter, add when deployed.
+
+      # ── AI Pipeline alerts ──────────────────────────────────────────────
+
+      - alert: EventBusQueueBackpressure
+        expr: |
+          multisell_events_queue_depth{priority="0"} > 200
+          or multisell_events_queue_depth{priority="1"} > 100
+          or multisell_events_queue_depth{priority="2"} > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EventBus queue backpressure (priority {{ $labels.priority }})"
+          description: "Priority {{ $labels.priority }} queue at {{ $value }} events (>80% buffer) — handlers may be slow or blocked"
+
+      - alert: SchedulerPublishErrors
+        expr: rate(multisell_scheduler_tick_errors_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler tick publishing failing"
+          description: "Scheduler is failing to publish tick events — agent scheduling may be degraded"
+
+      - alert: AgentHandlerErrors
+        expr: rate(multisell_events_handler_errors_total{topic=~"scheduler\\.tick\\..*"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent handler errors on scheduler tick topics"
+          description: "Handler errors on agent scheduler ticks — LLM/agent execution failures may be occurring"
+# ponytail: uses handler errors on scheduler.tick.* topics as proxy for LLM failures. No direct multisell_llm_errors_total metric exists — add one when AI pipeline needs exact error tracking.
+
+      - alert: AgentHeartbeatMissed
+        expr: multisell_agent_missed_heartbeats > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} missed {{ $value }} heartbeats"
+          description: "Agent {{ $labels.agent_id }} has missed {{ $value }} consecutive heartbeats — may be unresponsive"
+
+      - alert: AgentInstanceDown
+        expr: multisell_agent_instance_state == 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} stopped"
+          description: "Agent {{ $labels.agent_id }} instance is in Stopped state — investigate immediately"
+# ponytail: ToolBridge has no Prometheus metrics, so no timeout alerts. Add tool_execution_duration_seconds + tool_execution_errors_total when needed.
+
+      - alert: SentryErrorSpike
+        expr: |
+          rate(multisell_http_requests_total{status=~"5.."}[5m])
+          > 3 * rate(multisell_http_requests_total{status=~"5.."}[5m] offset 10m)
+          and rate(multisell_http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx error rate spike ({{ $value | humanizePercentage }})"
+          description: "5xx rate is 3x higher than 10 minutes ago — possible Sentry-worthy incident"

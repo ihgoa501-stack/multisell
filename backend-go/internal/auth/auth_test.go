@@ -115,7 +115,7 @@ func TestRegister_ShortPassword(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected short password error")
 	}
-	if !strings.Contains(err.Error(), "至少 6 位") {
+	if !strings.Contains(err.Error(), "至少 8 位") {
 		t.Fatalf("error = %v", err)
 	}
 }

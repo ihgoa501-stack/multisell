@@ -1,0 +1,1368 @@
+definitions:
+  github_com_lingmirror_backend-go_internal_response.PageResult:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+      page:
+        type: integer
+      size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_lingmirror_backend-go_internal_response.Result:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+  internal_ai.ChatInput:
+    properties:
+      agent_id:
+        type: string
+      context:
+        additionalProperties: true
+        type: object
+      message:
+        type: string
+      stream:
+        type: boolean
+    required:
+    - message
+    type: object
+  internal_ai.RunAgentRequest:
+    properties:
+      agent_id:
+        type: string
+      context:
+        additionalProperties: true
+        type: object
+      decision_point:
+        type: string
+      parent_trace_id:
+        type: string
+      stream:
+        type: boolean
+      user_id:
+        type: integer
+    required:
+    - agent_id
+    - decision_point
+    type: object
+  internal_auth.UserVO:
+    properties:
+      created_at:
+        type: string
+      display_name:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      last_login_at:
+        type: string
+      permissions:
+        items:
+          type: string
+        type: array
+      role:
+        type: string
+      status:
+        type: integer
+      username:
+        type: string
+    type: object
+  internal_auth.loginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  internal_auth.refreshRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  internal_auth.registerRequest:
+    properties:
+      display_name:
+        type: string
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+      role:
+        description: ignored on purpose — hardcoded in Register for security
+        type: string
+      username:
+        maxLength: 100
+        minLength: 3
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  internal_domain_candidate.CreateCandidateInput:
+    properties:
+      brand_id:
+        type: integer
+      category_id:
+        type: integer
+      collected_at:
+        type: string
+      completeness_status:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      destination_country:
+        type: string
+      hs_code:
+        type: string
+      images:
+        items:
+          type: integer
+        type: array
+      main_image:
+        type: string
+      origin_country:
+        type: string
+      package_height_cm:
+        type: number
+      package_length_cm:
+        type: number
+      package_weight_kg:
+        type: number
+      package_width_cm:
+        type: number
+      purchase_currency:
+        type: string
+      purchase_price:
+        type: number
+      raw_payload:
+        items:
+          type: integer
+        type: array
+      source_platform:
+        type: string
+      source_url:
+        type: string
+      spec_json:
+        items:
+          type: integer
+        type: array
+      status:
+        type: string
+      supplier_id:
+        type: integer
+      target_currency:
+        type: string
+      target_platform_id:
+        type: integer
+      target_sale_price:
+        type: number
+      title:
+        type: string
+    required:
+    - title
+    type: object
+  internal_domain_candidate.FillField:
+    properties:
+      field:
+        type: string
+      value: {}
+    required:
+    - field
+    - value
+    type: object
+  internal_domain_candidate.FillFieldsInput:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/internal_domain_candidate.FillField'
+        type: array
+    required:
+    - fields
+    type: object
+  internal_domain_candidate.UpdateCandidateInput:
+    properties:
+      brand_id:
+        type: integer
+      category_id:
+        type: integer
+      description:
+        type: string
+      destination_country:
+        type: string
+      hs_code:
+        type: string
+      images:
+        items:
+          type: integer
+        type: array
+      main_image:
+        type: string
+      origin_country:
+        type: string
+      package_height_cm:
+        type: number
+      package_length_cm:
+        type: number
+      package_weight_kg:
+        type: number
+      package_width_cm:
+        type: number
+      purchase_currency:
+        type: string
+      purchase_price:
+        type: number
+      spec_json:
+        items:
+          type: integer
+        type: array
+      status:
+        type: string
+      supplier_id:
+        type: integer
+      target_currency:
+        type: string
+      target_platform_id:
+        type: integer
+      target_sale_price:
+        type: number
+      title:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  internal_domain_integrations.PublishToOzonInput:
+    properties:
+      account_id:
+        type: integer
+      currency_code:
+        type: string
+      image_url:
+        type: string
+      price:
+        type: number
+      product_id:
+        type: integer
+    required:
+    - account_id
+    - price
+    - product_id
+    type: object
+  internal_domain_sku.Product:
+    properties:
+      ai_description:
+        type: string
+      ai_status:
+        type: string
+      ai_title:
+        type: string
+      brand_id:
+        type: integer
+      cargo_type:
+        type: string
+      category_id:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      images:
+        items:
+          type: integer
+        type: array
+      main_image:
+        type: string
+      name:
+        type: string
+      package_height_cm:
+        type: number
+      package_length_cm:
+        type: number
+      package_weight_kg:
+        type: number
+      package_width_cm:
+        type: number
+      platform_statuses:
+        items:
+          type: integer
+        type: array
+      product_height_cm:
+        type: number
+      product_length_cm:
+        type: number
+      product_weight_kg:
+        type: number
+      product_width_cm:
+        type: number
+      seo_keywords:
+        items:
+          type: integer
+        type: array
+      status:
+        type: integer
+      subtitle:
+        type: string
+      unit:
+        type: string
+      updated_at:
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /agentos:
+    get:
+      description: Get AgentOS cockpit dashboard overview
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: AgentOS overview
+      tags:
+      - agentos
+  /agentos/autonomy:
+    get:
+      description: Get the autonomy configuration and current level for all agents
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Agent autonomy status
+      tags:
+      - agentos
+  /agentos/status:
+    get:
+      description: Get the current runtime status of the AgentOS
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: AgentOS system status
+      tags:
+      - agentos
+  /agentos/work-items:
+    get:
+      description: Get pending work items from all agents
+      parameters:
+      - description: Max items (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by risk level
+        in: query
+        name: risk_level
+        type: string
+      - description: Filter by agent ID
+        in: query
+        name: agent_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: List work items
+      tags:
+      - agentos
+  /agentos/work-items/{id}:
+    get:
+      description: Get detail of a specific work item by ID
+      parameters:
+      - description: Work item ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Get work item detail
+      tags:
+      - agentos
+  /ai/agents:
+    get:
+      description: Get list of all registered AI agents
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Agent roster
+      tags:
+      - ai
+  /ai/agents/specs:
+    get:
+      description: Get the full registry of agent specifications
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Agent specs
+      tags:
+      - ai
+  /ai/chat:
+    post:
+      consumes:
+      - application/json
+      description: Send a message to the AI assistant and get a response (supports
+        streaming)
+      parameters:
+      - description: Chat message
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_ai.ChatInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: AI chat
+      tags:
+      - ai
+  /ai/run:
+    post:
+      consumes:
+      - application/json
+      description: Execute an agent decision point with the given context
+      parameters:
+      - description: Agent run request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_ai.RunAgentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Run AI agent
+      tags:
+      - ai
+  /ai/traces:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of AI agent execution traces
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      - description: Filter by agent ID
+        in: query
+        name: agent_id
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by decision point
+        in: query
+        name: decision_point
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+      security:
+      - BearerAuth: []
+      summary: List AI traces
+      tags:
+      - ai
+  /ai/traces/{trace_id}:
+    get:
+      description: Get a single execution trace by trace ID
+      parameters:
+      - description: Trace UUID
+        in: path
+        name: trace_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Get AI trace
+      tags:
+      - ai
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate with username and password, returns JWT tokens
+      parameters:
+      - description: Login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      summary: User login
+      tags:
+      - auth
+  /auth/me:
+    get:
+      description: Return the authenticated user's profile info
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_auth.UserVO'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchange a refresh token for a new access token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth.refreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      summary: Refresh JWT token
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Create a new operator account. Role is hardcoded to "operator"
+        for security.
+      parameters:
+      - description: Registration info
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth.registerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_auth.UserVO'
+              type: object
+      summary: Register a new user
+      tags:
+      - auth
+  /candidates:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of candidate products
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+      security:
+      - BearerAuth: []
+      summary: List candidates
+      tags:
+      - candidates
+    post:
+      consumes:
+      - application/json
+      description: Create a new candidate product
+      parameters:
+      - description: Candidate data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_domain_candidate.CreateCandidateInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Create candidate
+      tags:
+      - candidates
+  /candidates/{id}:
+    delete:
+      description: Delete a candidate product by ID
+      parameters:
+      - description: Candidate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Delete candidate
+      tags:
+      - candidates
+    get:
+      description: Get a single candidate product by ID
+      parameters:
+      - description: Candidate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Get candidate detail
+      tags:
+      - candidates
+    put:
+      consumes:
+      - application/json
+      description: Update an existing candidate product
+      parameters:
+      - description: Candidate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_domain_candidate.UpdateCandidateInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Update candidate
+      tags:
+      - candidates
+  /candidates/{id}/fields:
+    put:
+      consumes:
+      - application/json
+      description: Manually fill completeness fields for a candidate
+      parameters:
+      - description: Candidate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Field values
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_domain_candidate.FillFieldsInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Fill candidate fields
+      tags:
+      - candidates
+  /candidates/count:
+    get:
+      description: Get total count of candidate products
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Count candidates
+      tags:
+      - candidates
+  /dashboard/exceptions:
+    get:
+      description: Get exception distribution data for the dashboard
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Exception distribution
+      tags:
+      - dashboard
+  /dashboard/inventory:
+    get:
+      description: Get inventory health data for the dashboard
+      parameters:
+      - description: Max items (default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Inventory health
+      tags:
+      - dashboard
+  /dashboard/orders:
+    get:
+      description: Get order trend data for the dashboard
+      parameters:
+      - description: Number of days (default 30)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Order trends
+      tags:
+      - dashboard
+  /dashboard/overview:
+    get:
+      description: Get dashboard overview with key metrics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Dashboard overview
+      tags:
+      - dashboard
+  /dashboard/rejection-reasons:
+    get:
+      description: Get rejection reason statistics for the dashboard
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Rejection reason stats
+      tags:
+      - dashboard
+  /order:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of orders
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by platform ID
+        in: query
+        name: platform_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+      security:
+      - BearerAuth: []
+      summary: List orders
+      tags:
+      - orders
+  /order/{id}:
+    get:
+      description: Get order detail by ID
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Get order
+      tags:
+      - orders
+  /order/{id}/status:
+    post:
+      consumes:
+      - application/json
+      description: Transition order status via state machine
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status transition
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            from:
+              type: string
+            operator:
+              type: string
+            remark:
+              type: string
+            to:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Update order status
+      tags:
+      - orders
+  /order/summary:
+    get:
+      description: Get order summary statistics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Order summary
+      tags:
+      - orders
+  /owner/agent-activity:
+    get:
+      description: Get recent agent activity timeline
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Agent activity
+      tags:
+      - owner
+  /owner/platform-sync:
+    get:
+      description: Get sync status of all connected platform accounts
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Platform sync status
+      tags:
+      - owner
+  /owner/risk-summary:
+    get:
+      description: Get owner cockpit risk summary
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Risk summary
+      tags:
+      - owner
+  /owner/suggestions:
+    get:
+      description: Get AI-generated suggestions for the business owner
+      parameters:
+      - description: Max items (default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Owner suggestions
+      tags:
+      - owner
+  /platform-integrations:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of platform integration accounts
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      - description: Filter by platform
+        in: query
+        name: platform_id
+        type: integer
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+      security:
+      - BearerAuth: []
+      summary: List integrations
+      tags:
+      - integrations
+  /platform-integrations/{id}/sync:
+    post:
+      description: Trigger a sync of orders and products from the platform
+      parameters:
+      - description: Integration account ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Sync integration
+      tags:
+      - integrations
+  /platform-integrations/{id}/test:
+    post:
+      description: Test whether a platform integration account has valid credentials
+      parameters:
+      - description: Integration account ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Test integration connection
+      tags:
+      - integrations
+  /platform-integrations/publish-to-ozon:
+    post:
+      consumes:
+      - application/json
+      description: Publish a product listing to the Ozon platform
+      parameters:
+      - description: Publish request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_domain_integrations.PublishToOzonInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Publish to Ozon
+      tags:
+      - integrations
+  /products:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of products
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      - description: Filter by category
+        in: query
+        name: category_id
+        type: integer
+      - description: Filter by brand
+        in: query
+        name: brand_id
+        type: integer
+      - description: Filter by status
+        in: query
+        name: status
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+      security:
+      - BearerAuth: []
+      summary: List products
+      tags:
+      - products
+    post:
+      consumes:
+      - application/json
+      description: Create a new product
+      parameters:
+      - description: Product data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_domain_sku.Product'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Create product
+      tags:
+      - products
+  /products/{id}:
+    delete:
+      description: Delete a product by ID
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Delete product
+      tags:
+      - products
+    get:
+      description: Get a single product by ID
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Get product
+      tags:
+      - products
+    put:
+      consumes:
+      - application/json
+      description: Update an existing product
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Updated product data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_domain_sku.Product'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+      security:
+      - BearerAuth: []
+      summary: Update product
+      tags:
+      - products
+  /skus:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of SKUs
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      - description: Filter by product ID
+        in: query
+        name: product_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+      security:
+      - BearerAuth: []
+      summary: List SKUs
+      tags:
+      - products
+swagger: "2.0"

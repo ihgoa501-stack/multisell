@@ -27,7 +27,7 @@ type WebhookLog struct {
 	ID           int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	Platform     string          `gorm:"column:platform" json:"platform"`
 	EventType    string          `gorm:"column:event_type" json:"event_type"`
-	RawPayload   json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload"`
+	RawPayload   json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload,omitempty"`
 	Status       string          `gorm:"column:status;default:received" json:"status"`
 	MappedEvent  string          `gorm:"column:mapped_event" json:"mapped_event"`
 	CreatedAt    time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
@@ -57,6 +57,7 @@ type webhookHandler struct {
 
 // ReceiveWebhook POST /api/webhooks/:platform
 // Receives a generic webhook payload from an external e-commerce platform.
+// All requests are signature-verified before any processing or event bus publication.
 func (h *webhookHandler) ReceiveWebhook(c *gin.Context) {
 	platform := strings.ToLower(c.Param("platform"))
 	if platform == "" {
@@ -67,6 +68,37 @@ func (h *webhookHandler) ReceiveWebhook(c *gin.Context) {
 	body, err := c.GetRawData()
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	// Look up the platform adapter and verify the webhook signature.
+	adapter, ok := GetAdapter(platform)
+	if !ok {
+		h.logger.Warn("webhook from unknown platform rejected",
+			zap.String("platform", platform),
+			zap.String("remote_addr", c.ClientIP()),
+		)
+		response.Error(c, http.StatusBadRequest, "unknown platform: "+platform)
+		return
+	}
+
+	verifier, supportsVerification := adapter.(WebhookVerifier)
+	if !supportsVerification {
+		h.logger.Warn("webhook signature verification not supported for platform",
+			zap.String("platform", platform),
+			zap.String("remote_addr", c.ClientIP()),
+		)
+		response.Error(c, http.StatusInternalServerError,
+			"webhook signature verification not configured for platform: "+platform)
+		return
+	}
+
+	if !verifier.VerifyWebhookSignature(c.Request.Context(), body, c.Request.Header) {
+		h.logger.Warn("webhook signature verification failed",
+			zap.String("platform", platform),
+			zap.String("remote_addr", c.ClientIP()),
+		)
+		response.Error(c, http.StatusUnauthorized, "invalid webhook signature")
 		return
 	}
 

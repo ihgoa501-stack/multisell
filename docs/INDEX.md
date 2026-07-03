@@ -32,8 +32,8 @@
 
 | 文档 | 说明 |
 |------|------|
-| [项目状态](PROJECT_STATUS.md) | 当前完成进度、功能清单 |
-| [全站功能清单](FUNCTION_INVENTORY.md) | 当前页面、操作和 API 功能梳理 |
+| [项目状态](PROJECT_STATUS.md) | 当前版本、验证状态、更新历史 |
+| [模块目录](reference-module-catalog.md) | 🆕 模块、API 路由和前端页面唯一事实源 |
 | [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | 长期方向、阶段路线、Owner 控制规则和 Agent 提案检查表 |
 | [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | Day 1-7 完整开发计划，5 条并行线 |
 | [每日战情板](7_DAY_BATTLE_BOARD.md) | 7 天每日进度追踪 |
@@ -83,7 +83,9 @@
 | [Kernel 契约](governance/KERNEL_CONTRACTS.md) | EventBus、Command、Scheduler、ToolBridge、Approval、Audit 等内核契约 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
-| [运维手册](ops/RUNBOOK.md) | 当前 Docker/Go/Next/PostgreSQL 运维命令 |
+| [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
+| [突发事件响应](ops/INCIDENT_RESPONSE.md) | 严重等级定义、5 类故障排查步骤、升级路径、事后复盘模板 |
+| [灾难恢复](ops/DISASTER_RECOVERY.md) | 备份策略、RPO/RTO 估算、完整恢复流程、迁移回滚、3 种灾难场景 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
@@ -101,6 +103,13 @@
 | [Chrome 扩展指南](chrome-extension-guide.md) | 凌镜选品助手扩展：安装、WebSocket 协议、内容脚本 |
 | [测试说明](TEST_SUMMARY.md) | 当前新栈测试状态、已知问题和覆盖面 |
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | `frontend-next` build/test/lint 状态 |
+
+| [API 清单](api-inventory.md) | 🆕 全部 71+ 后端模块 API 路由、方法、参数清单 |
+| [架构决策记录](adr/) | 🆕 ADR-001~006：WebSocket 安全 / JWT type 校验 / Webhook HMAC / 密码策略 / Rate limiter 改进 / 文档策略 |
+| [事故响应](ops/INCIDENT_RESPONSE.md) | 🆕 SEV1-SEV3 定义 + 5 场景应急流程 |
+| [灾难恢复](ops/DISASTER_RECOVERY.md) | 🆕 备份策略、RPO(24h)/RTO(2h)、完整恢复步骤 |
+| [Swagger API 文档](http://localhost:8080/swagger/index.html) | 🆕 交互式 OpenAPI 文档 — `GET /swagger/index.html` |
+
 
 ### Demo & 验收
 

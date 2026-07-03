@@ -1,5 +1,8 @@
 # 凌镜 LingMirror — 全站功能清单
 
+> **注意**: 本文档的内容已合并到 [reference-module-catalog.md](reference-module-catalog.md)。添加新模块或路由时，请更新该文件。
+> 本文保留仅用于向后兼容参考，不再作为功能清单的事实源。
+>
 > 更新时间：2026-06-30
 > 范围：当前活跃新栈 `backend-go/` + `frontend-next/`
 

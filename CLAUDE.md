@@ -28,7 +28,7 @@ Version `v0.2.1` in `VERSION`, tracked on `main`.
 | Backend | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
 | Frontend | `frontend-next/` | `src/app/` — Next.js 16, React 19, TypeScript, Ant Design 6 |
 
-API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT.
+API prefix: `/api/v1`. Health: `/api/health`. Swagger: `GET /swagger/index.html` (44 endpoints annotated). All non-auth endpoints require JWT.
 
 ## Commands
 
@@ -54,6 +54,12 @@ npm test                              # vitest
 
 # E2E (separate sub-project under frontend-next/)
 cd frontend-next/e2e && npx playwright test
+
+# Smoke tests (end-to-end pipeline verification)
+cd backend-go
+./scripts/smoke_test_setup.sh           # setup test DB + seed data
+./scripts/smoke_test.sh                 # run 10-step pipeline verification
+
 ```
 
 New dev database: `multisell`. Migrations: `backend-go/migrations/` (run via Docker).
@@ -251,6 +257,11 @@ cd frontend-next/e2e && npx playwright test
 - `docs/FRONTEND_PAGES_AND_ROUTING.md` — Next App Router page map.
 - `docs/FUNCTION_INVENTORY.md` — complete feature inventory.
 - `docs/features/` — feature specs and template.
+- `docs/adr/` — architecture decision records (ADR-001~006).
+- `docs/ops/` — operations runbook, incident response, disaster recovery.
+- `docs/api-inventory.md` — complete API route inventory (71+ modules).
+- `backend-go/scripts/smoke_test.sh` — 10-step end-to-end pipeline verification.
+- Swagger UI: `GET /swagger/index.html` (dev only, 44 annotated endpoints).
 
 ## Skill routing
 

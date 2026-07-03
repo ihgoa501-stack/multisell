@@ -19,6 +19,13 @@ func NewHandler(service *Service) *Handler {
 }
 
 // RiskSummary GET /owner/risk-summary
+// @Summary      Risk summary
+// @Description  Get owner cockpit risk summary
+// @Tags         owner
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /owner/risk-summary [get]
 func (h *Handler) RiskSummary(c *gin.Context) {
 	summary, err := h.service.RiskSummary()
 	if err != nil {
@@ -29,6 +36,14 @@ func (h *Handler) RiskSummary(c *gin.Context) {
 }
 
 // Suggestions GET /owner/suggestions
+// @Summary      Owner suggestions
+// @Description  Get AI-generated suggestions for the business owner
+// @Tags         owner
+// @Produce      json
+// @Param        limit  query  int  false  "Max items (default 20)"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /owner/suggestions [get]
 func (h *Handler) Suggestions(c *gin.Context) {
 	limitStr := c.Query("limit")
 	limit := 20
@@ -46,6 +61,13 @@ func (h *Handler) Suggestions(c *gin.Context) {
 }
 
 // PlatformSyncStatus GET /owner/platform-sync
+// @Summary      Platform sync status
+// @Description  Get sync status of all connected platform accounts
+// @Tags         owner
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /owner/platform-sync [get]
 func (h *Handler) PlatformSyncStatus(c *gin.Context) {
 	items, err := h.service.PlatformSyncStatus()
 	if err != nil {
@@ -78,6 +100,13 @@ func (h *Handler) Feedback(c *gin.Context) {
 }
 
 // AgentActivity GET /owner/agent-activity
+// @Summary      Agent activity
+// @Description  Get recent agent activity timeline
+// @Tags         owner
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /owner/agent-activity [get]
 func (h *Handler) AgentActivity(c *gin.Context) {
 	data, err := h.service.AgentActivity()
 	if err != nil {

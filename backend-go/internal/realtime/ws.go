@@ -13,12 +13,46 @@ import (
 	"go.uber.org/zap"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // allow all origins in dev
-	},
+// makeOriginCheck creates a CheckOrigin function from a CORS allowed-origins string.
+// If origins is empty or "*", all origins are allowed (dev mode).
+func makeOriginCheck(allowedOrigins string) func(r *http.Request) bool {
+	origins := parseAllowedOrigins(allowedOrigins)
+	if len(origins) == 0 {
+		return func(r *http.Request) bool { return true }
+	}
+	if origins[0] == "*" {
+		return func(r *http.Request) bool { return true }
+	}
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // non-browser client
+		}
+		for _, o := range origins {
+			if o == origin {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// parseAllowedOrigins splits a comma-separated origin string into a slice.
+// Returns nil if input is empty or "*".
+func parseAllowedOrigins(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "*" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 // AIChatChunk is one streaming chunk from the AI.
@@ -38,12 +72,23 @@ type Handler struct {
 	logger        *zap.Logger
 	jwtSecret     string
 	aiChatHandler AIChatFunc
+	upgrader      websocket.Upgrader
 }
 
 // NewHandler creates a new WebSocket handler.
 // jwtSecret is used to validate token query param on upgrade.
-func NewHandler(hub *Hub, logger *zap.Logger, jwtSecret string) *Handler {
-	return &Handler{hub: hub, logger: logger, jwtSecret: jwtSecret}
+// allowedOrigins is the CORS allowed-origins config; "*" or empty allows all.
+func NewHandler(hub *Hub, logger *zap.Logger, jwtSecret string, allowedOrigins string) *Handler {
+	return &Handler{
+		hub:       hub,
+		logger:    logger,
+		jwtSecret: jwtSecret,
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin:     makeOriginCheck(allowedOrigins),
+		},
+	}
 }
 
 // WithAIChat sets the AI chat handler for streaming responses over WebSocket.
@@ -96,7 +141,7 @@ func (h *Handler) ServeWS(c *gin.Context) {
 		}
 	}
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		h.logger.Error("websocket upgrade failed", zap.Error(err))
 		return

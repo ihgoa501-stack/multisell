@@ -1,16 +1,23 @@
 # 凌镜 LingMirror — 运维手册
 
-> 版本：2.0
-> 最后更新：2026-06-24
-> 适用环境：当前 Go + Next 新栈
+> **版本**：2.1
+> **最后更新**：2026-07-03
+> **适用环境**：当前 Go + Next 新栈
+> **相关文档**：[突发事件响应](INCIDENT_RESPONSE.md) | [灾难恢复](DISASTER_RECOVERY.md)
+
+---
 
 ## 1. 环境概览
 
 | 组件 | 技术栈 | 默认端口 | Docker 服务名 |
 |---|---|---:|---|
 | 数据库 | PostgreSQL 15 | 5432 | `db` |
-| 后端 | Go / Gin / GORM | 8080 | `backend-go` |
-| 前端 | Next.js / React / Ant Design | 3000 | `frontend-next` |
+| 后端 | Go / Gin / GORM | 8080 | `backend` |
+| 前端 | Next.js / React / Ant Design | 3000 | `frontend` |
+| 反向代理 | Caddy | 443/80 | `caddy` |
+| 监控 | Prometheus | 9090 | `prometheus` |
+| 看板 | Grafana | 3001 | `grafana` |
+| 告警 | Alertmanager | -- | `alertmanager` |
 
 旧服务：
 
@@ -20,209 +27,173 @@
 
 ## 2. 启动与停止
 
-启动全栈：
+| 操作 | 命令 |
+|------|------|
+| 启动全栈 | `docker compose up -d` |
+| 启动带监控 | `docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d` |
+| 生产部署 | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` |
+| 仅数据库 | `docker compose up -d db` |
+| 停止 | `docker compose down` |
+| 停止并删除数据卷 | `docker compose down -v`（仅限可丢弃环境） |
+| 查看状态 | `docker compose ps` |
+| 重启单个服务 | `docker compose restart <服务名>` |
+| 强制重建 | `docker compose up -d --force-recreate <服务名>` |
+
+---
+
+## 3. 快速诊断
 
 ```bash
-docker compose up -d
+# API 健康检查
+curl -f http://localhost:8080/api/health
+
+# 检查数据库连接
+docker compose exec db pg_isready -U postgres
+
+# 查看容器资源占用
+docker stats --no-stream
+
+# 查看磁盘
+df -h /
+
+# 查看 Docker 卷大小
+docker system df -v
 ```
 
-仅启动数据库：
+---
+
+## 4. 日志
 
 ```bash
-docker compose up -d db
-```
-
-查看状态：
-
-```bash
-docker compose ps
-```
-
-停止：
-
-```bash
-docker compose down
-```
-
-停止并删除卷前必须确认这是可丢弃环境：
-
-```bash
-docker compose down -v
-```
-
-## 3. 本地开发启动
-
-后端：
-
-```bash
-cd backend-go
-go run cmd/server/main.go
-```
-
-前端：
-
-```bash
-cd frontend-next
-npm run dev -- --hostname 127.0.0.1 --port 3000
-```
-
-## 4. 健康检查
-
-```bash
-curl http://localhost:8080/api/health
-curl http://localhost:8080/api/v1/health
-```
-
-预期响应包含：
-
-```json
-{"status":"ok"}
-```
-
-## 5. 日志
-
-Docker：
-
-```bash
+# 追踪所有日志
 docker compose logs -f
-docker compose logs -f backend-go
-docker compose logs -f frontend-next
+
+# 按服务
+docker compose logs -f backend
+docker compose logs -f frontend
 docker compose logs -f db
+
+# 查看最后 N 行
+docker compose logs --tail=100 backend
+
+# 按关键词搜索
+docker compose logs --tail=500 backend | grep -i "error\|panic\|fatal"
+
+# 查看 Caddy 访问日志
+docker compose logs caddy
 ```
 
-本地开发：
+## 5. 数据库操作
 
-- 后端日志直接看 `go run` 终端。
-- 前端日志直接看 `npm run dev` 终端。
-
-## 6. 数据库
-
-默认开发数据库：
-
-| 变量 | 默认值 |
-|---|---|
-| `DB_HOST` | `localhost` / compose 中为 `db` |
-| `DB_PORT` | `5432` |
-| `DB_USER` | `postgres` |
-| `DB_PASSWORD` | `postgres` |
-| `DB_NAME` | `multisell` |
-
-进入数据库：
+### 5.1 连接与查询
 
 ```bash
+# 进入 psql 交互环境
 docker compose exec db psql -U postgres -d multisell
+
+# 直接执行 SQL
+docker compose exec db psql -U postgres -d multisell -c "SELECT count(*) FROM users;"
+
+# 查看当前连接数
+docker compose exec db psql -U postgres -c "SELECT count(*) FROM pg_stat_activity;"
+
+# 查看慢查询（运行超过 5 秒的）
+docker compose exec db psql -U postgres -d multisell -c "
+  SELECT pid, now() - pg_stat_activity.query_start AS duration, query, state
+  FROM pg_stat_activity
+  WHERE state != 'idle' AND now() - pg_stat_activity.query_start > interval '5 seconds'
+  ORDER BY duration DESC;
+"
 ```
 
-备份：
+### 5.2 备份与恢复
 
 ```bash
-docker compose exec db pg_dump -U postgres multisell > backup-$(date +%Y%m%d-%H%M%S).sql
+# 手动备份
+docker compose exec db pg_dump -U postgres multisell > backup_$(date +%Y%m%d_%H%M%S).sql
+
+# 使用备份服务（推荐，支持 S3 同步）
+docker compose run --rm backup
+
+# 恢复（注意：会覆盖现有数据）
+cat backup_file.sql | docker compose exec -T db psql -U postgres multisell
+
+# 查看备份目录
+docker run --rm -v db_backups:/backups alpine ls -lh /backups
 ```
 
-恢复前请确认目标库可覆盖：
+### 5.3 迁移
 
 ```bash
-cat backup.sql | docker compose exec -T db psql -U postgres -d multisell
+# 应用所有未执行的迁移
+docker compose run --rm migrate
+
+# 回退一个版本
+docker compose run --rm migrate down 1
+
+# 回退到指定版本
+docker compose run --rm migrate goto <version>
+
+# 查看当前版本
+docker compose exec db psql -U postgres -d multisell -c "SELECT version, dirty FROM schema_migrations;"
 ```
 
-## 7. 迁移
+迁移文件：`backend-go/migrations/`，每个版本有 `.up.sql` + `.down.sql`。
 
-当前 Go 新栈迁移文件在：
+---
 
-```text
-backend-go/migrations/
-```
+## 6. 监控
 
-关键文件：
+| 组件 | 访问地址 | 说明 |
+|------|---------|------|
+| Prometheus | `http://localhost:9090` | 指标查询，仅本地访问 |
+| Grafana | `http://localhost:3001` | 看板，管理员密码由 `GRAFANA_ADMIN_PASSWORD` 设置 |
+| Alertmanager | 内部 | 告警路由，输出到 Slack |
 
-- `000001_init_schema.up.sql`
-- `000003_data_migration.up.sql`
-- `validate.sql`
-- `MIGRATION_RUNBOOK.md`
-
-迁移执行方式以当前部署脚本/运维脚本为准。不要再使用旧 Alembic 流程管理新栈数据库。
-
-验证迁移：
-
+启动监控栈：
 ```bash
-psql "$DATABASE_URL" -f backend-go/migrations/validate.sql
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 ```
+
+---
+
+## 7. 生产配置检查清单
+
+上线/部署前确认：
+
+- [ ] `JWT_SECRET` 已设置且非默认值 `dev-secret-change-in-production`
+- [ ] `DB_PASSWORD` 已设置为强密码
+- [ ] `LLM_API_KEY` / `LLM_PROVIDER` / `LLM_MODEL` 按生产策略配置
+- [ ] `NEXT_PUBLIC_API_URL` 正确指向 API base（通常为 `/api`）
+- [ ] `DOMAIN` 和 `ACME_EMAIL` 已设置，Caddy 自动 TLS 可工作
+- [ ] `GRAFANA_ADMIN_PASSWORD` 已设置
+- [ ] 定时备份 crontab 已配置
+- [ ] 服务器防火墙只开放 80/443
+
+---
 
 ## 8. 验证命令
 
-后端：
-
 ```bash
-cd backend-go
-go test ./...
-go vet ./...
-go build -o bin/server cmd/server/main.go
+# 后端
+cd backend-go && go test ./... && go vet ./... && go build -o /dev/null cmd/server/main.go
+
+# 前端
+cd frontend-next && npm test && npm run build
+
+# 注意：npm run lint 已知未通过，不阻断部署但需尽快修复
 ```
 
-前端：
+---
 
-```bash
-cd frontend-next
-npm test
-npm run build
-npm run lint
-```
+## 9. 常见问题速查
 
-当前已知：`npm run lint` 尚未通过，生产门禁不能把 lint 视为绿色。
-
-## 9. 生产配置检查
-
-上线前至少确认：
-
-- `JWT_SECRET` 已设置且不是开发默认值。
-- `DB_*` 指向正确数据库。
-- `LLM_PROVIDER`、`LLM_API_KEY`、`LLM_MODEL` 按生产策略配置。
-- `NEXT_PUBLIC_API_URL` 指向正确 API base，通常为 `/api` 或后端网关地址。
-- Sentry release/source map 上传策略明确配置或显式关闭。
-
-## 10. 回滚与旧栈
-
-旧栈仅用于 reference / rollback：
-
-```bash
-docker compose -f docker-compose.legacy.yml up -d
-```
-
-除非明确执行回滚演练或安全修复，不要修改 `backend/` 和 `frontend/`。
-
-## 11. 常见问题
-
-### 前端请求 404
-
-检查 API path 是否缺少 `/v1`。当前默认：
-
-```text
-NEXT_PUBLIC_API_URL=http://localhost:8080/api
-```
-
-因此调用应写：
-
-```text
-/v1/...
-```
-
-最终请求：
-
-```text
-/api/v1/...
-```
-
-### 前端 build 通过但 lint 失败
-
-这是当前已知状态。修复 lint 后才能将前端质量门禁视为完全通过。
-
-### 数据库连接失败
-
-确认：
-
-```bash
-docker compose ps db
-docker compose exec db pg_isready -U postgres
-```
-
-并检查 `DB_HOST` 在本地和 compose 环境中是否分别使用 `localhost` / `db`。
+| 问题 | 可能原因 | 快速解决 |
+|------|---------|---------|
+| 前端请求 404 | API path 缺 `/v1` | 检查 `NEXT_PUBLIC_API_URL`，请求写 `/v1/...` |
+| 数据库连接失败 | DB_HOST 用错 | 本地用 `localhost`，Docker 内用 `db` |
+| 后端 crash 循环 | OOM / 端口冲突 | `docker compose logs backend` 查原因 |
+| AI 功能超时 | LLM provider 不可达 | 检查 `LLM_API_KEY` 和 provider 状态 |
+| 后端 build 通过但 lint 失败 | 已知问题 | 不阻断部署，但需尽快修复 |
+| Webhook 不回调 | Caddy 配置 / 签名过期 | 检查 `docker compose logs caddy` |
+| 前端 build 失败 | 依赖版本冲突 | `cd frontend-next && npm ci` 重新安装 |

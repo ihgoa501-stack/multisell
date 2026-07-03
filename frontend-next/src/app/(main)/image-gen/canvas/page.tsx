@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Card, Empty, Input, InputNumber, message, Modal, Space, Table, Tag, Typography } from 'antd';
 import {
   PlusOutlined,
@@ -88,28 +88,14 @@ function LayerEditModal({
   onOk: (l: Layer) => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState('');
-  const [fontSize, setFontSize] = useState(24);
-  const [color, setColor] = useState('#000000');
-  const [src, setSrc] = useState('');
-  const [imgW, setImgW] = useState(200);
-  const [imgH, setImgH] = useState(200);
-  const [x, setX] = useState(0);
-  const [y, setY] = useState(0);
-
-  useEffect(() => {
-    if (!layer) {
-      setText(''); setFontSize(24); setColor('#000000');
-      setSrc(''); setImgW(200); setImgH(200); setX(0); setY(0);
-      return;
-    }
-    setX(layer.x); setY(layer.y);
-    if (layer.type === 'text') {
-      setText(layer.text); setFontSize(layer.fontSize); setColor(layer.color);
-    } else {
-      setSrc(layer.src); setImgW(layer.width); setImgH(layer.height);
-    }
-  }, [layer]);
+  const [text, setText] = useState(layer?.type === 'text' ? layer.text : '');
+  const [fontSize, setFontSize] = useState(layer?.type === 'text' ? layer.fontSize : 24);
+  const [color, setColor] = useState(layer?.type === 'text' ? layer.color : '#000000');
+  const [src, setSrc] = useState(layer?.type === 'image' ? layer.src : '');
+  const [imgW, setImgW] = useState(layer?.type === 'image' ? layer.width : 200);
+  const [imgH, setImgH] = useState(layer?.type === 'image' ? layer.height : 200);
+  const [x, setX] = useState(layer?.x ?? 0);
+  const [y, setY] = useState(layer?.y ?? 0);
 
   const handleOk = () => {
     if (!layer) return;

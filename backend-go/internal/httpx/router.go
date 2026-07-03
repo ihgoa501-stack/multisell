@@ -93,6 +93,10 @@ import (
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+
+	_ "github.com/lingmirror/backend-go/docs"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 // NewRouter creates and configures the Gin engine with all routes.
@@ -126,6 +130,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
+	// Swagger API documentation
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	// ==========================================================
 	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
 	// ==========================================================
@@ -136,7 +143,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 
 	// Create event bus (with optional outbox persistence).
 	sr := eventbus.NewSchemaRegistry()
-	// TODO: register TopicSchema implementations for each event topic pattern
+	// ponytail: register known payload schemas; add more as event contracts stabilize
+	sr.Register("stock.alert", eventbus.StockAlertPayload{})
+	sr.Register("profit.*", eventbus.ProfitWatchPayload{})
+	sr.Register("compliance.*", eventbus.ComplianceCheckPayload{})
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4), eventbus.WithSchema(sr))
 	busCtx, busCancel := context.WithCancel(context.Background())
 	defer busCancel()
@@ -531,6 +541,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Agent routes (wired through the AI orchestrator)
 	agent.RegisterRoutes(protected, db, logger, aiOrch)
 
+	// AIOS routes (tool registry, runtime, guardrails health)
+	setup.RegisterAIOSRoutes(protected, aiosCfg)
+
 	// AgentOS routes
 	agentos.RegisterRoutes(protected, db, logger)
 
@@ -761,7 +774,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// Level 2 (manual review) and Level 3 (global alert) broadcast via the hub.
 	supplyChainOrch.SetEscalationManager(supplychain.NewEscalationManager(logger, hub))
 
-	wsHandler := realtime.NewHandler(hub, logger, cfg.JWT.Secret).WithAIChat(ai.NewAIChatHandler(aiOrch))
+	wsHandler := realtime.NewHandler(hub, logger, cfg.JWT.Secret, cfg.CORS.AllowedOrigins).WithAIChat(ai.NewAIChatHandler(aiOrch))
 	r.GET("/ws", wsHandler.ServeWS)
 
 	// AI routes need the hub for realtime broadcasts.
@@ -782,7 +795,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 		Weight: 10,
 	})
 	candSvc := candidate.NewService(db, logger)
-	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret).
+	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret, cfg.CORS.AllowedOrigins).
 		WithPluginDriver(&extPluginBridge{driver: pluginDrv}).
 		OnAutoCollect(func(userID int64, payload json.RawMessage) error {
 			var result struct {

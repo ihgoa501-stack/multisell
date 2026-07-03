@@ -24,10 +24,6 @@ const (
 	ShopeeDefault    = "https://partner.shopeemobile.com"
 )
 
-func init() {
-	RegisterAdapter("shopee", NewShopeeAdapter(nil, nil))
-}
-
 // ShopeeAdapter implements PlatformAdapter for Shopee Open API v2.
 type ShopeeAdapter struct {
 	httpClient *http.Client
@@ -44,11 +40,55 @@ func NewShopeeAdapter(db *gorm.DB, logger *zap.Logger) *ShopeeAdapter {
 }
 
 type shopeeAuth struct {
-	PartnerID  int64
-	APIKey     string
+	PartnerID   int64
+	APIKey      string
 	AccessToken string
-	ShopID     int64
-	BaseURL    string
+	ShopID      int64
+	BaseURL     string
+}
+
+// getAuth looks up the first active platform integration account for the given
+// platform ID and returns Shopee credentials. Config stores partner_id, api_key, and shop_id.
+func (a *ShopeeAdapter) getAuth(ctx context.Context, platformID int64) (*shopeeAuth, error) {
+	var accts []PlatformIntegrationAccount
+	if err := a.db.WithContext(ctx).
+		Where("platform_id = ? AND status = ?", platformID, "active").
+		Limit(1).
+		Find(&accts).Error; err != nil {
+		return nil, fmt.Errorf("shopee getAuth: %w", err)
+	}
+	if len(accts) == 0 {
+		return nil, fmt.Errorf("shopee getAuth: no active account for platform_id=%d", platformID)
+	}
+	acct := accts[0]
+
+	var cfg struct {
+		PartnerID int64  `json:"partner_id"`
+		APIKey    string `json:"api_key"`
+		ShopID    int64  `json:"shop_id"`
+	}
+	if len(acct.Config) > 0 {
+		json.Unmarshal(acct.Config, &cfg)
+	}
+	if acct.AccessToken == "" {
+		return nil, fmt.Errorf("shopee getAuth: account %d has empty access_token", acct.ID)
+	}
+	return &shopeeAuth{
+		PartnerID:   cfg.PartnerID,
+		APIKey:      cfg.APIKey,
+		AccessToken: acct.AccessToken,
+		ShopID:      cfg.ShopID,
+		BaseURL:     ShopeeDefault,
+	}, nil
+}
+
+// getAuthByAccountID resolves a platform integration account ID to Shopee creds.
+func (a *ShopeeAdapter) getAuthByAccountID(ctx context.Context, accountID int64) (*shopeeAuth, error) {
+	var acct PlatformIntegrationAccount
+	if err := a.db.WithContext(ctx).First(&acct, accountID).Error; err != nil {
+		return nil, fmt.Errorf("shopee getAuthByAccountID: %w", err)
+	}
+	return a.getAuth(ctx, acct.PlatformID)
 }
 
 func (a *ShopeeAdapter) sign(partnerID int64, apiKey, path, accessToken string, shopID int64, timestamp int64) string {
@@ -102,10 +142,54 @@ func (a *ShopeeAdapter) do(ctx context.Context, method, path string, auth *shope
 	return body, nil
 }
 
+// VerifyWebhookSignature implements WebhookVerifier.
+// Shopee signs webhook payloads with Authorization = HMAC-SHA256(body + timestamp, partner_key).
+// The timestamp is taken from the Timestamp header, and the partner_key from the
+// PlatformIntegrationAccount Config JSON as "api_key".
+func (a *ShopeeAdapter) VerifyWebhookSignature(ctx context.Context, body []byte, headers http.Header) bool {
+	signature := headers.Get("Authorization")
+	if signature == "" {
+		return false
+	}
+	timestamp := headers.Get("Timestamp")
+	if timestamp == "" {
+		return false
+	}
+
+	// Find the first active Shopee account and read its partner key.
+	var accts []PlatformIntegrationAccount
+	if err := a.db.WithContext(ctx).
+		Model(&PlatformIntegrationAccount{}).
+		Where("platform_id = (SELECT id FROM platform WHERE code = ?) AND status = ?", "shopee", "active").
+		Limit(1).
+		Find(&accts).Error; err != nil || len(accts) == 0 {
+		return false
+	}
+
+	var cfg struct {
+		APIKey string `json:"api_key"`
+	}
+	if len(accts[0].Config) > 0 {
+		_ = json.Unmarshal(accts[0].Config, &cfg)
+	}
+	if cfg.APIKey == "" {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(cfg.APIKey))
+	mac.Write(body)
+	mac.Write([]byte(timestamp))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
+}
+
 func (a *ShopeeAdapter) Publish(ctx context.Context, input *PublishInput) (*PublishResult, error) {
-	auth := &shopeeAuth{BaseURL: ShopeeDefault}
 	if len(input.SKUs) == 0 {
 		return nil, fmt.Errorf("shopee publish: no SKUs")
+	}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
 	}
 	payload := map[string]interface{}{
 		"item": map[string]interface{}{
@@ -139,7 +223,10 @@ func (a *ShopeeAdapter) Publish(ctx context.Context, input *PublishInput) (*Publ
 }
 
 func (a *ShopeeAdapter) SyncStatus(ctx context.Context, input *SyncStatusInput) (string, error) {
-	auth := &shopeeAuth{BaseURL: ShopeeDefault}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return "unknown", err
+	}
 	payload := map[string]interface{}{
 		"item_id": interface{}(nil),
 		"item_sku": []string{input.PlatformProductID},
@@ -167,22 +254,32 @@ func (a *ShopeeAdapter) SyncStatus(ctx context.Context, input *SyncStatusInput) 
 }
 
 func (a *ShopeeAdapter) ValidateCredentials(ctx context.Context, accountID int64) (bool, error) {
-	return false, fmt.Errorf("shopee ValidateCredentials requires credential resolution")
+	_, err := a.getAuthByAccountID(ctx, accountID)
+	if err != nil {
+		return false, fmt.Errorf("shopee ValidateCredentials: %w", err)
+	}
+	return false, fmt.Errorf("shopee ValidateCredentials: not yet implemented, requires OAuth credential setup")
 }
 
 func (a *ShopeeAdapter) SyncInventory(ctx context.Context, input *SyncInventoryInput) (bool, error) {
-	auth := &shopeeAuth{BaseURL: ShopeeDefault}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return false, err
+	}
 	payload := map[string]interface{}{
 		"item_id": interface{}(nil),
 		"sku":     input.SkuCode,
 		"stock":   input.Quantity,
 	}
-	_, err := a.do(ctx, http.MethodPost, "/api/v2/product/update_stock", auth, payload)
+	_, err = a.do(ctx, http.MethodPost, "/api/v2/product/update_stock", auth, payload)
 	return err == nil, err
 }
 
 func (a *ShopeeAdapter) PushTracking(ctx context.Context, input *PushTrackingInput) (bool, error) {
-	auth := &shopeeAuth{BaseURL: ShopeeDefault}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return false, err
+	}
 	payload := map[string]interface{}{
 		"order_sn":        input.OrderSN,
 		"tracking_number": input.TrackingNumber,
@@ -190,12 +287,15 @@ func (a *ShopeeAdapter) PushTracking(ctx context.Context, input *PushTrackingInp
 	if input.CarrierCode != "" {
 		payload["carrier_code"] = input.CarrierCode
 	}
-	_, err := a.do(ctx, http.MethodPost, "/api/v2/logistics/update_shipping_document", auth, payload)
+	_, err = a.do(ctx, http.MethodPost, "/api/v2/logistics/update_shipping_document", auth, payload)
 	return err == nil, err
 }
 
 func (a *ShopeeAdapter) FetchOrders(ctx context.Context, input *FetchOrdersInput) ([]*PlatformOrder, error) {
-	auth := &shopeeAuth{BaseURL: ShopeeDefault}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
+	}
 	tsStr := strconv.FormatInt(input.Since.Unix(), 10)
 
 	payload := map[string]interface{}{
@@ -268,12 +368,19 @@ func (a *ShopeeAdapter) FetchOrders(ctx context.Context, input *FetchOrdersInput
 }
 
 func (a *ShopeeAdapter) FetchSettlements(ctx context.Context, input *FetchSettlementsInput) ([]*PlatformSettlement, error) {
+	_, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
+	}
 	// stub: Shopee finance API requires additional auth scope
 	return []*PlatformSettlement{}, nil
 }
 
 func (a *ShopeeAdapter) FetchReturns(ctx context.Context, input *FetchReturnsInput) ([]*PlatformReturn, error) {
-	auth := &shopeeAuth{BaseURL: ShopeeDefault}
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]interface{}{
 		"page_size": 100,
 		"page_no":   1,

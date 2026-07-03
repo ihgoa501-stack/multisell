@@ -127,8 +127,8 @@ func (s *Service) GetUserByID(id int64) (*User, error) {
 // already taken. Default role is "user"; "admin" can only be assigned by an
 // existing admin (enforced at handler layer for now).
 func (s *Service) Register(username, password, displayName, email, role string) (*User, error) {
-	if len(password) < 6 {
-		return nil, errors.New("密码至少 6 位")
+	if len(password) < 8 {
+		return nil, errors.New("密码至少 8 位")
 	}
 	// Check for existing username.
 	var existing User

@@ -1,5 +1,8 @@
 # 凌镜 LingMirror 前端页面与路由
 
+> **注意**: 本文档的内容已合并到 [reference-module-catalog.md](reference-module-catalog.md)（前端页面章节）。添加新前端路由时，请更新该文件。
+> 本文保留仅用于向后兼容参考，不再作为前端路由的事实源。
+>
 > 最后更新：2026-06-26
 > 框架：Next.js / React / TypeScript / Ant Design
 > 入口：`frontend-next/src/app/`

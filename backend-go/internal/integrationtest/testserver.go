@@ -194,10 +194,10 @@ func (ts *TestServer) Login(t testing.TB) string {
 	t.Helper()
 
 	// Register a test user (ignore error — the user may already exist).
-	_ = ts.Post(t, "/api/v1/auth/register", `{"username":"testuser","password":"test123"}`, "")
+	_ = ts.Post(t, "/api/v1/auth/register", `{"username":"testuser","password":"test123456"}`, "")
 
 	// Login to get the token.
-	resp := ts.Post(t, "/api/v1/auth/login", `{"username":"testuser","password":"test123"}`, "")
+	resp := ts.Post(t, "/api/v1/auth/login", `{"username":"testuser","password":"test123456"}`, "")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
