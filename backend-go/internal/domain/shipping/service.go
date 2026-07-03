@@ -1,10 +1,12 @@
 package shipping
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -393,6 +395,85 @@ func (s *Service) DeleteBillBatch(id int64) error {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+
+// ImportBillCSV parses a carrier bill CSV and creates batch + items.
+func (s *Service) ImportBillCSV(data []byte, filename, createdBy string) (*ShippingBillBatch, error) {
+	reader := csv.NewReader(strings.NewReader(string(data)))
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CSV: %w", err)
+	}
+	if len(records) < 2 {
+		return nil, errors.New("CSV must have header row and at least one data row")
+	}
+
+	batch := ShippingBillBatch{
+		SourceFilename: filename,
+		RowCount:       len(records) - 1,
+		Status:         "imported",
+		CreatedBy:      createdBy,
+	}
+	if err := s.db.Create(&batch).Error; err != nil {
+		return nil, err
+	}
+
+	var items []ShippingBillItem
+	for i, row := range records[1:] {
+		item := ShippingBillItem{
+			BatchID:               batch.ID,
+			RowNumber:             i + 1,
+			ReconciliationStatus:  "unmatched_bill",
+			OrderNo:               col(row, 0),
+			TrackingNumber:        col(row, 1),
+			ProviderName:          col(row, 2),
+			ChannelName:           col(row, 3),
+			DestinationCountry:    col(row, 4),
+		}
+		if v := col(row, 5); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				item.BilledWeightKg = &f
+			}
+		}
+		if v := col(row, 6); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				item.ActualShippingFee = &f
+			}
+		}
+		if v := col(row, 7); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				item.TotalActualFee = &f
+			}
+		}
+		item.Currency = col(row, 8)
+		if v := col(row, 9); v != "" {
+			if t, err := time.Parse("2006-01-02", v); err == nil {
+				item.BilledAt = &t
+			}
+		}
+		item.Note = col(row, 10) // carrier_code stored in note
+		items = append(items, item)
+	}
+
+	if err := s.db.Create(&items).Error; err != nil {
+		return nil, err
+	}
+
+	if len(items) > 0 && items[0].Currency != "" {
+		batch.Currency = items[0].Currency
+		s.db.Model(&batch).Update("currency", items[0].Currency)
+	}
+
+	return &batch, nil
+}
+
+// col returns trimmed column value or empty string if index out of range.
+func col(row []string, idx int) string {
+	if idx < len(row) {
+		return strings.TrimSpace(row[idx])
+	}
+	return ""
 }
 
 func (s *Service) ListBillItems(c *common.Pagination, batchID int64) ([]ShippingBillItem, int64, error) {
@@ -1046,4 +1127,158 @@ func (s *Service) ListBillAnomalies(batchID int64) ([]ShippingBillItem, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+// ===== Phase 3: Fulfillment Tracking =====
+
+func (s *Service) CreateTracking(in *CreateTrackingInput) (*FulfillmentTracking, error) {
+	t := FulfillmentTracking{
+		OrderID:        in.OrderID,
+		TrackingNumber: in.TrackingNumber,
+		CarrierCode:    in.CarrierCode,
+		CarrierName:    in.CarrierName,
+		Status:         in.Status,
+		Note:           in.Note,
+		TrackingEvents: json.RawMessage("[]"),
+	}
+	if t.Status == "" {
+		t.Status = "pending"
+	}
+	if err := s.db.Create(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (s *Service) GetTrackingByOrderID(orderID int64) (*FulfillmentTracking, error) {
+	var t FulfillmentTracking
+	if err := s.db.Where("order_id = ?", orderID).First(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (s *Service) UpdateTrackingEvent(trackingID int64, event TrackingEvent, status string) (*FulfillmentTracking, error) {
+	var t FulfillmentTracking
+	if err := s.db.First(&t, trackingID).Error; err != nil {
+		return nil, err
+	}
+	var events []TrackingEvent
+	if len(t.TrackingEvents) > 0 {
+		json.Unmarshal(t.TrackingEvents, &events)
+	}
+	events = append(events, event)
+	raw, _ := json.Marshal(events)
+	t.TrackingEvents = raw
+	if status != "" {
+		t.Status = status
+	}
+	if status == "delivered" {
+		now := time.Now()
+		t.DeliveredAt = &now
+	}
+	if err := s.db.Save(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (s *Service) MarkTrackingException(id int64, lost, returned, damaged bool, note string) error {
+	updates := map[string]interface{}{
+		"is_lost": lost, "is_returned": returned, "is_damaged": damaged,
+		"note": note, "status": "exception",
+	}
+	return s.db.Model(&FulfillmentTracking{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// ===== Phase 4: Carrier Performance =====
+
+// CarrierPerformanceStats holds aggregate performance for a carrier/channel.
+type CarrierPerformanceStats struct {
+	ProviderName   string  `json:"provider_name"`
+	TotalOrders    int     `json:"total_orders"`
+	OnTimeCount    int     `json:"on_time_count"`
+	OnTimeRate     float64 `json:"on_time_rate"`
+	LostCount      int     `json:"lost_count"`
+	LostRate       float64 `json:"lost_rate"`
+	ReturnedCount  int     `json:"returned_count"`
+	ReturnedRate   float64 `json:"returned_rate"`
+	DamagedCount   int     `json:"damaged_count"`
+	DamagedRate    float64 `json:"damaged_rate"`
+	AvgVariancePct float64 `json:"avg_variance_pct"`
+	Score          float64 `json:"score"`
+}
+
+// GetCarrierPerformance returns performance stats aggregated from tracking + bill data.
+func (s *Service) GetCarrierPerformance(daysBack int) ([]CarrierPerformanceStats, error) {
+	if daysBack <= 0 {
+		daysBack = 90
+	}
+	since := time.Now().AddDate(0, 0, -daysBack)
+
+	// Aggregate from fulfillment_tracking
+	type trackRow struct {
+		CarrierName string
+		Total       int
+		OnTime      int
+		Lost        int
+		Returned    int
+		Damaged     int
+	}
+	var trackRows []trackRow
+	s.db.Table("fulfillment_tracking").
+		Select("COALESCE(carrier_name, 'unknown') as carrier_name, COUNT(*) as total, SUM(CASE WHEN status = 'delivered' AND delivered_at <= estimated_delivery THEN 1 ELSE 0 END) as on_time, SUM(CASE WHEN is_lost THEN 1 ELSE 0 END) as lost, SUM(CASE WHEN is_returned THEN 1 ELSE 0 END) as returned, SUM(CASE WHEN is_damaged THEN 1 ELSE 0 END) as damaged").
+		Where("created_at >= ?", since).
+		Group("carrier_name").
+		Scan(&trackRows)
+
+	// Aggregate from shipping_bill_item
+	type billRow struct {
+		ProviderName string
+		AvgVarPct    float64
+	}
+	var billRows []billRow
+	s.db.Table("shipping_bill_item").
+		Select("provider_name, COALESCE(AVG(ABS(variance_pct)), 0) as avg_var_pct").
+		Where("created_at >= ? AND variance_pct IS NOT NULL", since).
+		Group("provider_name").
+		Scan(&billRows)
+
+	billMap := make(map[string]float64)
+	for _, b := range billRows {
+		billMap[b.ProviderName] = b.AvgVarPct
+	}
+
+	var results []CarrierPerformanceStats
+	for _, tr := range trackRows {
+		st := CarrierPerformanceStats{
+			ProviderName: tr.CarrierName,
+			TotalOrders:  tr.Total,
+			OnTimeCount:  tr.OnTime,
+			LostCount:    tr.Lost,
+			ReturnedCount: tr.Returned,
+			DamagedCount: tr.Damaged,
+		}
+		if tr.Total > 0 {
+			st.OnTimeRate = roundTo(float64(tr.OnTime)/float64(tr.Total)*100, 1)
+			st.LostRate = roundTo(float64(tr.Lost)/float64(tr.Total)*100, 1)
+			st.ReturnedRate = roundTo(float64(tr.Returned)/float64(tr.Total)*100, 1)
+			st.DamagedRate = roundTo(float64(tr.Damaged)/float64(tr.Total)*100, 1)
+		}
+		if v, ok := billMap[tr.CarrierName]; ok {
+			st.AvgVariancePct = roundTo(v, 1)
+		}
+		// Composite score: higher is better, 0-100
+		score := st.OnTimeRate * 0.4
+		score -= st.LostRate * 1.0
+		score -= st.ReturnedRate * 0.5
+		score -= st.DamagedRate * 0.5
+		score -= st.AvgVariancePct * 0.3
+		if score < 0 {
+			score = 0
+		}
+		st.Score = roundTo(score, 1)
+		results = append(results, st)
+	}
+	return results, nil
 }

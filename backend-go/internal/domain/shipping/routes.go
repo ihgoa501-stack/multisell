@@ -44,16 +44,30 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		g.GET("/bill-batches", h.ListBillBatches)
 		g.GET("/bill-batches/:id", h.GetBillBatch)
 		g.POST("/bill-batches", h.CreateBillBatch)
+		g.POST("/bill-batches/import", h.ImportBill)
 		g.DELETE("/bill-batches/:id", h.DeleteBillBatch)
 		g.GET("/bill-batches/:id/items", h.ListBillItems)
-			g.POST("/bill-batches/:id/reconcile", h.ReconcileBillBatch)
-			g.GET("/bill-batches/:id/anomalies", h.ListBillAnomalies)
+		g.POST("/bill-batches/:id/reconcile", h.ReconcileBillBatch)
+		g.GET("/bill-batches/:id/anomalies", h.ListBillAnomalies)
 
-			// Phase 1: Fulfillment Intelligence OS
-			g.POST("/quote-unified", h.QuoteUnified)
-			g.POST("/snapshots", h.CreateSnapshot)
-			g.GET("/snapshots/:orderId", h.GetSnapshot)
-			g.PUT("/bill-items/:id/review", h.ReviewBillItem)
-			g.GET("/rules/:id/versions", h.ListRuleVersions)
-		}
+		// Phase 1: Fulfillment Intelligence OS
+		g.POST("/quote-unified", h.QuoteUnified)
+		g.POST("/snapshots", h.CreateSnapshot)
+		g.GET("/snapshots/:orderId", h.GetSnapshot)
+		g.PUT("/bill-items/:id/review", h.ReviewBillItem)
+		g.GET("/rules/:id/versions", h.ListRuleVersions)
+
+		// Phase 3: Fulfillment tracking
+		g.POST("/tracking", h.CreateTracking)
+		g.GET("/tracking/:orderId", h.GetTracking)
+		g.PUT("/tracking/:id/event", h.UpdateTrackingEvent)
+		g.PUT("/tracking/:id/exception", h.MarkTrackingException)
+
+		// Phase 4: Carrier performance
+		g.GET("/carrier-performance", h.GetCarrierPerformance)
+
+		// Phase 5: Carrier API (mock-backed)
+		g.GET("/carriers", h.ListCarriers)
+		g.POST("/carriers/:code/quote", h.CarrierQuote)
+	}
 }

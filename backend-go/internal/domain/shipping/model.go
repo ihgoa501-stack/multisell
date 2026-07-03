@@ -265,6 +265,43 @@ type CreateBillBatchInput struct {
 	CreatedBy      string `json:"created_by"`
 }
 
+
+// Phase 3: Fulfillment Tracking
+type FulfillmentTracking struct {
+	ID                int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OrderID           int64           `gorm:"column:order_id;not null;index" json:"order_id"`
+	TrackingNumber    string          `gorm:"column:tracking_number;not null" json:"tracking_number"`
+	CarrierCode       string          `gorm:"column:carrier_code" json:"carrier_code,omitempty"`
+	CarrierName       string          `gorm:"column:carrier_name" json:"carrier_name,omitempty"`
+	Status            string          `gorm:"column:status;default:pending" json:"status"`
+	TrackingEvents    json.RawMessage `gorm:"column:tracking_events;type:jsonb;default:'[]'" json:"tracking_events,omitempty"`
+	EstimatedDelivery *time.Time      `gorm:"column:estimated_delivery" json:"estimated_delivery,omitempty"`
+	DeliveredAt       *time.Time      `gorm:"column:delivered_at" json:"delivered_at,omitempty"`
+	IsLost            bool            `gorm:"column:is_lost;default:false" json:"is_lost"`
+	IsReturned        bool            `gorm:"column:is_returned;default:false" json:"is_returned"`
+	IsDamaged         bool            `gorm:"column:is_damaged;default:false" json:"is_damaged"`
+	Note              string          `gorm:"column:note" json:"note"`
+	CreatedAt         time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt         time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+func (FulfillmentTracking) TableName() string { return "fulfillment_tracking" }
+
+type CreateTrackingInput struct {
+	OrderID        int64  `json:"order_id" binding:"required"`
+	TrackingNumber string `json:"tracking_number" binding:"required"`
+	CarrierCode    string `json:"carrier_code"`
+	CarrierName    string `json:"carrier_name"`
+	Status         string `json:"status"`
+	Note           string `json:"note"`
+}
+
+type TrackingEvent struct {
+	Timestamp string `json:"timestamp"`
+	Status    string `json:"status"`
+	Location  string `json:"location,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
 // QuoteRequest is the payload for POST /shipping/quote.
 type QuoteRequest struct {
 	Mode                string  `json:"mode"`             // "sku" | "manual"
