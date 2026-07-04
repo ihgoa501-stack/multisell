@@ -1,5 +1,14 @@
 package main
 
+// @title           LingMirror API
+// @version         0.3.0
+// @description     Cross-border e-commerce AI AgentOS
+// @host            localhost:8080
+// @BasePath        /api/v1
+// @securityDefinitions.apikey BearerAuth
+// @in              header
+// @name            Authorization
+
 import (
 	"context"
 	"fmt"

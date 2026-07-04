@@ -667,7 +667,10 @@ func TestRegisterAndGetAdapter(t *testing.T) {
 }
 
 func TestListAdapters(t *testing.T) {
-	// init() registers "ozon" and "shopee"
+	// Register known adapters for this test scope.
+	RegisterAdapter("ozon", &mockAdapter{})
+	RegisterAdapter("shopee", &mockAdapter{})
+
 	adapters := ListAdapters()
 	if len(adapters) < 2 {
 		t.Fatalf("expected at least 2 registered adapters (ozon, shopee), got %d", len(adapters))

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
@@ -28,14 +29,21 @@ type ExtensionHandler struct {
 	pluginDriver       PluginDriver
 	autoCollectHandler func(userID int64, payload json.RawMessage) error
 	listCollectHandler func(userID int64, payload json.RawMessage) error
+	upgrader           websocket.Upgrader
 }
 
 // NewExtensionHandler creates a new ExtensionHandler.
-func NewExtensionHandler(hub *Hub, logger *zap.Logger, jwtSecret string) *ExtensionHandler {
+// allowedOrigins is the CORS allowed-origins config; "*" or empty allows all.
+func NewExtensionHandler(hub *Hub, logger *zap.Logger, jwtSecret string, allowedOrigins string) *ExtensionHandler {
 	return &ExtensionHandler{
 		hub:       hub,
 		logger:    logger,
 		jwtSecret: jwtSecret,
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin:     makeOriginCheck(allowedOrigins),
+		},
 	}
 }
 
@@ -62,7 +70,7 @@ func (h *ExtensionHandler) OnListCollect(hook func(userID int64, payload json.Ra
 // ServeWS upgrades HTTP connections to WebSocket. Unlike the main WebSocket
 // handler, auth is deferred to the first WebSocket message.
 func (h *ExtensionHandler) ServeWS(c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		h.logger.Error("extension websocket upgrade failed", zap.Error(err))
 		return

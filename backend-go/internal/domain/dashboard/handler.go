@@ -19,6 +19,13 @@ func NewHandler(service *Service) *Handler {
 }
 
 // Overview GET /dashboard/overview
+// @Summary      Dashboard overview
+// @Description  Get dashboard overview with key metrics
+// @Tags         dashboard
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /dashboard/overview [get]
 func (h *Handler) Overview(c *gin.Context) {
 	o, err := h.service.Overview()
 	if err != nil {
@@ -29,6 +36,14 @@ func (h *Handler) Overview(c *gin.Context) {
 }
 
 // Orders GET /dashboard/orders
+// @Summary      Order trends
+// @Description  Get order trend data for the dashboard
+// @Tags         dashboard
+// @Produce      json
+// @Param        days  query  int  false  "Number of days (default 30)"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /dashboard/orders [get]
 func (h *Handler) Orders(c *gin.Context) {
 	days := 30
 	if v := c.Query("days"); v != "" {
@@ -45,6 +60,14 @@ func (h *Handler) Orders(c *gin.Context) {
 }
 
 // Inventory GET /dashboard/inventory
+// @Summary      Inventory health
+// @Description  Get inventory health data for the dashboard
+// @Tags         dashboard
+// @Produce      json
+// @Param        limit  query  int  false  "Max items (default 20)"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /dashboard/inventory [get]
 func (h *Handler) Inventory(c *gin.Context) {
 	limit := 20
 	if v := c.Query("limit"); v != "" {
@@ -61,6 +84,13 @@ func (h *Handler) Inventory(c *gin.Context) {
 }
 
 // Exceptions GET /dashboard/exceptions
+// @Summary      Exception distribution
+// @Description  Get exception distribution data for the dashboard
+// @Tags         dashboard
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /dashboard/exceptions [get]
 func (h *Handler) Exceptions(c *gin.Context) {
 	items, err := h.service.ExceptionDistribution()
 	if err != nil {
@@ -71,6 +101,13 @@ func (h *Handler) Exceptions(c *gin.Context) {
 }
 
 // RejectionReasons GET /dashboard/rejection-reasons
+// @Summary      Rejection reason stats
+// @Description  Get rejection reason statistics for the dashboard
+// @Tags         dashboard
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /dashboard/rejection-reasons [get]
 func (h *Handler) RejectionReasons(c *gin.Context) {
 	items, err := h.service.GetRejectionReasonStats()
 	if err != nil {

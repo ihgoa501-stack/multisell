@@ -1,6 +1,21 @@
 package integrations
 
-import "context"
+import (
+	"context"
+	"net/http"
+)
+
+// WebhookVerifier is an optional interface that adapters can implement to
+// verify incoming webhook payload signatures before any processing occurs.
+// The webhook handler checks for this interface and rejects unauthenticated
+// payloads before they reach the event bus.
+type WebhookVerifier interface {
+	// VerifyWebhookSignature checks the HMAC or other signature on an incoming
+	// webhook request. body is the raw request body, and headers contains all
+	// HTTP headers from the request (canonicalized per Go's http.Header).
+	// Returns true if and only if the signature is valid.
+	VerifyWebhookSignature(ctx context.Context, body []byte, headers http.Header) bool
+}
 
 // PlatformAdapter defines the interface for interacting with a third-party
 // e-commerce platform (Shopify, Lazada, Shopee, etc.).

@@ -88,16 +88,15 @@ function LayerEditModal({
   onOk: (l: Layer) => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState('');
-  const [fontSize, setFontSize] = useState(24);
-  const [color, setColor] = useState('#000000');
-  const [src, setSrc] = useState('');
-  const [imgW, setImgW] = useState(200);
-  const [imgH, setImgH] = useState(200);
-  const [x, setX] = useState(0);
-  const [y, setY] = useState(0);
+  const [text, setText] = useState(layer?.type === 'text' ? layer.text : '');
+  const [fontSize, setFontSize] = useState(layer?.type === 'text' ? layer.fontSize : 24);
+  const [color, setColor] = useState(layer?.type === 'text' ? layer.color : '#000000');
+  const [src, setSrc] = useState(layer?.type === 'image' ? layer.src : '');
+  const [imgW, setImgW] = useState(layer?.type === 'image' ? layer.width : 200);
+  const [imgH, setImgH] = useState(layer?.type === 'image' ? layer.height : 200);
+  const [x, setX] = useState(layer?.x ?? 0);
+  const [y, setY] = useState(layer?.y ?? 0);
 
-  // ponytail: Modal key+destroyOnClose remounts on layer change, no useEffect needed
   const handleOk = () => {
     if (!layer) return;
     if (layer.type === 'text') {

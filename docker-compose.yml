@@ -1,19 +1,21 @@
 # 凌镜 LingMirror — 开发环境
 # docker compose up -d
+#
+# WARNING: This file is used as the base for production (-f docker-compose.yml -f docker-compose.prod.yml). Do not hardcode production credentials.
 
 services:
   db:
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: multisell
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
       - "5432:5432"
     volumes:
       - postgres_go_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d multisell"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d multisell"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -27,7 +29,7 @@ services:
       - ./backend-go/migrations:/migrations
     command:
       -path /migrations
-      -database "postgresql://postgres:postgres@db:5432/multisell?sslmode=disable"
+      -database "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/multisell?sslmode=disable"
       up
     restart: "no"
 
@@ -43,10 +45,10 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: "5432"
-      DB_USER: postgres
-      DB_PASSWORD: postgres
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: multisell
-      JWT_SECRET: dev-secret-change-in-production
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       SERVER_PORT: "8080"
     depends_on:
       db:
@@ -86,8 +88,8 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: "5432"
-      DB_USER: postgres
-      DB_PASSWORD: postgres
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: multisell
       BACKUP_DIR: /backups
       RETENTION_DAYS: "7"

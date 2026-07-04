@@ -289,6 +289,18 @@ func (h *Handler) DeleteSpecValue(c *gin.Context) {
 
 // ListSkus returns a paginated list of SKUs.
 // GET /api/v1/skus?page=1&size=20&search=xxx&product_id=
+// @Summary      List SKUs
+// @Description  Get paginated list of SKUs
+// @Tags         products
+// @Accept       json
+// @Produce      json
+// @Param        page       query  int     false  "Page number"
+// @Param        size       query  int     false  "Page size"
+// @Param        search     query  string  false  "Search keyword"
+// @Param        product_id query  int     false  "Filter by product ID"
+// @Success      200  {object}  response.PageResult
+// @Security     BearerAuth
+// @Router       /skus [get]
 func (h *Handler) ListSkus(c *gin.Context) {
 	p := common.ParsePagination(c)
 	search := c.Query("search")

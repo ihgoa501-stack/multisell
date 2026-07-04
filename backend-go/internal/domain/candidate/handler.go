@@ -32,6 +32,18 @@ func parseID(c *gin.Context) (int64, bool) {
 }
 
 // List GET /candidates
+// @Summary      List candidates
+// @Description  Get paginated list of candidate products
+// @Tags         candidates
+// @Accept       json
+// @Produce      json
+// @Param        page    query  int     false  "Page number"
+// @Param        size    query  int     false  "Page size"
+// @Param        status  query  string  false  "Filter by status"
+// @Param        search  query  string  false  "Search keyword"
+// @Success      200  {object}  response.PageResult
+// @Security     BearerAuth
+// @Router       /candidates [get]
 func (h *Handler) List(c *gin.Context) {
 	p := common.ParsePagination(c)
 	filter := &ListCandidateFilter{
@@ -85,6 +97,14 @@ func (h *Handler) GetCollectLead(c *gin.Context) {
 }
 
 // Get GET /candidates/:id
+// @Summary      Get candidate detail
+// @Description  Get a single candidate product by ID
+// @Tags         candidates
+// @Produce      json
+// @Param        id   path  int  true  "Candidate ID"
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /candidates/{id} [get]
 func (h *Handler) Get(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -103,6 +123,15 @@ func (h *Handler) Get(c *gin.Context) {
 }
 
 // Create POST /candidates
+// @Summary      Create candidate
+// @Description  Create a new candidate product
+// @Tags         candidates
+// @Accept       json
+// @Produce      json
+// @Param        body  body  CreateCandidateInput  true  "Candidate data"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /candidates [post]
 func (h *Handler) Create(c *gin.Context) {
 	var in CreateCandidateInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -122,6 +151,16 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 // Update PUT /candidates/:id
+// @Summary      Update candidate
+// @Description  Update an existing candidate product
+// @Tags         candidates
+// @Accept       json
+// @Produce      json
+// @Param        id    path  int                 true  "Candidate ID"
+// @Param        body  body  UpdateCandidateInput  true  "Update data"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /candidates/{id} [put]
 func (h *Handler) Update(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -145,6 +184,14 @@ func (h *Handler) Update(c *gin.Context) {
 }
 
 // Delete DELETE /candidates/:id
+// @Summary      Delete candidate
+// @Description  Delete a candidate product by ID
+// @Tags         candidates
+// @Produce      json
+// @Param        id  path  int  true  "Candidate ID"
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /candidates/{id} [delete]
 func (h *Handler) Delete(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -162,6 +209,13 @@ func (h *Handler) Delete(c *gin.Context) {
 }
 
 // Count GET /candidates/count
+// @Summary      Count candidates
+// @Description  Get total count of candidate products
+// @Tags         candidates
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /candidates/count [get]
 func (h *Handler) Count(c *gin.Context) {
 	total, err := h.service.Count()
 	if err != nil {
@@ -212,7 +266,16 @@ func (h *Handler) respondErr(c *gin.Context, err error) bool {
 }
 
 // FillFields PUT /candidates/:id/fields
-// Manually fill one or more completeness fields and recalculate status.
+// @Summary      Fill candidate fields
+// @Description  Manually fill completeness fields for a candidate
+// @Tags         candidates
+// @Accept       json
+// @Produce      json
+// @Param        id    path  int               true  "Candidate ID"
+// @Param        body  body  FillFieldsInput   true  "Field values"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /candidates/{id}/fields [put]
 func (h *Handler) FillFields(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {

@@ -43,6 +43,19 @@ func parseOptionalInt64(c *gin.Context, key string) *int64 {
 }
 
 // List GET /order
+// @Summary      List orders
+// @Description  Get paginated list of orders
+// @Tags         orders
+// @Accept       json
+// @Produce      json
+// @Param        page        query  int     false  "Page number"
+// @Param        size        query  int     false  "Page size"
+// @Param        search      query  string  false  "Search keyword"
+// @Param        status      query  string  false  "Filter by status"
+// @Param        platform_id query  int     false  "Filter by platform ID"
+// @Success      200  {object}  response.PageResult
+// @Security     BearerAuth
+// @Router       /order [get]
 func (h *Handler) List(c *gin.Context) {
 	p := common.ParsePagination(c)
 	f := &OrderListFilter{
@@ -63,6 +76,14 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // Get GET /order/:id
+// @Summary      Get order
+// @Description  Get order detail by ID
+// @Tags         orders
+// @Produce      json
+// @Param        id  path  int  true  "Order ID"
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /order/{id} [get]
 func (h *Handler) Get(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -132,6 +153,16 @@ func (h *Handler) Delete(c *gin.Context) {
 }
 
 // UpdateStatus POST /order/:id/status
+// @Summary      Update order status
+// @Description  Transition order status via state machine
+// @Tags         orders
+// @Accept       json
+// @Produce      json
+// @Param        id    path  int     true  "Order ID"
+// @Param        body  body  object{from=string,to=string,operator=string,remark=string}  true  "Status transition"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /order/{id}/status [post]
 func (h *Handler) UpdateStatus(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -155,6 +186,13 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 }
 
 // Summary GET /order/summary
+// @Summary      Order summary
+// @Description  Get order summary statistics
+// @Tags         orders
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /order/summary [get]
 func (h *Handler) Summary(c *gin.Context) {
 	sum, err := h.service.Summary()
 	if err != nil {

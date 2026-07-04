@@ -55,6 +55,15 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		// Validate token type — reject refresh tokens used as access tokens.
+		if tokenType, exists := claims["type"]; !exists || tokenType != "access" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "invalid or expired token",
+			})
+			return
+		}
+
 		if userID, exists := claims["user_id"]; exists {
 			switch v := userID.(type) {
 			case float64:

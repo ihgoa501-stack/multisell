@@ -28,13 +28,21 @@ type loginRequest struct {
 
 type registerRequest struct {
 	Username    string `json:"username" binding:"required,min=3,max=100"`
-	Password    string `json:"password" binding:"required,min=6"`
+	Password    string `json:"password" binding:"required,min=8"`
 	DisplayName string `json:"display_name"`
 	Email       string `json:"email"`
 	Role        string `json:"role"` // ignored on purpose — hardcoded in Register for security
 }
 
 // Register handles new user registration.
+// @Summary      Register a new user
+// @Description  Create a new operator account. Role is hardcoded to "operator" for security.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body  registerRequest  true  "Registration info"
+// @Success      200   {object}  response.Result{data=UserVO}
+// @Router       /auth/register [post]
 func (h *Handler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -53,6 +61,14 @@ func (h *Handler) Register(c *gin.Context) {
 }
 
 // Login handles user login.
+// @Summary      User login
+// @Description  Authenticate with username and password, returns JWT tokens
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body  loginRequest  true  "Login credentials"
+// @Success      200   {object}  response.Result
+// @Router       /auth/login [post]
 func (h *Handler) Login(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -80,6 +96,14 @@ type refreshRequest struct {
 }
 
 // Refresh handles token refresh.
+// @Summary      Refresh JWT token
+// @Description  Exchange a refresh token for a new access token
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body  refreshRequest  true  "Refresh token"
+// @Success      200   {object}  response.Result
+// @Router       /auth/refresh [post]
 func (h *Handler) Refresh(c *gin.Context) {
 	var req refreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -103,6 +127,13 @@ func (h *Handler) Refresh(c *gin.Context) {
 }
 
 // CurrentUser returns the authenticated user info from the JWT context.
+// @Summary      Get current user
+// @Description  Return the authenticated user's profile info
+// @Tags         auth
+// @Produce      json
+// @Success      200  {object}  response.Result{data=UserVO}
+// @Security     BearerAuth
+// @Router       /auth/me [get]
 func (h *Handler) CurrentUser(c *gin.Context) {
 	uid, exists := c.Get("user_id")
 	if !exists {

@@ -21,6 +21,33 @@ Version: v0.3.0 — 2026-07-03 中完成 12 线并行合并：10 个 PR 合入 m
 
 历史文档中出现 `backend/app/*`、`frontend/src/views/*`、`/api/*` 时，按旧栈参考处理（已归档在 git history 中）。
 
+
+## 2026-07-03 并行修复收口
+
+~20 个 Agent 在 worktree 中并行执行，完成安全修复、Bug 修复、基础设施加固、文档体系建设和测试脚本开发。
+
+| 类别 | 内容 |
+|------|------|
+| **安全修复** | WebSocket CheckOrigin 配置化验证（不再 `return true`）；JWT 中间件校验 token type=access，拒绝 refresh token；Webhook HMAC 验签（Ozon HMAC-SHA256 + Shopee HMAC）；密码最小长度 6→8；注册 5/min + refresh 20/min 限流；Rate limiter 启动 CleanupPeriodic goroutine |
+| **Bug 修复** | M1 Metabolism Execute() 在 ScoringAdapter=nil 时返回 500 而非崩溃；Canvas 页面 useEffect+setState 改为 key-based remount |
+| **基础设施** | docker-compose 8 处硬编码凭证替换为 `${VAR:-default}`；AIOS setup.go 标记 7 个未用模块（ponytail:）；Prometheus 新增 6 条 AI 管道告警规则（EventBus 队列积压、scheduler 错误、agent 心跳、5xx 尖峰） |
+| **文档体系** | ADR-001~006 架构决策记录（`docs/adr/`）；INCIDENT_RESPONSE.md（SEV1-3 定义 + 5 场景流程）；DISASTER_RECOVERY.md（24h RPO / 2h RTO + 恢复步骤）；RUNBOOK.md 更新；Swagger/OpenAPI（swaggo 安装 + 44 核心端点标注，`/swagger/index.html` 在线）；api-inventory.md 27→71 模块更新；5 份重叠文档合并入 reference-module-catalog.md 作为单一事实源 |
+| **测试脚本** | `backend-go/scripts/smoke_test.sh` + `smoke_test_setup.sh` — 10 步端到端管道验证 |
+
+### 验证摘要
+
+| 检查 | 状态 | 说明 |
+|------|------|------|
+| WebSocket CheckOrigin | ✅ 已实现 | `cors.allowed_origins` 配置化验证 |
+| JWT token type 校验 | ✅ 已实现 | 中间件拒绝 refresh token 访问受保护端点 |
+| Webhook HMAC 验签 | ✅ 已实现 | Ozon（HMAC-SHA256）+ Shopee（HMAC）双平台 |
+| docker-compose 凭证 | ✅ 已替换 | 8 处硬编码改为 env var 默认值 |
+| Swagger 端点 | ✅ 已配置 | `GET /swagger/index.html` — 44 核心端点 |
+| smoke_test.sh | ✅ 已编写 | 10 步骤管道验证，需在有效数据库上运行 |
+| Prometheus 告警 | ✅ 已配置 | `deploy/prometheus/rules/lingmirror_alerts.yml` |
+| `go test ./...` / `go vet ./...` | ⏳ 待验证 | 安全修复 + 新脚本引入后需重新运行 |
+
+
 ## 一句话说明
 
 凌镜是跨境电商 AI AgentOS，核心流程是：
@@ -51,39 +78,15 @@ cd frontend-next
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
-## 当前覆盖
+## 模块与路由覆盖
 
-### 后端
+> 完整的模块、路由和前端页面清单请参见 [reference-module-catalog.md](reference-module-catalog.md)（唯一事实源）。以下仅保留项目状态独有的内容。
 
-`backend-go/internal/httpx/router.go` 在 `/api/v1` 下注册了认证、RBAC、Agent、AgentOS 和业务域路由。当前业务域包括：
-
-- 商品基础：`category`、`brand`、`sku`、`price`、`inventory`、`supplier`
-- 平台与发布：`platform`、`integrations`、`listing`、`listingtask`
-- 订单履约：`order`、`orderimport`、`shipping`、`logistics`、`platformfee`、`aftersales`
-- 财务经营：`finance`、`settlement`、`decision`、`allocation`、`report`、`exchangerate`
-- 运营支撑：`dashboard`、`search`、`notification`、`exceptions`、`operationlog`、`importbatch`
-- AI / AgentOS：`ai`、`agent`、`agentos`、`agentrule`、`entropy`、`evolution`、`trustscore`、`actionpolicy`
-- 选品与生图：`sourcing`、`sourcing1688`、`imagegen`
-- 实时能力：WebSocket `/ws`
-
-### 前端
-
-`frontend-next/src/app/` 已按业务域迁移到 Next App Router。当前 build 输出覆盖：
-
-- Dashboard / AI / AgentOS / Action Center
-- 商品、SKU、分类、品牌、库存、供应商
-- 平台、平台集成、刊登、刊登任务、刊登任务详情
-- 订单、订单详情、订单导入、售后、代谢评分
-- 物流、平台费用、结算、结算详情、财务、经营决策、成本分摊
-- 选品分析、1688 采购
-- 异常、通知、生图、画布、批量导入、操作日志、搜索、报表
-- 设置、LLM 配置、RBAC、审批策略
-
-侧边栏菜单目前有 47 个入口，已确认都能匹配到 `frontend-next/src/app` 下的实际页面。
+`backend-go/internal/httpx/router.go` 在 `/api/v1` 下注册了认证、RBAC、Agent、AgentOS 和业务域路由，覆盖商品、平台、订单、财务、AI/AgentOS、选品生图等全套领域。`frontend-next/src/app/` 侧边栏菜单目前有 47 个入口，均已匹配到实际页面。
 
 ## 验证状态
 
-2026-06-30 质量收口复核（Issue #64）：
+2026-07-03 工作台 + 并行修复收口（Issue #64 + 20-Agent 并行执行）：
 
 | 检查 | 结果 | 说明 |
 |---|---:|---|
@@ -92,6 +95,11 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 | `cd frontend-next && npm test` | 通过 | 77 tests |
 | `cd frontend-next && npm run build` | **失败** | `src/config/menu.ts` 存在未解决的合并冲突标记，3 个 Turbopack 构建错误 |
 | `cd frontend-next && npm run lint` | **12 errors, 22 warnings** | 34 problems；含 merge conflict 解析错误、react-hooks/set-state-in-effect、@typescript-eslint/no-unused-vars 等 |
+| 安全基线加固（6 项） | ✅ 已实现 | WebSocket CheckOrigin / JWT type 校验 / Webhook HMAC / 密码 8+ / 限流 / rate limiter cleanup |
+| Swagger / OpenAPI | ✅ 已配置 | swaggo 安装 + 44 核心端点标注，`/swagger/index.html` 在线 |
+| 运营文档体系 | ✅ 已建立 | ADR-001~006 / INCIDENT_RESPONSE.md / DISASTER_RECOVERY.md / RUNBOOK.md 更新 |
+| smoke_test 脚本 | ✅ 已编写 | `backend-go/scripts/smoke_test.sh` + `smoke_test_setup.sh` |
+| Prometheus 告警规则 | ✅ 已配置 | `deploy/prometheus/rules/lingmirror_alerts.yml` — 6 条 AI 管道规则 |
 
 ## 本次修复内容（2026-06-25，4 Agent 并行执行）
 

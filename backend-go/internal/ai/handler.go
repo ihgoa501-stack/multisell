@@ -23,6 +23,15 @@ func NewHandler(service *Service, orchestrator *Orchestrator, streamer *Streamer
 }
 
 // Chat POST /ai/chat
+// @Summary      AI chat
+// @Description  Send a message to the AI assistant and get a response (supports streaming)
+// @Tags         ai
+// @Accept       json
+// @Produce      json
+// @Param        body  body  ChatInput  true  "Chat message"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /ai/chat [post]
 func (h *Handler) Chat(c *gin.Context) {
 	var in ChatInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -55,6 +64,15 @@ func (h *Handler) Chat(c *gin.Context) {
 }
 
 // RunAgent POST /ai/run
+// @Summary      Run AI agent
+// @Description  Execute an agent decision point with the given context
+// @Tags         ai
+// @Accept       json
+// @Produce      json
+// @Param        body  body  RunAgentRequest  true  "Agent run request"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /ai/run [post]
 func (h *Handler) RunAgent(c *gin.Context) {
 	var in RunAgentRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -71,6 +89,20 @@ func (h *Handler) RunAgent(c *gin.Context) {
 }
 
 // ListTraces GET /ai/traces
+// @Summary      List AI traces
+// @Description  Get paginated list of AI agent execution traces
+// @Tags         ai
+// @Accept       json
+// @Produce      json
+// @Param        page           query  int     false  "Page number"
+// @Param        size           query  int     false  "Page size"
+// @Param        search         query  string  false  "Search keyword"
+// @Param        agent_id       query  string  false  "Filter by agent ID"
+// @Param        status         query  string  false  "Filter by status"
+// @Param        decision_point query  string  false  "Filter by decision point"
+// @Success      200  {object}  response.PageResult
+// @Security     BearerAuth
+// @Router       /ai/traces [get]
 func (h *Handler) ListTraces(c *gin.Context) {
 	p := common.ParsePagination(c)
 	f := &TraceListFilter{
@@ -88,6 +120,14 @@ func (h *Handler) ListTraces(c *gin.Context) {
 }
 
 // GetTrace GET /ai/traces/:trace_id
+// @Summary      Get AI trace
+// @Description  Get a single execution trace by trace ID
+// @Tags         ai
+// @Produce      json
+// @Param        trace_id  path  string  true  "Trace UUID"
+// @Success      200       {object}  response.Result
+// @Security     BearerAuth
+// @Router       /ai/traces/{trace_id} [get]
 func (h *Handler) GetTrace(c *gin.Context) {
 	traceID := c.Param("trace_id")
 	if traceID == "" {
@@ -236,6 +276,13 @@ func (h *Handler) ReviewAction(c *gin.Context) {
 }
 
 // Roster GET /ai/agents
+// @Summary      Agent roster
+// @Description  Get list of all registered AI agents
+// @Tags         ai
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /ai/agents [get]
 func (h *Handler) Roster(c *gin.Context) {
 	roster, err := h.service.Roster()
 	if err != nil {
@@ -246,6 +293,13 @@ func (h *Handler) Roster(c *gin.Context) {
 }
 
 // AgentSpecs GET /ai/agents/specs
+// @Summary      Agent specs
+// @Description  Get the full registry of agent specifications
+// @Tags         ai
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /ai/agents/specs [get]
 func (h *Handler) AgentSpecs(c *gin.Context) {
 	response.Success(c, h.orchestrator.Registry().Agents)
 }

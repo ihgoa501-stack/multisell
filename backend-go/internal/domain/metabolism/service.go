@@ -186,8 +186,7 @@ func (s *MetabolismService) Execute(dryRun bool) error {
 	now := time.Now()
 
 	if s.adapter == nil {
-		s.logger.Warn("metabolism: no adapter registered, Execute is a no-op")
-		return nil
+		return fmt.Errorf("metabolism: scoring not configured — adapter is nil")
 	}
 
 	events, err := s.adapter.ScorableEvents("")

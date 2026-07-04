@@ -184,6 +184,7 @@ func TestAuth_SetsUserID_Float64Claim(t *testing.T) {
 	})
 
 	tok := signToken(t, cfg, jwt.MapClaims{
+		"type": "access",
 		"user_id": float64(42),
 		"exp":     float64(time.Now().Add(time.Hour).Unix()),
 	})
@@ -216,6 +217,7 @@ func TestAuth_SetsUserID_Int64Claim(t *testing.T) {
 	})
 
 	tok := signToken(t, cfg, jwt.MapClaims{
+		"type": "access",
 		"user_id": int64(100),
 		"exp":     float64(time.Now().Add(time.Hour).Unix()),
 	})
@@ -248,6 +250,7 @@ func TestAuth_MissingUserIDClaim(t *testing.T) {
 	})
 
 	tok := signToken(t, cfg, jwt.MapClaims{
+		"type": "access",
 		"sub": "test-subject",
 		"exp": float64(time.Now().Add(time.Hour).Unix()),
 	})
@@ -276,6 +279,7 @@ func TestAuth_NonNumericUserID(t *testing.T) {
 	})
 
 	tok := signToken(t, cfg, jwt.MapClaims{
+		"type": "access",
 		"user_id": "alice",
 		"exp":     float64(time.Now().Add(time.Hour).Unix()),
 	})

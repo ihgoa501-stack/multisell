@@ -3,6 +3,9 @@ package integrations
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,10 +20,6 @@ const (
 	OzonAPIBase        = "https://api-seller.ozon.ru"
 	OzonDefaultTimeout = 30 * time.Second
 )
-
-func init() {
-	RegisterAdapter("ozon", NewOzonAdapter(nil, nil))
-}
 
 // OzonAdapter implements PlatformAdapter for the Ozon seller API.
 type OzonAdapter struct {
@@ -523,6 +522,39 @@ func (a *OzonAdapter) ListProducts(ctx context.Context, platformID int64) ([]Ozo
 	}
 	return products, nil
 }
+
+func (a *OzonAdapter) VerifyWebhookSignature(ctx context.Context, body []byte, headers http.Header) bool {
+	signature := headers.Get("X-Ozon-Signature")
+	if signature == "" {
+		return false
+	}
+
+	// Ozon adapters share one webhook per seller account; find the first active account's config.
+	var accts []PlatformIntegrationAccount
+	if err := a.db.WithContext(ctx).
+		Model(&PlatformIntegrationAccount{}).
+		Where("platform_id = (SELECT id FROM platform WHERE code = ?) AND status = ?", "ozon", "active").
+		Limit(1).
+		Find(&accts).Error; err != nil || len(accts) == 0 {
+		return false
+	}
+
+	var cfg struct {
+		WebhookSecret string `json:"webhook_secret"`
+	}
+	if len(accts[0].Config) > 0 {
+		_ = json.Unmarshal(accts[0].Config, &cfg)
+	}
+	if cfg.WebhookSecret == "" {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(cfg.WebhookSecret))
+	mac.Write(body)
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
+}
+
 
 // --- helpers ---
 

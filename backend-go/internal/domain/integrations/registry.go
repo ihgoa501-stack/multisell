@@ -21,6 +21,7 @@ var (
 func InitAdapters(db *gorm.DB, logger *zap.Logger) {
 	RegisterAdapter("ozon", NewOzonAdapter(db, logger))
 	RegisterAdapter("shopee", NewShopeeAdapter(db, logger))
+	RegisterAdapter("shopify", NewShopifyAdapter(db, logger))
 }
 
 // RegisterAdapter registers a PlatformAdapter implementation under the given
