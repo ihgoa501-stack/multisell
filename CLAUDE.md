@@ -21,7 +21,7 @@ When these governance docs conflict with older project docs, follow the governan
 ## Project
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
-Version `v0.2.1` in `VERSION`, tracked on `main`.
+Version `v0.3.0.0` in `VERSION`, tracked on `main`.
 
 | Stack | Dir | Entry |
 |-------|-----|-------|

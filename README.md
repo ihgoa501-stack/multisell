@@ -11,7 +11,10 @@
 
 ## 核心定位
 
-**商品在这里创建 → AI加工 → 一键发布到多个平台。**
+**商品在这里创建 → AI 加工和经营判断 → Owner 审批 → 生成受控发布任务。**
+
+当前执行方向见 [docs/CURRENT_DIRECTION_AND_PRIORITIES.md](docs/CURRENT_DIRECTION_AND_PRIORITIES.md)。
+短期重点不是全自动生产执行，而是让商品、利润、履约、Agent 建议、审批和审计形成可信闭环。
 
 ## 功能模块
 
@@ -25,7 +28,7 @@
 | 库存管理 | 库存更新、安全库存预警、库存变动记录 |
 | 供应商管理 | 供应商档案、商品-供应商绑定 |
 | 平台管理 | 配置Ozon/Shopee等多平台API密钥 |
-| 发布管理 | 一键发布商品到多平台、发布状态追踪 |
+| 发布管理 | 生成发布任务、审批后进入发布流程、追踪发布状态 |
 | AI增强 | AI生成商品标题/描述/SEO关键词 |
 | AI选品 | A8 Agent 利润分析引擎，1688 选品采集与评估 |
 | 物流费率 | A10 物流费率引擎，四类定价模式，YAML 费率表配置 |
@@ -103,6 +106,7 @@ npm run lint
 ### 📖 参考
 | 文档 | 用途 |
 |------|------|
+| [当前方向与优先级](docs/CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向、AgentOS 安全优先级、下一阶段建议 |
 | [API 快速参考](docs/reference-api-quick.md) | 路由、认证、响应格式、中间件栈速查 |
 | [模块目录](docs/reference-module-catalog.md) | 全部 60+ 后端领域模块一览 |
 | [配置参考](docs/reference-configuration.md) | config.yaml + 环境变量完整说明 |

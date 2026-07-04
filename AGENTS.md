@@ -13,7 +13,7 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 ## Project
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
-Version `v0.2.1`.
+Version `v0.3.0.0`.
 
 ## Governance First
 
@@ -186,6 +186,7 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 
 - `CLAUDE.md` — Claude Code guidance (keep consistent).
 - `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.
+- `docs/CURRENT_DIRECTION_AND_PRIORITIES.md` — current execution direction, safety priorities, and documentation cleanup rules.
 - `docs/INDEX.md` — full doc index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
 - `docs/ACTIVE_STACK_POLICY.md` — active/legacy policy.
