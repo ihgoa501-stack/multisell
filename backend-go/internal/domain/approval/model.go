@@ -39,7 +39,7 @@ func (ApprovalRequest) TableName() string { return "approval_request" }
 type CreateApprovalInput struct {
 	ProductID   int64      `json:"product_id" binding:"required"`
 	RequestType string     `json:"request_type" binding:"required"`
-	Requester   string     `json:"requester" binding:"required"`
+	Requester   string     `json:"requester"`
 	OldValue    string     `json:"old_value"`
 	NewValue    string     `json:"new_value"`
 	Reason      string     `json:"reason"`

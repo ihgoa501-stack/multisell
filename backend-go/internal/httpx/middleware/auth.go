@@ -75,6 +75,12 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 			}
 		}
 
+		if username, exists := claims["username"]; exists {
+			if s, ok := username.(string); ok {
+				c.Set("username", s)
+			}
+		}
+
 		c.Next()
 	}
 }

@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -205,6 +206,9 @@ func (s *Service) ExecuteAction(id int64, operator, _ string) (*UnifiedAction, e
 	// Validate against action catalog before execution.
 	if s.cat != nil {
 		if err := s.cat.ValidateProduction(a.ActionType, riskLevelToInt(a.RiskLevel), a.Status == "approved"); err != nil {
+			if errors.Is(err, actioncatalog.ErrApprovalRequired) {
+				return nil, ErrApprovalRequired
+			}
 			return nil, err
 		}
 	}

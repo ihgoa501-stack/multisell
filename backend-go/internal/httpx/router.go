@@ -178,7 +178,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// AI orchestrator (shared by /ai and /agents routes).
 	aiosCfg := setup.Initialize(db, bus, logger)
 	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
-	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget).WithBus(bus)
+	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget).WithBus(bus).WithCatalog(cat).WithDispatcher(cmd)
 
 	// Pipeline engine for declarative decision DAG (replaces inline chain handlers).
 	pipelineEng := pipeline.NewEngine(func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {

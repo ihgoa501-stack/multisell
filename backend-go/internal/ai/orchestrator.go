@@ -18,6 +18,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
+	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
+	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -54,6 +56,12 @@ type Orchestrator struct {
 	// In production this runs in a goroutine; tests with SQLite can set this to
 	// true to avoid table-lock races during cleanup.
 	trustScoreSync bool
+
+	// cmd is the command dispatcher for executing actions through registered handlers.
+	cmd *command.Dispatcher
+
+	// cat is the action catalog for production validation before execution.
+	cat *actioncatalog.Catalog
 }
 
 // NewOrchestrator creates a new AI orchestrator.
@@ -101,6 +109,20 @@ func (o *Orchestrator) WithHub(hub *realtime.Hub) *Orchestrator {
 // WithBus sets the event bus for publishing agent decision events.
 func (o *Orchestrator) WithBus(bus EventPublisher) *Orchestrator {
 	o.bus = bus
+	return o
+}
+
+// WithDispatcher attaches a command dispatcher so that auto-execution
+// path dispatches through registered command handlers.
+func (o *Orchestrator) WithDispatcher(cmd *command.Dispatcher) *Orchestrator {
+	o.cmd = cmd
+	return o
+}
+
+// WithCatalog attaches an action catalog for production validation
+// before action execution.
+func (o *Orchestrator) WithCatalog(cat *actioncatalog.Catalog) *Orchestrator {
+	o.cat = cat
 	return o
 }
 
@@ -343,7 +365,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		if action != nil {
 			if fbErr := actionpolicy.CheckForbidden(o.db, action.AgentID, action.ActionType, action.RiskLevel); fbErr != nil {
 				o.logger.Warn("action blocked by forbidden rules", zap.Int64("action_id", action.ID), zap.Error(fbErr))
-				aiSvc := NewService(o.db, o.logger)
+				aiSvc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
 				if _, rejErr := aiSvc.RejectAction(action.ID, "governance", "blocked: "+fbErr.Error()); rejErr != nil {
 					o.logger.Warn("failed to reject forbidden action", zap.Error(rejErr))
 				}
@@ -369,7 +391,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			if policyErr != nil {
 				o.logger.Warn("policy evaluation failed", zap.Int64("action_id", action.ID), zap.Error(policyErr))
 			} else if result.FinalOutcome == "auto_approve" {
-				aiSvc := NewService(o.db, o.logger)
+				aiSvc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
 				if _, err := aiSvc.ApproveAction(action.ID, "policy", "auto-approved: "+result.Verdicts[0].Reason); err != nil {
 					o.logger.Warn("auto-approve failed", zap.Error(err))
 				} else if _, err := aiSvc.ExecuteAction(action.ID, "policy", "auto-executed"); err != nil {
@@ -380,7 +402,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 				}
 			} else if result.FinalOutcome == "block" {
 				o.logger.Warn("policy blocked action", zap.Int64("action_id", action.ID))
-				aiSvc := NewService(o.db, o.logger)
+				aiSvc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
 				if _, err := aiSvc.RejectAction(action.ID, "policy", "blocked: "+result.Verdicts[0].Reason); err != nil {
 					o.logger.Warn("reject failed", zap.Error(err))
 				} else {
@@ -484,7 +506,7 @@ func (o *Orchestrator) publishDecisionEvent(traceID string, agent AgentSpec, req
 
 // persistAction stores a unified action via the Service to avoid duplicates.
 func (o *Orchestrator) persistAction(in *CreateActionInput) (*UnifiedAction, error) {
-	svc := NewService(o.db, o.logger)
+	svc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
 	return svc.CreateAction(in)
 }
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -89,7 +90,7 @@ func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 						operator = x
 					}
 				case int64:
-					operator = "user:" + itoa(x)
+					operator = "user:" + strconv.FormatInt(x, 10)
 				}
 			}
 		}
@@ -126,9 +127,8 @@ func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 		// Fire-and-forget. Use a separate goroutine with a context timeout so a
 		// slow DB never blocks the request goroutine.
 		go func(e *operationlog.OperationLog) {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			_ = ctx // operationlog.Service.Create does not accept a context yet; keep for future.
 			if err := svc.Create(e); err != nil {
 				logger.Warn("audit log write failed", zap.Error(err), zap.String("path", path))
 			}
@@ -226,29 +226,6 @@ func composeAuditContent(c *gin.Context, bodySnippet string, status int) string 
 	return string(b)
 }
 
-// itoa is a stdlib-free int64→string for hot paths.
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
-
 // isSensitivePath checks if the given path matches any sensitive read path prefix.
 func isSensitivePath(path string, sensitivePaths []string) bool {
 	for _, p := range sensitivePaths {
@@ -291,16 +268,13 @@ func redactAny(v interface{}) {
 	case []interface{}:
 		for _, item := range val {
 			if m, ok := item.(map[string]interface{}); ok {
-				for k := range m {
-					redactKey(k, m)
-				}
 				redactNested(m)
 			}
 		}
 	}
 
-	// redactKey redacts data[k] if the key matches any sensitive field pattern.
 }
+// redactKey redacts data[k] if the key matches any sensitive field pattern.
 func redactKey(k string, data map[string]interface{}) {
 	lower := strings.ToLower(k)
 	for _, sf := range sensitiveFields {

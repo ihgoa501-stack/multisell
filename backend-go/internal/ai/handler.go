@@ -2,7 +2,6 @@ package ai
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -209,7 +208,7 @@ func (h *Handler) ApproveAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.service.ApproveAction(id, reviewerFromCtx(c), in.Reason)
+	a, err := h.service.ApproveAction(id, common.ReviewerFromCtx(c), in.Reason)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -229,7 +228,7 @@ func (h *Handler) RejectAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.service.RejectAction(id, reviewerFromCtx(c), in.Reason)
+	a, err := h.service.RejectAction(id, common.ReviewerFromCtx(c), in.Reason)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -249,7 +248,7 @@ func (h *Handler) ExecuteAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.service.ExecuteAction(id, reviewerFromCtx(c), in.Reason)
+	a, err := h.service.ExecuteAction(id, common.ReviewerFromCtx(c), in.Reason)
 	if err != nil {
 		if errors.Is(err, ErrApprovalRequired) {
 			response.Error(c, http.StatusForbidden, "action requires approval before execution")
@@ -337,23 +336,6 @@ func parseID(c *gin.Context) (int64, bool) {
 	return id, true
 }
 
-// reviewerFromCtx extracts username from JWT context.
-func reviewerFromCtx(c *gin.Context) string {
-	if v, ok := c.Get("username"); ok {
-		if s, ok := v.(string); ok && s != "" {
-			return s
-		}
-	}
-	if v, ok := c.Get("user_id"); ok {
-		switch x := v.(type) {
-		case float64:
-			return fmt.Sprintf("user:%d", int64(x))
-		case int64:
-			return fmt.Sprintf("user:%d", x)
-		}
-	}
-	return "unknown"
-}
 
 // userIDFromCtx extracts user id from the JWT context (set by auth middleware).
 func userIDFromCtx(c *gin.Context) *int64 {
