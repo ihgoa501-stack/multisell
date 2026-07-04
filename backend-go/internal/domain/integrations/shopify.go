@@ -3,6 +3,9 @@ package integrations
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -246,6 +249,42 @@ func (a *ShopifyAdapter) ValidateCredentials(ctx context.Context, accountID int6
 		return false, fmt.Errorf("shopify ValidateCredentials: %w", err)
 	}
 	return true, nil
+}
+
+
+// VerifyWebhookSignature implements WebhookVerifier.
+// Shopify signs webhook payloads with X-Shopify-Hmac-Sha256 = Base64(HMAC-SHA256(body, webhook_secret)).
+// The webhook_secret is stored in the PlatformIntegrationAccount Config.
+func (a *ShopifyAdapter) VerifyWebhookSignature(ctx context.Context, body []byte, headers http.Header) bool {
+	signature := headers.Get("X-Shopify-Hmac-Sha256")
+	if signature == "" {
+		return false
+	}
+
+	// Find the first active Shopify account and read its webhook secret.
+	var accts []PlatformIntegrationAccount
+	if err := a.db.WithContext(ctx).
+		Model(&PlatformIntegrationAccount{}).
+		Where("platform_id = (SELECT id FROM platform WHERE code = ?) AND status = ?", "shopify", "active").
+		Limit(1).
+		Find(&accts).Error; err != nil || len(accts) == 0 {
+		return false
+	}
+
+	var cfg struct {
+		WebhookSecret string `json:"webhook_secret"`
+	}
+	if len(accts[0].Config) > 0 {
+		_ = json.Unmarshal(accts[0].Config, &cfg)
+	}
+	if cfg.WebhookSecret == "" {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(cfg.WebhookSecret))
+	mac.Write(body)
+	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
 // ─── SyncInventory ───
