@@ -2,6 +2,7 @@ package approval
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -66,6 +67,9 @@ func (h *Handler) CreateApproval(c *gin.Context) {
 		return
 	}
 
+	// Enforce JWT identity for requester.
+	input.Requester = reviewerFromCtx(c)
+
 	req, err := h.service.Create(&input)
 	if err != nil {
 		response.InternalError(c, err)
@@ -92,6 +96,9 @@ func (h *Handler) ReviewApproval(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "动作必须是 approve 或 reject")
 		return
 	}
+
+	// Enforce JWT identity for reviewer.
+	input.Reviewer = reviewerFromCtx(c)
 
 	req, err := h.service.Review(id, &input)
 	if err != nil {
@@ -127,4 +134,22 @@ func (h *Handler) ApprovalStats(c *gin.Context) {
 		return
 	}
 	response.Success(c, stats)
+}
+
+// reviewerFromCtx extracts username from JWT context.
+func reviewerFromCtx(c *gin.Context) string {
+	if v, ok := c.Get("username"); ok {
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
+	}
+	if v, ok := c.Get("user_id"); ok {
+		switch x := v.(type) {
+		case float64:
+			return fmt.Sprintf("user:%d", int64(x))
+		case int64:
+			return fmt.Sprintf("user:%d", x)
+		}
+	}
+	return "unknown"
 }

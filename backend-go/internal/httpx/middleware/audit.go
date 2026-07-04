@@ -66,6 +66,7 @@ func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				bodySnippet = string(bodyBytes)
 				// Restore the body for downstream handlers.
 				c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+				bodySnippet = sanitizeBody(bodySnippet)
 			}
 		}
 
@@ -256,4 +257,36 @@ func isSensitivePath(path string, sensitivePaths []string) bool {
 		}
 	}
 	return false
+}
+
+// sensitiveFields are redacted from audit logs.
+var sensitiveFields = []string{"password", "secret", "token", "api_key", "api_secret", "credential", "access_key", "access_secret", "refresh_token", "jwt", "authorization"}
+
+// sanitizeBody redacts sensitive fields from JSON content for audit logging.
+func sanitizeBody(body string) string {
+	if body == "" {
+		return body
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &data); err != nil {
+		return body
+	}
+	redactNested(data)
+	b, _ := json.Marshal(data)
+	return string(b)
+}
+
+func redactNested(data map[string]interface{}) {
+	for k, v := range data {
+		lower := strings.ToLower(k)
+		for _, sf := range sensitiveFields {
+			if strings.Contains(lower, sf) {
+				data[k] = "***REDACTED***"
+				break
+			}
+		}
+		if nested, ok := v.(map[string]interface{}); ok {
+			redactNested(nested)
+		}
+	}
 }

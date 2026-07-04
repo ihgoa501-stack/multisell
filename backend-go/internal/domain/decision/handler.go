@@ -2,6 +2,7 @@ package decision
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -144,6 +145,8 @@ func (h *Handler) Approve(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Enforce JWT identity for decided_by.
+	in.DecidedBy = reviewerFromCtx(c)
 	d, err := h.service.Approve(id, &in)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -167,6 +170,8 @@ func (h *Handler) Reject(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Enforce JWT identity for decided_by.
+	in.DecidedBy = reviewerFromCtx(c)
 	d, err := h.service.Reject(id, &in)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -187,4 +192,22 @@ func (h *Handler) Summary(c *gin.Context) {
 		return
 	}
 	response.Success(c, sum)
+}
+
+// reviewerFromCtx extracts username from JWT context.
+func reviewerFromCtx(c *gin.Context) string {
+	if v, ok := c.Get("username"); ok {
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
+	}
+	if v, ok := c.Get("user_id"); ok {
+		switch x := v.(type) {
+		case float64:
+			return fmt.Sprintf("user:%d", int64(x))
+		case int64:
+			return fmt.Sprintf("user:%d", x)
+		}
+	}
+	return "unknown"
 }

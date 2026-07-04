@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"github.com/lingmirror/backend-go/internal/response"
@@ -15,7 +16,7 @@ import (
 // moaCoord can be nil; if set, MOA routes are registered.
 // cmd can be nil; if set, action execution dispatches through the command handlers.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, moaCoord *MOACoordinator, cmd *command.Dispatcher) {
-	svc := NewService(db, logger).WithDispatcher(cmd)
+	svc := NewService(db, logger).WithDispatcher(cmd).WithCatalog(actioncatalog.Default())
 	orch := NewOrchestrator(db, logger)
 	streamer := NewStreamer(hub, logger)
 	h := NewHandler(svc, orch, streamer)

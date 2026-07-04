@@ -74,15 +74,15 @@ export async function fetchAction(id: number): Promise<Result<UnifiedAction>> {
 }
 
 export async function approveAction(id: number, reason: string): Promise<Result<UnifiedAction>> {
-  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/approve", { operator: "user", reason });
+  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/approve", { reason });
 }
 
 export async function rejectAction(id: number, reason: string): Promise<Result<UnifiedAction>> {
-  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/reject", { operator: "user", reason });
+  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/reject", { reason });
 }
 
 export async function executeAction(id: number): Promise<Result<UnifiedAction>> {
-  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/execute", { operator: "user" });
+  return apiClient.post<UnifiedAction>("/v1/ai/actions/" + id + "/execute", {});
 }
 
 export async function fetchPolicyRules(): Promise<Result<PolicyRule[]>> {

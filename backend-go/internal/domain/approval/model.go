@@ -54,7 +54,7 @@ type CreateApprovalInput struct {
 // ReviewApprovalInput is the JSON body for reviewing an approval request.
 type ReviewApprovalInput struct {
 	Action     string `json:"action" binding:"required"` // approve, reject
-	Reviewer   string `json:"reviewer" binding:"required"`
+	Reviewer   string `json:"reviewer"`
 	ReviewNote string `json:"review_note"`
 }
 

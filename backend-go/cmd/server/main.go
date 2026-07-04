@@ -71,8 +71,8 @@ func main() {
 	})
 	driftDetector.Check()
 
-	// Setup router
-	router := httpx.NewRouter(db, cfg, logger)
+	// Setup router (returns App with Engine, Bus, Scheduler)
+	app := httpx.NewRouter(db, cfg, logger)
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
@@ -80,7 +80,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: router.Handler(),
+		Handler: app.Engine.Handler(),
 	}
 
 	go func() {
@@ -95,6 +95,11 @@ func main() {
 	<-quit
 
 	sugar.Info("shutting down server...")
+
+	// Stop scheduler and event bus first, then HTTP server.
+	app.Scheduler.Shutdown()
+	app.Cancel() // cancels bus context, stopping worker loops
+	app.Bus.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
