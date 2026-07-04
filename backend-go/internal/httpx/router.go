@@ -603,7 +603,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		score, _ := evt.Payload["score"].(int)
 		scoreFloat, _ := evt.Payload["score"].(float64)
 		if score >= 7 || scoreFloat >= 7 {
-				return runAgentWithTimeout(aiOrch, "A2", "listing_optimize", evt.Payload)
+			return runAgentWithTimeout(aiOrch, "A2", "listing_optimize", evt.Payload)
 		}
 		return nil
 	})

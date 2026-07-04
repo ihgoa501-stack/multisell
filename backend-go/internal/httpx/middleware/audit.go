@@ -267,26 +267,46 @@ func sanitizeBody(body string) string {
 	if body == "" {
 		return body
 	}
-	var data map[string]interface{}
-	if err := json.Unmarshal([]byte(body), &data); err != nil {
+	// Handle both JSON objects and arrays at the top level.
+	var raw interface{}
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
 		return body
 	}
-	redactNested(data)
-	b, _ := json.Marshal(data)
+	redactAny(raw)
+	b, _ := json.Marshal(raw)
 	return string(b)
 }
 
 func redactNested(data map[string]interface{}) {
 	for k, v := range data {
-		lower := strings.ToLower(k)
-		for _, sf := range sensitiveFields {
-			if strings.Contains(lower, sf) {
-				data[k] = "***REDACTED***"
-				break
+		redactKey(k, data)
+		redactAny(v)
+	}
+}
+
+func redactAny(v interface{}) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		redactNested(val)
+	case []interface{}:
+		for _, item := range val {
+			if m, ok := item.(map[string]interface{}); ok {
+				for k := range m {
+					redactKey(k, m)
+				}
+				redactNested(m)
 			}
 		}
-		if nested, ok := v.(map[string]interface{}); ok {
-			redactNested(nested)
+	}
+
+	// redactKey redacts data[k] if the key matches any sensitive field pattern.
+}
+func redactKey(k string, data map[string]interface{}) {
+	lower := strings.ToLower(k)
+	for _, sf := range sensitiveFields {
+		if strings.Contains(lower, sf) {
+			data[k] = "***REDACTED***"
+			break
 		}
 	}
 }
