@@ -22,8 +22,6 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
-import { getToken } from '@/lib/auth';
-import type { Result } from '@/types/api';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -66,8 +64,6 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   inventory: '库存',
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
 
 // ─────────────────────────────────────────────────────────
 // Helpers
@@ -105,7 +101,7 @@ export default function BatchOpsPage() {
   const loadBatches = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiClient.getPage<ImportBatch>('/v1/importbatch', {
+      const res = await apiClient.getPage<ImportBatch>('/v1/import-batch', {
         page: String(page),
         size: String(pageSize),
       });
@@ -136,7 +132,7 @@ export default function BatchOpsPage() {
 
       for (const b of processingBatches) {
         try {
-          const res = await apiClient.get<ImportBatch>(`/v1/importbatch/${b.id}`);
+          const res = await apiClient.get<ImportBatch>(`/v1/import-batch/${b.id}`);
           if (res.data) {
             updated.set(b.id, res.data);
           }
@@ -166,16 +162,9 @@ export default function BatchOpsPage() {
     formData.append('source_type', batchType);
 
     try {
-      const token = getToken();
-      const res = await fetch(`${API_BASE}/v1/importbatch/upload`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
+      const result = await apiClient.upload<ImportBatch>('/v1/import-batch/upload', formData);
 
-      const result: Result<ImportBatch> = await res.json();
-
-      if (result.code === 0 && result.data) {
+      if (result.data) {
         message.success(`上传成功！批次 #${result.data.id}`);
         setUploadResult(result.data);
         setPage(1);
@@ -183,8 +172,8 @@ export default function BatchOpsPage() {
       } else {
         message.error(result.message || '上传失败');
       }
-    } catch {
-      message.error('上传请求失败，请检查网络连接');
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '上传请求失败，请检查网络连接');
     } finally {
       setUploading(false);
     }

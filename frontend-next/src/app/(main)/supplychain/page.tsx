@@ -39,7 +39,7 @@ export default function SupplyChainPage() {
 
   return (
     <CrudListPage
-      resource="/supplychain/flows"
+      resource="/supply-chain/flows"
       title="供应链追踪"
       singular="供应链流"
       searchPlaceholder=""

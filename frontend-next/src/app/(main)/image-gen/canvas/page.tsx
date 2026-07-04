@@ -109,7 +109,7 @@ function LayerEditModal({
   };
 
   return (
-    <Modal title={layer?.type === 'text' ? '编辑文本' : '编辑图片'} open={open} onOk={handleOk} onCancel={onCancel} width={440} destroyOnClose>
+    <Modal key={layer?.id ?? 'reset'} title={layer?.type === 'text' ? '编辑文本' : '编辑图片'} open={open} onOk={handleOk} onCancel={onCancel} width={440} destroyOnClose>
       <Space direction="vertical" style={{ width: '100%' }} size="small">
         <div style={{ display: 'flex', gap: 12 }}>
           <div><Typography.Text type="secondary">X</Typography.Text><InputNumber value={x} onChange={(v) => setX(v ?? 0)} style={{ width: 80 }} /></div>

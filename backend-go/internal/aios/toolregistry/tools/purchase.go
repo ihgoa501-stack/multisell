@@ -1,10 +1,25 @@
 package tools
 
 import (
+	"context"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
+	"github.com/lingmirror/backend-go/internal/domain/purchase"
+	"gorm.io/gorm"
 )
+
+// ── Package-level state for purchase tool handlers ──────────────────
+
+var purchaseDB *gorm.DB
+
+// SetPurchaseDB sets the database connection for purchase tool handlers.
+// Must be called during server initialization.
+func SetPurchaseDB(db *gorm.DB) {
+	purchaseDB = db
+}
 
 func PurchaseTools() []toolregistry.Tool {
 	return []toolregistry.Tool{
@@ -36,6 +51,51 @@ func PurchaseTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"purchase:read:suggest"},
 			RiskLevel:           toolregistry.RiskMedium,
 			MaxDuration:         30 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if purchaseDB == nil {
+					return uninitializedResponse(), nil
+				}
+
+				// Return existing purchase suggestions from the database.
+				q := purchaseDB.Model(&purchase.PurchaseSuggestion{})
+
+				if skusRaw := input["skus"]; skusRaw != nil {
+					if skusList, ok := skusRaw.([]interface{}); ok && len(skusList) > 0 {
+						skuIDs := make([]int64, 0, len(skusList))
+						for _, s := range skusList {
+							if id, err := strconv.ParseInt(fmt.Sprint(s), 10, 64); err == nil {
+								skuIDs = append(skuIDs, id)
+							}
+						}
+						if len(skuIDs) > 0 {
+							q = q.Where("sku_id IN ?", skuIDs)
+						}
+					}
+				}
+
+				var suggestions []purchase.PurchaseSuggestion
+				if err := q.Order("id DESC").Limit(50).Find(&suggestions).Error; err != nil {
+					return nil, fmt.Errorf("purchase_order.suggest: %w", err)
+				}
+
+				items := make([]map[string]interface{}, len(suggestions))
+				for i, s := range suggestions {
+					items[i] = map[string]interface{}{
+						"id":            s.ID,
+						"sku_id":        s.SkuID,
+						"suggested_qty": s.SuggestedQty,
+						"reason":        s.Reason,
+						"status":        s.Status,
+						"generated_at":  s.GeneratedAt.Format(time.RFC3339),
+					}
+				}
+
+				return map[string]interface{}{
+					"status": "success",
+					"total":  len(items),
+					"items":  items,
+				}, nil
+			},
 		},
 		{
 			Name:        "purchase_order.create",
@@ -71,6 +131,111 @@ func PurchaseTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"purchase:write:order"},
 			RiskLevel:           toolregistry.RiskHigh,
 			MaxDuration:         30 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if purchaseDB == nil {
+					return uninitializedResponse(), nil
+				}
+
+				supplierStr := safeString(input["supplier_id"])
+				if supplierStr == "" {
+					return nil, fmt.Errorf("purchase_order.create: supplier_id is required")
+				}
+				supplierID, err := strconv.ParseInt(supplierStr, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("purchase_order.create: invalid supplier_id: %s", supplierStr)
+				}
+
+				itemsRaw := input["items"]
+				itemsList, ok := itemsRaw.([]interface{})
+				if !ok || len(itemsList) == 0 {
+					return nil, fmt.Errorf("purchase_order.create: items must be a non-empty array")
+				}
+
+				expectedDelivery := safeString(input["expected_delivery"])
+				remark := safeString(input["remark"])
+
+				now := time.Now()
+				orderNo := fmt.Sprintf("PO-%d", now.UnixMilli())
+
+				order := purchase.PurchaseOrder{
+					OrderNo:          orderNo,
+					SupplierID:       supplierID,
+					Status:           purchase.StatusDraft,
+					ExpectedDelivery: &expectedDelivery,
+					Remark:           remark,
+				}
+
+				var orderItems []purchase.PurchaseOrderItem
+				var totalAmount float64
+
+				for _, itemRaw := range itemsList {
+					item, ok := itemRaw.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					skuStr := safeString(item["sku"])
+					qty := int(safeFloat(item["quantity"], 0))
+					unitPrice := safeFloat(item["unit_price"], 0)
+					if skuStr == "" || qty <= 0 {
+						continue
+					}
+					skuID, err := strconv.ParseInt(skuStr, 10, 64)
+					if err != nil {
+						continue
+					}
+					subtotal := float64(qty) * unitPrice
+					totalAmount += subtotal
+					orderItems = append(orderItems, purchase.PurchaseOrderItem{
+						SkuID:     skuID,
+						Quantity:  qty,
+						UnitPrice: unitPrice,
+						Subtotal:  subtotal,
+					})
+				}
+
+				if len(orderItems) == 0 {
+					return nil, fmt.Errorf("purchase_order.create: no valid items provided")
+				}
+
+				order.TotalAmount = totalAmount
+
+				tx := purchaseDB.Begin()
+				if err := tx.Create(&order).Error; err != nil {
+					tx.Rollback()
+					return nil, fmt.Errorf("purchase_order.create: %w", err)
+				}
+				for i := range orderItems {
+					orderItems[i].PurchaseOrderID = order.ID
+				}
+				if err := tx.Create(&orderItems).Error; err != nil {
+					tx.Rollback()
+					return nil, fmt.Errorf("purchase_order.create: items failed: %w", err)
+				}
+				tx.Commit()
+
+				itemMaps := make([]map[string]interface{}, len(orderItems))
+				for i, oi := range orderItems {
+					itemMaps[i] = map[string]interface{}{
+						"sku_id":     oi.SkuID,
+						"quantity":   oi.Quantity,
+						"unit_price": oi.UnitPrice,
+						"subtotal":   oi.Subtotal,
+					}
+				}
+
+				return map[string]interface{}{
+					"status":            "created",
+					"order_id":          order.ID,
+					"order_no":          order.OrderNo,
+					"supplier_id":       order.SupplierID,
+					"order_status":     order.Status,
+					"total_amount":      order.TotalAmount,
+					"expected_delivery": expectedDelivery,
+					"remark":            order.Remark,
+					"items":             itemMaps,
+					"message":           fmt.Sprintf("采购订单 %s 已创建，共 %.2f", orderNo, totalAmount),
+				}, nil
+			},
 		},
 		{
 			Name:        "purchase_order.approve",
@@ -97,6 +262,54 @@ func PurchaseTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"purchase:write:approve"},
 			RiskLevel:           toolregistry.RiskCritical,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if purchaseDB == nil {
+					return uninitializedResponse(), nil
+				}
+
+				orderStr := safeString(input["order_id"])
+				action := safeString(input["action"])
+				remark := safeString(input["remark"])
+
+				if orderStr == "" {
+					return nil, fmt.Errorf("purchase_order.approve: order_id is required")
+				}
+				if action != "approve" && action != "reject" {
+					return nil, fmt.Errorf("purchase_order.approve: action must be 'approve' or 'reject'")
+				}
+
+				orderID, err := strconv.ParseInt(orderStr, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("purchase_order.approve: invalid order_id: %s", orderStr)
+				}
+
+				var order purchase.PurchaseOrder
+				if err := purchaseDB.First(&order, orderID).Error; err != nil {
+					if err == gorm.ErrRecordNotFound {
+						return notFoundResponse("purchase_order", orderStr), nil
+					}
+					return nil, fmt.Errorf("purchase_order.approve: %w", err)
+				}
+
+				newStatus := purchase.StatusApproved
+				if action == "reject" {
+					newStatus = purchase.StatusCancelled
+				}
+
+				if err := purchaseDB.Model(&order).Update("status", newStatus).Error; err != nil {
+					return nil, fmt.Errorf("purchase_order.approve: %w", err)
+				}
+
+				return map[string]interface{}{
+					"status":     "completed",
+					"order_id":   order.ID,
+					"order_no":   order.OrderNo,
+					"action":     action,
+					"new_status": newStatus,
+					"remark":     remark,
+					"message":    fmt.Sprintf("采购订单 %s 已%s", order.OrderNo, map[string]string{"approve": "批准", "reject": "驳回"}[action]),
+				}, nil
+			},
 		},
 		{
 			Name:        "purchase_order.list",
@@ -121,6 +334,85 @@ func PurchaseTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"purchase:read:order"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if purchaseDB == nil {
+					return uninitializedResponse(), nil
+				}
+
+				q := purchaseDB.Model(&purchase.PurchaseOrder{})
+
+				if status := safeString(input["status"]); status != "" {
+					q = q.Where("status = ?", status)
+				}
+				if supplierStr := safeString(input["supplier_id"]); supplierStr != "" {
+					if supplierID, err := strconv.ParseInt(supplierStr, 10, 64); err == nil {
+						q = q.Where("supplier_id = ?", supplierID)
+					}
+				}
+				if startDate := safeString(input["start_date"]); startDate != "" {
+					q = q.Where("created_at >= ?", startDate)
+				}
+				if endDate := safeString(input["end_date"]); endDate != "" {
+					q = q.Where("created_at <= ?", endDate+" 23:59:59")
+				}
+
+				page := int(safeFloat(input["page"], 1))
+				size := int(safeFloat(input["size"], 20))
+				if page < 1 {
+					page = 1
+				}
+				if size < 1 || size > 100 {
+					size = 20
+				}
+				offset := (page - 1) * size
+
+				var total int64
+				if err := q.Count(&total).Error; err != nil {
+					return nil, fmt.Errorf("purchase_order.list: count failed: %w", err)
+				}
+
+				var orders []purchase.PurchaseOrder
+				if err := q.Offset(offset).Limit(size).Order("id DESC").Preload("Items").Find(&orders).Error; err != nil {
+					return nil, fmt.Errorf("purchase_order.list: %w", err)
+				}
+
+				items := make([]map[string]interface{}, len(orders))
+				for i, o := range orders {
+					itemList := make([]map[string]interface{}, len(o.Items))
+					for j, oi := range o.Items {
+						itemList[j] = map[string]interface{}{
+							"sku_id":     oi.SkuID,
+							"quantity":   oi.Quantity,
+							"received_qty": oi.ReceivedQty,
+							"unit_price": oi.UnitPrice,
+							"subtotal":   oi.Subtotal,
+						}
+					}
+					m := map[string]interface{}{
+						"id":          o.ID,
+						"order_no":    o.OrderNo,
+						"supplier_id": o.SupplierID,
+						"status":      o.Status,
+						"total_amount": o.TotalAmount,
+						"remark":      o.Remark,
+						"created_at":  o.CreatedAt.Format(time.RFC3339),
+						"updated_at":  o.UpdatedAt.Format(time.RFC3339),
+						"items":       itemList,
+					}
+					if o.ExpectedDelivery != nil {
+						m["expected_delivery"] = *o.ExpectedDelivery
+					}
+					items[i] = m
+				}
+
+				return map[string]interface{}{
+					"status": "success",
+					"total":  total,
+					"page":   page,
+					"size":   size,
+					"items":  items,
+				}, nil
+			},
 		},
 	}
 }

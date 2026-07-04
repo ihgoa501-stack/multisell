@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 )
 
@@ -24,9 +25,13 @@ func newTestLogger(t *testing.T) *zap.Logger {
 
 func newTestIPC(t *testing.T) *IPC {
 	t.Helper()
-	return New(newTestLogger(t))
+	logger := newTestLogger(t)
+	bus := eventbus.New(logger, eventbus.WithBufferSize(1024))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	bus.Start(ctx)
+	return New(logger, bus)
 }
-
 // registerEchoHandler registers a handler that echoes the payload back.
 func registerEchoHandler(ipc *IPC, topic string) {
 	ipc.RegisterHandler(topic, func(ctx context.Context, msg *Message) (*Message, error) {

@@ -90,8 +90,7 @@ func (s *Scanner) ScanPaginated(ctx context.Context) (*ScanResult, error) {
 			break
 		}
 
-		// TODO: run actual compliance rules on each product row.
-		// For now we simply count scanned products.
+		// ponytail: compliance rules not yet wired — requires platform/listing join
 		result.ScannedProducts += len(rows)
 		offset += pageSize
 	}

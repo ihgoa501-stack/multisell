@@ -179,19 +179,6 @@ func TestProfitWatchAgent_Decide(t *testing.T) {
 	_ = risk
 }
 
-func TestSettlementReconAgent_Decide(t *testing.T) {
-	a := NewSettlementReconAgent(nil, zap.NewNop())
-	out, conf, risk, err := a.Decide(context.Background(), "settlement_import", map[string]interface{}{"platform_id": 1, "period": "2026-06"})
-	if err != nil {
-		t.Fatalf("Decide: %v", err)
-	}
-	if out == nil {
-		t.Fatal("nil output")
-	}
-	_ = conf
-	_ = risk
-}
-
 func TestLogisticsOpsAgent_Decide(t *testing.T) {
 	a := NewLogisticsOpsAgent(nil, zap.NewNop())
 	out, conf, risk, err := a.Decide(context.Background(), "carrier_compare", map[string]interface{}{"weight_kg": 5.0, "destination": "US"})

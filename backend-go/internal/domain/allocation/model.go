@@ -77,7 +77,7 @@ type CostAllocationItem struct {
 	AllocatedAmount  decimal.Decimal  `gorm:"column:allocated_amount;type:numeric(14,2);default:0" json:"allocated_amount"`
 	CostLayer       string           `gorm:"column:cost_layer;default:allocated" json:"cost_layer"`
 	PostedToLedger  int             `gorm:"column:posted_to_ledger;default:0" json:"posted_to_ledger"`
-	RawPayload      json.RawMessage  `gorm:"column:raw_payload;type:jsonb" json:"raw_payload"`
+	RawPayload      json.RawMessage  `gorm:"column:raw_payload;type:jsonb" json:"raw_payload,omitempty"`
 	CreatedAt       time.Time        `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 

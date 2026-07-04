@@ -27,5 +27,5 @@ type OrderFinanceReader interface {
 	GetByID(ctx context.Context, orderID int64) (*Order, error)
 	GetItemsByOrderID(ctx context.Context, orderID int64) ([]OrderItem, error)
 	ListByTimeRange(ctx context.Context, since, until time.Time) ([]Order, error)
-	// TODO: wire via dependency injection
+	// ponytail: wire via DI when a concrete implementation of OrderFinanceReader is ready
 }

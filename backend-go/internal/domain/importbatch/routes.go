@@ -11,7 +11,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	svc := NewService(db, logger)
 	h := NewHandler(svc, db, logger)
 
-	group := rg.Group("/importbatch")
+	group := rg.Group("/import-batch")
 	{
 		group.GET("", h.ListBatches)
 		group.GET("/:id", h.GetBatch)

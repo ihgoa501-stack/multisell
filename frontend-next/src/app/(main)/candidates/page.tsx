@@ -56,6 +56,8 @@ const completenessHintMap: Record<string, string> = {
 };
 
 // Field label map: internal field name -> Chinese label
+// ponytail: mirrors Go backend's completenessFieldNames (candidate/model.go).
+// Both must be updated together when adding a new completable field.
 const FIELD_LABELS: Record<string, string> = {
   title: '标题',
   purchase_price: '采购价',
@@ -243,7 +245,7 @@ export default function CandidatesPage() {
     setSeeding(true);
     try {
       const res = await apiClient.post('/v1/candidates/seed');
-      if (res.code === 0) {
+      if (res.code === 0 && res.data) {
         message.success('种子数据生成成功');
         await fetchCandidates(page, pageSize);
       } else {
@@ -295,6 +297,9 @@ export default function CandidatesPage() {
       }
     } catch {
       message.error('加载详情失败');
+      setDetailProduct(null);
+      setDetailMissingFields([]);
+      setCompletenessResult(null);
     } finally {
       setCompletenessLoading(false);
     }
@@ -312,11 +317,12 @@ export default function CandidatesPage() {
       const res = await apiClient.put(`/v1/candidates/${productId}/fields`, {
         fields: [{ field, value: parsedValue }],
       });
-      if (res.code === 0) {
+      if (res.code === 0 && res.data) {
         message.success(`"${FIELD_LABELS[field] || field}" 已更新`);
+        setDetailProduct(res.data as unknown as CandidateProduct);
+        setDetailMissingFields((res.data as any).missing_fields || []);
         setFillingField(null);
         setFillValues((prev) => ({ ...prev, [field]: '' }));
-        await refreshDetail(productId);
       } else {
         message.error(res.message || '更新失败');
       }
@@ -325,15 +331,16 @@ export default function CandidatesPage() {
     } finally {
       setActionLoading((prev) => ({ ...prev, [field]: false }));
     }
-  }, [fillValues, refreshDetail]);
+  }, [fillValues]);
 
   const handleSkipField = useCallback(async (productId: number, field: string) => {
     setActionLoading((prev) => ({ ...prev, [field]: true }));
     try {
       const res = await apiClient.post(`/v1/candidates/${productId}/skip-field`, { field });
-      if (res.code === 0) {
+      if (res.code === 0 && res.data) {
         message.success(`"${FIELD_LABELS[field] || field}" 已标记为无法补齐`);
-        await refreshDetail(productId);
+        setDetailProduct(res.data as unknown as CandidateProduct);
+        setDetailMissingFields((res.data as any).missing_fields || []);
       } else {
         message.error(res.message || '操作失败');
       }
@@ -342,15 +349,16 @@ export default function CandidatesPage() {
     } finally {
       setActionLoading((prev) => ({ ...prev, [field]: false }));
     }
-  }, [refreshDetail]);
+  }, []);
 
   const handleRescrape = useCallback(async (productId: number) => {
     setActionLoading((prev) => ({ ...prev, _rescrape: true }));
     try {
       const res = await apiClient.post(`/v1/candidates/${productId}/rescrape`);
-      if (res.code === 0) {
+      if (res.code === 0 && res.data) {
         message.success('已尝试重新采集');
-        await refreshDetail(productId);
+        setDetailProduct(res.data as unknown as CandidateProduct);
+        setDetailMissingFields((res.data as any).missing_fields || []);
       } else {
         message.error(res.message || '重新采集失败');
       }
@@ -359,7 +367,7 @@ export default function CandidatesPage() {
     } finally {
       setActionLoading((prev) => ({ ...prev, _rescrape: false }));
     }
-  }, [refreshDetail]);
+  }, []);
 
   const handleStartFill = (field: string) => {
     setFillingField(field);

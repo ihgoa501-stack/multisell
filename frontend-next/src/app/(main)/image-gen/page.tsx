@@ -22,7 +22,7 @@ export default function ImageGenPage() {
 
   return (
     <CrudListPage
-      resource="/imagegen"
+      resource="/image-gen"
       title="AI 图片生成"
       singular="生成任务"
       searchPlaceholder="搜索 prompt..."

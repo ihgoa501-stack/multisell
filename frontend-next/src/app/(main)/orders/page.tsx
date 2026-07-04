@@ -16,7 +16,7 @@ export default function OrdersPage() {
         { title: '收件人', dataIndex: 'recipient_name', width: 120 },
         { title: '运单号', dataIndex: 'tracking_number', width: 160 },
         { title: '实付金额', dataIndex: 'pay_amount', width: 120, render: fmtMoney },
-        { title: '利润', dataIndex: 'profit_amount', width: 120, render: fmtMoney },
+        // profit_amount removed from OrderResponse — add back when needed
         { title: '创建时间', dataIndex: 'created_at', width: 160, render: fmtDate },
       ]}
       fields={[

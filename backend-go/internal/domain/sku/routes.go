@@ -12,7 +12,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	h := NewHandler(svc)
 
 	// Product routes
-	products := rg.Group("/products")
+	products := rg.Group("/product-master")
 	{
 		products.GET("", h.ListProducts)
 		products.GET("/:id", h.GetProduct)

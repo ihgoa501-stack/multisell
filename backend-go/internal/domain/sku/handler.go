@@ -23,21 +23,7 @@ func NewHandler(service *Service) *Handler {
 // ── Product handlers ─────────────────────────────────────────────
 
 // ListProducts returns a paginated list of products.
-// GET /api/v1/products?page=1&size=20&search=xxx&category_id=&brand_id=&status=
-// @Summary      List products
-// @Description  Get paginated list of products
-// @Tags         products
-// @Accept       json
-// @Produce      json
-// @Param        page        query  int     false  "Page number"
-// @Param        size        query  int     false  "Page size"
-// @Param        search      query  string  false  "Search keyword"
-// @Param        category_id query  int     false  "Filter by category"
-// @Param        brand_id    query  int     false  "Filter by brand"
-// @Param        status      query  int     false  "Filter by status"
-// @Success      200  {object}  response.PageResult
-// @Security     BearerAuth
-// @Router       /products [get]
+// GET /api/v1/product-master?page=1&size=20&search=xxx&category_id=&brand_id=&status=
 func (h *Handler) ListProducts(c *gin.Context) {
 	p := common.ParsePagination(c)
 	search := c.Query("search")
@@ -63,14 +49,6 @@ func (h *Handler) ListProducts(c *gin.Context) {
 
 // GetProduct returns a single product by ID.
 // GET /api/v1/product-master/:id
-// @Summary      Get product
-// @Description  Get a single product by ID
-// @Tags         products
-// @Produce      json
-// @Param        id  path  int  true  "Product ID"
-// @Success      200  {object}  response.Result
-// @Security     BearerAuth
-// @Router       /products/{id} [get]
 func (h *Handler) GetProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -93,15 +71,6 @@ func (h *Handler) GetProduct(c *gin.Context) {
 
 // CreateProduct creates a new product.
 // POST /api/v1/product-master
-// @Summary      Create product
-// @Description  Create a new product
-// @Tags         products
-// @Accept       json
-// @Produce      json
-// @Param        body  body  Product  true  "Product data"
-// @Success      200   {object}  response.Result
-// @Security     BearerAuth
-// @Router       /products [post]
 func (h *Handler) CreateProduct(c *gin.Context) {
 	var p Product
 	if err := c.ShouldBindJSON(&p); err != nil {
@@ -119,16 +88,6 @@ func (h *Handler) CreateProduct(c *gin.Context) {
 
 // UpdateProduct updates an existing product.
 // PUT /api/v1/product-master/:id
-// @Summary      Update product
-// @Description  Update an existing product
-// @Tags         products
-// @Accept       json
-// @Produce      json
-// @Param        id    path  int      true  "Product ID"
-// @Param        body  body  Product  true  "Updated product data"
-// @Success      200   {object}  response.Result
-// @Security     BearerAuth
-// @Router       /products/{id} [put]
 func (h *Handler) UpdateProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -153,14 +112,6 @@ func (h *Handler) UpdateProduct(c *gin.Context) {
 
 // DeleteProduct deletes a product.
 // DELETE /api/v1/product-master/:id
-// @Summary      Delete product
-// @Description  Delete a product by ID
-// @Tags         products
-// @Produce      json
-// @Param        id  path  int  true  "Product ID"
-// @Success      200  {object}  response.Result
-// @Security     BearerAuth
-// @Router       /products/{id} [delete]
 func (h *Handler) DeleteProduct(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

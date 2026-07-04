@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
@@ -31,6 +32,13 @@ func SupplierTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"supplier:read:supplier"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":      "ok",
+					"message":     "stub: 供应商查询功能尚在实现中，将在后续版本上线",
+					"supplier_id": input["supplier_id"],
+				}, nil
+			},
 		},
 		{
 			Name:        "supplier.quote.compare",
@@ -52,6 +60,13 @@ func SupplierTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"supplier:read:quote"},
 			RiskLevel:           toolregistry.RiskMedium,
 			MaxDuration:         15 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				return map[string]interface{}{
+					"status":  "ok",
+					"message": "stub: 供应商比价功能尚在实现中，将在后续版本上线",
+					"sku":     input["sku"],
+				}, nil
+			},
 		},
 	}
 }

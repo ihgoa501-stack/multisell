@@ -12,7 +12,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *e
 	svc := NewService(db, logger, bus)
 	h := NewHandler(svc)
 
-	group := rg.Group("/supplychain/flows")
+	group := rg.Group("/supply-chain/flows")
 	{
 		group.GET("", h.List)
 		group.GET("/:id", h.Get)
@@ -25,7 +25,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *e
 	trackingSvc := NewTrackingService(db, logger)
 	th := NewTrackingHandler(trackingSvc).SetCarrierClient(NewMockCarrierClient())
 
-	trackingGroup := rg.Group("/supplychain/tracking")
+	trackingGroup := rg.Group("/supply-chain/tracking")
 	{
 		trackingGroup.GET("", th.List)
 		trackingGroup.GET("/:id", th.Get)

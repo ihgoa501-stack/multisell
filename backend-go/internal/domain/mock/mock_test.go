@@ -153,7 +153,7 @@ func TestService_GetSyncStatuses_Empty(t *testing.T) {
 	if err != nil {
 		// GetSyncStatuses uses PG-specific DISTINCT ON which SQLite doesn't support.
 		if strings.Contains(err.Error(), "syntax error") || strings.Contains(err.Error(), "near") {
-			t.Skip("GetSyncStatuses requires PG-specific DISTINCT ON:", err)
+			t.Skip("ponytail: GetSyncStatuses requires PG-specific DISTINCT ON:", err)
 		}
 		t.Fatalf("GetSyncStatuses failed: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestService_GetSyncStatuses_WithData(t *testing.T) {
 	items, err := svc.GetSyncStatuses()
 	if err != nil {
 		if strings.Contains(err.Error(), "syntax error") || strings.Contains(err.Error(), "near") {
-			t.Skip("GetSyncStatuses requires PG-specific DISTINCT ON:", err)
+			t.Skip("ponytail: GetSyncStatuses requires PG-specific DISTINCT ON:", err)
 		}
 		t.Fatalf("GetSyncStatuses failed: %v", err)
 	}

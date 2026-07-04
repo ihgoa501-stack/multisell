@@ -531,7 +531,7 @@ func TestDLQReplay(t *testing.T) {
 		t.Fatalf("ListDLQ returned error: %v", err)
 	}
 	if len(events) == 0 {
-		t.Skip("no DLQ events to replay")
+		t.Skip("ponytail: no DLQ events to replay")
 	}
 
 	// Re-subscribe with a handler that succeeds.
@@ -884,7 +884,7 @@ func TestIdempotencyKey_DLQReplay(t *testing.T) {
 		t.Fatalf("ListDLQ returned error: %v", err)
 	}
 	if len(events) == 0 {
-		t.Skip("no DLQ events to replay")
+		t.Skip("ponytail: no DLQ events to replay")
 	}
 
 	// Unsubscribe the original erroring handler and subscribe a new one that succeeds.

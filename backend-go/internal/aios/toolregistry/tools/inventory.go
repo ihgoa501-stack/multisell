@@ -1,10 +1,34 @@
 package tools
 
 import (
+	"context"
+	"fmt"
+	"strconv"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/aios/toolregistry"
+	"github.com/lingmirror/backend-go/internal/domain/inventory"
+	"gorm.io/gorm"
 )
+
+// ── Package-level state for inventory tool handlers ──────────────────
+
+var inventoryDB *gorm.DB
+var rollbackGuard *guardrails.RollbackGuard
+
+// SetInventoryDB sets the database connection for inventory tool handlers.
+// Must be called during server initialization.
+func SetInventoryDB(db *gorm.DB) {
+	inventoryDB = db
+}
+
+// SetRollbackGuard sets the rollback guard for inventory tool handlers.
+// Tool handlers that perform mutating operations can record rollback entries
+// for compensatable actions. Must be called during server initialization.
+func SetRollbackGuard(rg *guardrails.RollbackGuard) {
+	rollbackGuard = rg
+}
 
 func InventoryTools() []toolregistry.Tool {
 	return []toolregistry.Tool{
@@ -28,6 +52,43 @@ func InventoryTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"inventory:read:inventory"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if inventoryDB == nil {
+					return uninitializedResponse(), nil
+				}
+				q := inventoryDB.Model(&inventory.Inventory{})
+				if skuStr := safeString(input["sku"]); skuStr != "" {
+					if skuID, err := strconv.ParseInt(skuStr, 10, 64); err == nil {
+						q = q.Where("sku_id = ?", skuID)
+					}
+				}
+				if warehouse := safeString(input["warehouse_id"]); warehouse != "" {
+					q = q.Where("warehouse = ?", warehouse)
+				}
+				var items []inventory.Inventory
+				if err := q.Find(&items).Error; err != nil {
+					return nil, fmt.Errorf("inventory.read: %w", err)
+				}
+				results := make([]map[string]interface{}, len(items))
+				for i, item := range items {
+					results[i] = map[string]interface{}{
+						"id":              item.ID,
+						"sku_id":          item.SkuID,
+						"warehouse":       item.Warehouse,
+						"location":        item.Location,
+						"quantity":        item.Quantity,
+						"locked_quantity": item.LockedQuantity,
+						"safety_stock":    item.SafetyStock,
+						"created_at":      item.CreatedAt.Format(time.RFC3339),
+						"updated_at":      item.UpdatedAt.Format(time.RFC3339),
+					}
+				}
+				return map[string]interface{}{
+					"status": "success",
+					"total":  len(results),
+					"items":  results,
+				}, nil
+			},
 		},
 		{
 			Name:        "inventory.alert.list",
@@ -49,6 +110,60 @@ func InventoryTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"inventory:read:alert"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if inventoryDB == nil {
+					return uninitializedResponse(), nil
+				}
+				q := inventoryDB.Model(&inventory.InventoryAlertRule{})
+
+				if skuStr := safeString(input["sku"]); skuStr != "" {
+					if skuID, err := strconv.ParseInt(skuStr, 10, 64); err == nil {
+						q = q.Where("sku_id = ?", skuID)
+					}
+				}
+
+				page := int(safeFloat(input["page"], 1))
+				size := int(safeFloat(input["size"], 20))
+				if page < 1 {
+					page = 1
+				}
+				if size < 1 || size > 100 {
+					size = 20
+				}
+				offset := (page - 1) * size
+
+				var total int64
+				if err := q.Count(&total).Error; err != nil {
+					return nil, fmt.Errorf("inventory.alert.list: count failed: %w", err)
+				}
+
+				var rules []inventory.InventoryAlertRule
+				if err := q.Offset(offset).Limit(size).Order("id DESC").Find(&rules).Error; err != nil {
+					return nil, fmt.Errorf("inventory.alert.list: %w", err)
+				}
+
+				items := make([]map[string]interface{}, len(rules))
+				for i, r := range rules {
+					items[i] = map[string]interface{}{
+						"id":             r.ID,
+						"sku_id":         r.SkuID,
+						"min_level":      r.MinLevel,
+						"max_level":      r.MaxLevel,
+						"lead_time_days": r.LeadTimeDays,
+						"enabled":        r.Enabled,
+						"created_at":     r.CreatedAt.Format(time.RFC3339),
+						"updated_at":     r.UpdatedAt.Format(time.RFC3339),
+					}
+				}
+
+				return map[string]interface{}{
+					"status": "success",
+					"total":  total,
+					"page":   page,
+					"size":   size,
+					"items":  items,
+				}, nil
+			},
 		},
 		{
 			Name:        "inventory.alert.create",
@@ -71,6 +186,41 @@ func InventoryTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"inventory:write:alert"},
 			RiskLevel:           toolregistry.RiskMedium,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if inventoryDB == nil {
+					return uninitializedResponse(), nil
+				}
+
+				skuStr := safeString(input["sku"])
+				if skuStr == "" {
+					return nil, fmt.Errorf("inventory.alert.create: sku is required")
+				}
+				skuID, err := strconv.ParseInt(skuStr, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("inventory.alert.create: invalid sku: %s", skuStr)
+				}
+
+				rule := inventory.InventoryAlertRule{
+					SkuID:    skuID,
+					MinLevel: int(safeFloat(input["min_stock"], 0)),
+					MaxLevel: int(safeFloat(input["max_stock"], 0)),
+					Enabled:  true,
+				}
+
+				if err := inventoryDB.Create(&rule).Error; err != nil {
+					return nil, fmt.Errorf("inventory.alert.create: %w", err)
+				}
+
+				return map[string]interface{}{
+					"status":    "created",
+					"rule_id":   rule.ID,
+					"sku_id":    rule.SkuID,
+					"min_level": rule.MinLevel,
+					"max_level": rule.MaxLevel,
+					"enabled":   rule.Enabled,
+					"message":   fmt.Sprintf("SKU %d 的库存预警规则已创建", skuID),
+				}, nil
+			},
 		},
 		{
 			Name:        "inventory.transfer.create",
@@ -104,6 +254,81 @@ func InventoryTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"inventory:write:transfer"},
 			RiskLevel:           toolregistry.RiskHigh,
 			MaxDuration:         30 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if inventoryDB == nil {
+					return uninitializedResponse(), nil
+				}
+
+				from := safeString(input["from_warehouse"])
+				to := safeString(input["to_warehouse"])
+				if from == "" || to == "" {
+					return nil, fmt.Errorf("inventory.transfer.create: from_warehouse and to_warehouse are required")
+				}
+
+				// items is an array, each item has sku and quantity.
+				// The model maps to a single-sku transfer, so we create one record per item or take the first.
+				itemsRaw := input["items"]
+				itemsList, ok := itemsRaw.([]interface{})
+				if !ok || len(itemsList) == 0 {
+					return nil, fmt.Errorf("inventory.transfer.create: items must be a non-empty array")
+				}
+
+				created := make([]map[string]interface{}, 0, len(itemsList))
+				for idx, itemRaw := range itemsList {
+					item, ok := itemRaw.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					skuStr := safeString(item["sku"])
+					qty := int(safeFloat(item["quantity"], 0))
+					if skuStr == "" || qty <= 0 {
+						continue
+					}
+					skuID, err := strconv.ParseInt(skuStr, 10, 64)
+					if err != nil {
+						continue
+					}
+
+					t := inventory.InventoryTransfer{
+						FromWarehouse: from,
+						ToWarehouse:   to,
+						SkuID:         skuID,
+						Quantity:      qty,
+						Status:        "draft",
+					}
+					if err := inventoryDB.Create(&t).Error; err != nil {
+						return nil, fmt.Errorf("inventory.transfer.create: item %d failed: %w", idx, err)
+					}
+					created = append(created, map[string]interface{}{
+						"id":             t.ID,
+						"sku_id":         t.SkuID,
+						"quantity":       t.Quantity,
+						"status":         t.Status,
+						"from_warehouse": t.FromWarehouse,
+						"to_warehouse":   t.ToWarehouse,
+					})
+				}
+
+				// Register a compensatable rollback entry for the transfer.
+				if rollbackGuard != nil {
+					rollbackGuard.Record(guardrails.RollbackEntry{
+						ActionID:   fmt.Sprintf("transfer-%d", time.Now().UnixNano()),
+						ActionType: "inventory.transfer",
+						OriginalState: map[string]interface{}{
+							"from_warehouse": input["from_warehouse"],
+							"to_warehouse":   input["to_warehouse"],
+							"items":          input["items"],
+						},
+					})
+				}
+
+				return map[string]interface{}{
+					"status":    "created",
+					"count":     len(created),
+					"transfers": created,
+					"message":   fmt.Sprintf("已创建 %d 条调拨记录", len(created)),
+				}, nil
+			},
 		},
 		{
 			Name:        "inventory.transfer.list",
@@ -127,6 +352,79 @@ func InventoryTools() []toolregistry.Tool {
 			RequiredPermissions: []string{"inventory:read:transfer"},
 			RiskLevel:           toolregistry.RiskLow,
 			MaxDuration:         10 * time.Second,
+			Handler: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+				if inventoryDB == nil {
+					return uninitializedResponse(), nil
+				}
+
+				q := inventoryDB.Model(&inventory.InventoryTransfer{})
+
+				if status := safeString(input["status"]); status != "" {
+					q = q.Where("status = ?", status)
+				}
+				if startDate := safeString(input["start_date"]); startDate != "" {
+					q = q.Where("created_at >= ?", startDate)
+				}
+				if endDate := safeString(input["end_date"]); endDate != "" {
+					q = q.Where("created_at <= ?", endDate+" 23:59:59")
+				}
+
+				page := int(safeFloat(input["page"], 1))
+				size := int(safeFloat(input["size"], 20))
+				if page < 1 {
+					page = 1
+				}
+				if size < 1 || size > 100 {
+					size = 20
+				}
+				offset := (page - 1) * size
+
+				var total int64
+				if err := q.Count(&total).Error; err != nil {
+					return nil, fmt.Errorf("inventory.transfer.list: count failed: %w", err)
+				}
+
+				var ts []inventory.InventoryTransfer
+				if err := q.Offset(offset).Limit(size).Order("id DESC").Find(&ts).Error; err != nil {
+					return nil, fmt.Errorf("inventory.transfer.list: %w", err)
+				}
+
+				items := make([]map[string]interface{}, len(ts))
+				for i, t := range ts {
+					m := map[string]interface{}{
+						"id":             t.ID,
+						"from_warehouse": t.FromWarehouse,
+						"to_warehouse":   t.ToWarehouse,
+						"sku_id":         t.SkuID,
+						"quantity":       t.Quantity,
+						"status":         t.Status,
+						"note":           t.Note,
+						"created_at":     t.CreatedAt.Format(time.RFC3339),
+						"updated_at":     t.UpdatedAt.Format(time.RFC3339),
+					}
+					if t.Carrier != "" {
+						m["carrier"] = t.Carrier
+					}
+					if t.TrackingNo != "" {
+						m["tracking_no"] = t.TrackingNo
+					}
+					if t.EstimatedArrival != nil {
+						m["estimated_arrival"] = t.EstimatedArrival.Format(time.RFC3339)
+					}
+					if t.CompletedAt != nil {
+						m["completed_at"] = t.CompletedAt.Format(time.RFC3339)
+					}
+					items[i] = m
+				}
+
+				return map[string]interface{}{
+					"status": "success",
+					"total":  total,
+					"page":   page,
+					"size":   size,
+					"items":  items,
+				}, nil
+			},
 		},
 	}
 }

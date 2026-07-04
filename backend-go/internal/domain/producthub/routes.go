@@ -1,12 +1,7 @@
 package producthub
 
 import (
-	"net/http"
-	"strconv"
-	"time"
-
 	"github.com/gin-gonic/gin"
-	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -24,7 +19,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	versionSvc := NewVersionService(db, logger)
 	freshnessSvc := NewFreshnessService(db, logger)
 	relationSvc := NewRelationService(db, logger)
-	h := NewHandler(svc, versionSvc, freshnessSvc, relationSvc)
+	h := NewHandler(svc, versionSvc, freshnessSvc, relationSvc, variantSvc, offerSvc, sampleSvc, costSvc, db)
 
 	// Handlers
 	masterH := NewMasterHandler(masterSvc)
@@ -47,124 +42,21 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		group.GET("/:id/hub", hubH.GetHub)
 
 		// Variants sub-resource
-		group.GET("/:id/variants", func(c *gin.Context) {
-			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-			if err != nil {
-				response.Error(c, http.StatusBadRequest, "invalid id")
-				return
-			}
-			items, err := variantSvc.ListByMaster(c.Request.Context(), id)
-			if err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, items)
-		})
-		group.POST("/variants", func(c *gin.Context) {
-			var v ProductVariant
-			if err := c.ShouldBindJSON(&v); err != nil {
-				response.Error(c, http.StatusBadRequest, err.Error())
-				return
-			}
-			if err := variantSvc.Create(c.Request.Context(), &v); err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, v)
-		})
+		group.GET("/:id/variants", h.ListVariants)
+		group.POST("/variants", h.CreateVariant)
 
 		// Supplier offers sub-resource
-		group.GET("/:id/offers", func(c *gin.Context) {
-			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-			if err != nil {
-				response.Error(c, http.StatusBadRequest, "invalid id")
-				return
-			}
-			items, err := offerSvc.ListByMaster(c.Request.Context(), id)
-			if err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, items)
-		})
-		group.POST("/offers", func(c *gin.Context) {
-			var o SupplierOffer
-			if err := c.ShouldBindJSON(&o); err != nil {
-				response.Error(c, http.StatusBadRequest, err.Error())
-				return
-			}
-			if err := offerSvc.Create(c.Request.Context(), &o); err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, o)
-		})
+		group.GET("/:id/offers", h.ListOffers)
+		group.POST("/offers", h.CreateOffer)
 
 		// Sample requests sub-resource
-		group.GET("/:id/samples", func(c *gin.Context) {
-			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-			if err != nil {
-				response.Error(c, http.StatusBadRequest, "invalid id")
-				return
-			}
-			items, err := sampleSvc.ListByMaster(c.Request.Context(), id)
-			if err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, items)
-		})
-		group.POST("/samples", func(c *gin.Context) {
-			var sr SampleRequest
-			if err := c.ShouldBindJSON(&sr); err != nil {
-				response.Error(c, http.StatusBadRequest, err.Error())
-				return
-			}
-			if err := sampleSvc.Create(c.Request.Context(), &sr); err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, sr)
-		})
+		group.GET("/:id/samples", h.ListSamples)
+		group.POST("/samples", h.CreateSample)
 
 		// Cost versions sub-resource
-		group.GET("/:id/costs", func(c *gin.Context) {
-			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-			if err != nil {
-				response.Error(c, http.StatusBadRequest, "invalid id")
-				return
-			}
-			items, err := costSvc.ListByMaster(c.Request.Context(), id)
-			if err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, items)
-		})
-		group.POST("/costs", func(c *gin.Context) {
-			var cv CostVersion
-			if err := c.ShouldBindJSON(&cv); err != nil {
-				response.Error(c, http.StatusBadRequest, err.Error())
-				return
-			}
-			if err := costSvc.Create(c.Request.Context(), &cv); err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, cv)
-		})
-		group.POST("/costs/:costId/confirm", func(c *gin.Context) {
-			costID, err := strconv.ParseInt(c.Param("costId"), 10, 64)
-			if err != nil {
-				response.Error(c, http.StatusBadRequest, "invalid cost id")
-				return
-			}
-			if err := costSvc.Confirm(c.Request.Context(), costID); err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, gin.H{"id": costID, "status": "confirmed"})
-		})
+		group.GET("/:id/costs", h.ListCosts)
+		group.POST("/costs", h.CreateCost)
+		group.POST("/costs/:costId/confirm", h.ConfirmCost)
 	}
 
 	// Product details sub-routes (version history, freshness, relations)
@@ -188,44 +80,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		productsGroup.POST("/:id/discover-relations", h.AutoDiscoverRelations)
 
 		// Product dashboard summary (360)
-		productsGroup.GET("/360/summary", func(c *gin.Context) {
-			var total, active, draft int64
-			db.Model(&ProductMaster{}).Count(&total)
-			db.Model(&ProductMaster{}).Where("lifecycle_status = ?", "active").Count(&active)
-			db.Model(&ProductMaster{}).Where("lifecycle_status IN ?",
-				[]string{"idea", "researching", "sampling", "approved"},
-			).Count(&draft)
-			// ponytail: low_stock + expiring_certificates return 0 —
-			//  need inventory + compliance module integration for real data
-			response.Success(c, gin.H{
-				"total_products":       total,
-				"active_products":      active,
-				"draft_products":       draft,
-				"low_stock_products":   0,
-				"expiring_certificates": 0,
-			})
-		})
+		productsGroup.GET("/360/summary", h.GetProductSummary)
 
 		// Product recent decision traces
-		productsGroup.GET("/decision", func(c *gin.Context) {
-			type decisionRow struct {
-				ID        int64     `json:"id"`
-				ProductID int64     `json:"product_id"`
-				Action    string    `json:"action"`
-				Reason    string    `json:"reason"`
-				CreatedAt time.Time `json:"created_at"`
-			}
-			var rows []decisionRow
-			if err := db.Table("pre_listing_decision").
-				Select("id, sku_id AS product_id, recommendation AS action, reasoning AS reason, created_at").
-				Order("created_at DESC").
-				Limit(10).
-				Find(&rows).Error; err != nil {
-				response.InternalError(c, err)
-				return
-			}
-			response.Success(c, rows)
-		})
+		productsGroup.GET("/decision", h.ListRecentDecisions)
 	}
 	productsGroup.POST("/relations", h.CreateRelation)
 	productsGroup.DELETE("/relations/:id", h.DeleteRelation)

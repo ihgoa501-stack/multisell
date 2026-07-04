@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 )
 
 // ---------------------------------------------------------------------------
@@ -477,43 +478,42 @@ func TestActionStatus_String(t *testing.T) {
 
 func TestHighRiskActions(t *testing.T) {
 	actions := HighRiskActions()
-	expected := []string{
-		"price_update",
-		"inventory_change",
-		"order_cancel",
-		"refund_issue",
-		"platform_publish",
-		"sync_inventory",
-		"credential_change",
-		"permission_change",
-		"destructive_data_change",
+	// Now derived from actioncatalog.DefaultEntries() — the catalog is the
+	// source of truth, so verify all catalog RiskHigh entries are present.
+	catalogEntries := actioncatalog.DefaultEntries()
+	for _, e := range catalogEntries {
+		if e.RiskLevel >= actioncatalog.RiskHigh {
+			found := false
+			for _, a := range actions {
+				if a == e.ActionType {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("HighRiskActions() missing catalog entry: %s", e.ActionType)
+			}
+		}
 	}
-	if len(actions) != len(expected) {
-		t.Fatalf("expected %d high-risk actions, got %d", len(expected), len(actions))
+	// Also verify no stale entries (actions not in catalog).
+	catalogTypes := make(map[string]bool, len(catalogEntries))
+	for _, e := range catalogEntries {
+		catalogTypes[e.ActionType] = true
 	}
-	seen := make(map[string]bool)
 	for _, a := range actions {
-		seen[a] = true
-	}
-	for _, e := range expected {
-		if !seen[e] {
-			t.Errorf("missing expected high-risk action: %s", e)
+		if !catalogTypes[a] {
+			t.Errorf("HighRiskActions() has stale entry not in catalog: %s", a)
 		}
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Idempotency key — record as TODO. The current system does not have an
-// idempotency store, so duplicate execution is not yet prevented at the
-// platform layer. This test documents the known gap.
+// Idempotency key — known gap.
 // ---------------------------------------------------------------------------
 
 func TestIdempotencyKey_NotYetImplemented(t *testing.T) {
-	// ponytail: idempotency storage is not implemented yet. The AgentAction
-	// carries the idempotency_key field so callers can generate a key, but
-	// duplicate detection requires a persisted store (e.g. Redis or DB table).
-	// Add when dedup is a measurable requirement.
-	t.Skip("TODO: idempotency dedup not yet implemented — requires persisted store")
+	// ponytail: idempotency storage is not implemented yet.
+	t.Skip("ponytail: idempotency dedup not yet implemented — requires persisted store")
 }
 
 // ---------------------------------------------------------------------------

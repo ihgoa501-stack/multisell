@@ -5,7 +5,7 @@ import CrudListPage, { fmtDate, fmtMoney } from '@/components/crud/CrudListPage'
 export default function Sourcing1688Page() {
   return (
     <CrudListPage
-      resource="/sourcing1688"
+      resource="/sourcing-1688"
       title="1688 选品"
       singular="选品记录"
       searchPlaceholder="搜索供应商名称 / 1688 链接..."
