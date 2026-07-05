@@ -107,7 +107,13 @@ func (s *Service) Calculate(productID int64, calculatedBy string) (*ProfitResult
 		Currency:        "USD",
 		CalculatedBy:    calculatedBy,
 	}
-	s.db.Create(&summary)
+	if err := s.db.Create(&summary).Error; err != nil {
+		s.logger.Error("failed to save profit summary",
+			zap.Int64("product_id", productID),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("save profit summary: %w", err)
+	}
 
 	return &ProfitResult{
 		ProductID:       productID,
