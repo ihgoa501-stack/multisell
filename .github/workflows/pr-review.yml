@@ -1,0 +1,45 @@
+name: PR Auto Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  auto-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PR checklist completion
+        run: |
+          BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body' 2>/dev/null || echo "")
+          # Check if test boxes are checked
+          TEST_OK=$(echo "$BODY" | grep -c "\[x\] .*go build" || true)
+          VET_OK=$(echo "$BODY" | grep -c "\[x\] .*go vet" || true)
+          echo "go build checked: $([ "$TEST_OK" -gt 0 ] && echo '✅' || echo '❌')"
+          echo "go vet checked: $([ "$VET_OK" -gt 0 ] && echo '✅' || echo '❌')"
+          
+      - name: Check doc links in changed files
+        run: |
+          changed=$(gh pr diff ${{ github.event.pull_request.number }} --name-only 2>/dev/null | grep '\.md$' || true)
+          for f in $changed; do
+            [ ! -f "$f" ] && continue
+            grep -oPn 'docs/[^()#,）)\s]+\.md' "$f" | while IFS=: read -r line path; do
+              if [ ! -f "$path" ] && [ ! -d "$path" ]; then
+                echo "❌ $f:$line references missing: $path"
+                exit 1
+              fi
+            done
+          done
+          echo "✅ doc links valid"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Summary
+        run: |
+          echo "### PR Auto Review" >> $GITHUB_STEP_SUMMARY
+          echo "- PR #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Title: ${{ github.event.pull_request.title }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Changed files: " >> $GITHUB_STEP_SUMMARY
+          gh pr diff ${{ github.event.pull_request.number }} --name-only 2>/dev/null | while read f; do echo "  - $f" >> $GITHUB_STEP_SUMMARY; done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
