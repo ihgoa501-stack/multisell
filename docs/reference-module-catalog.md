@@ -4,20 +4,21 @@
 > 此文档合并了以下已废弃文档的内容：FUNCTION_INVENTORY.md、FRONTEND_PAGES_AND_ROUTING.md、api-inventory.md、PROJECT_STATUS.md（模块清单部分）。
 > 添加新模块或路由时，只更新此文件即可。
 >
-> 更新日期: 2026-07-03
+> 更新日期: 2026-07-05
 > 技术名: MultiSell
 
 ---
 
-## 验证状态 (2026-06-30)
+## 验证状态
 
-| 检查 | 结果 |
-|------|------|
-| `go test ./...` | 通过 |
-| `go vet ./...` | 通过 |
-| `npm test` | 通过，77 tests |
-| `npm run build` | **失败**（`src/config/menu.ts` 未解决的合并冲突） |
-| `npm run lint` | 12 errors, 22 warnings |
+本文件是模块、路由和页面清单的事实源，不再作为当前测试结果的事实源。
+
+当前验证状态以 [PROJECT_STATUS.md](PROJECT_STATUS.md) 的“当前事实快照”为准。
+历史测试报告保留在 [TEST_SUMMARY.md](TEST_SUMMARY.md) 和
+[FRONTEND_TEST_REPORT.md](FRONTEND_TEST_REPORT.md) 中。
+
+最后一次写入本目录的验证快照来自 2026-06-30，已降级为历史参考；
+在重新运行最新检查前，不应把旧的 build/lint/test 结果当作当前事实。
 
 ---
 

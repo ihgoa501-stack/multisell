@@ -49,6 +49,16 @@
 | [每日验收日志](DAILY_ACCEPTANCE_LOG.md) | Day 0-7 每日交付验收记录 |
 | [Claude Code 工作流](CLAUDE_CODE_AGENT_WORKFLOW.md) | Subagent 定义、并行策略、日终验证 |
 
+### 当前事实源与历史报告边界
+
+| 文档 | 当前用途 |
+|------|----------|
+| [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
+| [项目状态](PROJECT_STATUS.md) | 当前事实快照、当前验证状态、历史更新入口 |
+| [模块目录](reference-module-catalog.md) | 模块、API 路由、前端页面清单 |
+| [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试报告 |
+| [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 前端历史测试报告 |
+
 ## 🧠 知识库 (Knowledge Base)
 
 ### AI Agent 设计
@@ -103,8 +113,8 @@
 | [物流费率引擎指南](logistics-guide.md) | Logistics Rate Engine：四种定价模式、YAML 配置、A10 接线 |
 | [ToolBridge 工具桥接](toolbridge-guide.md) | 插件驱动工具执行、添加 Driver、降级策略 |
 | [Chrome 扩展指南](chrome-extension-guide.md) | 凌镜选品助手扩展：安装、WebSocket 协议、内容脚本 |
-| [测试说明](TEST_SUMMARY.md) | 当前新栈测试状态、已知问题和覆盖面 |
-| [前端测试报告](FRONTEND_TEST_REPORT.md) | `frontend-next` build/test/lint 状态 |
+| [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试状态、已知问题和覆盖面 |
+| [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 `frontend-next` build/test/lint 历史状态 |
 
 | [API 清单](api-inventory.md) | 🆕 全部 71+ 后端模块 API 路由、方法、参数清单 |
 | [架构决策记录](adr/) | 🆕 ADR-001~006：WebSocket 安全 / JWT type 校验 / Webhook HMAC / 密码策略 / Rate limiter 改进 / 文档策略 |

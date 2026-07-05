@@ -3,8 +3,23 @@
 > 测试日期：2026-06-24
 > 范围：`frontend-next/`
 > 框架：Next.js / React / TypeScript / Ant Design
+> 状态：历史验证报告
 
-## 测试概览
+## 使用说明
+
+这是 2026-06-24 的前端历史验证报告，不再作为当前前端状态的事实源。
+当前验证状态以 [PROJECT_STATUS.md](PROJECT_STATUS.md) 的“当前事实快照”为准。
+
+如果要判断今天的前端是否可交付，应重新运行：
+
+```bash
+cd frontend-next
+npm test
+npm run build
+npm run lint
+```
+
+## 历史测试概览
 
 | 检查 | 命令 | 状态 |
 |---|---|---:|
@@ -25,7 +40,7 @@ npm test
 - Tests: 75 passed
 - Runner: Vitest
 
-当前测试主要覆盖共享 UI / CRUD 组件：
+当时测试主要覆盖共享 UI / CRUD 组件：
 
 - `CrudListPage`
 - `BatchActionBar`
@@ -88,7 +103,7 @@ npm run lint
 
 ## 页面覆盖
 
-当前菜单入口来自：
+当时菜单入口来自：
 
 - `frontend-next/src/config/menu.ts`
 
@@ -103,7 +118,7 @@ npm run lint
 - `docs/FRONTEND_PAGES_AND_ROUTING.md`
 - `docs/UI_FRAMEWORK_GAP_ANALYSIS.md`
 
-## 下一步
+## 当时建议的下一步
 
 1. 修复 lint。
 2. 为关键业务页面增加 API mock 测试。
