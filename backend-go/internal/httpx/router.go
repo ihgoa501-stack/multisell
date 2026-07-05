@@ -716,8 +716,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			approvalIDInt = v
 		}
 		logger.Info("approval granted for listing task, creating listing task",
-			zap.Float64("product_id", productID),
-			zap.Float64("approval_id", approvalID))
+			zap.Int64("product_id", productID),
+			zap.Int64("approval_id", approvalIDInt))
 		ltSvc := listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, loopSvc)
 		_, err := ltSvc.Create(&listingtask.CreateTaskInput{
 			ProductID:  int64(productID),
