@@ -183,9 +183,10 @@ type CreateActionInput struct {
 }
 
 // ActionDecisionInput is used for approve/reject/execute.
+// NOTE: operator is intentionally NOT accepted from the client — it is always
+// extracted server-side from the JWT (common.ReviewerFromCtx). See handler.go.
 type ActionDecisionInput struct {
-	Operator string `json:"operator"`
-	Reason   string `json:"reason"`
+	Reason string `json:"reason"`
 }
 
 // ChatInput is the payload for POST /ai/chat.
