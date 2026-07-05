@@ -13,26 +13,26 @@ const (
 
 // ApprovalRequest maps to the "approval_request" table.
 type ApprovalRequest struct {
-	ID          int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	ProductID   int64      `gorm:"column:product_id;not null" json:"product_id"`
-	RequestType string     `gorm:"column:request_type;not null" json:"request_type"` // publish, price_change, delist, content_update, listing_task
-	Requester   string     `gorm:"column:requester;not null" json:"requester"`       // agent_id or user_id
-	Reviewer    string     `gorm:"column:reviewer" json:"reviewer"`
-	Status      string     `gorm:"column:status;default:pending" json:"status"` // pending, approved, rejected
-	OldValue    string     `gorm:"column:old_value;type:text" json:"old_value,omitempty"`
-	NewValue    string     `gorm:"column:new_value;type:text" json:"new_value,omitempty"`
-	Reason      string     `gorm:"column:reason;type:text" json:"reason,omitempty"`
-	ReviewNote  string     `gorm:"column:review_note;type:text" json:"review_note,omitempty"`
-	TargetType  string     `gorm:"column:target_type" json:"target_type,omitempty"`
-	TargetID    int64      `gorm:"column:target_id" json:"target_id,omitempty"`
-	RiskLevel   string     `gorm:"column:risk_level" json:"risk_level,omitempty"`
-	ExpiresAt   *time.Time `gorm:"column:expires_at" json:"expires_at,omitempty"`
-	EntityType  string     `gorm:"column:entity_type" json:"entity_type,omitempty"`
-	EntityID    int64      `gorm:"column:entity_id;default:0" json:"entity_id,omitempty"`
-	RequesterUserID *int64 `gorm:"column:requester_user_id" json:"requester_user_id,omitempty"`
-	ReviewerUserID  *int64 `gorm:"column:reviewer_user_id" json:"reviewer_user_id,omitempty"`
-	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt   time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	ID              int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ProductID       int64      `gorm:"column:product_id;not null" json:"product_id"`
+	RequestType     string     `gorm:"column:request_type;not null" json:"request_type"` // publish, price_change, delist, content_update, listing_task
+	Requester       string     `gorm:"column:requester;not null" json:"requester"`       // agent_id or username
+	RequesterUserID *int64     `gorm:"column:requester_user_id" json:"requester_user_id,omitempty"` // JWT user_id when requester is a person
+	Reviewer        string     `gorm:"column:reviewer" json:"reviewer"`
+	ReviewerUserID  *int64     `gorm:"column:reviewer_user_id" json:"reviewer_user_id,omitempty"` // JWT user_id when reviewer is a person
+	Status          string     `gorm:"column:status;default:pending" json:"status"` // pending, approved, rejected
+	OldValue        string     `gorm:"column:old_value;type:text" json:"old_value,omitempty"`
+	NewValue        string     `gorm:"column:new_value;type:text" json:"new_value,omitempty"`
+	Reason          string     `gorm:"column:reason;type:text" json:"reason,omitempty"`
+	ReviewNote      string     `gorm:"column:review_note;type:text" json:"review_note,omitempty"`
+	TargetType      string     `gorm:"column:target_type" json:"target_type,omitempty"`
+	TargetID        int64      `gorm:"column:target_id" json:"target_id,omitempty"`
+	RiskLevel       string     `gorm:"column:risk_level" json:"risk_level,omitempty"`
+	ExpiresAt       *time.Time `gorm:"column:expires_at" json:"expires_at,omitempty"`
+	EntityType      string     `gorm:"column:entity_type" json:"entity_type,omitempty"`
+	EntityID        int64      `gorm:"column:entity_id;default:0" json:"entity_id,omitempty"`
+	CreatedAt       time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (ApprovalRequest) TableName() string { return "approval_request" }
@@ -42,6 +42,7 @@ type CreateApprovalInput struct {
 	ProductID       int64      `json:"product_id" binding:"required"`
 	RequestType     string     `json:"request_type" binding:"required"`
 	Requester       string     `json:"requester"`
+	RequesterUserID *int64     `json:"requester_user_id"`
 	OldValue        string     `json:"old_value"`
 	NewValue        string     `json:"new_value"`
 	Reason          string     `json:"reason"`
@@ -51,7 +52,7 @@ type CreateApprovalInput struct {
 	ExpiresAt       *time.Time `json:"expires_at"`
 	EntityType      string     `json:"entity_type"`
 	EntityID        int64      `json:"entity_id"`
-	RequesterUserID *int64     `json:"requester_user_id"`
+	ReviewerUserID  *int64     `json:"reviewer_user_id"`
 }
 
 // ReviewApprovalInput is the JSON body for reviewing an approval request.

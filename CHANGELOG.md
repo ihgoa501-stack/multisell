@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.0 (2026-07-05) — 可信 AgentOS 执行门禁
+
+### Added
+- **Execution mode safety** — ExecuteAction now checks execution_mode before proceeding. `dry_run` validates through all gates without side effects, `sandbox` is rejected when no executor is configured, unknown modes return errors instead of falling through to production.
+- **Idempotency key support** — UnifiedAction.idempotency_key with atomic conditional UPDATE (`WHERE status IN ?` + `RowsAffected` check) prevents concurrent double-execution of the same action. If already completed, returns existing result.
+- **JWT identity binding** — approval (approve/reject) and execution actions now persist `approved_by_user_id`, `rejected_by_user_id`, and `executed_by_user_id` from the server JWT context, not client-supplied values.
+- **Closed-loop approval events** — approval Review now publishes lifecycle events (`approval.{status}.{request_type}`) to the event bus, triggering downstream workflows like listing task auto-creation on `approval.approved.listing_task`.
+- **Guardrails integration** — L4 ExecutionGuard runs on all production ExecuteAction calls, validating payloads through the AIOS guardrails chain before dispatching.
+- **Database migration 000064** — adds execution gate columns (`execution_mode`, `idempotency_key`, `approved_by_user_id`, `executed_by_user_id`, `rejected_by_user_id`, `requester_user_id`, `reviewer_user_id`) with partial and full indices.
+
+### Fixed
+- **Frontend risk level handling** — ActionConfirmModal now normalizes risk level case and validates high-risk confirmations before proceeding.
+
+### Tests
+- **ai** — 6 new execution gate tests: execution mode persistence, dry_run side-effect prevention, unknown/sandbox mode rejection, user ID persistence on approval and execution
+- **approval** — 1 new event publication test: verifies Review() publishes `approval.approved.listing_task` with correct payload
+
 ## v0.2.3 (2026-06-30) — 测试 & 管线 bugfix
 
 ### Bugfixes

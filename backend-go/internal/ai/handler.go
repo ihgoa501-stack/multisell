@@ -208,7 +208,11 @@ func (h *Handler) ApproveAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+<<<<<<< HEAD
 	a, err := h.service.ApproveAction(id, common.ReviewerFromCtx(c), in.Reason, common.UserIDFromCtx(c))
+=======
+	a, err := h.service.ApproveAction(id, common.ReviewerFromCtx(c), userIDFromCtx(c), in.Reason)
+>>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -228,7 +232,11 @@ func (h *Handler) RejectAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+<<<<<<< HEAD
 	a, err := h.service.RejectAction(id, common.ReviewerFromCtx(c), in.Reason, common.UserIDFromCtx(c))
+=======
+	a, err := h.service.RejectAction(id, common.ReviewerFromCtx(c), userIDFromCtx(c), in.Reason)
+>>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -248,7 +256,14 @@ func (h *Handler) ExecuteAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+<<<<<<< HEAD
 	a, err := h.service.ExecuteAction(id, common.ReviewerFromCtx(c), in.Reason, common.UserIDFromCtx(c))
+=======
+	// Actor identity is server-enforced from JWT, not client-supplied.
+	operator := common.ReviewerFromCtx(c)
+	userID := userIDFromCtx(c)
+	a, err := h.service.ExecuteAction(id, userID, operator, in.Reason)
+>>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if err != nil {
 		if errors.Is(err, ErrApprovalRequired) {
 			response.Error(c, http.StatusForbidden, "action requires approval before execution")
