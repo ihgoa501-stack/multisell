@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # LingMirror AgentOS MVP 收尾 — Agent 详情页
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

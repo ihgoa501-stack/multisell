@@ -1,3 +1,4 @@
+<!-- ⚠️ 此文档引用旧栈（Python/FastAPI/Vue 3），已于 2026-06-30 迁移至 Go/Next.js。仅供参考，不可直接执行。 -->
 <template>
   <div class="listing-container">
     <!-- ═══ 页面标题区 ═══ -->
@@ -159,7 +160,7 @@ const platformStats = computed(() => {
     { code: 'shopee', name: 'Shopee', total: 0, synced: 0 },
     { code: 'wb', name: 'Wildberries', total: 0, synced: 0 },
   ]
-  
+
   data.value.forEach(item => {
     const p = platforms.find(p => p.code === item.platform_code)
     if (p) {
@@ -167,7 +168,7 @@ const platformStats = computed(() => {
       if (item.status === 'synced') p.synced++
     }
   })
-  
+
   return platforms.map(p => ({
     ...p,
     syncRate: p.total > 0 ? Math.round(p.synced / p.total * 100) : 0,
@@ -191,19 +192,19 @@ const statusOptions = [
 // ── 筛选后的数据 ──
 const filteredData = computed(() => {
   let result = data.value
-  
+
   if (searchText.value) {
     result = result.filter(item => item.product_name?.toLowerCase().includes(searchText.value.toLowerCase()))
   }
-  
+
   if (filterPlatform.value) {
     result = result.filter(item => item.platform_code === filterPlatform.value)
   }
-  
+
   if (filterStatus.value) {
     result = result.filter(item => item.status === filterStatus.value)
   }
-  
+
   return result
 })
 

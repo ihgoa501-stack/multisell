@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # 真实平台 API 接入 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -158,7 +160,7 @@ async def test_worker_marks_item_failed_on_adapter_error(async_client, db_sessio
         await asyncio.sleep(0.2)
     finally:
         await worker.stop()
-    
+
     async with db_session.begin():
         stmt = select(ListingTaskItem).where(ListingTaskItem.id == item_id)
         row = (await db_session.execute(stmt)).scalar_one_or_none()
@@ -604,26 +606,26 @@ async def _execute_one(self, db: AsyncSession, item: ListingTaskItem):
     if not product or not platform:
         item.status = "failed"; item.error_message = "missing product/platform"
         await db.flush(); return
-    
+
     skus = (await db.execute(
         select(Sku).where(Sku.product_id == product.id)
     )).scalars().all()
     sku_ids = [s.id for s in skus]
-    
+
     prices = {}
     if sku_ids:
         price_rows = (await db.execute(
             select(Price).where(Price.sku_id.in_(sku_ids))
         )).scalars().all()
         prices = {p.sku_id: p for p in price_rows}
-    
+
     inventories = {}
     if sku_ids:
         inv_rows = (await db.execute(
             select(Inventory).where(Inventory.sku_id.in_(sku_ids))
         )).scalars().all()
         inventories = {i.sku_id: i for i in inv_rows}
-    
+
     adapter = get_listing_adapter(platform.code)
     result = await adapter.publish(
         product=product, platform=platform,

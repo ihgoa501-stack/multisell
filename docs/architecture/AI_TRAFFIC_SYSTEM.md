@@ -483,7 +483,6 @@ Owner 应该看到的是城市交通状态，而不是技术日志。
 - `docs/governance/KERNEL_CONTRACTS.md`
 - `docs/explanation-agent-pipeline.md`
 - `docs/aios-architecture.md`
-- `docs/agent-responsibility-cards.md`
 
 当本文档与治理文档冲突时，以治理文档为准；当具体实现与本文档冲突时，应优先检查实现是否绕过了交通系统契约。
 

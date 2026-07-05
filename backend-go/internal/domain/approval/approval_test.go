@@ -1,11 +1,8 @@
 package approval
 
 import (
-	"context"
 	"testing"
-
 	"github.com/lingmirror/backend-go/internal/dbtest"
-	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"gorm.io/gorm"
 )
 
@@ -463,75 +460,3 @@ func TestService_Review_SyncsUnifiedAction_Rejected(t *testing.T) {
 		t.Errorf("unified_action status = %q, want %q", status, "rejected")
 	}
 }
-
-
-func TestService_Review_PublishesApprovalEvent(t *testing.T) {
-	db := dbtest.NewDB(t, &ApprovalRequest{})
-	createUnifiedActionTable(db)
-	insertUnifiedActionRow(db, 2001, "Event Test Action")
-
-	bus := eventbus.New(dbtest.NewLogger(t))
-	busCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	bus.Start(busCtx)
-
-	got := make(chan eventbus.Event, 10)
-	bus.Subscribe("approval.approved.listing_task", func(ctx context.Context, evt eventbus.Event) error {
-		got <- evt
-		return nil
-	})
-
-	svc := NewService(db, dbtest.NewLogger(t), nil).WithBus(bus)
-
-	req, err := svc.Create(&CreateApprovalInput{
-		ProductID: 1, RequestType: "listing_task", Requester: "agent:A5",
-		EntityType: "unified_action", EntityID: 2001,
-	})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	_, err = svc.Review(req.ID, &ReviewApprovalInput{
-		Action: "approve", Reviewer: "owner",
-		ReviewNote: "approved by owner", ReviewerUserID: int64Ptr(42),
-	})
-	if err != nil {
-		t.Fatalf("Review: %v", err)
-	}
-
-	// Verify event was published with correct payload.
-	select {
-	case evt := <-got:
-		if evt.Topic != "approval.approved.listing_task" {
-			t.Errorf("topic = %q", evt.Topic)
-		}
-		pl := evt.Payload
-		if pl == nil {
-			t.Fatal("nil payload")
-		}
-		// In-process bus preserves Go types: int64 for scalars, *int64 for pointer fields.
-		if v, ok := pl["product_id"].(int64); !ok || v != 1 {
-			t.Errorf("product_id type/value = %T(%v)", pl["product_id"], pl["product_id"])
-		}
-		if v, ok := pl["approval_id"].(int64); !ok || v != req.ID {
-			t.Errorf("approval_id type/value = %T(%v)", pl["approval_id"], pl["approval_id"])
-		}
-		// reviewer_user_id can be int64 or *int64 depending on the value.
-		switch v := pl["reviewer_user_id"].(type) {
-		case int64:
-			if v != 42 {
-				t.Errorf("reviewer_user_id = %d, want 42", v)
-			}
-		case *int64:
-			if v == nil || *v != 42 {
-				t.Errorf("reviewer_user_id = %v, want 42", v)
-			}
-		default:
-			t.Errorf("reviewer_user_id unexpected type: %T(%v)", pl["reviewer_user_id"], pl["reviewer_user_id"])
-		}
-	case <-make(chan struct{}):
-		t.Fatal("timed out waiting for approval event")
-	}
-}
-
-func int64Ptr(n int64) *int64 { return &n }

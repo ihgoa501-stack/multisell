@@ -517,13 +517,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
 
-	// Scheduler task-state endpoint — proves each agent tick is actually running.
-	// Contains: cumulative ticks/skips, last tick time, running status per task.
-	// Prometheus metrics (multisell_scheduler_ticks_total) also available.
+	// Scheduler health endpoint — exposes task run state for AIOS dashboard.
 	r.GET("/api/v1/aios/scheduler/tasks", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"tasks": sched.TaskRunState(),
-		})
+		c.JSON(200, gin.H{"tasks": sched.TaskRunState()})
 	})
 
 	// ==========================================================
@@ -553,6 +549,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// RBAC routes — require rbac.manage permission
 	rbacRoutes := protected.Group("", middleware.RequirePermission(db, "rbac.manage"))
 	rbac.RegisterRoutes(rbacRoutes, db, logger)
+
+	// RBAC public routes — accessible to any authenticated user
+	rbac.RegisterPublicRoutes(protected, db, logger)
 
 	// Agent routes (wired through the AI orchestrator)
 	agent.RegisterRoutes(protected, db, logger, aiOrch)
@@ -689,39 +688,21 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	} else {
 		logger.Info("Prism client disabled")
 	}
-
 	approvalSvc = approval.NewService(db, logger, auditSvc).WithBus(bus)
 	rbacSvc := rbac.NewService(db, logger)
 	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
+	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
 
-	// Subscribe to approval events for listing task auto-creation (business closed-loop).
-	// When a listing_task approval is granted, create the listing task with approved status.
+	// Closed-loop: approval approved for listing_task → execute the task.
 	bus.Subscribe("approval.approved.listing_task", func(ctx context.Context, evt eventbus.Event) error {
-		payload := evt.Payload
-		if payload == nil {
+		entityID, ok := evt.Payload["entity_id"].(float64)
+		if !ok || int64(entityID) == 0 {
 			return nil
 		}
-		productID, _ := payload["product_id"].(float64)
-		approvalID, _ := payload["approval_id"].(float64)
-		approvalIDInt := int64(approvalID)
-		logger.Info("approval granted for listing task, creating listing task",
-			zap.Float64("product_id", productID),
-			zap.Float64("approval_id", approvalID))
 		ltSvc := listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, loopSvc)
-		_, err := ltSvc.Create(&listingtask.CreateTaskInput{
-			ProductID:  int64(productID),
-			PlatformID: 1,
-			Status:     "approved",
-			ApprovalID: &approvalIDInt,
-			CreatedBy:  "system:approval_bridge",
-		})
-		if err != nil {
-			logger.Warn("failed to create listing task from approval", zap.Error(err))
-			return err
-		}
-		return nil
+		_, err := ltSvc.ExecuteTask(int64(entityID), "system")
+		return err
 	})
-	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
 
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
@@ -829,7 +810,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		"G3": {"compliance_check"},
 	}
 	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
-	ai.RegisterRoutes(protected, db, logger, hub, moaCoord, cmd, aiosCfg.Guardrails)
+	ai.RegisterRoutes(protected, db, logger, hub, aiosCfg.Guardrails, moaCoord, cmd)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}

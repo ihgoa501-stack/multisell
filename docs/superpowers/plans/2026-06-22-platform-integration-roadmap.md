@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # 平台对接完整路线图 — 发布之后的 5 个阶段
 
 > **For agentic workers:** This is a roadmap index, not an execution plan. Each phase has its own plan file. Implement them in order.
@@ -46,16 +48,16 @@ class ListingAdapter(Protocol):
     async def publish(...)
     async def sync_status(...)
     async def validate_credentials(...)
-    
+
     # Phase 1 —
     async def fetch_orders(self, *, platform, since: datetime) -> list[dict]
-    
+
     # Phase 2 —
     async def push_tracking(self, *, platform, order_sn: str, tracking_no: str) -> bool
-    
+
     # Phase 3 —
     async def fetch_settlements(self, *, platform, since: datetime) -> list[dict]
-    
+
     # Phase 5 —
     async def sync_inventory(self, *, platform, sku_code: str, quantity: int) -> bool
 ```

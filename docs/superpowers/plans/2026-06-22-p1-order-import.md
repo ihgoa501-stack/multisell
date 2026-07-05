@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # P1: 平台订单实时导入 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -96,7 +98,7 @@ async def fetch_orders(self, *, platform: Platform, since: datetime,
     """拉取 Ozon FBS 订单"""
     limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
     await limiter.acquire()
-    
+
     payload = {
         "dir": "ASC",
         "filter": {"since": since.strftime("%Y-%m-%dT%H:%M:%S.000Z")},
@@ -105,7 +107,7 @@ async def fetch_orders(self, *, platform: Platform, since: datetime,
     async with self._client(platform) as client:
         resp = await client.post("/v3/posting/fbs/list", json=payload)
         body = self._parse_response(resp, "fetch_orders")
-    
+
     orders = []
     for p in body.get("result", {}).get("postings", []):
         items = []
@@ -163,14 +165,14 @@ async def fetch_orders(self, *, platform: Platform, since: datetime,
     params["page_size"] = 100
     params["create_time_from"] = int(since.timestamp())
     params["create_time_to"] = int(datetime.now(timezone.utc).timestamp())
-    
+
     limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
     await limiter.acquire()
-    
+
     async with self._client(platform) as client:
         resp = await client.get(api_path, params=params)
         body = self._parse_response(resp, "fetch_orders")
-    
+
     orders = []
     for order_sn in body.get("response", {}).get("order_list", []):
         orders.append(await self._fetch_order_detail(platform, order_sn))

@@ -7,6 +7,35 @@ on:
     branches: [main, infra-q3-buildout]
 
 jobs:
+  doc-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Check markdown file references exist
+        run: |
+          set +e
+          has_error=0
+          # Check AGENTS.md and CLAUDE.md for file references
+          for src in AGENTS.md CLAUDE.md; do
+            [ -f "$src" ] || continue
+            grep -oPn 'docs/[^()#,）)\s]+\.md' "$src" | while IFS=: read -r line path; do
+              if [ ! -f "$path" ]; then
+                echo "❌ $src:$line references missing file: $path"
+                has_error=1
+              fi
+            done
+          done
+          # Check docs/INDEX.md for file references
+          if [ -f docs/INDEX.md ]; then
+            grep -oPn '\[.*?\]\(([^)]+)\)' docs/INDEX.md | sed 's/.*(//;s/)//' | while read -r path; do
+              if [ ! -f "$path" ] && [ ! -d "$path" ]; then
+                echo "❌ docs/INDEX.md references missing: $path"
+                has_error=1
+              fi
+            done
+          fi
+          exit $has_error
+
   go-lint:
     runs-on: ubuntu-latest
     defaults:

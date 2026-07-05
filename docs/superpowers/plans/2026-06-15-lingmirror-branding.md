@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # LingMirror Branding Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -373,7 +375,7 @@ to:
 At the top, add:
 
 ```markdown
-产品品牌：凌镜 LingMirror  
+产品品牌：凌镜 LingMirror
 技术项目名：MultiSell
 ```
 
@@ -521,4 +523,3 @@ Future technical rename would include:
 - CI/CD identifiers.
 
 Do that only after product direction is stable and the current MVP is working.
-

@@ -1,3 +1,5 @@
+> ⚠️ 此文档引用旧栈（Python/FastAPI/Vue 3），已于 2026-06-30 迁移至 Go/Next.js。仅供参考，不可直接执行。
+
 # 🤖 MultiSell — 多AI协作开发 Prompt 模板
 
 ## 通用说明（发给每个AI前加上这段话）
@@ -60,14 +62,14 @@ MultiSell 技术栈：Python FastAPI + Vue 3 + Naive UI + PostgreSQL
 ```python
 class Order(Base):
     __tablename__ = "order"
-    id, order_no(订单号), product_id, sku_id, quantity, total_price, 
-    status(draft/pending/paid/shipped/delivered/cancelled), 
-    buyer_name, buyer_phone, buyer_address, remark, operator, 
+    id, order_no(订单号), product_id, sku_id, quantity, total_price,
+    status(draft/pending/paid/shipped/delivered/cancelled),
+    buyer_name, buyer_phone, buyer_address, remark, operator,
     created_at, updated_at
 
 class OrderItem(Base):
     __tablename__ = "order_item"
-    id, order_id(FK), sku_id(FK), product_name, sku_desc, 
+    id, order_id(FK), sku_id(FK), product_name, sku_desc,
     price, quantity, subtotal
 ```
 

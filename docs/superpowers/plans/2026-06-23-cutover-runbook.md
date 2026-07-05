@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # LingMirror 生产切流 Runbook
 
 > 版本：v1.0 | 最后更新：2026-06-23 | 适用：从 Python/FastAPI + Vue → Go/Gin + Next.js 全栈切换

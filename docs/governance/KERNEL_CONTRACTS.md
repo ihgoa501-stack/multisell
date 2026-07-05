@@ -189,8 +189,8 @@ rollback_note:     string               // human guidance for reversing
 
 ### Code Reference
 
-- `internal/platform/command/action.go` — `AgentAction` struct, `RiskLevel` type, `ActionMode` type.
-- `internal/platform/command/command.go` — `DispatchSafe` method enforces mode and approval rules.
+- `backend-go/internal/platform/command/action.go` — `AgentAction` struct, `RiskLevel` type, `ActionMode` type.
+- `backend-go/internal/platform/command/command.go` — `DispatchSafe` method enforces mode and approval rules.
 
 ## 5. Scheduler Contract
 

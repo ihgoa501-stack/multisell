@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LingMirror Logo Concepts</title>
+    <style>
+      :root {
+        --bg: #0b0b0e;
+        --panel: #121216;
+        --panel-2: #1a1a20;
+        --border: #282830;
+        --text: #e8e8ed;
+        --muted: #a0a0ab;
+        --faint: #6b6b78;
+        --indigo: #6366f1;
+        --cyan: #22d3ee;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, "DM Sans", ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 48px));
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+
+      header {
+        margin-bottom: 28px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        line-height: 1.1;
+        font-weight: 760;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .concept {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .stage {
+        display: grid;
+        min-height: 360px;
+        place-items: center;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 55%),
+          var(--panel-2);
+      }
+
+      .lockup {
+        display: grid;
+        justify-items: center;
+        gap: 18px;
+      }
+
+      .wordmark {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        color: var(--text);
+        letter-spacing: 0;
+      }
+
+      .wordmark .cn {
+        font-size: 27px;
+        font-weight: 680;
+      }
+
+      .wordmark .en {
+        font-size: 24px;
+        font-weight: 650;
+      }
+
+      .meta {
+        padding: 18px;
+        border-top: 1px solid var(--border);
+      }
+
+      .meta h2 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .meta p {
+        font-size: 13px;
+      }
+
+      .scale-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .scale-box {
+        display: grid;
+        place-items: center;
+        width: 56px;
+        height: 56px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #0f0f13;
+      }
+
+      .scale-box.small {
+        width: 32px;
+        height: 32px;
+      }
+
+      svg {
+        display: block;
+      }
+
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>凌镜 LingMirror Logo Concepts</h1>
+        <p>第二轮矢量方向稿。目标是摆脱“镜子/电路/箭头”的直译，做更像品牌记号的核心图形。</p>
+      </header>
+
+      <section class="grid">
+        <article class="concept">
+          <div class="stage">
+            <div class="lockup">
+              <svg width="148" height="148" viewBox="0 0 148 148" role="img" aria-label="LingMirror Prism Mark Logo">
+                <path d="M39 26H109C114.5 26 119 30.5 119 36V106C119 111.5 114.5 116 109 116H39C33.5 116 29 111.5 29 106V36C29 30.5 33.5 26 39 26Z" fill="#e8e8ed" />
+                <path d="M48 36H100C105 36 109 40 109 45V97C109 102 105 106 100 106H48C43 106 39 102 39 97V45C39 40 43 36 48 36Z" fill="#0b0b0e" />
+                <path d="M74 47L98 61V89L74 103L50 89V61L74 47Z" fill="#121216" />
+                <path d="M74 48L98 61L74 75L50 61L74 48Z" fill="#6366f1" />
+                <path d="M50 61L74 75V103L50 89V61Z" fill="#22d3ee" />
+                <path d="M98 61L74 75V103L98 89V61Z" fill="#e8e8ed" />
+                <path d="M74 75V103" stroke="#0b0b0e" stroke-width="5" stroke-linecap="round" />
+                <path d="M59 63L74 55L89 63" fill="none" stroke="#0b0b0e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M102 102L122 122" stroke="#6366f1" stroke-width="10" stroke-linecap="round" />
+              </svg>
+              <div class="wordmark">
+                <span class="cn">凌镜</span>
+                <span class="en">LingMirror</span>
+              </div>
+            </div>
+          </div>
+          <div class="meta">
+            <h2>A. Prism Mark</h2>
+            <p>当前 A 的稳定载体 + 上版 B 的棱镜折面。比纯 cube 更像“镜中校准”，但仍保留产品图标的识别度。</p>
+            <div class="scale-row">
+              <span class="scale-box">
+                <svg width="36" height="36" viewBox="0 0 148 148">
+                  <path d="M39 26H109C114.5 26 119 30.5 119 36V106C119 111.5 114.5 116 109 116H39C33.5 116 29 111.5 29 106V36C29 30.5 33.5 26 39 26Z" fill="#e8e8ed" />
+                  <path d="M48 36H100C105 36 109 40 109 45V97C109 102 105 106 100 106H48C43 106 39 102 39 97V45C39 40 43 36 48 36Z" fill="#0b0b0e" />
+                  <path d="M74 47L98 61V89L74 103L50 89V61L74 47Z" fill="#121216" />
+                  <path d="M74 48L98 61L74 75L50 61L74 48Z" fill="#6366f1" />
+                  <path d="M50 61L74 75V103L50 89V61Z" fill="#22d3ee" />
+                  <path d="M98 61L74 75V103L98 89V61Z" fill="#e8e8ed" />
+                  <path d="M74 75V103" stroke="#0b0b0e" stroke-width="5" stroke-linecap="round" />
+                  <path d="M102 102L122 122" stroke="#6366f1" stroke-width="10" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="scale-box small">
+                <svg width="22" height="22" viewBox="0 0 148 148">
+                  <path d="M39 26H109C114.5 26 119 30.5 119 36V106C119 111.5 114.5 116 109 116H39C33.5 116 29 111.5 29 106V36C29 30.5 33.5 26 39 26Z" fill="#e8e8ed" />
+                  <path d="M48 36H100C105 36 109 40 109 45V97C109 102 105 106 100 106H48C43 106 39 102 39 97V45C39 40 43 36 48 36Z" fill="#0b0b0e" />
+                  <path d="M74 47L98 61V89L74 103L50 89V61L74 47Z" fill="#121216" />
+                  <path d="M74 48L98 61L74 75L50 61L74 48Z" fill="#6366f1" />
+                  <path d="M50 61L74 75V103L50 89V61Z" fill="#22d3ee" />
+                  <path d="M98 61L74 75V103L98 89V61Z" fill="#e8e8ed" />
+                </svg>
+              </span>
+            </div>
+          </div>
+        </article>
+
+        <article class="concept">
+          <div class="stage">
+            <div class="lockup">
+              <svg width="148" height="148" viewBox="0 0 148 148" role="img" aria-label="LingMirror Prism Logo">
+                <path d="M31 111C54 39 94 27 117 37C126 41 129 50 125 58C119 70 101 69 86 60C68 49 52 54 43 70" fill="none" stroke="#e8e8ed" stroke-width="18" stroke-linecap="round" />
+                <path d="M31 111C54 39 94 27 117 37C126 41 129 50 125 58" fill="none" stroke="#22d3ee" stroke-width="10" stroke-linecap="round" />
+                <path d="M43 70C53 87 71 100 92 99C103 98 113 94 121 87" fill="none" stroke="#6366f1" stroke-width="10" stroke-linecap="round" />
+                <circle cx="43" cy="70" r="8" fill="#0b0b0e" stroke="#e8e8ed" stroke-width="7" />
+              </svg>
+              <div class="wordmark">
+                <span class="cn">凌镜</span>
+                <span class="en">LingMirror</span>
+              </div>
+            </div>
+          </div>
+          <div class="meta">
+            <h2>B. Signal Stroke</h2>
+            <p>一个连续笔画，表达“校准、流转、反射”。更有品牌姿态，但需要继续打磨比例。</p>
+            <div class="scale-row">
+              <span class="scale-box">
+                <svg width="36" height="36" viewBox="0 0 148 148">
+                  <path d="M31 111C54 39 94 27 117 37C126 41 129 50 125 58C119 70 101 69 86 60C68 49 52 54 43 70" fill="none" stroke="#e8e8ed" stroke-width="18" stroke-linecap="round" />
+                  <path d="M31 111C54 39 94 27 117 37C126 41 129 50 125 58" fill="none" stroke="#22d3ee" stroke-width="10" stroke-linecap="round" />
+                  <path d="M43 70C53 87 71 100 92 99C103 98 113 94 121 87" fill="none" stroke="#6366f1" stroke-width="10" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="scale-box small">
+                <svg width="22" height="22" viewBox="0 0 148 148">
+                  <path d="M31 111C54 39 94 27 117 37C126 41 129 50 125 58C119 70 101 69 86 60C68 49 52 54 43 70" fill="none" stroke="#e8e8ed" stroke-width="18" stroke-linecap="round" />
+                  <path d="M43 70C53 87 71 100 92 99C103 98 113 94 121 87" fill="none" stroke="#6366f1" stroke-width="10" stroke-linecap="round" />
+                </svg>
+              </span>
+            </div>
+          </div>
+        </article>
+
+        <article class="concept">
+          <div class="stage">
+            <div class="lockup">
+              <svg width="148" height="148" viewBox="0 0 148 148" role="img" aria-label="LingMirror Signal Logo">
+                <path d="M38 29H110C115 29 119 33 119 38V110C119 115 115 119 110 119H38C33 119 29 115 29 110V38C29 33 33 29 38 29Z" fill="#121216" stroke="#282830" stroke-width="4" />
+                <path d="M52 95V53C52 49.7 55.7 47.8 58.4 49.8L89.2 72.8C91.4 74.4 91.4 77.6 89.2 79.2L58.4 102.2C55.7 104.2 52 102.3 52 99V95Z" fill="#22d3ee" />
+                <path d="M96 52V100" stroke="#e8e8ed" stroke-width="10" stroke-linecap="round" />
+                <path d="M96 76H115" stroke="#6366f1" stroke-width="10" stroke-linecap="round" />
+              </svg>
+              <div class="wordmark">
+                <span class="cn">凌镜</span>
+                <span class="en">LingMirror</span>
+              </div>
+            </div>
+          </div>
+          <div class="meta">
+            <h2>C. Operator</h2>
+            <p>更偏 AgentOS：像“播放/执行/任务编排”的操作符。商业感强，但“凌镜”语义较弱。</p>
+            <div class="scale-row">
+              <span class="scale-box">
+                <svg width="36" height="36" viewBox="0 0 148 148">
+                  <path d="M38 29H110C115 29 119 33 119 38V110C119 115 115 119 110 119H38C33 119 29 115 29 110V38C29 33 33 29 38 29Z" fill="#121216" />
+                  <path d="M52 95V53C52 49.7 55.7 47.8 58.4 49.8L89.2 72.8C91.4 74.4 91.4 77.6 89.2 79.2L58.4 102.2C55.7 104.2 52 102.3 52 99V95Z" fill="#22d3ee" />
+                  <path d="M96 52V100" stroke="#e8e8ed" stroke-width="10" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="scale-box small">
+                <svg width="22" height="22" viewBox="0 0 148 148">
+                  <path d="M38 29H110C115 29 119 33 119 38V110C119 115 115 119 110 119H38C33 119 29 115 29 110V38C29 33 33 29 38 29Z" fill="#121216" />
+                  <path d="M52 95V53C52 49.7 55.7 47.8 58.4 49.8L89.2 72.8C91.4 74.4 91.4 77.6 89.2 79.2L58.4 102.2C55.7 104.2 52 102.3 52 99V95Z" fill="#22d3ee" />
+                </svg>
+              </span>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

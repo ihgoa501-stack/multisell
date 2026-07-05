@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # Logistics Shipping Documentation Plan
 
 > **For documentation agent:** This is a writing plan, not an implementation task. Do not edit backend or frontend code. Produce clear product and technical documentation for the logistics attributes and shipping-cost calculation system.

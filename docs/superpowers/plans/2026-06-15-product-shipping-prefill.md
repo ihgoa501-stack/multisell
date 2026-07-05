@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # Product Shipping Calculator Prefill Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -483,4 +485,3 @@ After this workflow is implemented, plan these in order:
 
 4. **Platform order ingestion**
    - Bring real platform orders into the system so shipping/profit workflows can run on real data.
-

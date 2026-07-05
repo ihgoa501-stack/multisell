@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # Product List Rebuild Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -939,4 +941,3 @@ After this product list rebuild is implemented, plan the next modules in this or
 
 5. **Platform order ingestion**
    - Import platform orders from Excel/API so shipping and profit can run on real orders.
-

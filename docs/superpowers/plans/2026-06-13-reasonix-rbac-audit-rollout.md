@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # Reasonix RBAC Audit Rollout Plan
 
 > **For Reasonix / coding agent:** Execute this plan with TDD. Do not refactor unrelated code. Keep changes scoped to permission checks, audit logs, and tests.

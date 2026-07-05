@@ -17,7 +17,7 @@ type Service struct {
 	db       *gorm.DB
 	logger   *zap.Logger
 	oplogSvc *operationlog.Service // optional, may be nil
-	bus      *eventbus.Bus         // optional, may be nil — used to publish approval lifecycle events
+	bus      *eventbus.Bus
 }
 
 // NewService creates a new approval service.
@@ -26,7 +26,7 @@ func NewService(db *gorm.DB, logger *zap.Logger, oplogSvc *operationlog.Service)
 	return &Service{db: db, logger: logger, oplogSvc: oplogSvc}
 }
 
-// WithBus attaches an event bus for publishing approval lifecycle events.
+// WithBus attaches an event bus for publishing approval events.
 func (s *Service) WithBus(bus *eventbus.Bus) *Service {
 	s.bus = bus
 	return s
@@ -111,8 +111,8 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 	updates := map[string]interface{}{
 		"status":           status,
 		"reviewer":         input.Reviewer,
-		"reviewer_user_id": input.ReviewerUserID,
 		"review_note":      input.ReviewNote,
+		"reviewer_user_id": input.ReviewerUserID,
 		"updated_at":       now,
 	}
 
@@ -181,13 +181,32 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 		}
 	}
 
-	// Publish approval lifecycle event for closed-loop workflows
-	// (e.g. listing task creation on approval.approved.listing_task).
-	// Only publish on success — never on rollback.
-	req.ReviewerUserID = input.ReviewerUserID
-	s.publishApprovalEvent(&req, status)
+	// Publish approval event for closed-loop subscribers.
+	s.publishApprovalEvent(req, status)
 
 	return &req, nil
+}
+
+// publishApprovalEvent publishes approval.{status}.{request_type} to the event bus.
+func (s *Service) publishApprovalEvent(req ApprovalRequest, status string) {
+	if s.bus == nil {
+		return
+	}
+	topic := fmt.Sprintf("approval.%s.%s", status, req.RequestType)
+	payload := map[string]interface{}{
+		"approval_id":    req.ID,
+		"product_id":     req.ProductID,
+		"request_type":   req.RequestType,
+		"status":         status,
+		"requester":      req.Requester,
+		"reviewer":       req.Reviewer,
+		"entity_type":    req.EntityType,
+		"entity_id":      req.EntityID,
+		"reviewer_user_id": req.ReviewerUserID,
+	}
+	if _, err := s.bus.Publish(context.Background(), topic, "approval", payload); err != nil {
+		s.logger.Warn("failed to publish approval event", zap.String("topic", topic), zap.Error(err))
+	}
 }
 
 // MyPending returns approval requests pending review.
@@ -310,27 +329,4 @@ func (s *Service) AutoEscalate() ([]ApprovalRequest, error) {
 		)
 	}
 	return items, nil
-}
-
-// publishApprovalEvent publishes an approval lifecycle event when there is an
-// event bus attached. Used by router.go subscribers to trigger cross-domain
-// workflows (e.g. listing task creation on approval).
-func (s *Service) publishApprovalEvent(req *ApprovalRequest, status string) {
-	if s.bus == nil {
-		return
-	}
-	topic := fmt.Sprintf("approval.%s.%s", status, req.RequestType)
-	ctx := context.Background()
-	_, _ = s.bus.Publish(ctx, topic, "approval", map[string]interface{}{
-		"approval_id":    req.ID,
-		"status":          status,
-		"request_type":    req.RequestType,
-		"entity_type":     req.EntityType,
-		"entity_id":       req.EntityID,
-		"product_id":      req.ProductID,
-		"reviewer":        req.Reviewer,
-		"reviewer_user_id": req.ReviewerUserID,
-		"target_type":     req.TargetType,
-		"target_id":       req.TargetID,
-	})
 }

@@ -7,16 +7,12 @@ import { usePermissionStore } from '@/stores/permission-store';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  // Initialize authChecked from localStorage — runs once before any effect
-  // Guard against SSR: localStorage is only available in the browser
-  const [authChecked] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return !!localStorage.getItem('token');
-  });
+  const [mounted, setMounted] = useState(false);
   const fetchPermissions = usePermissionStore((s) => s.fetchPermissions);
   const permissionsFetched = usePermissionStore((s) => s.fetched);
 
   useEffect(() => {
+    setMounted(true);
     const token = localStorage.getItem('token');
     if (!token) {
       router.replace('/login');
@@ -25,9 +21,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [router, fetchPermissions]);
 
-  if (!authChecked) return null;
+  if (!mounted) return null;
 
-  // Show a brief loading indicator while permissions are being fetched
   if (!permissionsFetched) {
     return (
       <div

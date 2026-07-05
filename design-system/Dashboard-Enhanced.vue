@@ -1,3 +1,4 @@
+<!-- ⚠️ 此文档引用旧栈（Python/FastAPI/Vue 3），已于 2026-06-30 迁移至 Go/Next.js。仅供参考，不可直接执行。 -->
 <template>
   <div class="dashboard-container">
     <!-- ═══════ 页面标题区 ═══════ -->
