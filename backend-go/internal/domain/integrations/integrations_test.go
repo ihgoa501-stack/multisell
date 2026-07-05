@@ -1151,3 +1151,70 @@ func TestHandler_CreateAttribute(t *testing.T) {
 		t.Fatalf("expected required=true, got %v", data["required"])
 	}
 }
+
+func TestExecutionModeDefaults(t *testing.T) {
+	ctx := context.Background()
+	mode := ExecutionModeFromCtx(ctx)
+	if mode != ExecutionModeProduction {
+		t.Errorf("default mode = %v, want ExecutionModeProduction", mode)
+	}
+	if mode.String() != "production" {
+		t.Errorf("default mode string = %q, want %q", mode.String(), "production")
+	}
+}
+
+func TestExecutionModeDryRun(t *testing.T) {
+	ctx := context.Background()
+	ctx = WithExecutionMode(ctx, ExecutionModeDryRun)
+
+	mode := ExecutionModeFromCtx(ctx)
+	if mode != ExecutionModeDryRun {
+		t.Fatalf("mode = %v, want dry_run", mode)
+	}
+	if mode.String() != "dry_run" {
+		t.Errorf("String = %q, want %q", mode.String(), "dry_run")
+	}
+}
+
+func TestExecutionModeSandbox(t *testing.T) {
+	ctx := context.Background()
+	ctx = WithExecutionMode(ctx, ExecutionModeSandbox)
+
+	mode := ExecutionModeFromCtx(ctx)
+	if mode != ExecutionModeSandbox {
+		t.Fatalf("mode = %v, want sandbox", mode)
+	}
+	if mode.String() != "sandbox" {
+		t.Errorf("String = %q, want %q", mode.String(), "sandbox")
+	}
+}
+
+func TestCheckWriteMode_DryRun_ReturnsMockResult(t *testing.T) {
+	svc := newTestDB(t)
+
+	// Without dry-run: mode should be production, no mock result.
+	prodCtx := context.Background()
+	result, err := svc.checkWriteMode(prodCtx, "test_op", "input")
+	if err != nil {
+		t.Fatalf("checkWriteMode production: %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for production mode, got %+v", result)
+	}
+
+	// With dry-run: should return mock PublishResult.
+	dryCtx := WithExecutionMode(context.Background(), ExecutionModeDryRun)
+	result, err = svc.checkWriteMode(dryCtx, "test_op", "input")
+	if err != nil {
+		t.Fatalf("checkWriteMode dry-run: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result for dry-run mode")
+	}
+	if result.PlatformProductID != "dry-run-simulated" {
+		t.Errorf("PlatformProductID = %q, want dry-run-simulated", result.PlatformProductID)
+	}
+	if result.SyncMessage != "dry_run: no platform call was made" {
+		t.Errorf("SyncMessage = %q, want dry_run: no platform call was made", result.SyncMessage)
+	}
+}
