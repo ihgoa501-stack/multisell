@@ -70,40 +70,44 @@ const (
 
 // UnifiedAction maps to "unified_action".
 type UnifiedAction struct {
-	ID                int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	SourceTable       string          `gorm:"column:source_table;not null;uniqueIndex:uq_source" json:"source_table"`
-	SourceID          string          `gorm:"column:source_id;not null;uniqueIndex:uq_source" json:"source_id"`
-	SourceType        string          `gorm:"column:source_type;not null" json:"source_type"`
-	TraceID           string          `gorm:"column:trace_id" json:"trace_id,omitempty"`
-	AgentID           string          `gorm:"column:agent_id;index" json:"agent_id,omitempty"`
-	SquadID           string          `gorm:"column:squad_id" json:"squad_id,omitempty"`
-	UserID            *int64          `gorm:"column:user_id;index" json:"user_id,omitempty"`
-	ActionType        string          `gorm:"column:action_type;not null" json:"action_type"`
-	BusinessObjectType string         `gorm:"column:business_object_type" json:"business_object_type,omitempty"`
-	BusinessObjectID  string          `gorm:"column:business_object_id" json:"business_object_id,omitempty"`
-	Title             string          `gorm:"column:title;not null" json:"title"`
-	Description       string          `gorm:"column:description" json:"description,omitempty"`
-	Payload           json.RawMessage `gorm:"column:payload;type:jsonb" json:"payload"`
-	BeforeSnapshot    json.RawMessage `gorm:"column:before_snapshot;type:jsonb" json:"before_snapshot,omitempty"`
-	AfterSnapshot     json.RawMessage `gorm:"column:after_snapshot;type:jsonb" json:"after_snapshot,omitempty"`
-	RiskLevel         string          `gorm:"column:risk_level;default:medium" json:"risk_level"`
-	RequiresApproval  bool            `gorm:"column:requires_approval" json:"requires_approval"`
-	Status            string          `gorm:"column:status;default:suggested;index" json:"status"`
-	Confidence        *float64        `gorm:"column:confidence" json:"confidence,omitempty"`
-	ProposedBy        string          `gorm:"column:proposed_by" json:"proposed_by"`
-	ApprovedBy        string          `gorm:"column:approved_by" json:"approved_by,omitempty"`
-	RejectedBy        string          `gorm:"column:rejected_by" json:"rejected_by,omitempty"`
-	ExecutedBy        string          `gorm:"column:executed_by" json:"executed_by,omitempty"`
-	RejectionReason   string          `gorm:"column:rejection_reason" json:"rejection_reason,omitempty"`
-	ProposedAt        time.Time       `gorm:"column:proposed_at;autoCreateTime;index" json:"proposed_at"`
-	ApprovedAt        *time.Time      `gorm:"column:approved_at" json:"approved_at,omitempty"`
-	RejectedAt        *time.Time      `gorm:"column:rejected_at" json:"rejected_at,omitempty"`
-	ExecutingAt       *time.Time      `gorm:"column:executing_at" json:"executing_at,omitempty"`
-	ExecutedAt        *time.Time      `gorm:"column:executed_at" json:"executed_at,omitempty"`
-	ReviewedAt        *time.Time      `gorm:"column:reviewed_at" json:"reviewed_at,omitempty"`
-	FailedAt          *time.Time      `gorm:"column:failed_at" json:"failed_at,omitempty"`
-	CreatedAt         time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt         time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	ID                 int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	SourceTable        string          `gorm:"column:source_table;not null;uniqueIndex:uq_source" json:"source_table"`
+	SourceID           string          `gorm:"column:source_id;not null;uniqueIndex:uq_source" json:"source_id"`
+	SourceType         string          `gorm:"column:source_type;not null" json:"source_type"`
+	TraceID            string          `gorm:"column:trace_id" json:"trace_id,omitempty"`
+	AgentID            string          `gorm:"column:agent_id;index" json:"agent_id,omitempty"`
+	SquadID            string          `gorm:"column:squad_id" json:"squad_id,omitempty"`
+	UserID             *int64          `gorm:"column:user_id;index" json:"user_id,omitempty"`
+	ActionType         string          `gorm:"column:action_type;not null" json:"action_type"`
+	BusinessObjectType string          `gorm:"column:business_object_type" json:"business_object_type,omitempty"`
+	BusinessObjectID   string          `gorm:"column:business_object_id" json:"business_object_id,omitempty"`
+	Title              string          `gorm:"column:title;not null" json:"title"`
+	Description        string          `gorm:"column:description" json:"description,omitempty"`
+	Payload            json.RawMessage `gorm:"column:payload;type:jsonb" json:"payload"`
+	BeforeSnapshot     json.RawMessage `gorm:"column:before_snapshot;type:jsonb" json:"before_snapshot,omitempty"`
+	AfterSnapshot      json.RawMessage `gorm:"column:after_snapshot;type:jsonb" json:"after_snapshot,omitempty"`
+	RiskLevel          string          `gorm:"column:risk_level;default:medium" json:"risk_level"`
+	RequiresApproval   bool            `gorm:"column:requires_approval" json:"requires_approval"`
+	Status             string          `gorm:"column:status;default:suggested;index" json:"status"`
+	Confidence         *float64        `gorm:"column:confidence" json:"confidence,omitempty"`
+	ProposedBy         string          `gorm:"column:proposed_by" json:"proposed_by"`
+	ApprovedBy         string          `gorm:"column:approved_by" json:"approved_by,omitempty"`
+	RejectedBy         string          `gorm:"column:rejected_by" json:"rejected_by,omitempty"`
+	ExecutedBy         string          `gorm:"column:executed_by" json:"executed_by,omitempty"`
+	RejectionReason    string          `gorm:"column:rejection_reason" json:"rejection_reason,omitempty"`
+	ProposedAt         time.Time       `gorm:"column:proposed_at;autoCreateTime;index" json:"proposed_at"`
+	ApprovedAt         *time.Time      `gorm:"column:approved_at" json:"approved_at,omitempty"`
+	RejectedAt         *time.Time      `gorm:"column:rejected_at" json:"rejected_at,omitempty"`
+	ExecutingAt        *time.Time      `gorm:"column:executing_at" json:"executing_at,omitempty"`
+	ExecutedAt         *time.Time      `gorm:"column:executed_at" json:"executed_at,omitempty"`
+	ReviewedAt         *time.Time      `gorm:"column:reviewed_at" json:"reviewed_at,omitempty"`
+	FailedAt           *time.Time      `gorm:"column:failed_at" json:"failed_at,omitempty"`
+	ExecutionMode      string          `gorm:"column:execution_mode;default:production" json:"execution_mode,omitempty"`
+	IdempotencyKey     string          `gorm:"column:idempotency_key;index" json:"idempotency_key,omitempty"`
+	ApprovedByUserID   *int64          `gorm:"column:approved_by_user_id" json:"approved_by_user_id,omitempty"`
+	ExecutedByUserID   *int64          `gorm:"column:executed_by_user_id" json:"executed_by_user_id,omitempty"`
+	CreatedAt          time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt          time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (UnifiedAction) TableName() string { return "unified_action" }
@@ -173,6 +177,8 @@ type CreateActionInput struct {
 	RequiresApproval   *bool           `json:"requires_approval"`
 	Confidence         *float64        `json:"confidence"`
 	ProposedBy         string          `json:"proposed_by"`
+	ExecutionMode      string          `json:"execution_mode"`
+	IdempotencyKey     string          `json:"idempotency_key"`
 }
 
 // ActionDecisionInput is used for approve/reject/execute.

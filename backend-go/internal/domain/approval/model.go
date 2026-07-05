@@ -29,6 +29,8 @@ type ApprovalRequest struct {
 	ExpiresAt   *time.Time `gorm:"column:expires_at" json:"expires_at,omitempty"`
 	EntityType  string     `gorm:"column:entity_type" json:"entity_type,omitempty"`
 	EntityID    int64      `gorm:"column:entity_id;default:0" json:"entity_id,omitempty"`
+	RequesterUserID *int64 `gorm:"column:requester_user_id" json:"requester_user_id,omitempty"`
+	ReviewerUserID  *int64 `gorm:"column:reviewer_user_id" json:"reviewer_user_id,omitempty"`
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
@@ -37,25 +39,27 @@ func (ApprovalRequest) TableName() string { return "approval_request" }
 
 // CreateApprovalInput is the JSON body for creating an approval request.
 type CreateApprovalInput struct {
-	ProductID   int64      `json:"product_id" binding:"required"`
-	RequestType string     `json:"request_type" binding:"required"`
-	Requester   string     `json:"requester"`
-	OldValue    string     `json:"old_value"`
-	NewValue    string     `json:"new_value"`
-	Reason      string     `json:"reason"`
-	TargetType  string     `json:"target_type"`
-	TargetID    int64      `json:"target_id"`
-	RiskLevel   string     `json:"risk_level"`
-	ExpiresAt   *time.Time `json:"expires_at"`
-	EntityType  string     `json:"entity_type"`
-	EntityID    int64      `json:"entity_id"`
+	ProductID       int64      `json:"product_id" binding:"required"`
+	RequestType     string     `json:"request_type" binding:"required"`
+	Requester       string     `json:"requester"`
+	OldValue        string     `json:"old_value"`
+	NewValue        string     `json:"new_value"`
+	Reason          string     `json:"reason"`
+	TargetType      string     `json:"target_type"`
+	TargetID        int64      `json:"target_id"`
+	RiskLevel       string     `json:"risk_level"`
+	ExpiresAt       *time.Time `json:"expires_at"`
+	EntityType      string     `json:"entity_type"`
+	EntityID        int64      `json:"entity_id"`
+	RequesterUserID *int64     `json:"requester_user_id"`
 }
 
 // ReviewApprovalInput is the JSON body for reviewing an approval request.
 type ReviewApprovalInput struct {
-	Action     string `json:"action" binding:"required"` // approve, reject
-	Reviewer   string `json:"reviewer"`
-	ReviewNote string `json:"review_note"`
+	Action         string `json:"action" binding:"required"` // approve, reject
+	Reviewer       string `json:"reviewer"`
+	ReviewNote     string `json:"review_note"`
+	ReviewerUserID *int64 `json:"reviewer_user_id"`
 }
 
 // ApprovalStats represents approval statistics.

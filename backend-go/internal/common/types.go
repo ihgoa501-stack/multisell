@@ -102,6 +102,25 @@ func ToString(v interface{}) string {
 	return ""
 }
 
+// UserIDFromCtx extracts the user_id from JWT context.
+func UserIDFromCtx(c *gin.Context) *int64 {
+	v, exists := c.Get("user_id")
+	if !exists {
+		return nil
+	}
+	switch x := v.(type) {
+	case int64:
+		return &x
+	case int:
+		n := int64(x)
+		return &n
+	case float64:
+		n := int64(x)
+		return &n
+	}
+	return nil
+}
+
 // ReviewerFromCtx extracts the reviewer identity from JWT context.
 // Prefers the username claim, falls back to user_id, then "unknown".
 func ReviewerFromCtx(c *gin.Context) string {

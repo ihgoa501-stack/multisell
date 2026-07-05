@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # P4: 售后单同步 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -59,7 +61,7 @@ async def fetch_returns(self, *, platform: Platform, since: datetime,
     async with self._client(platform) as client:
         resp = await client.post("/v3/returns/list", json=payload)
         body = self._parse_response(resp, "fetch_returns")
-    
+
     items = []
     for r in body.get("result", {}).get("returns", []):
         items.append({

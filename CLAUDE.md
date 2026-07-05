@@ -246,6 +246,7 @@ cd frontend-next/e2e && npx playwright test
 5. Run the smallest verification covering your touch surface.
 6. Pre-commit hooks in `.pre-commit-config.yaml`.
 7. Do not touch `.kilo/worktrees/` — managed by external tooling.
+8. **Documentation must stay in sync with code.** Any change to module names, API paths, directory layouts, or packages must update `AGENTS.md`, this file, and `docs/INDEX.md`. The `doc-links` CI job rejects PRs with dead references.
 
 ## Documentation
 
@@ -257,8 +258,7 @@ cd frontend-next/e2e && npx playwright test
 - `docs/FRONTEND_PAGES_AND_ROUTING.md` — Next App Router page map.
 - `docs/FUNCTION_INVENTORY.md` — complete feature inventory.
 - `docs/features/` — feature specs and template.
-- `docs/adr/` — architecture decision records (ADR-001~006).
-- `docs/ops/` — operations runbook, incident response, disaster recovery.
+- `docs/ops/RUNBOOK.md` — operations runbook.
 - `docs/api-inventory.md` — complete API route inventory (71+ modules).
 - `backend-go/scripts/smoke_test.sh` — 10-step end-to-end pipeline verification.
 - Swagger UI: `GET /swagger/index.html` (dev only, 44 annotated endpoints).

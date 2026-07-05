@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # MultiSell Stabilization And Productization Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:writing-plans to expand each subsystem below into its own task-by-task implementation plan before editing code. Use superpowers:subagent-driven-development or superpowers:executing-plans only after a subsystem plan exists. Steps in subsystem plans must use checkbox (`- [ ]`) syntax for tracking.

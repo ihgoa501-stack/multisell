@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # P5: 库存回写 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -112,7 +114,7 @@ async def sync_inventory_to_platforms(db, sku_id: int, sku_code: str, quantity: 
         .join(Platform, ProductListing.platform_id == Platform.id)
         .where(ProductListing.sku_id == sku_id)
     )).all()
-    
+
     for listing, platform in listings:
         adapter = get_listing_adapter(platform.code)
         if not hasattr(adapter, "sync_inventory"):

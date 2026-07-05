@@ -1,11 +1,13 @@
 package approval
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -15,12 +17,19 @@ type Service struct {
 	db       *gorm.DB
 	logger   *zap.Logger
 	oplogSvc *operationlog.Service // optional, may be nil
+	bus      *eventbus.Bus
 }
 
 // NewService creates a new approval service.
 // oplogSvc may be nil (audit logging disabled).
 func NewService(db *gorm.DB, logger *zap.Logger, oplogSvc *operationlog.Service) *Service {
 	return &Service{db: db, logger: logger, oplogSvc: oplogSvc}
+}
+
+// WithBus attaches an event bus for publishing approval events.
+func (s *Service) WithBus(bus *eventbus.Bus) *Service {
+	s.bus = bus
+	return s
 }
 
 // List returns paginated approval requests with optional filters.
@@ -62,19 +71,20 @@ func (s *Service) Get(id int64) (*ApprovalRequest, error) {
 // Create inserts a new approval request.
 func (s *Service) Create(input *CreateApprovalInput) (*ApprovalRequest, error) {
 	req := &ApprovalRequest{
-		ProductID:   input.ProductID,
-		RequestType: input.RequestType,
-		Requester:   input.Requester,
-		Status:      StatusPending,
-		OldValue:    input.OldValue,
-		NewValue:    input.NewValue,
-		Reason:      input.Reason,
-		TargetType:  input.TargetType,
-		TargetID:    input.TargetID,
-		RiskLevel:   input.RiskLevel,
-		ExpiresAt:   input.ExpiresAt,
-		EntityType:  input.EntityType,
-		EntityID:    input.EntityID,
+		ProductID:       input.ProductID,
+		RequestType:     input.RequestType,
+		Requester:       input.Requester,
+		RequesterUserID: input.RequesterUserID,
+		Status:          StatusPending,
+		OldValue:        input.OldValue,
+		NewValue:        input.NewValue,
+		Reason:          input.Reason,
+		TargetType:      input.TargetType,
+		TargetID:        input.TargetID,
+		RiskLevel:       input.RiskLevel,
+		ExpiresAt:       input.ExpiresAt,
+		EntityType:      input.EntityType,
+		EntityID:        input.EntityID,
 	}
 	if err := s.db.Create(req).Error; err != nil {
 		return nil, fmt.Errorf("creating approval request: %w", err)
@@ -99,10 +109,11 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 
 	now := time.Now()
 	updates := map[string]interface{}{
-		"status":      status,
-		"reviewer":    input.Reviewer,
-		"review_note": input.ReviewNote,
-		"updated_at":  now,
+		"status":           status,
+		"reviewer":         input.Reviewer,
+		"review_note":      input.ReviewNote,
+		"reviewer_user_id": input.ReviewerUserID,
+		"updated_at":       now,
 	}
 
 	// Build unified_action sync updates if applicable.
@@ -170,7 +181,32 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 		}
 	}
 
+	// Publish approval event for closed-loop subscribers.
+	s.publishApprovalEvent(req, status)
+
 	return &req, nil
+}
+
+// publishApprovalEvent publishes approval.{status}.{request_type} to the event bus.
+func (s *Service) publishApprovalEvent(req ApprovalRequest, status string) {
+	if s.bus == nil {
+		return
+	}
+	topic := fmt.Sprintf("approval.%s.%s", status, req.RequestType)
+	payload := map[string]interface{}{
+		"approval_id":    req.ID,
+		"product_id":     req.ProductID,
+		"request_type":   req.RequestType,
+		"status":         status,
+		"requester":      req.Requester,
+		"reviewer":       req.Reviewer,
+		"entity_type":    req.EntityType,
+		"entity_id":      req.EntityID,
+		"reviewer_user_id": req.ReviewerUserID,
+	}
+	if _, err := s.bus.Publish(context.Background(), topic, "approval", payload); err != nil {
+		s.logger.Warn("failed to publish approval event", zap.String("topic", topic), zap.Error(err))
+	}
 }
 
 // MyPending returns approval requests pending review.

@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # P3: 平台结算导入 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -55,7 +57,7 @@ async def fetch_settlements(self, *, platform: Platform, since: datetime,
                             db: Optional[AsyncSession] = None) -> list[dict]:
     limiter = await get_limiter_for_platform(self.PLATFORM_CODE, platform.id)
     await limiter.acquire()
-    
+
     payload = {
         "filter": {"date": {"from": since.strftime("%Y-%m-%dT%H:%M:%S.000Z")}},
         "page": 1,
@@ -64,7 +66,7 @@ async def fetch_settlements(self, *, platform: Platform, since: datetime,
     async with self._client(platform) as client:
         resp = await client.post("/v3/finance/transaction/list", json=payload)
         body = self._parse_response(resp, "fetch_settlements")
-    
+
     TYPE_MAP = {
         "sale": "order_sale",
         "refund": "refund",
@@ -181,7 +183,7 @@ class SettlementSyncWorker:
             )
             db.add(settlement)
             await db.flush()
-        
+
         item = SettlementItem(
             settlement_id=settlement.id,
             transaction_id=tx["transaction_id"],

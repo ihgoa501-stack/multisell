@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # LingMirror Icon Integration Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -359,4 +361,3 @@ After icon integration is verified, run a separate review for non-brand changes 
 - Docker/runtime behavior
 
 Do not combine that review with icon integration.
-

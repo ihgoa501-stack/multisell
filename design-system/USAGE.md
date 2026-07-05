@@ -1,3 +1,5 @@
+> ⚠️ 此文档引用旧栈（Python/FastAPI/Vue 3），已于 2026-06-30 迁移至 Go/Next.js。仅供参考，不可直接执行。
+
 # 凌镜 LingMirror 设计系统使用文档
 
 > **如何使用设计系统创建新页面、沿用设计 Token**
@@ -66,10 +68,10 @@ frontend/src/
 <template>
   <!-- 按钮：自动使用主题配置的主色 -->
   <n-button type="primary">新增商品</n-button>
-  
+
   <!-- 输入框：自动使用主题配置的圆角、边框色 -->
   <n-input v-model:value="search" placeholder="搜索商品..." />
-  
+
   <!-- 卡片：自动使用主题配置的阴影、圆角 -->
   <n-card title="商品统计">
     内容区
@@ -284,7 +286,7 @@ const statusText = computed(() => {
         批量操作
       </n-button>
     </n-space>
-    
+
     <n-space>
       <n-input
         v-model:value="search"
@@ -454,5 +456,5 @@ import '@/styles/components.css'
 
 ---
 
-**最后更新**：2026-06-18  
+**最后更新**：2026-06-18
 **维护者**：凌镜 LingMirror 设计团队

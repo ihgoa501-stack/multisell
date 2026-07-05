@@ -96,8 +96,6 @@
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
-| [突发事件响应](ops/INCIDENT_RESPONSE.md) | 严重等级定义、5 类故障排查步骤、升级路径、事后复盘模板 |
-| [灾难恢复](ops/DISASTER_RECOVERY.md) | 备份策略、RPO/RTO 估算、完整恢复流程、迁移回滚、3 种灾难场景 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
@@ -117,9 +115,6 @@
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 `frontend-next` build/test/lint 历史状态 |
 
 | [API 清单](api-inventory.md) | 🆕 全部 71+ 后端模块 API 路由、方法、参数清单 |
-| [架构决策记录](adr/) | 🆕 ADR-001~006：WebSocket 安全 / JWT type 校验 / Webhook HMAC / 密码策略 / Rate limiter 改进 / 文档策略 |
-| [事故响应](ops/INCIDENT_RESPONSE.md) | 🆕 SEV1-SEV3 定义 + 5 场景应急流程 |
-| [灾难恢复](ops/DISASTER_RECOVERY.md) | 🆕 备份策略、RPO(24h)/RTO(2h)、完整恢复步骤 |
 | [Swagger API 文档](http://localhost:8080/swagger/index.html) | 🆕 交互式 OpenAPI 文档 — `GET /swagger/index.html` |
 
 

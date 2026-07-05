@@ -1,3 +1,5 @@
+> ⚠️ 历史计划文档。引用已删除的旧栈，仅供参考。
+
 # Shipping Phase 2 Calculation Implementation Plan
 
 > **For Reasonix / coding agent:** Execute this plan with TDD. Do not refactor unrelated code. Keep changes scoped to the shipping provider/channel/rule data model, shipping calculation, simple frontend management/calculator UI, permissions, tests, and docs.

@@ -166,6 +166,7 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 - Add focused Go tests near touched behavior.
 - Frontend: keep `npm run build` and `npm run lint` green (lint has known issues).
 - Do not touch `.kilo/worktrees/` — managed by external tooling.
+- **Documentation must stay in sync with code.** Any PR that changes module names, API paths, directory layouts, or removes/adds packages must update `CLAUDE.md`, `AGENTS.md`, and `docs/INDEX.md` as needed. PRs with stale doc references will be rejected by CI (`doc-links` job).
 
 ## AI & AgentOS
 
