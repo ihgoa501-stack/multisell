@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/realtime"
@@ -15,7 +16,8 @@ import (
 // RegisterRoutes registers AI routes on the given router group.
 // moaCoord can be nil; if set, MOA routes are registered.
 // cmd can be nil; if set, action execution dispatches through the command handlers.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, moaCoord *MOACoordinator, cmd *command.Dispatcher) {
+// guardrails can be nil; if set, guardrail enforcement is applied to agent runs.
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, moaCoord *MOACoordinator, cmd *command.Dispatcher, guardrails *guardrails.Chain) {
 	svc := NewService(db, logger).WithDispatcher(cmd).WithCatalog(actioncatalog.Default())
 	orch := NewOrchestrator(db, logger)
 	streamer := NewStreamer(hub, logger)

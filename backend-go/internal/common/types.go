@@ -121,6 +121,27 @@ func ReviewerFromCtx(c *gin.Context) string {
 	return "unknown"
 }
 
+// UserIDFromCtx extracts the user_id from JWT context as *int64.
+// Returns nil if the claim is missing or not a numeric type.
+func UserIDFromCtx(c *gin.Context) *int64 {
+	v, ok := c.Get("user_id")
+	if !ok {
+		return nil
+	}
+	switch x := v.(type) {
+	case float64:
+		id := int64(x)
+		return &id
+	case int64:
+		return &x
+	case int:
+		id := int64(x)
+		return &id
+	default:
+		return nil
+	}
+}
+
 func convertError(typ string, v interface{}) error {
 	return fmt.Errorf("cannot convert %T to %s", v, typ)
 }

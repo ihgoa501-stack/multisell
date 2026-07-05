@@ -517,6 +517,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
 
+	// Scheduler health endpoint — exposes task run state for AIOS dashboard.
+	r.GET("/api/v1/aios/scheduler/tasks", func(c *gin.Context) {
+		c.JSON(200, gin.H{"tasks": sched.TaskRunState()})
+	})
+
 	// ==========================================================
 	// HTTP routes
 	// ==========================================================
@@ -680,10 +685,21 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	} else {
 		logger.Info("Prism client disabled")
 	}
-	approvalSvc = approval.NewService(db, logger, auditSvc)
+	approvalSvc = approval.NewService(db, logger, auditSvc).WithBus(bus)
 	rbacSvc := rbac.NewService(db, logger)
 	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
 	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
+
+	// Closed-loop: approval approved for listing_task → execute the task.
+	bus.Subscribe("approval.approved.listing_task", func(ctx context.Context, evt eventbus.Event) error {
+		entityID, ok := evt.Payload["entity_id"].(float64)
+		if !ok || int64(entityID) == 0 {
+			return nil
+		}
+		ltSvc := listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, loopSvc)
+		_, err := ltSvc.ExecuteTask(int64(entityID), "system")
+		return err
+	})
 
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
@@ -791,7 +807,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		"G3": {"compliance_check"},
 	}
 	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
-	ai.RegisterRoutes(protected, db, logger, hub, moaCoord, cmd)
+	ai.RegisterRoutes(protected, db, logger, hub, moaCoord, cmd, aiosCfg.Guardrails)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}
