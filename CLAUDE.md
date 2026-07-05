@@ -250,7 +250,7 @@ cd frontend-next/e2e && npx playwright test
 
 ## Documentation
 
-- `AGENTS.md` — canonical cross-agent project instructions.
+- `AGENTS.md` — canonical cross-agent project instructions. **Read the "Project Medical Record" section first — it lists known issues, what was fixed, and project rules.**
 - `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.
 - `docs/INDEX.md` — full documentation index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
