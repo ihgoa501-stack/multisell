@@ -68,8 +68,10 @@ export default function ActionConfirmModal({
 
   if (!action) return null;
 
-  const risk = RISK_LABELS[action.risk_level] || RISK_LABELS.medium;
-  const isHighRisk = action.risk_level === 'high' || action.risk_level === 'critical';
+  const normalizedRisk = action.risk_level?.toLowerCase() ?? '';
+  const HIGH_RISK_LEVELS = new Set(['high', 'critical']);
+  const risk = RISK_LABELS[normalizedRisk] || RISK_LABELS.medium;
+  const isHighRisk = HIGH_RISK_LEVELS.has(normalizedRisk);
   const isExecuteMode = mode === 'execute';
   const isApproveMode = mode === 'approve';
 
@@ -81,13 +83,15 @@ export default function ActionConfirmModal({
     ? '确认拒绝操作'
     : '操作确认';
 
-  const handleConfirm = () => {
-    onConfirm(action, reason);
-  };
-
   const canConfirm = isExecuteMode
     ? (!isHighRisk || confirmText === action.title)
     : true;
+
+  const handleConfirm = () => {
+    if (!action) return;
+    if (isExecuteMode && isHighRisk && confirmText !== action.title) return;
+    onConfirm(action, reason);
+  };
 
   return (
     <Modal
