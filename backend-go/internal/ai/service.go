@@ -275,6 +275,12 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 		}
 		// ponytail: use a generic GuardInput for the action-level check;
 		// per-tool checks happen inside the tool registry hooks.
+		// Seed action_type into ToolInput so ExecutionGuard rules can match by action type.
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		payload["action_type"] = a.ActionType
+		payload["risk_level"] = a.RiskLevel
 		gr, err := s.guard.Check(context.Background(), &guardrails.GuardInput{
 			AgentID:   a.AgentID,
 			ToolName:  a.ActionType,
@@ -293,7 +299,7 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 				zap.String("action_type", a.ActionType),
 				zap.String("reason", gr.Reason),
 			)
-			return nil, fmt.Errorf("action blocked by guard: %s", gr.Reason)
+			return nil, fmt.Errorf("%w: %s", ErrBlockedByGuardrails, gr.Reason)
 		}
 	}
 
@@ -520,6 +526,9 @@ func (e *InvalidTransitionError) Error() string {
 
 // ErrApprovalRequired signals that an action needs approval first.
 var ErrApprovalRequired = &InvalidTransitionError{From: "suggested", To: "executing"}
+
+// ErrBlockedByGuardrails is returned when the execution guardrail chain blocks an action.
+var ErrBlockedByGuardrails = errors.New("action blocked by guardrails")
 
 // riskLevelToInt converts a risk level string to an actioncatalog risk constant.
 func riskLevelToInt(level string) int {

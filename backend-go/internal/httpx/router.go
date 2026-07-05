@@ -550,6 +550,15 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	protected := api.Group("")
 	protected.Use(middleware.Auth(cfg))
 
+	// Scheduler task-state endpoint — proves each agent tick is actually running.
+	// Contains: cumulative ticks/skips, last tick time, running status per task.
+	// Prometheus metrics (multisell_scheduler_ticks_total) also available.
+	protected.GET("/aios/scheduler/tasks", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"tasks": sched.TaskRunState(),
+		})
+	})
+
 	// RBAC routes — require rbac.manage permission
 	rbacRoutes := protected.Group("", middleware.RequirePermission(db, "rbac.manage"))
 	rbac.RegisterRoutes(rbacRoutes, db, logger)

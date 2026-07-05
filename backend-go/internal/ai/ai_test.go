@@ -3,11 +3,14 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"go.uber.org/zap"
@@ -773,4 +776,100 @@ func TestService_ExecuteAction_SavesUserID(t *testing.T) {
 	if fromDB.ExecutedByUserID == nil || *fromDB.ExecutedByUserID != 77 {
 		t.Errorf("DB executed_by_user_id = %v, want 77", fromDB.ExecutedByUserID)
 	}
+}
+
+
+func TestService_ExecuteAction_Idempotency_Reexecution(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+	noApproval := false
+	a, err := svc.CreateAction(&CreateActionInput{
+		SourceTable: "ai_trace", SourceID: "trc_idem_1", SourceType: "agent_run",
+		AgentID: "A2", ActionType: "listing_optimize", Title: "idempotent exec",
+		RiskLevel: "low", ProposedBy: "agent:A2",
+		RequiresApproval: &noApproval, IdempotencyKey: "idem-rex-001",
+	})
+	if err != nil { t.Fatalf("CreateAction: %v", err) }
+	first, err := svc.ExecuteAction(a.ID, nil, "alice", "")
+	if err != nil { t.Fatalf("first ExecuteAction: %v", err) }
+	if first.Status != "executed" { t.Fatalf("first status = %q", first.Status) }
+	second, err := svc.ExecuteAction(a.ID, nil, "alice", "")
+	if err != nil { t.Fatalf("second (idempotent) ExecuteAction: %v", err) }
+	if second.Status != "executed" { t.Errorf("second status = %q, want %q", second.Status, "executed") }
+}
+
+func TestService_ExecuteAction_GuardrailsCheck(t *testing.T) {
+	db := newTestDB(t)
+	t.Run("blocked", func(t *testing.T) {
+		// Use an ExecutionGuard that blocks purchases above /bin/zsh.
+		eg := guardrails.NewExecutionGuardWithRules([]guardrails.ExecutionRule{
+			{Name: "block_purchases_above_1", MaxAmount: 1, ActionTypes: []string{"purchase"}},
+		})
+		chain := guardrails.NewChain()
+		chain.Add(eg)
+		svc := NewService(db, testLogger()).WithGuard(chain)
+		noApproval := false
+		a, _ := svc.CreateAction(&CreateActionInput{
+			SourceTable: "ai_trace", SourceID: "trc_grd_1", SourceType: "agent_run",
+			AgentID: "A2", ActionType: "purchase", Title: "blocked purchase",
+			RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
+			Payload: json.RawMessage(`{"amount":100}`),
+		})
+		_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
+		if err == nil || !errors.Is(err, ErrBlockedByGuardrails) {
+			t.Fatalf("expected guard blocked error, got %v", err)
+		}
+		var fromDB UnifiedAction
+		db.First(&fromDB, a.ID)
+		if fromDB.Status != "suggested" {
+			t.Errorf("status changed to %q after guard block", fromDB.Status)
+		}
+	})
+	t.Run("passes", func(t *testing.T) {
+		svc := NewService(db, testLogger())
+		noApproval := false
+		a, _ := svc.CreateAction(&CreateActionInput{
+			SourceTable: "ai_trace", SourceID: "trc_grd_3", SourceType: "agent_run",
+			AgentID: "A2", ActionType: "listing_optimize", Title: "guard passes",
+			RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
+		})
+		result, err := svc.ExecuteAction(a.ID, nil, "alice", "")
+		if err != nil { t.Fatalf("expected success, got %v", err) }
+		if result.Status != "executed" { t.Errorf("status = %q, want %q", result.Status, "executed") }
+	})
+}
+
+func TestService_ExecuteAction_ConcurrentClaim(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+	noApproval := false
+	a, err := svc.CreateAction(&CreateActionInput{
+		SourceTable: "ai_trace", SourceID: "trc_conc_1", SourceType: "agent_run",
+		AgentID: "A2", ActionType: "listing_optimize", Title: "concurrent",
+		RiskLevel: "low", ProposedBy: "agent:A2",
+		RequiresApproval: &noApproval,
+	})
+	if err != nil { t.Fatalf("CreateAction: %v", err) }
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
+			results <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	var errs []error
+	for e := range results {
+		errs = append(errs, e)
+	}
+	if len(errs) != 2 { t.Fatalf("expected 2 results, got %d", len(errs)) }
+	success := 0
+	for _, e := range errs {
+		if e == nil { success++ }
+	}
+	if success != 1 { t.Errorf("expected exactly 1 success, got %d", success) }
 }
