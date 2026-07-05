@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Modal, Descriptions, Tag, Typography, Input, Divider, Alert } from 'antd';
 import {
   ExclamationCircleOutlined,
-  SafetyCertificateOutlined,
   AuditOutlined,
   RollbackOutlined,
 } from '@ant-design/icons';

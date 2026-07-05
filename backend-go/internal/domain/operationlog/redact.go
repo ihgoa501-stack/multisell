@@ -16,8 +16,9 @@ var sensitiveFields = []string{
 // RedactSensitive redacts the value of any JSON object key whose name
 // (case-insensitive) contains a sensitive field pattern.
 // Non-JSON content is returned as-is.
-// This is the canonical redaction function used by both the operationlog
-// service and the HTTP audit middleware.
+// Used by the operationlog service's Log/LogStructured methods.
+// Note: the HTTP audit middleware in httpx/middleware has its own inlined
+// copy for dependency reasons. If changing this logic, update both.
 func RedactSensitive(content string) string {
 	if content == "" {
 		return content

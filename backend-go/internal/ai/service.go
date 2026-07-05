@@ -398,7 +398,8 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	}
 
 	// Audit log: execution complete (success or failure).
-	s.logExecuteAction(a, operator, finalUpdates["status"].(string))
+	status, _ := finalUpdates["status"].(string)
+	s.logExecuteAction(a, operator, status)
 
 	return &a, nil
 }
