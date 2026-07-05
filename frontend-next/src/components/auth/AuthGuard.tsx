@@ -1,27 +1,29 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Spin } from 'antd';
 import { usePermissionStore } from '@/stores/permission-store';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
   const fetchPermissions = usePermissionStore((s) => s.fetchPermissions);
   const permissionsFetched = usePermissionStore((s) => s.fetched);
+  const isBrowser = typeof window !== 'undefined';
 
   useEffect(() => {
-    setMounted(true);
+    if (!isBrowser) return;
     const token = localStorage.getItem('token');
     if (!token) {
       router.replace('/login');
     } else {
       fetchPermissions();
     }
-  }, [router, fetchPermissions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  if (!mounted) return null;
+  // During SSR: render nothing to avoid hydration mismatch
+  if (!isBrowser) return null;
 
   if (!permissionsFetched) {
     return (
