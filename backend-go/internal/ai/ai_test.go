@@ -154,7 +154,7 @@ func TestService_ActionLifecycle(t *testing.T) {
 	}
 
 	// Approve.
-	approved, err := svc.ApproveAction(a.ID, "alice", "")
+	approved, err := svc.ApproveAction(a.ID, "alice", nil, "")
 	if err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
@@ -163,12 +163,12 @@ func TestService_ActionLifecycle(t *testing.T) {
 	}
 
 	// Reject should fail (already approved).
-	if _, err := svc.RejectAction(a.ID, "bob", "no"); err == nil {
+	if _, err := svc.RejectAction(a.ID, "bob", nil, "no"); err == nil {
 		t.Fatal("expected reject-after-approve to fail")
 	}
 
 	// Execute.
-	executed, err := svc.ExecuteAction(a.ID, "alice", "")
+	executed, err := svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestService_ExecuteWithoutApproval(t *testing.T) {
 		RiskLevel: "high", ProposedBy: "agent:A7",
 	})
 	// Execute without approving first → should fail.
-	_, err := svc.ExecuteAction(a.ID, "alice", "")
+	_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err == nil {
 		t.Fatal("expected Execute to fail without approval")
 	}
@@ -215,7 +215,7 @@ func TestService_ExecuteAutoApproved(t *testing.T) {
 		RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
 	})
 	// Execute directly → should succeed.
-	executed, err := svc.ExecuteAction(a.ID, "system", "")
+	executed, err := svc.ExecuteAction(a.ID, nil, "system", "")
 	if err != nil {
 		t.Fatalf("Execute auto-approved: %v", err)
 	}

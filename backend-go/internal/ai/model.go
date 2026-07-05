@@ -89,11 +89,15 @@ type UnifiedAction struct {
 	RiskLevel         string          `gorm:"column:risk_level;default:medium" json:"risk_level"`
 	RequiresApproval  bool            `gorm:"column:requires_approval" json:"requires_approval"`
 	Status            string          `gorm:"column:status;default:suggested;index" json:"status"`
+	ExecutionMode     string          `gorm:"column:execution_mode;default:production" json:"execution_mode"`
+	IdempotencyKey    string          `gorm:"column:idempotency_key;index" json:"idempotency_key,omitempty"`
 	Confidence        *float64        `gorm:"column:confidence" json:"confidence,omitempty"`
 	ProposedBy        string          `gorm:"column:proposed_by" json:"proposed_by"`
 	ApprovedBy        string          `gorm:"column:approved_by" json:"approved_by,omitempty"`
 	RejectedBy        string          `gorm:"column:rejected_by" json:"rejected_by,omitempty"`
 	ExecutedBy        string          `gorm:"column:executed_by" json:"executed_by,omitempty"`
+	ApprovedByUserID  *int64          `gorm:"column:approved_by_user_id" json:"approved_by_user_id,omitempty"`
+	ExecutedByUserID  *int64          `gorm:"column:executed_by_user_id" json:"executed_by_user_id,omitempty"`
 	RejectionReason   string          `gorm:"column:rejection_reason" json:"rejection_reason,omitempty"`
 	ProposedAt        time.Time       `gorm:"column:proposed_at;autoCreateTime;index" json:"proposed_at"`
 	ApprovedAt        *time.Time      `gorm:"column:approved_at" json:"approved_at,omitempty"`
@@ -173,6 +177,8 @@ type CreateActionInput struct {
 	RequiresApproval   *bool           `json:"requires_approval"`
 	Confidence         *float64        `json:"confidence"`
 	ProposedBy         string          `json:"proposed_by"`
+	ExecutionMode      string          `json:"execution_mode"`
+	IdempotencyKey     string          `json:"idempotency_key"`
 }
 
 // ActionDecisionInput is used for approve/reject/execute.
@@ -202,19 +208,19 @@ type ChatResponse struct {
 
 // TraceListFilter captures query parameters.
 type TraceListFilter struct {
-	Search     string
-	AgentID    string
-	Status     string
+	Search        string
+	AgentID       string
+	Status        string
 	DecisionPoint string
 }
 
 // ActionListFilter captures query parameters.
 type ActionListFilter struct {
-	Search   string
-	AgentID  string
-	Status   string
+	Search    string
+	AgentID   string
+	Status    string
 	RiskLevel string
-	SquadID  string
+	SquadID   string
 }
 
 // AgentRosterSummary is a per-agent summary for the cockpit.
