@@ -267,6 +267,7 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	}
 
 	// ── Gate 6: Guardrails check (L4 ExecutionGuard) ──────────────
+	var guardPayload map[string]interface{}
 	if s.guard != nil {
 		payload := map[string]interface{}{}
 		if len(a.Payload) > 0 {
@@ -279,6 +280,7 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 			ToolName:  a.ActionType,
 			ToolInput: payload,
 		})
+		guardPayload = payload
 		if err != nil {
 			s.logger.Warn("guardrails check error during execution",
 				zap.Int64("action_id", a.ID),
@@ -338,11 +340,14 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	var execErr error
 	var cmdResult *command.Result
 	if s.cmd != nil {
-		payload := map[string]interface{}{}
-		if len(a.Payload) > 0 {
-			_ = json.Unmarshal(a.Payload, &payload)
+		cmdPayload := guardPayload
+		if cmdPayload == nil {
+			cmdPayload = map[string]interface{}{}
+			if len(a.Payload) > 0 {
+				_ = json.Unmarshal(a.Payload, &cmdPayload)
+			}
 		}
-		cmdResult, execErr = s.cmd.Dispatch(context.Background(), a.ActionType, payload)
+		cmdResult, execErr = s.cmd.Dispatch(context.Background(), a.ActionType, cmdPayload)
 		if execErr != nil {
 			s.logger.Warn("command dispatch failed during action execution",
 				zap.Int64("action_id", a.ID),

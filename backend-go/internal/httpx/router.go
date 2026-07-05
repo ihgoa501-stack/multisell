@@ -701,9 +701,20 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		if payload == nil {
 			return nil
 		}
-		productID, _ := payload["product_id"].(float64)
-		approvalID, _ := payload["approval_id"].(float64)
-		approvalIDInt := int64(approvalID)
+		var productID int64
+		switch v := payload["product_id"].(type) {
+		case float64:
+			productID = int64(v)
+		case int64:
+			productID = v
+		}
+		var approvalIDInt int64
+		switch v := payload["approval_id"].(type) {
+		case float64:
+			approvalIDInt = int64(v)
+		case int64:
+			approvalIDInt = v
+		}
 		logger.Info("approval granted for listing task, creating listing task",
 			zap.Float64("product_id", productID),
 			zap.Float64("approval_id", approvalID))

@@ -321,7 +321,7 @@ func (s *Service) publishApprovalEvent(req *ApprovalRequest, status string) {
 	}
 	topic := fmt.Sprintf("approval.%s.%s", status, req.RequestType)
 	ctx := context.Background()
-	_, _ = s.bus.Publish(ctx, topic, "approval", map[string]interface{}{
+	if _, err := s.bus.Publish(ctx, topic, "approval", map[string]interface{}{
 		"approval_id":    req.ID,
 		"status":          status,
 		"request_type":    req.RequestType,
@@ -332,5 +332,10 @@ func (s *Service) publishApprovalEvent(req *ApprovalRequest, status string) {
 		"reviewer_user_id": req.ReviewerUserID,
 		"target_type":     req.TargetType,
 		"target_id":       req.TargetID,
-	})
+	}); err != nil {
+		s.logger.Warn("failed to publish approval event",
+			zap.String("topic", topic),
+			zap.Int64("approval_id", req.ID),
+			zap.Error(err))
+	}
 }
