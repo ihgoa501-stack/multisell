@@ -40,6 +40,31 @@
 - 在审批、审计、RBAC 和可观测性未统一前扩大 Agent 自主权。
 - 真实外部平台写回早于只读、sandbox、审批和失败处理闭环。
 
+## 当前事实快照
+
+| 项目 | 当前口径 |
+|------|----------|
+| 活跃代码栈 | `backend-go/` + `frontend-next/` |
+| 当前方向 | 可信 AgentOS 执行门禁收口，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
+| 模块 / API / 页面事实源 | [reference-module-catalog.md](reference-module-catalog.md) |
+| 最新全量验证 | 待重新运行并记录 |
+| 历史验证记录 | 本文下方各日期段落、[TEST_SUMMARY.md](TEST_SUMMARY.md)、[FRONTEND_TEST_REPORT.md](FRONTEND_TEST_REPORT.md) |
+
+### 当前验证状态
+
+截至 2026-07-05，本文档没有记录新的全量验证结果。下方历史段落中的
+`go test`、`go vet`、`npm test`、`npm run build`、`npm run lint` 结果只代表当时执行环境。
+
+当前需要重新确认：
+
+| 检查 | 当前状态 | 说明 |
+|------|----------|------|
+| `cd backend-go && go test ./...` | 待重新运行 | P0 AgentOS 门禁工作正在推进，需以最新代码重新验证 |
+| `cd backend-go && go vet ./...` | 待重新运行 | 同上 |
+| `cd frontend-next && npm test` | 待重新运行 | 历史结果有 75/77 tests 两种记录 |
+| `cd frontend-next && npm run build` | 待重新运行 | 历史记录中既有通过也有失败，不能当作当前事实 |
+| `cd frontend-next && npm run lint` | 待重新运行 | 历史记录中持续有 lint 遗留问题 |
+
 ## 当前结论
 
 凌镜已完成全站新技术栈迁移，旧栈（Python/FastAPI + Vue 3）已于 2026-06-30 删除。
@@ -57,6 +82,11 @@ Version: v0.3.0.0 — 2026-07-03 中完成 12 线并行合并：10 个 PR 合入
 
 历史文档中出现 `backend/app/*`、`frontend/src/views/*`、`/api/*` 时，按旧栈参考处理（已归档在 git history 中）。
 
+
+## 历史更新记录
+
+以下内容按日期保留，用于追溯项目演进。除非重新验证并写入“当前事实快照”，
+否则不要把历史段落中的测试结果、缺陷数量或完成状态当作今天的事实。
 
 ## 2026-07-03 并行修复收口
 
@@ -120,7 +150,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 `backend-go/internal/httpx/router.go` 在 `/api/v1` 下注册了认证、RBAC、Agent、AgentOS 和业务域路由，覆盖商品、平台、订单、财务、AI/AgentOS、选品生图等全套领域。`frontend-next/src/app/` 侧边栏菜单目前有 47 个入口，均已匹配到实际页面。
 
-## 验证状态
+## 历史验证状态
 
 2026-07-03 工作台 + 并行修复收口（Issue #64 + 20-Agent 并行执行）：
 
@@ -263,7 +293,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 - 菜单新增"经营闭环"组
 - `/candidates` 已接入后端API
 
-### 验证状态
+### 历史验证状态
 
 | 检查 | 结果 |
 |------|------|
@@ -340,7 +370,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 | Idempotency | 重复执行 blocking | status=completed 明确报错（本期新增） |
 | Audit | 执行/反馈关键操作 | operationlog.Service.Log（本期新增） |
 
-### 验证状态
+### 历史验证状态
 | 检查 | 结果 | 说明 |
 |------|------|------|
 | `go test ./internal/domain/listingtask/...` | 通过 | 21 tests（含状态机/门禁/反馈） |
