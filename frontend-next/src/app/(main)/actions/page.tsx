@@ -7,7 +7,6 @@ import {
   Col,
   Input,
   message,
-  Modal,
   Row,
   Select,
   Space,
@@ -22,6 +21,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import ActionConfirmModal, { ConfirmAction } from '@/components/actions/ActionConfirmModal';
 import apiClient from '@/lib/api-client';
 import type { PageResult } from '@/types/api';
 
@@ -69,8 +69,8 @@ export default function ActionsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
+  const [actionMode, setActionMode] = useState<'approve' | 'reject' | 'execute' | null>(null);
   const [selectedAction, setSelectedAction] = useState<UnifiedAction | null>(null);
-  const [decisionReason, setDecisionReason] = useState('');
 
   const { data: actionsData, isLoading } = useQuery<PageResult<UnifiedAction>>({
     queryKey: ['actions', statusFilter, riskFilter, agentFilter, search, page],
@@ -85,8 +85,8 @@ export default function ActionsPage() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiClient.post('/v1/ai/actions/' + id + '/approve', { operator: 'user', reason: decisionReason }),
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      apiClient.post('/v1/ai/actions/' + id + '/approve', { operator: 'user', reason }),
     onSuccess: () => {
       message.success('已批准');
       setModalOpen(false);
@@ -96,8 +96,8 @@ export default function ActionsPage() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiClient.post('/v1/ai/actions/' + id + '/reject', { operator: 'user', reason: decisionReason }),
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      apiClient.post('/v1/ai/actions/' + id + '/reject', { operator: 'user', reason }),
     onSuccess: () => {
       message.success('已拒绝');
       setModalOpen(false);
@@ -107,7 +107,7 @@ export default function ActionsPage() {
   });
 
   const executeMutation = useMutation({
-    mutationFn: (id: number) =>
+    mutationFn: ({ id }: { id: number }) =>
       apiClient.post('/v1/ai/actions/' + id + '/execute', { operator: 'user' }),
     onSuccess: () => {
       message.success('已执行');
@@ -116,18 +116,19 @@ export default function ActionsPage() {
     onError: () => message.error('执行失败'),
   });
 
-  const openModal = (action: UnifiedAction) => {
+  const openModal = (action: UnifiedAction, mode: 'approve' | 'reject' | 'execute' | null) => {
     setSelectedAction(action);
-    setDecisionReason('');
+    setActionMode(mode);
     setModalOpen(true);
   };
 
-  const handleDecision = () => {
-    if (!selectedAction) return;
-    if (selectedAction.status === 'suggested' || selectedAction.status === 'pending') {
-      approveMutation.mutate(selectedAction.id);
-    } else {
-      executeMutation.mutate(selectedAction.id);
+  const handleConfirm = (action: ConfirmAction, reason: string) => {
+    if (actionMode === 'approve') {
+      approveMutation.mutate({ id: action.id, reason });
+    } else if (actionMode === 'reject') {
+      rejectMutation.mutate({ id: action.id, reason });
+    } else if (actionMode === 'execute') {
+      executeMutation.mutate({ id: action.id });
     }
   };
 
@@ -138,7 +139,7 @@ export default function ActionsPage() {
       key: 'title',
       ellipsis: true,
       render: (t: string, r: UnifiedAction) => (
-        <Text strong style={{ cursor: 'pointer' }} onClick={() => openModal(r)}>{t}</Text>
+        <Text strong style={{ cursor: 'pointer' }} onClick={() => openModal(r, null)}>{t}</Text>
       ),
     },
     {
@@ -197,8 +198,7 @@ export default function ActionsPage() {
               type="primary"
               size="small"
               icon={<PlayCircleOutlined />}
-              onClick={() => executeMutation.mutate(record.id)}
-              loading={executeMutation.isPending}
+              onClick={() => openModal(record, 'execute')}
             >
               执行
             </Button>
@@ -211,7 +211,7 @@ export default function ActionsPage() {
                 type="primary"
                 size="small"
                 icon={<CheckCircleOutlined />}
-                onClick={() => openModal(record)}
+                onClick={() => openModal(record, 'approve')}
               >
                 批准
               </Button>
@@ -219,7 +219,7 @@ export default function ActionsPage() {
                 danger
                 size="small"
                 icon={<CloseCircleOutlined />}
-                onClick={() => openModal(record)}
+                onClick={() => openModal(record, 'reject')}
               >
                 拒绝
               </Button>
@@ -320,50 +320,14 @@ export default function ActionsPage() {
         size="middle"
       />
 
-      <Modal
-        title={selectedAction?.title || 'Action 详情'}
+      <ActionConfirmModal
+        action={selectedAction}
         open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        footer={
-          selectedAction?.status === 'approved'
-            ? [
-                <Button key="cancel" onClick={() => setModalOpen(false)}>取消</Button>,
-                <Button key="execute" type="primary" icon={<PlayCircleOutlined />} onClick={handleDecision}>
-                  执行
-                </Button>,
-              ]
-            : selectedAction?.status === 'rejected'
-            ? null
-            : [
-                <Button key="reject" danger onClick={() => rejectMutation.mutate(selectedAction!.id)}>
-                  拒绝
-                </Button>,
-                <Button key="approve" type="primary" onClick={handleDecision}>
-                  批准
-                </Button>,
-              ]
-        }
-        width={640}
-      >
-        {selectedAction && (
-          <div>
-            <p><Text strong>描述：</Text>{selectedAction.description || '-'}</p>
-            <p><Text strong>Agent：</Text>{selectedAction.agent_id}</p>
-            <p><Text strong>类型：</Text>{selectedAction.action_type}</p>
-            <p>
-              <Text strong>风险：</Text>
-              <Tag color={RISK_COLORS[selectedAction.risk_level]}>{selectedAction.risk_level}</Tag>
-            </p>
-            <p><Text strong>提案人：</Text>{selectedAction.proposed_by || '-'}</p>
-            {selectedAction.rejection_reason && (
-              <p><Text strong>拒绝原因：</Text><Text type="danger">{selectedAction.rejection_reason}</Text></p>
-            )}
-            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, maxHeight: 300, overflow: 'auto', fontSize: 12 }}>
-              {JSON.stringify(selectedAction.payload, null, 2)}
-            </pre>
-          </div>
-        )}
-      </Modal>
+        mode={actionMode}
+        loading={approveMutation.isPending || rejectMutation.isPending || executeMutation.isPending}
+        onClose={() => setModalOpen(false)}
+        onConfirm={handleConfirm}
+      />
     </div>
   );
 }
