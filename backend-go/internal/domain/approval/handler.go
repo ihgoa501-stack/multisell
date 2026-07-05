@@ -66,8 +66,9 @@ func (h *Handler) CreateApproval(c *gin.Context) {
 		return
 	}
 
-	// Enforce JWT identity for requester.
-	input.Requester = common.ReviewerFromCtx(c)
+		// Enforce JWT identity for requester.
+		input.Requester = common.ReviewerFromCtx(c)
+		input.RequesterUserID = common.UserIDFromCtx(c)
 
 	req, err := h.service.Create(&input)
 	if err != nil {
@@ -98,6 +99,7 @@ func (h *Handler) ReviewApproval(c *gin.Context) {
 
 	// Enforce JWT identity for reviewer.
 	input.Reviewer = common.ReviewerFromCtx(c)
+	input.ReviewerUserID = common.UserIDFromCtx(c)
 
 	req, err := h.service.Review(id, &input)
 	if err != nil {
