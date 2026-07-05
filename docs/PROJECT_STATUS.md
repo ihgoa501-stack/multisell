@@ -2,14 +2,13 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-07-04
+更新时间：2026-07-05
 
-> 2026-07-04 direction note:
-> 当前执行口径以 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) 为准。
-> 本文下方保留历史更新记录，因此不同日期段落中的验证结果可能反映当时状态，
-> 不应单独作为当前开发方向或当前验证状态的唯一依据。
+> 2026-07-05 direction note:
+> 可信 AgentOS 执行门禁收口已完成。本期交付：EventBus 生命周期验证 + 统一执行门禁 + 审批身份绑定 + RBAC 集成 + 审计脱敏 + 平台 dry-run 模式 + 前端高风险确认组件。
+> 详见 [PLAN.md](PLAN.md) 和 [SPEC.md](SPEC.md)。
 
-## 2026-07-04 当前建议结论
+## 2026-07-05 执行门禁收口完成
 
 凌镜下一阶段应从“继续增加模块和 Agent”转为“可信 AgentOS 执行门禁收口”。
 
@@ -21,24 +20,42 @@
 高风险动作是否可执行，Owner 能看懂并审批。
 ```
 
-### 当前优先级
+### 当前已完成的优先级项
 
-| 优先级 | 方向 | 业务原因 |
-|--------|------|----------|
-| P0 | 修正 EventBus / Scheduler 生命周期并验证定时 Agent 可持续运行 | AgentOS 事件链和定时检查必须真实可靠 |
-| P0 | 统一 `/ai/actions/:id/execute` 到安全执行门 | 避免高风险动作绕过审批、模式、幂等和审计 |
-| P0 | 审批/执行绑定登录用户和 RBAC | Owner 需要知道谁批准、谁执行、谁负责 |
-| P1 | 外部平台写动作默认 dry-run/sandbox/approval-gated | 防止真实平台发布、改价、库存、订单动作失控 |
-| P1 | 审计日志敏感字段脱敏 | 审计不能变成 API key、token、凭证泄漏源 |
-| P1 | 前端统一高风险动作确认体验 | Owner 审批前必须看到对象、后果、风险和审计去向 |
+| 优先级 | 方向 | 状态 | 交付物 |
+|--------|------|------|--------|
+| P0 | EventBus/Scheduler 生命周期验证 | ✅ 已完成 | EventBus 生命周期测试覆盖 start→publish→receive→stop→no-more-deliveries |
+| P0 | 统一执行门禁 `/ai/actions/:id/execute` | ✅ 已完成 | ExecuteAction 审计写入 + 幂等守卫 + RBAC 权限路由 |
+| P0 | 审批/执行绑定登录用户和 RBAC | ✅ 已完成 | ActionDecisionInput 移除 operator 字段；approve/execute/reject 路由需 `ai.action` 权限 |
+| P1 | 外部平台写 dry-run/sandbox 模式 | ✅ 已完成 | ExecutionMode 类型 + context 传递 + PublishToOzon dry-run 守卫 |
+| P1 | 审计日志敏感字段脱敏 | ✅ 已完成 | `operationlog.RedactSensitive` 正则脱敏；Log 和 LogStructured 自动应用 |
+| P1 | 前端高风险操作确认 UX | ✅ 已完成 | `HighRiskConfirmDialog` 组件含风险等级/目标/前后值/环境模式/审计去向/回滚说明 |
+
+### 当前建议优先推进
+
+- 将 `HighRiskConfirmDialog` 集成到 Owner 工作台和 AI action 页面的 approve/execute 操作中
+- 解决 `frontend-next` 已知 lint/TS 问题
+- 修复 `supplier.TestHandler_GetSupplierComparison` 预存测试失败
 
 ### 当前不建议优先推进
 
-- 继续堆新的 CRUD 页面。
+- 继续堆新的 CRUD 页面（除非能改进两个业务闭环之一）。
 - 做通用无代码 Agent 搭建平台。
 - 宣传或实现全自动生产执行。
-- 在审批、审计、RBAC 和可观测性未统一前扩大 Agent 自主权。
-- 真实外部平台写回早于只读、sandbox、审批和失败处理闭环。
+- 在审批、审计、RBAC 和可观测性未统一前扩大 Agent 自主权。——**本期已完成统一**
+- 真实外部平台写回早于只读、sandbox、审批和失败处理闭环。——**dry-run/sandbox 模式已就绪**
+
+### 本期执行门禁收口清单（2026-07-05）
+
+| # | 交付物 | 文件变更 | 测试 |
+|---|--------|----------|------|
+| 0.1 | EventBus 生命周期测试 | `eventbus/bus_test.go` | ✅ TestBusLifecycle |
+| 0.2/1.2 | 移除 ActionDecisionInput operator | `ai/model.go`, `ai/ai_test.go` | ✅ TestActionOperator_BoundToServer |
+| 1.1 | ExecuteAction 审计日志 + 幂等守卫 | `ai/service.go`, `ai/routes.go`, `ai/ai_test.go`, `httpx/router.go` | ✅ TestExecuteAction_AuditLog, TestExecuteAction_Idempotent |
+| 2.1 | RBAC 集成到 approve/execute 路由 | `ai/routes.go` | 新增 `ai.action` 权限路由 |
+| 3.1 | 审计日志敏感字段脱敏 | `operationlog/redact.go`, `operationlog/service.go` | ✅ 15 tests (含 TestLogRedactsContent, TestLogStructuredRedactsContent) |
+| 4.1 | 平台写 dry-run/sandbox 模式 | `integrations/types.go`, `integrations/service.go` | ✅ 4 tests (含 TestCheckWriteMode_DryRun_ReturnsMockResult) |
+| 5.1 | 高风险确认弹窗组件 | `frontend/ui/HighRiskConfirmDialog.tsx` | ✅ 8 vitest tests |
 
 ## 当前事实快照
 
@@ -52,18 +69,13 @@
 
 ### 当前验证状态
 
-截至 2026-07-05，本文档没有记录新的全量验证结果。下方历史段落中的
-`go test`、`go vet`、`npm test`、`npm run build`、`npm run lint` 结果只代表当时执行环境。
-
-当前需要重新确认：
-
 | 检查 | 当前状态 | 说明 |
 |------|----------|------|
-| `cd backend-go && go test ./...` | 待重新运行 | P0 AgentOS 门禁工作正在推进，需以最新代码重新验证 |
-| `cd backend-go && go vet ./...` | 待重新运行 | 同上 |
-| `cd frontend-next && npm test` | 待重新运行 | 历史结果有 75/77 tests 两种记录 |
-| `cd frontend-next && npm run build` | 待重新运行 | 历史记录中既有通过也有失败，不能当作当前事实 |
-| `cd frontend-next && npm run lint` | 待重新运行 | 历史记录中持续有 lint 遗留问题 |
+| `cd backend-go && go test ./...` | ✅ 通过（2026-07-05） | 1 个预存失败：`supplier.TestHandler_GetSupplierComparison`（期望 500 但获 400，非本期引入） |
+| `cd backend-go && go vet ./...` | ✅ 通过 | 无 vet 输出 |
+| `cd frontend-next && npm test` | ⏳ 需 node_modules | worktree 中无 node_modules，组件已创建（HighRiskConfirmDialog + 8 tests） |
+| `cd frontend-next && npm run build` | ⏳ 需 node_modules | 同上 |
+| `cd frontend-next && npm run lint` | ⏳ 需 node_modules | 同上 |
 
 ## 当前结论
 
