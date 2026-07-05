@@ -229,7 +229,8 @@ func TestService_RecordFeedback_AdoptWithListingTask(t *testing.T) {
 		requester TEXT, reviewer TEXT, status TEXT, risk_level TEXT, old_value TEXT,
 		new_value TEXT, reason TEXT, review_note TEXT, target_type TEXT,
 		target_id INTEGER, entity_type TEXT,
-		entity_id INTEGER, expires_at TIMESTAMP, updated_at TIMESTAMP, created_at TIMESTAMP
+		entity_id INTEGER, requester_user_id INTEGER, reviewer_user_id INTEGER,
+		expires_at TIMESTAMP, updated_at TIMESTAMP, created_at TIMESTAMP
 	)`)
 
 	err := svc.RecordFeedback(1, &FeedbackInput{Action: "adopt", Note: "looks good"})

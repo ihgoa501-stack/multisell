@@ -232,8 +232,10 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	}
 
 	// ── Gate 2: Validate against action catalog before execution ───
+	isDryRun := a.ExecutionMode == "dry_run"
+
 	if s.cat != nil {
-		if err := s.cat.ValidateProduction(a.ActionType, riskLevelToInt(a.RiskLevel), a.Status == "approved"); err != nil {
+		if err := s.cat.ValidateProduction(a.ActionType, riskLevelToInt(a.RiskLevel), isDryRun || a.Status == "approved"); err != nil {
 			if errors.Is(err, actioncatalog.ErrApprovalRequired) {
 				return nil, ErrApprovalRequired
 			}
@@ -246,12 +248,25 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 		return nil, &InvalidTransitionError{From: a.Status, To: "executing"}
 	}
 
-	// ── Gate 4: Approval check ─────────────────────────────────────
-	if a.RequiresApproval && a.Status == "suggested" {
+	// ── Gate 4: Execution mode check ──────────────────────────
+	switch a.ExecutionMode {
+	case "", "production":
+		// production execution continues below
+	case "dry_run":
+		// isDryRun already set at Gate 2
+		// dry_run validates through all gates but does not dispatch or mutate.
+	case "sandbox":
+		return nil, fmt.Errorf("sandbox execution requires a sandbox executor; no sandbox configured")
+	default:
+		return nil, fmt.Errorf("unknown execution mode: %s", a.ExecutionMode)
+	}
+
+	// ── Gate 5: Approval check ─────────────────────────────────────
+	if !isDryRun && a.RequiresApproval && a.Status == "suggested" {
 		return nil, ErrApprovalRequired
 	}
 
-	// ── Gate 5: Guardrails check (L4 ExecutionGuard) ──────────────
+	// ── Gate 6: Guardrails check (L4 ExecutionGuard) ──────────────
 	if s.guard != nil {
 		payload := map[string]interface{}{}
 		if len(a.Payload) > 0 {
@@ -280,29 +295,42 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 		}
 	}
 
-	// ── Gate 6: Execution mode check ──────────────────────────
-	switch a.ExecutionMode {
-	case "", "production":
-		// production execution continues below
-	case "dry_run":
-		s.logger.Info("dry-run action — execution skipped",
+	// Dry-run: all validation passed, return without mutation.
+	if isDryRun {
+		s.logger.Info("dry-run action — all gates passed, execution skipped",
 			zap.Int64("action_id", a.ID),
 			zap.String("action_type", a.ActionType))
 		return &a, nil
-	case "sandbox":
-		return nil, fmt.Errorf("sandbox execution requires a sandbox executor; no sandbox configured")
-	default:
-		return nil, fmt.Errorf("unknown execution mode: %s", a.ExecutionMode)
 	}
-	// ── Execute: transition to executing ───────────────────────────
+
+	// ── Execute: transition to executing (atomic claim) ────────
 	now := nowPtr()
-	updates := map[string]interface{}{
-		"status":       "executing",
-		"executed_by":  operator,
-		"executed_by_user_id": userID,
-		"executing_at": now,
+	res := s.db.Model(&UnifiedAction{}).
+		Where("id = ? AND status IN ?", a.ID, []string{"suggested", "approved"}).
+		Updates(map[string]interface{}{
+			"status":       "executing",
+			"executed_by":  operator,
+			"executed_by_user_id": userID,
+			"executing_at": now,
+		})
+	if res.Error != nil {
+		return nil, res.Error
 	}
-	if err := s.db.Model(&a).Updates(updates).Error; err != nil {
+	// RowsAffected == 0 means another request already claimed this action.
+	if res.RowsAffected == 0 {
+		var current UnifiedAction
+		if err := s.db.First(&current, a.ID).Error; err != nil {
+			return nil, err
+		}
+		// Idempotent: if already completed, return existing result.
+		if current.IdempotencyKey != "" && (current.Status == "executed" || current.Status == "failed") {
+			return &current, nil
+		}
+		return nil, fmt.Errorf("action %d is already %s (conflict)", a.ID, current.Status)
+	}
+
+	// Re-read the action to get fresh values after the atomic UPDATE.
+	if err := s.db.First(&a, a.ID).Error; err != nil {
 		return nil, err
 	}
 
