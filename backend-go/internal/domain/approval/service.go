@@ -181,6 +181,12 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 		}
 	}
 
+	// Publish approval lifecycle event for closed-loop workflows
+	// (e.g. listing task creation on approval.approved.listing_task).
+	// Only publish on success — never on rollback.
+	req.ReviewerUserID = input.ReviewerUserID
+	s.publishApprovalEvent(&req, status)
+
 	return &req, nil
 }
 

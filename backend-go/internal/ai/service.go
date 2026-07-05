@@ -146,6 +146,10 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 	if len(payload) == 0 {
 		payload = nil
 	}
+	execMode := in.ExecutionMode
+	if execMode == "" {
+		execMode = "production"
+	}
 	a := UnifiedAction{
 		SourceTable:        in.SourceTable,
 		SourceID:           in.SourceID,
@@ -165,6 +169,8 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 		RiskLevel:          risk,
 		RequiresApproval:   requires,
 		Status:             "suggested",
+		IdempotencyKey:     in.IdempotencyKey,
+		ExecutionMode:      execMode,
 		Confidence:         in.Confidence,
 		ProposedBy:         in.ProposedBy,
 	}
@@ -178,6 +184,7 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 func (s *Service) ApproveAction(id int64, operator string, userID *int64, _ string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "approved", map[string]interface{}{
 		"approved_by": operator,
+		"approved_by_user_id": userID,
 		"approved_at": nowPtr(),
 	}, "suggested", "pending")
 }
@@ -188,6 +195,7 @@ func (s *Service) ApproveAction(id int64, operator string, userID *int64, _ stri
 func (s *Service) RejectAction(id int64, operator string, userID *int64, reason string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "rejected", map[string]interface{}{
 		"rejected_by":      operator,
+		"rejected_by_user_id": userID,
 		"rejected_at":      nowPtr(),
 		"rejection_reason": reason,
 	}, "suggested", "pending")
@@ -272,20 +280,20 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 		}
 	}
 
-	// ── Gate 6: Dry-run mode — validate only, never mutate ─────────
-	if a.ExecutionMode == "" || a.ExecutionMode == "production" {
+	// ── Gate 6: Execution mode check ──────────────────────────
+	switch a.ExecutionMode {
+	case "", "production":
 		// production execution continues below
-	} else if a.ExecutionMode == "dry_run" {
+	case "dry_run":
 		s.logger.Info("dry-run action — execution skipped",
 			zap.Int64("action_id", a.ID),
 			zap.String("action_type", a.ActionType))
 		return &a, nil
-	} else {
-		s.logger.Warn("unknown execution mode, defaulting to production",
-			zap.Int64("action_id", a.ID),
-			zap.String("mode", a.ExecutionMode))
+	case "sandbox":
+		return nil, fmt.Errorf("sandbox execution requires a sandbox executor; no sandbox configured")
+	default:
+		return nil, fmt.Errorf("unknown execution mode: %s", a.ExecutionMode)
 	}
-
 	// ── Execute: transition to executing ───────────────────────────
 	now := nowPtr()
 	updates := map[string]interface{}{

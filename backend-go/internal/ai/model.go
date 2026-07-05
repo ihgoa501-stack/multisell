@@ -97,7 +97,8 @@ type UnifiedAction struct {
 	RejectedBy        string          `gorm:"column:rejected_by" json:"rejected_by,omitempty"`
 	ExecutedBy        string          `gorm:"column:executed_by" json:"executed_by,omitempty"`
 	ApprovedByUserID  *int64          `gorm:"column:approved_by_user_id" json:"approved_by_user_id,omitempty"`
-	ExecutedByUserID  *int64          `gorm:"column:executed_by_user_id" json:"executed_by_user_id,omitempty"`
+		ExecutedByUserID  *int64          `gorm:"column:executed_by_user_id" json:"executed_by_user_id,omitempty"`
+		RejectedByUserID  *int64          `gorm:"column:rejected_by_user_id" json:"rejected_by_user_id,omitempty"`
 	RejectionReason   string          `gorm:"column:rejection_reason" json:"rejection_reason,omitempty"`
 	ProposedAt        time.Time       `gorm:"column:proposed_at;autoCreateTime;index" json:"proposed_at"`
 	ApprovedAt        *time.Time      `gorm:"column:approved_at" json:"approved_at,omitempty"`
