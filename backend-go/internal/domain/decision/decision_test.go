@@ -32,6 +32,16 @@ func newTestHandler(t *testing.T) (*Handler, *gin.Engine) {
 	h := NewHandler(svc)
 	r := gin.New()
 
+	// Test middleware that simulates JWT auth context.
+	r.Use(func(c *gin.Context) {
+		if user := c.GetHeader("X-Test-User"); user != "" {
+			c.Set("username", user)
+		} else {
+			c.Set("username", "test-admin")
+		}
+		c.Set("user_id", int64(1))
+	})
+
 	// IMPORTANT: /summary MUST be registered before /:id
 	r.GET("/api/v1/decision", h.List)
 	r.GET("/api/v1/decision/summary", h.Summary)
@@ -1029,8 +1039,8 @@ func TestHandler_Approve(t *testing.T) {
 	if d.Status != "approved" {
 		t.Fatalf("Status = %q, want approved", d.Status)
 	}
-	if d.DecidedBy != "admin" {
-		t.Fatalf("DecidedBy = %q, want admin", d.DecidedBy)
+	if d.DecidedBy != "test-admin" {
+		t.Fatalf("DecidedBy = %q, want test-admin", d.DecidedBy)
 	}
 	if d.DecidedAt == nil {
 		t.Fatal("DecidedAt is nil after approve")
@@ -1088,8 +1098,8 @@ func TestHandler_Reject(t *testing.T) {
 	if d.Status != "rejected" {
 		t.Fatalf("Status = %q, want rejected", d.Status)
 	}
-	if d.DecidedBy != "manager" {
-		t.Fatalf("DecidedBy = %q, want manager", d.DecidedBy)
+	if d.DecidedBy != "test-admin" {
+		t.Fatalf("DecidedBy = %q, want test-admin", d.DecidedBy)
 	}
 	if d.DecidedAt == nil {
 		t.Fatal("DecidedAt is nil after reject")

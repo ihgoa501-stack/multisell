@@ -177,7 +177,7 @@ type CreateActionInput struct {
 
 // ActionDecisionInput is used for approve/reject/execute.
 type ActionDecisionInput struct {
-	Operator string `json:"operator" binding:"required"`
+	Operator string `json:"operator"`
 	Reason   string `json:"reason"`
 }
 

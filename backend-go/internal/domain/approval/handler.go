@@ -66,6 +66,9 @@ func (h *Handler) CreateApproval(c *gin.Context) {
 		return
 	}
 
+	// Enforce JWT identity for requester.
+	input.Requester = common.ReviewerFromCtx(c)
+
 	req, err := h.service.Create(&input)
 	if err != nil {
 		response.InternalError(c, err)
@@ -92,6 +95,9 @@ func (h *Handler) ReviewApproval(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "动作必须是 approve 或 reject")
 		return
 	}
+
+	// Enforce JWT identity for reviewer.
+	input.Reviewer = common.ReviewerFromCtx(c)
 
 	req, err := h.service.Review(id, &input)
 	if err != nil {

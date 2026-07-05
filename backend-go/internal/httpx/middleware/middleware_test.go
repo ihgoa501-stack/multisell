@@ -861,28 +861,6 @@ func TestComposeAuditContent_WithError(t *testing.T) {
 	_ = w
 }
 
-func TestItoa(t *testing.T) {
-	tests := []struct {
-		n    int64
-		want string
-	}{
-		{0, "0"},
-		{1, "1"},
-		{42, "42"},
-		{100, "100"},
-		{-1, "-1"},
-		{-42, "-42"},
-		{9223372036854775807, "9223372036854775807"}, // max int64
-	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			got := itoa(tt.n)
-			if got != tt.want {
-				t.Errorf("itoa(%d) = %q, want %q", tt.n, got, tt.want)
-			}
-		})
-	}
-}
 
 // ===================== RBAC Middleware Tests =====================
 

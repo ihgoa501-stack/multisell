@@ -102,6 +102,25 @@ func ToString(v interface{}) string {
 	return ""
 }
 
+// ReviewerFromCtx extracts the reviewer identity from JWT context.
+// Prefers the username claim, falls back to user_id, then "unknown".
+func ReviewerFromCtx(c *gin.Context) string {
+	if v, ok := c.Get("username"); ok {
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
+	}
+	if v, ok := c.Get("user_id"); ok {
+		switch x := v.(type) {
+		case float64:
+			return fmt.Sprintf("user:%d", int64(x))
+		case int64:
+			return fmt.Sprintf("user:%d", x)
+		}
+	}
+	return "unknown"
+}
+
 func convertError(typ string, v interface{}) error {
 	return fmt.Errorf("cannot convert %T to %s", v, typ)
 }

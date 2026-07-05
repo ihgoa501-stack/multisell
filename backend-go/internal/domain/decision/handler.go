@@ -144,6 +144,8 @@ func (h *Handler) Approve(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Enforce JWT identity for decided_by.
+	in.DecidedBy = common.ReviewerFromCtx(c)
 	d, err := h.service.Approve(id, &in)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -167,6 +169,8 @@ func (h *Handler) Reject(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Enforce JWT identity for decided_by.
+	in.DecidedBy = common.ReviewerFromCtx(c)
 	d, err := h.service.Reject(id, &in)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

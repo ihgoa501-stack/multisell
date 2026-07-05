@@ -3,10 +3,12 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -18,6 +20,7 @@ type Service struct {
 	logger *zap.Logger
 	traces *TraceWriter
 	cmd    *command.Dispatcher
+	cat    *actioncatalog.Catalog
 }
 
 // NewService creates a new AI service.
@@ -33,6 +36,12 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 // dispatch actions through registered command handlers.
 func (s *Service) WithDispatcher(cmd *command.Dispatcher) *Service {
 	s.cmd = cmd
+	return s
+}
+
+// WithCatalog attaches the action catalog for production validation.
+func (s *Service) WithCatalog(cat *actioncatalog.Catalog) *Service {
+	s.cat = cat
 	return s
 }
 
@@ -193,6 +202,15 @@ func (s *Service) ExecuteAction(id int64, operator, _ string) (*UnifiedAction, e
 	var a UnifiedAction
 	if err := s.db.First(&a, id).Error; err != nil {
 		return nil, err
+	}
+	// Validate against action catalog before execution.
+	if s.cat != nil {
+		if err := s.cat.ValidateProduction(a.ActionType, riskLevelToInt(a.RiskLevel), a.Status == "approved"); err != nil {
+			if errors.Is(err, actioncatalog.ErrApprovalRequired) {
+				return nil, ErrApprovalRequired
+			}
+			return nil, err
+		}
 	}
 	// Allowed source states: "suggested" (auto-approved) or "approved".
 	if a.Status != "suggested" && a.Status != "approved" {
@@ -398,6 +416,20 @@ func (e *InvalidTransitionError) Error() string {
 
 // ErrApprovalRequired signals that an action needs approval first.
 var ErrApprovalRequired = &InvalidTransitionError{From: "suggested", To: "executing"}
+
+// riskLevelToInt converts a risk level string to an actioncatalog risk constant.
+func riskLevelToInt(level string) int {
+	switch level {
+	case "low":
+		return actioncatalog.RiskLow
+	case "medium":
+		return actioncatalog.RiskMedium
+	case "high":
+		return actioncatalog.RiskHigh
+	default:
+		return actioncatalog.RiskMedium
+	}
+}
 
 func nowPtr() *time.Time {
 	t := time.Now()

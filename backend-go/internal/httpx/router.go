@@ -99,8 +99,16 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
+// App holds the Gin engine and background services for graceful shutdown.
+type App struct {
+	Engine    *gin.Engine
+	Bus       *eventbus.Bus
+	Scheduler *scheduler.Scheduler
+	Cancel    context.CancelFunc
+}
+
 // NewRouter creates and configures the Gin engine with all routes.
-func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine {
+func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	gin.SetMode(cfg.Server.Mode)
 
 	r := gin.New()
@@ -149,7 +157,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	sr.Register("compliance.*", eventbus.ComplianceCheckPayload{})
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4), eventbus.WithSchema(sr))
 	busCtx, busCancel := context.WithCancel(context.Background())
-	defer busCancel()
 	bus.Start(busCtx)
 
 	// Initialize platform adapters (Ozon, Shopee, etc.).
@@ -171,7 +178,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	// AI orchestrator (shared by /ai and /agents routes).
 	aiosCfg := setup.Initialize(db, bus, logger)
 	budget := costcontrol.NewController(db, logger, cfg.LLM.DailyBudgetUSD, 5*time.Minute, 3.0)
-	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget).WithBus(bus)
+	aiOrch := ai.NewOrchestrator(db, logger).WithGuardrails(aiosCfg.Guardrails).WithBudget(budget).WithBus(bus).WithCatalog(cat).WithDispatcher(cmd)
 
 	// Pipeline engine for declarative decision DAG (replaces inline chain handlers).
 	pipelineEng := pipeline.NewEngine(func(ctx context.Context, agentID, dp string, ctxMap map[string]interface{}) error {
@@ -866,7 +873,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *gin.Engine 
 	a12 := impl.NewCollectionAgent(toolBridge, candSvc, logger)
 	aiOrch.RegisterAgent("A12", a12)
 
-	return r
+	return &App{Engine: r, Bus: bus, Scheduler: sched, Cancel: busCancel}
 }
 
 // runAgentWithTimeout runs an agent with a 30-second timeout for pipeline chains.

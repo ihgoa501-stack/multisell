@@ -208,7 +208,7 @@ func (h *Handler) ApproveAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.service.ApproveAction(id, in.Operator, in.Reason)
+	a, err := h.service.ApproveAction(id, common.ReviewerFromCtx(c), in.Reason)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -228,7 +228,7 @@ func (h *Handler) RejectAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.service.RejectAction(id, in.Operator, in.Reason)
+	a, err := h.service.RejectAction(id, common.ReviewerFromCtx(c), in.Reason)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -248,7 +248,7 @@ func (h *Handler) ExecuteAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.service.ExecuteAction(id, in.Operator, in.Reason)
+	a, err := h.service.ExecuteAction(id, common.ReviewerFromCtx(c), in.Reason)
 	if err != nil {
 		if errors.Is(err, ErrApprovalRequired) {
 			response.Error(c, http.StatusForbidden, "action requires approval before execution")
@@ -335,6 +335,7 @@ func parseID(c *gin.Context) (int64, bool) {
 	}
 	return id, true
 }
+
 
 // userIDFromCtx extracts user id from the JWT context (set by auth middleware).
 func userIDFromCtx(c *gin.Context) *int64 {
