@@ -348,16 +348,16 @@ npm run lint         # 已知 ~34 problems（12 errors + 22 warnings），非阻
 | **AI/Agent/AgentOS + Commerce（钱）** | `/plan` → 写测试 → 小心实现 |
 | **所有其他 CRUD/UI** | 按现有 pattern 快速实现 |
 
-### 当前 P0（执行门禁收口）
+### 当前 P0（执行门禁收口）— 已全部完成（2026-07-05）
 
-| # | 项目 | 业务影响 |
-|---|------|----------|
-| P0 | EventBus/Scheduler 生命周期验证 | 定时 Agent 检查可能未可靠运行 |
-| P0 | 统一执行门禁 `/ai/actions/:id/execute` | 高风险动作可能绕过审批 |
-| P0 | 审批/执行绑定登录用户 + RBAC | 审计责任链不完整 |
-| P1 | 外部平台写安全（dry-run/sandbox/approval） | 真实平台发布可能失控 |
-| P1 | 审计日志敏感字段脱敏 | 审计可能泄漏凭证 |
-| P1 | 前端统一高风险动作确认 UX | Owner 无法做知情决策 |
+| # | 项目 | 状态 | 交付物 |
+|---|------|------|--------|
+| P0 | EventBus/Scheduler 生命周期验证 | ✅ 已完成 | 测试覆盖 start→publish→receive→stop→no-more-deliveries |
+| P0 | 统一执行门禁 `/ai/actions/:id/execute` | ✅ 已完成 | 审计日志 + 幂等守卫 + RBAC 权限路由 |
+| P0 | 审批/执行绑定登录用户 + RBAC | ✅ 已完成 | ActionDecisionInput 移除 operator；approve/execute 需 `ai.action` 权限 |
+| P1 | 外部平台写安全（dry-run/sandbox/approval） | ✅ 已完成 | ExecutionMode 类型 + PublishToOzon dry-run 守卫 |
+| P1 | 审计日志敏感字段脱敏 | ✅ 已完成 | `operationlog.RedactSensitive` — Log 和 LogStructured 自动脱敏 |
+| P1 | 前端统一高风险动作确认 UX | ✅ 已完成 | HighRiskConfirmDialog 组件（已集成到 Owner 工作台）|
 
 ---
 
@@ -427,6 +427,6 @@ Agent 定时检查 → 事件链通知 → Owner 驾驶舱总览
 
 ## 11. 开放问题
 
-1. **当前 P0 执行门禁收口的第一迭代范围** — 三件全做还是一门禁一迭代？建议一门禁一个迭代。
-2. **前端展示优先还是后端逻辑优先？** — 后端已有部分骨架，前端高风险确认 UX 接近空白。
-3. **烟雾测试的实际执行环境** — 需要真实数据库还是可以用内存 SQLite 跑简化版？
+1. ~~**当前 P0 执行门禁收口的第一迭代范围** — 三件全做还是一门禁一迭代？~~ ✅ 一期全部完成
+2. ~~**前端展示优先还是后端逻辑优先？** — 后端已有部分骨架，前端高风险确认 UX 接近空白。~~ ✅ 后端全做完后，前端组件已创建并集成到 Owner 工作台
+3. ~~**烟雾测试的实际执行环境** — 需要真实数据库还是可以用内存 SQLite 跑简化版？~~ 尚未验证
