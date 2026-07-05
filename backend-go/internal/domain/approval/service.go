@@ -1,11 +1,13 @@
 package approval
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -15,12 +17,19 @@ type Service struct {
 	db       *gorm.DB
 	logger   *zap.Logger
 	oplogSvc *operationlog.Service // optional, may be nil
+	bus      *eventbus.Bus         // optional, may be nil — used to publish approval lifecycle events
 }
 
 // NewService creates a new approval service.
 // oplogSvc may be nil (audit logging disabled).
 func NewService(db *gorm.DB, logger *zap.Logger, oplogSvc *operationlog.Service) *Service {
 	return &Service{db: db, logger: logger, oplogSvc: oplogSvc}
+}
+
+// WithBus attaches an event bus for publishing approval lifecycle events.
+func (s *Service) WithBus(bus *eventbus.Bus) *Service {
+	s.bus = bus
+	return s
 }
 
 // List returns paginated approval requests with optional filters.
@@ -62,19 +71,20 @@ func (s *Service) Get(id int64) (*ApprovalRequest, error) {
 // Create inserts a new approval request.
 func (s *Service) Create(input *CreateApprovalInput) (*ApprovalRequest, error) {
 	req := &ApprovalRequest{
-		ProductID:   input.ProductID,
-		RequestType: input.RequestType,
-		Requester:   input.Requester,
-		Status:      StatusPending,
-		OldValue:    input.OldValue,
-		NewValue:    input.NewValue,
-		Reason:      input.Reason,
-		TargetType:  input.TargetType,
-		TargetID:    input.TargetID,
-		RiskLevel:   input.RiskLevel,
-		ExpiresAt:   input.ExpiresAt,
-		EntityType:  input.EntityType,
-		EntityID:    input.EntityID,
+		ProductID:       input.ProductID,
+		RequestType:     input.RequestType,
+		Requester:       input.Requester,
+		RequesterUserID: input.RequesterUserID,
+		Status:          StatusPending,
+		OldValue:        input.OldValue,
+		NewValue:        input.NewValue,
+		Reason:          input.Reason,
+		TargetType:      input.TargetType,
+		TargetID:        input.TargetID,
+		RiskLevel:       input.RiskLevel,
+		ExpiresAt:       input.ExpiresAt,
+		EntityType:      input.EntityType,
+		EntityID:        input.EntityID,
 	}
 	if err := s.db.Create(req).Error; err != nil {
 		return nil, fmt.Errorf("creating approval request: %w", err)
@@ -99,10 +109,11 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 
 	now := time.Now()
 	updates := map[string]interface{}{
-		"status":      status,
-		"reviewer":    input.Reviewer,
-		"review_note": input.ReviewNote,
-		"updated_at":  now,
+		"status":           status,
+		"reviewer":         input.Reviewer,
+		"reviewer_user_id": input.ReviewerUserID,
+		"review_note":      input.ReviewNote,
+		"updated_at":       now,
 	}
 
 	// Build unified_action sync updates if applicable.
@@ -169,6 +180,12 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 			})
 		}
 	}
+
+	// Publish approval lifecycle event for closed-loop workflows
+	// (e.g. listing task creation on approval.approved.listing_task).
+	// Only publish on success — never on rollback.
+	req.ReviewerUserID = input.ReviewerUserID
+	s.publishApprovalEvent(&req, status)
 
 	return &req, nil
 }
@@ -293,4 +310,27 @@ func (s *Service) AutoEscalate() ([]ApprovalRequest, error) {
 		)
 	}
 	return items, nil
+}
+
+// publishApprovalEvent publishes an approval lifecycle event when there is an
+// event bus attached. Used by router.go subscribers to trigger cross-domain
+// workflows (e.g. listing task creation on approval).
+func (s *Service) publishApprovalEvent(req *ApprovalRequest, status string) {
+	if s.bus == nil {
+		return
+	}
+	topic := fmt.Sprintf("approval.%s.%s", status, req.RequestType)
+	ctx := context.Background()
+	_, _ = s.bus.Publish(ctx, topic, "approval", map[string]interface{}{
+		"approval_id":    req.ID,
+		"status":          status,
+		"request_type":    req.RequestType,
+		"entity_type":     req.EntityType,
+		"entity_id":       req.EntityID,
+		"product_id":      req.ProductID,
+		"reviewer":        req.Reviewer,
+		"reviewer_user_id": req.ReviewerUserID,
+		"target_type":     req.TargetType,
+		"target_id":       req.TargetID,
+	})
 }
