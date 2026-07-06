@@ -1,8 +1,8 @@
 'use client';
 
 import CrudListPage, { fmtDate } from '@/components/crud/CrudListPage';
-import { Table, Tag, Tabs } from 'antd';
-import { useQuery } from '@tanstack/react-query';
+import { Button, Form, InputNumber, Input, Modal, Row, Col, Statistic, Space, message, Table, Tag, Tabs } from 'antd';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 
 // --- Types ---
@@ -59,7 +59,52 @@ export default function InventoryPage() {
       width: 100,
       render: (_: unknown, r: BinLocation) => {
         const pct = r.capacity > 0 ? Math.round((r.used / r.capacity) * 100) : 0;
-        return (
+        // P3: Safety config, allocation, dead stock (#201)
+  const qc = useQueryClient();
+  const { data: safetyConfigs } = useQuery({
+    queryKey: ['inventory-safety-configs'],
+    queryFn: async () => { const res = await apiClient.get<any[]>('/v1/inventory/safety-configs'); return res.data; },
+  });
+  const safetyItems: any[] = (safetyConfigs as any) ?? [];
+
+  const upsertSafetyMut = useMutation({
+    mutationFn: (values: any) => apiClient.put<any>('/v1/inventory/safety-config/'+values.sku_id, values),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-safety-configs'] }); message.success('安全库存配置已保存'); },
+  });
+
+  const { data: deadStockRes } = useQuery({
+    queryKey: ['inventory-dead-stock'],
+    queryFn: async () => { const res = await apiClient.post<any[]>('/v1/inventory/dead-stock/analyze', {}); return res; },
+  });
+  const deadStockItems: any[] = (deadStockRes as any) ?? [];
+
+  const { mutate: analyzeDeadStock, isPending: deadLoading } = useMutation({
+    mutationFn: () => apiClient.post<any>('/v1/inventory/dead-stock/analyze', {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-dead-stock'] }); message.success('死库存分析完成'); },
+  });
+
+  const safetyColumns = [
+    { title: 'SKU ID', dataIndex: 'sku_id', key: 'sku_id' },
+    { title: '最低库存', dataIndex: 'min_stock_level', key: 'min_stock_level' },
+    { title: '最高库存', dataIndex: 'max_stock_level', key: 'max_stock_level' },
+    { title: '提前期(天)', dataIndex: 'lead_time_days', key: 'lead_time_days' },
+    { title: '安全天数', dataIndex: 'safety_days', key: 'safety_days' },
+    { title: '日均销量', dataIndex: 'daily_avg_sales', key: 'daily_avg_sales' },
+    { title: '自动补货', dataIndex: 'auto_reorder', key: 'auto_reorder', render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '开启' : '关闭'}</Tag> },
+  ];
+
+  const deadStockColumns = [
+    { title: 'SKU ID', dataIndex: 'sku_id', key: 'sku_id' },
+    { title: 'SKU编码', dataIndex: 'sku_code', key: 'sku_code' },
+    { title: '产品名', dataIndex: 'product_name', key: 'product_name' },
+    { title: '仓库', dataIndex: 'warehouse', key: 'warehouse' },
+    { title: '数量', dataIndex: 'current_qty', key: 'current_qty' },
+    { title: '未动天数', dataIndex: 'days_since_move', key: 'days_since_move' },
+    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={v === 'dead' ? 'red' : 'orange'}>{v === 'dead' ? '死库存' : '滞销'}</Tag> },
+    { title: '建议', dataIndex: 'suggestion', key: 'suggestion' },
+  ];
+
+  return (
           <Tag color={pct >= 90 ? 'red' : pct >= 70 ? 'orange' : 'green'}>
             {pct}%
           </Tag>
@@ -98,6 +143,51 @@ export default function InventoryPage() {
     },
     { title: '承运方', dataIndex: 'carrier', width: 100, render: (v?: string) => v ?? '-' },
     { title: '预计到达', dataIndex: 'estimated_arrival', width: 160, render: (v?: string) => (v ? fmtDate(v) : '-') },
+  ];
+
+  // P3: Safety config, allocation, dead stock (#201)
+  const qc = useQueryClient();
+  const { data: safetyConfigs } = useQuery({
+    queryKey: ['inventory-safety-configs'],
+    queryFn: async () => { const res = await apiClient.get<any[]>('/v1/inventory/safety-configs'); return res.data; },
+  });
+  const safetyItems: any[] = (safetyConfigs as any) ?? [];
+
+  const upsertSafetyMut = useMutation({
+    mutationFn: (values: any) => apiClient.put<any>('/v1/inventory/safety-config/'+values.sku_id, values),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-safety-configs'] }); message.success('安全库存配置已保存'); },
+  });
+
+  const { data: deadStockRes } = useQuery({
+    queryKey: ['inventory-dead-stock'],
+    queryFn: async () => { const res = await apiClient.post<any[]>('/v1/inventory/dead-stock/analyze', {}); return res; },
+  });
+  const deadStockItems: any[] = (deadStockRes as any) ?? [];
+
+  const { mutate: analyzeDeadStock, isPending: deadLoading } = useMutation({
+    mutationFn: () => apiClient.post<any>('/v1/inventory/dead-stock/analyze', {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-dead-stock'] }); message.success('死库存分析完成'); },
+  });
+
+  const safetyColumns = [
+    { title: 'SKU ID', dataIndex: 'sku_id', key: 'sku_id' },
+    { title: '最低库存', dataIndex: 'min_stock_level', key: 'min_stock_level' },
+    { title: '最高库存', dataIndex: 'max_stock_level', key: 'max_stock_level' },
+    { title: '提前期(天)', dataIndex: 'lead_time_days', key: 'lead_time_days' },
+    { title: '安全天数', dataIndex: 'safety_days', key: 'safety_days' },
+    { title: '日均销量', dataIndex: 'daily_avg_sales', key: 'daily_avg_sales' },
+    { title: '自动补货', dataIndex: 'auto_reorder', key: 'auto_reorder', render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '开启' : '关闭'}</Tag> },
+  ];
+
+  const deadStockColumns = [
+    { title: 'SKU ID', dataIndex: 'sku_id', key: 'sku_id' },
+    { title: 'SKU编码', dataIndex: 'sku_code', key: 'sku_code' },
+    { title: '产品名', dataIndex: 'product_name', key: 'product_name' },
+    { title: '仓库', dataIndex: 'warehouse', key: 'warehouse' },
+    { title: '数量', dataIndex: 'current_qty', key: 'current_qty' },
+    { title: '未动天数', dataIndex: 'days_since_move', key: 'days_since_move' },
+    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={v === 'dead' ? 'red' : 'orange'}>{v === 'dead' ? '死库存' : '滞销'}</Tag> },
+    { title: '建议', dataIndex: 'suggestion', key: 'suggestion' },
   ];
 
   return (
@@ -157,6 +247,65 @@ export default function InventoryPage() {
                   scroll={{ x: 'max-content' }}
                   pagination={{ pageSize: 10, total: xferData?.total ?? 0, showSizeChanger: false }}
                 />
+              ),
+            },
+            {
+              key: 'safety',
+              label: '安全库存',
+              children: (
+                <div>
+                  <Table dataSource={safetyItems} columns={safetyColumns} rowKey="sku_id" size="small" pagination={false} style={{ marginBottom: 16 }} />
+                  <p style={{ color: '#888', fontSize: 12 }}>此为只读视图。安全库存配置通过 SKU 详情编辑。</p>
+                </div>
+              ),
+            },
+            {
+              key: 'deadstock',
+              label: '死库存分析',
+              children: (
+                <div>
+                  <Space style={{ marginBottom: 16 }}>
+                    <Button type="primary" onClick={() => analyzeDeadStock()} loading={deadLoading}>运行死库存分析</Button>
+                  </Space>
+                  <Table dataSource={deadStockItems} columns={deadStockColumns} rowKey="sku_id" size="small" pagination={{ pageSize: 10 }} />
+                </div>
+              ),
+            },
+            {
+              key: 'allocation',
+              label: '多平台分配',
+              children: (
+                <div>
+                  <Input.Search placeholder="输入SKU ID查看分配建议" style={{ width: 300, marginBottom: 16 }} onSearch={async (val) => {
+                    if (!val) return;
+                    try {
+                      const res = await apiClient.get<any>('/v1/inventory/allocate/' + val);
+                      Modal.info({
+                        title: '分配建议',
+                        width: 600,
+                        content: (
+                          <div>
+                            <p>总可用: {res.data.total_available}</p>
+                            <p>已分配: {res.data.reserved_total}</p>
+                            <p>未分配: {res.data.unallocated}</p>
+                            <Table dataSource={res.data.recommendations || []} rowKey="platform_id" size="small" pagination={false}
+                              columns={[
+                                { title: '平台ID', dataIndex: 'platform_id', key: 'platform_id' },
+                                { title: '平台名称', dataIndex: 'platform_name', key: 'platform_name' },
+                                { title: '销售占比(%)', dataIndex: 'sales_share', key: 'sales_share' },
+                                { title: '当前库存', dataIndex: 'current_stock', key: 'current_stock' },
+                                { title: '建议分配', dataIndex: 'recommended', key: 'recommended' },
+                                { title: '优先级', dataIndex: 'priority', key: 'priority' },
+                              ]}
+                            />
+                          </div>
+                        ),
+                      });
+                    } catch(e: any) {
+                      message.error(e?.message || '查询失败');
+                    }
+                  }} />
+                </div>
               ),
             },
           ]}

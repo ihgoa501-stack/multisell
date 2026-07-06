@@ -252,3 +252,104 @@ func (h *Handler) OversellReport(c *gin.Context) {
 
 	response.Paginated(c, items, total, p.Page, p.Size)
 }
+
+// ── Safety Config (#201) ──────────────────────────────────────────────
+
+// GetSafetyConfig returns safety stock config for a SKU.
+// GET /api/v1/inventory/safety-config/:sku_id
+func (h *Handler) GetSafetyConfig(c *gin.Context) {
+	skuID, err := strconv.ParseInt(c.Param("sku_id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid sku_id")
+		return
+	}
+	cfg, err := h.service.GetSafetyConfig(c.Request.Context(), skuID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			response.Error(c, http.StatusNotFound, "safety config not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, "failed to get safety config: "+err.Error())
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// UpsertSafetyConfig creates or updates safety stock config.
+// PUT /api/v1/inventory/safety-config/:sku_id
+func (h *Handler) UpsertSafetyConfig(c *gin.Context) {
+	skuID, err := strconv.ParseInt(c.Param("sku_id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid sku_id")
+		return
+	}
+	var cfg InventorySafetyConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	cfg.SkuID = skuID
+	if err := h.service.UpsertSafetyConfig(c.Request.Context(), &cfg); err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to save safety config: "+err.Error())
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// ListSafetyConfigs returns all safety stock configs.
+// GET /api/v1/inventory/safety-configs
+func (h *Handler) ListSafetyConfigs(c *gin.Context) {
+	items, err := h.service.ListSafetyConfigs(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to list safety configs: "+err.Error())
+		return
+	}
+	if items == nil {
+		items = []InventorySafetyConfig{}
+	}
+	response.Success(c, items)
+}
+
+// ── Allocation (#201) ──────────────────────────────────────────────────
+
+// AllocateStock returns allocation recommendation for a SKU.
+// GET /api/v1/inventory/allocate/:sku_id
+func (h *Handler) AllocateStock(c *gin.Context) {
+	skuID, err := strconv.ParseInt(c.Param("sku_id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid sku_id")
+		return
+	}
+	rec, err := h.service.AllocateStock(c.Request.Context(), skuID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "allocation failed: "+err.Error())
+		return
+	}
+	response.Success(c, rec)
+}
+
+// ── Dead Stock (#201) ──────────────────────────────────────────────────
+
+// IdentifyDeadStock runs dead stock identification.
+// POST /api/v1/inventory/dead-stock/analyze?threshold_days=90
+func (h *Handler) IdentifyDeadStock(c *gin.Context) {
+	thresholdDays, _ := strconv.Atoi(c.DefaultQuery("threshold_days", "90"))
+	items, err := h.service.IdentifyDeadStock(c.Request.Context(), thresholdDays)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "dead stock analysis failed: "+err.Error())
+		return
+	}
+	response.Success(c, items)
+}
+
+// ListDeadStockLogs returns dead stock detection history.
+// GET /api/v1/inventory/dead-stock/logs?page=&size=
+func (h *Handler) ListDeadStockLogs(c *gin.Context) {
+	p := common.ParsePagination(c)
+	items, total, err := h.service.ListDeadStockLogs(c.Request.Context(), p.Page, p.Size)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to list dead stock logs: "+err.Error())
+		return
+	}
+	response.Paginated(c, items, total, p.Page, p.Size)
+}

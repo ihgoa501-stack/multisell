@@ -28,6 +28,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/brand"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/category"
+	"github.com/lingmirror/backend-go/internal/domain/competitor"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/compliance"
 	"github.com/lingmirror/backend-go/internal/domain/consolidation"
@@ -587,6 +588,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// Domain routes (all require authentication)
 	category.RegisterRoutes(protected, db, logger)
 	brand.RegisterRoutes(protected, db, logger)
+	competitor.RegisterRoutes(protected, db, logger)
 	productRoutes := protected.Group("", middleware.RequirePermission(db, "product.read"))
 	sku.RegisterRoutes(productRoutes, db, logger)
 	inventoryRoutes := protected.Group("", middleware.RequirePermission(db, "inventory.read"))
@@ -916,7 +918,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// fallback map. No-op if DefaultEngine is nil (no YAML files loaded).
 	tools.SetSourcingEngine(logistics.DefaultEngine)
 	supplychain.RegisterRoutes(protected, db, logger, bus)
-	productanalysis.RegisterRoutes(protected, db, logger)
+	productanalysis.RegisterRoutesWithPrism(protected, db, logger, prismSvc)
 	trustscore.RegisterRoutes(protected, db, logger)
 	reportRoutes := protected.Group("", middleware.RequirePermission(db, "report.read"))
 	report.RegisterRoutes(reportRoutes, db, logger)

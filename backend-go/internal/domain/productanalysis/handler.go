@@ -8,17 +8,25 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"github.com/lingmirror/backend-go/internal/response"
 )
 
 // Handler handles product analysis HTTP requests.
 type Handler struct {
-	service Service
+	service  Service
+	prismSvc prismadapter.PrismService
 }
 
 // NewHandler creates a new Handler.
 func NewHandler(svc Service) *Handler {
 	return &Handler{service: svc}
+}
+
+// WithPrism sets the Prism image generation service on the handler.
+func (h *Handler) WithPrism(p prismadapter.PrismService) *Handler {
+	h.prismSvc = p
+	return h
 }
 
 // Analyze POST /api/v1/product-analysis/analyze
@@ -134,4 +142,36 @@ func releaseSlot(key string) {
 	defer slotsMu.Unlock()
 
 	delete(slots, key)
+}
+
+// ── P3: Prism Image Generation Trigger (#193) ────────────────────────
+
+// TriggerPrism triggers Prism image generation for a product analysis.
+// POST /api/v1/product-analysis/trigger-prism
+func (h *Handler) TriggerPrism(c *gin.Context) {
+	if h.prismSvc == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Prism service not available")
+		return
+	}
+
+	var req struct {
+		ImageURL string `json:"image_url" binding:"required"`
+		Platform string `json:"platform" binding:"required"`
+		ProductID int64 `json:"product_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+
+	result, err := h.prismSvc.Generate(c.Request.Context(), &prismadapter.GenerateRequest{
+		ImageURL:  req.ImageURL,
+		Platform:  req.Platform,
+		ProductID: req.ProductID,
+	})
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Prism generation failed: "+err.Error())
+		return
+	}
+	response.Success(c, result)
 }

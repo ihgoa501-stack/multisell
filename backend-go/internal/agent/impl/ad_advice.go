@@ -102,6 +102,14 @@ func (a *AdAdviceAgent) Decide(ctx context.Context, decisionPoint string, params
 		return a.dispatchOrDirect(ctx, "acos.analyze", decisionPoint, params, a.analyzeAcos)
 	case "ad_optimization":
 		return a.dispatchOrDirect(ctx, "ad.optimize", decisionPoint, params, a.suggestAdOptimization)
+	case "ad_strategy":
+		return a.adStrategy(params)
+	case "keyword_bidding":
+		return a.keywordBidding(params)
+	case "acos_optimization":
+		return a.acosOptimization(params)
+	case "budget_allocation":
+		return a.budgetAllocation(params)
 	default:
 		return map[string]interface{}{
 			"status":         "unknown",
@@ -416,4 +424,259 @@ func (a *AdAdviceAgent) suggestAdOptimization(ctx map[string]interface{}) (outpu
 		"confidence":        0.85,
 	}
 	return output, 0.85, "low", nil
+}
+
+// ---------- P3: ad_strategy (#194) ----------
+
+// adStrategy recommends an ad campaign strategy based on product lifecycle and goals.
+func (a *AdAdviceAgent) adStrategy(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	productStage := safeString(ctx["product_stage"], "launch") // launch, growth, mature
+	budget := safeFloat(ctx["budget"], 0)
+	goal := safeString(ctx["goal"], "sales") // sales, brand, acos_minimize
+	marketplace := safeString(ctx["marketplace"], "US")
+
+	strategies := make([]map[string]interface{}, 0)
+
+	switch productStage {
+	case "launch":
+		strategies = append(strategies,
+			map[string]interface{}{"type": "auto_targeting", "description": "自动定位广告，快速收集关键词数据，预算占比 60%", "budget_share": 60},
+			map[string]interface{}{"type": "manual_broad", "description": "手动广泛匹配，测试核心关键词，预算占比 40%", "budget_share": 40},
+		)
+	case "growth":
+		strategies = append(strategies,
+			map[string]interface{}{"type": "manual_exact", "description": "精准匹配高转化关键词，预算占比 50%", "budget_share": 50},
+			map[string]interface{}{"type": "auto_targeting", "description": "自动定位补充发现新词，预算占比 25%", "budget_share": 25},
+			map[string]interface{}{"type": "product_targeting", "description": "商品定位广告，抢占竞品流量，预算占比 25%", "budget_share": 25},
+		)
+	case "mature":
+		strategies = append(strategies,
+			map[string]interface{}{"type": "manual_exact", "description": "精准匹配核心盈利关键词，预算占比 60%", "budget_share": 60},
+			map[string]interface{}{"type": "retargeting", "description": "再营销广告，挽回流失客户，预算占比 25%", "budget_share": 25},
+			map[string]interface{}{"type": "product_targeting", "description": "商品定位防御广告，预算占比 15%", "budget_share": 15},
+		)
+	default:
+		strategies = append(strategies,
+			map[string]interface{}{"type": "manual_exact", "description": "精准匹配广告", "budget_share": 100},
+		)
+	}
+
+	var recommendedBudget float64
+	if budget > 0 {
+		recommendedBudget = budget
+	} else {
+		recommendedBudget = 200.0 // default daily budget
+	}
+
+	output = map[string]interface{}{
+		"marketplace":       marketplace,
+		"product_stage":     productStage,
+		"goal":              goal,
+		"recommended_budget": recommendedBudget,
+		"strategies":        strategies,
+		"confidence":        0.80,
+	}
+	return output, 0.80, "low", nil
+}
+
+// ---------- P3: keyword_bidding (#194) ----------
+
+// keywordBidding provides CPC bid recommendations per keyword.
+func (a *AdAdviceAgent) keywordBidding(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	keywords := ctx["keywords"]
+	targetAcos := safeFloat(ctx["target_acos"], 30.0)
+	budget := safeFloat(ctx["budget"], 0)
+
+	if keywords == nil {
+		return insufficientData("keyword_bidding", []string{"keywords"}), 0.0, "low", nil
+	}
+
+	bidSuggestions := make([]map[string]interface{}, 0)
+	if termsList, ok := keywords.([]interface{}); ok {
+		for _, raw := range termsList {
+			term, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			kw := safeString(term["keyword"], "")
+			spend := safeFloat(term["spend"], 0)
+			sales := safeFloat(term["sales"], 0)
+			currentBid := safeFloat(term["current_bid"], 0)
+
+			acos := 0.0
+			if sales > 0 {
+				acos = round2(spend / sales * 100)
+			}
+
+			var suggestedBid float64
+			var action string
+			if acos > targetAcos && sales > 0 {
+				idealAcos := targetAcos * 0.8
+				if spend > 0 && currentBid > 0 {
+					suggestedBid = round2(currentBid * idealAcos / acos)
+				}
+				action = "reduce_bid"
+			} else if acos > 0 && acos <= targetAcos*0.5 {
+				if currentBid > 0 {
+					suggestedBid = round2(currentBid * 1.2)
+				}
+				action = "increase_bid"
+			} else {
+				suggestedBid = currentBid
+				action = "maintain"
+			}
+
+			bidSuggestions = append(bidSuggestions, map[string]interface{}{
+				"keyword":      kw,
+				"current_bid":  currentBid,
+				"suggested_bid": suggestedBid,
+				"acos":         acos,
+				"action":       action,
+			})
+		}
+	}
+
+	output = map[string]interface{}{
+		"bid_suggestions": bidSuggestions,
+		"target_acos":     targetAcos,
+		"budget":          budget,
+		"confidence":      0.85,
+	}
+	return output, 0.85, "low", nil
+}
+
+// ---------- P3: acos_optimization (#194) ----------
+
+// acosOptimization provides ACOS optimization recommendations across campaigns.
+func (a *AdAdviceAgent) acosOptimization(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	campaignsRaw := ctx["campaigns"]
+	targetAcos := safeFloat(ctx["target_acos"], 30.0)
+	maxBudget := safeFloat(ctx["max_budget"], 0)
+
+	if campaignsRaw == nil {
+		return insufficientData("acos_optimization", []string{"campaigns"}), 0.0, "low", nil
+	}
+
+	campaignResults := make([]map[string]interface{}, 0)
+	if campaigns, ok := campaignsRaw.([]interface{}); ok {
+		for _, raw := range campaigns {
+			c, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			campaignID := safeString(c["campaign_id"], "")
+			cSpend := safeFloat(c["spend"], 0)
+			cSales := safeFloat(c["sales"], 0)
+
+			cAcos := 0.0
+			if cSales > 0 {
+				cAcos = round2(cSpend / cSales * 100)
+			}
+
+			status := "healthy"
+			var optimization []string
+			if cAcos > targetAcos {
+				status = "needs_optimization"
+				reduction := round2((cAcos - targetAcos) / cAcos * 100)
+				optimization = append(optimization, fmt.Sprintf("目标降低出价 %.0f%% 以将 ACOS 降至 %.1f%%", reduction, targetAcos))
+			}
+			if maxBudget > 0 && cSpend > maxBudget*0.9 {
+				optimization = append(optimization, "预算即将耗尽，建议增加日预算")
+			}
+
+			campaignResults = append(campaignResults, map[string]interface{}{
+				"campaign_id":  campaignID,
+				"acos":         cAcos,
+				"target_acos":  targetAcos,
+				"status":       status,
+				"optimization": optimization,
+			})
+		}
+	}
+
+	output = map[string]interface{}{
+		"campaigns":      campaignResults,
+		"target_acos":    targetAcos,
+		"confidence":     0.85,
+	}
+	return output, 0.85, "low", nil
+}
+
+// ---------- P3: budget_allocation (#194) ----------
+
+// budgetAllocation recommends budget distribution across campaigns.
+func (a *AdAdviceAgent) budgetAllocation(ctx map[string]interface{}) (output map[string]interface{}, confidence float64, riskLevel string, err error) {
+	totalBudget := safeFloat(ctx["total_budget"], 1000)
+	campaignsRaw := ctx["campaigns"]
+	goal := safeString(ctx["goal"], "sales")
+
+	if campaignsRaw == nil {
+		return insufficientData("budget_allocation", []string{"campaigns"}), 0.0, "low", nil
+	}
+
+	type campaignPerf struct {
+		id    string
+		spend float64
+		sales float64
+		acos  float64
+	}
+	var perfs []campaignPerf
+	if campaigns, ok := campaignsRaw.([]interface{}); ok {
+		for _, raw := range campaigns {
+			c, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			cp := campaignPerf{
+				id:    safeString(c["campaign_id"], ""),
+				spend: safeFloat(c["spend"], 0),
+				sales: safeFloat(c["sales"], 0),
+			}
+			if cp.sales > 0 {
+				cp.acos = round2(cp.spend / cp.sales * 100)
+			}
+			perfs = append(perfs, cp)
+		}
+	}
+
+	if len(perfs) == 0 {
+		return insufficientData("budget_allocation", []string{"campaigns"}), 0.0, "low", nil
+	}
+
+	// Calculate total spend for proportion.
+	var totalSpend float64
+	for _, p := range perfs {
+		totalSpend += p.spend
+	}
+
+	allocations := make([]map[string]interface{}, 0, len(perfs))
+	if totalSpend > 0 {
+		for _, p := range perfs {
+			share := p.spend / totalSpend
+			allocated := round2(totalBudget * share)
+			var reason string
+			if goal == "sales" && p.acos < 30 {
+				reason = "高转化低ACOS，建议维持或增加预算"
+			} else if p.acos > 50 {
+				reason = "ACOS过高，建议减少预算或优化"
+			} else {
+				reason = "表现中等，建议维持当前预算"
+			}
+			allocations = append(allocations, map[string]interface{}{
+				"campaign_id":      p.id,
+				"current_share":    round2(share * 100),
+				"allocated_budget": allocated,
+				"acos":             p.acos,
+				"reason":           reason,
+			})
+		}
+	}
+
+	output = map[string]interface{}{
+		"total_budget":          totalBudget,
+		"allocations":           allocations,
+		"allocation_strategy":   goal,
+		"confidence":            0.80,
+	}
+	return output, 0.80, "low", nil
 }
