@@ -177,7 +177,7 @@ rollback_note:     string               // human guidance for reversing
 |------------|------------------------------------------------|-----------------|
 | low        | stock_alert, dashboard_summary, read_data      | No              |
 | medium     | listing_draft, compliance_flag, suggest_price  | No (suggestion) |
-| high       | price_update, inventory_change, order_cancel, platform_publish, credential_change | Yes |
+| high       | price_update, inventory_change, order_cancel, listing_publish, credential_change | Yes |
 
 ### Execution Mode Rules
 
