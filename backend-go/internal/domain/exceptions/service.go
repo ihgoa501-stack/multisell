@@ -2,10 +2,16 @@ package exceptions
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/ai"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -21,13 +27,34 @@ type ListFilter struct {
 
 // Service provides exceptions business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db          *gorm.DB
+	logger      *zap.Logger
+	llm         ai.LLMProvider            // optional, for AI suggestion generation
+	oplogSvc    *operationlog.Service     // optional, for audit logging
+	approvalSvc *approval.Service         // optional, for high-risk approval
 }
 
 // NewService creates a new exceptions service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
+}
+
+// WithLLM attaches an LLM provider for AI suggestion generation.
+func (s *Service) WithLLM(llm ai.LLMProvider) *Service {
+	s.llm = llm
+	return s
+}
+
+// WithOperationLog attaches an operation log service for audit logging.
+func (s *Service) WithOperationLog(svc *operationlog.Service) *Service {
+	s.oplogSvc = svc
+	return s
+}
+
+// WithApproval attaches an approval service for high-risk resolution approval.
+func (s *Service) WithApproval(svc *approval.Service) *Service {
+	s.approvalSvc = svc
+	return s
 }
 
 // List returns a paginated list of exceptions filtered by severity/status/type.
@@ -118,6 +145,203 @@ func (s *Service) Update(e *ExceptionItem) error {
 // Delete removes an exception item.
 func (s *Service) Delete(id int64) error {
 	return s.db.Delete(&ExceptionItem{}, id).Error
+}
+
+// Suggest generates an AI resolution suggestion for an exception.
+// Falls back gracefully to rule-based defaults when no LLM is configured.
+func (s *Service) Suggest(ctx context.Context, exceptionID int64) (*ResolutionSuggestion, error) {
+	e, err := s.GetByID(exceptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	sug := &ResolutionSuggestion{
+		ExceptionID: exceptionID,
+		CreatedAt:   time.Now(),
+	}
+
+	if s.llm == nil {
+		return s.fallbackSuggestion(e, sug)
+	}
+
+	prompt := fmt.Sprintf(`你是一个跨境电商异常处理专家。请分析以下异常并提供处理建议。
+
+异常类型：%s
+标题：%s
+描述：%s
+严重程度：%s
+
+请以JSON格式回复，包含以下字段：
+- suggestion_text: 处理建议的详细说明（中文）
+- suggested_action: 建议采取的行动（restock/cancel_order/adjust_price/contact_carrier/investigate_fee/other）
+- risk_level: 该操作的风险等级（low/medium/high）
+- auto_executable: 是否可自动执行（true/false）`, e.SourceType, e.Title, e.Description, e.Severity)
+
+	resp, err := s.llm.Chat(ctx, &ai.LLMRequest{
+		Messages:    []ai.LLMMessage{{Role: "user", Content: prompt}},
+		Temperature: 0.3,
+		MaxTokens:   500,
+	})
+	if err != nil {
+		s.logger.Warn("LLM suggestion failed, falling back to rule-based", zap.Error(err))
+		return s.fallbackSuggestion(e, sug)
+	}
+
+	if err := sug.parseLLMResponse(resp.Answer, e); err != nil {
+		s.logger.Warn("LLM response parse failed, falling back to rule-based", zap.Error(err))
+		return s.fallbackSuggestion(e, sug)
+	}
+	return sug, nil
+}
+
+// ResolveWithApproval resolves an exception after checking risk level.
+// High-risk exceptions require an approval request; an audit log is always written.
+func (s *Service) ResolveWithApproval(ctx context.Context, id int64, resolvedBy, suggestion, action string) (*ExceptionItem, error) {
+	e, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	riskLevel := e.Severity
+	if riskLevel == "" {
+		riskLevel = "medium"
+	}
+
+	// High risk: create an approval request for audit trail
+	if riskLevel == "high" && s.approvalSvc != nil {
+		reason := fmt.Sprintf("Exception #%d: %s\nAgent suggestion: %s\nAction: %s", id, e.Title, suggestion, action)
+		_, err := s.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			ProductID:   0,
+			RequestType: "exception_resolve",
+			Requester:   "system",
+			TargetType:  "exception",
+			TargetID:    id,
+			RiskLevel:   riskLevel,
+			Reason:      reason,
+			EntityType:  "exception",
+			EntityID:    id,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("approval setup failed: %w", err)
+		}
+		s.logger.Info("approval request created for high-risk exception resolution",
+			zap.Int64("exception_id", id),
+			zap.String("action", action))
+	}
+
+	// Audit log
+	if s.oplogSvc != nil {
+		_ = s.oplogSvc.Log("exceptions", "resolve", fmt.Sprintf("%d", id), resolvedBy,
+			fmt.Sprintf("Owner resolved exception #%d. Suggestion: %s. Action: %s", id, suggestion, action))
+	}
+
+	// Mark as resolved
+	return s.Resolve(id, resolvedBy, fmt.Sprintf("Suggestion: %s | Action: %s", suggestion, action))
+}
+
+// fallbackSuggestion generates a rule-based suggestion when no LLM is available.
+func (s *Service) fallbackSuggestion(e *ExceptionItem, sug *ResolutionSuggestion) (*ResolutionSuggestion, error) {
+	sug.SuggestionText = suggestTextForType(e.SourceType)
+	sug.SuggestedAction = suggestActionForType(e.SourceType)
+	sug.RiskLevel = e.Severity
+	if sug.RiskLevel == "" {
+		sug.RiskLevel = "medium"
+	}
+	sug.AutoExecutable = sug.RiskLevel != "high"
+	return sug, nil
+}
+
+// parseLLMResponse extracts fields from the LLM's JSON response.
+func (s *ResolutionSuggestion) parseLLMResponse(answer string, e *ExceptionItem) error {
+	body := extractJSONBlock(answer)
+	if body == "" {
+		return errors.New("no JSON block found in LLM response")
+	}
+	var parsed struct {
+		SuggestionText  string `json:"suggestion_text"`
+		SuggestedAction string `json:"suggested_action"`
+		RiskLevel       string `json:"risk_level"`
+		AutoExecutable  bool   `json:"auto_executable"`
+	}
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		return fmt.Errorf("parse JSON: %w", err)
+	}
+	s.SuggestionText = parsed.SuggestionText
+	s.SuggestedAction = parsed.SuggestedAction
+	s.RiskLevel = parsed.RiskLevel
+	s.AutoExecutable = parsed.AutoExecutable
+
+	// Validate required fields
+	if s.SuggestionText == "" {
+		return errors.New("suggestion_text is empty")
+	}
+	if s.RiskLevel == "" {
+		s.RiskLevel = "medium"
+	}
+	if s.SuggestedAction == "" {
+		s.SuggestedAction = "other"
+	}
+	return nil
+}
+
+// extractJSONBlock extracts a JSON object from text that may be wrapped in markdown code fences.
+func extractJSONBlock(text string) string {
+	text = strings.TrimSpace(text)
+	// Try markdown code block first
+	if idx := strings.Index(text, "```json"); idx >= 0 {
+		rest := text[idx+7:]
+		if end := strings.Index(rest, "```"); end >= 0 {
+			return strings.TrimSpace(rest[:end])
+		}
+	}
+	// Try raw JSON object
+	idx := strings.Index(text, "{")
+	if idx < 0 {
+		return ""
+	}
+	depth := 0
+	for i := idx; i < len(text); i++ {
+		switch text[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return text[idx : i+1]
+			}
+		}
+	}
+	return ""
+}
+
+func suggestTextForType(t string) string {
+	switch t {
+	case TypeLossOrder:
+		return "建议审查该订单的采购成本和售价，评估是否调价或取消订单止损"
+	case TypeOutOfStock:
+		return "建议立即补货并检查安全库存设置，避免再次缺货"
+	case TypeLogisticsAbnormal:
+		return "建议联系物流商确认包裹状态，必要时发起理赔或补发"
+	case TypeFeeAbnormal:
+		return "建议核对平台费用明细，确认是否有误收或新增收费项目"
+	default:
+		return "建议人工审查异常详情，根据具体情况处理"
+	}
+}
+
+func suggestActionForType(t string) string {
+	switch t {
+	case TypeLossOrder:
+		return "adjust_price"
+	case TypeOutOfStock:
+		return "restock"
+	case TypeLogisticsAbnormal:
+		return "contact_carrier"
+	case TypeFeeAbnormal:
+		return "investigate_fee"
+	default:
+		return "other"
+	}
 }
 
 // AutoDetect scans all data sources for anomalies and creates exception records

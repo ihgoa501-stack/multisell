@@ -2,6 +2,16 @@ package exceptions
 
 import "time"
 
+// ResolutionSuggestion is AI-generated advice for handling an exception.
+type ResolutionSuggestion struct {
+	ExceptionID     int64     `json:"exception_id"`
+	SuggestionText  string    `json:"suggestion_text"`
+	SuggestedAction string   `json:"suggested_action"` // e.g. "restock", "cancel_order", "adjust_price"
+	RiskLevel       string    `json:"risk_level"`
+	AutoExecutable  bool      `json:"auto_executable"` // can execute without approval
+	CreatedAt       time.Time `json:"created_at"`
+}
+
 // Exception type constants for auto-detection.
 const (
 	TypeLossOrder        = "loss_order"

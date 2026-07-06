@@ -4,7 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 )
 
 func TestService_CRUD(t *testing.T) {
@@ -148,5 +151,171 @@ func TestService_AutoDetect(t *testing.T) {
 	}
 	if dupCount > 0 {
 		t.Fatal("AutoDetect created duplicate exception for order 101")
+	}
+}
+
+func TestService_Suggest(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ExceptionItem{})
+	logger := dbtest.NewLogger(t)
+
+	// Without LLM provider — falls back to rule-based defaults
+	svc := NewService(db, logger)
+	e := &ExceptionItem{
+		SourceModule: "order",
+		SourceType:   TypeLossOrder,
+		Severity:     "high",
+		Title:        "亏损订单",
+		Description:  "订单 #12345 亏损 -50.00",
+		Status:       "open",
+	}
+	if err := svc.Create(e); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	sug, err := svc.Suggest(context.Background(), e.ID)
+	if err != nil {
+		t.Fatalf("Suggest without LLM: %v", err)
+	}
+	if sug.ExceptionID != e.ID {
+		t.Fatalf("ExceptionID = %d, want %d", sug.ExceptionID, e.ID)
+	}
+	if sug.SuggestionText == "" {
+		t.Fatal("SuggestionText should not be empty (fallback)")
+	}
+	if sug.SuggestedAction != "adjust_price" {
+		t.Fatalf("SuggestedAction = %q, want adjust_price", sug.SuggestedAction)
+	}
+	if sug.RiskLevel != "high" {
+		t.Fatalf("RiskLevel = %q, want high", sug.RiskLevel)
+	}
+	if sug.AutoExecutable {
+		t.Fatal("AutoExecutable should be false for high risk")
+	}
+
+	// With stub LLM provider — stub returns keyword-matched text
+	llm := ai.NewLLMProvider(logger)
+	svc = svc.WithLLM(llm)
+
+	sug2, err := svc.Suggest(context.Background(), e.ID)
+	if err != nil {
+		t.Fatalf("Suggest with LLM: %v", err)
+	}
+	if sug2.ExceptionID != e.ID {
+		t.Fatalf("ExceptionID = %d, want %d", sug2.ExceptionID, e.ID)
+	}
+	if sug2.SuggestionText == "" {
+		t.Fatal("SuggestionText should not be empty")
+	}
+	if sug2.SuggestedAction == "" {
+		t.Fatal("SuggestedAction should not be empty")
+	}
+	if sug2.RiskLevel == "" {
+		t.Fatal("RiskLevel should not be empty")
+	}
+
+	// Unknown exception ID
+	_, err = svc.Suggest(context.Background(), 99999)
+	if err == nil {
+		t.Fatal("expected error for unknown exception")
+	}
+}
+
+func TestService_ResolveWithApproval(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ExceptionItem{}, &operationlog.OperationLog{}, &approval.ApprovalRequest{})
+	logger := dbtest.NewLogger(t)
+
+	oplogSvc := operationlog.NewService(db, logger)
+	approvalSvc := approval.NewService(db, logger, oplogSvc)
+
+	svc := NewService(db, logger).
+		WithOperationLog(oplogSvc).
+		WithApproval(approvalSvc)
+
+	// Low severity exception — resolves directly, no approval request created
+	e := &ExceptionItem{
+		SourceModule: "inventory",
+		SourceType:   TypeOutOfStock,
+		Severity:     "low",
+		Title:        "库存偏低",
+		Description:  "SKU #100 库存较低",
+		Status:       "open",
+	}
+	if err := svc.Create(e); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	resolved, err := svc.ResolveWithApproval(context.Background(), e.ID, "owner_zhang", "建议补货", "restock")
+	if err != nil {
+		t.Fatalf("ResolveWithApproval low risk: %v", err)
+	}
+	if resolved.Status != "resolved" {
+		t.Fatalf("Status = %s, want resolved", resolved.Status)
+	}
+
+	var lowApprovalCount int64
+	db.Model(&approval.ApprovalRequest{}).Where("target_type = ? AND target_id = ?", "exception", e.ID).Count(&lowApprovalCount)
+	if lowApprovalCount != 0 {
+		t.Fatalf("expected 0 approval requests for low risk, got %d", lowApprovalCount)
+	}
+
+	// High severity exception — resolve creates an approval request
+	e2 := &ExceptionItem{
+		SourceModule: "order",
+		SourceType:   TypeLossOrder,
+		Severity:     "high",
+		Title:        "高亏损订单",
+		Description:  "订单 #99999 亏损 -5000.00",
+		Status:       "open",
+	}
+	if err := svc.Create(e2); err != nil {
+		t.Fatalf("Create e2: %v", err)
+	}
+
+	resolved2, err := svc.ResolveWithApproval(context.Background(), e2.ID, "owner_li", "建议取消订单", "cancel_order")
+	if err != nil {
+		t.Fatalf("ResolveWithApproval high risk: %v", err)
+	}
+	if resolved2.Status != "resolved" {
+		t.Fatalf("Status = %s, want resolved", resolved2.Status)
+	}
+	if resolved2.ResolvedBy != "owner_li" {
+		t.Fatalf("ResolvedBy = %s, want owner_li", resolved2.ResolvedBy)
+	}
+
+	var highApprovalCount int64
+	db.Model(&approval.ApprovalRequest{}).Where("target_type = ? AND target_id = ?", "exception", e2.ID).Count(&highApprovalCount)
+	if highApprovalCount != 1 {
+		t.Fatalf("expected 1 approval request for high risk, got %d", highApprovalCount)
+	}
+}
+
+func TestService_ResolveWithApproval_NoServices(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ExceptionItem{})
+	logger := dbtest.NewLogger(t)
+
+	// No operation log or approval service configured — should still work
+	svc := NewService(db, logger)
+
+	e := &ExceptionItem{
+		SourceModule: "order",
+		SourceType:   TypeLossOrder,
+		Severity:     "high",
+		Title:        "亏损订单",
+		Description:  "订单 #12345 亏损 -50.00",
+		Status:       "open",
+	}
+	if err := svc.Create(e); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	resolved, err := svc.ResolveWithApproval(context.Background(), e.ID, "owner_wang", "建议调价", "adjust_price")
+	if err != nil {
+		t.Fatalf("ResolveWithApproval no services: %v", err)
+	}
+	if resolved.Status != "resolved" {
+		t.Fatalf("Status = %s, want resolved", resolved.Status)
 	}
 }
