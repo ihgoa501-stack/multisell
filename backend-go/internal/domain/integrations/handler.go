@@ -370,6 +370,10 @@ func (h *Handler) WriteBack(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	in.Operator = c.GetString("username")
+	if in.Operator == "" {
+		in.Operator = "system"
+	}
 	result, err := h.service.WriteBack(c.Request.Context(), &in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())

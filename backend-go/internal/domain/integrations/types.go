@@ -221,6 +221,9 @@ type WriteBackRequest struct {
 	AccountID   int64           `json:"account_id" binding:"required"`
 	Payload     json.RawMessage `json:"payload"`
 	ReferenceID string          `json:"reference_id,omitempty"`
+
+	// Operator is set server-side from JWT — never accepted from the client.
+	Operator string `json:"-"`
 }
 
 // WriteBackResult is the response for the write-back endpoint.

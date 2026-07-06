@@ -32,7 +32,7 @@ func (s *Service) WriteBack(ctx context.Context, req *WriteBackRequest) (*WriteB
 	if mode >= ExecutionModeApprovalRequired && s.approvalSvc != nil {
 		apprReq, err := s.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
 			RequestType: "write_back_" + req.Action,
-			Requester:   "system",
+			Requester:   operatorOrDefault(req.Operator),
 			NewValue:    fmt.Sprintf("write-back %s on account %d (%s)", req.Action, acct.ID, acct.StoreName),
 			Reason:      fmt.Sprintf("production write-back of action=%s requires approval", req.Action),
 			TargetType:  "integration_account", TargetID: acct.ID,
@@ -213,4 +213,12 @@ func (s *Service) RetryWriteBack(ctx context.Context, refID string) (*WriteBackR
 		req.Payload = json.RawMessage(record.Payload)
 	}
 	return s.WriteBack(ctx, req)
+}
+
+// operatorOrDefault returns op if non-empty, otherwise "system".
+func operatorOrDefault(op string) string {
+	if op == "" {
+		return "system"
+	}
+	return op
 }
