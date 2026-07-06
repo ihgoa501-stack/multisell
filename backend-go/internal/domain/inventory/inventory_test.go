@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 )
@@ -192,4 +193,92 @@ func TestInventoryAlert_ListAndResolve(t *testing.T) {
 	if err := svc.ResolveAlert(1); err != nil {
 		t.Fatalf("ResolveAlert: %v", err)
 	}
+}
+
+// ── Safety Config (#201) ──
+
+func TestSafetyConfig_UpsertAndGet(t *testing.T) {
+	db := dbtest.NewDB(t, &InventorySafetyConfig{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	cfg := &InventorySafetyConfig{
+		SkuID:         1001,
+		MinStockLevel: 10,
+		MaxStockLevel: 500,
+		LeadTimeDays:  7,
+		SafetyDays:    14,
+		DailyAvgSales: 5.0,
+		AutoReorder:   true,
+	}
+	if err := svc.UpsertSafetyConfig(context.Background(), cfg); err != nil {
+		t.Fatalf("UpsertSafetyConfig: %v", err)
+	}
+	if cfg.ID == 0 {
+		t.Fatal("expected non-zero ID")
+	}
+
+	got, err := svc.GetSafetyConfig(context.Background(), 1001)
+	if err != nil {
+		t.Fatalf("GetSafetyConfig: %v", err)
+	}
+	if got.MinStockLevel != 10 {
+		t.Fatalf("MinStockLevel = %d, want 10", got.MinStockLevel)
+	}
+	if got.DailyAvgSales != 5.0 {
+		t.Fatalf("DailyAvgSales = %f, want 5.0", got.DailyAvgSales)
+	}
+}
+
+func TestSafetyConfig_List(t *testing.T) {
+	db := dbtest.NewDB(t, &InventorySafetyConfig{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	svc.UpsertSafetyConfig(context.Background(), &InventorySafetyConfig{SkuID: 1, MinStockLevel: 5})
+	svc.UpsertSafetyConfig(context.Background(), &InventorySafetyConfig{SkuID: 2, MinStockLevel: 10})
+
+	items, err := svc.ListSafetyConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("ListSafetyConfigs: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2, got %d", len(items))
+	}
+}
+
+// ── Dead Stock (#201) ──
+
+
+func TestDeadStock_Identify_WithTables(t *testing.T) {
+	db := dbtest.NewDB(t, &Inventory{}, &InventoryLog{}, &DeadStockLog{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Create sku + product tables manually (the service query joins them).
+	db.Exec("CREATE TABLE IF NOT EXISTS sku (id INTEGER PRIMARY KEY, code TEXT, product_id INTEGER)")
+	db.Exec(`CREATE TABLE IF NOT EXISTS product (id INTEGER PRIMARY KEY, name TEXT, description TEXT,
+		category_id INTEGER, main_image TEXT,
+		package_height_cm REAL, package_width_cm REAL, package_length_cm REAL, package_weight_kg REAL)`)
+
+	db.Exec("INSERT OR IGNORE INTO sku (id, code, product_id) VALUES (1, 'SKU001', 1), (2, 'SKU002', 1), (3, 'SKU003', 2)")
+	db.Exec("INSERT OR IGNORE INTO product (id, name) VALUES (1, 'Product A'), (2, 'Product B')")
+
+	db.Create(&Inventory{SkuID: 1, Warehouse: "WH1", Quantity: 100})
+	db.Create(&Inventory{SkuID: 2, Warehouse: "WH2", Quantity: 50})
+	db.Create(&Inventory{SkuID: 3, Warehouse: "WH1", Quantity: 200})
+
+	// Only sku 1 has recent movement.
+	db.Create(&InventoryLog{SkuID: 1, ChangeType: "in", ChangeQty: 10, CreatedAt: time.Now().Add(-10 * 24 * time.Hour)})
+
+	results, err := svc.IdentifyDeadStock(context.Background(), 60)
+	if err != nil {
+		t.Fatalf("IdentifyDeadStock: %v", err)
+	}
+	_ = results
+
+	// Test dead stock log listing.
+	logs, total, err := svc.ListDeadStockLogs(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf("ListDeadStockLogs: %v", err)
+	}
+	_ = total
+	_ = logs
 }

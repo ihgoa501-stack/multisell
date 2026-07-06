@@ -18,6 +18,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		suppliers.GET("/scoreboard", h.ListScoreboard) // must be before /:id
 		suppliers.GET("/:id", h.Get)
 		suppliers.GET("/:id/score", h.GetScore)
+		suppliers.GET("/:id/score-history", h.GetScoreHistory)     // #197
+		suppliers.PUT("/:id/kpi-score", h.UpdateScoreManual)       // #197
+		suppliers.POST("/:id/score-snapshot", h.RecordScoreSnapshot) // #197
 		suppliers.POST("/:id/recalculate", h.RecalculateScore)
 		suppliers.POST("", h.Create)
 		suppliers.PUT("/:id", h.Update)

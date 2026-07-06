@@ -40,7 +40,7 @@ func (h *Handler) List(c *gin.Context) {
 // Get returns a single supplier by ID.
 // GET /api/v1/suppliers/:id
 func (h *Handler) Get(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
 		return
@@ -79,7 +79,7 @@ func (h *Handler) Create(c *gin.Context) {
 // Update updates an existing supplier.
 // PUT /api/v1/suppliers/:id
 func (h *Handler) Update(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
 		return
@@ -103,7 +103,7 @@ func (h *Handler) Update(c *gin.Context) {
 // Delete deletes a supplier.
 // DELETE /api/v1/suppliers/:id
 func (h *Handler) Delete(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
 		return
@@ -153,7 +153,7 @@ func (h *Handler) CreateProductSupplier(c *gin.Context) {
 // UpdateProductSupplier updates a product-supplier association.
 // PUT /api/v1/product-suppliers/:id
 func (h *Handler) UpdateProductSupplier(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
 		return
@@ -177,7 +177,7 @@ func (h *Handler) UpdateProductSupplier(c *gin.Context) {
 // DeleteProductSupplier deletes a product-supplier association.
 // DELETE /api/v1/product-suppliers/:id
 func (h *Handler) DeleteProductSupplier(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
 		return
@@ -196,7 +196,7 @@ func (h *Handler) DeleteProductSupplier(c *gin.Context) {
 // GetScore returns the supplier's credibility score.
 // GET /api/v1/suppliers/:id/score
 func (h *Handler) GetScore(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
 		return
@@ -218,7 +218,7 @@ func (h *Handler) GetScore(c *gin.Context) {
 // RecalculateScore triggers score recalculation from purchase order history.
 // POST /api/v1/suppliers/:id/recalculate
 func (h *Handler) RecalculateScore(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
 		return
@@ -252,7 +252,7 @@ func (h *Handler) ListScoreboard(c *gin.Context) {
 // GetSupplierComparison returns a product vs its suppliers side-by-side.
 // GET /api/v1/product-suppliers/comparison?product_id=
 func (h *Handler) GetSupplierComparison(c *gin.Context) {
-	productID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	productID, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid product id")
 		return
@@ -265,4 +265,68 @@ func (h *Handler) GetSupplierComparison(c *gin.Context) {
 	}
 
 	response.Success(c, result)
+}
+
+// ── Score History (#197) ───────────────────────────────────────────────
+
+// GetScoreHistory returns score history for a supplier.
+// GET /api/v1/suppliers/:id/score-history?limit=30
+func (h *Handler) GetScoreHistory(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
+	items, err := h.service.GetScoreHistory(c.Request.Context(), id, limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to get score history: "+err.Error())
+		return
+	}
+	if items == nil {
+		items = []SupplierScoreHistory{}
+	}
+	response.Success(c, items)
+}
+
+// UpdateScoreManual manually sets a supplier's KPI score.
+// PUT /api/v1/suppliers/:id/kpi-score
+func (h *Handler) UpdateScoreManual(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var req struct {
+		KpiScore float64 `json:"kpi_score" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	sup, err := h.service.UpdateScoreManual(c.Request.Context(), id, req.KpiScore)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			response.Error(c, http.StatusNotFound, "supplier not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, "failed to update score: "+err.Error())
+		return
+	}
+	response.Success(c, sup)
+}
+
+// RecordScoreSnapshot creates a score history snapshot.
+// POST /api/v1/suppliers/:id/score-snapshot
+func (h *Handler) RecordScoreSnapshot(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Query("product_id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.service.RecordScoreSnapshot(c.Request.Context(), id); err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to record snapshot: "+err.Error())
+		return
+	}
+	response.Success(c, gin.H{"id": id})
 }

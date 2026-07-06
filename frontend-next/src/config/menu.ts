@@ -43,6 +43,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/sku', label: 'SKU' },
       { key: '/inventory', label: '库存' },
       { key: '/suppliers', label: '供应商' },
+      { key: '/competitors', label: '竞品监控' },
       { key: '/listings', label: '刊登管理' },
       { key: '/listing-tasks', label: '刊登任务' },
       { key: '/platform-integrations', label: '平台集成', status: 'sandbox' },

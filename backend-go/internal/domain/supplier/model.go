@@ -58,6 +58,24 @@ type SupplierScore struct {
 // TableName overrides the default table name.
 func (SupplierScore) TableName() string { return "supplier_score" }
 
+// SupplierScoreHistory maps to the "supplier_score_history" table and tracks
+// score changes over time for trend analysis.
+type SupplierScoreHistory struct {
+	ID                  int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	SupplierID          int64      `gorm:"column:supplier_id;not null;index" json:"supplier_id"`
+	OnTimeDeliveryRate  float64    `gorm:"column:on_time_delivery_rate;default:0" json:"on_time_delivery_rate"`
+	QualityPassRate     float64    `gorm:"column:quality_pass_rate;default:0" json:"quality_pass_rate"`
+	CommunicationScore  float64    `gorm:"column:communication_score;default:0" json:"communication_score"`
+	OrderFulfillmentPct float64    `gorm:"column:order_fulfillment_pct;default:0" json:"order_fulfillment_pct"`
+	AvgLeadTimeDays     float64    `gorm:"column:avg_lead_time_days;default:0" json:"avg_lead_time_days"`
+	ReliabilityScore    float64    `gorm:"column:reliability_score;default:0" json:"reliability_score"`
+	Trigger             string     `gorm:"column:trigger;default:auto" json:"trigger"` // "auto" or "manual"
+	CreatedAt           time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+}
+
+// TableName overrides the default table name.
+func (SupplierScoreHistory) TableName() string { return "supplier_score_history" }
+
 // SupplierComparisonResponse is the response for product-vs-supplier comparison.
 type SupplierComparisonResponse struct {
 	ProductID   int64             `json:"product_id"`

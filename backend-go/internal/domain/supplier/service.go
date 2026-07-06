@@ -374,3 +374,64 @@ func (s *Service) GetSupplierComparison(ctx context.Context, productID int64) (*
 		Suppliers:   suppliers,
 	}, nil
 }
+
+// ── Score History (#197) ───────────────────────────────────────────────
+
+// GetScoreHistory returns the score history for a supplier, ordered by date desc.
+func (s *Service) GetScoreHistory(ctx context.Context, supplierID int64, limit int) ([]SupplierScoreHistory, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 30
+	}
+	var items []SupplierScoreHistory
+	if err := s.db.WithContext(ctx).
+		Where("supplier_id = ?", supplierID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// UpdateScoreManual manually sets a supplier's KPI score and logs a history entry.
+func (s *Service) UpdateScoreManual(ctx context.Context, supplierID int64, kpiScore float64) (*Supplier, error) {
+	sup, err := s.GetByID(ctx, supplierID)
+	if err != nil {
+		return nil, err
+	}
+
+	sup.KpiScore = kpiScore
+	if err := s.db.WithContext(ctx).Save(sup).Error; err != nil {
+		return nil, err
+	}
+
+	// Log a history entry with trigger="manual".
+	history := &SupplierScoreHistory{
+		SupplierID: supplierID,
+		Trigger:    "manual",
+	}
+	if err := s.db.WithContext(ctx).Create(history).Error; err != nil {
+		s.logger.Warn("failed to create score history entry", zap.Error(err))
+	}
+
+	return sup, nil
+}
+
+// RecordScoreSnapshot creates a score history snapshot from the current score.
+func (s *Service) RecordScoreSnapshot(ctx context.Context, supplierID int64) error {
+	score, err := s.GetScore(ctx, supplierID)
+	if err != nil {
+		return err
+	}
+	history := &SupplierScoreHistory{
+		SupplierID:          supplierID,
+		OnTimeDeliveryRate:  score.OnTimeDeliveryRate,
+		QualityPassRate:     score.QualityPassRate,
+		CommunicationScore:  score.CommunicationScore,
+		OrderFulfillmentPct: score.OrderFulfillmentPct,
+		AvgLeadTimeDays:     score.AvgLeadTimeDays,
+		ReliabilityScore:    score.ReliabilityScore,
+		Trigger:             "auto",
+	}
+	return s.db.WithContext(ctx).Create(history).Error
+}

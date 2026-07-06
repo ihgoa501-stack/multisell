@@ -1041,3 +1041,67 @@ func TestHandler_GetSupplierComparison_InvalidID(t *testing.T) {
 		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 	}
 }
+
+// =========================================================================
+//  Service Tests — Score History (#197)
+// =========================================================================
+
+func TestSupplierScoreHistory_Get(t *testing.T) {
+	svc := newService(t)
+	ctx := context.Background()
+
+	// Drop and recreate tables with full schema matching the model.
+	svc.db.Exec("DROP TABLE IF EXISTS supplier_score_history")
+	svc.db.Exec("DROP TABLE IF EXISTS supplier_score")
+	if err := svc.db.AutoMigrate(&SupplierScore{}, &SupplierScoreHistory{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+
+	sup := &Supplier{Name: "ScoreHistory Test"}
+	if err := svc.Create(ctx, sup); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Insert a score record so RecordScoreSnapshot can find it.
+	svc.db.Exec("INSERT INTO supplier_score (supplier_id, reliability_score) VALUES (?, 85.0)", sup.ID)
+
+	// Record a snapshot
+	if err := svc.RecordScoreSnapshot(ctx, sup.ID); err != nil {
+		t.Fatalf("RecordScoreSnapshot: %v", err)
+	}
+
+	// Get history
+	items, err := svc.GetScoreHistory(ctx, sup.ID, 10)
+	if err != nil {
+		t.Fatalf("GetScoreHistory: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(items))
+	}
+	if items[0].Trigger != "auto" {
+		t.Fatalf("trigger = %q, want auto", items[0].Trigger)
+	}
+}
+
+func TestSupplierScore_UpdateManual(t *testing.T) {
+	svc := newService(t)
+	ctx := context.Background()
+
+	svc.db.Exec("DROP TABLE IF EXISTS supplier_score_history")
+	if err := svc.db.AutoMigrate(&SupplierScoreHistory{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+
+	sup := &Supplier{Name: "Manual Score Test"}
+	if err := svc.Create(ctx, sup); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	updated, err := svc.UpdateScoreManual(ctx, sup.ID, 95.5)
+	if err != nil {
+		t.Fatalf("UpdateScoreManual: %v", err)
+	}
+	if updated.KpiScore != 95.5 {
+		t.Fatalf("KpiScore = %f, want 95.5", updated.KpiScore)
+	}
+}
