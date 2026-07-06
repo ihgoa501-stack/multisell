@@ -3,6 +3,7 @@ package toolbridge
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -16,6 +17,10 @@ type ToolDriver interface {
 	FetchPage(ctx context.Context, url string) (*PageData, error)
 	// Health checks if this driver is available and returns latency.
 	Health() (available bool, latency time.Duration, err error)
+	// Category returns the tool category for security classification.
+	Category() ToolCategory
+	// Execute runs the tool with the given input and returns a structured result.
+	Execute(input map[string]interface{}) (*ToolResult, error)
 }
 
 // Bridge defines the public API for fetching page data through the bridge.
@@ -32,6 +37,7 @@ type ToolBridgeOption func(*ToolBridge)
 type ToolBridge struct {
 	mu      sync.RWMutex
 	drivers []DriverEntry
+	tools   map[string]ToolDriver
 	timeout time.Duration
 	logger  *zap.Logger
 	tracker *ExternalCallTracker
@@ -129,5 +135,37 @@ func (b *ToolBridge) Route(ctx context.Context, url string) (*PageData, error) {
 	return b.FetchPage(ctx, url)
 }
 
+// RegisterTool registers a tool driver by name for use with ExecuteTool.
+// Tools are stored separately from page-fetching drivers.
+func (b *ToolBridge) RegisterTool(name string, driver ToolDriver) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.tools == nil {
+		b.tools = make(map[string]ToolDriver)
+	}
+	b.tools[name] = driver
+}
+
+// ExecuteTool runs a tool by name with the given input.
+// For mutation tools, approvalID must be non-empty in production.
+func (b *ToolBridge) ExecuteTool(name string, input map[string]interface{}, approvalID string) (*ToolResult, error) {
+	b.mu.RLock()
+	driver, ok := b.tools[name]
+	b.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", ErrToolNotRegistered, name)
+	}
+	if driver.Category() == ToolCategoryMutation && approvalID == "" {
+		return nil, ErrApprovalRequired
+	}
+	return driver.Execute(input)
+}
+
 // ErrNoDrivers is returned when FetchPage is called with no registered drivers.
 var ErrNoDrivers = errors.New("toolbridge: no drivers registered")
+
+// ErrToolNotRegistered is returned when ExecuteTool is called for an unknown tool.
+var ErrToolNotRegistered = errors.New("toolbridge: tool not registered")
+
+// ErrApprovalRequired is returned when a mutation tool is executed without approval.
+var ErrApprovalRequired = errors.New("toolbridge: mutation tool requires approval")

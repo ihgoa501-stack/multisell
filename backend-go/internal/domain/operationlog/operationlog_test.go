@@ -1,6 +1,8 @@
 package operationlog
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,5 +200,153 @@ func TestService_LogStructured_AgentActionAudit(t *testing.T) {
 	}
 	if l.ApprovalID == nil || *l.ApprovalID != 101 {
 		t.Errorf("ApprovalID = %v", l.ApprovalID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RedactSensitive tests
+// ---------------------------------------------------------------------------
+
+func TestRedactSensitive_EmptyString(t *testing.T) {
+	if got := RedactSensitive(""); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestRedactSensitive_NonJSON(t *testing.T) {
+	input := "plain text, no JSON"
+	if got := RedactSensitive(input); got != input {
+		t.Errorf("expected unchanged, got %q", got)
+	}
+}
+
+func TestRedactSensitive_PasswordField(t *testing.T) {
+	input := `{"password": "s3cret!", "name": "test"}`
+	got := RedactSensitive(input)
+	if strings.Contains(got, "s3cret!") {
+		t.Errorf("password was not redacted: %s", got)
+	}
+	if !strings.Contains(got, "***REDACTED***") {
+		t.Errorf("expected [REDACTED] marker: %s", got)
+	}
+	// Verify JSON is still valid and name is preserved
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("invalid JSON after redaction: %v", err)
+	}
+	if parsed["name"] != "test" {
+		t.Errorf("expected name=test, got %v", parsed["name"])
+	}
+}
+
+func TestRedactSensitive_APIKeyField(t *testing.T) {
+	input := `{"api_key": "sk-1234567890abcdef", "data": "hello"}`
+	got := RedactSensitive(input)
+	if strings.Contains(got, "sk-1234567890abcdef") {
+		t.Errorf("api_key was not redacted: %s", got)
+	}
+	if !strings.Contains(got, "***REDACTED***") {
+		t.Errorf("expected [REDACTED] marker: %s", got)
+	}
+}
+
+func TestRedactSensitive_TokenAndSecret(t *testing.T) {
+	input := `{"token": "abc123", "api_secret": "xyz789", "user": "admin"}`
+	got := RedactSensitive(input)
+	if strings.Contains(got, "abc123") || strings.Contains(got, "xyz789") {
+		t.Errorf("sensitive values not redacted: %s", got)
+	}
+}
+
+func TestRedactSensitive_AccessKey(t *testing.T) {
+	input := `{"access_key": "AKIA123456", "access_secret": "verysecret"}`
+	got := RedactSensitive(input)
+	if strings.Contains(got, "AKIA123456") || strings.Contains(got, "verysecret") {
+		t.Errorf("access keys not redacted: %s", got)
+	}
+}
+
+func TestRedactSensitive_JWT(t *testing.T) {
+	input := `{"jwt": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0", "sub": "123"}`
+	got := RedactSensitive(input)
+	if strings.Contains(got, "eyJhbGciOiJIUzI1NiJ9") {
+		t.Errorf("jwt was not redacted: %s", got)
+	}
+}
+
+func TestRedactSensitive_Authorization(t *testing.T) {
+	input := `{"authorization": "Bearer abc123"}`
+	got := RedactSensitive(input)
+	if strings.Contains(got, "Bearer") {
+		t.Errorf("authorization was not redacted: %s", got)
+	}
+}
+
+func TestRedactSensitive_NestedObject(t *testing.T) {
+	input := `{"outer": {"inner": {"password": "hunter2"}, "keep": "me"}}`
+	got := RedactSensitive(input)
+	if strings.Contains(got, "hunter2") {
+		t.Errorf("nested password was not redacted: %s", got)
+	}
+	if !strings.Contains(got, "me") {
+		t.Errorf("non-sensitive nested field should be preserved: %s", got)
+	}
+}
+
+func TestRedactSensitive_ArrayOfObjects(t *testing.T) {
+	input := `[{"token": "abc"}, {"name": "safe"}]`
+	got := RedactSensitive(input)
+	if strings.Contains(got, "abc") {
+		t.Errorf("token in array was not redacted: %s", got)
+	}
+	if !strings.Contains(got, "safe") {
+		t.Errorf("non-sensitive value should be preserved: %s", got)
+	}
+}
+
+func TestRedactSensitive_LogService(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &OperationLog{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	err := svc.Log("auth", "login", "1", "admin", `{"password": "hunter2", "user": "admin"}`)
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+
+	var all []OperationLog
+	db.Find(&all)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(all))
+	}
+	if strings.Contains(all[0].Content, "hunter2") {
+		t.Errorf("password was not redacted via Log: %s", all[0].Content)
+	}
+}
+
+func TestRedactSensitive_LogStructuredService(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &OperationLog{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	err := svc.LogStructured(&StructuredLogInput{
+		Module:     "auth",
+		Action:     "update_credential",
+		ResourceID: "1",
+		Operator:   "admin",
+		Content:    `{"api_key": "sk-abc123", "name": "test"}`,
+		Result:     "success",
+	})
+	if err != nil {
+		t.Fatalf("LogStructured: %v", err)
+	}
+
+	var all []OperationLog
+	db.Find(&all)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(all))
+	}
+	if strings.Contains(all[0].Content, "sk-abc123") {
+		t.Errorf("api_key was not redacted via LogStructured: %s", all[0].Content)
 	}
 }

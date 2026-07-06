@@ -15,6 +15,8 @@ type mockDriver struct {
 	data     *PageData
 	err      error
 	healthOk bool
+	category ToolCategory
+	execFn   func(map[string]interface{}) (*ToolResult, error)
 }
 
 func (m *mockDriver) FetchPage(ctx context.Context, url string) (*PageData, error) {
@@ -31,6 +33,20 @@ func (m *mockDriver) FetchPage(ctx context.Context, url string) (*PageData, erro
 
 func (m *mockDriver) Health() (available bool, latency time.Duration, err error) {
 	return m.healthOk, 0, nil
+}
+
+func (m *mockDriver) Category() ToolCategory {
+	if m.category != 0 || m.category == ToolCategoryRead {
+		return m.category
+	}
+	return ToolCategoryRead
+}
+
+func (m *mockDriver) Execute(input map[string]interface{}) (*ToolResult, error) {
+	if m.execFn != nil {
+		return m.execFn(input)
+	}
+	return &ToolResult{Success: true, Data: input}, nil
 }
 
 // TestBridgeRoutesToPreferredDriver verifies that a driver with lower weight
@@ -199,13 +215,14 @@ func TestBridgeContextCancellation(t *testing.T) {
 	}
 }
 
-// TestBridgeTimeoutPropagation verifies that a per-driver timeout works
-// correctly (timeout shorter than the driver would take).
+// TestBridgeTimeoutPropagation verifies that per-driver timeout errors are
+// propagated through the bridge.
 func TestBridgeTimeoutPropagation(t *testing.T) {
 	logger := zap.NewNop()
 
 	d := &mockDriver{
 		name: "slow",
+		err:  errors.New("driver: deadline exceeded"),
 	}
 
 	bridge := NewToolBridge([]DriverEntry{
@@ -218,7 +235,7 @@ func TestBridgeTimeoutPropagation(t *testing.T) {
 	defer cancel()
 	_, err := bridge.FetchPage(ctx, "http://example.com/product")
 	if err == nil {
-		t.Fatal("expected timeout error, got nil")
+		t.Fatal("expected error, got nil")
 	}
 }
 
@@ -251,5 +268,102 @@ func TestBridgeDriverOrdering(t *testing.T) {
 	}
 	if data.Title != "D2 Result" {
 		t.Errorf("expected data from d2 (lower weight), got title=%q", data.Title)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ExecuteTool tests — read/suggest/mutate categories
+// ---------------------------------------------------------------------------
+
+// TestExecuteTool_ReadToolSucceeds verifies that a read-category tool can be
+// executed through the bridge without an approval ID.
+func TestExecuteTool_ReadToolSucceeds(t *testing.T) {
+	logger := zap.NewNop()
+	bridge := NewToolBridge(nil, 10*time.Second, logger)
+
+	d := &mockDriver{name: "reader", category: ToolCategoryRead}
+	bridge.RegisterTool("inspect_product", d)
+
+	result, err := bridge.ExecuteTool("inspect_product", map[string]interface{}{"id": "123"}, "")
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected success")
+	}
+}
+
+// TestExecuteTool_SuggestToolSucceeds verifies that a suggestion-category tool
+// can be executed without approval.
+func TestExecuteTool_SuggestToolSucceeds(t *testing.T) {
+	logger := zap.NewNop()
+	bridge := NewToolBridge(nil, 10*time.Second, logger)
+
+	d := &mockDriver{name: "suggester", category: ToolCategorySuggestion}
+	bridge.RegisterTool("analyze_price", d)
+
+	result, err := bridge.ExecuteTool("analyze_price", map[string]interface{}{"sku": "SKU001"}, "")
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected success")
+	}
+}
+
+// TestExecuteTool_MutationRequiresApproval verifies that a mutation tool
+// without approval returns ErrApprovalRequired.
+func TestExecuteTool_MutationRequiresApproval(t *testing.T) {
+	logger := zap.NewNop()
+	bridge := NewToolBridge(nil, 10*time.Second, logger)
+
+	d := &mockDriver{name: "mutator", category: ToolCategoryMutation}
+	bridge.RegisterTool("publish_listing", d)
+
+	_, err := bridge.ExecuteTool("publish_listing", map[string]interface{}{"id": "42"}, "")
+	if err == nil {
+		t.Fatal("expected error for mutation without approval")
+	}
+	if !errors.Is(err, ErrApprovalRequired) {
+		t.Errorf("expected ErrApprovalRequired, got: %v", err)
+	}
+}
+
+// TestExecuteTool_MutationWithApprovalSucceeds verifies that a mutation tool
+// succeeds when a non-empty approvalID is provided.
+func TestExecuteTool_MutationWithApprovalSucceeds(t *testing.T) {
+	logger := zap.NewNop()
+	bridge := NewToolBridge(nil, 10*time.Second, logger)
+
+	d := &mockDriver{name: "mutator", category: ToolCategoryMutation,
+		execFn: func(input map[string]interface{}) (*ToolResult, error) {
+			return &ToolResult{Success: true, Data: map[string]interface{}{"status": "published"}}, nil
+		}}
+	bridge.RegisterTool("publish_listing", d)
+
+	result, err := bridge.ExecuteTool("publish_listing", map[string]interface{}{"id": "42"}, "approval-123")
+	if err != nil {
+		t.Fatalf("ExecuteTool with approval: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected success")
+	}
+	if result.Data["status"] != "published" {
+		t.Errorf("expected published, got %v", result.Data["status"])
+	}
+}
+
+// TestExecuteTool_UnknownTool verifies that an unregistered tool returns
+// ErrToolNotRegistered.
+func TestExecuteTool_UnknownTool(t *testing.T) {
+	logger := zap.NewNop()
+	bridge := NewToolBridge(nil, 10*time.Second, logger)
+
+	_, err := bridge.ExecuteTool("nonexistent", nil, "")
+	if err == nil {
+		t.Fatal("expected error for unknown tool")
+	}
+	if !errors.Is(err, ErrToolNotRegistered) {
+		t.Errorf("expected ErrToolNotRegistered, got: %v", err)
 	}
 }

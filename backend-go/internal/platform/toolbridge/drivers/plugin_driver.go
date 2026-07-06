@@ -129,6 +129,14 @@ func (d *PluginDriver) Health() (available bool, latency time.Duration, err erro
 	return true, time.Since(start), nil
 }
 
+// Category returns ToolCategoryRead — this driver only fetches page data.
+func (d *PluginDriver) Category() toolbridge.ToolCategory { return toolbridge.ToolCategoryRead }
+
+// Execute is not supported for page-fetching drivers.
+func (d *PluginDriver) Execute(_ map[string]interface{}) (*toolbridge.ToolResult, error) {
+	return nil, errors.New("plugin driver: Execute not supported, use FetchPage instead")
+}
+
 // HandleResponse processes an extension response and routes it to the
 // correct pending request channel. This is intended to be called by the
 // realtime layer when a browser extension sends back a fetch result.

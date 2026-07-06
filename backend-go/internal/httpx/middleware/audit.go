@@ -67,7 +67,7 @@ func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				bodySnippet = string(bodyBytes)
 				// Restore the body for downstream handlers.
 				c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-				bodySnippet = sanitizeBody(bodySnippet)
+				bodySnippet = operationlog.RedactSensitive(bodySnippet)
 			}
 		}
 
@@ -234,53 +234,4 @@ func isSensitivePath(path string, sensitivePaths []string) bool {
 		}
 	}
 	return false
-}
-
-// sensitiveFields are redacted from audit logs.
-var sensitiveFields = []string{"password", "secret", "token", "api_key", "api_secret", "credential", "access_key", "access_secret", "refresh_token", "jwt", "authorization"}
-
-// sanitizeBody redacts sensitive fields from JSON content for audit logging.
-func sanitizeBody(body string) string {
-	if body == "" {
-		return body
-	}
-	// Handle both JSON objects and arrays at the top level.
-	var raw interface{}
-	if err := json.Unmarshal([]byte(body), &raw); err != nil {
-		return body
-	}
-	redactAny(raw)
-	b, _ := json.Marshal(raw)
-	return string(b)
-}
-
-func redactNested(data map[string]interface{}) {
-	for k, v := range data {
-		redactKey(k, data)
-		redactAny(v)
-	}
-}
-
-func redactAny(v interface{}) {
-	switch val := v.(type) {
-	case map[string]interface{}:
-		redactNested(val)
-	case []interface{}:
-		for _, item := range val {
-			if m, ok := item.(map[string]interface{}); ok {
-				redactNested(m)
-			}
-		}
-	}
-
-}
-// redactKey redacts data[k] if the key matches any sensitive field pattern.
-func redactKey(k string, data map[string]interface{}) {
-	lower := strings.ToLower(k)
-	for _, sf := range sensitiveFields {
-		if strings.Contains(lower, sf) {
-			data[k] = "***REDACTED***"
-			break
-		}
-	}
 }
