@@ -66,7 +66,7 @@ export default function TrustScoresPage() {
         </div>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => recalcMut.mutate()} loading={recalcMut.isPending}>重算</Button>
-          <Button type="primary" icon={<ArrowUpOutlined />} onClick={() => upgradeMut.mutate()} loading={upgradeMut.isPending}>自动升级</Button>
+          <Button type="primary" icon={<ArrowUpOutlined />} onClick={() => upgradeMut.mutate()} loading={upgradeMut.isPending}>批量升级</Button>
         </Space>
       </Space>
 
