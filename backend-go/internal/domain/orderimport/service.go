@@ -1,6 +1,8 @@
 package orderimport
 
 import (
+	"time"
+
 	"github.com/lingmirror/backend-go/internal/common"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -214,4 +216,154 @@ func (s *Service) Summary() (*Summary, error) {
 		SuccessCount: agg.SuccessCount,
 		ErrorCount:   agg.ErrorCount,
 	}, nil
+}
+
+// SyncOrders idempotently imports orders: skips rows whose platform_order_no
+// already exists in order_import_item for the same platform.
+func (s *Service) SyncOrders(batchID int64, orders []SyncOrderInput) (*SyncResult, error) {
+	var createdCount, skippedCount, failedCount int
+	var firstErr string
+	platform := ""
+	if len(orders) > 0 {
+		platform = orders[0].Platform
+	}
+
+	for _, o := range orders {
+		// Check for existing platform_order_no
+		var existing int64
+		s.db.Model(&OrderImportItem{}).
+			Where("platform_order_no = ?", o.PlatformOrderNo).
+			Count(&existing)
+		if existing > 0 {
+			skippedCount++
+			s.db.Model(&OrderImportBatch{}).Where("id = ?", batchID).
+				UpdateColumn("skipped_duplicate_count", gorm.Expr("skipped_duplicate_count + 1"))
+			continue
+		}
+
+		item := OrderImportItem{
+			BatchID:         batchID,
+			RowNumber:       skippedCount + createdCount + failedCount + 1,
+			Platform:        o.Platform,
+			StoreName:       o.StoreName,
+			PlatformOrderNo: o.PlatformOrderNo,
+			SkuCode:         o.SkuCode,
+			Quantity:        o.Quantity,
+			UnitPrice:       o.UnitPrice,
+			Currency:        o.Currency,
+			RecipientName:   o.RecipientName,
+			RecipientPhone:  o.RecipientPhone,
+			CountryCode:     o.CountryCode,
+			ShippingAddress: o.ShippingAddress,
+			ShippingFee:     o.ShippingFee,
+			TrackingNumber:  o.TrackingNumber,
+			PaidAt:          o.PaidAt,
+			Status:          "imported",
+		}
+		if err := s.db.Create(&item).Error; err != nil {
+			failedCount++
+			if firstErr == "" {
+				firstErr = err.Error()
+			}
+			// ponytail: per-batch failure counter, no per-item rollback
+			s.db.Model(&OrderImportBatch{}).Where("id = ?", batchID).
+				UpdateColumn("failed_count", gorm.Expr("failed_count + 1"))
+			continue
+		}
+		createdCount++
+		s.db.Model(&OrderImportBatch{}).Where("id = ?", batchID).
+			UpdateColumn("created_order_count", gorm.Expr("created_order_count + 1"))
+	}
+
+	result := "success"
+	if failedCount > 0 && createdCount > 0 {
+		result = "partial"
+	} else if failedCount > 0 {
+		result = "failed"
+	}
+	now := time.Now()
+	_ = s.UpsertSyncStatus(platform, &now, result, createdCount, firstErr)
+	// ponytail: only tracks one platform; for multi-platform batches, iterate per platform
+
+	return &SyncResult{
+		Platform:       platform,
+		CreatedCount:   createdCount,
+		SkippedCount:   skippedCount,
+		FailedCount:    failedCount,
+		LastSyncResult: result,
+		ErrorMessage:   firstErr,
+	}, nil
+}
+
+// GetSyncStatus returns import sync status for all platforms.
+func (s *Service) GetSyncStatus() ([]ImportSyncStatus, error) {
+	var statuses []ImportSyncStatus
+	if err := s.db.Order("platform ASC").Find(&statuses).Error; err != nil {
+		return nil, err
+	}
+	return statuses, nil
+}
+
+// UpsertSyncStatus creates or updates the sync status for a platform.
+func (s *Service) UpsertSyncStatus(platform string, lastSyncAt *time.Time, result string, orderCount int, errMsg string) error {
+	var existing ImportSyncStatus
+	err := s.db.Where("platform = ?", platform).First(&existing).Error
+	if err == gorm.ErrRecordNotFound {
+		return s.db.Create(&ImportSyncStatus{
+			Platform:       platform,
+			LastSyncAt:     lastSyncAt,
+			LastSyncResult: result,
+			OrderCount:     orderCount,
+			ErrorMessage:   errMsg,
+		}).Error
+	}
+	if err != nil {
+		return err
+	}
+	existing.LastSyncAt = lastSyncAt
+	existing.LastSyncResult = result
+	existing.OrderCount += orderCount
+	existing.ErrorMessage = errMsg
+	return s.db.Save(&existing).Error
+}
+
+// RetryImport resets a failed batch for retry and returns the updated batch.
+func (s *Service) RetryImport(batchID int64) (*OrderImportBatch, error) {
+	var batch OrderImportBatch
+	if err := s.db.First(&batch, batchID).Error; err != nil {
+		return nil, err
+	}
+	updates := map[string]interface{}{
+		"chain_status":          "chain_pending",
+		"failed_count":          0,
+		"created_order_count":   0,
+		"skipped_duplicate_count": 0,
+	}
+
+	// Also reset associated items: mark both imported (chain-pending) and failed items for retry
+	s.db.Model(&OrderImportItem{}).Where("batch_id = ? AND status IN ?", batchID, []string{"imported", "import_failed"}).
+		UpdateColumn("status", "retry_pending")
+
+	// Reset sync status for the batch's platform
+	platform := batch.Platform
+	if platform != "" {
+		_ = s.UpsertSyncStatus(platform, nil, "retrying", 0, "")
+	}
+
+	if err := s.db.Model(&batch).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.First(&batch, batchID).Error; err != nil {
+		return nil, err
+	}
+	return &batch, nil
+}
+
+// GetBatch returns a single batch.
+func (s *Service) GetBatch(id int64) (*OrderImportBatch, error) {
+	var b OrderImportBatch
+	if err := s.db.First(&b, id).Error; err != nil {
+		return nil, err
+	}
+	return &b, nil
 }
