@@ -31,5 +31,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, bus *eventbus.Bus, aiOrch 
 
 		// External step advancement.
 		group.POST("/runs/:id/advance", h.AdvanceStep)
+
+		// Monitoring.
+		group.GET("/monitor/stats", h.GetMonitorStats)
 	}
 }

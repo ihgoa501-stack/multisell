@@ -87,4 +87,12 @@ export const menuGroups: MenuGroup[] = [
       { key: '/design-system', label: '设计系统', status: 'shell' },
     ],
   },
+  {
+    label: '工作流',
+    items: [
+      { key: '/workflow/defs', icon: 'ApartmentOutlined', label: '工作流定义' },
+      { key: '/workflow/runs', label: '运行记录' },
+      { key: '/workflow/monitor', icon: 'DashboardOutlined', label: '监控面板' },
+    ],
+  },
 ];

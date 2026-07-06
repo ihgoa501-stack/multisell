@@ -31,13 +31,20 @@ func NewDB(t testing.TB, models ...interface{}) *gorm.DB {
 	t.Helper()
 
 	n := dbCounter.Add(1)
-	dsn := fmt.Sprintf("file:test_%d?mode=memory&cache=shared", n)
+	dsn := fmt.Sprintf("file:test_%d?mode=memory&cache=shared&_journal_mode=WAL&_busy_timeout=5000", n)
 
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		t.Fatalf("dbtest: failed to open in-memory SQLite: %v", err)
+	}
+
+	// ponytail: single connection serializes writes for SQLite concurrency.
+	// PostgreSQL (production) handles concurrent writes natively.
+	sqlDB, err := db.DB()
+	if err == nil {
+		sqlDB.SetMaxOpenConns(1)
 	}
 
 	if len(models) > 0 {
