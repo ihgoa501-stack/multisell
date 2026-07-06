@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/integrationtest"
 	"github.com/lingmirror/backend-go/internal/response"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // mustJSON marshals v to a JSON string, panicking on error.
@@ -19,7 +22,9 @@ func mustJSON(v interface{}) string {
 }
 
 func TestOrderRoutes_Unauthenticated(t *testing.T) {
-	ts := integrationtest.NewTestServer(t, RegisterRoutes, &Order{}, &OrderItem{}, &OrderStatusLog{})
+	ts := integrationtest.NewTestServer(t, func(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+		RegisterRoutes(rg, db, logger, nil)
+	}, &Order{}, &OrderItem{}, &OrderStatusLog{})
 	defer ts.Close()
 
 	tests := []struct {
@@ -68,7 +73,9 @@ func TestOrderRoutes_Unauthenticated(t *testing.T) {
 }
 
 func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
-	ts := integrationtest.NewTestServer(t, RegisterRoutes, &Order{}, &OrderItem{}, &OrderStatusLog{})
+	ts := integrationtest.NewTestServer(t, func(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+		RegisterRoutes(rg, db, logger, nil)
+	}, &Order{}, &OrderItem{}, &OrderStatusLog{})
 	defer ts.Close()
 	token := ts.Login(t)
 
@@ -194,7 +201,9 @@ func TestOrderRoutes_Create_Get_Update_Delete(t *testing.T) {
 }
 
 func TestOrderRoutes_Create_InvalidInput(t *testing.T) {
-	ts := integrationtest.NewTestServer(t, RegisterRoutes, &Order{}, &OrderItem{}, &OrderStatusLog{})
+	ts := integrationtest.NewTestServer(t, func(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+		RegisterRoutes(rg, db, logger, nil)
+	}, &Order{}, &OrderItem{}, &OrderStatusLog{})
 	defer ts.Close()
 	token := ts.Login(t)
 
@@ -223,7 +232,9 @@ func TestOrderRoutes_Create_InvalidInput(t *testing.T) {
 }
 
 func TestOrderRoutes_Get_NotFound(t *testing.T) {
-	ts := integrationtest.NewTestServer(t, RegisterRoutes, &Order{}, &OrderItem{}, &OrderStatusLog{})
+	ts := integrationtest.NewTestServer(t, func(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+		RegisterRoutes(rg, db, logger, nil)
+	}, &Order{}, &OrderItem{}, &OrderStatusLog{})
 	defer ts.Close()
 	token := ts.Login(t)
 

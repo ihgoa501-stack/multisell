@@ -2,23 +2,26 @@ package platform
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
 
 // Handler handles platform & store HTTP requests.
 type Handler struct {
-	service *Service
+	service     *Service
+	approvalSvc *approval.Service
 }
 
 // NewHandler creates a new platform handler.
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, approvalSvc *approval.Service) *Handler {
+	return &Handler{service: service, approvalSvc: approvalSvc}
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -98,6 +101,32 @@ func (h *Handler) UpdatePlatform(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "platform_update",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("update platform id=%d", id),
+			Reason:      "platform update requires approval",
+			TargetType:  "platform",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "platform",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("platform update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	response.Success(c, p)
 }
 
@@ -107,6 +136,32 @@ func (h *Handler) DeletePlatform(c *gin.Context) {
 	if !ok {
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "platform_delete",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("delete platform id=%d", id),
+			Reason:      "platform deletion requires approval",
+			TargetType:  "platform",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "platform",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("platform deletion requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.DeletePlatform(id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "platform not found")
@@ -191,6 +246,32 @@ func (h *Handler) UpdateStore(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "store_update",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("update store id=%d", id),
+			Reason:      "store update requires approval",
+			TargetType:  "store",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "store",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("store update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	response.Success(c, st)
 }
 
@@ -200,6 +281,32 @@ func (h *Handler) DeleteStore(c *gin.Context) {
 	if !ok {
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "store_delete",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("delete store id=%d", id),
+			Reason:      "store deletion requires approval",
+			TargetType:  "store",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "store",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("store deletion requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.DeleteStore(id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "store not found")

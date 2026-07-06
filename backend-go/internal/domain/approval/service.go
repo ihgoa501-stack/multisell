@@ -32,6 +32,20 @@ func (s *Service) WithBus(bus *eventbus.Bus) *Service {
 	return s
 }
 
+// RequireApproval creates a pending approval request for a high-risk mutation
+// and returns the created request. The caller should NOT proceed with the
+// mutation — a human must review the request first.
+func (s *Service) RequireApproval(input *CreateApprovalInput) (*ApprovalRequest, error) {
+	if input.Requester == "" {
+		input.Requester = "system"
+	}
+	req, err := s.Create(input)
+	if err != nil {
+		return nil, fmt.Errorf("approval required: %w", err)
+	}
+	return req, nil
+}
+
 // List returns paginated approval requests with optional filters.
 func (s *Service) List(page, size int, status, requestType string) ([]ApprovalRequest, int64, error) {
 	q := s.db.Model(&ApprovalRequest{})

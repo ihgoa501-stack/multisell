@@ -2,12 +2,14 @@ package price
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/response"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -15,12 +17,13 @@ import (
 
 // Handler handles price HTTP requests.
 type Handler struct {
-	service *Service
+	service     *Service
+	approvalSvc *approval.Service
 }
 
 // NewHandler creates a new price handler.
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, approvalSvc *approval.Service) *Handler {
+	return &Handler{service: service, approvalSvc: approvalSvc}
 }
 
 // ListPrices returns a paginated list of prices.
@@ -75,6 +78,28 @@ func (h *Handler) SetPrice(c *gin.Context) {
 		operator = "system"
 	}
 
+	// ponytail: RequireApproval gates the mutation; caller must submit the approval
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			ProductID:   p.SkuID,
+			RequestType: "price_change",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("sku=%d price=%s type=%s", p.SkuID, p.Price.String(), p.PriceType),
+			Reason:      "set price requires approval",
+			TargetType:  "price",
+			TargetID:    p.SkuID,
+			RiskLevel:   "high",
+			EntityType:  "price",
+			EntityID:    p.SkuID,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("price change requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.SetPrice(c.Request.Context(), &p, operator); err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to set price: "+err.Error())
 		return
@@ -99,6 +124,32 @@ func (h *Handler) UpdatePrice(c *gin.Context) {
 	}
 	p.ID = id
 
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			ProductID:   p.SkuID,
+			RequestType: "price_change",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("update price id=%d sku=%d price=%s", id, p.SkuID, p.Price.String()),
+			Reason:      "update price requires approval",
+			TargetType:  "price",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "price",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("price update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.UpdatePrice(c.Request.Context(), &p); err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to update price: "+err.Error())
 		return
@@ -113,6 +164,31 @@ func (h *Handler) DeletePrice(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "price_delete",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("delete price id=%d", id),
+			Reason:      "delete price requires approval",
+			TargetType:  "price",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "price",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("price deletion requires approval (approval_id=%d)", apprReq.ID))
 		return
 	}
 
@@ -271,6 +347,31 @@ func (h *Handler) DeleteCompetitorPrice(c *gin.Context) {
 		return
 	}
 
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "competitor_price_delete",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("delete competitor price id=%d", id),
+			Reason:      "delete competitor price requires approval",
+			TargetType:  "competitor_price",
+			TargetID:    id,
+			RiskLevel:   "medium",
+			EntityType:  "competitor_price",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("competitor price deletion requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.DeleteCompetitorPrice(c.Request.Context(), id); err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to delete: "+err.Error())
 		return
@@ -356,6 +457,31 @@ func (h *Handler) UpdatePricingStrategy(c *gin.Context) {
 		ps.Active = *req.Active
 	}
 
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "pricing_strategy_update",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("update pricing strategy id=%d type=%s", id, req.StrategyType),
+			Reason:      "update pricing strategy requires approval",
+			TargetType:  "pricing_strategy",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "pricing_strategy",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("pricing strategy update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.SavePricingStrategy(c.Request.Context(), ps); err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to update strategy: "+err.Error())
 		return
@@ -407,6 +533,31 @@ func (h *Handler) DeletePricingStrategy(c *gin.Context) {
 		return
 	}
 
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "pricing_strategy_delete",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("delete pricing strategy id=%d", id),
+			Reason:      "delete pricing strategy requires approval",
+			TargetType:  "pricing_strategy",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "pricing_strategy",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("pricing strategy deletion requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.DeletePricingStrategy(c.Request.Context(), id); err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to delete strategy: "+err.Error())
 		return
@@ -455,6 +606,31 @@ func (h *Handler) ApplyRecommendation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "pricing_recommendation_apply",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("apply pricing recommendation id=%d", id),
+			Reason:      "applying a pricing recommendation requires approval",
+			TargetType:  "pricing_recommendation",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "pricing_recommendation",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("applying pricing recommendation requires approval (approval_id=%d)", apprReq.ID))
 		return
 	}
 
