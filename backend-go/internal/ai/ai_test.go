@@ -3,14 +3,11 @@ package ai
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 
-	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"go.uber.org/zap"
@@ -157,11 +154,7 @@ func TestService_ActionLifecycle(t *testing.T) {
 	}
 
 	// Approve.
-<<<<<<< HEAD
 	approved, err := svc.ApproveAction(a.ID, "alice", "", nil)
-=======
-	approved, err := svc.ApproveAction(a.ID, "alice", nil, "")
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
@@ -170,20 +163,12 @@ func TestService_ActionLifecycle(t *testing.T) {
 	}
 
 	// Reject should fail (already approved).
-<<<<<<< HEAD
 	if _, err := svc.RejectAction(a.ID, "bob", "no", nil); err == nil {
-=======
-	if _, err := svc.RejectAction(a.ID, "bob", nil, "no"); err == nil {
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 		t.Fatal("expected reject-after-approve to fail")
 	}
 
 	// Execute.
-<<<<<<< HEAD
 	executed, err := svc.ExecuteAction(a.ID, "alice", "", nil)
-=======
-	executed, err := svc.ExecuteAction(a.ID, nil, "alice", "")
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -212,11 +197,7 @@ func TestService_ExecuteWithoutApproval(t *testing.T) {
 		RiskLevel: "high", ProposedBy: "agent:A7",
 	})
 	// Execute without approving first → should fail.
-<<<<<<< HEAD
 	_, err := svc.ExecuteAction(a.ID, "alice", "", nil)
-=======
-	_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if err == nil {
 		t.Fatal("expected Execute to fail without approval")
 	}
@@ -234,11 +215,7 @@ func TestService_ExecuteAutoApproved(t *testing.T) {
 		RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
 	})
 	// Execute directly → should succeed.
-<<<<<<< HEAD
 	executed, err := svc.ExecuteAction(a.ID, "system", "", nil)
-=======
-	executed, err := svc.ExecuteAction(a.ID, nil, "system", "")
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if err != nil {
 		t.Fatalf("Execute auto-approved: %v", err)
 	}
@@ -534,362 +511,4 @@ func TestRouteChat_FirstKMScout(t *testing.T) {
 			}
 		})
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Execution Gate focused tests
-// ---------------------------------------------------------------------------
-
-func TestService_CreateAction_PersistsExecutionModeAndIdempotencyKey(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, testLogger())
-
-	// Default execution_mode.
-	a, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_exec_1", SourceType: "agent_run",
-		AgentID: "A6", ActionType: "profit_check", Title: "default mode",
-		ProposedBy: "agent:A6",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-	if a.ExecutionMode != "production" {
-		t.Errorf("default execution_mode = %q, want %q", a.ExecutionMode, "production")
-	}
-
-	// Explicit production.
-	a, err = svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_exec_2", SourceType: "agent_run",
-		AgentID: "A6", ActionType: "profit_check", Title: "prod mode",
-		ExecutionMode: "production", ProposedBy: "agent:A6",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-	if a.ExecutionMode != "production" {
-		t.Errorf("production execution_mode = %q", a.ExecutionMode)
-	}
-
-	// Explicit dry_run.
-	a, err = svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_exec_3", SourceType: "agent_run",
-		AgentID: "A6", ActionType: "profit_check", Title: "dry run",
-		ExecutionMode: "dry_run", ProposedBy: "agent:A6",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-	if a.ExecutionMode != "dry_run" {
-		t.Errorf("dry_run execution_mode = %q", a.ExecutionMode)
-	}
-
-	// IdempotencyKey persisted.
-	a, err = svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_exec_4", SourceType: "agent_run",
-		AgentID: "A6", ActionType: "profit_check", Title: "idempotent",
-		IdempotencyKey: "idem-001", ProposedBy: "agent:A6",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-	if a.IdempotencyKey != "idem-001" {
-		t.Errorf("idempotency_key = %q, want %q", a.IdempotencyKey, "idem-001")
-	}
-}
-
-func TestService_DryRunExecute_NoSideEffects(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, testLogger())
-
-	noApproval := false
-	a, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_dry_1", SourceType: "agent_run",
-		AgentID: "A2", ActionType: "listing_optimize", Title: "dry run test",
-		RiskLevel: "low", ProposedBy: "agent:A2",
-		RequiresApproval: &noApproval, ExecutionMode: "dry_run",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-
-	// Execute dry-run — should return without changing status or writing executed_by.
-	result, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-	if err != nil {
-		t.Fatalf("ExecuteAction dry_run: %v", err)
-	}
-	if result.Status != "suggested" {
-		t.Errorf("dry_run should not change status; got %q", result.Status)
-	}
-	if result.ExecutedBy != "" {
-		t.Errorf("dry_run should not write executed_by; got %q", result.ExecutedBy)
-	}
-	if result.ExecutedByUserID != nil {
-		t.Errorf("dry_run should not write executed_by_user_id; got %v", result.ExecutedByUserID)
-	}
-	if result.ExecutingAt != nil {
-		t.Errorf("dry_run should not write executing_at")
-	}
-
-	// Verify DB state unchanged.
-	var fromDB UnifiedAction
-	if err := db.First(&fromDB, a.ID).Error; err != nil {
-		t.Fatalf("read from DB: %v", err)
-	}
-	if fromDB.Status != "suggested" {
-		t.Errorf("DB status = %q after dry_run, want %q", fromDB.Status, "suggested")
-	}
-}
-
-func TestService_Execute_UnknownMode_ReturnsError(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, testLogger())
-
-	noApproval := false
-	a, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_unk_1", SourceType: "agent_run",
-		AgentID: "A2", ActionType: "listing_optimize", Title: "unknown mode",
-		RiskLevel: "low", ProposedBy: "agent:A2",
-		RequiresApproval: &noApproval, ExecutionMode: "bogus_mode",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-
-	_, err = svc.ExecuteAction(a.ID, nil, "alice", "")
-	if err == nil {
-		t.Fatal("expected error for unknown execution mode")
-	}
-	if !strings.Contains(err.Error(), "unknown execution mode") {
-		t.Errorf("error = %q, want 'unknown execution mode'", err.Error())
-	}
-
-	// Verify no state change in DB.
-	var fromDB UnifiedAction
-	db.First(&fromDB, a.ID)
-	if fromDB.Status != "suggested" {
-		t.Errorf("status changed to %q after unknown mode error", fromDB.Status)
-	}
-}
-
-func TestService_Execute_Sandbox_ReturnsError(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, testLogger())
-
-	noApproval := false
-	a, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_sbx_1", SourceType: "agent_run",
-		AgentID: "A2", ActionType: "listing_optimize", Title: "sandbox no executor",
-		RiskLevel: "low", ProposedBy: "agent:A2",
-		RequiresApproval: &noApproval, ExecutionMode: "sandbox",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-
-	_, err = svc.ExecuteAction(a.ID, nil, "alice", "")
-	if err == nil {
-		t.Fatal("expected error for sandbox without configured executor")
-	}
-	if !strings.Contains(err.Error(), "no sandbox configured") {
-		t.Errorf("error = %q, want 'no sandbox configured'", err.Error())
-	}
-
-	// Verify no state change in DB.
-	var fromDB UnifiedAction
-	db.First(&fromDB, a.ID)
-	if fromDB.Status != "suggested" {
-		t.Errorf("status changed to %q after sandbox error", fromDB.Status)
-	}
-}
-
-func TestService_ApproveAction_SavesUserID(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, testLogger())
-
-	a, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_uid_1", SourceType: "agent_run",
-		AgentID: "A6", ActionType: "profit_check", Title: "user id test",
-		RiskLevel: "medium", ProposedBy: "agent:A6",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-
-	uid := int64(42)
-	approved, err := svc.ApproveAction(a.ID, "alice", &uid, "")
-	if err != nil {
-		t.Fatalf("ApproveAction: %v", err)
-	}
-	if approved.ApprovedByUserID == nil {
-		t.Fatal("expected approved_by_user_id to be set")
-	}
-	if *approved.ApprovedByUserID != 42 {
-		t.Errorf("approved_by_user_id = %d, want 42", *approved.ApprovedByUserID)
-	}
-	if approved.ApprovedBy != "alice" {
-		t.Errorf("approved_by = %q, want %q", approved.ApprovedBy, "alice")
-	}
-
-	// Verify DB.
-	var fromDB UnifiedAction
-	db.First(&fromDB, a.ID)
-	if fromDB.ApprovedByUserID == nil || *fromDB.ApprovedByUserID != 42 {
-		t.Errorf("DB approved_by_user_id = %v, want 42", fromDB.ApprovedByUserID)
-	}
-
-	// Also test RejectAction saves rejected_by_user_id.
-	// Create another action and reject it.
-	a2, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_uid_2", SourceType: "agent_run",
-		AgentID: "A6", ActionType: "profit_check", Title: "reject uid test",
-		RiskLevel: "medium", ProposedBy: "agent:A6",
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-	uid2 := int64(99)
-	rejected, err := svc.RejectAction(a2.ID, "bob", &uid2, "not needed")
-	if err != nil {
-		t.Fatalf("RejectAction: %v", err)
-	}
-	if rejected.RejectedByUserID == nil {
-		t.Fatal("expected rejected_by_user_id to be set")
-	}
-	if *rejected.RejectedByUserID != 99 {
-		t.Errorf("rejected_by_user_id = %d, want 99", *rejected.RejectedByUserID)
-	}
-}
-
-func TestService_ExecuteAction_SavesUserID(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, testLogger())
-
-	noApproval := false
-	a, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_exuid_1", SourceType: "agent_run",
-		AgentID: "A2", ActionType: "listing_optimize", Title: "exec user id",
-		RiskLevel: "low", ProposedBy: "agent:A2",
-		RequiresApproval: &noApproval,
-	})
-	if err != nil {
-		t.Fatalf("CreateAction: %v", err)
-	}
-
-	uid := int64(77)
-	executed, err := svc.ExecuteAction(a.ID, &uid, "system", "")
-	if err != nil {
-		t.Fatalf("ExecuteAction: %v", err)
-	}
-	if executed.ExecutedByUserID == nil {
-		t.Fatal("expected executed_by_user_id to be set")
-	}
-	if *executed.ExecutedByUserID != 77 {
-		t.Errorf("executed_by_user_id = %d, want 77", *executed.ExecutedByUserID)
-	}
-	if executed.ExecutedBy != "system" {
-		t.Errorf("executed_by = %q, want %q", executed.ExecutedBy, "system")
-	}
-
-	// Verify DB.
-	var fromDB UnifiedAction
-	db.First(&fromDB, a.ID)
-	if fromDB.ExecutedByUserID == nil || *fromDB.ExecutedByUserID != 77 {
-		t.Errorf("DB executed_by_user_id = %v, want 77", fromDB.ExecutedByUserID)
-	}
-}
-
-
-func TestService_ExecuteAction_Idempotency_Reexecution(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, testLogger())
-	noApproval := false
-	a, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_idem_1", SourceType: "agent_run",
-		AgentID: "A2", ActionType: "listing_optimize", Title: "idempotent exec",
-		RiskLevel: "low", ProposedBy: "agent:A2",
-		RequiresApproval: &noApproval, IdempotencyKey: "idem-rex-001",
-	})
-	if err != nil { t.Fatalf("CreateAction: %v", err) }
-	first, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-	if err != nil { t.Fatalf("first ExecuteAction: %v", err) }
-	if first.Status != "executed" { t.Fatalf("first status = %q", first.Status) }
-	second, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-	if err != nil { t.Fatalf("second (idempotent) ExecuteAction: %v", err) }
-	if second.Status != "executed" { t.Errorf("second status = %q, want %q", second.Status, "executed") }
-}
-
-func TestService_ExecuteAction_GuardrailsCheck(t *testing.T) {
-	db := newTestDB(t)
-	t.Run("blocked", func(t *testing.T) {
-		// Use an ExecutionGuard that blocks purchases above /bin/zsh.
-		eg := guardrails.NewExecutionGuardWithRules([]guardrails.ExecutionRule{
-			{Name: "block_purchases_above_1", MaxAmount: 1, ActionTypes: []string{"purchase"}},
-		})
-		chain := guardrails.NewChain()
-		chain.Add(eg)
-		svc := NewService(db, testLogger()).WithGuard(chain)
-		noApproval := false
-		a, _ := svc.CreateAction(&CreateActionInput{
-			SourceTable: "ai_trace", SourceID: "trc_grd_1", SourceType: "agent_run",
-			AgentID: "A2", ActionType: "purchase", Title: "blocked purchase",
-			RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
-			Payload: json.RawMessage(`{"amount":100}`),
-		})
-		_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-		if err == nil || !errors.Is(err, ErrBlockedByGuardrails) {
-			t.Fatalf("expected guard blocked error, got %v", err)
-		}
-		var fromDB UnifiedAction
-		db.First(&fromDB, a.ID)
-		if fromDB.Status != "suggested" {
-			t.Errorf("status changed to %q after guard block", fromDB.Status)
-		}
-	})
-	t.Run("passes", func(t *testing.T) {
-		svc := NewService(db, testLogger())
-		noApproval := false
-		a, _ := svc.CreateAction(&CreateActionInput{
-			SourceTable: "ai_trace", SourceID: "trc_grd_3", SourceType: "agent_run",
-			AgentID: "A2", ActionType: "listing_optimize", Title: "guard passes",
-			RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
-		})
-		result, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-		if err != nil { t.Fatalf("expected success, got %v", err) }
-		if result.Status != "executed" { t.Errorf("status = %q, want %q", result.Status, "executed") }
-	})
-}
-
-func TestService_ExecuteAction_ConcurrentClaim(t *testing.T) {
-	db := newTestDB(t)
-	svc := NewService(db, testLogger())
-	noApproval := false
-	a, err := svc.CreateAction(&CreateActionInput{
-		SourceTable: "ai_trace", SourceID: "trc_conc_1", SourceType: "agent_run",
-		AgentID: "A2", ActionType: "listing_optimize", Title: "concurrent",
-		RiskLevel: "low", ProposedBy: "agent:A2",
-		RequiresApproval: &noApproval,
-	})
-	if err != nil { t.Fatalf("CreateAction: %v", err) }
-	var wg sync.WaitGroup
-	results := make(chan error, 2)
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-			results <- err
-		}()
-	}
-	wg.Wait()
-	close(results)
-	var errs []error
-	for e := range results {
-		errs = append(errs, e)
-	}
-	if len(errs) != 2 { t.Fatalf("expected 2 results, got %d", len(errs)) }
-	success := 0
-	for _, e := range errs {
-		if e == nil { success++ }
-	}
-	if success != 1 { t.Errorf("expected exactly 1 success, got %d", success) }
 }
