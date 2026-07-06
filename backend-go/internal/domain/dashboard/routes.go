@@ -18,5 +18,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		group.GET("/inventory", h.Inventory)
 		group.GET("/exceptions", h.Exceptions)
 		group.GET("/rejection-reasons", h.RejectionReasons)
+		group.GET("/brief", h.DailyBrief)
 	}
 }

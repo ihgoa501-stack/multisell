@@ -3,6 +3,7 @@ package profit
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
@@ -191,13 +192,23 @@ func (s *Service) calculateTariff(prod *candidate.CandidateProduct) float64 {
 	return (prod.PurchasePrice / s.getCNYRate()) * 0.05
 }
 
-// ListSummaries returns paginated profit summaries with optional status filter.
-func (s *Service) ListSummaries(page, size int, status string) ([]ProfitSummary, int64, error) {
+// ListSummaries returns paginated profit summaries with optional status and date range filters.
+func (s *Service) ListSummaries(page, size int, status string, startDate, endDate string) ([]ProfitSummary, int64, error) {
 	var items []ProfitSummary
 	var total int64
 	q := s.db.Model(&ProfitSummary{})
 	if status != "" {
 		q = q.Where("status = ?", status)
+	}
+	if startDate != "" {
+		if t, err := time.Parse("2006-01-02", startDate); err == nil {
+			q = q.Where("created_at >= ?", t)
+		}
+	}
+	if endDate != "" {
+		if t, err := time.Parse("2006-01-02", endDate); err == nil {
+			q = q.Where("created_at < ?", t.AddDate(0, 0, 1))
+		}
 	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err

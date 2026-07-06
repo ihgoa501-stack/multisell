@@ -81,3 +81,60 @@ func monthRange(t time.Time) (time.Time, time.Time) {
 	end := start.AddDate(0, 1, 0)
 	return start, end
 }
+
+// DailyBrief is the seller's daily workspace payload (single composite endpoint).
+type DailyBrief struct {
+	TodayProfit       float64 `json:"today_profit"`
+	TodayRevenue      float64 `json:"today_revenue"`
+	MonthProfit       float64 `json:"month_profit"`
+	MonthRevenue      float64 `json:"month_revenue"`
+	MonthCost         float64 `json:"month_cost"`
+
+	OpenExceptionCount     int64 `json:"open_exception_count"`
+	LowStockCount          int64 `json:"low_stock_count"`
+	OutOfStockCount        int64 `json:"out_of_stock_count"`
+	NegativeMarginCount    int64 `json:"negative_margin_count"`
+	PendingSupportCount    int64 `json:"pending_support_count"`
+	PendingAftersalesCount int64 `json:"pending_aftersales_count"`
+
+	LowStockSkus       []LowStockSkuBrief       `json:"low_stock_skus"`
+	NegativeMarginSkus []NegativeMarginSkuBrief `json:"negative_margin_skus"`
+	RecentExceptions   []ExceptionBrief         `json:"recent_exceptions"`
+	UrgentConversations []UrgentConversationBrief `json:"urgent_conversations"`
+	PlatformConnections []PlatformConnectionStatus `json:"platform_connections"`
+}
+
+type LowStockSkuBrief struct {
+	SkuID        int64  `json:"sku_id"`
+	ProductID    int64  `json:"product_id"`
+	Code         string `json:"code"`
+	SpecDesc     string `json:"spec_desc"`
+	Stock        int    `json:"stock"`
+	WarningStock int    `json:"warning_stock"`
+}
+
+type NegativeMarginSkuBrief struct {
+	ProductID       int64   `json:"product_id"`
+	SkuCode         string  `json:"sku_code"`
+	Title           string  `json:"title"`
+	ProfitMargin    float64 `json:"profit_margin"`
+	EstimatedProfit float64 `json:"estimated_profit"`
+}
+
+type ExceptionBrief struct {
+	ID           int64  `json:"id"`
+	Severity     string `json:"severity"`
+	SourceModule string `json:"source_module"`
+	Message      string `json:"message"`
+	Status       string `json:"status"`
+	CreatedAt    string `json:"created_at"`
+}
+
+type UrgentConversationBrief struct {
+	ID            int64   `json:"id"`
+	CustomerName  string  `json:"customer_name"`
+	Subject       string  `json:"subject"`
+	Priority      string  `json:"priority"`
+	Platform      string  `json:"platform"`
+	LastMessageAt *string `json:"last_message_at,omitempty"`
+}

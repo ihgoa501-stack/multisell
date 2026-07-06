@@ -14,7 +14,7 @@ func TestService_ListSummaries(t *testing.T) {
 	db.Create(&ProfitSummary{ProductID: 1, Status: "profitable", EstimatedProfit: 25.0, ProfitMargin: 20.0})
 	db.Create(&ProfitSummary{ProductID: 2, Status: "unprofitable", EstimatedProfit: -5.0, ProfitMargin: -5.0})
 
-	items, total, err := svc.ListSummaries(1, 10, "")
+	items, total, err := svc.ListSummaries(1, 10, "", "", "")
 	if err != nil {
 		t.Fatalf("ListSummaries: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestService_ListSummaries_Filtered(t *testing.T) {
 	db.Create(&ProfitSummary{ProductID: 1, Status: "profitable"})
 	db.Create(&ProfitSummary{ProductID: 2, Status: "unprofitable"})
 
-	items, total, err := svc.ListSummaries(1, 10, "profitable")
+	items, total, err := svc.ListSummaries(1, 10, "profitable", "", "")
 	if err != nil {
 		t.Fatalf("ListSummaries: %v", err)
 	}
