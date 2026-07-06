@@ -1,8 +1,8 @@
 # API 快速参考 (API Quick Reference)
 
 > 凌镜 LingMirror API 路由、权限和响应格式速查
-> 更新日期: 2026-06-30
-> 完整清单: [API 端点清单](../api-inventory.md)
+> 更新日期: 2026-07-06
+> 完整清单: [API 端点清单](api-inventory.md)
 
 ---
 

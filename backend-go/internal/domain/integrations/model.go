@@ -28,6 +28,7 @@ type PlatformIntegrationAccount struct {
 	Status          string          `gorm:"column:status;default:active" json:"status"`
 	LastSyncAt      *time.Time      `gorm:"column:last_sync_at" json:"last_sync_at,omitempty"`
 	SyncStatus      string          `gorm:"column:sync_status;default:idle" json:"sync_status"`
+	ExecutionMode   int8            `gorm:"column:execution_mode;default:0" json:"execution_mode"`
 	LastError       string          `gorm:"column:last_error" json:"last_error"`
 	Config          json.RawMessage `gorm:"column:config;type:jsonb" json:"config,omitempty"`
 	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
@@ -178,3 +179,20 @@ type TestConnectionResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 }
+
+// WriteBackRecord persists write-back attempts for audit and retry.
+type WriteBackRecord struct {
+	ID          uint      `gorm:"primaryKey"`
+	ReferenceID string    `gorm:"uniqueIndex;size:64"`
+	AccountID   int64     `gorm:"not null;index"`
+	Action      string    `gorm:"size:50;not null"`
+	Payload     string    `gorm:"type:text"`
+	Status      string    `gorm:"size:20;default:pending"` // pending, success, failed
+	Result      string    `gorm:"type:text"`
+	Error       string    `gorm:"type:text"`
+	RetryCount  int       `gorm:"default:0"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (WriteBackRecord) TableName() string { return "write_back_record" }

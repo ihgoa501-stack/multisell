@@ -91,6 +91,7 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '工作流',
     items: [
+      { key: '/workflows', icon: 'ApartmentOutlined', label: '工作流管理' },
       { key: '/workflow/defs', icon: 'ApartmentOutlined', label: '工作流定义' },
       { key: '/workflow/runs', label: '运行记录' },
       { key: '/workflow/monitor', icon: 'DashboardOutlined', label: '监控面板' },

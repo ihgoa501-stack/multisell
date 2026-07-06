@@ -21,6 +21,20 @@ type DashboardOverview struct {
 	PlatformConnections []PlatformConnectionStatus `json:"platform_connections"`
 	// Agent status summary
 	AgentStatuses       []AgentStatusEntry         `json:"agent_statuses"`
+
+	// M6 — Owner KPIs
+	TodaySales        float64       `json:"today_sales"`
+	PendingApprovals  int64         `json:"pending_approvals"`
+	AgentSuggestions  int64         `json:"agent_suggestions"`
+	RecentAlerts      []AlertBrief  `json:"recent_alerts"`
+}
+
+// AlertBrief is one entry in the recent alerts list.
+type AlertBrief struct {
+	ID        int64  `json:"id"`
+	Severity  string `json:"severity"`
+	Title     string `json:"title"`
+	CreatedAt string `json:"created_at"`
 }
 
 // PlatformConnectionStatus shows one connected platform account.

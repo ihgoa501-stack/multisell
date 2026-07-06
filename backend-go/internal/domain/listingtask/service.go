@@ -132,6 +132,92 @@ func (s *Service) Create(in *CreateTaskInput) (*ListingTask, error) {
 	return &t, nil
 }
 
+// CreateFromSuggestion creates a controlled listing task from a candidate suggestion.
+// It validates the candidate exists, requires approval, creates the task with
+// pending_approval status, and writes an audit log.
+func (s *Service) CreateFromSuggestion(candidateID uint, operator string) (*ListingTask, error) {
+	// 1. Look up candidate product.
+	type candidateRow struct {
+		ID                 int64
+		Title              string
+		PurchasePrice      float64
+		TargetSalePrice    float64
+		TargetPlatformID   *int64
+		DestinationCountry string
+	}
+	var row candidateRow
+	if err := s.db.Table("candidate_product").
+		Select("id, title, purchase_price, target_sale_price, target_platform_id, destination_country").
+		Where("id = ?", candidateID).Scan(&row).Error; err != nil {
+		return nil, fmt.Errorf("candidate lookup failed: %w", err)
+	}
+	if row.ID == 0 {
+		return nil, fmt.Errorf("candidate %d not found", candidateID)
+	}
+
+	// 2. Build decision snapshot from candidate data.
+	snapshot := map[string]interface{}{
+		"candidate_id":      candidateID,
+		"title":             row.Title,
+		"purchase_price":    row.PurchasePrice,
+		"target_sale_price": row.TargetSalePrice,
+		"source":            "suggestion",
+	}
+	snapshotBytes, _ := json.Marshal(snapshot)
+
+	// 3. Require approval via the approval service.
+	if s.approvalSvc == nil {
+		return nil, errors.New("approval service not configured")
+	}
+	apprReq, err := s.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+		ProductID:   int64(candidateID),
+		RequestType: "listing_task",
+		Requester:   operator,
+		NewValue:    fmt.Sprintf("create listing task from candidate %d", candidateID),
+		Reason:      "listing task creation requires owner approval",
+		TargetType:  "candidate",
+		TargetID:    int64(candidateID),
+		RiskLevel:   "high",
+		EntityType:  "listing_task",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("approval required: %w", err)
+	}
+
+	// 4. Create listing task with pending_approval status.
+	platformID := int64(0)
+	if row.TargetPlatformID != nil {
+		platformID = *row.TargetPlatformID
+	}
+	task := ListingTask{
+		ProductID:          int64(candidateID),
+		PlatformID:         platformID,
+		SourceType:         "suggestion",
+		SourceItemKey:      fmt.Sprintf("candidate:%d", candidateID),
+		Status:             "pending_approval",
+		DecisionSnapshot:   snapshotBytes,
+		TargetSalePrice:    &row.TargetSalePrice,
+		DestinationCountry: row.DestinationCountry,
+		ApprovalID:         &apprReq.ID,
+		CreatedBy:          operator,
+	}
+	if err := s.db.Create(&task).Error; err != nil {
+		return nil, err
+	}
+
+	// Update the approval entity ID now that the task exists.
+	s.db.Model(&approval.ApprovalRequest{}).Where("id = ?", apprReq.ID).
+		Update("entity_id", task.ID)
+
+	// 5. Write audit log.
+	s.writeAudit("listing_task.create_from_suggestion", "success",
+		fmt.Sprintf("%d", task.ID), operator,
+		fmt.Sprintf("candidate_id=%d listing_task_id=%d platform_id=%d", candidateID, task.ID, task.PlatformID),
+		&task)
+
+	return &task, nil
+}
+
 // Update patches a listing task by id.
 func (s *Service) Update(id int64, in *UpdateTaskInput) (*ListingTask, error) {
 	var t ListingTask
@@ -496,7 +582,75 @@ func (s *Service) statusChangeAudit(taskID int64, oldStatus, newStatus, operator
 	})
 }
 
-// ---------- Listing publish chain ----------
+// ---------- Review ----------
+
+// ReviewTask returns a review of the listing task: whether it was published,
+// any platform errors, and expected vs actual profit.
+func (s *Service) ReviewTask(taskID int64) (*TaskReview, error) {
+	var task ListingTask
+	if err := s.db.First(&task, taskID).Error; err != nil {
+		return nil, err
+	}
+
+	review := &TaskReview{
+		TaskID:    uint(task.ID),
+		Published: task.Status == "completed" && task.LastError == "",
+		Status:    task.Status,
+		CreatedAt: task.CreatedAt,
+	}
+
+	// Platform name
+	var plat platform.Platform
+	if err := s.db.First(&plat, task.PlatformID).Error; err == nil {
+		review.Platform = plat.Code
+	}
+
+	// Platform errors from task items
+	var items []ListingTaskItem
+	s.db.Where("task_id = ? AND error_message != ''", taskID).Find(&items)
+	for _, item := range items {
+		if item.ErrorMessage != "" {
+			review.PlatformErrors = append(review.PlatformErrors, item.ErrorMessage)
+		}
+	}
+	if len(review.PlatformErrors) == 0 {
+		review.PlatformErrors = nil
+	}
+
+	// Expected profit/margin from task target fields
+	if task.TargetProfitMargin != nil {
+		review.MarginExpected = task.TargetProfitMargin
+	}
+	if task.TargetSalePrice != nil && task.TargetProfitMargin != nil {
+		pe := *task.TargetSalePrice * *task.TargetProfitMargin
+		review.ProfitExpected = &pe
+	}
+
+	// Actual profit from orders (sales_order_item → sales_order)
+	type orderProfit struct {
+		ProfitAmount float64
+		ProfitMargin float64
+	}
+	var orders []orderProfit
+	s.db.Table("sales_order_item").
+		Select("so.profit_amount, so.profit_margin").
+		Joins("JOIN sales_order so ON so.id = sales_order_item.order_id").
+		Where("sales_order_item.product_id = ? AND so.platform_id = ?", task.ProductID, task.PlatformID).
+		Scan(&orders)
+	if len(orders) > 0 {
+		var totalProfit, totalMargin float64
+		for _, o := range orders {
+			totalProfit += o.ProfitAmount
+			totalMargin += o.ProfitMargin
+		}
+		pa := totalProfit
+		ma := totalMargin / float64(len(orders))
+		review.ProfitActual = &pa
+		review.MarginActual = &ma
+	}
+
+	return review, nil
+}
 
 // ExecuteTask triggers execution of a listing task after passing the execution gate.
 //

@@ -52,3 +52,20 @@ func (h *Handler) ListSummaries(c *gin.Context) {
 	}
 	response.Paginated(c, items, total, p.Page, p.Size)
 }
+
+// CalculateOrderProfit POST /profit/order/:orderId/calculate
+func (h *Handler) CalculateOrderProfit(c *gin.Context) {
+	orderIDStr := c.Param("orderId")
+	orderID, err := strconv.ParseUint(orderIDStr, 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid orderId")
+		return
+	}
+
+	result, err := h.service.CalculateOrderProfit(c.Request.Context(), uint(orderID))
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, result)
+}

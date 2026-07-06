@@ -2,14 +2,15 @@ package price
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers price routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service) {
 	svc := NewService(db, logger)
-	h := NewHandler(svc)
+	h := NewHandler(svc, approvalSvc)
 
 	// Price CRUD routes
 	prices := rg.Group("/prices")

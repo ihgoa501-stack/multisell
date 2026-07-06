@@ -39,6 +39,26 @@ func (h *Handler) Check(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// CheckEnhanced POST /candidates/:id/completeness
+func (h *Handler) CheckEnhanced(c *gin.Context) {
+	idStr := c.Param("id")
+	productID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid candidate id")
+		return
+	}
+
+	var in CheckInput
+	c.ShouldBindJSON(&in)
+
+	result, err := h.service.CheckEnhanced(productID, in.TriggeredBy)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
 // ListChecks GET /completeness/checks
 func (h *Handler) ListChecks(c *gin.Context) {
 	p := common.ParsePagination(c)

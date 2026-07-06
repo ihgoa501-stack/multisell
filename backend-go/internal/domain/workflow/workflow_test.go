@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -428,5 +429,387 @@ func TestGetMonitorStats(t *testing.T) {
 	stats, _ = e.GetMonitorStats(context.Background())
 	if stats.TotalRuns != 1 {
 		t.Errorf("expected 1 total run, got %d", stats.TotalRuns)
+	}
+}
+
+// ── M5.2: Node CRUD tests ──────────────────────────────────────────────
+
+func TestCreateAndListNode(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowNode{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{Name: "node-test", Steps: "[]"}
+	if err := e.CreateDef(context.Background(), def); err != nil {
+		t.Fatalf("CreateDef: %v", err)
+	}
+
+	node := &WorkflowNode{
+		WorkflowID: uint(def.ID),
+		Type:       "approval",
+		Config:     json.RawMessage(`{"timeout_seconds":300}`),
+		OrderIndex: 0,
+	}
+	if err := e.CreateNode(context.Background(), node); err != nil {
+		t.Fatalf("CreateNode: %v", err)
+	}
+	if node.ID == 0 {
+		t.Fatal("expected non-zero node ID")
+	}
+
+	nodes, err := e.ListNodes(context.Background(), uint(def.ID))
+	if err != nil {
+		t.Fatalf("ListNodes: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Errorf("expected 1 node, got %d", len(nodes))
+	}
+	if nodes[0].Type != "approval" {
+		t.Errorf("expected type 'approval', got '%s'", nodes[0].Type)
+	}
+}
+
+func TestListNodesForEmptyWorkflow(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowNode{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	nodes, err := e.ListNodes(context.Background(), 999)
+	if err != nil {
+		t.Fatalf("ListNodes: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Errorf("expected 0 nodes for non-existent workflow, got %d", len(nodes))
+	}
+}
+
+// ── M5.2: Condition step execution tests ──────────────────────────────
+
+func TestExecCondition(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{
+		Name:  "cond-exec-test",
+		Steps: `[{"name":"s1","type":"agent","timeout_seconds":1},{"name":"s2","type":"condition","condition":"$steps.s1.status == \"completed\"","timeout_seconds":1},{"name":"s3","type":"condition","condition":"$steps.s1.status == \"failed\"","timeout_seconds":1}]`,
+	}
+	e.CreateDef(context.Background(), def)
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+	<-time.After(200 * time.Millisecond)
+
+	var sr2, sr3 WorkflowStepRun
+	db.Where("workflow_run_id = ? AND step_name = ?", run.ID, "s2").First(&sr2)
+	db.Where("workflow_run_id = ? AND step_name = ?", run.ID, "s3").First(&sr3)
+
+	if sr2.Status != StepStatusCompleted {
+		t.Errorf("expected s2 to complete (condition true), got %s", sr2.Status)
+	}
+	if sr3.Status != StepStatusSkipped {
+		t.Errorf("expected s3 to be skipped (condition false), got %s", sr3.Status)
+	}
+
+	var final WorkflowRun
+	db.First(&final, run.ID)
+	if final.Status != RunStatusCompleted {
+		t.Errorf("expected run completed, got %s", final.Status)
+	}
+}
+
+// ── M5.2: Approval step execution tests ──────────────────────────────
+
+func TestApprovalApprove(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{
+		Name:  "approve-test",
+		Steps: `[{"name":"ask","type":"approval","timeout_seconds":5},{"name":"done","type":"agent","timeout_seconds":1}]`,
+	}
+	e.CreateDef(context.Background(), def)
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+
+	// approval step should be pending — signal approval.
+	<-time.After(50 * time.Millisecond)
+	if err := e.ApproveStep(context.Background(), run.ID, "ask", "admin", "looks good"); err != nil {
+		t.Fatalf("ApproveStep: %v", err)
+	}
+	<-time.After(50 * time.Millisecond)
+
+	var final WorkflowRun
+	db.First(&final, run.ID)
+	if final.Status != RunStatusCompleted {
+		t.Errorf("expected completed after approval, got %s", final.Status)
+	}
+}
+
+func TestApprovalReject(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{
+		Name:  "reject-test",
+		Steps: `[{"name":"ask","type":"approval","timeout_seconds":5}]`,
+	}
+	e.CreateDef(context.Background(), def)
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+
+	<-time.After(50 * time.Millisecond)
+	if err := e.RejectStep(context.Background(), run.ID, "ask", "admin", "not approved"); err != nil {
+		t.Fatalf("RejectStep: %v", err)
+	}
+	<-time.After(50 * time.Millisecond)
+
+	// Rejected step should cause workflow failure.
+	var final WorkflowRun
+	db.First(&final, run.ID)
+	if final.Status != RunStatusFailed {
+		t.Errorf("expected failed after rejection, got %s", final.Status)
+	}
+}
+
+func TestApprovalInvalidStep(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	err := e.ApproveStep(context.Background(), 0, "nonexistent", "admin", "")
+	if err == nil {
+		t.Fatal("expected error for non-existent approval step")
+	}
+}
+
+// ── M5.1: Paginated list tests ────────────────────────────────────────
+
+func TestListDefsPaginated(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowNode{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	// Insert 5 defs.
+	for i := 0; i < 5; i++ {
+		e.CreateDef(context.Background(), &WorkflowDef{
+			Name:  fmt.Sprintf("def-%d", i),
+			Steps: "[]",
+		})
+	}
+
+	// Page 1, size 3.
+	defs, total, err := e.ListDefsPaginated(context.Background(), 1, 3)
+	if err != nil {
+		t.Fatalf("ListDefsPaginated: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("expected total=5, got %d", total)
+	}
+	if len(defs) != 3 {
+		t.Errorf("expected 3 defs on page 1, got %d", len(defs))
+	}
+
+	// Page 2, size 3.
+	defs2, total2, _ := e.ListDefsPaginated(context.Background(), 2, 3)
+	if len(defs2) != 2 {
+		t.Errorf("expected 2 defs on page 2, got %d", len(defs2))
+	}
+	if total2 != 5 {
+		t.Errorf("expected total=5, got %d", total2)
+	}
+}
+
+// ── M5.2: Action step execution test ──────────────────────────────────
+
+func TestExecActionStep(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{
+		Name:  "action-test",
+		Steps: `[{"name":"act","type":"action","timeout_seconds":1}]`,
+	}
+	e.CreateDef(context.Background(), def)
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+	<-time.After(100 * time.Millisecond)
+
+	var final WorkflowRun
+	db.First(&final, run.ID)
+	if final.Status != RunStatusCompleted {
+		t.Errorf("expected completed for action step, got %s", final.Status)
+	}
+}
+
+func TestGetMonitor(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	// No runs yet.
+	m, err := e.GetMonitor(context.Background())
+	if err != nil {
+		t.Fatalf("GetMonitor: %v", err)
+	}
+	if m.Running != 0 || m.Pending != 0 || m.Blocked != 0 || m.Failed != 0 || m.Completed24h != 0 {
+		t.Errorf("expected all zero, got %+v", m)
+	}
+
+	// Create runs in different statuses.
+	def := &WorkflowDef{Name: "mon-test", Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def)
+
+	for i := 0; i < 3; i++ {
+		e.StartRun(context.Background(), def.ID, nil)
+	}
+	<-time.After(200 * time.Millisecond)
+
+	m, _ = e.GetMonitor(context.Background())
+	if m.Running != 0 {
+		t.Logf("running: %d (expected 0 or 3 — goroutines may have finished)", m.Running)
+	}
+	if m.Completed24h != 3 {
+		t.Errorf("expected 3 completed_24h, got %d (runs auto-complete without AI)", m.Completed24h)
+	}
+}
+
+// ── Run list with filtering tests ─────────────────────────────────────────
+
+func TestListRunsFiltered(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def1 := &WorkflowDef{Name: "wf-1", Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`}
+	def2 := &WorkflowDef{Name: "wf-2", Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def1)
+	e.CreateDef(context.Background(), def2)
+
+	// Use event type to keep runs alive so we can query by status later.
+	for i := 0; i < 2; i++ {
+		e.StartRun(context.Background(), def1.ID, nil)
+	}
+	e.StartRun(context.Background(), def2.ID, nil)
+	<-time.After(200 * time.Millisecond)
+
+	// Filter by def1.
+	id1 := def1.ID
+	runs, total, err := e.ListRunsFiltered(context.Background(), &id1, 1, 20)
+	if err != nil {
+		t.Fatalf("ListRunsFiltered: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("expected 2 runs for def1, got %d", total)
+	}
+	if len(runs) != 2 {
+		t.Errorf("expected 2 runs, got %d", len(runs))
+	}
+
+	// Filter by def2.
+	id2 := def2.ID
+	runs, total, _ = e.ListRunsFiltered(context.Background(), &id2, 1, 20)
+	if total != 1 {
+		t.Errorf("expected 1 run for def2, got %d", total)
+	}
+
+	// Pagination.
+	runs, total, _ = e.ListRunsFiltered(context.Background(), nil, 1, 1)
+	if total != 3 {
+		t.Errorf("expected 3 total, got %d", total)
+	}
+	if len(runs) != 1 {
+		t.Errorf("expected 1 run per page, got %d", len(runs))
+	}
+}
+
+// ── Retry run tests ───────────────────────────────────────────────────────
+
+func TestRetryRun(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{Name: "retry-wf", Steps: `[{"name":"s1","type":"event","wait_for_event":"manual","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def)
+
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+	<-time.After(50 * time.Millisecond)
+
+	// Advance with error to force failed status.
+	e.AdvanceStep(context.Background(), run.ID, "s1", nil, &stepError{"boom"})
+	<-time.After(50 * time.Millisecond)
+
+	var failedRun WorkflowRun
+	db.First(&failedRun, run.ID)
+	if failedRun.Status != RunStatusFailed {
+		t.Fatalf("expected failed status, got %s", failedRun.Status)
+	}
+
+	// Retry the failed run.
+	if err := e.RetryRun(context.Background(), run.ID); err != nil {
+		t.Fatalf("RetryRun: %v", err)
+	}
+
+	var retried WorkflowRun
+	db.First(&retried, run.ID)
+	if retried.Status != RunStatusRunning {
+		t.Errorf("expected running after retry, got %s", retried.Status)
+	}
+	if retried.RetryCount != 1 {
+		t.Errorf("expected retry_count=1, got %d", retried.RetryCount)
+	}
+}
+
+func TestRetryRun_nonFailed(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{Name: "retry-nonfail", Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def)
+
+	// Use event so run stays pending.
+	def2 := &WorkflowDef{Name: "retry-nonfail-2", Steps: `[{"name":"s1","type":"event","wait_for_event":"never","timeout_seconds":5}]`}
+	e.CreateDef(context.Background(), def2)
+	run, _ := e.StartRun(context.Background(), def2.ID, nil)
+
+	err := e.RetryRun(context.Background(), run.ID)
+	if err == nil {
+		t.Fatal("expected error retrying non-failed run")
+	}
+}
+
+func TestRetryRun_maxRetriesExhausted(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{Name: "retry-exhaust", Steps: `[{"name":"s1","type":"event","wait_for_event":"manual","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def)
+
+	run := &WorkflowRun{
+		WorkflowDefID: def.ID,
+		Name:          def.Name,
+		Status:        RunStatusFailed,
+		RetryCount:    3,
+		MaxRetries:    3,
+	}
+	e.db.Create(run)
+
+	err := e.RetryRun(context.Background(), run.ID)
+	if err == nil {
+		t.Fatal("expected error when max retries exhausted")
+	}
+}
+
+// ── Template seeding tests ────────────────────────────────────────────────
+
+func TestSeedTemplates(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	if err := e.SeedTemplates(context.Background()); err != nil {
+		t.Fatalf("SeedTemplates: %v", err)
+	}
+
+	var count int64
+	db.Model(&WorkflowDef{}).Count(&count)
+	if count != 2 {
+		t.Errorf("expected 2 templates, got %d", count)
+	}
+
+	// Running again should not create duplicates.
+	if err := e.SeedTemplates(context.Background()); err != nil {
+		t.Fatalf("SeedTemplates (2nd): %v", err)
+	}
+	db.Model(&WorkflowDef{}).Count(&count)
+	if count != 2 {
+		t.Errorf("expected 2 templates after second seed, got %d", count)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/reliability"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
@@ -464,6 +465,13 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		}
 	}(o.db, o.logger)
 
+	// Record agent heartbeat asynchronously.
+	go func(db *gorm.DB, log *zap.Logger) {
+		relSvc := reliability.NewService(db, log)
+		if err := relSvc.UpsertAgentHeartbeat(context.Background(), agent.ID, agent.Name, agent.Squad, "running", ""); err != nil {
+			log.Warn("failed to record agent heartbeat", zap.String("agent", agent.ID), zap.Error(err))
+		}
+	}(o.db, o.logger)
 	return &RunAgentResult{
 		TraceID:       traceID,
 		AgentID:       agent.ID,

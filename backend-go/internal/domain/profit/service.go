@@ -1,13 +1,16 @@
 package profit
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
+	"github.com/lingmirror/backend-go/internal/domain/order"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
+	"github.com/lingmirror/backend-go/internal/domain/shipping"
 	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"go.uber.org/zap"
@@ -243,6 +246,97 @@ func (s *Service) GetByProductID(productID int64) (*ProfitSummary, error) {
 		return nil, err
 	}
 	return &ps, nil
+}
+
+// CalculateOrderProfit computes order-level profit by reading the order,
+// its items, and the shipping snapshot, then stores a profit record.
+func (s *Service) CalculateOrderProfit(ctx context.Context, orderID uint) (*OrderProfit, error) {
+	var o order.Order
+	if err := s.db.WithContext(ctx).First(&o, orderID).Error; err != nil {
+		return nil, fmt.Errorf("get order: %w", err)
+	}
+
+	var items []order.OrderItem
+	if err := s.db.WithContext(ctx).Where("order_id = ?", o.ID).Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("get order items: %w", err)
+	}
+
+	// 1. Revenue: prefer pay_amount (actual received), fallback to total_amount
+	revenue := o.PayAmount
+	if revenue == 0 {
+		revenue = o.TotalAmount
+	}
+
+	// 2. Purchase cost from the order's stored product cost
+	cost := o.ProductCost
+
+	// 3. Shipping cost: prefer snapshot, fallback to order.shipping_fee
+	shippingCost := o.ShippingFee
+	var snap shipping.SalesOrderShippingSnapshot
+	if err := s.db.WithContext(ctx).Where("order_id = ?", o.ID).First(&snap).Error; err == nil {
+		if snap.TotalShippingFee > 0 {
+			shippingCost = snap.TotalShippingFee
+		}
+	}
+
+	// 4. Platform fee from the order
+	platformFee := o.PlatformFee
+
+	// 5. Payment fee from the order
+	paymentFee := o.PaymentFee
+
+	// 6. Tariff cost: use other_fee as proxy (separate tariff line not stored on order)
+	tariffCost := o.OtherFee
+
+	// 7. Calculate totals
+	totalCost := cost + shippingCost + platformFee + paymentFee + tariffCost
+	profit := revenue - totalCost
+	margin := 0.0
+	if revenue > 0 {
+		margin = (profit / revenue) * 100
+		margin = math.Round(margin*100) / 100
+	}
+
+	r2 := func(v float64) float64 { return math.Round(v*100) / 100 }
+
+	// 8. Upsert profit record for the order
+	record := OrderProfitRecord{
+		OrderID:      o.ID,
+		Revenue:      r2(revenue),
+		Cost:         r2(cost),
+		ShippingCost: r2(shippingCost),
+		PlatformFee:  r2(platformFee),
+		PaymentFee:   r2(paymentFee),
+		TariffCost:   r2(tariffCost),
+		TotalCost:    r2(totalCost),
+		Profit:       r2(profit),
+		Margin:       margin,
+	}
+
+	var existing OrderProfitRecord
+	if err := s.db.WithContext(ctx).Where("order_id = ?", o.ID).First(&existing).Error; err == nil {
+		record.ID = existing.ID
+		if err := s.db.WithContext(ctx).Save(&record).Error; err != nil {
+			return nil, fmt.Errorf("update order profit record: %w", err)
+		}
+	} else {
+		if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
+			return nil, fmt.Errorf("create order profit record: %w", err)
+		}
+	}
+
+	return &OrderProfit{
+		OrderID:      orderID,
+		Revenue:      record.Revenue,
+		Cost:         record.Cost,
+		ShippingCost: record.ShippingCost,
+		PlatformFee:  record.PlatformFee,
+		PaymentFee:   record.PaymentFee,
+		TariffCost:   record.TariffCost,
+		TotalCost:    record.TotalCost,
+		Profit:       record.Profit,
+		Margin:       record.Margin,
+	}, nil
 }
 
 func classifyProfit(margin float64) string {

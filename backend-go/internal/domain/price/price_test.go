@@ -622,7 +622,7 @@ func TestListChangeLogs_Pagination(t *testing.T) {
 
 func setupRouter(svc *Service) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(svc)
+	h := NewHandler(svc, nil)
 	r := gin.New()
 	rg := r.Group("/api/v1")
 	prices := rg.Group("/prices")
@@ -1093,7 +1093,7 @@ func newTestDBWithEngine(t *testing.T) *Service {
 
 func setupPriceRouter(svc *Service) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(svc)
+	h := NewHandler(svc, nil)
 	r := gin.New()
 	rg := r.Group("/api/v1")
 

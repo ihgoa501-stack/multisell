@@ -477,11 +477,138 @@ func orderRecipientPhone(addr *struct {
 // ─── FetchSettlements ───
 
 func (a *ShopifyAdapter) FetchSettlements(ctx context.Context, input *FetchSettlementsInput) ([]*PlatformSettlement, error) {
-	return nil, fmt.Errorf("shopify FetchSettlements: not yet implemented — requires Shopify payouts API")
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
+	}
+
+	path := fmt.Sprintf("/admin/api/2023-01/shopify_payments/payouts.json?created_at_min=%s&limit=250",
+		input.Since.Format("2006-01-02"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, auth.BaseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("shopify fetch_settlements req: %w", err)
+	}
+	req.Header.Set("X-Shopify-Access-Token", auth.AccessToken)
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("shopify fetch_settlements: %w", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("shopify fetch_settlements read: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("shopify fetch_settlements: HTTP %d %s", resp.StatusCode, truncStr(string(body), 200))
+	}
+
+	var r struct {
+		Payouts []struct {
+			ID          int64  `json:"id"`
+			Status      string `json:"status"`
+			Date        string `json:"date"`
+			Amount      string `json:"amount"`
+			Currency    string `json:"currency"`
+		} `json:"payouts"`
+	}
+	json.Unmarshal(body, &r)
+
+	var items []*PlatformSettlement
+	for _, p := range r.Payouts {
+		items = append(items, &PlatformSettlement{
+			TransactionID:   fmt.Sprintf("%d", p.ID),
+			TransactionType: "settlement",
+			Amount:          p.Amount,
+			Currency:        p.Currency,
+			OccurredAt:      p.Date,
+			Description:     fmt.Sprintf("shopify payout [%s]", p.Status),
+		})
+	}
+	if items == nil {
+		items = []*PlatformSettlement{}
+	}
+	return items, nil
 }
 
 // ─── FetchReturns ───
 
 func (a *ShopifyAdapter) FetchReturns(ctx context.Context, input *FetchReturnsInput) ([]*PlatformReturn, error) {
-	return nil, fmt.Errorf("shopify FetchReturns: not yet implemented — requires iterating orders for refunds")
+	auth, err := a.getAuth(ctx, input.PlatformID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Shopify returns/refunds are found via the orders API.
+	// Fetch refunded orders since the given timestamp.
+	path := fmt.Sprintf("/admin/api/2023-01/orders.json?status=any&financial_status=refunded&updated_at_min=%s&limit=250",
+		input.Since.Format(time.RFC3339))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, auth.BaseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("shopify fetch_returns req: %w", err)
+	}
+	req.Header.Set("X-Shopify-Access-Token", auth.AccessToken)
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("shopify fetch_returns: %w", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("shopify fetch_returns read: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("shopify fetch_returns: HTTP %d %s", resp.StatusCode, truncStr(string(body), 200))
+	}
+
+	var r struct {
+		Orders []struct {
+			ID                int64                  `json:"id"`
+			Name              string                 `json:"name"`
+			CreatedAt         string                 `json:"created_at"`
+			Refunds           []struct {
+				ID            int64  `json:"id"`
+				CreatedAt     string `json:"created_at"`
+				RefundLineItems []struct {
+					LineItem struct {
+						Sku      string `json:"sku"`
+						Quantity int    `json:"quantity"`
+						Price    string `json:"price"`
+					} `json:"line_item"`
+				} `json:"refund_line_items"`
+				Transactions []struct {
+					Amount string `json:"amount"`
+					Status string `json:"status"`
+				} `json:"transactions"`
+			} `json:"refunds"`
+		} `json:"orders"`
+	}
+	json.Unmarshal(body, &r)
+
+	var items []*PlatformReturn
+	for _, o := range r.Orders {
+		for _, refund := range o.Refunds {
+			var totalRefund string
+			if len(refund.Transactions) > 0 {
+				totalRefund = refund.Transactions[0].Amount
+			}
+			for _, li := range refund.RefundLineItems {
+				items = append(items, &PlatformReturn{
+					ReturnID:     fmt.Sprintf("shopify-refund-%d", refund.ID),
+					OrderSN:      o.Name,
+					SkuCode:      li.LineItem.Sku,
+					Quantity:     li.LineItem.Quantity,
+					Reason:       "customer_refund",
+					Status:       "completed",
+					CreatedAt:    refund.CreatedAt,
+					RefundAmount: totalRefund,
+				})
+			}
+		}
+	}
+	if items == nil {
+		items = []*PlatformReturn{}
+	}
+	return items, nil
 }

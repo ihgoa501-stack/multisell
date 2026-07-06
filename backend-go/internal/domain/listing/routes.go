@@ -2,15 +2,16 @@ package listing
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers listing routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *eventbus.Bus) {
-	svc := NewService(db, logger, bus, NewSKUProvider(db), NewDecisionReader(db))
-	h := NewHandler(svc)
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *eventbus.Bus, approvalSvc *approval.Service) {
+	svc := NewService(db, logger, bus, NewSKUProvider(db), NewDecisionReader(db), NewCandidateReader(db), NewProfitReader(db))
+	h := NewHandler(svc, approvalSvc)
 
 	group := rg.Group("/listings")
 	{
@@ -21,6 +22,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *e
 		group.DELETE("/:id", h.Delete)
 		group.POST("/:id/publish", h.Publish)
 		group.POST("/:id/sync", h.Sync)
+			group.POST("/suggest", h.Suggest)
 	}
 
 	// Listing publish chain — uses /listing (singular) prefix.

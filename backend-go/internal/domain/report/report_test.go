@@ -63,6 +63,46 @@ type testSettlementItem struct {
 func (testSettlementItem) TableName() string { return "settlement_item" }
 
 // ---------------------------------------------------------------------------
+// Daily/weekly report inline models
+// ---------------------------------------------------------------------------
+
+type testListingTask struct {
+	ID        int64     `gorm:"primaryKey"`
+	CreatedAt time.Time `gorm:"index"`
+}
+
+func (testListingTask) TableName() string { return "listing_task" }
+
+type testExceptionItem struct {
+	ID        int64     `gorm:"primaryKey"`
+	CreatedAt time.Time `gorm:"index"`
+}
+
+func (testExceptionItem) TableName() string { return "exception_item" }
+
+type testApprovalRequest struct {
+	ID        int64     `gorm:"primaryKey"`
+	CreatedAt time.Time `gorm:"index"`
+}
+
+func (testApprovalRequest) TableName() string { return "approval_request" }
+
+type testUnifiedAction struct {
+	ID        int64     `gorm:"primaryKey"`
+	CreatedAt time.Time `gorm:"index"`
+}
+
+func (testUnifiedAction) TableName() string { return "unified_action" }
+
+type testLLMCostLog struct {
+	ID         int64   `gorm:"primaryKey"`
+	WindowDate string  `gorm:"column:window_date"`
+	CostUSD    float64 `gorm:"column:cost_usd"`
+}
+
+func (testLLMCostLog) TableName() string { return "llm_cost_logs" }
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -300,5 +340,225 @@ func TestSettlementReport(t *testing.T) {
 	}
 	if r.ReconciliationDist["unmatched"] != 1 {
 		t.Fatalf("ReconciliationDist[unmatched] = %d, want 1", r.ReconciliationDist["unmatched"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 7. TestDailyReport — daily report with aggregated data
+// ---------------------------------------------------------------------------
+
+func TestDailyReport(t *testing.T) {
+	db := dbtest.NewDB(t,
+		&testSalesOrder{},
+		&testListingTask{},
+		&testExceptionItem{},
+		&testApprovalRequest{},
+		&testUnifiedAction{},
+		&testLLMCostLog{},
+	)
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	day := time.Date(2026, 7, 6, 10, 0, 0, 0, time.UTC)
+	pid := int64(1)
+
+	// sales_order: 3 orders, total pay 350.50, total profit 65.10
+	orders := []testSalesOrder{
+		{CreatedAt: day, PlatformID: &pid, PayAmount: 100.50, ProfitAmount: 20.10, Status: "delivered"},
+		{CreatedAt: day, PlatformID: &pid, PayAmount: 200.00, ProfitAmount: 40.00, Status: "delivered"},
+		{CreatedAt: day, PlatformID: &pid, PayAmount: 50.00, ProfitAmount: 5.00, Status: "cancelled"},
+	}
+	for i, o := range orders {
+		if err := db.Create(&o).Error; err != nil {
+			t.Fatalf("insert order %d: %v", i, err)
+		}
+	}
+
+	// listing_task: 2 new listings
+	for i := 0; i < 2; i++ {
+		if err := db.Create(&testListingTask{CreatedAt: day}).Error; err != nil {
+			t.Fatalf("insert listing_task %d: %v", i, err)
+		}
+	}
+
+	// exception_item: 1 anomaly
+	if err := db.Create(&testExceptionItem{CreatedAt: day}).Error; err != nil {
+		t.Fatal("insert exception_item: ", err)
+	}
+
+	// approval_request: 3 approvals
+	for i := 0; i < 3; i++ {
+		if err := db.Create(&testApprovalRequest{CreatedAt: day}).Error; err != nil {
+			t.Fatalf("insert approval_request %d: %v", i, err)
+		}
+	}
+
+	// unified_action: 5 agent proposals
+	for i := 0; i < 5; i++ {
+		if err := db.Create(&testUnifiedAction{CreatedAt: day}).Error; err != nil {
+			t.Fatalf("insert unified_action %d: %v", i, err)
+		}
+	}
+
+	// llm_cost_logs: total $1.23
+	logs := []testLLMCostLog{
+		{WindowDate: "2026-07-06", CostUSD: 0.50},
+		{WindowDate: "2026-07-06", CostUSD: 0.73},
+	}
+	for i, l := range logs {
+		if err := db.Create(&l).Error; err != nil {
+			t.Fatalf("insert llm_cost_log %d: %v", i, err)
+		}
+	}
+
+	r, err := svc.Daily("2026-07-06")
+	if err != nil {
+		t.Fatalf("Daily failed: %v", err)
+	}
+	if r == nil {
+		t.Fatal("expected non-nil report")
+	}
+
+	if r.Date != "2026-07-06" {
+		t.Fatalf("Date = %q, want %q", r.Date, "2026-07-06")
+	}
+	assertFloatEqual(t, 350.50, r.Sales, 0.01)
+	if r.Orders != 3 {
+		t.Fatalf("Orders = %d, want 3", r.Orders)
+	}
+	assertFloatEqual(t, 65.10, r.Profit, 0.01)
+	if r.NewListings != 2 {
+		t.Fatalf("NewListings = %d, want 2", r.NewListings)
+	}
+	if r.Anomalies != 1 {
+		t.Fatalf("Anomalies = %d, want 1", r.Anomalies)
+	}
+	if r.Approvals != 3 {
+		t.Fatalf("Approvals = %d, want 3", r.Approvals)
+	}
+	if r.AgentProposals != 5 {
+		t.Fatalf("AgentProposals = %d, want 5", r.AgentProposals)
+	}
+	assertFloatEqual(t, 1.23, r.LLMCost, 0.01)
+}
+
+// ---------------------------------------------------------------------------
+// 8. TestDailyReport_Default — default date is today
+// ---------------------------------------------------------------------------
+
+func TestDailyReport_Default(t *testing.T) {
+	db := dbtest.NewDB(t,
+		&testSalesOrder{},
+		&testListingTask{},
+		&testExceptionItem{},
+		&testApprovalRequest{},
+		&testUnifiedAction{},
+		&testLLMCostLog{},
+	)
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	r, err := svc.Daily("")
+	if err != nil {
+		t.Fatalf("Daily() with empty date failed: %v", err)
+	}
+	if r.Date != time.Now().Format("2006-01-02") {
+		t.Fatalf("Date = %q, want today", r.Date)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 9. TestWeeklyReport — weekly aggregated report
+// ---------------------------------------------------------------------------
+
+func TestWeeklyReport(t *testing.T) {
+	db := dbtest.NewDB(t,
+		&testSalesOrder{},
+		&testListingTask{},
+		&testExceptionItem{},
+		&testApprovalRequest{},
+		&testUnifiedAction{},
+		&testLLMCostLog{},
+	)
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// week: Mon 2026-06-29 to Sun 2026-07-05
+	weekStart := time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC)
+	pid := int64(1)
+
+	// Place orders on 3 different days of the week
+	days := []int{0, 2, 5} // Mon, Wed, Sat
+	amounts := []float64{100, 200, 150}
+	for i, offset := range days {
+		d := weekStart.AddDate(0, 0, offset)
+		o := testSalesOrder{
+			CreatedAt:    d,
+			PlatformID:   &pid,
+			PayAmount:    amounts[i],
+			ProfitAmount: amounts[i] * 0.2,
+			Status:       "delivered",
+		}
+		if err := db.Create(&o).Error; err != nil {
+			t.Fatalf("insert order day+%d: %v", offset, err)
+		}
+		// Each day also has an anomaly
+		if err := db.Create(&testExceptionItem{CreatedAt: d}).Error; err != nil {
+			t.Fatalf("insert exception day+%d: %v", offset, err)
+		}
+	}
+
+	r, err := svc.Weekly("2026-06-29")
+	if err != nil {
+		t.Fatalf("Weekly failed: %v", err)
+	}
+	if r == nil {
+		t.Fatal("expected non-nil report")
+	}
+
+	if r.WeekStart != "2026-06-29" {
+		t.Fatalf("WeekStart = %q, want %q", r.WeekStart, "2026-06-29")
+	}
+	if r.WeekEnd != "2026-07-05" {
+		t.Fatalf("WeekEnd = %q, want %q", r.WeekEnd, "2026-07-05")
+	}
+	if len(r.DailyReports) != 7 {
+		t.Fatalf("len(DailyReports) = %d, want 7", len(r.DailyReports))
+	}
+	// sales_total = 100 + 200 + 150 = 450
+	assertFloatEqual(t, 450.00, r.SalesTotal, 0.01)
+	// profit_total = 100*0.2 + 200*0.2 + 150*0.2 = 20 + 40 + 30 = 90
+	assertFloatEqual(t, 90.00, r.ProfitTotal, 0.01)
+	// orders_total = 3
+	if r.OrdersTotal != 3 {
+		t.Fatalf("OrdersTotal = %d, want 3", r.OrdersTotal)
+	}
+	// anomalies_total = 3
+	if r.AnomaliesTotal != 3 {
+		t.Fatalf("AnomaliesTotal = %d, want 3", r.AnomaliesTotal)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 10. TestWeeklyReport_Default — defaults to current ISO week
+// ---------------------------------------------------------------------------
+
+func TestWeeklyReport_Default(t *testing.T) {
+	db := dbtest.NewDB(t,
+		&testSalesOrder{},
+		&testListingTask{},
+		&testExceptionItem{},
+		&testApprovalRequest{},
+		&testUnifiedAction{},
+		&testLLMCostLog{},
+	)
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	r, err := svc.Weekly("")
+	if err != nil {
+		t.Fatalf("Weekly() with empty week_start failed: %v", err)
+	}
+	if r.WeekStart == "" {
+		t.Fatal("expected non-empty WeekStart")
+	}
+	if len(r.DailyReports) != 7 {
+		t.Fatalf("len(DailyReports) = %d, want 7", len(r.DailyReports))
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/platform"
 )
 
 var errPublishHookFailed = errors.New("publish hook failed")
@@ -697,5 +698,219 @@ func TestService_ExecuteTask_PublishHookFails(t *testing.T) {
 		if it.ErrorMessage == "" {
 			t.Fatalf("item %d: error_message not set", it.ID)
 		}
+	}
+}
+
+// ── CreateFromSuggestion ──
+
+// TestService_CreateFromSuggestion tests the happy path: candidate found, approval created, task created.
+func TestService_CreateFromSuggestion(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+
+	// Create candidate_product table and insert a test candidate.
+	db.Exec("CREATE TABLE candidate_product (id INTEGER PRIMARY KEY, title TEXT, purchase_price REAL DEFAULT 0, target_sale_price REAL DEFAULT 0, target_platform_id INTEGER, destination_country TEXT DEFAULT 'US')")
+	db.Exec("INSERT INTO candidate_product (id, title, purchase_price, target_sale_price, target_platform_id, destination_country) VALUES (1, 'Test Product', 10.0, 25.0, 1, 'US')")
+
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+
+	task, err := svc.CreateFromSuggestion(1, "owner")
+	if err != nil {
+		t.Fatalf("CreateFromSuggestion: %v", err)
+	}
+	if task.Status != "pending_approval" {
+		t.Fatalf("Status = %s (expected pending_approval)", task.Status)
+	}
+	if task.ApprovalID == nil {
+		t.Fatal("ApprovalID should be set")
+	}
+	if task.SourceType != "suggestion" {
+		t.Fatalf("SourceType = %s (expected suggestion)", task.SourceType)
+	}
+
+	// Verify approval was created and linked.
+	var appr approval.ApprovalRequest
+	if err := db.First(&appr, *task.ApprovalID).Error; err != nil {
+		t.Fatalf("approval not found: %v", err)
+	}
+	if appr.Status != "pending" {
+		t.Fatalf("approval status = %s (expected pending)", appr.Status)
+	}
+	if appr.EntityType != "listing_task" {
+		t.Fatalf("EntityType = %s (expected listing_task)", appr.EntityType)
+	}
+	if appr.EntityID != task.ID {
+		t.Fatalf("EntityID = %d (expected %d)", appr.EntityID, task.ID)
+	}
+}
+
+// TestService_CreateFromSuggestion_NotFound tests error when candidate doesn't exist.
+func TestService_CreateFromSuggestion_NotFound(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &approval.ApprovalRequest{})
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+
+	// Create table but insert no rows.
+	db.Exec("CREATE TABLE candidate_product (id INTEGER PRIMARY KEY, title TEXT, purchase_price REAL, target_sale_price REAL, target_platform_id INTEGER, destination_country TEXT)")
+
+	_, err := svc.CreateFromSuggestion(999, "owner")
+	if err == nil {
+		t.Fatal("expected error for non-existent candidate")
+	}
+}
+
+// TestService_CreateFromSuggestion_NoApprovalService tests error when approvalSvc is nil.
+func TestService_CreateFromSuggestion_NoApprovalService(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &approval.ApprovalRequest{})
+	db.Exec("CREATE TABLE candidate_product (id INTEGER PRIMARY KEY, title TEXT)")
+	db.Exec("INSERT INTO candidate_product (id, title) VALUES (1, 'Test')")
+
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+
+	_, err := svc.CreateFromSuggestion(1, "owner")
+	if err == nil {
+		t.Fatal("expected error when approval service not configured")
+	}
+}
+
+// ── ReviewTask ──
+
+func TestService_ReviewTask_Published(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &platform.Platform{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+
+	// Create platform record
+	db.Create(&platform.Platform{ID: 1, Name: "Ozon", Code: "ozon"})
+
+	task, _ := svc.Create(&CreateTaskInput{
+		ProductID:          10,
+		PlatformID:         1,
+		Status:             "completed",
+		TargetSalePrice:    dbtest.FloatPtr(100.0),
+		TargetProfitMargin: dbtest.FloatPtr(0.25),
+		DestinationCountry: "US",
+	})
+	svc.CreateItem(&CreateTaskItemInput{TaskID: task.ID, ProductID: 10, PlatformID: 1, Status: "completed"})
+
+	review, err := svc.ReviewTask(task.ID)
+	if err != nil {
+		t.Fatalf("ReviewTask: %v", err)
+	}
+	if !review.Published {
+		t.Fatal("expected published = true")
+	}
+	if review.Status != "completed" {
+		t.Fatalf("status = %s", review.Status)
+	}
+	if review.Platform != "ozon" {
+		t.Fatalf("platform = %s", review.Platform)
+	}
+	if review.ProfitExpected == nil {
+		t.Fatal("expected profit_expected to be set")
+	}
+	if *review.ProfitExpected != 25.0 {
+		t.Fatalf("profit_expected = %f (want 25.0)", *review.ProfitExpected)
+	}
+	if review.MarginExpected == nil || *review.MarginExpected != 0.25 {
+		t.Fatalf("margin_expected = %v", review.MarginExpected)
+	}
+	// No orders exist — actual fields should be nil
+	if review.ProfitActual != nil {
+		t.Fatal("expected profit_actual to be nil (no orders)")
+	}
+	if review.MarginActual != nil {
+		t.Fatal("expected margin_actual to be nil (no orders)")
+	}
+}
+
+func TestService_ReviewTask_Failed(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+
+	task, _ := svc.Create(&CreateTaskInput{
+		ProductID:          10,
+		PlatformID:         1,
+		Status:             "failed",
+		TargetSalePrice:    dbtest.FloatPtr(50.0),
+		TargetProfitMargin: dbtest.FloatPtr(0.20),
+		DestinationCountry: "US",
+	})
+	errMsg := "platform rejected: missing images"
+	svc.CreateItem(&CreateTaskItemInput{TaskID: task.ID, ProductID: 10, PlatformID: 1, Status: "failed"})
+	svc.UpdateItem(1, &UpdateTaskItemInput{ErrorMessage: &errMsg})
+
+	review, err := svc.ReviewTask(task.ID)
+	if err != nil {
+		t.Fatalf("ReviewTask: %v", err)
+	}
+	if review.Published {
+		t.Fatal("expected published = false for failed task")
+	}
+	if len(review.PlatformErrors) != 1 {
+		t.Fatalf("expected 1 platform error, got %d", len(review.PlatformErrors))
+	}
+	if review.PlatformErrors[0] != "platform rejected: missing images" {
+		t.Fatalf("platform error = %q", review.PlatformErrors[0])
+	}
+	// Expected profit should still be computed from target fields
+	if review.ProfitExpected == nil || *review.ProfitExpected != 10.0 {
+		t.Fatalf("profit_expected = %v", review.ProfitExpected)
+	}
+}
+
+func TestService_ReviewTask_NotFound(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+
+	_, err := svc.ReviewTask(99999)
+	if err == nil {
+		t.Fatal("expected error for non-existent task")
+	}
+}
+
+func TestService_ReviewTask_WithActualProfit(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+
+	task, _ := svc.Create(&CreateTaskInput{
+		ProductID:          100,
+		PlatformID:         2,
+		Status:             "completed",
+		TargetSalePrice:    dbtest.FloatPtr(200.0),
+		TargetProfitMargin: dbtest.FloatPtr(0.30),
+		DestinationCountry: "RU",
+	})
+
+	// Create order tables and insert a matching order with profit data.
+	db.Exec("CREATE TABLE sales_order (id INTEGER PRIMARY KEY, platform_id INTEGER, profit_amount REAL DEFAULT 0, profit_margin REAL DEFAULT 0)")
+	db.Exec("CREATE TABLE sales_order_item (id INTEGER PRIMARY KEY, order_id INTEGER, product_id INTEGER)")
+	db.Exec("INSERT INTO sales_order (id, platform_id, profit_amount, profit_margin) VALUES (1, 2, 45.0, 0.225)")
+	db.Exec("INSERT INTO sales_order_item (id, order_id, product_id) VALUES (1, 1, 100)")
+
+	review, err := svc.ReviewTask(task.ID)
+	if err != nil {
+		t.Fatalf("ReviewTask: %v", err)
+	}
+	if !review.Published {
+		t.Fatal("expected published = true")
+	}
+	if review.ProfitActual == nil {
+		t.Fatal("expected profit_actual to be set")
+	}
+	if *review.ProfitActual != 45.0 {
+		t.Fatalf("profit_actual = %f (want 45.0)", *review.ProfitActual)
+	}
+	if review.MarginActual == nil {
+		t.Fatal("expected margin_actual to be set")
+	}
+	if *review.MarginActual != 0.225 {
+		t.Fatalf("margin_actual = %f (want 0.225)", *review.MarginActual)
 	}
 }

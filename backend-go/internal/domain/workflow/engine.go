@@ -15,6 +15,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// approvalSignal is sent through the approval channel to unblock a pending approval step.
+type approvalSignal struct {
+	approved bool
+	comment  string
+	reviewer string
+}
+
 // Engine is the generic workflow execution engine.
 type Engine struct {
 	db       *gorm.DB
@@ -23,19 +30,22 @@ type Engine struct {
 	cmd      *command.Dispatcher
 	logger   *zap.Logger
 
-	mu       sync.Mutex
-	running  map[int64]context.CancelFunc // cancel running steps per run
+	mu            sync.Mutex
+	running       map[int64]context.CancelFunc // cancel running steps per run
+	approvalChans map[string]chan approvalSignal
+	approvalMu    sync.Mutex
 }
 
 // NewEngine creates a workflow engine.
 func NewEngine(db *gorm.DB, bus *eventbus.Bus, aiOrch *ai.Orchestrator, dispatcher *command.Dispatcher, logger *zap.Logger) *Engine {
 	return &Engine{
-		db:      db,
-		bus:     bus,
-		aiOrch:  aiOrch,
-		cmd:     dispatcher,
-		logger:  logger.Named("workflow"),
-		running: make(map[int64]context.CancelFunc),
+		db:            db,
+		bus:           bus,
+		aiOrch:        aiOrch,
+		cmd:           dispatcher,
+		logger:        logger.Named("workflow"),
+		running:       make(map[int64]context.CancelFunc),
+		approvalChans: make(map[string]chan approvalSignal),
 	}
 }
 
@@ -63,6 +73,17 @@ func (e *Engine) UpdateDef(ctx context.Context, def *WorkflowDef) error {
 
 func (e *Engine) DeleteDef(ctx context.Context, id int64) error {
 	return e.db.WithContext(ctx).Delete(&WorkflowDef{}, id).Error
+}
+
+// ListDefsPaginated returns a paginated list of workflow definitions with total count.
+func (e *Engine) ListDefsPaginated(ctx context.Context, page, size int) ([]WorkflowDef, int64, error) {
+	var total int64
+	e.db.WithContext(ctx).Model(&WorkflowDef{}).Count(&total)
+
+	var defs []WorkflowDef
+	offset := (page - 1) * size
+	err := e.db.WithContext(ctx).Order("id DESC").Offset(offset).Limit(size).Find(&defs).Error
+	return defs, total, err
 }
 
 // ── Run lifecycle ────────────────────────────────────────────────────
@@ -230,6 +251,12 @@ func (e *Engine) executeStep(ctx context.Context, runID int64, def StepDef) {
 			output, execErr = e.execDelay(ctx, runID, def)
 		case StepTypeEvent:
 			output, execErr = e.execEvent(ctx, runID, def)
+		case StepTypeCondition:
+			output, execErr = e.execCondition(ctx, runID, def)
+		case StepTypeApproval:
+			output, execErr = e.execApproval(ctx, runID, def)
+		case StepTypeAction:
+			output, execErr = e.execAction(ctx, runID, def)
 		default:
 			execErr = fmt.Errorf("unknown step type: %s", def.Type)
 		}
@@ -621,6 +648,158 @@ func (e *Engine) execEvent(ctx context.Context, runID int64, def StepDef) (map[s
 	}
 }
 
+// ── Condition / Approval / Action executors ──────────────────────────
+
+func (e *Engine) execCondition(ctx context.Context, runID int64, def StepDef) (map[string]interface{}, error) {
+	if def.Condition == "" {
+		return map[string]interface{}{"result": true, "condition": ""}, nil
+	}
+	result, err := e.evalCondition(ctx, runID, def.Condition)
+	if err != nil {
+		return nil, fmt.Errorf("condition eval: %w", err)
+	}
+	return map[string]interface{}{
+		"result":    result,
+		"condition": def.Condition,
+	}, nil
+}
+
+func (e *Engine) execApproval(ctx context.Context, runID int64, def StepDef) (map[string]interface{}, error) {
+	key := fmt.Sprintf("%d:%s", runID, def.Name)
+	ch := make(chan approvalSignal, 1)
+
+	e.approvalMu.Lock()
+	e.approvalChans[key] = ch
+	e.approvalMu.Unlock()
+
+	defer func() {
+		e.approvalMu.Lock()
+		delete(e.approvalChans, key)
+		e.approvalMu.Unlock()
+	}()
+
+	// Publish event that the step awaits approval.
+	if e.bus != nil {
+		e.bus.Publish(ctx, "workflow.step.pending_approval", "workflow", map[string]interface{}{
+			"run_id":    runID,
+			"step_name": def.Name,
+		})
+	}
+
+	// Mark step as pending approval.
+	e.db.WithContext(ctx).Model(&WorkflowStepRun{}).
+		Where("workflow_run_id = ? AND step_name = ?", runID, def.Name).
+		Update("status", StepStatusPending)
+
+	e.logger.Info("step awaiting approval", zap.Int64("run_id", runID), zap.String("step", def.Name))
+
+	select {
+	case sig := <-ch:
+		if sig.approved {
+			return map[string]interface{}{
+				"approved": true,
+				"comment":  sig.comment,
+				"reviewer": sig.reviewer,
+			}, nil
+		}
+		return map[string]interface{}{
+			"approved": false,
+			"comment":  sig.comment,
+			"reviewer": sig.reviewer,
+		}, fmt.Errorf("step rejected: %s", sig.comment)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (e *Engine) execAction(ctx context.Context, runID int64, def StepDef) (map[string]interface{}, error) {
+	if def.Command != "" {
+		return e.execCommand(ctx, runID, def)
+	}
+	if def.AgentID != "" {
+		return e.execAgent(ctx, runID, def)
+	}
+	return def.Inputs, nil
+}
+
+// ── Approval API ─────────────────────────────────────────────────────
+
+// ApproveStep signals a pending approval step to proceed.
+func (e *Engine) ApproveStep(ctx context.Context, runID int64, stepName, reviewer, comment string) error {
+	key := fmt.Sprintf("%d:%s", runID, stepName)
+
+	e.approvalMu.Lock()
+	ch, ok := e.approvalChans[key]
+	e.approvalMu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("no pending approval for run %d step %s", runID, stepName)
+	}
+
+	ch <- approvalSignal{approved: true, comment: comment, reviewer: reviewer}
+
+	e.db.WithContext(ctx).Model(&WorkflowStepRun{}).
+		Where("workflow_run_id = ? AND step_name = ?", runID, stepName).
+		Updates(map[string]interface{}{
+			"status": StepStatusApproved,
+			"output": mustJSON(map[string]interface{}{
+				"approved": true,
+				"comment":  comment,
+				"reviewer": reviewer,
+			}),
+		})
+	return nil
+}
+
+// RejectStep signals a pending approval step to be rejected.
+func (e *Engine) RejectStep(ctx context.Context, runID int64, stepName, reviewer, comment string) error {
+	key := fmt.Sprintf("%d:%s", runID, stepName)
+
+	e.approvalMu.Lock()
+	ch, ok := e.approvalChans[key]
+	e.approvalMu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("no pending approval for run %d step %s", runID, stepName)
+	}
+
+	ch <- approvalSignal{approved: false, comment: comment, reviewer: reviewer}
+
+	e.db.WithContext(ctx).Model(&WorkflowStepRun{}).
+		Where("workflow_run_id = ? AND step_name = ?", runID, stepName).
+		Updates(map[string]interface{}{
+			"status": StepStatusRejected,
+			"output": mustJSON(map[string]interface{}{
+				"approved": false,
+				"comment":  comment,
+				"reviewer": reviewer,
+			}),
+		})
+	return nil
+}
+
+// ── Node CRUD ────────────────────────────────────────────────────────
+
+// CreateNode adds a node to a workflow definition.
+func (e *Engine) CreateNode(ctx context.Context, node *WorkflowNode) error {
+	return e.db.WithContext(ctx).Create(node).Error
+}
+
+// ListNodes returns all nodes for a workflow definition, ordered by order_index.
+func (e *Engine) ListNodes(ctx context.Context, workflowID uint) ([]WorkflowNode, error) {
+	var nodes []WorkflowNode
+	err := e.db.WithContext(ctx).
+		Where("workflow_def_id = ?", workflowID).
+		Order("order_index ASC, id ASC").
+		Find(&nodes).Error
+	return nodes, err
+}
+
+// DeleteNode removes a single node.
+func (e *Engine) DeleteNode(ctx context.Context, nodeID uint) error {
+	return e.db.WithContext(ctx).Delete(&WorkflowNode{}, nodeID).Error
+}
+
 // ── Event helpers ───────────────────────────────────────────────────────────
 
 // PublishEvent wraps the event bus so callers don't need to import eventbus directly.
@@ -794,4 +973,113 @@ func (e *Engine) GetRun(ctx context.Context, runID int64) (*WorkflowRun, error) 
 	run.Steps = steps
 
 	return &run, nil
+}
+
+// ── Monitoring ──────────────────────────────────────────────────────────
+
+// MonitorResult holds simple per-status counts plus 24h completion count.
+// Used by the GET /workflow/monitor endpoint.
+type MonitorResult struct {
+	Running      int `json:"running"`
+	Pending      int `json:"pending"`
+	Blocked      int `json:"blocked"`
+	Failed       int `json:"failed"`
+	Completed24h int `json:"completed_24h"`
+}
+
+// GetMonitor returns counts of workflow runs grouped by status, plus
+// the number completed in the last 24 hours.
+func (e *Engine) GetMonitor(ctx context.Context) (*MonitorResult, error) {
+	result := &MonitorResult{}
+
+	type statusCount struct {
+		Status string
+		Count  int
+	}
+	var counts []statusCount
+	e.db.WithContext(ctx).Model(&WorkflowRun{}).
+		Select("status, COUNT(*) as count").
+		Group("status").
+		Scan(&counts)
+
+	for _, c := range counts {
+		switch c.Status {
+		case RunStatusRunning:
+			result.Running = c.Count
+		case RunStatusPending:
+			result.Pending = c.Count
+		case RunStatusPaused:
+			result.Blocked = c.Count
+		case RunStatusFailed:
+			result.Failed = c.Count
+		}
+	}
+
+	// Completed in the last 24 hours.
+	var completed24h int64
+	e.db.WithContext(ctx).Model(&WorkflowRun{}).
+		Where("status = ? AND completed_at > ?", RunStatusCompleted, time.Now().Add(-24*time.Hour)).
+		Count(&completed24h)
+	result.Completed24h = int(completed24h)
+
+	return result, nil
+}
+
+// ── Run queries with filtering ──────────────────────────────────────────
+
+// ListRunsFiltered returns paginated workflow runs, optionally filtered by
+// workflow_def_id.
+func (e *Engine) ListRunsFiltered(ctx context.Context, workflowID *int64, page, size int) ([]WorkflowRun, int64, error) {
+	query := e.db.WithContext(ctx).Model(&WorkflowRun{})
+	if workflowID != nil {
+		query = query.Where("workflow_def_id = ?", *workflowID)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var runs []WorkflowRun
+	if err := query.Order("id DESC").Offset((page - 1) * size).Limit(size).Find(&runs).Error; err != nil {
+		return nil, 0, err
+	}
+	return runs, total, nil
+}
+
+// RetryRun resets a failed run and increments the retry counter.
+// Returns an error if the run is not failed or has exhausted retries.
+func (e *Engine) RetryRun(ctx context.Context, runID int64) error {
+	var run WorkflowRun
+	if err := e.db.WithContext(ctx).First(&run, runID).Error; err != nil {
+		return fmt.Errorf("run not found: %w", err)
+	}
+	if run.Status != RunStatusFailed {
+		return fmt.Errorf("run %d is not failed (status: %s)", runID, run.Status)
+	}
+	if run.RetryCount >= run.MaxRetries {
+		return fmt.Errorf("run %d has exhausted max retries (%d)", runID, run.MaxRetries)
+	}
+
+	now := time.Now()
+
+	// Reset steps to pending.
+	e.db.WithContext(ctx).Model(&WorkflowStepRun{}).
+		Where("workflow_run_id = ?", runID).
+		Updates(map[string]interface{}{
+			"status":       StepStatusPending,
+			"error":        "",
+			"started_at":   nil,
+			"completed_at": nil,
+		})
+
+	// Reset run.
+	return e.db.WithContext(ctx).Model(&run).Updates(map[string]interface{}{
+		"status":          RunStatusRunning,
+		"error":           "",
+		"started_at":      now,
+		"completed_at":    nil,
+		"retry_count":     run.RetryCount + 1,
+		"current_node_id": 0,
+	}).Error
 }

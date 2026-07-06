@@ -167,3 +167,66 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"id": id})
 }
+
+// AutoDetect POST /api/v1/exceptions/auto-detect
+func (h *Handler) AutoDetect(c *gin.Context) {
+	items, err := h.service.AutoDetect(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if items == nil {
+		items = []ExceptionItem{}
+	}
+	response.Success(c, items)
+}
+
+// Suggest POST /api/v1/exceptions/:id/suggest
+func (h *Handler) Suggest(c *gin.Context) {
+	id, ok := parseEID(c)
+	if !ok {
+		return
+	}
+	suggestion, err := h.service.Suggest(c.Request.Context(), id)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, suggestion)
+}
+
+type ownerResolveRequest struct {
+	Suggestion string `json:"suggestion"`
+	Action     string `json:"action"`
+	ResolvedBy string `json:"resolved_by"`
+}
+
+// OwnerResolve POST /api/v1/exceptions/:id/resolve
+func (h *Handler) OwnerResolve(c *gin.Context) {
+	id, ok := parseEID(c)
+	if !ok {
+		return
+	}
+	var req ownerResolveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "无效的请求体")
+		return
+	}
+	if req.Suggestion == "" || req.Action == "" {
+		response.Error(c, http.StatusBadRequest, "suggestion 和 action 不能为空")
+		return
+	}
+	resolvedBy := req.ResolvedBy
+	if resolvedBy == "" {
+		resolvedBy = c.Query("operator")
+	}
+	if resolvedBy == "" {
+		resolvedBy = "owner"
+	}
+	e, err := h.service.ResolveWithApproval(c.Request.Context(), id, resolvedBy, req.Suggestion, req.Action)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, e)
+}

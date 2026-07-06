@@ -1,7 +1,7 @@
 # 凌镜 LingMirror — 文档索引
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 更新日期：2026-07-04
+> 更新日期：2026-07-06
 
 ---
 
@@ -165,8 +165,10 @@
 | 06-15 | [项目稳定化与 MVP 交接](superpowers/plans/2026-06-15-project-stabilization-and-mvp-handoff.md) |
 | 06-15 | [运费手动计算器](superpowers/plans/2026-06-15-shipping-manual-calculator.md) |
 | 06-15 | [运费表导入](superpowers/plans/2026-06-15-shipping-rate-import.md) |
-| 06-18 | [AgentOS Phase 1](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) |
 | 06-16 | [订单导入运营链路](superpowers/plans/2026-06-16-order-import-operational-chain.md) |
+| 06-18 | [AgentOS Phase 1](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) |
+| 07-06 | [H1 Copilot OS 计划](superpowers/plans/2026-07-06-lingmirror-h1-copilot-os-plan.md) |
+| 07-06 | [H1 Copilot OS 规格](superpowers/specs/2026-07-06-lingmirror-h1-copilot-os-spec.md) |
 
 ## 🆕 功能需求 (Feature Requests)
 

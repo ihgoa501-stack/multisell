@@ -39,6 +39,7 @@ import { getCurrentOperator } from '@/lib/user';
 import StatCard from '@/components/ui/StatCard';
 import SectionCard from '@/components/ui/SectionCard';
 import WorkItemDrawer from './work-item-drawer';
+import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
 import type { WorkItemDetail } from './types';
 
 const { Text } = Typography;
@@ -259,6 +260,22 @@ export default function AgentOSPage() {
     },
   });
 
+  // Workflow monitoring
+  interface WorkflowMonitor {
+    running: number;
+    pending: number;
+    blocked: number;
+    failed: number;
+    completed_24h: number;
+  }
+  const { data: workflowMonitor, isLoading: wfMonitorLoading } = useQuery({
+    queryKey: ['workflow-monitor'],
+    queryFn: async () => {
+      const res = await apiClient.get<WorkflowMonitor>('/v1/workflow/monitor');
+      return res.data;
+    },
+  });
+
   // Action operations
   const approveMutation = useMutation({
     mutationFn: async (id: string) =>
@@ -267,10 +284,12 @@ export default function AgentOSPage() {
       }),
     onSuccess: () => {
       message.success('已批准');
+      setConfirmAction(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
     onError: (e: Error) => message.error(`批准失败: ${e.message}`),
+    onSettled: () => setConfirmAction(null),
   });
 
   const rejectMutation = useMutation({
@@ -294,10 +313,12 @@ export default function AgentOSPage() {
       }),
     onSuccess: () => {
       message.success('已执行');
+      setConfirmAction(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
     onError: (e: Error) => message.error(`执行失败: ${e.message}`),
+    onSettled: () => setConfirmAction(null),
   });
 
   const refreshAll = () => {
@@ -315,6 +336,7 @@ export default function AgentOSPage() {
   // Work item detail drawer
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{type: 'approve' | 'execute'; item: WorkItem} | null>(null);
 
   const { data: workItemDetail, isLoading: detailLoading } = useQuery({
     queryKey: ['agentos-work-item-detail', selectedWorkItemId],
@@ -431,12 +453,10 @@ export default function AgentOSPage() {
             size="small"
             type="primary"
             icon={<CheckOutlined />}
-            loading={
-              approveMutation.isPending && approveMutation.variables === record.id
-            }
+            disabled={approveMutation.isPending && approveMutation.variables === record.id}
             onClick={(e) => {
               e.stopPropagation();
-              approveMutation.mutate(record.id);
+              setConfirmAction({type: 'approve', item: record});
             }}
           >
             批准
@@ -458,12 +478,10 @@ export default function AgentOSPage() {
           <Button
             size="small"
             icon={<ThunderboltOutlined />}
-            loading={
-              executeMutation.isPending && executeMutation.variables === record.id
-            }
+            disabled={executeMutation.isPending && executeMutation.variables === record.id}
             onClick={(e) => {
               e.stopPropagation();
-              executeMutation.mutate(record.id);
+              setConfirmAction({type: 'execute', item: record});
             }}
           >
             执行
@@ -599,6 +617,32 @@ export default function AgentOSPage() {
             loading={healthLoading} />
         </Col>
       </Row>
+
+      {/* Workflow Monitoring */}
+      <SectionCard title={<><ApiOutlined /> Workflow 运行监控</>} style={{ marginBottom: 16 }}>
+        <Row gutter={16}>
+          <Col xs={12} sm={4}>
+            <StatCard title="运行中" value={workflowMonitor?.running ?? 0}
+              prefix={<RobotOutlined />} valueStyle={{ color: 'var(--i4)' }} loading={wfMonitorLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="待处理" value={workflowMonitor?.pending ?? 0}
+              prefix={<ClockCircleOutlined />} valueStyle={{ color: 'var(--y4)' }} loading={wfMonitorLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="已阻塞" value={workflowMonitor?.blocked ?? 0}
+              prefix={<CloseOutlined />} valueStyle={{ color: 'var(--r4)' }} loading={wfMonitorLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="失败" value={workflowMonitor?.failed ?? 0}
+              prefix={<AlertOutlined />} valueStyle={{ color: 'var(--r4)' }} loading={wfMonitorLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="24h 完成" value={workflowMonitor?.completed_24h ?? 0}
+              prefix={<CheckOutlined />} valueStyle={{ color: 'var(--g4)' }} loading={wfMonitorLoading} />
+          </Col>
+        </Row>
+      </SectionCard>
 
       <Row gutter={16}>
         {/* 左侧：Squad 健康地图 + 工作队列 */}
@@ -1013,6 +1057,34 @@ export default function AgentOSPage() {
           <Empty description="无审计记录" />
         )}
       </Drawer>
+
+      {/* High-risk action confirmation dialog */}
+      <HighRiskConfirmDialog
+        open={!!confirmAction}
+        actionName={confirmAction?.type === 'approve' ? '批准动作' : '执行动作'}
+        riskLevel={confirmAction?.item.risk_level === 'high' ? 'high' : confirmAction?.item.risk_level === 'medium' ? 'medium' : 'low'}
+        detail={confirmAction ? { targetLabel: confirmAction.item.title } : undefined}
+        environmentMode="production"
+        expectedConsequence={
+          confirmAction?.type === 'approve'
+            ? '批准后该动作将进入待执行队列'
+            : '执行后该动作将立即生效'
+        }
+        auditDestination="操作已记录至 operation_log 表"
+        confirmLoading={
+          (confirmAction?.type === 'approve' ? approveMutation.isPending : executeMutation.isPending) &&
+          confirmAction?.item.id === (confirmAction?.type === 'approve' ? approveMutation.variables : executeMutation.variables)
+        }
+        confirmText={confirmAction?.type === 'approve' ? '批准' : '执行'}
+        showReason
+        reasonPlaceholder="补充说明（选填）"
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (confirmAction.type === 'approve') approveMutation.mutate(confirmAction.item.id);
+          else executeMutation.mutate(confirmAction.item.id);
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

@@ -2,13 +2,13 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-07-05
+更新时间：2026-07-06
 
-> 2026-07-05 direction note:
-> 可信 AgentOS 执行门禁收口已完成。本期交付：EventBus 生命周期验证 + 统一执行门禁 + 审批身份绑定 + RBAC 集成 + 审计脱敏 + 平台 dry-run 模式 + 前端高风险确认组件。
-> 详见 [PLAN.md](PLAN.md) 和 [SPEC.md](SPEC.md)。
+> 2026-07-06 direction note:
+> H1 Copilot OS 方案制定中。本期交付：H1 路线图与规格文档（19 个 Open Issue × 6 轮迭代），M1 基础修复（测试全绿 + 文档口径统一）。
+> 详见 [superpowers/plans/2026-07-06-lingmirror-h1-copilot-os-plan.md](superpowers/plans/2026-07-06-lingmirror-h1-copilot-os-plan.md) 和 [superpowers/specs/2026-07-06-lingmirror-h1-copilot-os-spec.md](superpowers/specs/2026-07-06-lingmirror-h1-copilot-os-spec.md)。
 
-## 2026-07-05 执行门禁收口完成
+## 2026-07-06 H1 Copilot OS 方案阶段
 
 凌镜下一阶段应从“继续增加模块和 Agent”转为“可信 AgentOS 执行门禁收口”。
 
@@ -33,9 +33,9 @@
 
 ### 当前建议优先推进
 
+- 执行 M1.3–M1.26 剩余的 25 个 H1 Copilot OS 实施任务
 - 将 `HighRiskConfirmDialog` 集成到 Owner 工作台和 AI action 页面的 approve/execute 操作中
 - 解决 `frontend-next` 已知 lint/TS 问题
-- 修复 `supplier.TestHandler_GetSupplierComparison` 预存测试失败
 
 ### 当前不建议优先推进
 
@@ -62,7 +62,7 @@
 | 项目 | 当前口径 |
 |------|----------|
 | 活跃代码栈 | `backend-go/` + `frontend-next/` |
-| 当前方向 | 可信 AgentOS 执行门禁收口，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
+| 当前方向 | H1 Copilot OS 方案阶段，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
 | 模块 / API / 页面事实源 | [reference-module-catalog.md](reference-module-catalog.md) |
 | 最新全量验证 | 待重新运行并记录 |
 | 历史验证记录 | 本文下方各日期段落、[TEST_SUMMARY.md](TEST_SUMMARY.md)、[FRONTEND_TEST_REPORT.md](FRONTEND_TEST_REPORT.md) |
@@ -71,19 +71,17 @@
 
 | 检查 | 当前状态 | 说明 |
 |------|----------|------|
-| `cd backend-go && go test ./...` | ✅ 通过（2026-07-05） | 1 个预存失败：`supplier.TestHandler_GetSupplierComparison`（期望 500 但获 400，非本期引入） |
+| `cd backend-go && go test ./...` | ✅ 通过（2026-07-06） | 全绿（M1.1 修复后 supplier 预存失败已解决） |
 | `cd backend-go && go vet ./...` | ✅ 通过 | 无 vet 输出 |
-| `cd frontend-next && npm test` | ⏳ 需 node_modules | worktree 中无 node_modules，组件已创建（HighRiskConfirmDialog + 8 tests） |
-| `cd frontend-next && npm run build` | ⏳ 需 node_modules | 同上 |
-| `cd frontend-next && npm run lint` | ⏳ 需 node_modules | 同上 |
+| `cd frontend-next && npm run build` | ✅ 通过（2026-07-06） | M1.1 修复后构建正常 |
 
 ## 当前结论
 
 凌镜已完成全站新技术栈迁移，旧栈（Python/FastAPI + Vue 3）已于 2026-06-30 删除。
 Git history 保留了全部历史代码，可随时回溯。
 
-Version: v0.3.0.0 — 2026-07-03 中完成 12 线并行合并：10 个 PR 合入 main，open PR 归零。
-详见 [合并梳理](ORCHESTRATION_2026-07-03.md)（PR #261）。
+Version: v0.4.1.0 — 2026-07-06, H1 Copilot OS 方案制定中。
+详见 [H1 Copilot OS 计划](superpowers/plans/2026-07-06-lingmirror-h1-copilot-os-plan.md)。
 
 当前唯一活跃开发线：
 

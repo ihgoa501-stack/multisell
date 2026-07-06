@@ -87,3 +87,23 @@ func (h *Handler) PlatformFee(c *gin.Context) {
 	}
 	response.Success(c, r)
 }
+
+// DailyReport GET /report/daily
+func (h *Handler) DailyReport(c *gin.Context) {
+	r, err := h.service.Daily(c.Query("date"))
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, r)
+}
+
+// WeeklyReport GET /report/weekly
+func (h *Handler) WeeklyReport(c *gin.Context) {
+	r, err := h.service.Weekly(c.Query("week_start"))
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, r)
+}

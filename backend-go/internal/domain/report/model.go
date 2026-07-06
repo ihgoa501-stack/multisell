@@ -93,3 +93,27 @@ type FeeTypeRow struct {
 	TotalFee  float64 `json:"total_fee"`
 	Count     int64   `json:"count"`
 }
+
+// DailyReport is a single-day executive summary.
+type DailyReport struct {
+	Date           string  `json:"date"`
+	Sales          float64 `json:"sales"`
+	Orders         int64   `json:"orders"`
+	Profit         float64 `json:"profit"`
+	NewListings    int64   `json:"new_listings"`
+	Anomalies      int64   `json:"anomalies"`
+	Approvals      int64   `json:"approvals"`
+	AgentProposals int64   `json:"agent_proposals"`
+	LLMCost        float64 `json:"llm_cost"`
+}
+
+// WeeklyReport is a 7-day summary with per-day breakdown.
+type WeeklyReport struct {
+	WeekStart      string        `json:"week_start"`
+	WeekEnd        string        `json:"week_end"`
+	DailyReports   []DailyReport `json:"daily_reports"`
+	SalesTotal     float64       `json:"sales_total"`
+	ProfitTotal    float64       `json:"profit_total"`
+	OrdersTotal    int64         `json:"orders_total"`
+	AnomaliesTotal int64         `json:"anomalies_total"`
+}

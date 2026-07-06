@@ -43,3 +43,20 @@ type CheckResult struct {
 type CheckInput struct {
 	TriggeredBy string `json:"triggered_by"`
 }
+
+// CompletenessReport is the enhanced API response with economic estimates
+// from profit, logistics, and platform fee services.
+type CompletenessReport struct {
+	CandidateID          int64    `json:"candidate_id"`
+	BaseInfoScore        float64  `json:"base_info_score"`          // 基础信息完整度 0-1
+	CostScore            float64  `json:"cost_score"`               // 成本完整度
+	LogisticsScore       float64  `json:"logistics_score"`         // 物流完整度
+	PlatformFeeScore     float64  `json:"platform_fee_score"`      // 平台费完整度
+	ProfitScore          float64  `json:"profit_score"`            // 利润可测算
+	OverallScore         float64  `json:"overall_score"`           // 综合
+	MissingFields        []string `json:"missing_fields"`
+	EstimatedProfit      *float64 `json:"estimated_profit,omitempty"`
+	EstimatedMargin      *float64 `json:"estimated_margin,omitempty"`
+	EstimatedLogistics   *float64 `json:"estimated_logistics,omitempty"`
+	EstimatedPlatformFee *float64 `json:"estimated_platform_fee,omitempty"`
+}

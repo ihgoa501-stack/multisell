@@ -2,12 +2,14 @@ package integrations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -15,8 +17,9 @@ import (
 
 // Service provides integrations business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db          *gorm.DB
+	logger      *zap.Logger
+	approvalSvc *approval.Service
 }
 
 // NewService creates a new integrations service.
@@ -24,6 +27,11 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
 }
 
+// WithApproval sets the approval service dependency (optional, for write-back gating).
+func (s *Service) WithApproval(svc *approval.Service) *Service {
+	s.approvalSvc = svc
+	return s
+}
 // List returns paginated integration accounts with optional filter.
 func (s *Service) List(p *common.Pagination, f *AccountListFilter) ([]PlatformIntegrationAccount, int64, error) {
 	q := s.db.Model(&PlatformIntegrationAccount{})
@@ -244,7 +252,39 @@ func (s *Service) CreateAttributeMapping(accountID int64, in *CreateAttributeMap
 	return &m, nil
 }
 
-// PublishToOzonInput is the request payload for publishing a product to Ozon.
+// GetMode returns the current execution mode for an integration account.
+// ponytail: stored in Config JSON to avoid migration. Mode 0 (dry_run) is default.
+func (s *Service) GetMode(id int64) (*ModeResponse, error) {
+	var a PlatformIntegrationAccount
+	if err := s.db.First(&a, id).Error; err != nil {
+		return nil, err
+	}
+	return &ModeResponse{
+		Mode:        ExecutionMode(a.ExecutionMode),
+		AccountID:   a.ID,
+		AccountName: a.StoreName,
+	}, nil
+}
+
+// SetMode updates the execution mode for an integration account.
+func (s *Service) SetMode(id int64, mode ExecutionMode) error {
+	return s.db.Model(&PlatformIntegrationAccount{}).Where("id = ?", id).
+		Update("execution_mode", int8(mode)).Error
+}
+
+// executionModeFromConfig reads ExecutionMode from account DB field.
+func executionModeFromConfig(config json.RawMessage) ExecutionMode {
+	if len(config) == 0 {
+		return ExecutionModeDryRun
+	}
+	var cfg struct {
+		Mode ExecutionMode `json:"execution_mode"`
+	}
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return ExecutionModeDryRun
+	}
+	return cfg.Mode
+}
 type PublishToOzonInput struct {
 	ProductID    int64   `json:"product_id" binding:"required"`
 	AccountID    int64   `json:"account_id" binding:"required"`

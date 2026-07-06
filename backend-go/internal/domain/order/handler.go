@@ -2,23 +2,26 @@ package order
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
 
 // Handler handles order HTTP requests.
 type Handler struct {
-	service *Service
+	service     *Service
+	approvalSvc *approval.Service
 }
 
 // NewHandler creates a new order handler.
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, approvalSvc *approval.Service) *Handler {
+	return &Handler{service: service, approvalSvc: approvalSvc}
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -131,6 +134,32 @@ func (h *Handler) Update(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "order_update",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("update order id=%d", id),
+			Reason:      "order update requires approval",
+			TargetType:  "order",
+			TargetID:    id,
+			RiskLevel:   "medium",
+			EntityType:  "order",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("order update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	o, err := h.service.Update(id, &in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -145,6 +174,32 @@ func (h *Handler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "order_delete",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("delete order id=%d", id),
+			Reason:      "order deletion requires approval",
+			TargetType:  "order",
+			TargetID:    id,
+			RiskLevel:   "medium",
+			EntityType:  "order",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("order deletion requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.Delete(id); err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -178,6 +233,32 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "order_status_change",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("order %d status %s -> %s", id, body.From, body.To),
+			Reason:      "order status change requires approval",
+			TargetType:  "order",
+			TargetID:    id,
+			RiskLevel:   "medium",
+			EntityType:  "order",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("order status change requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.UpdateStatus(id, body.From, body.To, body.Operator, body.Remark); err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return

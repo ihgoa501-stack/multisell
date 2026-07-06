@@ -18,6 +18,128 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
 }
 
+// Daily returns the daily report for the given date (defaults to today).
+func (s *Service) Daily(dateStr string) (*DailyReport, error) {
+	if dateStr == "" {
+		dateStr = time.Now().Format("2006-01-02")
+	}
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return nil, err
+	}
+	nextDay := date.AddDate(0, 0, 1)
+	r := &DailyReport{Date: dateStr}
+
+	// Sales, Orders, Profit from sales_order
+	type salesRow struct {
+		Sales  float64
+		Orders int64
+		Profit float64
+	}
+	var sr salesRow
+	if err := s.db.Table("sales_order").
+		Where("created_at >= ? AND created_at < ?", date, nextDay).
+		Select("COALESCE(SUM(pay_amount),0) AS sales, COUNT(*) AS orders, COALESCE(SUM(profit_amount),0) AS profit").
+		Scan(&sr).Error; err != nil {
+		return nil, err
+	}
+	r.Sales = sr.Sales
+	r.Orders = sr.Orders
+	r.Profit = sr.Profit
+
+	// NewListings from listing_task
+	type cnt struct {
+		C int64
+	}
+	var lc cnt
+	if err := s.db.Table("listing_task").
+		Where("created_at >= ? AND created_at < ?", date, nextDay).
+		Select("COUNT(*) AS c").Scan(&lc).Error; err != nil {
+		return nil, err
+	}
+	r.NewListings = lc.C
+
+	// Anomalies from exception_item
+	var ac cnt
+	if err := s.db.Table("exception_item").
+		Where("created_at >= ? AND created_at < ?", date, nextDay).
+		Select("COUNT(*) AS c").Scan(&ac).Error; err != nil {
+		return nil, err
+	}
+	r.Anomalies = ac.C
+
+	// Approvals from approval_request
+	var apc cnt
+	if err := s.db.Table("approval_request").
+		Where("created_at >= ? AND created_at < ?", date, nextDay).
+		Select("COUNT(*) AS c").Scan(&apc).Error; err != nil {
+		return nil, err
+	}
+	r.Approvals = apc.C
+
+	// AgentProposals from unified_action
+	var uc cnt
+	if err := s.db.Table("unified_action").
+		Where("created_at >= ? AND created_at < ?", date, nextDay).
+		Select("COUNT(*) AS c").Scan(&uc).Error; err != nil {
+		return nil, err
+	}
+	r.AgentProposals = uc.C
+
+	// LLMCost from llm_cost_logs
+	type costRow struct {
+		Total float64
+	}
+	var lcst costRow
+	if err := s.db.Table("llm_cost_logs").
+		Where("window_date = ?", dateStr).
+		Select("COALESCE(SUM(cost_usd),0) AS total").
+		Scan(&lcst).Error; err != nil {
+		return nil, err
+	}
+	r.LLMCost = lcst.Total
+
+	return r, nil
+}
+
+// Weekly returns the weekly report starting from the given Monday.
+func (s *Service) Weekly(weekStartStr string) (*WeeklyReport, error) {
+	if weekStartStr == "" {
+		now := time.Now()
+		weekday := now.Weekday()
+		if weekday == time.Sunday {
+			weekday = 7
+		}
+		weekStart := now.AddDate(0, 0, -int(weekday-time.Monday))
+		weekStartStr = weekStart.Format("2006-01-02")
+	}
+	weekStart, err := time.Parse("2006-01-02", weekStartStr)
+	if err != nil {
+		return nil, err
+	}
+	weekEnd := weekStart.AddDate(0, 0, 6)
+
+	r := &WeeklyReport{
+		WeekStart: weekStartStr,
+		WeekEnd:   weekEnd.Format("2006-01-02"),
+	}
+
+	for i := 0; i < 7; i++ {
+		d := weekStart.AddDate(0, 0, i)
+		dr, err := s.Daily(d.Format("2006-01-02"))
+		if err != nil {
+			return nil, err
+		}
+		r.DailyReports = append(r.DailyReports, *dr)
+		r.SalesTotal += dr.Sales
+		r.ProfitTotal += dr.Profit
+		r.OrdersTotal += dr.Orders
+		r.AnomaliesTotal += dr.Anomalies
+	}
+
+	return r, nil
+}
+
 // parseRange parses from/to query strings. Missing values default to wide bounds.
 func parseRange(fromStr, toStr string) (time.Time, time.Time) {
 	var zero time.Time

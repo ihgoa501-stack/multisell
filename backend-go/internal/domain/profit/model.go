@@ -47,3 +47,36 @@ type ProfitResult struct {
 type SummaryInput struct {
 	CalculatedBy string `json:"calculated_by"`
 }
+
+// OrderProfitRecord maps to "order_profit_record".
+// Stores one row per order capturing all cost components and computed profit.
+type OrderProfitRecord struct {
+	ID           int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OrderID      int64     `gorm:"column:order_id;not null;uniqueIndex" json:"order_id"`
+	Revenue      float64   `gorm:"column:revenue;default:0" json:"revenue"`
+	Cost         float64   `gorm:"column:cost;default:0" json:"cost"`
+	ShippingCost float64   `gorm:"column:shipping_cost;default:0" json:"shipping_cost"`
+	PlatformFee  float64   `gorm:"column:platform_fee;default:0" json:"platform_fee"`
+	PaymentFee   float64   `gorm:"column:payment_fee;default:0" json:"payment_fee"`
+	TariffCost   float64   `gorm:"column:tariff_cost;default:0" json:"tariff_cost"`
+	TotalCost    float64   `gorm:"column:total_cost;default:0" json:"total_cost"`
+	Profit       float64   `gorm:"column:profit;default:0" json:"profit"`
+	Margin       float64   `gorm:"column:margin;default:0" json:"margin"`
+	CalculatedAt time.Time `gorm:"column:calculated_at;autoCreateTime" json:"calculated_at"`
+}
+
+func (OrderProfitRecord) TableName() string { return "order_profit_record" }
+
+// OrderProfit is the API response for order-level profit calculation.
+type OrderProfit struct {
+	OrderID      uint    `json:"order_id"`
+	Revenue      float64 `json:"revenue"`
+	Cost         float64 `json:"cost"`
+	ShippingCost float64 `json:"shipping_cost"`
+	PlatformFee  float64 `json:"platform_fee"`
+	PaymentFee   float64 `json:"payment_fee"`
+	TariffCost   float64 `json:"tariff_cost"`
+	TotalCost    float64 `json:"total_cost"`
+	Profit       float64 `json:"profit"`
+	Margin       float64 `json:"margin"`
+}

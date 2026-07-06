@@ -1,23 +1,26 @@
 package inventory
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
 
 // Handler handles inventory HTTP requests.
 type Handler struct {
-	service *Service
+	service     *Service
+	approvalSvc *approval.Service
 }
 
 // NewHandler creates a new inventory handler.
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, approvalSvc *approval.Service) *Handler {
+	return &Handler{service: service, approvalSvc: approvalSvc}
 }
 
 // ── Inventory handlers ────────────────────────────────────────────
@@ -83,6 +86,26 @@ func (h *Handler) Update(c *gin.Context) {
 		operator = "system"
 	}
 
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "inventory_update",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("update inventory id=%d qty=%d", id, req.Quantity),
+			Reason:      "inventory update requires approval",
+			TargetType:  "inventory",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "inventory",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("inventory update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.UpdateStock(c.Request.Context(), id, req.Quantity, operator, req.Remark); err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to update stock: "+err.Error())
 		return
@@ -113,6 +136,26 @@ func (h *Handler) Lock(c *gin.Context) {
 		operator = "system"
 	}
 
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "inventory_lock",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("lock inventory id=%d qty=%d", id, req.Quantity),
+			Reason:      "inventory lock requires approval",
+			TargetType:  "inventory",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "inventory",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("inventory lock requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.LockStock(c.Request.Context(), id, req.Quantity, operator); err != nil {
 		response.Error(c, http.StatusBadRequest, "failed to lock stock: "+err.Error())
 		return
@@ -141,6 +184,26 @@ func (h *Handler) Unlock(c *gin.Context) {
 	operator := c.GetString("username")
 	if operator == "" {
 		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "inventory_unlock",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("unlock inventory id=%d qty=%d", id, req.Quantity),
+			Reason:      "inventory unlock requires approval",
+			TargetType:  "inventory",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "inventory",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("inventory unlock requires approval (approval_id=%d)", apprReq.ID))
+		return
 	}
 
 	if err := h.service.UnlockStock(c.Request.Context(), id, req.Quantity, operator); err != nil {
@@ -230,12 +293,36 @@ func (h *Handler) SyncCrossPlatform(c *gin.Context) {
 		return
 	}
 
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "inventory_sync_cross_platform",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("sync inventory cross-platform product_id=%d", productID),
+			Reason:      "cross-platform inventory sync requires approval",
+			TargetType:  "inventory",
+			TargetID:    productID,
+			RiskLevel:   "high",
+			EntityType:  "product",
+			EntityID:    productID,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("cross-platform inventory sync requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	result, err := h.service.SyncAcrossPlatforms(c.Request.Context(), productID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "sync failed: "+err.Error())
 		return
 	}
-
 	response.Success(c, result)
 }
 
@@ -289,6 +376,32 @@ func (h *Handler) UpsertSafetyConfig(c *gin.Context) {
 		return
 	}
 	cfg.SkuID = skuID
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "safety_config_upsert",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("upsert safety config sku_id=%d", skuID),
+			Reason:      "safety stock config changes require approval",
+			TargetType:  "safety_config",
+			TargetID:    skuID,
+			RiskLevel:   "medium",
+			EntityType:  "safety_config",
+			EntityID:    skuID,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("safety config update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	if err := h.service.UpsertSafetyConfig(c.Request.Context(), &cfg); err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to save safety config: "+err.Error())
 		return
@@ -334,6 +447,30 @@ func (h *Handler) AllocateStock(c *gin.Context) {
 // POST /api/v1/inventory/dead-stock/analyze?threshold_days=90
 func (h *Handler) IdentifyDeadStock(c *gin.Context) {
 	thresholdDays, _ := strconv.Atoi(c.DefaultQuery("threshold_days", "90"))
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "dead_stock_analyze",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("analyze dead stock threshold=%d", thresholdDays),
+			Reason:      "dead stock analysis requires approval",
+			TargetType:  "dead_stock",
+			RiskLevel:   "low",
+			EntityType:  "dead_stock",
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("dead stock analysis requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	items, err := h.service.IdentifyDeadStock(c.Request.Context(), thresholdDays)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "dead stock analysis failed: "+err.Error())

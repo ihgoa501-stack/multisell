@@ -8,7 +8,7 @@ import apiClient from '@/lib/api-client';
 
 const { RangePicker } = DatePicker;
 
-type TabKey = 'sales' | 'profit' | 'inventory' | 'settlement' | 'platform-fee';
+type TabKey = 'sales' | 'profit' | 'inventory' | 'settlement' | 'platform-fee' | 'daily' | 'weekly';
 
 const TABS: { key: TabKey; label: string; path: string; hasRange: boolean }[] = [
   { key: 'sales', label: '销售报表', path: '/v1/report/sales', hasRange: true },
@@ -16,6 +16,8 @@ const TABS: { key: TabKey; label: string; path: string; hasRange: boolean }[] = 
   { key: 'inventory', label: '库存报表', path: '/v1/report/inventory', hasRange: false },
   { key: 'settlement', label: '结算报表', path: '/v1/report/settlement', hasRange: true },
   { key: 'platform-fee', label: '平台费用', path: '/v1/report/platform-fee', hasRange: true },
+  { key: 'daily', label: '日报', path: '/v1/report/daily', hasRange: false },
+  { key: 'weekly', label: '周报', path: '/v1/report/weekly', hasRange: false },
 ];
 
 interface SummaryData {
@@ -49,6 +51,28 @@ interface ProfitRankingItem {
   period_end: string;
 }
 
+interface DailyReport {
+  date: string;
+  sales: number;
+  orders: number;
+  profit: number;
+  new_listings: number;
+  anomalies: number;
+  approvals: number;
+  agent_proposals: number;
+  llm_cost: number;
+}
+
+interface WeeklyReport {
+  week_start: string;
+  week_end: string;
+  daily_reports: DailyReport[];
+  sales_total: number;
+  profit_total: number;
+  orders_total: number;
+  anomalies_total: number;
+}
+
 function formatCurrency(v: number): string {
   return `¥${v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -64,6 +88,18 @@ const PROFIT_RANKING_COLUMNS = [
   { title: '利润率', dataIndex: 'profit_margin', render: (v: number) => formatPercent(v) },
 ];
 
+const WEEKLY_DAILY_COLUMNS = [
+  { title: '日期', dataIndex: 'date', key: 'date' },
+  { title: '销售额', dataIndex: 'sales', key: 'sales', render: (v: number) => formatCurrency(v) },
+  { title: '订单数', dataIndex: 'orders', key: 'orders' },
+  { title: '利润', dataIndex: 'profit', key: 'profit', render: (v: number) => formatCurrency(v) },
+  { title: '上新数', dataIndex: 'new_listings', key: 'new_listings' },
+  { title: '异常', dataIndex: 'anomalies', key: 'anomalies' },
+  { title: '审批数', dataIndex: 'approvals', key: 'approvals' },
+  { title: 'Agent提案', dataIndex: 'agent_proposals', key: 'agent_proposals' },
+  { title: 'LLM费用($)', dataIndex: 'llm_cost', key: 'llm_cost', render: (v: number) => `$${v.toFixed(2)}` },
+];
+
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('sales');
   const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
@@ -71,10 +107,12 @@ export default function ReportsPage() {
     dayjs(),
   ]);
   const [platformId, setPlatformId] = useState<string>('');
+  const [dailyDate, setDailyDate] = useState<dayjs.Dayjs>(dayjs());
+  const [weeklyStart, setWeeklyStart] = useState<dayjs.Dayjs>(dayjs().startOf('week').add(1, 'day')); // Monday
 
   const current = TABS.find((t) => t.key === activeTab)!;
 
-  // Generic report query for non-profit tabs
+  // Generic report query for non-profit, non-daily/weekly tabs
   const { data, isLoading: genericLoading } = useQuery({
     queryKey: ['report', activeTab, range?.[0]?.format('YYYY-MM-DD'), range?.[1]?.format('YYYY-MM-DD'), platformId],
     queryFn: async () => {
@@ -87,7 +125,7 @@ export default function ReportsPage() {
       const res = await apiClient.get<SummaryData>(current.path, params);
       return res.data;
     },
-    enabled: activeTab !== 'profit',
+    enabled: activeTab !== 'profit' && activeTab !== 'daily' && activeTab !== 'weekly',
     retry: false,
   });
 
@@ -121,11 +159,40 @@ export default function ReportsPage() {
     retry: false,
   });
 
+  // Daily report query
+  const { data: dailyData, isLoading: dailyLoading } = useQuery({
+    queryKey: ['report-daily', dailyDate?.format('YYYY-MM-DD')],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (dailyDate) params.date = dailyDate.format('YYYY-MM-DD');
+      const res = await apiClient.get<DailyReport>('/v1/report/daily', params);
+      return res.data;
+    },
+    enabled: activeTab === 'daily',
+    retry: false,
+  });
+
+  // Weekly report query
+  const { data: weeklyData, isLoading: weeklyLoading } = useQuery({
+    queryKey: ['report-weekly', weeklyStart?.format('YYYY-MM-DD')],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (weeklyStart) params.week_start = weeklyStart.format('YYYY-MM-DD');
+      const res = await apiClient.get<WeeklyReport>('/v1/report/weekly', params);
+      return res.data;
+    },
+    enabled: activeTab === 'weekly',
+    retry: false,
+  });
+
   const summaryEntries = Object.entries(data?.summary ?? []);
   const rows = data?.rows ?? [];
 
   const isProfitTab = activeTab === 'profit';
   const isProfitLoading = profitSummaryLoading || rankingLoading;
+  const isDailyTab = activeTab === 'daily';
+  const isWeeklyTab = activeTab === 'weekly';
+  const isGenericTab = !isProfitTab && !isDailyTab && !isWeeklyTab;
 
   return (
     <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
@@ -139,6 +206,21 @@ export default function ReportsPage() {
 
       <Card style={{ marginBottom: 16, background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          {activeTab === 'daily' && (
+            <DatePicker
+              value={dailyDate}
+              onChange={(v) => v && setDailyDate(v)}
+              allowClear={false}
+            />
+          )}
+          {activeTab === 'weekly' && (
+            <DatePicker
+              value={weeklyStart}
+              onChange={(v) => v && setWeeklyStart(v)}
+              allowClear={false}
+              picker="week"
+            />
+          )}
           {current.hasRange && (
             <RangePicker
               value={range}
@@ -162,7 +244,7 @@ export default function ReportsPage() {
         </div>
       </Card>
 
-      {isProfitTab ? (
+      {isProfitTab && (
         isProfitLoading ? (
           <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
             <div style={{ textAlign: 'center', padding: 48 }}>
@@ -218,7 +300,73 @@ export default function ReportsPage() {
             </Card>
           </>
         )
-      ) : (
+      )}
+
+      {isDailyTab && (
+        dailyLoading ? (
+          <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+            <div style={{ textAlign: 'center', padding: 48 }}>
+              <Spin tip="日报加载中..." />
+            </div>
+          </Card>
+        ) : !dailyData ? (
+          <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+            <Empty description="暂无日报数据" />
+          </Card>
+        ) : (
+          <Card title={`日报 ${dailyData.date}`} style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+              <Statistic title="销售额" value={dailyData.sales} prefix="¥" precision={2} />
+              <Statistic title="订单数" value={dailyData.orders} />
+              <Statistic title="利润" value={dailyData.profit} prefix="¥" precision={2}
+                valueStyle={{ color: dailyData.profit >= 0 ? '#3f8600' : '#cf1322' }} />
+              <Statistic title="上新数" value={dailyData.new_listings} />
+              <Statistic title="异常" value={dailyData.anomalies}
+                valueStyle={{ color: dailyData.anomalies > 0 ? '#cf1322' : undefined }} />
+              <Statistic title="审批数" value={dailyData.approvals} />
+              <Statistic title="Agent提案" value={dailyData.agent_proposals} />
+              <Statistic title="LLM费用" value={dailyData.llm_cost} precision={2} prefix="$" />
+            </div>
+          </Card>
+        )
+      )}
+
+      {isWeeklyTab && (
+        weeklyLoading ? (
+          <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+            <div style={{ textAlign: 'center', padding: 48 }}>
+              <Spin tip="周报加载中..." />
+            </div>
+          </Card>
+        ) : !weeklyData ? (
+          <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+            <Empty description="暂无周报数据" />
+          </Card>
+        ) : (
+          <>
+            <Card title={`周报 ${weeklyData.week_start} ~ ${weeklyData.week_end}`} style={{ marginBottom: 16, background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                <Statistic title="销售总额" value={weeklyData.sales_total} prefix="¥" precision={2} />
+                <Statistic title="利润总额" value={weeklyData.profit_total} prefix="¥" precision={2}
+                  valueStyle={{ color: weeklyData.profit_total >= 0 ? '#3f8600' : '#cf1322' }} />
+                <Statistic title="订单总数" value={weeklyData.orders_total} />
+                <Statistic title="异常总数" value={weeklyData.anomalies_total}
+                  valueStyle={{ color: weeklyData.anomalies_total > 0 ? '#cf1322' : undefined }} />
+              </div>
+            </Card>
+            <Card title="每日明细" style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+              <Table
+                rowKey="date"
+                dataSource={weeklyData.daily_reports}
+                pagination={false}
+                columns={WEEKLY_DAILY_COLUMNS}
+              />
+            </Card>
+          </>
+        )
+      )}
+
+      {isGenericTab && (
         <>
           {genericLoading ? (
             <Card style={{ background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>

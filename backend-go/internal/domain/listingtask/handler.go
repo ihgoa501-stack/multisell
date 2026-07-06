@@ -148,6 +148,32 @@ func (h *Handler) Create(c *gin.Context) {
 	response.Success(c, t)
 }
 
+// CreateFromSuggestion POST /listing-tasks/from-suggestion
+func (h *Handler) CreateFromSuggestion(c *gin.Context) {
+	var in CreateFromSuggestionInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	_, operator, ok := getUserIDFromContext(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	task, err := h.service.CreateFromSuggestion(in.CandidateID, operator)
+	if err != nil {
+		if err.Error() == "approval service not configured" {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, task)
+}
+
 // Update PUT /listing-tasks/:id
 func (h *Handler) Update(c *gin.Context) {
 	id, ok := parseID(c)
@@ -338,6 +364,27 @@ func (h *Handler) RetryItem(c *gin.Context) {
 		return
 	}
 	response.Success(c, item)
+}
+
+// ---------- Review ----------
+
+// Review GET /listing-tasks/:id/review — returns the task review with
+// publish status, platform errors, and expected vs actual profit.
+func (h *Handler) Review(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	review, err := h.service.ReviewTask(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "listing task not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, review)
 }
 
 // ---------- Stats / Bulk Retry ----------
