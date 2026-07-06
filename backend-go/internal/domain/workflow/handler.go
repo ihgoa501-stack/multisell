@@ -153,12 +153,20 @@ func (h *Handler) ResumeRun(c *gin.Context) {
 }
 
 func (h *Handler) ListRuns(c *gin.Context) {
-	runs, err := h.eng.ListRuns(c.Request.Context())
+	var workflowID *int64
+	if widStr := c.Query("workflow_id"); widStr != "" {
+		if wid, err := strconv.ParseInt(widStr, 10, 64); err == nil {
+			workflowID = &wid
+		}
+	}
+
+	p := common.ParsePagination(c)
+	runs, total, err := h.eng.ListRunsFiltered(c.Request.Context(), workflowID, p.Page, p.Size)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(c, runs)
+	response.Paginated(c, runs, total, p.Page, p.Size)
 }
 
 func (h *Handler) GetRun(c *gin.Context) {
@@ -214,6 +222,16 @@ func (h *Handler) GetMonitorStats(c *gin.Context) {
 	response.Success(c, stats)
 }
 
+// GetMonitor returns per-status counts plus 24h completions.
+func (h *Handler) GetMonitor(c *gin.Context) {
+	stats, err := h.eng.GetMonitor(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, stats)
+}
+
 func (h *Handler) GetRunsStatusDistribution(c *gin.Context) {
 	stats, err := h.eng.GetMonitorStats(c.Request.Context())
 	if err != nil {
@@ -225,6 +243,20 @@ func (h *Handler) GetRunsStatusDistribution(c *gin.Context) {
 		"average_duration_s": stats.AverageDurationS,
 		"failure_by_step":    stats.FailureByStep,
 	})
+}
+
+// RetryRun resets a failed run and attempts to re-execute.
+func (h *Handler) RetryRun(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	if err := h.eng.RetryRun(c.Request.Context(), id); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"status": "retrying"})
 }
 
 type stepError struct{ msg string }

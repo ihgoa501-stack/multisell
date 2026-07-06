@@ -18,5 +18,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		group.GET("/inventory", h.Inventory)
 		group.GET("/settlement", h.Settlement)
 		group.GET("/platform-fee", h.PlatformFee)
+		group.GET("/daily", h.DailyReport)
+		group.GET("/weekly", h.WeeklyReport)
 	}
 }

@@ -34,6 +34,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, bus *eventbus.Bus, aiOrch 
 
 		// Monitoring.
 		group.GET("/monitor/stats", h.GetMonitorStats)
+		group.GET("/monitor", h.GetMonitor)
+
+		// Run retry.
+		group.POST("/runs/:id/retry", h.RetryRun)
 	}
 
 	// M5.1 / M5.2 — Workflow management endpoints (plural).

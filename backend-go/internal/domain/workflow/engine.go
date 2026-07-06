@@ -974,3 +974,112 @@ func (e *Engine) GetRun(ctx context.Context, runID int64) (*WorkflowRun, error) 
 
 	return &run, nil
 }
+
+// ── Monitoring ──────────────────────────────────────────────────────────
+
+// MonitorResult holds simple per-status counts plus 24h completion count.
+// Used by the GET /workflow/monitor endpoint.
+type MonitorResult struct {
+	Running      int `json:"running"`
+	Pending      int `json:"pending"`
+	Blocked      int `json:"blocked"`
+	Failed       int `json:"failed"`
+	Completed24h int `json:"completed_24h"`
+}
+
+// GetMonitor returns counts of workflow runs grouped by status, plus
+// the number completed in the last 24 hours.
+func (e *Engine) GetMonitor(ctx context.Context) (*MonitorResult, error) {
+	result := &MonitorResult{}
+
+	type statusCount struct {
+		Status string
+		Count  int
+	}
+	var counts []statusCount
+	e.db.WithContext(ctx).Model(&WorkflowRun{}).
+		Select("status, COUNT(*) as count").
+		Group("status").
+		Scan(&counts)
+
+	for _, c := range counts {
+		switch c.Status {
+		case RunStatusRunning:
+			result.Running = c.Count
+		case RunStatusPending:
+			result.Pending = c.Count
+		case RunStatusPaused:
+			result.Blocked = c.Count
+		case RunStatusFailed:
+			result.Failed = c.Count
+		}
+	}
+
+	// Completed in the last 24 hours.
+	var completed24h int64
+	e.db.WithContext(ctx).Model(&WorkflowRun{}).
+		Where("status = ? AND completed_at > ?", RunStatusCompleted, time.Now().Add(-24*time.Hour)).
+		Count(&completed24h)
+	result.Completed24h = int(completed24h)
+
+	return result, nil
+}
+
+// ── Run queries with filtering ──────────────────────────────────────────
+
+// ListRunsFiltered returns paginated workflow runs, optionally filtered by
+// workflow_def_id.
+func (e *Engine) ListRunsFiltered(ctx context.Context, workflowID *int64, page, size int) ([]WorkflowRun, int64, error) {
+	query := e.db.WithContext(ctx).Model(&WorkflowRun{})
+	if workflowID != nil {
+		query = query.Where("workflow_def_id = ?", *workflowID)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var runs []WorkflowRun
+	if err := query.Order("id DESC").Offset((page - 1) * size).Limit(size).Find(&runs).Error; err != nil {
+		return nil, 0, err
+	}
+	return runs, total, nil
+}
+
+// RetryRun resets a failed run and increments the retry counter.
+// Returns an error if the run is not failed or has exhausted retries.
+func (e *Engine) RetryRun(ctx context.Context, runID int64) error {
+	var run WorkflowRun
+	if err := e.db.WithContext(ctx).First(&run, runID).Error; err != nil {
+		return fmt.Errorf("run not found: %w", err)
+	}
+	if run.Status != RunStatusFailed {
+		return fmt.Errorf("run %d is not failed (status: %s)", runID, run.Status)
+	}
+	if run.RetryCount >= run.MaxRetries {
+		return fmt.Errorf("run %d has exhausted max retries (%d)", runID, run.MaxRetries)
+	}
+
+	now := time.Now()
+
+	// Reset steps to pending.
+	e.db.WithContext(ctx).Model(&WorkflowStepRun{}).
+		Where("workflow_run_id = ?", runID).
+		Updates(map[string]interface{}{
+			"status":       StepStatusPending,
+			"error":        "",
+			"started_at":   nil,
+			"completed_at": nil,
+		})
+
+	// Reset run.
+	return e.db.WithContext(ctx).Model(&run).Updates(map[string]interface{}{
+		"status":          RunStatusRunning,
+		"error":           "",
+		"started_at":      now,
+		"completed_at":    nil,
+		"retry_count":     run.RetryCount + 1,
+		"current_node_id": 0,
+	}).Error
+}

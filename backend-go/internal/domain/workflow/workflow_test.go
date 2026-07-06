@@ -631,3 +631,185 @@ func TestExecActionStep(t *testing.T) {
 		t.Errorf("expected completed for action step, got %s", final.Status)
 	}
 }
+
+func TestGetMonitor(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	// No runs yet.
+	m, err := e.GetMonitor(context.Background())
+	if err != nil {
+		t.Fatalf("GetMonitor: %v", err)
+	}
+	if m.Running != 0 || m.Pending != 0 || m.Blocked != 0 || m.Failed != 0 || m.Completed24h != 0 {
+		t.Errorf("expected all zero, got %+v", m)
+	}
+
+	// Create runs in different statuses.
+	def := &WorkflowDef{Name: "mon-test", Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def)
+
+	for i := 0; i < 3; i++ {
+		e.StartRun(context.Background(), def.ID, nil)
+	}
+	<-time.After(200 * time.Millisecond)
+
+	m, _ = e.GetMonitor(context.Background())
+	if m.Running != 0 {
+		t.Logf("running: %d (expected 0 or 3 — goroutines may have finished)", m.Running)
+	}
+	if m.Completed24h != 3 {
+		t.Errorf("expected 3 completed_24h, got %d (runs auto-complete without AI)", m.Completed24h)
+	}
+}
+
+// ── Run list with filtering tests ─────────────────────────────────────────
+
+func TestListRunsFiltered(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def1 := &WorkflowDef{Name: "wf-1", Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`}
+	def2 := &WorkflowDef{Name: "wf-2", Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def1)
+	e.CreateDef(context.Background(), def2)
+
+	// Use event type to keep runs alive so we can query by status later.
+	for i := 0; i < 2; i++ {
+		e.StartRun(context.Background(), def1.ID, nil)
+	}
+	e.StartRun(context.Background(), def2.ID, nil)
+	<-time.After(200 * time.Millisecond)
+
+	// Filter by def1.
+	id1 := def1.ID
+	runs, total, err := e.ListRunsFiltered(context.Background(), &id1, 1, 20)
+	if err != nil {
+		t.Fatalf("ListRunsFiltered: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("expected 2 runs for def1, got %d", total)
+	}
+	if len(runs) != 2 {
+		t.Errorf("expected 2 runs, got %d", len(runs))
+	}
+
+	// Filter by def2.
+	id2 := def2.ID
+	runs, total, _ = e.ListRunsFiltered(context.Background(), &id2, 1, 20)
+	if total != 1 {
+		t.Errorf("expected 1 run for def2, got %d", total)
+	}
+
+	// Pagination.
+	runs, total, _ = e.ListRunsFiltered(context.Background(), nil, 1, 1)
+	if total != 3 {
+		t.Errorf("expected 3 total, got %d", total)
+	}
+	if len(runs) != 1 {
+		t.Errorf("expected 1 run per page, got %d", len(runs))
+	}
+}
+
+// ── Retry run tests ───────────────────────────────────────────────────────
+
+func TestRetryRun(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{Name: "retry-wf", Steps: `[{"name":"s1","type":"event","wait_for_event":"manual","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def)
+
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+	<-time.After(50 * time.Millisecond)
+
+	// Advance with error to force failed status.
+	e.AdvanceStep(context.Background(), run.ID, "s1", nil, &stepError{"boom"})
+	<-time.After(50 * time.Millisecond)
+
+	var failedRun WorkflowRun
+	db.First(&failedRun, run.ID)
+	if failedRun.Status != RunStatusFailed {
+		t.Fatalf("expected failed status, got %s", failedRun.Status)
+	}
+
+	// Retry the failed run.
+	if err := e.RetryRun(context.Background(), run.ID); err != nil {
+		t.Fatalf("RetryRun: %v", err)
+	}
+
+	var retried WorkflowRun
+	db.First(&retried, run.ID)
+	if retried.Status != RunStatusRunning {
+		t.Errorf("expected running after retry, got %s", retried.Status)
+	}
+	if retried.RetryCount != 1 {
+		t.Errorf("expected retry_count=1, got %d", retried.RetryCount)
+	}
+}
+
+func TestRetryRun_nonFailed(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{Name: "retry-nonfail", Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def)
+
+	// Use event so run stays pending.
+	def2 := &WorkflowDef{Name: "retry-nonfail-2", Steps: `[{"name":"s1","type":"event","wait_for_event":"never","timeout_seconds":5}]`}
+	e.CreateDef(context.Background(), def2)
+	run, _ := e.StartRun(context.Background(), def2.ID, nil)
+
+	err := e.RetryRun(context.Background(), run.ID)
+	if err == nil {
+		t.Fatal("expected error retrying non-failed run")
+	}
+}
+
+func TestRetryRun_maxRetriesExhausted(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{Name: "retry-exhaust", Steps: `[{"name":"s1","type":"event","wait_for_event":"manual","timeout_seconds":1}]`}
+	e.CreateDef(context.Background(), def)
+
+	run := &WorkflowRun{
+		WorkflowDefID: def.ID,
+		Name:          def.Name,
+		Status:        RunStatusFailed,
+		RetryCount:    3,
+		MaxRetries:    3,
+	}
+	e.db.Create(run)
+
+	err := e.RetryRun(context.Background(), run.ID)
+	if err == nil {
+		t.Fatal("expected error when max retries exhausted")
+	}
+}
+
+// ── Template seeding tests ────────────────────────────────────────────────
+
+func TestSeedTemplates(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	if err := e.SeedTemplates(context.Background()); err != nil {
+		t.Fatalf("SeedTemplates: %v", err)
+	}
+
+	var count int64
+	db.Model(&WorkflowDef{}).Count(&count)
+	if count != 2 {
+		t.Errorf("expected 2 templates, got %d", count)
+	}
+
+	// Running again should not create duplicates.
+	if err := e.SeedTemplates(context.Background()); err != nil {
+		t.Fatalf("SeedTemplates (2nd): %v", err)
+	}
+	db.Model(&WorkflowDef{}).Count(&count)
+	if count != 2 {
+		t.Errorf("expected 2 templates after second seed, got %d", count)
+	}
+}

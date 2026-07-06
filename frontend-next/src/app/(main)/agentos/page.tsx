@@ -260,6 +260,22 @@ export default function AgentOSPage() {
     },
   });
 
+  // Workflow monitoring
+  interface WorkflowMonitor {
+    running: number;
+    pending: number;
+    blocked: number;
+    failed: number;
+    completed_24h: number;
+  }
+  const { data: workflowMonitor, isLoading: wfMonitorLoading } = useQuery({
+    queryKey: ['workflow-monitor'],
+    queryFn: async () => {
+      const res = await apiClient.get<WorkflowMonitor>('/v1/workflow/monitor');
+      return res.data;
+    },
+  });
+
   // Action operations
   const approveMutation = useMutation({
     mutationFn: async (id: string) =>
@@ -601,6 +617,32 @@ export default function AgentOSPage() {
             loading={healthLoading} />
         </Col>
       </Row>
+
+      {/* Workflow Monitoring */}
+      <SectionCard title={<><ApiOutlined /> Workflow 运行监控</>} style={{ marginBottom: 16 }}>
+        <Row gutter={16}>
+          <Col xs={12} sm={4}>
+            <StatCard title="运行中" value={workflowMonitor?.running ?? 0}
+              prefix={<RobotOutlined />} valueStyle={{ color: 'var(--i4)' }} loading={wfMonitorLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="待处理" value={workflowMonitor?.pending ?? 0}
+              prefix={<ClockCircleOutlined />} valueStyle={{ color: 'var(--y4)' }} loading={wfMonitorLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="已阻塞" value={workflowMonitor?.blocked ?? 0}
+              prefix={<CloseOutlined />} valueStyle={{ color: 'var(--r4)' }} loading={wfMonitorLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="失败" value={workflowMonitor?.failed ?? 0}
+              prefix={<AlertOutlined />} valueStyle={{ color: 'var(--r4)' }} loading={wfMonitorLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="24h 完成" value={workflowMonitor?.completed_24h ?? 0}
+              prefix={<CheckOutlined />} valueStyle={{ color: 'var(--g4)' }} loading={wfMonitorLoading} />
+          </Col>
+        </Row>
+      </SectionCard>
 
       <Row gutter={16}>
         {/* 左侧：Squad 健康地图 + 工作队列 */}

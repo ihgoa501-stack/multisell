@@ -63,6 +63,9 @@ type WorkflowRun struct {
 	StartedAt     *time.Time `gorm:"column:started_at" json:"started_at,omitempty"`
 	CompletedAt   *time.Time `gorm:"column:completed_at" json:"completed_at,omitempty"`
 	Error         string     `gorm:"column:error;type:text" json:"error,omitempty"`
+	CurrentNodeID int64      `gorm:"column:current_node_id;default:0" json:"current_node_id"`
+	RetryCount    int        `gorm:"column:retry_count;default:0" json:"retry_count"`
+	MaxRetries    int        `gorm:"column:max_retries;default:3" json:"max_retries"`
 	CreatedAt     time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt     time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 
