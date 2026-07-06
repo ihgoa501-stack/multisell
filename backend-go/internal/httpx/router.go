@@ -66,6 +66,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
+	"github.com/lingmirror/backend-go/internal/domain/reliability"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
 	"github.com/lingmirror/backend-go/internal/domain/sentiment"
@@ -595,6 +596,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	inventory.RegisterRoutes(inventoryRoutes, db, logger)
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
+	reliability.RegisterRoutes(protected, db, logger)
 
 	// Supply chain event: purchase order received → auto-increment inventory.
 	// GUARDRAIL (mutation guard): audited via MutationGuard, registered as system.inventory.receive.
