@@ -23,7 +23,7 @@ func (s *Service) List(p *common.Pagination, f *ListFilter) ([]Sourcing1688Produ
 	if f != nil {
 		if f.Search != "" {
 			like := "%" + f.Search + "%"
-			q = q.Where("supplier_name ILIKE ? OR source_url ILIKE ?", like, like)
+			q = q.Where("LOWER(supplier_name) LIKE LOWER(?) OR LOWER(source_url) LIKE LOWER(?)", like, like)
 		}
 		if f.Status != "" {
 			q = q.Where("status = ?", f.Status)
@@ -68,6 +68,7 @@ func (s *Service) Create(in *CreateInput) (*Sourcing1688Product, error) {
 		Description:  in.Description,
 		Status:       status,
 		RawData:      in.RawData,
+		CollectedBy:  in.CollectedBy,
 	}
 	if in.Price != nil {
 		p.Price = in.Price
