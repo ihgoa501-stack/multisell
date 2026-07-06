@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -196,6 +197,40 @@ func (m ExecutionMode) String() string {
 // external platform. Dry-run mode does not perform real writes.
 func (m ExecutionMode) IsWriteAllowed() bool {
 	return m == ExecutionModeProduction || m == ExecutionModeApprovalRequired
+}
+
+// ---------- 环境配置 (Environment Mode) ----------
+
+// ModeRequest is the payload for PUT /platform-integrations/:id/mode.
+type ModeRequest struct {
+	Mode ExecutionMode `json:"mode" binding:"required"`
+}
+
+// ModeResponse is the response for GET /platform-integrations/:id/mode.
+type ModeResponse struct {
+	Mode        ExecutionMode `json:"mode"`
+	AccountID   int64         `json:"account_id"`
+	AccountName string        `json:"account_name"`
+}
+
+// ---------- 写回门禁域 (Write-Back) ----------
+
+// WriteBackRequest is the payload for the generic write-back endpoint.
+type WriteBackRequest struct {
+	Action      string          `json:"action" binding:"required"` // sync_inventory, push_tracking, sync_status, validate_credentials
+	AccountID   int64           `json:"account_id" binding:"required"`
+	Payload     json.RawMessage `json:"payload"`
+	ReferenceID string          `json:"reference_id,omitempty"`
+}
+
+// WriteBackResult is the response for the write-back endpoint.
+type WriteBackResult struct {
+	ReferenceID string      `json:"reference_id"`
+	Action      string      `json:"action"`
+	Success     bool        `json:"success"`
+	Message     string      `json:"message"`
+	Retryable   bool        `json:"retryable"`
+	Result      interface{} `json:"result,omitempty"`
 }
 
 // ---------- 平台事件域 (Platform Events) ----------

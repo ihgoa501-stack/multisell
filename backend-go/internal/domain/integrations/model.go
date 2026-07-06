@@ -178,3 +178,20 @@ type TestConnectionResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 }
+
+// WriteBackRecord persists write-back attempts for audit and retry.
+type WriteBackRecord struct {
+	ID          uint      `gorm:"primaryKey"`
+	ReferenceID string    `gorm:"uniqueIndex;size:64"`
+	AccountID   int64     `gorm:"not null;index"`
+	Action      string    `gorm:"size:50;not null"`
+	Payload     string    `gorm:"type:text"`
+	Status      string    `gorm:"size:20;default:pending"` // pending, success, failed
+	Result      string    `gorm:"type:text"`
+	Error       string    `gorm:"type:text"`
+	RetryCount  int       `gorm:"default:0"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (WriteBackRecord) TableName() string { return "write_back_record" }

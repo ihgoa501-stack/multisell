@@ -3,6 +3,7 @@ package integrations
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,6 +72,8 @@ func setupRouter(svc *Service) *gin.Engine {
 	g.POST("/platform-integrations/:id/categories", h.CreateCategory)
 	g.GET("/platform-integrations/:id/attributes", h.ListAttributes)
 	g.POST("/platform-integrations/:id/attributes", h.CreateAttribute)
+	g.GET("/platform-integrations/:id/mode", h.GetMode)
+	g.PUT("/platform-integrations/:id/mode", h.SetMode)
 	return r
 }
 
@@ -1268,5 +1271,134 @@ func TestExecutionModeProduction_IsWriteAllowed(t *testing.T) {
 	}
 	if ExecutionModeSandbox.IsWriteAllowed() {
 		t.Error("IsWriteAllowed: expected false for sandbox")
+	}
+}
+
+func TestModeGetSet(t *testing.T) {
+	svc := newTestDB(t)
+
+	// Create an account
+	created, err := svc.Create(&CreateAccountInput{
+		PlatformID: 1,
+		StoreName:  "Mode Test Store",
+		Status:     "active",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Default mode should be dry_run
+	mode, err := svc.GetMode(created.ID)
+	if err != nil {
+		t.Fatalf("GetMode: %v", err)
+	}
+	if mode.Mode != ExecutionModeDryRun {
+		t.Fatalf("expected default mode dry_run (0), got %d", mode.Mode)
+	}
+	if mode.AccountID != created.ID {
+		t.Fatalf("expected account_id %d, got %d", created.ID, mode.AccountID)
+	}
+
+	// Set to sandbox
+	if err := svc.SetMode(created.ID, ExecutionModeSandbox); err != nil {
+		t.Fatalf("SetMode sandbox: %v", err)
+	}
+	mode, err = svc.GetMode(created.ID)
+	if err != nil {
+		t.Fatalf("GetMode after set: %v", err)
+	}
+	if mode.Mode != ExecutionModeSandbox {
+		t.Fatalf("expected mode sandbox (1), got %d", mode.Mode)
+	}
+
+	// Set to production
+	if err := svc.SetMode(created.ID, ExecutionModeProduction); err != nil {
+		t.Fatalf("SetMode production: %v", err)
+	}
+	mode, err = svc.GetMode(created.ID)
+	if err != nil {
+		t.Fatalf("GetMode after production: %v", err)
+	}
+	if mode.Mode != ExecutionModeProduction {
+		t.Fatalf("expected mode production (3), got %d", mode.Mode)
+	}
+
+	// GetMode on non-existent account
+	_, err = svc.GetMode(99999)
+	if err == nil {
+		t.Fatal("expected error for non-existent account")
+	}
+}
+
+func TestModeHandler(t *testing.T) {
+	svc := newTestDB(t)
+	r := setupRouter(svc)
+
+	// Create an account first
+	body := `{"platform_id":1,"store_name":"Handler Mode Test","status":"active"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/platform-integrations", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Create: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	res := parseResult(t, w.Body.Bytes())
+
+	// Extract created ID
+	data, ok := res.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Data to be object, got %T", res.Data)
+	}
+	id := int64(data["id"].(float64))
+	path := fmt.Sprintf("/api/v1/platform-integrations/%d/mode", id)
+
+	// GET mode (default dry_run)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, path, nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET mode: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	res = parseResult(t, w.Body.Bytes())
+	modeData, ok := res.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Data to be object, got %T", res.Data)
+	}
+	mode := int(modeData["mode"].(float64))
+	if ExecutionMode(mode) != ExecutionModeDryRun {
+		t.Fatalf("expected mode 0, got %d", mode)
+	}
+
+	// PUT mode to sandbox
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"mode":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT mode: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET mode (should now be sandbox)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, path, nil)
+	r.ServeHTTP(w, req)
+	res = parseResult(t, w.Body.Bytes())
+	modeData, ok = res.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Data to be object, got %T", res.Data)
+	}
+	mode = int(modeData["mode"].(float64))
+	if ExecutionMode(mode) != ExecutionModeSandbox {
+		t.Fatalf("expected mode 1, got %d", mode)
+	}
+
+	// PUT invalid mode
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"mode":99}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("PUT invalid: expected 400, got %d", w.Code)
 	}
 }

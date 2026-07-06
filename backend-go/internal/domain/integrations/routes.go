@@ -9,7 +9,7 @@ import (
 
 // RegisterRoutes registers integrations routes on the given router group.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service) {
-	svc := NewService(db, logger)
+	svc := NewService(db, logger).WithApproval(approvalSvc)
 	h := NewHandler(svc, approvalSvc)
 
 	group := rg.Group("/platform-integrations")
@@ -18,6 +18,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approv
 		group.GET("", h.List)
 		group.POST("", h.Create)
 		group.POST("/publish-to-ozon", h.PublishToOzon)
+		group.POST("/write-back", h.WriteBack)
+		group.POST("/write-back/:ref-id/retry", h.RetryWriteBack)
 
 		// member-level (with :id)
 		group.GET("/:id", h.Get)
@@ -30,5 +32,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approv
 		group.GET("/:id/attributes", h.ListAttributes)
 		group.POST("/:id/attributes", h.CreateAttribute)
 		group.GET("/:id/ozon-products", h.ListOzonProducts)
+		group.GET("/:id/mode", h.GetMode)
+		group.PUT("/:id/mode", h.SetMode)
 	}
 }
