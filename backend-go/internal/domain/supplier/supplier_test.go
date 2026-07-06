@@ -1012,7 +1012,7 @@ func TestHandler_GetSupplierComparison(t *testing.T) {
 	_ = svc.CreateProductSupplier(ctx, &ProductSupplier{ProductID: 1, SupplierID: sup.ID, SupplyPrice: decimalPtr(12.50), MinOrderQty: 5})
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/products/1/supplier-comparison", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/products/1/supplier-comparison?product_id=1", nil)
 	r.ServeHTTP(w, req)
 
 	// The underlying service query uses PostgreSQL ::bigint cast syntax, which
