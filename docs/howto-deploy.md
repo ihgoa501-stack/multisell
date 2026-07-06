@@ -160,5 +160,4 @@ cat backup_20260630.sql | docker exec -i multisell-db psql -U postgres multisell
 ## 相关文档
 
 - [参考 - 配置参考](reference-configuration.md)
-- [生产服务器信息](../../production-server-info.md)
 - [部署脚本](../../scripts/deploy.sh)
