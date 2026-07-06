@@ -39,6 +39,7 @@ import { getCurrentOperator } from '@/lib/user';
 import StatCard from '@/components/ui/StatCard';
 import SectionCard from '@/components/ui/SectionCard';
 import WorkItemDrawer from './work-item-drawer';
+import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
 import type { WorkItemDetail } from './types';
 
 const { Text } = Typography;
@@ -315,6 +316,7 @@ export default function AgentOSPage() {
   // Work item detail drawer
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{type: 'approve' | 'execute'; item: WorkItem} | null>(null);
 
   const { data: workItemDetail, isLoading: detailLoading } = useQuery({
     queryKey: ['agentos-work-item-detail', selectedWorkItemId],
@@ -431,12 +433,9 @@ export default function AgentOSPage() {
             size="small"
             type="primary"
             icon={<CheckOutlined />}
-            loading={
-              approveMutation.isPending && approveMutation.variables === record.id
-            }
             onClick={(e) => {
               e.stopPropagation();
-              approveMutation.mutate(record.id);
+              setConfirmAction({type: 'approve', item: record});
             }}
           >
             批准
@@ -458,12 +457,9 @@ export default function AgentOSPage() {
           <Button
             size="small"
             icon={<ThunderboltOutlined />}
-            loading={
-              executeMutation.isPending && executeMutation.variables === record.id
-            }
             onClick={(e) => {
               e.stopPropagation();
-              executeMutation.mutate(record.id);
+              setConfirmAction({type: 'execute', item: record});
             }}
           >
             执行
@@ -1013,6 +1009,35 @@ export default function AgentOSPage() {
           <Empty description="无审计记录" />
         )}
       </Drawer>
+
+      {/* High-risk action confirmation dialog */}
+      <HighRiskConfirmDialog
+        open={!!confirmAction}
+        actionName={confirmAction?.type === 'approve' ? '批准动作' : '执行动作'}
+        riskLevel={confirmAction?.item.risk_level === 'high' ? 'high' : confirmAction?.item.risk_level === 'medium' ? 'medium' : 'low'}
+        detail={confirmAction ? { targetLabel: confirmAction.item.title } : undefined}
+        environmentMode="production"
+        expectedConsequence={
+          confirmAction?.type === 'approve'
+            ? '批准后该动作将进入待执行队列'
+            : '执行后该动作将立即生效'
+        }
+        auditDestination="操作已记录至 operation_log 表"
+        confirmLoading={
+          (confirmAction?.type === 'approve' ? approveMutation.isPending : executeMutation.isPending) &&
+          confirmAction?.item.id === (confirmAction?.type === 'approve' ? approveMutation.variables : executeMutation.variables)
+        }
+        confirmText={confirmAction?.type === 'approve' ? '批准' : '执行'}
+        showReason
+        reasonPlaceholder="补充说明（选填）"
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (confirmAction.type === 'approve') approveMutation.mutate(confirmAction.item.id);
+          else executeMutation.mutate(confirmAction.item.id);
+          setConfirmAction(null);
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }
