@@ -110,6 +110,7 @@ Rules:
 - Commands that mutate critical data must enforce permission, approval, and audit requirements.
 - Command results must distinguish success, validation failure, policy block, external failure, and internal error.
 - Commands should be idempotent where possible.
+- Consumers with their own comprehensive gate chain (e.g. ai.Service.ExecuteAction) may use raw Dispatch() after passing their gates. DispatchSafe() enforces mode, approval, and audit at the AgentAction envelope level for consumers without their own gate chain.
 
 Recommended command shape:
 
