@@ -1,16 +1,22 @@
 package workflow
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ── Step type constants ──────────────────────────────────────────────
 
 const (
-	StepTypeAgent   = "agent"   // run an AI agent decision
-	StepTypeCommand = "command" // dispatch a command
-	StepTypeFork    = "fork"    // fan-out to parallel sub-steps
-	StepTypeJoin    = "join"    // barrier: wait for fork results
-	StepTypeDelay   = "delay"   // timer wait
-	StepTypeEvent   = "event"   // wait for event bus message
+	StepTypeAgent     = "agent"     // run an AI agent decision
+	StepTypeCommand   = "command"   // dispatch a command
+	StepTypeFork      = "fork"      // fan-out to parallel sub-steps
+	StepTypeJoin      = "join"      // barrier: wait for fork results
+	StepTypeDelay     = "delay"     // timer wait
+	StepTypeEvent     = "event"     // wait for event bus message
+	StepTypeCondition = "condition" // evaluate a condition expression
+	StepTypeApproval  = "approval"  // wait for human approval/rejection
+	StepTypeAction    = "action"    // dispatch a predefined action
 )
 
 // Run status constants.
@@ -29,6 +35,8 @@ const (
 	StepStatusCompleted = "completed"
 	StepStatusFailed    = "failed"
 	StepStatusSkipped   = "skipped"
+	StepStatusApproved  = "approved"
+	StepStatusRejected  = "rejected"
 )
 
 // ── DB models ────────────────────────────────────────────────────────
@@ -103,4 +111,40 @@ type StepDef struct {
 	TimeoutSeconds int                    `json:"timeout_seconds,omitempty"`
 	RetryCount     int                    `json:"retry_count,omitempty"`
 	RetryBackoffMs int                    `json:"retry_backoff_ms,omitempty"`
+}
+
+// ── WorkflowNode (structured node table) ─────────────────────────────
+
+// WorkflowNode represents a single node in a workflow definition.
+type WorkflowNode struct {
+	ID         uint            `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	WorkflowID uint            `gorm:"column:workflow_def_id;not null;index" json:"workflow_def_id"`
+	Type       string          `gorm:"column:type;not null" json:"type"` // condition, approval, action, event
+	Config     json.RawMessage `gorm:"column:config;type:jsonb;default:'{}'" json:"config"`
+	OrderIndex int             `gorm:"column:order_index;default:0" json:"order_index"`
+	CreatedAt  time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt  time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+func (WorkflowNode) TableName() string { return "workflow_node" }
+
+// NodeConfig holds typed configuration for each node type.
+type NodeConfig struct {
+	// Common
+	Condition      string `json:"condition,omitempty"`       // for condition nodes
+	ApprovalRoles  string `json:"approval_roles,omitempty"`  // comma-separated roles for approval
+	Command        string `json:"command,omitempty"`         // for action nodes
+	AgentID        string `json:"agent_id,omitempty"`        // for action nodes
+	DecisionPoint  string `json:"decision_point,omitempty"`  // for action nodes
+	EventTopic     string `json:"event_topic,omitempty"`     // for event nodes
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"` // all types
+}
+
+// ── Approval step input/output ───────────────────────────────────────
+
+// ApprovalResult is the payload for an approval step decision.
+type ApprovalResult struct {
+	Approved bool   `json:"approved"`
+	Comment  string `json:"comment,omitempty"`
+	Reviewer string `json:"reviewer,omitempty"`
 }

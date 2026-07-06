@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/response"
 )
 
@@ -229,3 +230,156 @@ func (h *Handler) GetRunsStatusDistribution(c *gin.Context) {
 type stepError struct{ msg string }
 
 func (e *stepError) Error() string { return e.msg }
+
+// ── Workflow (plural) endpoints — M5.1 ──────────────────────────────
+
+// ListWorkflows returns a paginated list of workflow definitions.
+func (h *Handler) ListWorkflows(c *gin.Context) {
+	p := common.ParsePagination(c)
+	defs, total, err := h.eng.ListDefsPaginated(c.Request.Context(), p.Page, p.Size)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Paginated(c, defs, total, p.Page, p.Size)
+}
+
+// GetWorkflow returns a single workflow def with its nodes.
+func (h *Handler) GetWorkflow(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	def, err := h.eng.GetDef(c.Request.Context(), int64(id))
+	if err != nil {
+		response.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// Fetch nodes associated with this workflow.
+	nodes, _ := h.eng.ListNodes(c.Request.Context(), uint(id))
+
+	response.Success(c, gin.H{
+		"workflow": def,
+		"nodes":    nodes,
+	})
+}
+
+// CreateWorkflow creates a new workflow definition (with optional nodes).
+func (h *Handler) CreateWorkflow(c *gin.Context) {
+	var req struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		Steps       string         `json:"steps"`
+		Nodes       []WorkflowNode `json:"nodes,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.Name == "" {
+		response.Error(c, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	// Validate steps JSON if provided.
+	var steps []StepDef
+	if req.Steps != "" {
+		if err := json.Unmarshal([]byte(req.Steps), &steps); err != nil {
+			response.Error(c, http.StatusBadRequest, "invalid steps JSON: "+err.Error())
+			return
+		}
+	}
+
+	def := &WorkflowDef{
+		Name:        req.Name,
+		Description: req.Description,
+		Steps:       req.Steps,
+	}
+	if len(steps) == 0 {
+		def.Steps = "[]"
+	}
+
+	if err := h.eng.CreateDef(c.Request.Context(), def); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Create nodes if provided.
+	for i := range req.Nodes {
+		req.Nodes[i].WorkflowID = uint(def.ID)
+		req.Nodes[i].OrderIndex = i
+		if err := h.eng.CreateNode(c.Request.Context(), &req.Nodes[i]); err != nil {
+			response.Error(c, http.StatusInternalServerError, "node create failed: "+err.Error())
+			return
+		}
+	}
+
+	response.Success(c, gin.H{
+		"workflow": def,
+		"nodes":    req.Nodes,
+	})
+}
+
+// ── Approval endpoints — M5.2 ───────────────────────────────────────
+
+// ApproveStep approves a pending approval step in a run.
+func (h *Handler) ApproveStep(c *gin.Context) {
+	runID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+
+	var req struct {
+		StepName string `json:"step_name"`
+		Reviewer string `json:"reviewer"`
+		Comment  string `json:"comment"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.StepName == "" {
+		response.Error(c, http.StatusBadRequest, "step_name is required")
+		return
+	}
+
+	if err := h.eng.ApproveStep(c.Request.Context(), runID, req.StepName, req.Reviewer, req.Comment); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"approved": req.StepName})
+}
+
+// RejectStep rejects a pending approval step in a run.
+func (h *Handler) RejectStep(c *gin.Context) {
+	runID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+
+	var req struct {
+		StepName string `json:"step_name"`
+		Reviewer string `json:"reviewer"`
+		Comment  string `json:"comment"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.StepName == "" {
+		response.Error(c, http.StatusBadRequest, "step_name is required")
+		return
+	}
+
+	if err := h.eng.RejectStep(c.Request.Context(), runID, req.StepName, req.Reviewer, req.Comment); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"rejected": req.StepName})
+}

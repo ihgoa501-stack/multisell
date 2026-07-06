@@ -260,30 +260,19 @@ func (s *Service) GetMode(id int64) (*ModeResponse, error) {
 		return nil, err
 	}
 	return &ModeResponse{
-		Mode:        executionModeFromConfig(a.Config),
+		Mode:        ExecutionMode(a.ExecutionMode),
 		AccountID:   a.ID,
 		AccountName: a.StoreName,
 	}, nil
 }
 
-// SetMode updates the execution mode for an integration account in Config JSON.
+// SetMode updates the execution mode for an integration account.
 func (s *Service) SetMode(id int64, mode ExecutionMode) error {
-	var a PlatformIntegrationAccount
-	if err := s.db.First(&a, id).Error; err != nil {
-		return err
-	}
-	var cfg map[string]interface{}
-	if len(a.Config) > 0 {
-		json.Unmarshal(a.Config, &cfg)
-	} else {
-		cfg = make(map[string]interface{})
-	}
-	cfg["execution_mode"] = int(mode)
-	raw, _ := json.Marshal(cfg)
-	return s.db.Model(&a).Update("config", raw).Error
+	return s.db.Model(&PlatformIntegrationAccount{}).Where("id = ?", id).
+		Update("execution_mode", int8(mode)).Error
 }
 
-// executionModeFromConfig reads ExecutionMode from Config JSON, defaulting to DryRun.
+// executionModeFromConfig reads ExecutionMode from account DB field.
 func executionModeFromConfig(config json.RawMessage) ExecutionMode {
 	if len(config) == 0 {
 		return ExecutionModeDryRun

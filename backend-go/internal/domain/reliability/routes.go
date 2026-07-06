@@ -6,16 +6,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// RegisterRoutes registers reliability routes on the given router group.
+// RegisterRoutes registers reliability routes.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	svc := NewService(db, logger)
 	h := NewHandler(svc)
-
 	group := rg.Group("/reliability")
 	{
-		group.GET("/agent-status", h.GetAgentStatus)
-		group.GET("/llm-cost", h.GetLLMCost)
-		group.GET("/failures", h.GetFailures)
-		group.POST("/failures/:id/resolve", h.ResolveFailure)
+		group.GET("/budget", h.GetBudget)
+		group.PUT("/budget", h.SetBudget)
 	}
 }

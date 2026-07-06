@@ -26,7 +26,7 @@ func (s *Service) WriteBack(ctx context.Context, req *WriteBackRequest) (*WriteB
 		return nil, fmt.Errorf("write-back: no adapter for platform %s", plat.Code)
 	}
 
-	mode := executionModeFromConfig(acct.Config)
+	mode := ExecutionMode(acct.ExecutionMode)
 
 	// Production mode requires approval
 	if mode >= ExecutionModeApprovalRequired && s.approvalSvc != nil {

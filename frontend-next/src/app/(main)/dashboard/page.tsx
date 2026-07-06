@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Collapse, Empty, Row, Col, Table, Tag, Tabs, Alert } from 'antd';
+import { Card, Collapse, Empty, Row, Col, Statistic, Table, Tag, Tabs, Alert } from 'antd';
 import {
   CheckCircleFilled, ExclamationCircleFilled,
   ExclamationCircleOutlined, FallOutlined,
@@ -63,6 +63,22 @@ interface UrgentConversation {
   priority: string;
   platform: string;
   last_message_at?: string;
+}
+
+
+/* ─── Overview (M6 Owner KPIs) ─── */
+
+interface DashboardOverview {
+  today_sales: number;
+  pending_approvals: number;
+  agent_suggestions: number;
+  exception_open_count: number;
+  recent_alerts: {
+    id: number;
+    severity: string;
+    title: string;
+    created_at: string;
+  }[];
 }
 
 interface PlatformConnection {
@@ -250,10 +266,33 @@ function BriefSkeleton() {
   );
 }
 
+
+/* ─── KPI Overview Cards ─── */
+
+function KpiRow({ data }: { data: DashboardOverview }) {
+  const fmt = (n: number) => n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const items = [
+    { title: '今日销售额', value: `$${fmt(data.today_sales)}`, icon: <ShoppingCartOutlined />, color: 'var(--b4)' },
+    { title: '待审批', value: data.pending_approvals.toString(), icon: <WarningFilled />, color: 'var(--y4)' },
+    { title: '未处理异常', value: data.exception_open_count.toString(), icon: <ExclamationCircleFilled />, color: 'var(--r4)' },
+    { title: 'Agent 建议', value: data.agent_suggestions.toString(), icon: <RiseOutlined />, color: 'var(--g4)' },
+  ];
+  return (
+    <Row gutter={16}>
+      {items.map((item) => (
+        <Col span={6} key={item.title}>
+          <Card style={{ borderRadius: 'var(--r4)', border: '1px solid var(--bd)' }} size="small">
+            <Statistic title={item.title} value={item.value} prefix={item.icon} valueStyle={{ color: item.color }} />
+          </Card>
+        </Col>
+      ))}
+    </Row>
+  );
+}
 /* ─── Page ─── */
 
 export default function DashboardPage() {
-  const { data, isLoading, error } = useQuery({
+  const { data: brief, isLoading: briefLoading, error: briefError } = useQuery({
     queryKey: ['dashboard', 'brief'],
     queryFn: async () => {
       const res = await apiClient.get<DailyBrief>('/v1/dashboard/brief');
@@ -261,15 +300,25 @@ export default function DashboardPage() {
     },
   });
 
-  if (error) {
+  const { data: overview } = useQuery({
+    queryKey: ['dashboard', 'overview'],
+    queryFn: async () => {
+      const res = await apiClient.get<DashboardOverview>('/v1/dashboard/overview');
+      return res.data;
+    },
+  });
+
+  const data = brief;
+
+  if (briefError) {
     return (
       <div style={{ padding: 'var(--space-xl)' }}>
-        <Alert message="加载失败" description={error instanceof Error ? error.message : '未知错误'} type="error" showIcon />
+        <Alert message="加载失败" description={briefError instanceof Error ? briefError.message : '未知错误'} type="error" showIcon />
       </div>
     );
   }
 
-  if (isLoading || !data) return <BriefSkeleton />;
+  if (briefLoading || !data) return <BriefSkeleton />;
 
   return (
     <div style={{ padding: 'var(--space-xl)', display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)' }}>
