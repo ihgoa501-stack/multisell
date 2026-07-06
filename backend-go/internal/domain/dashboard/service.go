@@ -107,41 +107,8 @@ func (s *Service) Overview() (*DashboardOverview, error) {
 	o.MonthCost = fin.Cost
 
 	// Platform connections
-	type pRow struct {
-		PlatformID   int64
-		PlatformCode string
-		PlatformName string
-		StoreName    string
-		Status       string
-		SyncStatus   string
-		LastSyncAt   *time.Time
-		LastError    string
-	}
-	var prs []pRow
-	s.db.Table("platform_integration_account AS a").
-		Joins("JOIN platform AS p ON p.id = a.platform_id").
-		Select("a.platform_id, p.code AS platform_code, p.name AS platform_name, a.store_name, a.status, a.sync_status, a.last_sync_at, a.last_error").
-		Scan(&prs)
-	for _, pr := range prs {
-		var lastSync *string
-		if pr.LastSyncAt != nil {
-			s := pr.LastSyncAt.Format("2006-01-02T15:04:05Z")
-			lastSync = &s
-		}
-		o.PlatformConnections = append(o.PlatformConnections, PlatformConnectionStatus{
-			PlatformID:   pr.PlatformID,
-			PlatformCode: pr.PlatformCode,
-			PlatformName: pr.PlatformName,
-			StoreName:    pr.StoreName,
-			Status:       pr.Status,
-			SyncStatus:   pr.SyncStatus,
-			LastSyncAt:   lastSync,
-			LastError:    pr.LastError,
-		})
-	}
-	if o.PlatformConnections == nil {
-		o.PlatformConnections = []PlatformConnectionStatus{}
-	}
+	o.PlatformConnections = s.getPlatformConnections()
+
 
 	// Agent statuses (read from unified action / decision tables)
 	type aRow struct {
@@ -186,6 +153,193 @@ func (s *Service) Overview() (*DashboardOverview, error) {
 	}
 
 	return o, nil
+}
+
+// GetDailyBrief returns the daily composite brief for the seller's workspace.
+func (s *Service) GetDailyBrief() (*DailyBrief, error) {
+	b := &DailyBrief{
+		LowStockSkus:       make([]LowStockSkuBrief, 0),
+		NegativeMarginSkus: make([]NegativeMarginSkuBrief, 0),
+		RecentExceptions:   make([]ExceptionBrief, 0),
+		UrgentConversations: make([]UrgentConversationBrief, 0),
+	}
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	tomorrowStart := todayStart.AddDate(0, 0, 1)
+	monthStart, monthEnd := monthRange(now)
+
+	// Today profit/revenue from profit_summary
+	var todayAgg struct {
+		Profit  float64
+		Revenue float64
+	}
+	if err := s.db.Table("profit_summary").
+		Select("COALESCE(SUM(estimated_profit),0) AS profit, COALESCE(SUM(target_revenue),0) AS revenue").
+		Where("created_at >= ? AND created_at < ?", todayStart, tomorrowStart).
+		Scan(&todayAgg).Error; err != nil {
+		s.logger.Error("failed to query today profit", zap.Error(err))
+	}
+	b.TodayProfit = todayAgg.Profit
+	b.TodayRevenue = todayAgg.Revenue
+
+	// Month profit/revenue from profit_summary
+	var monthAgg struct {
+		Profit  float64
+		Revenue float64
+	}
+	if err := s.db.Table("profit_summary").
+		Select("COALESCE(SUM(estimated_profit),0) AS profit, COALESCE(SUM(target_revenue),0) AS revenue").
+		Where("created_at >= ? AND created_at < ?", monthStart, monthEnd).
+		Scan(&monthAgg).Error; err != nil {
+		s.logger.Error("failed to query month profit", zap.Error(err))
+	}
+	b.MonthProfit = monthAgg.Profit
+	b.MonthRevenue = monthAgg.Revenue
+
+	// Month cost from finance_ledger_entry (same pattern as Overview)
+	var costAgg struct {
+		Cost float64
+	}
+	if err := s.db.Table("finance_ledger_entry").
+		Select("COALESCE(SUM(CASE WHEN entry_type IN ('product_cost','shipping_cost','platform_fee','payment_fee','other_fee') THEN amount ELSE 0 END),0) AS cost").
+		Where("created_at >= ? AND created_at < ?", monthStart, monthEnd).
+		Scan(&costAgg).Error; err != nil {
+		s.logger.Error("failed to query month cost", zap.Error(err))
+	}
+	b.MonthCost = costAgg.Cost
+
+	// Counts
+	if err := s.db.Table("exception_item").Where("status = ?", "open").Count(&b.OpenExceptionCount).Error; err != nil {
+		s.logger.Error("failed to count exceptions", zap.Error(err))
+	}
+	if err := s.db.Table("sku").Where("warning_stock > 0 AND stock <= warning_stock").Count(&b.LowStockCount).Error; err != nil {
+		s.logger.Error("failed to count low stock", zap.Error(err))
+	}
+	if err := s.db.Table("sku").Where("stock <= 0").Count(&b.OutOfStockCount).Error; err != nil {
+		s.logger.Error("failed to count out of stock", zap.Error(err))
+	}
+	if err := s.db.Table("profit_summary").Where("status = ?", "unprofitable").Count(&b.NegativeMarginCount).Error; err != nil {
+		s.logger.Error("failed to count negative margin", zap.Error(err))
+	}
+	if err := s.db.Table("customer_conversations").Where("status = ? AND priority IN ?", "open", []string{"high", "urgent"}).Count(&b.PendingSupportCount).Error; err != nil {
+		s.logger.Error("failed to count pending support", zap.Error(err))
+	}
+	if err := s.db.Table("after_sales_order").Where("status IN ?", []string{"pending", "open"}).Count(&b.PendingAftersalesCount).Error; err != nil {
+		s.logger.Error("failed to count pending aftersales", zap.Error(err))
+	}
+
+	// Top 5 low stock SKUs
+	if err := s.db.Table("sku").
+		Select("id AS sku_id, product_id, code, spec_desc, stock, warning_stock").
+		Where("warning_stock > 0 AND stock <= warning_stock").
+		Order("stock ASC, warning_stock DESC").
+		Limit(5).
+		Scan(&b.LowStockSkus).Error; err != nil {
+		s.logger.Error("failed to query low stock SKUs", zap.Error(err))
+	}
+
+	// Top 5 negative margin SKUs (distinct by product_id, newest calculation)
+	var negRows []struct {
+		ProductID       int64
+		SkuCode         string
+		Title           string
+		ProfitMargin    float64
+		EstimatedProfit float64
+	}
+	if err := s.db.Raw(`
+		SELECT ps.product_id,
+			COALESCE((SELECT s.code FROM sku s WHERE s.product_id = ps.product_id LIMIT 1),'') AS sku_code,
+			COALESCE(cp.title,'') AS title,
+			ps.profit_margin, ps.estimated_profit
+		FROM profit_summary ps
+		INNER JOIN (
+			SELECT product_id, MAX(id) AS max_id
+			FROM profit_summary
+			WHERE status = ?
+			GROUP BY product_id
+		) latest ON latest.max_id = ps.id
+		LEFT JOIN candidate_product cp ON cp.id = ps.product_id
+		ORDER BY ps.profit_margin ASC
+		LIMIT 5
+	`, "unprofitable").Scan(&negRows).Error; err != nil {
+		s.logger.Error("failed to query negative margin SKUs", zap.Error(err))
+	}
+	for _, r := range negRows {
+		b.NegativeMarginSkus = append(b.NegativeMarginSkus, NegativeMarginSkuBrief{
+			ProductID:       r.ProductID,
+			SkuCode:         r.SkuCode,
+			Title:           r.Title,
+			ProfitMargin:    r.ProfitMargin,
+			EstimatedProfit: r.EstimatedProfit,
+		})
+	}
+
+	// Top 5 recent open exceptions
+	type excRow struct {
+		ID           int64
+		Severity     string
+		SourceModule string
+		Message      string
+		Status       string
+		CreatedAt    time.Time
+	}
+	var excRows []excRow
+	if err := s.db.Table("exception_item").
+		Select("id, severity, source_module, COALESCE(description,'') AS message, status, created_at").
+		Where("status = ?", "open").
+		Order("created_at DESC").
+		Limit(5).
+		Scan(&excRows).Error; err != nil {
+		s.logger.Error("failed to query recent exceptions", zap.Error(err))
+	}
+	for _, r := range excRows {
+		b.RecentExceptions = append(b.RecentExceptions, ExceptionBrief{
+			ID:           r.ID,
+			Severity:     r.Severity,
+			SourceModule: r.SourceModule,
+			Message:      r.Message,
+			Status:       r.Status,
+			CreatedAt:    r.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+
+	// Top 5 urgent conversations
+	type convRow struct {
+		ID            int64
+		CustomerName  string
+		Subject       string
+		Priority      string
+		Platform      string
+		LastMessageAt *time.Time
+	}
+	var convRows []convRow
+	if err := s.db.Table("customer_conversations").
+		Where("status = ? AND priority IN ?", "open", []string{"high", "urgent"}).
+		Order("priority DESC, last_message_at ASC").
+		Limit(5).
+		Scan(&convRows).Error; err != nil {
+		s.logger.Error("failed to query urgent conversations", zap.Error(err))
+	}
+	for _, r := range convRows {
+		var lastMsg *string
+		if r.LastMessageAt != nil {
+			s := r.LastMessageAt.Format("2006-01-02T15:04:05Z")
+			lastMsg = &s
+		}
+		b.UrgentConversations = append(b.UrgentConversations, UrgentConversationBrief{
+			ID:            r.ID,
+			CustomerName:  r.CustomerName,
+			Subject:       r.Subject,
+			Priority:      r.Priority,
+			Platform:      r.Platform,
+			LastMessageAt: lastMsg,
+		})
+	}
+
+	// Platform connections (same query as Overview)
+	b.PlatformConnections = s.getPlatformConnections()
+
+	return b, nil
 }
 
 // OrdersTrend returns the per-day order count + revenue for the last `days` days.
@@ -263,4 +417,42 @@ func (s *Service) GetRejectionReasonStats() ([]RejectionReasonStat, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+// getPlatformConnections returns platform connection statuses, shared by Overview and GetDailyBrief.
+func (s *Service) getPlatformConnections() []PlatformConnectionStatus {
+	type pRow struct {
+		PlatformID   int64
+		PlatformCode string
+		PlatformName string
+		StoreName    string
+		Status       string
+		SyncStatus   string
+		LastSyncAt   *time.Time
+		LastError    string
+	}
+	var prs []pRow
+	s.db.Table("platform_integration_account AS a").
+		Joins("JOIN platform AS p ON p.id = a.platform_id").
+		Select("a.platform_id, p.code AS platform_code, p.name AS platform_name, a.store_name, a.status, a.sync_status, a.last_sync_at, a.last_error").
+		Scan(&prs)
+	out := make([]PlatformConnectionStatus, 0, len(prs))
+	for _, pr := range prs {
+		var lastSync *string
+		if pr.LastSyncAt != nil {
+			s := pr.LastSyncAt.Format("2006-01-02T15:04:05Z")
+			lastSync = &s
+		}
+		out = append(out, PlatformConnectionStatus{
+			PlatformID:   pr.PlatformID,
+			PlatformCode: pr.PlatformCode,
+			PlatformName: pr.PlatformName,
+			StoreName:    pr.StoreName,
+			Status:       pr.Status,
+			SyncStatus:   pr.SyncStatus,
+			LastSyncAt:   lastSync,
+			LastError:    pr.LastError,
+		})
+	}
+	return out
 }

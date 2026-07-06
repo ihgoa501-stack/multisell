@@ -24,10 +24,12 @@ export const menuGroups: MenuGroup[] = [
   {
     label: 'Owner 总控台',
     items: [
-      { key: '/owner', icon: 'DashboardOutlined', label: '经营总控台', status: 'mock' },
+      { key: '/owner', icon: 'DashboardOutlined', label: '卖家工作台' },
       { key: '/candidates', label: '候选商品', status: 'mock' },
       { key: '/approval', label: '审批管理', status: 'mock' },
-      { key: '/dashboard', label: '数据概览', status: 'mock' },
+      { key: '/profit', icon: 'DollarOutlined', label: '利润真相' },
+      { key: '/support', icon: 'MessageOutlined', label: '统一客服' },
+      { key: '/dashboard', label: '每日简报' },
     ],
   },
   {

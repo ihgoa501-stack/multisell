@@ -1,28 +1,68 @@
 'use client';
 
+import { Card, Collapse, Empty, Row, Col, Table, Tag, Tabs, Alert } from 'antd';
 import {
-  Badge, Card, Col, Descriptions, Empty, Row, Spin, Statistic, Table, Tag,
-} from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, LinkOutlined, RobotOutlined } from '@ant-design/icons';
+  CheckCircleFilled, ExclamationCircleFilled,
+  ExclamationCircleOutlined, FallOutlined,
+  RiseOutlined, ShoppingCartOutlined, WarningFilled,
+} from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { StatRowSkeleton } from '@/components/ui/PageSkeleton';
 
-interface OverviewData {
-  order_total?: number;
-  order_by_status?: Record<string, number>;
-  order_revenue?: number;
-  order_profit?: number;
-  sku_total?: number;
-  low_stock_count?: number;
-  out_of_stock_count?: number;
-  listing_active_count?: number;
-  aftersales_pending_count?: number;
-  exception_open_count?: number;
-  month_revenue?: number;
-  month_cost?: number;
-  platform_connections?: PlatformConnection[];
-  agent_statuses?: AgentStatus[];
+/* ─── Types ─── */
+
+interface DailyBrief {
+  today_profit: number;
+  today_revenue: number;
+  month_profit: number;
+  month_revenue: number;
+  month_cost: number;
+  open_exception_count: number;
+  low_stock_count: number;
+  out_of_stock_count: number;
+  negative_margin_count: number;
+  pending_support_count: number;
+  pending_aftersales_count: number;
+  low_stock_skus: LowStockSku[];
+  negative_margin_skus: NegativeMarginSku[];
+  recent_exceptions: RecentException[];
+  urgent_conversations: UrgentConversation[];
+  platform_connections: PlatformConnection[];
+}
+
+interface LowStockSku {
+  sku_id: number;
+  product_id: number;
+  code: string;
+  spec_desc: string;
+  stock: number;
+  warning_stock: number;
+}
+
+interface NegativeMarginSku {
+  product_id: number;
+  sku_code: string;
+  title: string;
+  profit_margin: number;
+  estimated_profit: number;
+}
+
+interface RecentException {
+  id: number;
+  severity: string;
+  source_module: string;
+  message: string;
+  status: string;
+  created_at: string;
+}
+
+interface UrgentConversation {
+  id: number;
+  customer_name: string;
+  subject: string;
+  priority: string;
+  platform: string;
+  last_message_at?: string;
 }
 
 interface PlatformConnection {
@@ -36,222 +76,225 @@ interface PlatformConnection {
   last_error?: string;
 }
 
-interface AgentStatus {
-  agent_id: string;
-  name: string;
-  status: string;
-  last_activity?: string;
+/* ─── Helpers ─── */
+
+function fmt(n: number): string {
+  return `¥${n.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`;
 }
 
-interface ExceptionItem {
-  type: string;
-  count: number;
+function profitColor(n: number): string {
+  return n >= 0 ? 'var(--g4)' : 'var(--r4)';
 }
 
-interface RejectionReasonStat {
-  agent_id: string;
-  rejection_reason: string;
-  count: number;
-}
+/* ─── Sections ─── */
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: 'default',
-  paid: 'blue',
-  shipped: 'cyan',
-  completed: 'green',
-  cancelled: 'red',
-  refunded: 'orange',
-};
-
-const PLATFORM_COLORS: Record<string, string> = {
-  ozon: 'blue',
-  shopee: 'orange',
-};
-
-const AGENT_COLORS: Record<string, string> = {
-  A4: 'green', A5: 'red', A6: 'purple',
-  A8: 'geekblue', A10: 'cyan', A9: 'gold',
-  G0: 'volcano', G1: 'lime', G3: 'orange',
-};
-
-function Money({ value }: { value: number | undefined }) {
+function ProfitCard({ data }: { data: DailyBrief }) {
   return (
-    <Statistic value={value ?? 0} precision={2} prefix="¥" />
+    <Card style={{ borderRadius: 'var(--r4)', background: 'var(--s2)', border: '1px solid var(--bd)' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 'clamp(1.8rem,5vw,2.6rem)', fontWeight: 700, fontFamily: 'var(--ds)', color: profitColor(data.today_profit) }}>
+          {data.today_profit >= 0 ? <RiseOutlined /> : <FallOutlined />}
+          {' '}{fmt(data.today_profit)}
+        </span>
+        <span style={{ color: 'var(--t3)', fontSize: 'var(--text-small)' }}>今日利润</span>
+      </div>
+
+      <Row gutter={[16, 8]} style={{ marginTop: 'var(--space-lg)' }}>
+        <Col xs={12} sm={6}>
+          <div style={{ fontSize: 'var(--text-small)', color: 'var(--t3)' }}>今日收入</div>
+          <div style={{ fontWeight: 600, color: 'var(--t1)' }}>{fmt(data.today_revenue)}</div>
+        </Col>
+        <Col xs={12} sm={6}>
+          <div style={{ fontSize: 'var(--text-small)', color: 'var(--t3)' }}>本月利润</div>
+          <div style={{ fontWeight: 600, color: profitColor(data.month_profit) }}>{fmt(data.month_profit)}</div>
+        </Col>
+        <Col xs={12} sm={6}>
+          <div style={{ fontSize: 'var(--text-small)', color: 'var(--t3)' }}>本月收入</div>
+          <div style={{ fontWeight: 600, color: 'var(--t1)' }}>{fmt(data.month_revenue)}</div>
+        </Col>
+        <Col xs={12} sm={6}>
+          <div style={{ fontSize: 'var(--text-small)', color: 'var(--t3)' }}>本月成本</div>
+          <div style={{ fontWeight: 600, color: 'var(--r4)' }}>{fmt(data.month_cost)}</div>
+        </Col>
+      </Row>
+    </Card>
   );
 }
 
+function ExceptionAlerts({ data }: { data: DailyBrief }) {
+  const issues: Array<{ key: string; label: string; count: number; severity: 'critical' | 'warning'; href: string }> = [];
+
+  if (data.low_stock_count > 0 || data.out_of_stock_count > 0) {
+    issues.push({ key: 'stock', label: `低库存 ${data.low_stock_count} 条 / 缺货 ${data.out_of_stock_count} 条`, count: data.low_stock_count + data.out_of_stock_count, severity: data.out_of_stock_count > 0 ? 'critical' : 'warning', href: '/inventory' });
+  }
+  if (data.negative_margin_count > 0) {
+    issues.push({ key: 'margin', label: `亏损 SKU ${data.negative_margin_count} 条`, count: data.negative_margin_count, severity: 'critical', href: '/profit' });
+  }
+  if (data.open_exception_count > 0) {
+    issues.push({ key: 'exception', label: `异常 ${data.open_exception_count} 条`, count: data.open_exception_count, severity: data.open_exception_count > 5 ? 'critical' : 'warning', href: '/exceptions' });
+  }
+  if (data.pending_support_count > 0 || data.pending_aftersales_count > 0) {
+    issues.push({ key: 'support', label: `待回复客服 ${data.pending_support_count} 条 / 售后 ${data.pending_aftersales_count} 条`, count: data.pending_support_count + data.pending_aftersales_count, severity: 'warning', href: '/support' });
+  }
+
+  if (issues.length === 0) {
+    return (
+      <Card style={{ borderRadius: 'var(--r4)', background: 'var(--s2)', border: '1px solid var(--bd)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--g4)', fontSize: 'var(--text-body)' }}>
+          <CheckCircleFilled /> 一切正常
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {issues.map((issue) => (
+        <Alert
+          key={issue.key}
+          type={issue.severity === 'critical' ? 'error' : 'warning'}
+          showIcon
+          icon={issue.severity === 'critical' ? <ExclamationCircleFilled /> : <WarningFilled />}
+          message={
+            <a href={issue.href} style={{ color: 'inherit', textDecoration: 'underline' }}>
+              {issue.label}
+            </a>
+          }
+          style={{ borderRadius: 'var(--r3)', marginBottom: 0 }}
+        />
+      ))}
+    </div>
+  );
+}
+
+const lowStockColumns = [
+  { title: 'SKU 编码', dataIndex: 'code', key: 'code', width: 140 },
+  { title: '规格', dataIndex: 'spec_desc', key: 'spec_desc', ellipsis: true },
+  { title: '库存', dataIndex: 'stock', key: 'stock', width: 80, render: (v: number) => <span style={{ color: v <= 0 ? 'var(--r4)' : 'var(--y4)', fontWeight: 600 }}>{v}</span> },
+  { title: '预警线', dataIndex: 'warning_stock', key: 'warning_stock', width: 80 },
+  { title: '状态', key: 'status', width: 80, render: (_: unknown, r: LowStockSku) => r.stock <= 0 ? <Tag color="red">缺货</Tag> : <Tag color="orange">偏低</Tag> },
+];
+
+const negativeMarginColumns = [
+  { title: 'SKU', dataIndex: 'sku_code', key: 'sku_code', width: 140 },
+  { title: '商品', dataIndex: 'title', key: 'title', ellipsis: true },
+  { title: '利润率', dataIndex: 'profit_margin', key: 'profit_margin', width: 90, render: (v: number) => <span style={{ color: 'var(--r4)', fontWeight: 600 }}>{v.toFixed(2)}%</span>, sorter: (a: NegativeMarginSku, b: NegativeMarginSku) => a.profit_margin - b.profit_margin },
+  { title: '预计利润', dataIndex: 'estimated_profit', key: 'estimated_profit', width: 110, render: (v: number) => fmt(v) },
+];
+
+function DetailsTabs({ data }: { data: DailyBrief }) {
+  const tabItems = [
+    {
+      key: 'stock',
+      label: <span><ShoppingCartOutlined /> 库存告警</span>,
+      children: data.low_stock_skus.length === 0
+        ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span style={{ color: 'var(--g4)' }}><CheckCircleFilled /> 库存正常</span>} />
+        : <Table rowKey="sku_id" dataSource={data.low_stock_skus} columns={lowStockColumns} pagination={false} size="small" style={{ marginTop: 'var(--space-sm)' }} />,
+    },
+    {
+      key: 'margin',
+      label: <span><FallOutlined /> 亏损 SKU</span>,
+      children: data.negative_margin_skus.length === 0
+        ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span style={{ color: 'var(--g4)' }}><CheckCircleFilled /> 无亏损 SKU</span>} />
+        : <Table rowKey="sku_code" dataSource={data.negative_margin_skus} columns={negativeMarginColumns} pagination={false} size="small" style={{ marginTop: 'var(--space-sm)' }} />,
+    },
+    {
+      key: 'support',
+      label: <span><ExclamationCircleOutlined /> 紧急客服</span>,
+      children: data.urgent_conversations.length === 0
+        ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span style={{ color: 'var(--g4)' }}><CheckCircleFilled /> 无待处理会话</span>} />
+        : data.urgent_conversations.map((c) => (
+          <Card key={c.id} size="small" style={{ marginBottom: 8, borderLeft: c.priority === 'high' || c.priority === 'urgent' ? '3px solid var(--r4)' : '3px solid var(--y4)' }}>
+            <Row justify="space-between" align="middle">
+              <Col>
+                <div style={{ fontWeight: 600, fontSize: 'var(--text-body)' }}>{c.customer_name}</div>
+                <div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)' }}>{c.subject}</div>
+              </Col>
+              <Col>
+                <Tag color={c.priority === 'high' || c.priority === 'urgent' ? 'red' : 'orange'}>{c.priority}</Tag>
+                <Tag>{c.platform}</Tag>
+              </Col>
+            </Row>
+            {c.last_message_at && <div style={{ color: 'var(--t4)', fontSize: 'var(--text-label)', marginTop: 4 }}>{new Date(c.last_message_at).toLocaleString('zh-CN')}</div>}
+          </Card>
+        )),
+    },
+  ];
+
+  return (
+    <Card style={{ borderRadius: 'var(--r4)', background: 'var(--s2)', border: '1px solid var(--bd)' }}>
+      <Tabs items={tabItems} />
+    </Card>
+  );
+}
+
+const platformColumns = [
+  { title: '平台', dataIndex: 'platform_name', key: 'platform_name', width: 100, render: (v: string) => <Tag>{v}</Tag> },
+  { title: '店铺', dataIndex: 'store_name', key: 'store_name', ellipsis: true },
+  { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (v: string) => v === 'active' ? <Tag color="green">已连接</Tag> : <Tag color="red">断开</Tag> },
+  { title: '同步', dataIndex: 'sync_status', key: 'sync_status', width: 80, render: (v: string) => <Tag>{v}</Tag> },
+  { title: '上次同步', dataIndex: 'last_sync_at', key: 'last_sync_at', width: 140, render: (v?: string) => v ? v.slice(0, 16).replace('T', ' ') : '-' },
+  { title: '错误', dataIndex: 'last_error', key: 'last_error', ellipsis: true, render: (v?: string) => v ? <span style={{ color: 'var(--r4)' }}>{v}</span> : '-' },
+];
+
+/* ─── Loading skeleton ─── */
+
+function BriefSkeleton() {
+  return (
+    <div style={{ padding: 'var(--space-xl)', display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)' }}>Daily Brief</h1>
+      <div style={{ height: 120, background: 'var(--s2)', borderRadius: 'var(--r4)' }} />
+      <div style={{ height: 80, background: 'var(--s2)', borderRadius: 'var(--r3)' }} />
+      <div style={{ height: 300, background: 'var(--s2)', borderRadius: 'var(--r4)' }} />
+    </div>
+  );
+}
+
+/* ─── Page ─── */
+
 export default function DashboardPage() {
-  const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: ['dashboard', 'overview'],
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['dashboard', 'brief'],
     queryFn: async () => {
-      const res = await apiClient.get<OverviewData>('/v1/dashboard/overview');
+      const res = await apiClient.get<DailyBrief>('/v1/dashboard/brief');
       return res.data;
     },
   });
 
-  const { data: exceptions, isLoading: exceptionsLoading } = useQuery({
-    queryKey: ['dashboard', 'exceptions'],
-    queryFn: async () => {
-      const res = await apiClient.get<ExceptionItem[]>('/v1/dashboard/exceptions');
-      return res.data ?? [];
-    },
-  });
-
-  const { data: rejectionReasons, isLoading: rejectionLoading } = useQuery({
-    queryKey: ['dashboard', 'rejection-reasons'],
-    queryFn: async () => {
-      const res = await apiClient.get<RejectionReasonStat[]>('/v1/dashboard/rejection-reasons');
-      return res.data ?? [];
-    },
-  });
-
-  if (overviewLoading) {
+  if (error) {
     return (
       <div style={{ padding: 'var(--space-xl)' }}>
-        <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', marginBottom: 'var(--space-xl)' }}>Dashboard</h1>
-        <StatRowSkeleton count={6} />
+        <Alert message="加载失败" description={error instanceof Error ? error.message : '未知错误'} type="error" showIcon />
       </div>
     );
   }
 
-  const o = overview ?? {};
-  const statusEntries = Object.entries(o.order_by_status ?? {});
-  const platforms = o.platform_connections ?? [];
-  const agents = o.agent_statuses ?? [];
+  if (isLoading || !data) return <BriefSkeleton />;
 
   return (
-    <div style={{ padding: 'var(--space-xl)' }}>
-      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', marginBottom: 'var(--space-xl)' }}>Dashboard</h1>
+    <div style={{ padding: 'var(--space-xl)', display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)' }}>
+      <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', margin: 0, color: 'var(--t1)' }}>Daily Brief</h1>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card><Statistic title="订单总数" value={o.order_total ?? 0} /></Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card>
-              <Money value={o.order_revenue} />
-            <div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)', marginTop: 'var(--space-xs)' }}>订单收入</div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card size="small" styles={{ body: { padding: 'var(--space-md)' } }}>
-            <Money value={o.order_profit} />
-            <div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)', marginTop: 'var(--space-xs)' }}>订单利润</div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card><Statistic title="SKU 总数" value={o.sku_total ?? 0} /></Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card size="small" styles={{ body: { padding: 'var(--space-md)' } }}><Statistic title="低库存" value={o.low_stock_count ?? 0}
-              valueStyle={{ color: (o.low_stock_count ?? 0) > 0 ? 'var(--y4)' : 'var(--t1)' }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={8} lg={4}>
-          <Card size="small" styles={{ body: { padding: 'var(--space-md)' } }}>
-            <Statistic title="异常" value={o.exception_open_count ?? 0}
-              valueStyle={{ color: (o.exception_open_count ?? 0) > 0 ? 'var(--r4)' : 'var(--t1)' }} />
-          </Card>
-        </Col>
-      </Row>
+      {/* Top: profit */}
+      <ProfitCard data={data} />
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card title={<><LinkOutlined /> 平台对接</>}>
-            {platforms.length === 0 ? (
-              <Empty description="暂无已对接平台">
-                <a href="/platform-integrations">连接 Ozon 店铺</a>
-              </Empty>
-            ) : platforms.map((p) => (
-              <Card key={p.platform_id} size="small" style={{ marginBottom: 8, borderLeft: p.status === 'active' ? '3px solid var(--g4)' : '3px solid var(--r4)' }}>
-                <Descriptions column={2} size="small">
-                  <Descriptions.Item label="平台">
-                    <Tag color={PLATFORM_COLORS[p.platform_code] || 'default'}>{p.platform_name}</Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="状态">
-                    {p.status === 'active' ? <Badge status="success" text="已连接" /> : <Badge status="error" text="断开" />}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="店铺">{p.store_name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="同步"><Tag>{p.sync_status}</Tag></Descriptions.Item>
-                  {p.last_sync_at && (
-                    <Descriptions.Item label="上次同步" span={2}>{p.last_sync_at?.slice(0, 16).replace('T', ' ')}</Descriptions.Item>
-                  )}
-                </Descriptions>
-              </Card>
-            ))}
-          </Card>
-        </Col>
+      {/* Middle: exceptions */}
+      <ExceptionAlerts data={data} />
 
-        <Col xs={24} lg={12}>
-          <Card title={<><RobotOutlined /> AI Agent 状态</>}>
-            {agents.length === 0 ? (
-              <Empty description="Agent 暂无活动"><span style={{ color: 'var(--t3)' }}>系统启动中...</span></Empty>
-            ) : (
-              <Row gutter={[12, 12]}>
-                {agents.map((a) => (
-                  <Col key={a.agent_id} xs={12} md={8}>
-                    <Card size="small">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <Tag color={AGENT_COLORS[a.agent_id] || 'default'}>{a.agent_id}</Tag>
-                        {a.status === 'active' ? <CheckCircleOutlined style={{ color: 'var(--g4)' }} /> : <CloseCircleOutlined style={{ color: 'var(--t3)' }} />}
-                      </div>
-                      <div style={{ fontWeight: 500, fontSize: 13 }}>{a.name}</div>
-                      <div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)', marginTop: 'var(--space-xs)' }}>
-                        {a.last_activity ? a.last_activity.slice(0, 16).replace('T', ' ') : '等待运行'}
-                      </div>
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
-            )}
-          </Card>
-        </Col>
-      </Row>
+      {/* Bottom: detail tabs */}
+      <DetailsTabs data={data} />
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card title="订单状态分布">
-            {statusEntries.length === 0 ? <Empty description="暂无数据" /> : (
-              <Row gutter={[12, 12]}>
-                {statusEntries.map(([status, count]) => (
-                  <Col key={status} xs={12} md={8}>
-                    <Statistic title={<Tag color={STATUS_COLORS[status] ?? 'default'}>{status}</Tag>} value={count} />
-                  </Col>
-                ))}
-              </Row>
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title="当月收入 vs 成本">
-            <Row gutter={16}>
-              <Col span={12}><Money value={o.month_revenue} /><div style={{ color: 'var(--t3)', fontSize: 'var(--text-small)', marginTop: 'var(--space-xs)' }}>收入</div></Col>
-              <Col span={12}><Statistic title="成本" value={o.month_cost ?? 0} precision={2} prefix="¥" valueStyle={{ color: 'var(--r4)' }} /></Col>
-            </Row>
-          </Card>
-        </Col>
-      </Row>
-
-      <Card title="异常分布" style={{ marginTop: 16 }}>
-        <Table rowKey="type" loading={exceptionsLoading} dataSource={exceptions} pagination={false} size="small"
-          columns={[
-            { title: '异常类型', dataIndex: 'type' },
-            { title: '数量', dataIndex: 'count', width: 120 },
-          ]} />
-      </Card>
-
-      <Card title="拒绝原因分析" style={{ marginTop: 16 }}>
-        <Table rowKey={(r) => `${r.agent_id}-${r.rejection_reason}`}
-          loading={rejectionLoading}
-          dataSource={rejectionReasons}
-          pagination={false}
-          size="small"
-          columns={[
-            { title: 'Agent ID', dataIndex: 'agent_id', width: 100 },
-            { title: '拒绝原因', dataIndex: 'rejection_reason' },
-            { title: '次数', dataIndex: 'count', width: 80 },
-          ]} />
-      </Card>
+      {/* Collapsed: platform connections */}
+      <Collapse
+        items={[{
+          key: 'platforms',
+          label: `平台对接 (${data.platform_connections.length})`,
+          children: data.platform_connections.length === 0
+            ? <Empty description="暂无已对接平台" />
+            : <Table rowKey="platform_id" dataSource={data.platform_connections} columns={platformColumns} pagination={false} size="small" />,
+        }]}
+        style={{ background: 'var(--s2)', border: '1px solid var(--bd)', borderRadius: 'var(--r4)' }}
+      />
     </div>
   );
 }

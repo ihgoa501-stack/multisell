@@ -116,3 +116,20 @@ func (h *Handler) RejectionReasons(c *gin.Context) {
 	}
 	response.Success(c, items)
 }
+
+// DailyBrief GET /dashboard/brief
+// @Summary      Daily brief
+// @Description  Get the seller's daily workspace composite brief
+// @Tags         dashboard
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /dashboard/brief [get]
+func (h *Handler) DailyBrief(c *gin.Context) {
+	brief, err := h.service.GetDailyBrief()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, brief)
+}

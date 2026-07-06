@@ -43,7 +43,9 @@ func (h *Handler) Summary(c *gin.Context) {
 func (h *Handler) ListSummaries(c *gin.Context) {
 	p := common.ParsePagination(c)
 	status := c.Query("status")
-	items, total, err := h.service.ListSummaries(p.Page, p.Size, status)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+	items, total, err := h.service.ListSummaries(p.Page, p.Size, status, startDate, endDate)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
