@@ -14,6 +14,7 @@ CREATE INDEX IF NOT EXISTS idx_forbidden_action ON forbidden_action (action_type
 INSERT INTO forbidden_action (action_type, agent_id, risk_level, reason) VALUES
 ('price_update', '*', 'high', 'AI auto price change is forbidden without Owner approval policy'),
 ('inventory_change', '*', 'high', 'AI auto inventory change is forbidden without Owner approval policy'),
+('order_cancel', '*', 'high', 'AI auto order cancellation is forbidden'),
 ('listing_publish', '*', 'high', 'AI auto platform publish is forbidden without explicit approval'),
 ('credential_change', '*', 'high', 'AI cannot change credentials'),
 ('permission_change', '*', 'high', 'AI cannot change permissions or RBAC rules'),
