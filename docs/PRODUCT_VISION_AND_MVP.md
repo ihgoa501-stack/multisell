@@ -1,9 +1,16 @@
 # 凌镜 LingMirror 最终产品形态与第一可用版本定义
 
-产品品牌：凌镜 LingMirror  
+产品品牌：凌镜 LingMirror
 技术项目名：MultiSell
 
-更新时间：2026-06-15
+更新时间：2026-07-06
+
+> **定位更新：短期 Copilot，长期 Autopilot**
+>
+> 凌镜当前定位是 **AI 辅助经营决策平台（Copilot）**——Agent 给出建议，人类做最终决策和审批。
+> 长期方向（2027+）是向 **AI 自主运营（Autopilot）** 演进，但那不是当前版本的目标。
+>
+> 详见 [POSITIONING_2026-07-06.md](./POSITIONING_2026-07-06.md) 和 [CURRENT_DIRECTION_AND_PRIORITIES.md](./CURRENT_DIRECTION_AND_PRIORITIES.md)。
 
 ## 结论
 
@@ -569,4 +576,3 @@ MultiSell 的最终定位是面向中小跨境电商团队的 AI Agent 协作运
 不要为了页面完整而增加低价值模块。
 不要跳过数据标准化和验收。
 ```
-

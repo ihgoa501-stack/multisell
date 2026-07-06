@@ -39,7 +39,7 @@ func (h *Handler) Chat(c *gin.Context) {
 		return
 	}
 	// Route through orchestrator.
-	userID := userIDFromCtx(c)
+	userID := common.UserIDFromCtx(c)
 	result, err := h.orchestrator.Chat(in.Message, userID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -79,7 +79,7 @@ func (h *Handler) RunAgent(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	in.UserID = userIDFromCtx(c)
+	in.UserID = common.UserIDFromCtx(c)
 	result, err := h.orchestrator.Run(&in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -208,7 +208,7 @@ func (h *Handler) ApproveAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.service.ApproveAction(id, common.ReviewerFromCtx(c), userIDFromCtx(c), in.Reason)
+	a, err := h.service.ApproveAction(id, common.ReviewerFromCtx(c), common.UserIDFromCtx(c), in.Reason)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -228,7 +228,7 @@ func (h *Handler) RejectAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := h.service.RejectAction(id, common.ReviewerFromCtx(c), userIDFromCtx(c), in.Reason)
+	a, err := h.service.RejectAction(id, common.ReviewerFromCtx(c), common.UserIDFromCtx(c), in.Reason)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -250,7 +250,7 @@ func (h *Handler) ExecuteAction(c *gin.Context) {
 	}
 	// Actor identity is server-enforced from JWT, not client-supplied.
 	operator := common.ReviewerFromCtx(c)
-	userID := userIDFromCtx(c)
+	userID := common.UserIDFromCtx(c)
 	a, err := h.service.ExecuteAction(id, userID, operator, in.Reason)
 	if err != nil {
 		if errors.Is(err, ErrApprovalRequired) {
@@ -340,24 +340,6 @@ func parseID(c *gin.Context) (int64, bool) {
 }
 
 
-// userIDFromCtx extracts user id from the JWT context (set by auth middleware).
-func userIDFromCtx(c *gin.Context) *int64 {
-	v, exists := c.Get("user_id")
-	if !exists {
-		return nil
-	}
-	switch x := v.(type) {
-	case int64:
-		return &x
-	case int:
-		n := int64(x)
-		return &n
-	case float64:
-		n := int64(x)
-		return &n
-	}
-	return nil
-}
 
 func stringify(v interface{}) string {
 	if s, ok := v.(string); ok {

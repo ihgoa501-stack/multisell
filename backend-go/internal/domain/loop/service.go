@@ -38,7 +38,7 @@ func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismServ
 		db:              db,
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
-		profitSvc:       profit.NewService(db, logger, rateSvc),
+		profitSvc:       profit.NewService(db, logger, rateSvc, 7.2),
 		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, oplogSvc, nil),
 		approvalSvc:     approvalSvc,
 		oplogSvc:        oplogSvc,
@@ -150,7 +150,13 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 		TriggeredBy:       triggeredBy,
 		FeedbackStatus:    "pending",
 	}
-	s.db.Create(&rec)
+	if err := s.db.Create(&rec).Error; err != nil {
+		s.logger.Error("failed to save listing recommendation",
+			zap.Int64("product_id", productID),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("save listing recommendation: %w", err)
+	}
 
 	return &EvaluateResult{
 		ProductID:          productID,

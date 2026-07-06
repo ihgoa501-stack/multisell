@@ -28,7 +28,7 @@ type MOAResult struct {
 	Status        string            `json:"status"`         // completed | blocked | needs_approval
 	AgentResults  []MOAAgentResult  `json:"agent_results"`
 	Conflicts     []MOAConflict     `json:"conflicts,omitempty"`
-	Suggestion    string            `json:"suggestion,omitempty"`
+	Suggestion    interface{}       `json:"suggestion,omitempty"`
 	RiskLevel     string            `json:"risk_level"`
 	NeedsApproval bool              `json:"needs_approval"`
 	ApprovalID    *int64            `json:"approval_id,omitempty"`
@@ -291,19 +291,59 @@ func (c *MOACoordinator) computeRiskLevel(results []MOAAgentResult, _ []MOAConfl
 	return "low"
 }
 
-// synthesize produces a human-readable suggestion from agent results.
-// ponytail: naive concatenation, replace with LLM summary when quality matters.
-func (c *MOACoordinator) synthesize(results []MOAAgentResult, conflicts []MOAConflict) string {
+// synthesize produces a structured suggestion from agent results.
+// Returns a map with overview, agent findings, conflict details, risk assessment,
+// and recommendation — never a plain string.
+func (c *MOACoordinator) synthesize(results []MOAAgentResult, conflicts []MOAConflict) interface{} {
 	if len(results) == 0 {
-		return "No agent results available."
+		return map[string]interface{}{
+			"overview":       "No agent results available.",
+			"risk_level":     "unknown",
+			"recommendation": "Cannot proceed without agent results.",
+		}
 	}
-	text := fmt.Sprintf("MOA analysis for %d agent(s): ", len(results))
+
+	// Build per-agent findings.
+	agentFindings := make([]map[string]interface{}, 0, len(results))
 	for _, r := range results {
-		text += fmt.Sprintf("[%s] confidence=%.2f risk=%s; ", r.AgentID, r.Confidence, r.RiskLevel)
+		finding := map[string]interface{}{
+			"agent_id":   r.AgentID,
+			"confidence": r.Confidence,
+			"risk_level": r.RiskLevel,
+		}
+		agentFindings = append(agentFindings, finding)
 	}
+
+	// Build conflict details.
+	conflictDetails := make([]map[string]interface{}, 0, len(conflicts))
+	for _, c := range conflicts {
+		detail := map[string]interface{}{
+			"between":  c.Between,
+			"on":       c.On,
+			"option_a": c.AOption,
+			"option_b": c.BOption,
+		}
+		conflictDetails = append(conflictDetails, detail)
+	}
+
+	// Determine overall recommendation.
+	riskLevel := c.computeRiskLevel(results, conflicts)
+	recommendation := "Review recommended before action."
 	if len(conflicts) > 0 {
-		text += fmt.Sprintf("Conflicts: %d area(s) of disagreement. ", len(conflicts))
+		recommendation = "Conflicts detected — manual review required before proceeding."
 	}
-	text += "Review recommended before action."
-	return text
+	if riskLevel == "low" && len(conflicts) == 0 {
+		recommendation = "Proceed with confidence — all agents agree, low risk."
+	}
+
+	overview := fmt.Sprintf("MOA analysis for %d agent(s): %d conflict(s).", len(results), len(conflicts))
+
+	return map[string]interface{}{
+		"overview":        overview,
+		"agent_findings":  agentFindings,
+		"conflicts":       conflictDetails,
+		"conflict_count":  len(conflicts),
+		"risk_level":      riskLevel,
+		"recommendation":  recommendation,
+	}
 }

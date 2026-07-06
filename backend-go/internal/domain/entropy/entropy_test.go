@@ -78,3 +78,34 @@ func TestRuleHealthScoreDefaults(t *testing.T) {
 		t.Fatalf("expected empty RiskLevel, got %q", h.RiskLevel)
 	}
 }
+
+func TestConsumeAgentMetrics_Normal(t *testing.T) {
+	svc := NewService(newEntropyTestDB(t), zap.NewNop())
+	metrics := []AgentMetricsSnapshot{
+		{AgentID: "A5", RunCount: 100, FailureCount: 2, BlockedCount: 1, ExternalFailureRate: 0.02, AvgLatencyMs: 500},
+	}
+	anomalies := svc.ConsumeAgentMetrics(metrics)
+	if len(anomalies) != 0 {
+		t.Errorf("expected 0 anomalies for normal agent, got %d: %v", len(anomalies), anomalies)
+	}
+}
+
+func TestConsumeAgentMetrics_HighFailureRate(t *testing.T) {
+	svc := NewService(newEntropyTestDB(t), zap.NewNop())
+	metrics := []AgentMetricsSnapshot{
+		{AgentID: "A6", RunCount: 10, FailureCount: 5, BlockedCount: 3, ExternalFailureRate: 0.5, AvgLatencyMs: 2000},
+	}
+	anomalies := svc.ConsumeAgentMetrics(metrics)
+	if len(anomalies) == 0 {
+		t.Fatal("expected anomalies for high failure rate")
+	}
+	found := false
+	for _, a := range anomalies {
+		if a.AgentID == "A6" && a.Severity != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected A6 anomaly, got: %v", anomalies)
+	}
+}

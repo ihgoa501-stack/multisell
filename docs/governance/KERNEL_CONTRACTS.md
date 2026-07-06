@@ -48,9 +48,9 @@ Rules:
   6. DLQ replay may reclaim a `failed` row back to `state='processing'` with `processed_at=NULL`.
 
 - **Mutation Guard**: every EventBus subscriber that mutates business state MUST use
-  `eventbus.MutationGuard.Guard()` to wrap the handler. The guard enforces:
+  `eventbus.MutationGuard.Guard()` to wrap the handler. The guard ensures:
 
-  1. The mutation's `SystemAction` is registered in the ActionCatalog
+  1. The mutation's `SystemAction` is registered in the ActionCatalog (mandatory convention — enforced during review, not code-enforced by the guard itself).
      (`actioncatalog.DefaultEntries`) as a `system.*` action type.
   2. A structured audit entry (`pending` -> `executed`|`failed`) is written to
      `operation_log` with `trigger_type='eventbus'` before and after handler execution.
@@ -110,6 +110,7 @@ Rules:
 - Commands that mutate critical data must enforce permission, approval, and audit requirements.
 - Command results must distinguish success, validation failure, policy block, external failure, and internal error.
 - Commands should be idempotent where possible.
+- Consumers with their own comprehensive gate chain (e.g. ai.Service.ExecuteAction) may use raw Dispatch() after passing their gates. DispatchSafe() enforces mode, approval, and audit at the AgentAction envelope level for consumers without their own gate chain.
 
 Recommended command shape:
 
@@ -177,7 +178,7 @@ rollback_note:     string               // human guidance for reversing
 |------------|------------------------------------------------|-----------------|
 | low        | stock_alert, dashboard_summary, read_data      | No              |
 | medium     | listing_draft, compliance_flag, suggest_price  | No (suggestion) |
-| high       | price_update, inventory_change, order_cancel, platform_publish, credential_change | Yes |
+| high       | price_update, inventory_change, order_cancel, listing_publish, credential_change | Yes |
 
 ### Execution Mode Rules
 

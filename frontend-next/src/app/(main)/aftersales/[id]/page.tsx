@@ -143,7 +143,7 @@ export default function AftersalesDetailPage() {
         </Col>
         <Col span={12}>
           <Card title={<><RobotOutlined /> Agent 决策</>} size="small">
-            <Text type="secondary">当前售后单可通过 Agent 自动处理</Text>
+            <Text type="secondary">当前售后单可由 Agent 分析并提供处理建议</Text>
             <div style={{ marginTop: 12 }}>
               <Space>
                 <Button
@@ -151,7 +151,7 @@ export default function AftersalesDetailPage() {
                   loading={actionMutation.isPending}
                   onClick={() => actionMutation.mutate({ action: 'auto-decide', values: {} })}
                 >
-                  Agent 自动处理
+                  Agent 分析建议
                 </Button>
                 <Button icon={<RobotOutlined />} onClick={() => window.open(`/ai?query=分析售后单 #${id}，订单ID ${data.order_id as string}，原因: ${data.reason as string}，当前状态: ${status}`, '_blank')}>
                   AI 咨询

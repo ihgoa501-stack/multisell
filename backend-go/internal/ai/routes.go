@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
+	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/realtime"
@@ -14,7 +15,6 @@ import (
 )
 
 // RegisterRoutes registers AI routes on the given router group.
-// moaCoord can be nil; if set, MOA routes are registered.
 // cmd can be nil; if set, action execution dispatches through the command handlers.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, moaCoord *MOACoordinator, cmd *command.Dispatcher, guard *guardrails.Chain) {
 	svc := NewService(db, logger).WithDispatcher(cmd).WithCatalog(actioncatalog.Default()).WithGuard(guard)
@@ -24,7 +24,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *r
 
 	ai := rg.Group("/ai")
 	{
-		// Static routes first.
+		// Static routes first (no approval RBAC required).
 		ai.POST("/chat", h.Chat)
 		ai.POST("/run", h.RunAgent)
 		ai.GET("/traces", h.ListTraces)
@@ -36,9 +36,14 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *r
 		// Parameterized routes after.
 		ai.GET("/traces/:trace_id", h.GetTrace)
 		ai.GET("/actions/:id", h.GetAction)
-		ai.POST("/actions/:id/approve", h.ApproveAction)
-		ai.POST("/actions/:id/reject", h.RejectAction)
-		ai.POST("/actions/:id/execute", h.ExecuteAction)
+
+		// Approval-gated actions: approve, reject, execute require "ai.action" permission.
+		aiGroup := ai.Group("", middleware.RequirePermission(db, "ai.action"))
+		aiGroup.POST("/actions/:id/approve", h.ApproveAction)
+		aiGroup.POST("/actions/:id/reject", h.RejectAction)
+		aiGroup.POST("/actions/:id/execute", h.ExecuteAction)
+
+		// Review does NOT require approval RBAC (read-only review after execution).
 		ai.POST("/actions/:id/review", h.ReviewAction)
 
 		// MOA multi-agent orchestration (optional).

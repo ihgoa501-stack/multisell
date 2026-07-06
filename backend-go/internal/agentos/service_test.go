@@ -12,7 +12,7 @@ func TestSLAEscalation(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ai.UnifiedAction{})
 	logger := dbtest.NewLogger(t)
-	svc := NewService(db, logger)
+	svc := NewService(db, logger, nil)
 
 	// Create 5 actions with varying statuses and ages
 	now := time.Now()

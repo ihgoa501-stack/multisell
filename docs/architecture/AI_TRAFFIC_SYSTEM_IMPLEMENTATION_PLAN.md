@@ -172,7 +172,7 @@ production
 - inventory_change
 - order_cancel
 - refund_issue
-- platform_publish
+- listing_publish
 - sync_inventory
 - credential_change
 - permission_change

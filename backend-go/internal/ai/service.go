@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"go.uber.org/zap"
@@ -24,6 +26,7 @@ type Service struct {
 	cmd    *command.Dispatcher
 	cat    *actioncatalog.Catalog
 	guard  *guardrails.Chain
+	oplogSvc *operationlog.Service // optional audit logging sink
 }
 
 // NewService creates a new AI service.
@@ -54,6 +57,12 @@ func (s *Service) WithCatalog(cat *actioncatalog.Catalog) *Service {
 	return s
 }
 
+// WithOperationLog attaches an optional operation-log service for audit logging.
+// If nil, audit logging is silently skipped (graceful degradation).
+func (s *Service) WithOperationLog(svc *operationlog.Service) *Service {
+	s.oplogSvc = svc
+	return s
+}
 
 // TraceWriter exposes the underlying trace writer for the orchestrator.
 func (s *Service) TraceWriter() *TraceWriter { return s.traces }
@@ -173,6 +182,7 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 		IdempotencyKey:     in.IdempotencyKey,
 		ExecutionMode:      execMode,
 		Confidence:         in.Confidence,
+		ProposedBy:         in.ProposedBy,
 	}
 	if err := s.db.Create(&a).Error; err != nil {
 		return nil, err
@@ -180,12 +190,13 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 	return &a, nil
 }
 
-// ApproveAction transitions an action to "approved".
+// ApproveAction transitions an action to "approved",
+// storing the user ID if provided.
 func (s *Service) ApproveAction(id int64, operator string, userID *int64, _ string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "approved", map[string]interface{}{
-		"approved_by":      operator,
+		"approved_by":        operator,
 		"approved_by_user_id": userID,
-		"approved_at":      nowPtr(),
+		"approved_at":        nowPtr(),
 	}, "suggested", "pending")
 }
 
@@ -194,10 +205,10 @@ func (s *Service) ApproveAction(id int64, operator string, userID *int64, _ stri
 // permitted (revoke via a separate flow instead).
 func (s *Service) RejectAction(id int64, operator string, userID *int64, reason string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "rejected", map[string]interface{}{
-		"rejected_by":      operator,
+		"rejected_by":         operator,
 		"rejected_by_user_id": userID,
-		"rejected_at":      nowPtr(),
-		"rejection_reason": reason,
+		"rejected_at":         nowPtr(),
+		"rejection_reason":    reason,
 	}, "suggested", "pending")
 }
 
@@ -215,8 +226,6 @@ func (s *Service) RejectAction(id int64, operator string, userID *int64, reason 
 // For low-risk auto-approved actions (RequiresApproval=false) this can be
 // called directly from "suggested"; otherwise the action must first be
 // approved.
-//
-// After Model(&a).Updates, GORM refreshes a in-place so no second First() is needed.
 func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*UnifiedAction, error) {
 	var a UnifiedAction
 	if err := s.db.First(&a, id).Error; err != nil {
@@ -316,10 +325,10 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	res := s.db.Model(&UnifiedAction{}).
 		Where("id = ? AND status IN ?", a.ID, []string{"suggested", "approved"}).
 		Updates(map[string]interface{}{
-			"status":       "executing",
-			"executed_by":  operator,
+			"status":              "executing",
+			"executed_by":         operator,
 			"executed_by_user_id": userID,
-			"executing_at": now,
+			"executing_at":        now,
 		})
 	if res.Error != nil {
 		return nil, res.Error
@@ -382,18 +391,39 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	} else {
 		finalUpdates["status"] = "executed"
 		if cmdResult != nil && cmdResult.AfterSnapshot != nil {
-			snapJSON, _ := json.Marshal(cmdResult.AfterSnapshot)
-			finalUpdates["after_snapshot"] = snapJSON
+			finalUpdates["after_snapshot"] = cmdResult.AfterSnapshot
 		}
 	}
 
 	if err := s.db.Model(&a).Updates(finalUpdates).Error; err != nil {
 		return nil, err
 	}
+
+	// Audit log: execution complete (success or failure).
+	status, _ := finalUpdates["status"].(string)
+	s.logExecuteAction(a, operator, status)
+
 	return &a, nil
 }
 
-// FailAction marks an executing action as failed.
+// logExecuteAction writes an audit log entry for an action execution event.
+// Silently skips if no operation-log service is configured (graceful degradation).
+func (s *Service) logExecuteAction(a UnifiedAction, operator, status string) {
+	if s.oplogSvc == nil {
+		return
+	}
+	content, _ := json.Marshal(a)
+	_ = s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
+		Action:      "ai.action." + status,
+		Module:      "ai.action",
+		ResourceID:  strconv.FormatInt(a.ID, 10),
+		Operator:    operator,
+		Content:     string(content),
+		Result:      status,
+		TriggerType: "agent",
+	})
+}
+
 func (s *Service) FailAction(id int64, reason string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "failed", map[string]interface{}{
 		"failed_at":        nowPtr(),

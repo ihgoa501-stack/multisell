@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import {
-  Badge,
+  Alert, Badge,
   Button,
   Collapse,
   Col,
+  Drawer,
   Empty,
   message,
   Row,
@@ -14,6 +15,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Timeline,
   Typography,
 } from 'antd';
 import {
@@ -107,6 +109,67 @@ interface AgentTimelineEntry {
     created_at: string;
   }>;
   status_summary: Record<string, number>;
+}
+
+interface TrafficSummary {
+  status_distribution: Record<string, number>;
+  intercepted_total: number;
+  funnel: {
+    produced: number;
+    approved: number;
+    executed: number;
+    blocked_by_policy: number;
+    rejected_by_owner: number;
+  };
+  by_risk: Record<string, Record<string, number>>;
+}
+
+interface InterceptedAction {
+  id: number;
+  action_type: string;
+  agent_id: string;
+  risk_level: string;
+  block_reason: string;
+  blocked_at: string;
+  target_summary: string;
+}
+
+interface AuditReplayEvent {
+  type: string;
+  subtype?: string;
+  agent_id?: string;
+  action_id?: number;
+  status?: string;
+  detail?: string;
+  timestamp: string;
+}
+
+interface AuditReplayResponse {
+  events: AuditReplayEvent[];
+}
+
+// Agent metrics
+interface AgentMetricsEntry {
+  agent_id: string;
+  run_count: number;
+  success_count: number;
+  failure_count: number;
+  blocked_count: number;
+  approval_rate: number;
+  owner_acceptance_rate: number;
+  avg_latency_ms: number;
+  external_failure_rate: number;
+  health: string;
+}
+
+interface ExternalPlatformHealth {
+  platform: string;
+  total_calls: number;
+  failed_calls: number;
+  consecutive_failures: number;
+  degraded: boolean;
+  last_failure_at: string;
+  last_error: string;
 }
 
 // ---------- Color helpers ----------
@@ -243,6 +306,10 @@ export default function AgentOSPage() {
     qc.invalidateQueries({ queryKey: ['agentos-autonomy'] });
     qc.invalidateQueries({ queryKey: ['aios-health'] });
     qc.invalidateQueries({ queryKey: ['agentos-timeline'] });
+    qc.invalidateQueries({ queryKey: ['traffic-summary'] });
+    qc.invalidateQueries({ queryKey: ['intercepted-actions'] });
+    qc.invalidateQueries({ queryKey: ['agent-metrics'] });
+    qc.invalidateQueries({ queryKey: ['external-health'] });
   };
 
   // Work item detail drawer
@@ -265,6 +332,48 @@ export default function AgentOSPage() {
       const res = await apiClient.get<AgentTimelineEntry[]>('/v1/agentos/agent-timeline');
       return res.data ?? [];
     },
+  });
+
+  const { data: trafficSummary, isLoading: trafficLoading } = useQuery({
+    queryKey: ['traffic-summary'],
+    queryFn: async () => {
+      const res = await apiClient.get<TrafficSummary>('/v1/agentos/traffic-summary');
+      return res.data;
+    },
+  });
+
+  const { data: interceptedData, isLoading: interceptedLoading } = useQuery({
+    queryKey: ['intercepted-actions'],
+    queryFn: async () => {
+      const res = await apiClient.get<{items: InterceptedAction[], total: number}>('/v1/agentos/intercepted-actions');
+      return res.data;
+    },
+  });
+
+  const { data: agentMetricsData, isLoading: metricsLoading } = useQuery({
+    queryKey: ['agent-metrics'],
+    queryFn: async () => {
+      const res = await apiClient.get<{agents: AgentMetricsEntry[]}>('/v1/agentos/agent-metrics');
+      return res.data?.agents ?? [];
+    },
+  });
+
+  const { data: externalHealthData, isLoading: extHealthLoading } = useQuery({
+    queryKey: ['external-health'],
+    queryFn: async () => {
+      const res = await apiClient.get<ExternalPlatformHealth[]>('/v1/agentos/external-health');
+      return res.data ?? [];
+    },
+  });
+
+  const [auditReplayCorrelationId, setAuditReplayCorrelationId] = useState<string | null>(null);
+  const { data: auditReplayData, isLoading: replayLoading } = useQuery({
+    queryKey: ['audit-replay', auditReplayCorrelationId],
+    queryFn: async () => {
+      const res = await apiClient.get<AuditReplayResponse>(`/v1/agentos/audit-replay/${auditReplayCorrelationId}`);
+      return res.data;
+    },
+    enabled: !!auditReplayCorrelationId,
   });
 
   const workColumns = [
@@ -308,6 +417,16 @@ export default function AgentOSPage() {
       fixed: 'right' as const,
       render: (_: unknown, record: WorkItem) => (
         <Space size="small">
+          <Button
+            size="small"
+            icon={<BranchesOutlined />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAuditReplayCorrelationId(record.trace_id ?? record.id);
+            }}
+          >
+            回放
+          </Button>
           <Button
             size="small"
             type="primary"
@@ -372,6 +491,28 @@ export default function AgentOSPage() {
         </Button>
       </div>
 
+      {/* Congestion alert banner */}
+      {(() => {
+        const blocked = trafficSummary?.funnel?.blocked_by_policy ?? 0;
+        const unhealthy = (agentMetricsData ?? []).filter(m => m.health !== 'ok').length;
+        if (blocked > 0 || unhealthy > 0) {
+          return (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={
+                <Space>
+                  {blocked > 0 && <span>{'\u{1F6AB}'} {blocked} 个动作被拦截</span>}
+                  {unhealthy > 0 && <span>{'\u{26A0}\u{FE0F}'} {unhealthy} 个 Agent 异常</span>}
+                </Space>
+              }
+            />
+          );
+        }
+        return null;
+      })()}
+
       {/* 顶部：统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
@@ -392,6 +533,53 @@ export default function AgentOSPage() {
             prefix={<SafetyCertificateOutlined />} valueStyle={{ color: 'var(--g4)' }} />
         </Col>
       </Row>
+
+      {/* Traffic Funnel */}
+      <SectionCard title="AI Traffic Funnel" style={{ marginBottom: 16 }}>
+        <Row gutter={16}>
+          <Col xs={12} sm={4}>
+            <StatCard title="已产生" value={trafficSummary?.funnel?.produced ?? 0}
+              prefix={<RobotOutlined />} loading={trafficLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="待审批" value={trafficSummary?.status_distribution?.pending_approval ?? 0}
+              prefix={<ClockCircleOutlined />} valueStyle={{ color: 'var(--y4)' }} loading={trafficLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="已执行" value={trafficSummary?.funnel?.executed ?? 0}
+              prefix={<CheckOutlined />} valueStyle={{ color: 'var(--g4)' }} loading={trafficLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="被拦截" value={trafficSummary?.funnel?.blocked_by_policy ?? 0}
+              prefix={<CloseOutlined />} valueStyle={{ color: 'var(--r4)' }} loading={trafficLoading} />
+          </Col>
+          <Col xs={12} sm={4}>
+            <StatCard title="转化率"
+              value={(() => {
+                const f = trafficSummary?.funnel;
+                if (!f || f.produced === 0) return '-';
+                return `${((f.executed / f.produced) * 100).toFixed(0)}%`;
+              })()}
+              prefix={<ThunderboltOutlined />} loading={trafficLoading} />
+          </Col>
+        </Row>
+        {/* Mini funnel bar */}
+        {trafficSummary?.funnel && (
+          <div style={{ marginTop: 8, height: 8, background: 'var(--s2)', borderRadius: 4, display: 'flex', overflow: 'hidden' }}>
+            {['executed', 'pending_approval', 'blocked', 'rejected'].map((k) => {
+              const total = Object.values(trafficSummary.status_distribution).reduce((a: number, b: number) => a + b, 0) || 1;
+              const v = trafficSummary.status_distribution[k] ?? 0;
+              const pct = (v / total) * 100;
+              if (pct === 0) return null;
+              const colors: Record<string, string> = {
+                executed: 'var(--g4)', pending_approval: 'var(--y4)',
+                blocked: 'var(--r4)', rejected: 'var(--r3)',
+              };
+              return <div key={k} style={{ width: `${pct}%`, background: colors[k] ?? 'var(--i4)', height: '100%' }} title={`${k}: ${v}`} />;
+            })}
+          </div>
+        )}
+      </SectionCard>
 
       {/* AIOS 系统指标 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -500,6 +688,110 @@ export default function AgentOSPage() {
                   </Space>
                 )}
               </Spin>
+          </SectionCard>
+
+          {/* Blocked/Intercepted Actions */}
+          <SectionCard title="被拦截动作" style={{ marginBottom: 16 }}>
+            <Table
+              rowKey="id"
+              loading={interceptedLoading}
+              dataSource={interceptedData?.items ?? []}
+              size="small"
+              pagination={false}
+              columns={[
+                { title: '类型', dataIndex: 'action_type', width: 140 },
+                { title: 'Agent', dataIndex: 'agent_id', width: 100 },
+                { title: '风险', dataIndex: 'risk_level', width: 80,
+                  render: (v: string) => <Tag color={riskColor(v)}>{v}</Tag> },
+                { title: '拦截原因', dataIndex: 'block_reason', width: 160,
+                  render: (v: string) => {
+                    const reasons: Record<string, string> = {
+                      approval_required: '缺少审批',
+                      L4_blocked: 'L4 自主执行阻止',
+                      rate_limited: '频率限制',
+                      policy_blocked: '策略拦截',
+                    };
+                    return <Tag color="red">{reasons[v] ?? v}</Tag>;
+                  }
+                },
+                { title: '时间', dataIndex: 'blocked_at', width: 150 },
+                { title: '目标', dataIndex: 'target_summary', ellipsis: true },
+              ]}
+            />
+          </SectionCard>
+
+          {/* Agent Health Cards */}
+          <SectionCard title="Agent 健康" style={{ marginBottom: 16 }}>
+            <Spin spinning={metricsLoading}>
+              {agentMetricsData && agentMetricsData.length > 0 ? (
+                <Row gutter={[12, 12]}>
+                  {agentMetricsData.map((m) => (
+                    <Col xs={24} sm={12} lg={8} key={m.agent_id}>
+                      <div style={{
+                        background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8,
+                        borderLeft: `4px solid ${m.health === 'ok' ? 'var(--g4)' : m.health === 'warn' ? 'var(--y4)' : 'var(--r4)'}`,
+                        padding: 12,
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <Text strong>{m.agent_id}</Text>
+                          <Tag color={healthColor(m.health)}>{m.health}</Tag>
+                        </div>
+                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">运行</Text>
+                            <Text>{m.run_count}</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">成功/失败/拦截</Text>
+                            <Text>{m.success_count}/{m.failure_count}/{m.blocked_count}</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">采纳率</Text>
+                            <Text>{(m.owner_acceptance_rate * 100).toFixed(0)}%</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">平均延迟</Text>
+                            <Text>{(m.avg_latency_ms / 1000).toFixed(1)}s</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text type="secondary">外部失败率</Text>
+                            <Tag color={m.external_failure_rate > 0.2 ? 'red' : 'green'}>
+                              {(m.external_failure_rate * 100).toFixed(0)}%
+                            </Tag>
+                          </div>
+                        </Space>
+                      </div>
+                    </Col>
+                  ))}
+                </Row>
+              ) : !metricsLoading ? (
+                <Empty description="暂无 Agent 指标数据" />
+              ) : null}
+            </Spin>
+          </SectionCard>
+
+          {/* External Platform Health */}
+          <SectionCard title="外部平台健康" style={{ marginBottom: 16 }}>
+            <Table
+              rowKey="platform"
+              dataSource={externalHealthData ?? []}
+              size="small"
+              pagination={false}
+              columns={[
+                { title: '平台', dataIndex: 'platform', width: 120 },
+                { title: '调用总数', dataIndex: 'total_calls', width: 100 },
+                { title: '失败数', dataIndex: 'failed_calls', width: 80 },
+                { title: '连续失败', dataIndex: 'consecutive_failures', width: 100 },
+                {
+                  title: '状态', dataIndex: 'degraded', width: 100,
+                  render: (v: boolean) => v
+                    ? <Tag color="red">降级</Tag>
+                    : <Tag color="green">正常</Tag>
+                },
+                { title: '最后失败', dataIndex: 'last_failure_at', width: 160 },
+                { title: '错误', dataIndex: 'last_error', ellipsis: true },
+              ]}
+            />
           </SectionCard>
 
           {/* 待审批工作队列 */}
@@ -693,6 +985,34 @@ export default function AgentOSPage() {
           setSelectedWorkItemId(null);
         }}
       />
+
+      {/* Audit Replay Drawer */}
+      <Drawer
+        title={`审计回放: ${auditReplayCorrelationId ?? ''}`}
+        open={!!auditReplayCorrelationId}
+        onClose={() => setAuditReplayCorrelationId(null)}
+        width={640}
+        loading={replayLoading}
+      >
+        {auditReplayData?.events?.length ? (
+          <Timeline
+            items={auditReplayData.events.map((evt) => ({
+              color: evt.type === 'action' ? 'blue' : evt.type === 'approval' ? 'orange' : evt.type === 'audit' ? 'green' : 'gray',
+              children: (
+                <div>
+                  <div><Text strong>{evt.type}</Text> {evt.subtype && `— ${evt.subtype}`}</div>
+                  {evt.agent_id && <div><Text type="secondary">Agent: {evt.agent_id}</Text></div>}
+                  {evt.status && <Tag color={statusColor(evt.status)}>{evt.status}</Tag>}
+                  {evt.detail && <div><Text type="secondary">{evt.detail}</Text></div>}
+                  <div><Text type="secondary" style={{ fontSize: '0.75rem' }}>{evt.timestamp}</Text></div>
+                </div>
+              ),
+            }))}
+          />
+        ) : (
+          <Empty description="无审计记录" />
+        )}
+      </Drawer>
     </div>
   );
 }

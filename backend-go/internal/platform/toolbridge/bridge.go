@@ -23,6 +23,9 @@ type Bridge interface {
 	FetchPage(ctx context.Context, url string) (*PageData, error)
 }
 
+// ToolBridgeOption is a functional option for ToolBridge construction.
+type ToolBridgeOption func(*ToolBridge)
+
 // ToolBridge routes fetch requests to the best available driver.
 // It tries drivers in weight order (lower weight = higher priority) and
 // falls through to the next driver when the preferred one fails.
@@ -31,6 +34,7 @@ type ToolBridge struct {
 	drivers []DriverEntry
 	timeout time.Duration
 	logger  *zap.Logger
+	tracker *ExternalCallTracker
 }
 
 // DriverEntry pairs a named driver with its preference weight.
@@ -42,7 +46,7 @@ type DriverEntry struct {
 
 // NewToolBridge creates a ToolBridge with the given drivers sorted by weight.
 // If timeout is zero or negative, it defaults to 60 seconds.
-func NewToolBridge(drivers []DriverEntry, timeout time.Duration, logger *zap.Logger) *ToolBridge {
+func NewToolBridge(drivers []DriverEntry, timeout time.Duration, logger *zap.Logger, opts ...ToolBridgeOption) *ToolBridge {
 	sorted := make([]DriverEntry, len(drivers))
 	copy(sorted, drivers)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -51,10 +55,21 @@ func NewToolBridge(drivers []DriverEntry, timeout time.Duration, logger *zap.Log
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	return &ToolBridge{
+	b := &ToolBridge{
 		drivers: sorted,
 		timeout: timeout,
 		logger:  logger,
+	}
+	for _, opt := range opts {
+		opt(b)
+	}
+	return b
+}
+
+// WithTracker sets the ExternalCallTracker for monitoring platform health.
+func WithTracker(t *ExternalCallTracker) ToolBridgeOption {
+	return func(b *ToolBridge) {
+		b.tracker = t
 	}
 }
 

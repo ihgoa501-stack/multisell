@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/notification"
@@ -817,6 +818,49 @@ func TestDispatchSafe_AuditRecorder_NotCalledForFailedExecution(t *testing.T) {
 // ---------------------------------------------------------------------------
 // P2: Production PolicyChecker with approval — end-to-end validation.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// P4: RateLimiter — sliding window per (agent, action_type)
+// ---------------------------------------------------------------------------
+
+func TestRateLimiter_Allow_Basic(t *testing.T) {
+	rl := NewRateLimiter(2, time.Minute)
+	if !rl.Allow("A5", "stock_alert") {
+		t.Error("expected first call to be allowed")
+	}
+	if !rl.Allow("A5", "stock_alert") {
+		t.Error("expected second call to be allowed")
+	}
+	if rl.Allow("A5", "stock_alert") {
+		t.Error("expected third call to be rate limited")
+	}
+}
+
+func TestRateLimiter_AllowsDifferentTypes(t *testing.T) {
+	rl := NewRateLimiter(2, time.Minute)
+	rl.Allow("A5", "stock_alert") // 1
+	rl.Allow("A5", "stock_alert") // 2 (max)
+	// Different action type should still be allowed
+	if !rl.Allow("A5", "price_update") {
+		t.Error("different action type should not share rate limit")
+	}
+	// Different agent should be allowed
+	if !rl.Allow("A6", "stock_alert") {
+		t.Error("different agent should not share rate limit")
+	}
+}
+
+func TestRateLimiter_Reset(t *testing.T) {
+	rl := NewRateLimiter(1, time.Minute)
+	rl.Allow("A5", "stock_alert")
+	if rl.Allow("A5", "stock_alert") {
+		t.Error("expected rate limited after hitting limit")
+	}
+	rl.Reset("A5")
+	if !rl.Allow("A5", "stock_alert") {
+		t.Error("expected allowed after reset")
+	}
+}
 
 func TestDispatchSafe_Production_HighRisk_RequiresValidApproval(t *testing.T) {
 	logger := dbtest.NewLogger(t)

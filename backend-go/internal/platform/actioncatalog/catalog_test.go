@@ -99,11 +99,11 @@ func TestUnknownActionFailsValidation(t *testing.T) {
 	}
 }
 
-func TestL4BlockedInValidateProduction(t *testing.T) {
+func TestL4_BlockedEvenWithApproval(t *testing.T) {
 	c := Default()
 	err := c.ValidateProduction("auto_publish", RiskHigh, true)
 	if err == nil {
-		t.Fatal("expected error for L4 blocked action")
+		t.Fatal("L4 action should be blocked even with approval")
 	}
 	if !IsAutonomousBlocked(err) {
 		t.Errorf("expected ErrAutonomousBlocked, got: %v", err)
@@ -169,6 +169,45 @@ func TestHasAction(t *testing.T) {
 	if c.HasAction("non_existent") {
 		t.Error("expected HasAction false for non_existent")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// AutonomyLevel.String — correct labels for all levels plus unknown.
+// ---------------------------------------------------------------------------
+
+func TestAutonomyLevel_String_Unknown(t *testing.T) {
+	tests := []struct {
+		l    AutonomyLevel
+		want string
+	}{
+		{LevelUnknown, "unknown"},
+		{Level1, "L1"},
+		{Level2, "L2"},
+		{Level3, "L3"},
+		{Level4, "L4"},
+	}
+	for _, tt := range tests {
+		if got := tt.l.String(); got != tt.want {
+			t.Errorf("AutonomyLevel(%d).String() = %q, want %q", tt.l, got, tt.want)
+		}
+	}
+	if got := AutonomyLevel(99).String(); got != "L99" {
+		t.Errorf("unknown level: got %q, want L99", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Must — panics on unknown action type.
+// ---------------------------------------------------------------------------
+
+func TestMust_PanicsOnUnknown(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for unknown action type")
+		}
+	}()
+	c := Default()
+	c.Must("nonexistent")
 }
 
 // ---------------------------------------------------------------------------

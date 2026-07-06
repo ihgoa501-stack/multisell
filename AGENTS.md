@@ -195,14 +195,14 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 
 ## Project Medical Record
 
-> Last updated: 2026-07-05. Read this before any work. It prevents repeating mistakes.
+> Last updated: 2026-07-06. Read this before any work. It prevents repeating mistakes.
 > For the latest verification status, run: `cd backend-go && go test ./...`
 
 ### ✅ What Works (verified this session)
 
 - `go build ./...` — passes
 - `go vet ./...` — passes
-- `go test ./...` — 60 modules, 0 failures
+- `go test ./...` — 96 packages green, 11 pkgs no-test (107 total), 0 failures
 - Frontend: `npm run dev` — starts on port 3001 (but dev server can exit unexpectedly)
 - Login: admin / admin123456 (user table seeded, RBAC roles linked)
 - All 30+ frontend pages render (product hub, categories, brands, SKU, inventory, orders, agents, AI command center, etc.)
@@ -219,8 +219,12 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 | P2 | Frontend dev server has no watchdog — exits silently | `npm run dev` process |
 | P3 | No real CI trigger yet (doc-links job added but not tested) | `.github/workflows/ci.yml` |
 
-### 🛠️ What Was Fixed (2026-07-05)
+### 🛠️ What Was Fixed (2026-07-06)
 
+- **工程可信度恢复**: `go build ./...` / `go vet ./...` / `go test ./...` 全绿
+  - 修复 `internal/common/types.go` 中 `UserIDFromCtx` 重复定义（删除第二个副本）
+  - 清理 `internal/ai/` 6 个文件共 19 处 merge conflict（handler.go, service.go, orchestrator.go, routes.go, model.go, ai_test.go）
+  - 冲突来自 merge commit `964e0624`（合并远程 main v0.4.0），保留 HEAD 版本
 - Merge conflicts in `routes.go` + `router.go` (HEAD won over worktree-wf)
 - Duplicate `UserIDFromCtx` in `types.go` (kept first, deleted second)
 - AuthGuard SSR crash (`useState` reading localStorage during server render → `useEffect` + `mounted`)

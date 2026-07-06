@@ -1,6 +1,7 @@
 package listingtask
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 )
+
+var errPublishHookFailed = errors.New("publish hook failed")
 
 func int64Ptr(v int64) *int64 { return &v }
 
@@ -569,5 +572,130 @@ func TestService_ExecuteTaskAllowsApprovedBlockedTask(t *testing.T) {
 	}
 	if updated.Status != "completed" {
 		t.Fatalf("status = %s, want completed", updated.Status)
+	}
+}
+
+// TestService_ExecuteTask_PublishHookNil confirms nil publishHook has zero effect.
+func TestService_ExecuteTask_PublishHookNil(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+
+	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "approved", CreatedBy: "tester"}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := db.Create(&ListingTaskItem{TaskID: task.ID, ProductID: 10, PlatformID: 1, Status: "pending"}).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	req := approval.ApprovalRequest{
+		ProductID: 10, RequestType: "publish", Requester: "tester",
+		Status: "approved", EntityType: "listing_task", EntityID: task.ID, RiskLevel: "high",
+	}
+	if err := db.Create(&req).Error; err != nil {
+		t.Fatalf("create approval: %v", err)
+	}
+	db.Model(&task).Update("approval_id", req.ID)
+
+	updated, err := svc.ExecuteTask(task.ID, "tester")
+	if err != nil {
+		t.Fatalf("ExecuteTask: %v", err)
+	}
+	if updated.Status != "completed" {
+		t.Fatalf("status = %s, want completed", updated.Status)
+	}
+	if updated.LastError != "" {
+		t.Fatalf("last_error = %q, want empty", updated.LastError)
+	}
+}
+
+// TestService_ExecuteTask_PublishHookSucceeds verifies that a successful
+// publishHook keeps the task in "completed" state.
+func TestService_ExecuteTask_PublishHookSucceeds(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	var hookCalled bool
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc.publishHook = func(taskID int64) error {
+		hookCalled = true
+		return nil
+	}
+
+	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "approved", CreatedBy: "tester"}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := db.Create(&ListingTaskItem{TaskID: task.ID, ProductID: 10, PlatformID: 1, Status: "pending"}).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	req := approval.ApprovalRequest{
+		ProductID: 10, RequestType: "publish", Requester: "tester",
+		Status: "approved", EntityType: "listing_task", EntityID: task.ID, RiskLevel: "high",
+	}
+	if err := db.Create(&req).Error; err != nil {
+		t.Fatalf("create approval: %v", err)
+	}
+	db.Model(&task).Update("approval_id", req.ID)
+
+	updated, err := svc.ExecuteTask(task.ID, "tester")
+	if err != nil {
+		t.Fatalf("ExecuteTask: %v", err)
+	}
+	if updated.Status != "completed" {
+		t.Fatalf("status = %s, want completed", updated.Status)
+	}
+	if !hookCalled {
+		t.Fatal("publishHook was not called")
+	}
+}
+
+// TestService_ExecuteTask_PublishHookFails verifies that a failing publishHook
+// reverts the task to "failed" with last_error and item error_message set,
+// so the task can be retried via RetryFailed / RetryItem.
+func TestService_ExecuteTask_PublishHookFails(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc.publishHook = func(taskID int64) error {
+		return errPublishHookFailed
+	}
+
+	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "approved", CreatedBy: "tester"}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	item := ListingTaskItem{TaskID: task.ID, ProductID: 10, PlatformID: 1, Status: "pending"}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	req := approval.ApprovalRequest{
+		ProductID: 10, RequestType: "publish", Requester: "tester",
+		Status: "approved", EntityType: "listing_task", EntityID: task.ID, RiskLevel: "high",
+	}
+	if err := db.Create(&req).Error; err != nil {
+		t.Fatalf("create approval: %v", err)
+	}
+	db.Model(&task).Update("approval_id", req.ID)
+
+	updated, err := svc.ExecuteTask(task.ID, "tester")
+	if err != nil {
+		t.Fatalf("ExecuteTask: %v", err)
+	}
+	if updated.Status != "failed" {
+		t.Fatalf("status = %s, want failed", updated.Status)
+	}
+	if updated.LastError == "" {
+		t.Fatal("last_error should be set")
+	}
+	// Verify items got the error message too.
+	var items []ListingTaskItem
+	db.Where("task_id = ?", task.ID).Find(&items)
+	for _, it := range items {
+		if it.ErrorMessage == "" {
+			t.Fatalf("item %d: error_message not set", it.ID)
+		}
 	}
 }

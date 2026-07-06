@@ -1,6 +1,6 @@
 # LingMirror Current Direction and Priorities
 
-> Updated: 2026-07-04
+> Updated: 2026-07-06
 > Status: current execution guidance
 > Scope: product direction, documentation alignment, AgentOS safety priorities
 
@@ -17,23 +17,38 @@ review, not as a claim that every implementation detail has been fully verified.
 
 ## Current Product Direction
 
-LingMirror should be developed as a cross-border e-commerce AI AgentOS:
+**Product Positioning: Short-Term Copilot, Long-Term Autopilot.**
+
+In the current phase (through Q4 2026), LingMirror is an **AI-assisted business
+decision platform (Copilot)**:
 
 ```text
-Trusted commerce data foundation
--> Owner-facing decision cockpit
--> controlled Agent recommendations
--> approval-gated execution
--> audit and review loop
+The AI recommends; the Owner decides.
+Every suggestion includes what, why, risk level, and expected outcome.
 ```
 
-The near-term product promise should not be "fully automatic company operation".
-The safer and more useful promise is:
+All of the following high-risk actions default to **require approval**:
+
+- Pricing changes (list price, sale price, discounts)
+- Inventory changes (quantity, reservation, allocation)
+- Procurement / purchase orders
+- Advertising budget and campaign changes
+- Platform publishing and listing changes
+
+These actions are blocked from unsupervised execution even if an Agent has a
+high trust score. See `backend-go/internal/platform/actioncatalog/catalog.go`
+(L4 `AutonomousBlocked: true`).
+
+The long-term direction (2027+) is toward **AI-autonomous operations (Autopilot)**:
 
 ```text
-Help the Owner see what matters, understand why it matters, approve the right
-actions, and avoid unsafe automatic changes.
+Agents may execute approved, bounded actions in well-scoped areas.
+The Owner sets strategy, monitors exceptions, and audits outcomes.
 ```
+
+But the current product promise, and all current UI copy, should consistently
+communicate **Copilot** — not "fully automatic company operation" or
+"fully autonomous business".
 
 ## What To Focus On
 

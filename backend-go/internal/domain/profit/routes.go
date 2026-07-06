@@ -10,7 +10,7 @@ import (
 // RegisterRoutes registers profit summary routes.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	rateSvc := exchangerate.NewService(db, logger)
-	svc := NewService(db, logger, rateSvc)
+	svc := NewService(db, logger, rateSvc, 7.2)
 	h := NewHandler(svc)
 
 	r := rg.Group("/profit")
