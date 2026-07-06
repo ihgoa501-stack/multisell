@@ -43,7 +43,7 @@ func (s *Service) SyncAcrossPlatforms(ctx context.Context, productID int64) (*Cr
 	var listings []listingRow
 	if err := s.db.WithContext(ctx).
 		Raw(`SELECT platform_id, status,
-			        COALESCE((published_data->>'stock')::int, 1) AS quantity
+			        COALESCE(CAST(published_data->>'stock' AS INTEGER), 1) AS quantity
 			 FROM product_listing
 			 WHERE product_id = ?
 			   AND status IN ('active','live','published')`, productID).
@@ -449,7 +449,7 @@ func (s *Service) AllocateStock(ctx context.Context, skuID int64) (*AllocationRe
 		type commitRow struct{ Qty int }
 		var cr commitRow
 		s.db.WithContext(ctx).
-			Raw(`SELECT COALESCE(SUM(COALESCE((published_data->>'stock')::int, 1)), 0)
+			Raw(`SELECT COALESCE(SUM(COALESCE(CAST(published_data->>'stock' AS INTEGER), 1)), 0)
 				 FROM product_listing
 				 WHERE platform_id = ? AND product_id IN (
 				   SELECT product_id FROM sku WHERE id = ?
