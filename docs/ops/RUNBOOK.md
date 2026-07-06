@@ -155,7 +155,81 @@ docker compose exec db psql -U postgres -d multisell -c "SELECT version, dirty F
 
 ---
 
-## 6. 监控
+## 6. 回退流程
+
+> 发版前必须先验证回退流程可行。详见 `scripts/rollback.sh`。
+
+### 6.1 Git Tag 策略
+
+每次发版必须在 `main` 分支打 annotated tag，格式为 `v<major>.<minor>.<patch>`，例如：
+
+```bash
+# 发版时打 tag（与 VERSION 文件保持同步）
+git tag -a v0.4.2.0 -m "Release v0.4.2.0"
+git push origin v0.4.2.0
+```
+
+现有 tag：`v0.3.0.0`、`v0.3.1`、`v0.4.0.0`、`v0.4.1.0`。
+
+```bash
+# 查看所有 tag
+git tag -l | sort -V
+
+# 查看两个版本间的变更
+git log --oneline v0.4.0.0..HEAD
+```
+
+### 6.2 回退步骤
+
+```bash
+# Step 1: 确认当前版本回退目标
+git tag -l | sort -V
+git log --oneline v0.4.1.0..HEAD   # 查看当前发版的变更
+
+# Step 2: 执行回退脚本（不包含数据库回滚）
+./scripts/rollback.sh
+
+# 或包含数据库回滚（如果当前发版包含迁移）
+./scripts/rollback.sh --revert-migration
+
+# Step 3: 验证回退结果
+# 3a) 确认代码回退到目标版本
+git log --oneline -1
+
+# 3b) 确认健康检查通过
+sleep 5 && curl -sf http://localhost:8080/api/health && echo "  OK" || echo "  FAIL"
+
+# 3c) 确认数据库迁移版本（如果执行了回滚）
+docker compose exec db psql -U postgres -d multisell -c \
+  "SELECT version, dirty FROM schema_migrations;"
+
+# 3d) 确认前端可访问
+curl -sf -o /dev/null -w "%{http_code}" http://localhost/
+
+# Step 4: 如果回退失败需要恢复，重新部署
+./scripts/deploy.sh
+```
+
+### 6.3 发版前回退验证清单
+
+每次发版前必须完整执行一次回退验证：
+
+- [ ] 当前 HEAD 对应一个 tag（`git tag -l --points-at HEAD`）
+- [ ] 回退脚本可用（`./scripts/rollback.sh` 以 dry-run 确认参数正确）
+- [ ] 目标回退版本的健康检查可预期通过（API + 前端）
+- [ ] 如果本次包含数据库迁移，已测试 `--revert-migration` 路径
+- [ ] 回退后重新部署可恢复（`./scripts/deploy.sh`）
+
+### 6.4 数据库迁移回退原则
+
+- 每个迁移文件必须有对应的 `down.sql`，否则拒绝合并
+- `down.sql` 必须能回退到上一个 Schema 版本而不丢数据
+- 如果回退迁移会丢数据，在 `down.sql` 注释中写明风险
+- 迁移回退命令：`docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm migrate down 1`
+
+---
+
+## 7. 监控
 
 | 组件 | 访问地址 | 说明 |
 |------|---------|------|
@@ -170,7 +244,7 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 
 ---
 
-## 7. 生产配置检查清单
+## 8. 生产配置检查清单
 
 上线/部署前确认：
 
@@ -185,7 +259,7 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 
 ---
 
-## 8. 验证命令
+## 9. 验证命令
 
 ```bash
 # 后端
@@ -199,7 +273,7 @@ cd frontend-next && npm test && npm run build
 
 ---
 
-## 9. 常见问题速查
+## 10. 常见问题速查
 
 | 问题 | 可能原因 | 快速解决 |
 |------|---------|---------|

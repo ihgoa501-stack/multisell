@@ -142,15 +142,21 @@ type PlatformReturn struct {
 // ---------- 执行模式 (Execution Mode) ----------
 
 // ExecutionMode controls whether platform write operations are actually executed.
+// ponytail: int8 is sufficient — 4 modes, no extra JSON/DB serialization needed.
 type ExecutionMode int8
 
 const (
-	// ExecutionModeProduction executes writes against the real platform API.
-	ExecutionModeProduction ExecutionMode = 0
-	// ExecutionModeDryRun logs the intended operation but does NOT call the platform.
-	ExecutionModeDryRun ExecutionMode = 1
+	// ExecutionModeDryRun simulates the write and returns a mock result.
+	// This is the DEFAULT mode — real writes require explicit opt-in.
+	ExecutionModeDryRun ExecutionMode = 0
 	// ExecutionModeSandbox routes writes through the platform's sandbox API.
-	ExecutionModeSandbox ExecutionMode = 2
+	ExecutionModeSandbox ExecutionMode = 1
+	// ExecutionModeApprovalRequired marks the operation as requiring explicit
+	// user confirmation before execution. checkWriteMode passes through so the
+	// handler layer can gate on it.
+	ExecutionModeApprovalRequired ExecutionMode = 2
+	// ExecutionModeProduction executes writes against the real platform API.
+	ExecutionModeProduction ExecutionMode = 3
 )
 
 // modeCtxKey is the context key for execution mode.
@@ -162,12 +168,12 @@ func WithExecutionMode(ctx context.Context, mode ExecutionMode) context.Context 
 }
 
 // ExecutionModeFromCtx retrieves the execution mode from the context.
-// Returns ExecutionModeProduction if not set.
+// Returns ExecutionModeDryRun if not set.
 func ExecutionModeFromCtx(ctx context.Context) ExecutionMode {
 	if v, ok := ctx.Value(modeCtxKey{}).(ExecutionMode); ok {
 		return v
 	}
-	return ExecutionModeProduction
+	return ExecutionModeDryRun
 }
 
 // String returns a human-readable name for the execution mode.
@@ -177,9 +183,19 @@ func (m ExecutionMode) String() string {
 		return "dry_run"
 	case ExecutionModeSandbox:
 		return "sandbox"
-	default:
+	case ExecutionModeApprovalRequired:
+		return "approval_required"
+	case ExecutionModeProduction:
 		return "production"
+	default:
+		return "unknown"
 	}
+}
+
+// IsWriteAllowed returns true if the mode permits actual writes to the
+// external platform. Dry-run mode does not perform real writes.
+func (m ExecutionMode) IsWriteAllowed() bool {
+	return m == ExecutionModeProduction || m == ExecutionModeApprovalRequired
 }
 
 // ---------- 平台事件域 (Platform Events) ----------
