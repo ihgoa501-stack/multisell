@@ -426,9 +426,11 @@ export default function AICommandPage() {
       }),
     onSuccess: () => {
       message.success('已批准');
+      setConfirmAction(null);
       qc.invalidateQueries({ queryKey: ['ai-actions-suggested'] });
     },
     onError: (e: Error) => message.error(`批准失败: ${e.message}`),
+    onSettled: () => setConfirmAction(null),
   });
 
   const rejectMutation = useMutation({
@@ -451,9 +453,11 @@ export default function AICommandPage() {
       }),
     onSuccess: () => {
       message.success('已执行');
+      setConfirmAction(null);
       qc.invalidateQueries({ queryKey: ['ai-actions-suggested'] });
     },
     onError: (e: Error) => message.error(`执行失败: ${e.message}`),
+    onSettled: () => setConfirmAction(null),
   });
 
   // ---------- Handlers ----------
@@ -1223,7 +1227,6 @@ export default function AICommandPage() {
           if (!confirmAction) return;
           if (confirmAction.type === 'approve') approveMutation.mutate(confirmAction.action.id);
           else executeMutation.mutate(confirmAction.action.id);
-          setConfirmAction(null);
         }}
         onCancel={() => setConfirmAction(null)}
       />

@@ -268,10 +268,12 @@ export default function AgentOSPage() {
       }),
     onSuccess: () => {
       message.success('已批准');
+      setConfirmAction(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
     onError: (e: Error) => message.error(`批准失败: ${e.message}`),
+    onSettled: () => setConfirmAction(null),
   });
 
   const rejectMutation = useMutation({
@@ -295,10 +297,12 @@ export default function AgentOSPage() {
       }),
     onSuccess: () => {
       message.success('已执行');
+      setConfirmAction(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
     onError: (e: Error) => message.error(`执行失败: ${e.message}`),
+    onSettled: () => setConfirmAction(null),
   });
 
   const refreshAll = () => {
@@ -433,6 +437,7 @@ export default function AgentOSPage() {
             size="small"
             type="primary"
             icon={<CheckOutlined />}
+            disabled={approveMutation.isPending && approveMutation.variables === record.id}
             onClick={(e) => {
               e.stopPropagation();
               setConfirmAction({type: 'approve', item: record});
@@ -457,6 +462,7 @@ export default function AgentOSPage() {
           <Button
             size="small"
             icon={<ThunderboltOutlined />}
+            disabled={executeMutation.isPending && executeMutation.variables === record.id}
             onClick={(e) => {
               e.stopPropagation();
               setConfirmAction({type: 'execute', item: record});
@@ -1034,7 +1040,6 @@ export default function AgentOSPage() {
           if (!confirmAction) return;
           if (confirmAction.type === 'approve') approveMutation.mutate(confirmAction.item.id);
           else executeMutation.mutate(confirmAction.item.id);
-          setConfirmAction(null);
         }}
         onCancel={() => setConfirmAction(null)}
       />
