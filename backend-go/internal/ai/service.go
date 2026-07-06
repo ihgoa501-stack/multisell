@@ -10,7 +10,6 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/common"
-	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"go.uber.org/zap"
@@ -52,12 +51,6 @@ func (s *Service) WithDispatcher(cmd *command.Dispatcher) *Service {
 // WithCatalog attaches the action catalog for production validation.
 func (s *Service) WithCatalog(cat *actioncatalog.Catalog) *Service {
 	s.cat = cat
-	return s
-}
-
-// WithGuard attaches the guardrails chain for execution-level checks.
-func (s *Service) WithGuard(g *guardrails.Chain) *Service {
-	s.guard = g
 	return s
 }
 
@@ -180,8 +173,6 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 		ExecutionMode:      execMode,
 		Confidence:         in.Confidence,
 		ProposedBy:         in.ProposedBy,
-		ExecutionMode:      in.ExecutionMode,
-		IdempotencyKey:     in.IdempotencyKey,
 	}
 	if err := s.db.Create(&a).Error; err != nil {
 		return nil, err
@@ -189,59 +180,31 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 	return &a, nil
 }
 
-<<<<<<< HEAD
 // ApproveAction transitions an action to "approved",
 // storing the user ID if provided.
-func (s *Service) ApproveAction(id int64, operator, _ string, userID *int64) (*UnifiedAction, error) {
-	updates := map[string]interface{}{
-=======
-// ApproveAction transitions an action to "approved".
 func (s *Service) ApproveAction(id int64, operator string, userID *int64, _ string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "approved", map[string]interface{}{
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
-		"approved_by": operator,
+		"approved_by":        operator,
 		"approved_by_user_id": userID,
-		"approved_at": nowPtr(),
-	}
-	if userID != nil {
-		updates["approved_by_user_id"] = *userID
-	}
-	return s.transitionAction(id, "approved", updates, "suggested", "pending")
+		"approved_at":        nowPtr(),
+	}, "suggested", "pending")
 }
 
 // RejectAction transitions an action to "rejected". Only allowed from
 // "suggested" or "pending" — rejecting an already-approved action is not
 // permitted (revoke via a separate flow instead).
-<<<<<<< HEAD
-func (s *Service) RejectAction(id int64, operator, reason string, _ *int64) (*UnifiedAction, error) {
-=======
 func (s *Service) RejectAction(id int64, operator string, userID *int64, reason string) (*UnifiedAction, error) {
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	return s.transitionAction(id, "rejected", map[string]interface{}{
-		"rejected_by":      operator,
+		"rejected_by":         operator,
 		"rejected_by_user_id": userID,
-		"rejected_at":      nowPtr(),
-		"rejection_reason": reason,
+		"rejected_at":         nowPtr(),
+		"rejection_reason":    reason,
 	}, "suggested", "pending")
 }
 
 // ExecuteAction transitions an action through "executing" → "executed"/"failed" and
 // dispatches the underlying business command via the CommandDispatcher.
 //
-<<<<<<< HEAD
-// The enhanced flow:
-//  1. Idempotency check — if the action has an idempotency key and is already
-//     executed/reviewed, return the existing result as a no-op.
-//  2. Validate against action catalog.
-//  3. Check status allows execution (suggested/approved).
-//  4. Check approval requirements.
-//  5. Run guardrails chain (L4 execution guard) if configured.
-//  6. Dry-run mode — skip dispatch, mark as reviewed.
-//  7. Execute normally through the command dispatcher.
-//
-// userID is stored in executed_by_user_id when provided (system calls pass nil).
-func (s *Service) ExecuteAction(id int64, operator, _ string, userID *int64) (*UnifiedAction, error) {
-=======
 // Security gates (all checked before any mutation):
 //   - Idempotency: if IdempotencyKey is set and the action is already executed,
 //     returns the existing result without re-executing.
@@ -253,28 +216,12 @@ func (s *Service) ExecuteAction(id int64, operator, _ string, userID *int64) (*U
 // For low-risk auto-approved actions (RequiresApproval=false) this can be
 // called directly from "suggested"; otherwise the action must first be
 // approved.
-//
-// After Model(&a).Updates, GORM refreshes a in-place so no second First() is needed.
 func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*UnifiedAction, error) {
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	var a UnifiedAction
 	if err := s.db.First(&a, id).Error; err != nil {
 		return nil, err
 	}
 
-<<<<<<< HEAD
-	// 1. Idempotency check: if the action has an idempotency key and is already
-	// in a terminal execution state, return it as-is.
-	if a.IdempotencyKey != "" && (a.Status == ActionStatusExecuted || a.Status == ActionStatusReviewed) {
-		s.logger.Debug("idempotent action — already executed",
-			zap.Int64("action_id", a.ID),
-			zap.String("idempotency_key", a.IdempotencyKey),
-			zap.String("status", a.Status))
-		return &a, nil
-	}
-
-	// 2. Validate against action catalog before execution.
-=======
 	// ── Gate 1: Idempotency key ────────────────────────────────────
 	if a.IdempotencyKey != "" && (a.Status == "executed" || a.Status == "failed") {
 		s.logger.Debug("idempotent action — returning existing result",
@@ -286,7 +233,6 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	// ── Gate 2: Validate against action catalog before execution ───
 	isDryRun := a.ExecutionMode == "dry_run"
 
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if s.cat != nil {
 		if err := s.cat.ValidateProduction(a.ActionType, riskLevelToInt(a.RiskLevel), isDryRun || a.Status == "approved"); err != nil {
 			if errors.Is(err, actioncatalog.ErrApprovalRequired) {
@@ -296,92 +242,11 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 		}
 	}
 
-<<<<<<< HEAD
-	// 3. Allowed source states: "suggested" (auto-approved) or "approved".
-=======
 	// ── Gate 3: Status transition check ────────────────────────────
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 	if a.Status != "suggested" && a.Status != "approved" {
 		return nil, &InvalidTransitionError{From: a.Status, To: "executing"}
 	}
 
-<<<<<<< HEAD
-	// 4. If the action claims to require approval but hasn't been approved, refuse.
-	if a.RequiresApproval && a.Status == "suggested" {
-		return nil, ErrApprovalRequired
-	}
-
-	// 5. Run guardrails chain on execution (L4 execution guard).
-	if s.guard != nil {
-		payload := map[string]interface{}{}
-		if len(a.Payload) > 0 {
-			_ = json.Unmarshal(a.Payload, &payload)
-		}
-		// Build a GuardInput that the execution guard can evaluate.
-		gIn := &guardrails.GuardInput{
-			Level:  4,
-			AgentID: a.AgentID,
-			ToolName: a.ActionType,
-			ToolInput: map[string]interface{}{
-				"action_type": a.ActionType,
-				"risk_level":  a.RiskLevel,
-				"amount":      payload["amount"],
-				"quantity":    payload["quantity"],
-			},
-		}
-		if userID != nil {
-			gIn.UserID = *userID
-		}
-		gRes, gErr := s.guard.Check(context.Background(), gIn)
-		if gErr != nil {
-			s.logger.Warn("guardrails execution check failed",
-				zap.Int64("action_id", a.ID),
-				zap.Error(gErr))
-		} else if gRes.Blocked {
-			return nil, &InvalidTransitionError{
-				From: a.Status,
-				To:   "blocked_by_guardrails",
-			}
-		}
-	}
-
-	now := nowPtr()
-	executedByUserIDVal := interface{}(nil)
-	if userID != nil {
-		executedByUserIDVal = *userID
-	}
-	updates := map[string]interface{}{
-		"status":            "executing",
-		"executed_by":       operator,
-		"executing_at":      now,
-		"executed_by_user_id": executedByUserIDVal,
-	}
-	if err := s.db.Model(&a).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-
-	// 6. Dry-run mode: skip command dispatch, mark as executed immediately.
-	if a.ExecutionMode == "dry_run" {
-		execNow := nowPtr()
-		finalUpdates := map[string]interface{}{
-			"status":     "executed",
-			"executed_at": execNow,
-			"updated_at": execNow,
-		}
-		if err := s.db.Model(&a).Updates(finalUpdates).Error; err != nil {
-			return nil, err
-		}
-		return &a, nil
-	}
-
-	// 7. Dispatch through CommandDispatcher to execute real business logic.
-	// The cmd field may be nil; in that case the command is not dispatched
-	// but the action still transitions to "executed" (the caller has opted
-	// out of command dispatch entirely, not just this command).
-	var execErr error
-	var cmdResult *command.Result
-	if s.cmd != nil {
-=======
 	// ── Gate 4: Execution mode check ──────────────────────────
 	switch a.ExecutionMode {
 	case "", "production":
@@ -403,7 +268,6 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	// ── Gate 6: Guardrails check (L4 ExecutionGuard) ──────────────
 	var guardPayload map[string]interface{}
 	if s.guard != nil {
->>>>>>> 62d5ec00e4f8a842385d0bea2bcb01224d47b682
 		payload := map[string]interface{}{}
 		if len(a.Payload) > 0 {
 			_ = json.Unmarshal(a.Payload, &payload)
@@ -451,10 +315,10 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	res := s.db.Model(&UnifiedAction{}).
 		Where("id = ? AND status IN ?", a.ID, []string{"suggested", "approved"}).
 		Updates(map[string]interface{}{
-			"status":       "executing",
-			"executed_by":  operator,
+			"status":              "executing",
+			"executed_by":         operator,
 			"executed_by_user_id": userID,
-			"executing_at": now,
+			"executing_at":        now,
 		})
 	if res.Error != nil {
 		return nil, res.Error
@@ -517,8 +381,7 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	} else {
 		finalUpdates["status"] = "executed"
 		if cmdResult != nil && cmdResult.AfterSnapshot != nil {
-			snapJSON, _ := json.Marshal(cmdResult.AfterSnapshot)
-			finalUpdates["after_snapshot"] = snapJSON
+			finalUpdates["after_snapshot"] = cmdResult.AfterSnapshot
 		}
 	}
 
@@ -528,7 +391,7 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	return &a, nil
 }
 
-// FailAction marks an executing action as failed.
+
 func (s *Service) FailAction(id int64, reason string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "failed", map[string]interface{}{
 		"failed_at":        nowPtr(),

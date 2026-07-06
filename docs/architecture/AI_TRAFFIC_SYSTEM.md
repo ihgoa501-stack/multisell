@@ -316,7 +316,7 @@ price_update
 inventory_change
 order_cancel
 refund_issue
-platform_publish
+listing_publish
 sync_inventory
 credential_change
 ```
@@ -366,7 +366,7 @@ listing.optimization_needed
   -> A2 listing_optimize
   -> create optimized draft
   -> A7 compliance_check
-  -> if pass: propose platform_publish
+  -> if pass: propose listing_publish
   -> approval required
   -> ToolBridge publishes after approval
   -> audit records external reference
