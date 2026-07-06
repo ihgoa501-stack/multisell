@@ -14,9 +14,9 @@ import (
 )
 
 // RegisterRoutes registers AI routes on the given router group.
-// moaCoord can be nil; if set, MOA routes are registered.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, guard *guardrails.Chain, moaCoord *MOACoordinator, cmd *command.Dispatcher) {
-svc := NewService(db, logger).WithDispatcher(cmd).WithCatalog(actioncatalog.Default()).WithGuard(guard)
+// cmd can be nil; if set, action execution dispatches through the command handlers.
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, hub *realtime.Hub, moaCoord *MOACoordinator, cmd *command.Dispatcher, guard *guardrails.Chain) {
+	svc := NewService(db, logger).WithDispatcher(cmd).WithCatalog(actioncatalog.Default()).WithGuard(guard)
 	orch := NewOrchestrator(db, logger)
 	streamer := NewStreamer(hub, logger)
 	h := NewHandler(svc, orch, streamer)

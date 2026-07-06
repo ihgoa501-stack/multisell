@@ -366,7 +366,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			if fbErr := actionpolicy.CheckForbidden(o.db, action.AgentID, action.ActionType, action.RiskLevel); fbErr != nil {
 				o.logger.Warn("action blocked by forbidden rules", zap.Int64("action_id", action.ID), zap.Error(fbErr))
 				aiSvc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
-				if _, rejErr := aiSvc.RejectAction(action.ID, "governance", "blocked: "+fbErr.Error(), nil); rejErr != nil {
+				if _, rejErr := aiSvc.RejectAction(action.ID, "governance", nil, "blocked: "+fbErr.Error()); rejErr != nil {
 					o.logger.Warn("failed to reject forbidden action", zap.Error(rejErr))
 				}
 				action, _ = aiSvc.GetAction(action.ID)
@@ -392,9 +392,9 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 				o.logger.Warn("policy evaluation failed", zap.Int64("action_id", action.ID), zap.Error(policyErr))
 			} else if result.FinalOutcome == "auto_approve" {
 				aiSvc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
-				if _, err := aiSvc.ApproveAction(action.ID, "policy", "auto-approved: "+result.Verdicts[0].Reason, nil); err != nil {
+				if _, err := aiSvc.ApproveAction(action.ID, "policy", nil, "auto-approved: "+result.Verdicts[0].Reason); err != nil {
 					o.logger.Warn("auto-approve failed", zap.Error(err))
-				} else if _, err := aiSvc.ExecuteAction(action.ID, "policy", "auto-executed", nil); err != nil {
+				} else if _, err := aiSvc.ExecuteAction(action.ID, nil, "policy", "auto-executed"); err != nil {
 					o.logger.Warn("auto-execute failed", zap.Error(err))
 				} else {
 					o.logger.Info("policy auto-approved and executed action", zap.Int64("action_id", action.ID))
@@ -403,7 +403,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			} else if result.FinalOutcome == "block" {
 				o.logger.Warn("policy blocked action", zap.Int64("action_id", action.ID))
 				aiSvc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
-				if _, err := aiSvc.RejectAction(action.ID, "policy", "blocked: "+result.Verdicts[0].Reason, nil); err != nil {
+				if _, err := aiSvc.RejectAction(action.ID, "policy", nil, "blocked: "+result.Verdicts[0].Reason); err != nil {
 					o.logger.Warn("reject failed", zap.Error(err))
 				} else {
 					action, _ = aiSvc.GetAction(action.ID)

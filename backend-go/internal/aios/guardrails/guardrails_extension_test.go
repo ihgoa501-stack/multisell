@@ -487,7 +487,7 @@ func TestRollbackGuard_RecordAndRollback(t *testing.T) {
 	called := false
 	entry := guardrails.RollbackEntry{
 		ActionID:   "action-001",
-		ActionType: "inventory_update",
+		ActionType: "inventory_change",
 		OriginalState: map[string]interface{}{
 			"before_quantity": float64(100),
 		},

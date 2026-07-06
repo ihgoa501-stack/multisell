@@ -4,7 +4,46 @@ import (
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/domain/candidate"
 )
+
+func TestService_Check_CreateErrorIsReturned(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CompletenessCheck{}, &candidate.CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Insert a candidate so First() succeeds
+	platformID := int64(1)
+	prod := candidate.CandidateProduct{
+		Title:            "Test",
+		Description:      "Enough chars for completeness to pass title/desc checks",
+		MainImage:        "https://example.test/img.jpg",
+		Images:           []byte(`["img1.jpg"]`),
+		CategoryID:       nil,
+		BrandID:          nil,
+		SpecJSON:         []byte(`{}`),
+		PurchasePrice:    10,
+		PurchaseCurrency: "CNY",
+		PackageWeightKg:  0.5,
+		PackageLengthCm:  10,
+		PackageWidthCm:   8,
+		PackageHeightCm:  6,
+		HSCode:           "1234.56",
+		TargetSalePrice:  30,
+		TargetPlatformID: &platformID,
+	}
+	if err := db.Create(&prod).Error; err != nil {
+		t.Fatalf("create candidate: %v", err)
+	}
+
+	// Drop the target table so Create fails
+	db.Exec("DROP TABLE completeness_check")
+
+	_, err := svc.Check(prod.ID, "tester")
+	if err == nil {
+		t.Fatal("expected error from Create (table dropped)")
+	}
+}
 
 func TestService_Check_CompleteProduct(t *testing.T) {
 	t.Parallel()

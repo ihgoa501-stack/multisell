@@ -108,7 +108,7 @@ print(val if val is not None else '')
 # json_code <json> -- returns response envelope code
 json_code() {
   if $HAS_JQ; then
-    jq -r '.code' <<< "$1" 2>/dev/null || echo "-1"
+    jq -r '.code // ""' <<< "$1" 2>/dev/null || echo "-1"
   elif $HAS_PY3; then
     python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('code',-1))" "$1" 2>/dev/null || echo "-1"
   else
@@ -119,7 +119,7 @@ json_code() {
 # json_first_id <json> -- extracts the first id from a data array
 json_first_id() {
   if $HAS_JQ; then
-    jq -r '.data[0].id // empty' <<< "$1" 2>/dev/null
+    jq -r '.data[0].id // ""' <<< "$1" 2>/dev/null
   elif $HAS_PY3; then
     python3 -c "import sys,json; d=json.loads(sys.argv[1]); print(d['data'][0]['id'])" "$1" 2>/dev/null || echo ""
   else
@@ -130,7 +130,7 @@ json_first_id() {
 # json_total <json> -- extracts total count from paginated response
 json_total() {
   if $HAS_JQ; then
-    jq -r '.total // empty' <<< "$1" 2>/dev/null
+    jq -r '.total // ""' <<< "$1" 2>/dev/null
   elif $HAS_PY3; then
     python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('total',0))" "$1" 2>/dev/null || echo "0"
   else
@@ -342,10 +342,38 @@ COMPL_RESP=$(curl -s -X POST "$API/completeness/check/$FIRST_ID" \
 COMPL_SCORE=$(json_extract ".data.score" "$COMPL_RESP" 2>/dev/null || echo "0")
 echo -e "  ${GRN}  Score: $COMPL_SCORE${NC}"
 
+# Step 5b: Back-read — verify completeness check data persisted
+COMPL_CHECKS_RESP=$(curl -s -X GET "$API/completeness/checks" -H "${AUTH[@]}")
+CHECKS_TOTAL=$(json_total "$COMPL_CHECKS_RESP" 2>/dev/null || echo "0")
+TOTAL=$((TOTAL + 1))
+if [ "$CHECKS_TOTAL" -ge 1 ] 2>/dev/null; then
+  PASSED=$((PASSED + 1))
+  echo -e "  ${GRN}[Back-read] completeness checks total: $CHECKS_TOTAL${NC}"
+else
+  echo -e "  ${RED}[Back-read] completeness checks: got $CHECKS_TOTAL, expected ≥1${NC}"
+  exit 1
+fi
+
 # ── Step 6: Profit summary ──────────────────────────────────────────────
 step 6 "Get profit summary for candidate $FIRST_ID (GET $API/profit/summary/$FIRST_ID)" \
   -X GET "$API/profit/summary/$FIRST_ID" \
   -H "${AUTH[@]}"
+
+PROFIT_RESP=$(curl -s -X GET "$API/profit/summary/$FIRST_ID" -H "${AUTH[@]}")
+PROFIT_STATUS=$(json_extract ".data.status" "$PROFIT_RESP" 2>/dev/null || echo "unknown")
+echo -e "  ${GRN}  Profit status: $PROFIT_STATUS${NC}"
+
+# Step 6b: Back-read — verify profit summary data persisted
+PROFIT_SUMMARIES_RESP=$(curl -s -X GET "$API/profit/summaries" -H "${AUTH[@]}")
+PROFIT_TOTAL=$(json_total "$PROFIT_SUMMARIES_RESP" 2>/dev/null || echo "0")
+TOTAL=$((TOTAL + 1))
+if [ "$PROFIT_TOTAL" -ge 1 ] 2>/dev/null; then
+  PASSED=$((PASSED + 1))
+  echo -e "  ${GRN}[Back-read] profit summaries total: $PROFIT_TOTAL${NC}"
+else
+  echo -e "  ${RED}[Back-read] profit summaries: got $PROFIT_TOTAL, expected ≥1${NC}"
+  exit 1
+fi
 
 # ── Step 7: Loop evaluate ──────────────────────────────────────────────
 step 7 "Evaluate loop for candidate $FIRST_ID (POST $API/loop/evaluate/$FIRST_ID)" \
@@ -353,6 +381,18 @@ step 7 "Evaluate loop for candidate $FIRST_ID (POST $API/loop/evaluate/$FIRST_ID
   -H "${AUTH[@]}" \
   -H "Content-Type: application/json" \
   -d "$COMPL_BODY"
+
+# Step 7b: Back-read — verify recommendation persisted
+RECS_RESP=$(curl -s -X GET "$API/loop/recommendations" -H "${AUTH[@]}")
+RECS_TOTAL=$(json_total "$RECS_RESP" 2>/dev/null || echo "0")
+TOTAL=$((TOTAL + 1))
+if [ "$RECS_TOTAL" -ge 1 ] 2>/dev/null; then
+  PASSED=$((PASSED + 1))
+  echo -e "  ${GRN}[Back-read] recommendations total: $RECS_TOTAL${NC}"
+else
+  echo -e "  ${RED}[Back-read] recommendations: got $RECS_TOTAL, expected ≥1${NC}"
+  exit 1
+fi
 
 # ── Step 8: Mock seed ───────────────────────────────────────────────────
 step 8 "Seed mock orders (POST $API/mock/seed)" \

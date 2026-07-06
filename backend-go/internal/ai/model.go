@@ -106,9 +106,10 @@ type UnifiedAction struct {
 	IdempotencyKey     string          `gorm:"column:idempotency_key;index" json:"idempotency_key,omitempty"`
 	ApprovedByUserID   *int64          `gorm:"column:approved_by_user_id" json:"approved_by_user_id,omitempty"`
 	ExecutedByUserID   *int64          `gorm:"column:executed_by_user_id" json:"executed_by_user_id,omitempty"`
-	CreatedAt          time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt          time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
-}
+		RejectedByUserID   *int64          `gorm:"column:rejected_by_user_id" json:"rejected_by_user_id,omitempty"`
+		CreatedAt          time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+		UpdatedAt          time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	}
 
 func (UnifiedAction) TableName() string { return "unified_action" }
 
@@ -208,19 +209,19 @@ type ChatResponse struct {
 
 // TraceListFilter captures query parameters.
 type TraceListFilter struct {
-	Search     string
-	AgentID    string
-	Status     string
+	Search        string
+	AgentID       string
+	Status        string
 	DecisionPoint string
 }
 
 // ActionListFilter captures query parameters.
 type ActionListFilter struct {
-	Search   string
-	AgentID  string
-	Status   string
+	Search    string
+	AgentID   string
+	Status    string
 	RiskLevel string
-	SquadID  string
+	SquadID   string
 }
 
 // AgentRosterSummary is a per-agent summary for the cockpit.

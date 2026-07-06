@@ -89,6 +89,7 @@
 | 平台集成与映射 | `integrations` |
 | 刊登记录 | `listing` |
 | 上架任务与任务条目 | `listingtask` |
+| ⇨ 平台发布钩子 | `listingtask.PublishHook` — ExecuteTask 成功后调用 adapter.Publish 推送到 Ozon/Shopee 等平台。失败时 task 状态转 failed 可重试，成功时 publish 结果合并到 item result（不覆盖 Prism 数据）。通过 auditSvc.LogStructured 记录发布审计。 |
 | 平台费用规则 | `platformfee` |
 
 ### 订单、物流与售后
@@ -154,12 +155,12 @@
 
 ## 验证快照
 
-2026-06-30：
+2026-07-03：
 
 | 命令 | 结果 |
 |---|---|
 | `cd backend-go && go test ./...` | 通过 |
 | `cd backend-go && go vet ./...` | 通过 |
-| `cd frontend-next && npm test` | 通过，77 tests |
-| `cd frontend-next && npm run build` | **失败**（`src/config/menu.ts` 未解决的合并冲突） |
-| `cd frontend-next && npm run lint` | 12 errors, 22 warnings |
+| `cd frontend-next && npm test` | 通过 |
+| `cd frontend-next && npm run build` | 通过 |
+| `cd frontend-next && npm run lint` | 通过 |

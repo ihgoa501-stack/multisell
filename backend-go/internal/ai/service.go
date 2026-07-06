@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
-	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
+	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"go.uber.org/zap"
@@ -34,6 +35,12 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	}
 }
 
+// WithGuard sets the guardrails chain for execution checks (L1-L5).
+func (s *Service) WithGuard(g *guardrails.Chain) *Service {
+	s.guard = g
+	return s
+}
+
 // WithDispatcher attaches the command dispatcher so that ExecuteAction can
 // dispatch actions through registered command handlers.
 func (s *Service) WithDispatcher(cmd *command.Dispatcher) *Service {
@@ -44,12 +51,6 @@ func (s *Service) WithDispatcher(cmd *command.Dispatcher) *Service {
 // WithCatalog attaches the action catalog for production validation.
 func (s *Service) WithCatalog(cat *actioncatalog.Catalog) *Service {
 	s.cat = cat
-	return s
-}
-
-// WithGuard attaches the guardrails chain for execution-level checks.
-func (s *Service) WithGuard(g *guardrails.Chain) *Service {
-	s.guard = g
 	return s
 }
 
@@ -145,6 +146,10 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 	if len(payload) == 0 {
 		payload = nil
 	}
+	execMode := in.ExecutionMode
+	if execMode == "" {
+		execMode = "production"
+	}
 	a := UnifiedAction{
 		SourceTable:        in.SourceTable,
 		SourceID:           in.SourceID,
@@ -164,10 +169,10 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 		RiskLevel:          risk,
 		RequiresApproval:   requires,
 		Status:             "suggested",
+		IdempotencyKey:     in.IdempotencyKey,
+		ExecutionMode:      execMode,
 		Confidence:         in.Confidence,
 		ProposedBy:         in.ProposedBy,
-		ExecutionMode:      in.ExecutionMode,
-		IdempotencyKey:     in.IdempotencyKey,
 	}
 	if err := s.db.Create(&a).Error; err != nil {
 		return nil, err
@@ -177,61 +182,59 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 
 // ApproveAction transitions an action to "approved",
 // storing the user ID if provided.
-func (s *Service) ApproveAction(id int64, operator, _ string, userID *int64) (*UnifiedAction, error) {
-	updates := map[string]interface{}{
-		"approved_by": operator,
-		"approved_at": nowPtr(),
-	}
-	if userID != nil {
-		updates["approved_by_user_id"] = *userID
-	}
-	return s.transitionAction(id, "approved", updates, "suggested", "pending")
+func (s *Service) ApproveAction(id int64, operator string, userID *int64, _ string) (*UnifiedAction, error) {
+	return s.transitionAction(id, "approved", map[string]interface{}{
+		"approved_by":        operator,
+		"approved_by_user_id": userID,
+		"approved_at":        nowPtr(),
+	}, "suggested", "pending")
 }
 
 // RejectAction transitions an action to "rejected". Only allowed from
 // "suggested" or "pending" — rejecting an already-approved action is not
 // permitted (revoke via a separate flow instead).
-func (s *Service) RejectAction(id int64, operator, reason string, _ *int64) (*UnifiedAction, error) {
+func (s *Service) RejectAction(id int64, operator string, userID *int64, reason string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "rejected", map[string]interface{}{
-		"rejected_by":      operator,
-		"rejected_at":      nowPtr(),
-		"rejection_reason": reason,
+		"rejected_by":         operator,
+		"rejected_by_user_id": userID,
+		"rejected_at":         nowPtr(),
+		"rejection_reason":    reason,
 	}, "suggested", "pending")
 }
 
 // ExecuteAction transitions an action through "executing" → "executed"/"failed" and
 // dispatches the underlying business command via the CommandDispatcher.
 //
-// The enhanced flow:
-//  1. Idempotency check — if the action has an idempotency key and is already
-//     executed/reviewed, return the existing result as a no-op.
-//  2. Validate against action catalog.
-//  3. Check status allows execution (suggested/approved).
-//  4. Check approval requirements.
-//  5. Run guardrails chain (L4 execution guard) if configured.
-//  6. Dry-run mode — skip dispatch, mark as reviewed.
-//  7. Execute normally through the command dispatcher.
+// Security gates (all checked before any mutation):
+//   - Idempotency: if IdempotencyKey is set and the action is already executed,
+//     returns the existing result without re-executing.
+//   - Execution mode: dry_run validates and reports, never mutates.
+//   - Guardrails: runs the L4 ExecutionGuard on the action payload.
+//   - Approval: requires approved status for high-risk actions.
+//   - Actor identity: operator is set server-side from JWT (not client-supplied).
 //
-// userID is stored in executed_by_user_id when provided (system calls pass nil).
-func (s *Service) ExecuteAction(id int64, operator, _ string, userID *int64) (*UnifiedAction, error) {
+// For low-risk auto-approved actions (RequiresApproval=false) this can be
+// called directly from "suggested"; otherwise the action must first be
+// approved.
+func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*UnifiedAction, error) {
 	var a UnifiedAction
 	if err := s.db.First(&a, id).Error; err != nil {
 		return nil, err
 	}
 
-	// 1. Idempotency check: if the action has an idempotency key and is already
-	// in a terminal execution state, return it as-is.
-	if a.IdempotencyKey != "" && (a.Status == ActionStatusExecuted || a.Status == ActionStatusReviewed) {
-		s.logger.Debug("idempotent action — already executed",
+	// ── Gate 1: Idempotency key ────────────────────────────────────
+	if a.IdempotencyKey != "" && (a.Status == "executed" || a.Status == "failed") {
+		s.logger.Debug("idempotent action — returning existing result",
 			zap.Int64("action_id", a.ID),
-			zap.String("idempotency_key", a.IdempotencyKey),
-			zap.String("status", a.Status))
+			zap.String("idempotency_key", a.IdempotencyKey))
 		return &a, nil
 	}
 
-	// 2. Validate against action catalog before execution.
+	// ── Gate 2: Validate against action catalog before execution ───
+	isDryRun := a.ExecutionMode == "dry_run"
+
 	if s.cat != nil {
-		if err := s.cat.ValidateProduction(a.ActionType, riskLevelToInt(a.RiskLevel), a.Status == "approved"); err != nil {
+		if err := s.cat.ValidateProduction(a.ActionType, riskLevelToInt(a.RiskLevel), isDryRun || a.Status == "approved"); err != nil {
 			if errors.Is(err, actioncatalog.ErrApprovalRequired) {
 				return nil, ErrApprovalRequired
 			}
@@ -239,91 +242,117 @@ func (s *Service) ExecuteAction(id int64, operator, _ string, userID *int64) (*U
 		}
 	}
 
-	// 3. Allowed source states: "suggested" (auto-approved) or "approved".
+	// ── Gate 3: Status transition check ────────────────────────────
 	if a.Status != "suggested" && a.Status != "approved" {
 		return nil, &InvalidTransitionError{From: a.Status, To: "executing"}
 	}
 
-	// 4. If the action claims to require approval but hasn't been approved, refuse.
-	if a.RequiresApproval && a.Status == "suggested" {
+	// ── Gate 4: Execution mode check ──────────────────────────
+	switch a.ExecutionMode {
+	case "", "production":
+		// production execution continues below
+	case "dry_run":
+		// isDryRun already set at Gate 2
+		// dry_run validates through all gates but does not dispatch or mutate.
+	case "sandbox":
+		return nil, fmt.Errorf("sandbox execution requires a sandbox executor; no sandbox configured")
+	default:
+		return nil, fmt.Errorf("unknown execution mode: %s", a.ExecutionMode)
+	}
+
+	// ── Gate 5: Approval check ─────────────────────────────────────
+	if !isDryRun && a.RequiresApproval && a.Status == "suggested" {
 		return nil, ErrApprovalRequired
 	}
 
-	// 5. Run guardrails chain on execution (L4 execution guard).
+	// ── Gate 6: Guardrails check (L4 ExecutionGuard) ──────────────
+	var guardPayload map[string]interface{}
 	if s.guard != nil {
 		payload := map[string]interface{}{}
 		if len(a.Payload) > 0 {
 			_ = json.Unmarshal(a.Payload, &payload)
 		}
-		// Build a GuardInput that the execution guard can evaluate.
-		gIn := &guardrails.GuardInput{
-			Level:  4,
-			AgentID: a.AgentID,
-			ToolName: a.ActionType,
-			ToolInput: map[string]interface{}{
-				"action_type": a.ActionType,
-				"risk_level":  a.RiskLevel,
-				"amount":      payload["amount"],
-				"quantity":    payload["quantity"],
-			},
+		// ponytail: use a generic GuardInput for the action-level check;
+		// per-tool checks happen inside the tool registry hooks.
+		// Seed action_type into ToolInput so ExecutionGuard rules can match by action type.
+		if payload == nil {
+			payload = map[string]interface{}{}
 		}
-		if userID != nil {
-			gIn.UserID = *userID
-		}
-		gRes, gErr := s.guard.Check(context.Background(), gIn)
-		if gErr != nil {
-			s.logger.Warn("guardrails execution check failed",
+		payload["action_type"] = a.ActionType
+		payload["risk_level"] = a.RiskLevel
+		gr, err := s.guard.Check(context.Background(), &guardrails.GuardInput{
+			AgentID:   a.AgentID,
+			ToolName:  a.ActionType,
+			ToolInput: payload,
+		})
+		guardPayload = payload
+		if err != nil {
+			s.logger.Warn("guardrails check error during execution",
 				zap.Int64("action_id", a.ID),
-				zap.Error(gErr))
-		} else if gRes.Blocked {
-			return nil, &InvalidTransitionError{
-				From: a.Status,
-				To:   "blocked_by_guardrails",
-			}
+				zap.Error(err))
+			return nil, fmt.Errorf("execution guard check failed: %w", err)
+		}
+		if gr.Blocked {
+			s.logger.Warn("action blocked by execution guard",
+				zap.Int64("action_id", a.ID),
+				zap.String("action_type", a.ActionType),
+				zap.String("reason", gr.Reason),
+			)
+			return nil, fmt.Errorf("%w: %s", ErrBlockedByGuardrails, gr.Reason)
 		}
 	}
 
-	now := nowPtr()
-	executedByUserIDVal := interface{}(nil)
-	if userID != nil {
-		executedByUserIDVal = *userID
-	}
-	updates := map[string]interface{}{
-		"status":            "executing",
-		"executed_by":       operator,
-		"executing_at":      now,
-		"executed_by_user_id": executedByUserIDVal,
-	}
-	if err := s.db.Model(&a).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-
-	// 6. Dry-run mode: skip command dispatch, mark as executed immediately.
-	if a.ExecutionMode == "dry_run" {
-		execNow := nowPtr()
-		finalUpdates := map[string]interface{}{
-			"status":     "executed",
-			"executed_at": execNow,
-			"updated_at": execNow,
-		}
-		if err := s.db.Model(&a).Updates(finalUpdates).Error; err != nil {
-			return nil, err
-		}
+	// Dry-run: all validation passed, return without mutation.
+	if isDryRun {
+		s.logger.Info("dry-run action — all gates passed, execution skipped",
+			zap.Int64("action_id", a.ID),
+			zap.String("action_type", a.ActionType))
 		return &a, nil
 	}
 
-	// 7. Dispatch through CommandDispatcher to execute real business logic.
-	// The cmd field may be nil; in that case the command is not dispatched
-	// but the action still transitions to "executed" (the caller has opted
-	// out of command dispatch entirely, not just this command).
+	// ── Execute: transition to executing (atomic claim) ────────
+	now := nowPtr()
+	res := s.db.Model(&UnifiedAction{}).
+		Where("id = ? AND status IN ?", a.ID, []string{"suggested", "approved"}).
+		Updates(map[string]interface{}{
+			"status":              "executing",
+			"executed_by":         operator,
+			"executed_by_user_id": userID,
+			"executing_at":        now,
+		})
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	// RowsAffected == 0 means another request already claimed this action.
+	if res.RowsAffected == 0 {
+		var current UnifiedAction
+		if err := s.db.First(&current, a.ID).Error; err != nil {
+			return nil, err
+		}
+		// Idempotent: if already completed, return existing result.
+		if current.IdempotencyKey != "" && (current.Status == "executed" || current.Status == "failed") {
+			return &current, nil
+		}
+		return nil, fmt.Errorf("action %d is already %s (conflict)", a.ID, current.Status)
+	}
+
+	// Re-read the action to get fresh values after the atomic UPDATE.
+	if err := s.db.First(&a, a.ID).Error; err != nil {
+		return nil, err
+	}
+
+	// Dispatch through CommandDispatcher to execute real business logic.
 	var execErr error
 	var cmdResult *command.Result
 	if s.cmd != nil {
-		payload := map[string]interface{}{}
-		if len(a.Payload) > 0 {
-			_ = json.Unmarshal(a.Payload, &payload)
+		cmdPayload := guardPayload
+		if cmdPayload == nil {
+			cmdPayload = map[string]interface{}{}
+			if len(a.Payload) > 0 {
+				_ = json.Unmarshal(a.Payload, &cmdPayload)
+			}
 		}
-		cmdResult, execErr = s.cmd.Dispatch(context.Background(), a.ActionType, payload)
+		cmdResult, execErr = s.cmd.Dispatch(context.Background(), a.ActionType, cmdPayload)
 		if execErr != nil {
 			s.logger.Warn("command dispatch failed during action execution",
 				zap.Int64("action_id", a.ID),
@@ -351,11 +380,8 @@ func (s *Service) ExecuteAction(id int64, operator, _ string, userID *int64) (*U
 		finalUpdates["rejection_reason"] = errMsg
 	} else {
 		finalUpdates["status"] = "executed"
-		// Record the after_snapshot from the command result so the UI can
-		// see what actually changed.
 		if cmdResult != nil && cmdResult.AfterSnapshot != nil {
-			snapJSON, _ := json.Marshal(cmdResult.AfterSnapshot)
-			finalUpdates["after_snapshot"] = snapJSON
+			finalUpdates["after_snapshot"] = cmdResult.AfterSnapshot
 		}
 	}
 
@@ -365,7 +391,7 @@ func (s *Service) ExecuteAction(id int64, operator, _ string, userID *int64) (*U
 	return &a, nil
 }
 
-// FailAction marks an executing action as failed.
+
 func (s *Service) FailAction(id int64, reason string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "failed", map[string]interface{}{
 		"failed_at":        nowPtr(),
@@ -498,6 +524,9 @@ func (e *InvalidTransitionError) Error() string {
 
 // ErrApprovalRequired signals that an action needs approval first.
 var ErrApprovalRequired = &InvalidTransitionError{From: "suggested", To: "executing"}
+
+// ErrBlockedByGuardrails is returned when the execution guardrail chain blocks an action.
+var ErrBlockedByGuardrails = errors.New("action blocked by guardrails")
 
 // riskLevelToInt converts a risk level string to an actioncatalog risk constant.
 func riskLevelToInt(level string) int {

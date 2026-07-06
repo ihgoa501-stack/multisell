@@ -8,11 +8,6 @@ import (
 
 // RegisterRoutes registers candidate routes on the given router group.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	// Auto-migrate to ensure schema is up to date (additive only).
-	if err := db.AutoMigrate(&CandidateProduct{}, &CollectLead{}); err != nil {
-		logger.Warn("candidate: auto-migrate failed", zap.Error(err))
-	}
-
 	svc := NewService(db, logger)
 	h := NewHandler(svc)
 

@@ -206,6 +206,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// Event Bus Subscriptions: agent triggers + pipeline chains
 	// ==========================================================
 
+	auditSvc := operationlog.NewService(db, logger)
+	mutationGuard := eventbus.NewMutationGuard(logger, &auditAdapter{svc: auditSvc})
+
 	// scheduler.tick.A5 → orchestrator runs A5 stock_alert
 	bus.Subscribe("scheduler.tick.A5", func(ctx context.Context, evt eventbus.Event) error {
 		_, err := aiOrch.Run(&ai.RunAgentRequest{
@@ -279,35 +282,45 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		return err
 	})
 	// scheduler.tick.trustscore → recalculate trust scores + auto-upgrade eligible agents
-	bus.Subscribe("scheduler.tick.trustscore", func(ctx context.Context, evt eventbus.Event) error {
-		ug := trustscore.NewUpgrader(db, logger)
-		_, err := ug.AutoUpgrade()
-		return err
-	})
+	bus.Subscribe("scheduler.tick.trustscore",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.trustscore.auto_upgrade",
+			Domain:       "trustscore",
+			Description:  "定时信任分重算 → 自动升级Agent自主化等级",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			ug := trustscore.NewUpgrader(db, logger)
+			_, err := ug.AutoUpgrade()
+			return err
+		}))
 	// scheduler.tick.entropy → run entropy defenses + agent health check
-	bus.Subscribe("scheduler.tick.entropy", func(ctx context.Context, evt eventbus.Event) error {
-		svc := entropy.NewService(db, logger)
-		_, err := svc.RunDefenses(0)
+	bus.Subscribe("scheduler.tick.entropy",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.entropy.run_defenses",
+			Domain:       "entropy",
+			Description:  "定时熵防御运行: 异常检测和Agent健康检查",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			svc := entropy.NewService(db, logger)
+			_, err := svc.RunDefenses(0)
 
-		// Check agent health and publish unhealthy agents to the bus.
-		unhealthy, healthErr := svc.CheckAgentHealth()
-		if healthErr != nil {
-			logger.Warn("entropy: agent health check failed", zap.Error(healthErr))
-		} else {
-			for _, ua := range unhealthy {
-				logger.Warn("entropy: agent health below threshold",
-					zap.String("agent_id", ua.AgentID),
-					zap.Float64("health_score", ua.HealthScore),
-				)
-				bus.Publish(ctx, "entropy.agent.unhealthy."+ua.AgentID, "entropy", map[string]interface{}{
-					"agent_id":     ua.AgentID,
-					"health_score": ua.HealthScore,
-				})
+			// Check agent health and publish unhealthy agents to the bus.
+			unhealthy, healthErr := svc.CheckAgentHealth()
+			if healthErr != nil {
+				logger.Warn("entropy: agent health check failed", zap.Error(healthErr))
+			} else {
+				for _, ua := range unhealthy {
+					logger.Warn("entropy: agent health below threshold",
+						zap.String("agent_id", ua.AgentID),
+						zap.Float64("health_score", ua.HealthScore),
+					)
+					bus.Publish(ctx, "entropy.agent.unhealthy."+ua.AgentID, "entropy", map[string]interface{}{
+						"agent_id":     ua.AgentID,
+						"health_score": ua.HealthScore,
+					})
+				}
 			}
-		}
 
-		return err
-	})
+			return err
+		}))
 
 	// scheduler.tick.A8 → sourcing batch scan
 	bus.Subscribe("scheduler.tick.A8", func(ctx context.Context, evt eventbus.Event) error {
@@ -334,11 +347,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// Agent Decision Audit Chain: log every agent.decided.*
 	// event to the operation_log for the full audit trail.
 	// -------------------------------------------------------
-	auditSvc := operationlog.NewService(db, logger)
-
-	mutationGuard := eventbus.NewMutationGuard(logger, &auditAdapter{svc: auditSvc})
-
-	bus.Subscribe("agent.decided.*", approval.NewAgentDecisionSubscriber(db, logger, auditSvc))
+	bus.Subscribe("agent.decided.*",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.approval.agent_decision_auto_create",
+			Domain:       "approval",
+			Description:  "Agent决策自动创建审批: 低置信度Agent决策自动生成审批请求",
+		}, approval.NewAgentDecisionSubscriber(db, logger, auditSvc)))
 	bus.Subscribe("agent.decided.**", func(ctx context.Context, evt eventbus.Event) error {
 		payload := evt.Payload
 
@@ -508,19 +522,19 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	})
 
 	// Ozon sync handler
-	bus.Subscribe("scheduler.tick.ozon_sync", func(ctx context.Context, evt eventbus.Event) error {
-		integrations.InitAdapters(db, logger)
-		svc := integrations.NewService(db, logger)
-		return svc.SyncOzonOrders(ctx)
-	})
+	bus.Subscribe("scheduler.tick.ozon_sync",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.integrations.ozon_order_sync",
+			Domain:       "integrations",
+			Description:  "定时从 Ozon 平台同步订单数据到本地数据库",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			integrations.InitAdapters(db, logger)
+			svc := integrations.NewService(db, logger)
+			return svc.SyncOzonOrders(ctx)
+		}))
 
 	// Start scheduler in background goroutine.
 	go sched.Start(busCtx)
-
-	// Scheduler health endpoint — exposes task run state for AIOS dashboard.
-	r.GET("/api/v1/aios/scheduler/tasks", func(c *gin.Context) {
-		c.JSON(200, gin.H{"tasks": sched.TaskRunState()})
-	})
 
 	// ==========================================================
 	// HTTP routes
@@ -558,6 +572,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	// AIOS routes (tool registry, runtime, guardrails health)
 	setup.RegisterAIOSRoutes(protected, aiosCfg)
+		// Scheduler health endpoint -- exposes task run state for AIOS dashboard.
+		protected.GET("/aios/scheduler/tasks", func(c *gin.Context) {
+		c.JSON(200, gin.H{"tasks": sched.TaskRunState()})
+		})
 
 	// AgentOS routes
 	agentos.RegisterRoutes(protected, db, logger)
@@ -617,9 +635,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	})
 
 	// sourcing.recommend → orchestrator triggers A10 shipping quoting
-	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
-		return supplyChainOrch.HandleRecommendEvent(ctx, evt)
-	})
+	bus.Subscribe("sourcing.recommend",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.supplychain.create_recommend_flow",
+			Domain:       "supplychain",
+			Description:  "选品推荐事件: 创建供应链流水记录并触发物流报价",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			return supplyChainOrch.HandleRecommendEvent(ctx, evt)
+		}))
 	// scheduler.tick.orch → supply chain orchestrator heartbeat (no-op)
 	bus.Subscribe("scheduler.tick.orch", func(ctx context.Context, evt eventbus.Event) error {
 		return nil
@@ -649,9 +672,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		}))
 
 	// Supply chain event: after-sale return initiated -> create reverse logistics flow
-	bus.Subscribe("supplychain.aftersale.returned", func(ctx context.Context, evt eventbus.Event) error {
-		return supplyChainOrch.HandleAftersaleReturn(ctx, evt)
-	})
+	bus.Subscribe("supplychain.aftersale.returned",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.supplychain.aftersale_return",
+			Domain:       "supplychain",
+			Description:  "售后退货: 创建逆向物流流水并记录退货跟踪数据",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			return supplyChainOrch.HandleAftersaleReturn(ctx, evt)
+		}))
 
 	// -------------------------------------------------------
 	// Data flywheel: fulfillment data backflow (Issue #5)
@@ -667,9 +695,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	bus.Subscribe("supplychain.flywheel", flywheelLogSvc.HandleCategoryFlywheelEvent())
 
 	// Supply chain event: stock critical (A5) → orchestrator triggers A8 sourcing rescan
-	bus.Subscribe("supplychain.stock.critical", func(ctx context.Context, evt eventbus.Event) error {
-		return supplyChainOrch.HandleStockCritical(ctx, evt)
-	})
+	bus.Subscribe("supplychain.stock.critical",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.supplychain.stock_critical",
+			Domain:       "supplychain",
+			Description:  "库存红色预警: 创建供应链流水并触发补货审批",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			return supplyChainOrch.HandleStockCritical(ctx, evt)
+		}))
 
 	platform.RegisterRoutes(protected, db, logger)
 	listingRoutes := protected.Group("", middleware.RequirePermission(db, "listing.read"))
@@ -691,18 +724,130 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	approvalSvc = approval.NewService(db, logger, auditSvc).WithBus(bus)
 	rbacSvc := rbac.NewService(db, logger)
 	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
-	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc)
+	// Build platform publish hook for listing task execution.
+	// After ExecuteTask completes, this pushes the product to the platform API.
+	publishHook := func(taskID int64) error {
+		var t listingtask.ListingTask
+		if err := db.First(&t, taskID).Error; err != nil {
+			return fmt.Errorf("load listing task %d: %w", taskID, err)
+		}
+		// Resolve platform code → adapter.
+		var plat struct{ Code string }
+		if err := db.Table("platform").Select("code").Where("id = ?", t.PlatformID).Scan(&plat).Error; err != nil {
+			return fmt.Errorf("load platform %d: %w", t.PlatformID, err)
+		}
+		adapter, ok := integrations.GetAdapter(plat.Code)
+		if !ok {
+			return fmt.Errorf("no adapter for platform %q", plat.Code)
+		}
+		// Load product data.
+		var prod sku.Product
+		if err := db.First(&prod, t.ProductID).Error; err != nil {
+			return fmt.Errorf("load product %d: %w", t.ProductID, err)
+		}
+		type skuRow struct {
+			ID   int64
+			Code string
+		}
+		var skus []skuRow
+		if err := db.Table("sku").Where("product_id = ?", t.ProductID).Find(&skus).Error; err != nil {
+			return fmt.Errorf("load SKUs for product %d: %w", t.ProductID, err)
+		}
+		// Find first active account for this platform.
+		// ponytail: picks the first active account by insertion order.
+		// Add account_id to ListingTask if multi-store routing becomes needed.
+		var acct integrations.PlatformIntegrationAccount
+		if err := db.Where("platform_id = ? AND status = ?", t.PlatformID, "active").First(&acct).Error; err != nil {
+			return fmt.Errorf("no active account for platform %d: %w", t.PlatformID, err)
+		}
+		prices := make(map[int64]string)
+		inventories := make(map[int64]int)
+		publishSKUs := make([]integrations.PublishSKU, 0, len(skus))
+		for _, sk := range skus {
+			publishSKUs = append(publishSKUs, integrations.PublishSKU{SkuID: sk.ID, SkuCode: sk.Code})
+			if t.TargetSalePrice != nil {
+				prices[sk.ID] = fmt.Sprintf("%.2f", *t.TargetSalePrice)
+			}
+			var s sku.Sku
+			if err := db.First(&s, sk.ID).Error; err == nil {
+				inventories[sk.ID] = s.Stock
+			}
+		}
+		pkgH, _ := prod.PackageHeightCm.Float64()
+		pkgW, _ := prod.PackageWidthCm.Float64()
+		pkgL, _ := prod.PackageLengthCm.Float64()
+		pkgWt, _ := prod.PackageWeightKg.Float64()
+
+		result, err := adapter.Publish(context.Background(), &integrations.PublishInput{
+			ProductID:      t.ProductID,
+			PlatformID:     t.PlatformID,
+			AccountID:      acct.ID,
+			SKUs:           publishSKUs,
+			Prices:         prices,
+			Inventories:    inventories,
+			ProductName:    prod.Name,
+			Description:    prod.Description,
+			CategoryID:     prod.CategoryID,
+			MainImage:      prod.MainImage,
+			PackageHeight:  pkgH,
+			PackageWidth:   pkgW,
+			PackageLength:  pkgL,
+			PackageWeight:  pkgWt,
+		})
+		auditContent := fmt.Sprintf("publish product %d to platform %s (account %d)", t.ProductID, plat.Code, acct.ID)
+		if err != nil {
+			auditContent = fmt.Sprintf("publish product %d to platform %s failed: %v", t.ProductID, plat.Code, err)
+		}
+		auditSvc.LogStructured(&operationlog.StructuredLogInput{
+			Module:      "platform_publish",
+			Action:      "publish",
+			ResourceID:  fmt.Sprintf("listing_task:%d", taskID),
+			Operator:    "system",
+			Content:     auditContent,
+			Result:      func() string {
+				if err != nil {
+					return "failure"
+				}
+				return "success"
+			}(),
+			TriggerType: "system",
+			EntityType:  "listing_task",
+			EntityID:    taskID,
+		})
+		if err != nil {
+			return fmt.Errorf("platform %s publish failed: %w", plat.Code, err)
+		}
+		// Merge platform publish result into existing item result
+		// (which already contains Prism compliance data from ExecuteTask).
+		resultJSON, _ := json.Marshal(result)
+		db.Exec(`UPDATE listing_task_item SET result = COALESCE(result, '{}')::jsonb || ?::jsonb WHERE task_id = ?`,
+			string(resultJSON), taskID)
+
+		logger.Info("listing task platform publish succeeded",
+			zap.Int64("task_id", taskID),
+			zap.String("platform", plat.Code),
+			zap.String("platform_product_id", result.PlatformProductID),
+			zap.String("platform_url", result.PlatformURL),
+		)
+		return nil
+	}
+	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc, publishHook)
 
 	// Closed-loop: approval approved for listing_task → execute the task.
-	bus.Subscribe("approval.approved.listing_task", func(ctx context.Context, evt eventbus.Event) error {
-		entityID, ok := evt.Payload["entity_id"].(float64)
-		if !ok || int64(entityID) == 0 {
-			return nil
-		}
-		ltSvc := listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, loopSvc)
-		_, err := ltSvc.ExecuteTask(int64(entityID), "system")
-		return err
-	})
+	bus.Subscribe("approval.approved.listing_task",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.listingtask.execute",
+			Domain:       "listingtask",
+			Description:  "审批通过: 执行上架任务",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			entityID, ok := evt.Payload["entity_id"].(float64)
+			if !ok || int64(entityID) == 0 {
+				return nil
+			}
+			ltSvc := listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, loopSvc)
+			_, err := ltSvc.ExecuteTask(int64(entityID), "system")
+			return err
+		}))
 
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
@@ -779,16 +924,26 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
 	// scheduler.tick.agentos -> SLA escalation for overdue pending actions
-	bus.Subscribe("scheduler.tick.agentos", func(ctx context.Context, evt eventbus.Event) error {
-		agentosSvc := agentos.NewService(db, logger)
-		return agentosSvc.SLAEscalation()
-	})
+	bus.Subscribe("scheduler.tick.agentos",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.agentos.sla_escalation",
+			Domain:       "agentos",
+			Description:  "定时SLA过期升级: 将超时的待审批动作升级处理",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			agentosSvc := agentos.NewService(db, logger)
+			return agentosSvc.SLAEscalation()
+		}))
 
-	bus.Subscribe("scheduler.tick.M1", func(ctx context.Context, evt eventbus.Event) error {
-		logger.Info("metabolism: M1 tick received")
-		_, err := m1Svc.ScoreAndExcreteEntities(false)
-		return err
-	})
+	bus.Subscribe("scheduler.tick.M1",
+		mutationGuard.Guard(eventbus.MutationInfo{
+			SystemAction: "system.metabolism.excrete",
+			Domain:       "metabolism",
+			Description:  "定时代谢排泄评分: 评分并清除不合格实体",
+		}, func(ctx context.Context, evt eventbus.Event) error {
+			logger.Info("metabolism: M1 tick received")
+			_, err := m1Svc.ScoreAndExcreteEntities(false)
+			return err
+		}))
 	metabolism.RegisterRoutes(protected, db, logger, nil, nil)
 
 	// WebSocket route
@@ -810,7 +965,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		"G3": {"compliance_check"},
 	}
 	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
-	ai.RegisterRoutes(protected, db, logger, hub, aiosCfg.Guardrails, moaCoord, cmd)
+	ai.RegisterRoutes(protected, db, logger, hub, moaCoord, cmd, aiosCfg.Guardrails)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}

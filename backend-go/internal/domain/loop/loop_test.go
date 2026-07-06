@@ -11,6 +11,49 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 )
 
+func TestService_Evaluate_CreateErrorIsReturned(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t,
+		&candidate.CandidateProduct{},
+		&completeness.CompletenessCheck{},
+		&profit.ProfitSummary{},
+		&listingtask.ListingTask{},
+		&ListingRecommendation{},
+		&approval.ApprovalRequest{},
+	)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false)
+
+	platformID := int64(1)
+	prod := candidate.CandidateProduct{
+		Title:              "Test Product",
+		Description:        "Description with enough length for completeness",
+		MainImage:          "https://example.test/img.jpg",
+		Images:             []byte(`["img1.jpg"]`),
+		SpecJSON:           []byte(`{}`),
+		PurchasePrice:      10,
+		PurchaseCurrency:   "CNY",
+		PackageWeightKg:    0.5,
+		PackageLengthCm:    10,
+		PackageWidthCm:     8,
+		PackageHeightCm:    6,
+		HSCode:             "1234.56",
+		TargetSalePrice:    30,
+		TargetPlatformID:   &platformID,
+		DestinationCountry: "US",
+	}
+	if err := db.Create(&prod).Error; err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+
+	// Drop the listing_recommendation table so the final Create in Evaluate fails
+	db.Exec("DROP TABLE listing_recommendation")
+
+	_, err := svc.Evaluate(prod.ID, "tester")
+	if err == nil {
+		t.Fatal("expected error from Create (listing_recommendation table dropped)")
+	}
+}
+
 func TestService_GetRecommendations(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingRecommendation{})

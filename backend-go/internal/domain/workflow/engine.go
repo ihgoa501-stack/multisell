@@ -445,6 +445,9 @@ func (e *Engine) execCommand(ctx context.Context, runID int64, def StepDef) (map
 		return def.Inputs, nil
 	}
 
+	// ponytail: raw Dispatch — workflow engine runs predefined pipeline steps,
+	// not AI-generated actions. No action gate needed; command registration is
+	// the authorization boundary here.
 	_, err := e.cmd.Dispatch(ctx, def.Command, def.Inputs)
 	if err != nil {
 		return nil, fmt.Errorf("command %s: %w", def.Command, err)
