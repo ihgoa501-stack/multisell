@@ -1768,3 +1768,202 @@ func TestCarrierQuote_BadRequest(t *testing.T) {
 		t.Errorf("expected 400 for bad JSON, got %d", w.Code)
 	}
 }
+
+
+// ---------- Pure function unit tests ----------
+
+func TestApplyRule_StepPricing(t *testing.T) {
+	firstKg := 0.5
+	firstPrice := 10.0
+	addKg := 0.5
+	addPrice := 3.0
+	rule := &ShippingQuoteRule{
+		RuleType:        "first_weight_plus_increment",
+		FirstKg:         &firstKg,
+		FirstPrice:      &firstPrice,
+		AdditionalKg:    &addKg,
+		AdditionalPrice: &addPrice,
+	}
+	got := applyRule(rule, 2.0)
+	if got != 19.0 {
+		t.Errorf("applyRule first_weight_plus_increment(2kg) = %.2f, want 19.00", got)
+	}
+}
+
+func TestApplyRule_FreeShipping(t *testing.T) {
+	fixed := 0.0
+	perKg := 0.0
+	rule := &ShippingQuoteRule{
+		RuleType:   "fixed_plus_per_kg",
+		FixedFee:   &fixed,
+		PerKgPrice: &perKg,
+	}
+	got := applyRule(rule, 5.0)
+	if got != 0 {
+		t.Errorf("applyRule free shipping(5kg) = %.2f, want 0.00", got)
+	}
+}
+
+func TestApplyRule_MinimumCharge(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+
+	prov, err := svc.CreateProvider(&CreateProviderInput{Name: "Carrier", Code: "C"})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	ch, err := svc.CreateChannel(&CreateChannelInput{
+		ProviderID: prov.ID, Name: "Standard",
+		VolumetricDivisor: intPtr(6000),
+	})
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	zone, err := svc.CreateZone(&CreateZoneInput{ChannelID: ch.ID, CountryCode: "RU"})
+	if err != nil {
+		t.Fatalf("create zone: %v", err)
+	}
+
+	fixedFee := 5.0
+	perKg := 3.0
+	minCharge := 30.0
+	svc.CreateRule(&CreateQuoteRuleInput{
+		ChannelID: ch.ID, ZoneID: &zone.ID,
+		RuleType: "fixed_plus_per_kg", FixedFee: &fixedFee,
+		PerKgPrice: &perKg, MinimumCharge: &minCharge,
+		Status: statusPtr(1),
+	})
+
+	resp, err := svc.Quote(&QuoteRequest{
+		Mode: "manual", DestinationCountry: "RU",
+		ManualWeightKg: floatPtr(1.0), ManualLengthCM: floatPtr(10),
+		ManualWidthCM: floatPtr(10), ManualHeightCM: floatPtr(10),
+	})
+	if err != nil {
+		t.Fatalf("quote: %v", err)
+	}
+	if resp.Results[0].TotalShippingFee != 30.0 {
+		t.Errorf("expected total 30.0 (minimum charge), got %.2f", resp.Results[0].TotalShippingFee)
+	}
+}
+
+func TestApplyRule_ZeroWeight(t *testing.T) {
+	fixed := 10.0
+	perKg := 5.0
+	rule := &ShippingQuoteRule{
+		RuleType:   "fixed_plus_per_kg",
+		FixedFee:   &fixed,
+		PerKgPrice: &perKg,
+	}
+	got := applyRule(rule, 0)
+	if got != 10.0 {
+		t.Errorf("applyRule(0kg) = %.2f, want 10.00", got)
+	}
+}
+
+func TestRoundTo_0(t *testing.T) {
+	got := roundTo(3.14159, 2)
+	if got != 3.14 {
+		t.Errorf("roundTo(3.14159, 2) = %v, want 3.14", got)
+	}
+}
+
+func TestRoundTo_FiveUp(t *testing.T) {
+	// 2.375 * 100 = 237.5, math.Round half-away-from-zero → 238 → 2.38
+	got := roundTo(2.375, 2)
+	if got != 2.38 {
+		t.Errorf("roundTo(2.375, 2) = %v, want 2.38", got)
+	}
+}
+
+func TestRoundTo_Negative(t *testing.T) {
+	got := roundTo(-1.234, 2)
+	if got != -1.23 {
+		t.Errorf("roundTo(-1.234, 2) = %v, want -1.23", got)
+	}
+}
+
+func TestValidateLabelURL_Valid(t *testing.T) {
+	err := ValidateLabelURL("https://example.com/label/123")
+	if err != nil {
+		t.Errorf("expected nil for valid URL, got %v", err)
+	}
+}
+
+func TestValidateLabelURL_Invalid(t *testing.T) {
+	err := ValidateLabelURL("")
+	if err == nil {
+		t.Fatal("expected error for empty URL")
+	}
+}
+
+func TestValidateLabelURL_InvalidScheme(t *testing.T) {
+	err := ValidateLabelURL("http://example.com/label")
+	if err == nil {
+		t.Fatal("expected error for non-HTTPS URL")
+	}
+}
+
+func TestSortResults(t *testing.T) {
+	results := []QuoteResult{
+		{ChannelName: "expensive", TotalShippingFee: 30.0},
+		{ChannelName: "cheapest", TotalShippingFee: 10.0},
+		{ChannelName: "mid", TotalShippingFee: 20.0},
+	}
+	sortResults(results)
+	if results[0].ChannelName != "cheapest" {
+		t.Errorf("first after sort = %q, want cheapest", results[0].ChannelName)
+	}
+	if results[1].ChannelName != "mid" {
+		t.Errorf("second after sort = %q, want mid", results[1].ChannelName)
+	}
+	if results[2].ChannelName != "expensive" {
+		t.Errorf("third after sort = %q, want expensive", results[2].ChannelName)
+	}
+}
+
+func TestBuildDetail_FixedPlusPerKg(t *testing.T) {
+	fixed := 5.0
+	perKg := 3.0
+	rule := &ShippingQuoteRule{
+		RuleType:   "fixed_plus_per_kg",
+		FixedFee:   &fixed,
+		PerKgPrice: &perKg,
+	}
+	detail := buildDetail(rule, 2.0, 11.0, 0, 0)
+	if detail != "fixed 5.0 + 2.00kg x 3.0 = 11.0" {
+		t.Errorf("buildDetail = %q", detail)
+	}
+}
+
+func TestBuildDetail_FirstWeight(t *testing.T) {
+	firstKg := 0.5
+	firstPrice := 10.0
+	addKg := 0.5
+	addPrice := 3.0
+	rule := &ShippingQuoteRule{
+		RuleType:        "first_weight_plus_increment",
+		FirstKg:         &firstKg,
+		FirstPrice:      &firstPrice,
+		AdditionalKg:    &addKg,
+		AdditionalPrice: &addPrice,
+	}
+	detail := buildDetail(rule, 0.3, 10.0, 0, 0)
+	if detail != "first 0.5kg = 10.0" {
+		t.Errorf("buildDetail = %q", detail)
+	}
+}
+
+func TestBuildDetail_WithSurcharges(t *testing.T) {
+	fixed := 5.0
+	perKg := 3.0
+	rule := &ShippingQuoteRule{
+		RuleType:   "fixed_plus_per_kg",
+		FixedFee:   &fixed,
+		PerKgPrice: &perKg,
+	}
+	detail := buildDetail(rule, 2.0, 11.0, 3.0, 1.4)
+	if detail != "fixed 5.0 + 2.00kg x 3.0 = 11.0 + surcharge 3.0 + fuel 1.4" {
+		t.Errorf("buildDetail = %q", detail)
+	}
+}

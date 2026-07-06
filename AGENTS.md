@@ -213,9 +213,9 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 | Priority | Issue | Location |
 |----------|-------|----------|
 | P0 | Agent output is stub (fake data, not real LLM) | `orchestrator.go:172` — `synthesizeOutput()` |
-| P1 | MoA aggregation is string concatenation, not LLM | `moa.go:296` — `synthesize()` marked `ponytail` |
+| P1 | MoA aggregation is structured but still deterministic, not LLM-synthesized | `moa.go` — `synthesize()` returns structured findings/conflicts/recommendation |
 | P1 | Owner dashboard /owner is Mock | `frontend-next/src/app/(main)/owner/` |
-| P2 | Only 2 platform adapters (Ozon + Shopee), untested | `domain/integrations/` |
+| P2 | Only 3 platform adapters (Ozon + Shopee + Shopify), still thinly tested | `domain/integrations/` |
 | P2 | Frontend dev server has no watchdog — exits silently | `npm run dev` process |
 | P3 | No real CI trigger yet (doc-links job added but not tested) | `.github/workflows/ci.yml` |
 

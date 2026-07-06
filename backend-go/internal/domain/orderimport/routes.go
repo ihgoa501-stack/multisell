@@ -15,13 +15,11 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	{
 		group.GET("", h.List)
 		group.GET("/summary", h.Summary)
-		group.GET("/status", h.GetStatus)
 		group.GET("/:id", h.Get)
 		group.POST("", h.Create)
 		group.PUT("/:id", h.Update)
 		group.DELETE("/:id", h.Delete)
 		group.POST("/:id/process", h.Process)
 		group.POST("/:id/complete", h.Complete)
-		group.POST("/:id/retry", h.Retry)
 	}
 }

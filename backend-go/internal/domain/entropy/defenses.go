@@ -70,7 +70,7 @@ func (s *DecayScheduler) ApplyDecay(userID int64) (int, error) {
 	cutoff := time.Now().Add(-14 * 24 * time.Hour)
 	res := s.db.Model(&PersonalRule{}).
 		Where("user_id = ? AND status = 'active' AND updated_at < ?", userID, cutoff).
-		Update("confidence", gorm.Expr("GREATEST(confidence * 0.95, 0.1)"))
+		Update("confidence", gorm.Expr("CASE WHEN confidence * 0.95 < 0.1 THEN 0.1 ELSE confidence * 0.95 END"))
 	return int(res.RowsAffected), res.Error
 }
 

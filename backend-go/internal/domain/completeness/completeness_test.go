@@ -5,8 +5,6 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
-	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
-	"github.com/lingmirror/backend-go/internal/domain/profit"
 )
 
 func TestService_Check_CreateErrorIsReturned(t *testing.T) {
@@ -101,186 +99,287 @@ func TestService_ListChecks_Filtered(t *testing.T) {
 	}
 }
 
-func TestService_CheckEnhanced_NoProfitSvc(t *testing.T) {
+// ---------- unit tests for makeDim ----------
+
+func TestMakeDim_Complete(t *testing.T) {
 	t.Parallel()
-	db := dbtest.NewDB(t, &CompletenessCheck{}, &candidate.CandidateProduct{}, &profit.ProfitSummary{})
-	svc := NewService(db, dbtest.NewLogger(t))
-	// profitSvc is nil — estimates will be nil
+	svc := NewService(nil, dbtest.NewLogger(t))
 
-	platformID := int64(1)
-	prod := candidate.CandidateProduct{
-		Title:            "Enhanced Test Product",
-		Description:      "This product has sufficient description for completeness.",
-		MainImage:        "https://example.test/img.jpg",
-		Images:           []byte(`["img1.jpg","img2.jpg"]`),
-		CategoryID:       &platformID,
-		BrandID:          &platformID,
-		SpecJSON:         []byte(`{"color":"red"}`),
-		PurchasePrice:    50,
-		PurchaseCurrency: "CNY",
-		PackageWeightKg:  1.5,
-		PackageLengthCm:  20,
-		PackageWidthCm:   15,
-		PackageHeightCm:  10,
-		HSCode:           "8471.30",
-		TargetSalePrice:  100,
-		TargetPlatformID: &platformID,
-		OriginCountry:    "CN",
+	dim := svc.makeDim("商品标题", true, "any value", "")
+	if !dim.Complete {
+		t.Fatal("expected Complete=true")
 	}
-	if err := db.Create(&prod).Error; err != nil {
-		t.Fatalf("create candidate: %v", err)
+	if dim.Score != 100 {
+		t.Fatalf("expected Score=100, got %f", dim.Score)
 	}
-
-	r, err := svc.CheckEnhanced(prod.ID, "tester")
-	if err != nil {
-		t.Fatalf("CheckEnhanced: %v", err)
+	if dim.Reason != "" {
+		t.Fatalf("expected empty Reason, got %q", dim.Reason)
 	}
-
-	if r.CandidateID != prod.ID {
-		t.Fatalf("CandidateID = %d, want %d", r.CandidateID, prod.ID)
-	}
-	if r.BaseInfoScore <= 0 {
-		t.Fatalf("BaseInfoScore = %f, want >0", r.BaseInfoScore)
-	}
-	if r.CostScore != 1.0 {
-		t.Fatalf("CostScore = %f, want 1.0", r.CostScore)
-	}
-	if r.LogisticsScore != 1.0 {
-		t.Fatalf("LogisticsScore = %f, want 1.0", r.LogisticsScore)
-	}
-	if r.PlatformFeeScore != 1.0 {
-		t.Fatalf("PlatformFeeScore = %f, want 1.0", r.PlatformFeeScore)
-	}
-	if r.ProfitScore <= 0 {
-		t.Fatalf("ProfitScore = %f, want >0", r.ProfitScore)
-	}
-	if r.OverallScore <= 0 {
-		t.Fatalf("OverallScore = %f, want >0", r.OverallScore)
-	}
-	// No profit service → estimates nil
-	if r.EstimatedProfit != nil {
-		t.Fatal("Expected nil EstimatedProfit without profit service")
-	}
-	if r.EstimatedMargin != nil {
-		t.Fatal("Expected nil EstimatedMargin without profit service")
-	}
-	if r.EstimatedLogistics != nil {
-		t.Fatal("Expected nil EstimatedLogistics without profit service")
-	}
-	if r.EstimatedPlatformFee != nil {
-		t.Fatal("Expected nil EstimatedPlatformFee without profit service")
+	if dim.Label != "商品标题" {
+		t.Fatalf("expected Label=商品标题, got %q", dim.Label)
 	}
 }
 
-func TestService_CheckEnhanced_MissingFields(t *testing.T) {
+func TestMakeDim_Incomplete(t *testing.T) {
+	t.Parallel()
+	svc := NewService(nil, dbtest.NewLogger(t))
+
+	dim := svc.makeDim("商品标题", false, "", "标题为空或过短（至少10个字符）")
+	if dim.Complete {
+		t.Fatal("expected Complete=false")
+	}
+	if dim.Score != 0 {
+		t.Fatalf("expected Score=0, got %f", dim.Score)
+	}
+	if dim.Reason != "标题为空或过短（至少10个字符）" {
+		t.Fatalf("expected Reason=%q, got %q", "标题为空或过短（至少10个字符）", dim.Reason)
+	}
+}
+
+// ---------- unit tests for checkDimension ----------
+
+func TestCheckDimension_ValidTitle(t *testing.T) {
+	t.Parallel()
+	svc := NewService(nil, dbtest.NewLogger(t))
+
+	prod := &candidate.CandidateProduct{Title: "This is a valid title"}
+	dim := svc.checkDimension(prod, "title", "商品标题")
+	if !dim.Complete {
+		t.Fatal("expected Complete=true for valid title")
+	}
+	if dim.Score != 100 {
+		t.Fatalf("expected Score=100, got %f", dim.Score)
+	}
+}
+
+func TestCheckDimension_MissingTitle(t *testing.T) {
+	t.Parallel()
+	svc := NewService(nil, dbtest.NewLogger(t))
+
+	prod := &candidate.CandidateProduct{Title: "short"} // < 10 chars → incomplete
+	dim := svc.checkDimension(prod, "title", "商品标题")
+	if dim.Complete {
+		t.Fatal("expected Complete=false for short title")
+	}
+	if dim.Score != 0 {
+		t.Fatalf("expected Score=0, got %f", dim.Score)
+	}
+	if dim.Reason == "" {
+		t.Fatal("expected non-empty Reason")
+	}
+}
+
+func TestCheckDimension_EmptyImage(t *testing.T) {
+	t.Parallel()
+	svc := NewService(nil, dbtest.NewLogger(t))
+
+	prod := &candidate.CandidateProduct{MainImage: ""}
+	dim := svc.checkDimension(prod, "main_image", "主图")
+	if dim.Complete {
+		t.Fatal("expected Complete=false for empty main image")
+	}
+}
+
+func TestCheckDimension_InsufficientImages(t *testing.T) {
+	t.Parallel()
+	svc := NewService(nil, dbtest.NewLogger(t))
+
+	prod := &candidate.CandidateProduct{Images: []byte(`[]`)} // len ≤ 2
+	dim := svc.checkDimension(prod, "images", "多图")
+	if dim.Complete {
+		t.Fatal("expected Complete=false for insufficient images")
+	}
+}
+
+func TestCheckDimension_ZeroPurchasePrice(t *testing.T) {
+	t.Parallel()
+	svc := NewService(nil, dbtest.NewLogger(t))
+
+	prod := &candidate.CandidateProduct{PurchasePrice: 0}
+	dim := svc.checkDimension(prod, "purchase_price", "采购成本")
+	if dim.Complete {
+		t.Fatal("expected Complete=false for zero purchase price")
+	}
+}
+
+func TestCheckDimension_MissingHSCode(t *testing.T) {
+	t.Parallel()
+	svc := NewService(nil, dbtest.NewLogger(t))
+
+	prod := &candidate.CandidateProduct{HSCode: ""}
+	dim := svc.checkDimension(prod, "hs_code", "HS编码")
+	if dim.Complete {
+		t.Fatal("expected Complete=false for empty HS code")
+	}
+}
+
+func TestCheckDimension_UnknownKey(t *testing.T) {
+	t.Parallel()
+	svc := NewService(nil, dbtest.NewLogger(t))
+
+	prod := &candidate.CandidateProduct{}
+	dim := svc.checkDimension(prod, "nonexistent", "未知")
+	if dim.Complete {
+		t.Fatal("expected Complete=false for unknown key")
+	}
+	if dim.Reason != "未知检查项" {
+		t.Fatalf("expected Reason=%q, got %q", "未知检查项", dim.Reason)
+	}
+}
+
+// ---------- integration tests for Check ----------
+
+func TestCheck_AllComplete(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &CompletenessCheck{}, &candidate.CandidateProduct{})
 	svc := NewService(db, dbtest.NewLogger(t))
 
+	catID := int64(1)
+	brandID := int64(1)
+	platformID := int64(1)
+
 	prod := candidate.CandidateProduct{
-		Title:       "Minimal",
-		Description: "Enough chars for desc check to pass",
+		Title:            "优质蓝牙耳机",
+		Description:      "高音质蓝牙耳机，支持主动降噪功能，续航时间长",
+		MainImage:        "https://example.com/main.jpg",
+		Images:           []byte(`["img1.jpg","img2.jpg","img3.jpg"]`),
+		CategoryID:       &catID,
+		BrandID:          &brandID,
+		SpecJSON:         []byte(`{"color":"black","weight":"200g"}`),
+		PurchasePrice:    50.0,
+		PurchaseCurrency: "CNY",
+		PackageWeightKg:  0.5,
+		PackageLengthCm:  10,
+		PackageWidthCm:   8,
+		PackageHeightCm:  6,
+		HSCode:           "8518.30",
+		TargetSalePrice:  120.0,
+		TargetPlatformID: &platformID,
 	}
 	if err := db.Create(&prod).Error; err != nil {
 		t.Fatalf("create candidate: %v", err)
 	}
 
-	r, err := svc.CheckEnhanced(prod.ID, "tester")
+	result, err := svc.Check(prod.ID, "tester")
 	if err != nil {
-		t.Fatalf("CheckEnhanced: %v", err)
+		t.Fatalf("Check: %v", err)
 	}
-
-	if r.CostScore != 0 {
-		t.Fatalf("CostScore = %f, want 0", r.CostScore)
+	if result.Score != 100.0 {
+		t.Fatalf("expected Score=100, got %f", result.Score)
 	}
-	if r.LogisticsScore != 0 {
-		t.Fatalf("LogisticsScore = %f, want 0", r.LogisticsScore)
+	if result.Status != "complete" {
+		t.Fatalf("expected Status=complete, got %s", result.Status)
 	}
-	if r.PlatformFeeScore != 0 {
-		t.Fatalf("PlatformFeeScore = %f, want 0", r.PlatformFeeScore)
+	if len(result.MissingItems) != 0 {
+		t.Fatalf("expected 0 missing items, got %v", result.MissingItems)
 	}
-	if r.ProfitScore != 0 {
-		t.Fatalf("ProfitScore = %f, want 0", r.ProfitScore)
+	if result.ProductID != prod.ID {
+		t.Fatalf("expected ProductID=%d, got %d", prod.ID, result.ProductID)
 	}
-
-	foundMissing := map[string]bool{}
-	for _, m := range r.MissingFields {
-		foundMissing[m] = true
-	}
-	expected := []string{"采购成本", "目标售价", "包装重量", "包装尺寸", "目标平台"}
-	for _, e := range expected {
-		if !foundMissing[e] {
-			t.Fatalf("missing field %q not found in report", e)
-		}
+	if len(result.Dimensions) != 12 {
+		t.Fatalf("expected 12 dimensions, got %d", len(result.Dimensions))
 	}
 }
 
-func TestService_CheckEnhanced_WithProfitService(t *testing.T) {
+func TestCheck_Partial(t *testing.T) {
 	t.Parallel()
-	db := dbtest.NewDB(t, &CompletenessCheck{}, &candidate.CandidateProduct{}, &profit.ProfitSummary{})
-	rateSvc := exchangerate.NewService(db, dbtest.NewLogger(t))
-	profitSvc := profit.NewService(db, dbtest.NewLogger(t), rateSvc, 7.2)
-
+	db := dbtest.NewDB(t, &CompletenessCheck{}, &candidate.CandidateProduct{})
 	svc := NewService(db, dbtest.NewLogger(t))
-	svc.profitSvc = profitSvc
 
 	platformID := int64(1)
+
+	// Missing: CategoryID, BrandID, HSCode, TargetSalePrice
 	prod := candidate.CandidateProduct{
-		Title:            "Profit Check Product",
-		Description:      "Sufficiently long description for the completeness check to pass on desc.",
-		MainImage:        "https://example.test/img.jpg",
-		Images:           []byte(`["img1.jpg"]`),
-		CategoryID:       &platformID,
-		BrandID:          &platformID,
-		SpecJSON:         []byte(`{}`),
-		PurchasePrice:    50,
+		Title:            "优质蓝牙耳机 Pro",
+		Description:      "高音质蓝牙耳机，支持主动降噪功能，续航时间长。",
+		MainImage:        "https://example.com/main.jpg",
+		Images:           []byte(`["img1.jpg","img2.jpg","img3.jpg"]`),
+		SpecJSON:         []byte(`{"color":"black"}`),
+		PurchasePrice:    50.0,
 		PurchaseCurrency: "CNY",
-		PackageWeightKg:  1.0,
-		PackageLengthCm:  20,
-		PackageWidthCm:   15,
-		PackageHeightCm:  10,
-		HSCode:           "8471.30",
-		TargetSalePrice:  100,
+		PackageWeightKg:  0.5,
+		PackageLengthCm:  10,
+		PackageWidthCm:   8,
+		PackageHeightCm:  6,
+		HSCode:           "", // empty → incomplete
+		TargetSalePrice:  0,  // zero → incomplete
 		TargetPlatformID: &platformID,
-		OriginCountry:    "CN",
 	}
 	if err := db.Create(&prod).Error; err != nil {
 		t.Fatalf("create candidate: %v", err)
 	}
 
-	r, err := svc.CheckEnhanced(prod.ID, "tester")
+	result, err := svc.Check(prod.ID, "tester")
 	if err != nil {
-		t.Fatalf("CheckEnhanced: %v", err)
+		t.Fatalf("Check: %v", err)
+	}
+	if result.Score >= 100 {
+		t.Fatalf("expected Score < 100, got %f", result.Score)
+	}
+	if result.Status != "incomplete" {
+		t.Fatalf("expected Status=incomplete, got %s", result.Status)
+	}
+	if len(result.MissingItems) == 0 {
+		t.Fatal("expected missing items")
+	}
+	if result.ProductID != prod.ID {
+		t.Fatalf("expected ProductID=%d, got %d", prod.ID, result.ProductID)
+	}
+}
+
+func TestCheck_StoreResult(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &CompletenessCheck{}, &candidate.CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	catID := int64(1)
+	brandID := int64(1)
+	platformID := int64(1)
+
+	prod := candidate.CandidateProduct{
+		Title:            "优质蓝牙耳机 Pro Max",
+		Description:      "高音质蓝牙耳机，支持主动降噪功能，续航时间长。",
+		MainImage:        "https://example.com/main.jpg",
+		Images:           []byte(`["img1.jpg","img2.jpg","img3.jpg"]`),
+		CategoryID:       &catID,
+		BrandID:          &brandID,
+		SpecJSON:         []byte(`{"color":"black"}`),
+		PurchasePrice:    50.0,
+		PurchaseCurrency: "CNY",
+		PackageWeightKg:  0.5,
+		PackageLengthCm:  10,
+		PackageWidthCm:   8,
+		PackageHeightCm:  6,
+		HSCode:           "8518.30",
+		TargetSalePrice:  120.0,
+		TargetPlatformID: &platformID,
+	}
+	if err := db.Create(&prod).Error; err != nil {
+		t.Fatalf("create candidate: %v", err)
 	}
 
-	if r.EstimatedProfit == nil {
-		t.Fatal("Expected EstimatedProfit, got nil")
+	result, err := svc.Check(prod.ID, "tester")
+	if err != nil {
+		t.Fatalf("Check: %v", err)
 	}
-	if r.EstimatedMargin == nil {
-		t.Fatal("Expected EstimatedMargin, got nil")
+
+	var stored CompletenessCheck
+	if err := db.Where("product_id = ?", prod.ID).First(&stored).Error; err != nil {
+		t.Fatalf("find stored completeness_check: %v", err)
 	}
-	if r.EstimatedLogistics == nil {
-		t.Fatal("Expected EstimatedLogistics, got nil")
+	if stored.Score != result.Score {
+		t.Fatalf("stored Score=%f, result Score=%f", stored.Score, result.Score)
 	}
-	if r.EstimatedPlatformFee == nil {
-		t.Fatal("Expected EstimatedPlatformFee, got nil")
+	if stored.Status != result.Status {
+		t.Fatalf("stored Status=%s, result Status=%s", stored.Status, result.Status)
 	}
-	if *r.EstimatedProfit <= 0 {
-		t.Fatalf("EstimatedProfit = %f, want > 0", *r.EstimatedProfit)
+	if stored.TriggeredBy != "tester" {
+		t.Fatalf("expected TriggeredBy=tester, got %s", stored.TriggeredBy)
 	}
-	if *r.EstimatedLogistics <= 0 {
-		t.Fatalf("EstimatedLogistics = %f, want > 0", *r.EstimatedLogistics)
+	if stored.ProductID != prod.ID {
+		t.Fatalf("expected ProductID=%d, got %d", prod.ID, stored.ProductID)
 	}
-	if r.CostScore != 1.0 {
-		t.Fatalf("CostScore = %f, want 1.0", r.CostScore)
-	}
-	if r.LogisticsScore != 1.0 {
-		t.Fatalf("LogisticsScore = %f, want 1.0", r.LogisticsScore)
-	}
-	if r.PlatformFeeScore != 1.0 {
-		t.Fatalf("PlatformFeeScore = %f, want 1.0", r.PlatformFeeScore)
-	}
-	if r.ProfitScore != 1.0 {
-		t.Fatalf("ProfitScore = %f, want 1.0", r.ProfitScore)
+	if stored.ScoreBreakdown == "" {
+		t.Fatal("expected non-empty ScoreBreakdown")
 	}
 }

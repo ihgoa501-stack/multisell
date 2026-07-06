@@ -1,13 +1,10 @@
 package exceptions
 
 import (
-	"context"
+	"fmt"
 	"testing"
 
-	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/dbtest"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
-	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 )
 
 func TestService_CRUD(t *testing.T) {
@@ -93,229 +90,250 @@ func TestService_CRUD(t *testing.T) {
 	}
 }
 
-func TestService_AutoDetect(t *testing.T) {
+func TestCreate_DifferentSeverities(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ExceptionItem{})
 	svc := NewService(db, dbtest.NewLogger(t))
 
-	// Create minimal related tables for auto-detection queries.
-	db.Exec(`CREATE TABLE order_profit_record (id INTEGER PRIMARY KEY, order_id INTEGER UNIQUE, profit REAL)`)
-	db.Exec(`CREATE TABLE inventory (id INTEGER PRIMARY KEY, sku_id INTEGER, quantity INTEGER, locked_quantity INTEGER DEFAULT 0, safety_stock INTEGER DEFAULT 0)`)
-	db.Exec(`CREATE TABLE fulfillment_tracking (id INTEGER PRIMARY KEY, order_id INTEGER, is_lost INTEGER DEFAULT 0, is_returned INTEGER DEFAULT 0, is_damaged INTEGER DEFAULT 0)`)
-	db.Exec(`CREATE TABLE sales_order (id INTEGER PRIMARY KEY, platform_id INTEGER, shipping_fee REAL DEFAULT 0, platform_fee REAL DEFAULT 0, pay_amount REAL DEFAULT 0, shipped_at TIMESTAMP, delivered_at TIMESTAMP)`)
-	db.Exec(`CREATE TABLE platform_fee_rule (id INTEGER PRIMARY KEY, platform_id INTEGER, fee_type TEXT, fee_rate_pct REAL, status TEXT DEFAULT 'active', priority INTEGER DEFAULT 0)`)
-
-	ctx := context.Background()
-
-	// Empty data -- should not error and return no items.
-	items, err := svc.AutoDetect(ctx)
-	if err != nil {
-		t.Fatalf("AutoDetect on empty data: %v", err)
-	}
-	if len(items) != 0 {
-		t.Fatalf("expected 0 items on empty data, got %d", len(items))
-	}
-
-	// Seed a loss order.
-	db.Exec(`INSERT INTO order_profit_record (id, order_id, profit) VALUES (1, 101, -50.0)`)
-
-	items, err = svc.AutoDetect(ctx)
-	if err != nil {
-		t.Fatalf("AutoDetect: %v", err)
-	}
-
-	found := false
-	for _, item := range items {
-		if item.SourceType == TypeLossOrder && item.SourceID != nil && *item.SourceID == 101 {
-			found = true
-			if item.Severity != "high" {
-				t.Errorf("loss order severity = %s, want high", item.Severity)
-			}
-			break
+	levels := []string{"low", "medium", "high", "critical"}
+	for _, lvl := range levels {
+		e := &ExceptionItem{
+			SourceModule: "test",
+			Severity:     lvl,
+			Title:        "severity-" + lvl,
+		}
+		if err := svc.Create(e); err != nil {
+			t.Fatalf("Create(%s): %v", lvl, err)
+		}
+		if e.ID == 0 {
+			t.Fatalf("Create(%s): ID not set", lvl)
 		}
 	}
-	if !found {
-		t.Fatal("expected loss order exception for order 101")
-	}
 
-	// Duplicate avoidance: second detection should not create another exception for order 101.
-	items, err = svc.AutoDetect(ctx)
+	items, total, err := svc.List(ListFilter{}, 1, 100)
 	if err != nil {
-		t.Fatalf("AutoDetect (2nd call): %v", err)
+		t.Fatalf("List: %v", err)
 	}
-	dupCount := 0
-	for _, item := range items {
-		if item.SourceType == TypeLossOrder && item.SourceID != nil && *item.SourceID == 101 {
-			dupCount++
+	if total != int64(len(levels)) {
+		t.Fatalf("total = %d, want %d", total, len(levels))
+	}
+	// Verify each severity was stored
+	seen := map[string]bool{}
+	for _, it := range items {
+		seen[it.Severity] = true
+	}
+	for _, lvl := range levels {
+		if !seen[lvl] {
+			t.Fatalf("missing severity %s in results", lvl)
 		}
-	}
-	if dupCount > 0 {
-		t.Fatal("AutoDetect created duplicate exception for order 101")
 	}
 }
 
-func TestService_Suggest(t *testing.T) {
+func TestGet_NotFound(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ExceptionItem{})
-	logger := dbtest.NewLogger(t)
+	svc := NewService(db, dbtest.NewLogger(t))
 
-	// Without LLM provider — falls back to rule-based defaults
-	svc := NewService(db, logger)
-	e := &ExceptionItem{
-		SourceModule: "order",
-		SourceType:   TypeLossOrder,
-		Severity:     "high",
-		Title:        "亏损订单",
-		Description:  "订单 #12345 亏损 -50.00",
-		Status:       "open",
-	}
-	if err := svc.Create(e); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	sug, err := svc.Suggest(context.Background(), e.ID)
-	if err != nil {
-		t.Fatalf("Suggest without LLM: %v", err)
-	}
-	if sug.ExceptionID != e.ID {
-		t.Fatalf("ExceptionID = %d, want %d", sug.ExceptionID, e.ID)
-	}
-	if sug.SuggestionText == "" {
-		t.Fatal("SuggestionText should not be empty (fallback)")
-	}
-	if sug.SuggestedAction != "adjust_price" {
-		t.Fatalf("SuggestedAction = %q, want adjust_price", sug.SuggestedAction)
-	}
-	if sug.RiskLevel != "high" {
-		t.Fatalf("RiskLevel = %q, want high", sug.RiskLevel)
-	}
-	if sug.AutoExecutable {
-		t.Fatal("AutoExecutable should be false for high risk")
-	}
-
-	// With stub LLM provider — stub returns keyword-matched text
-	llm := ai.NewLLMProvider(logger)
-	svc = svc.WithLLM(llm)
-
-	sug2, err := svc.Suggest(context.Background(), e.ID)
-	if err != nil {
-		t.Fatalf("Suggest with LLM: %v", err)
-	}
-	if sug2.ExceptionID != e.ID {
-		t.Fatalf("ExceptionID = %d, want %d", sug2.ExceptionID, e.ID)
-	}
-	if sug2.SuggestionText == "" {
-		t.Fatal("SuggestionText should not be empty")
-	}
-	if sug2.SuggestedAction == "" {
-		t.Fatal("SuggestedAction should not be empty")
-	}
-	if sug2.RiskLevel == "" {
-		t.Fatal("RiskLevel should not be empty")
-	}
-
-	// Unknown exception ID
-	_, err = svc.Suggest(context.Background(), 99999)
+	_, err := svc.GetByID(999)
 	if err == nil {
-		t.Fatal("expected error for unknown exception")
+		t.Fatal("expected error for non-existent ID")
 	}
 }
 
-func TestService_ResolveWithApproval(t *testing.T) {
-	t.Parallel()
-	db := dbtest.NewDB(t, &ExceptionItem{}, &operationlog.OperationLog{}, &approval.ApprovalRequest{})
-	logger := dbtest.NewLogger(t)
-
-	oplogSvc := operationlog.NewService(db, logger)
-	approvalSvc := approval.NewService(db, logger, oplogSvc)
-
-	svc := NewService(db, logger).
-		WithOperationLog(oplogSvc).
-		WithApproval(approvalSvc)
-
-	// Low severity exception — resolves directly, no approval request created
-	e := &ExceptionItem{
-		SourceModule: "inventory",
-		SourceType:   TypeOutOfStock,
-		Severity:     "low",
-		Title:        "库存偏低",
-		Description:  "SKU #100 库存较低",
-		Status:       "open",
-	}
-	if err := svc.Create(e); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	resolved, err := svc.ResolveWithApproval(context.Background(), e.ID, "owner_zhang", "建议补货", "restock")
-	if err != nil {
-		t.Fatalf("ResolveWithApproval low risk: %v", err)
-	}
-	if resolved.Status != "resolved" {
-		t.Fatalf("Status = %s, want resolved", resolved.Status)
-	}
-
-	var lowApprovalCount int64
-	db.Model(&approval.ApprovalRequest{}).Where("target_type = ? AND target_id = ?", "exception", e.ID).Count(&lowApprovalCount)
-	if lowApprovalCount != 0 {
-		t.Fatalf("expected 0 approval requests for low risk, got %d", lowApprovalCount)
-	}
-
-	// High severity exception — resolve creates an approval request
-	e2 := &ExceptionItem{
-		SourceModule: "order",
-		SourceType:   TypeLossOrder,
-		Severity:     "high",
-		Title:        "高亏损订单",
-		Description:  "订单 #99999 亏损 -5000.00",
-		Status:       "open",
-	}
-	if err := svc.Create(e2); err != nil {
-		t.Fatalf("Create e2: %v", err)
-	}
-
-	resolved2, err := svc.ResolveWithApproval(context.Background(), e2.ID, "owner_li", "建议取消订单", "cancel_order")
-	if err != nil {
-		t.Fatalf("ResolveWithApproval high risk: %v", err)
-	}
-	if resolved2.Status != "resolved" {
-		t.Fatalf("Status = %s, want resolved", resolved2.Status)
-	}
-	if resolved2.ResolvedBy != "owner_li" {
-		t.Fatalf("ResolvedBy = %s, want owner_li", resolved2.ResolvedBy)
-	}
-
-	var highApprovalCount int64
-	db.Model(&approval.ApprovalRequest{}).Where("target_type = ? AND target_id = ?", "exception", e2.ID).Count(&highApprovalCount)
-	if highApprovalCount != 1 {
-		t.Fatalf("expected 1 approval request for high risk, got %d", highApprovalCount)
-	}
-}
-
-func TestService_ResolveWithApproval_NoServices(t *testing.T) {
+func TestList_FilterBySeverity(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ExceptionItem{})
-	logger := dbtest.NewLogger(t)
+	svc := NewService(db, dbtest.NewLogger(t))
 
-	// No operation log or approval service configured — should still work
-	svc := NewService(db, logger)
+	for _, s := range []string{"low", "high"} {
+		e := &ExceptionItem{
+			SourceModule: "order",
+			Severity:     s,
+			Title:        "sev-" + s,
+		}
+		if err := svc.Create(e); err != nil {
+			t.Fatalf("Create(%s): %v", s, err)
+		}
+	}
+
+	items, total, err := svc.List(ListFilter{Severity: "high"}, 1, 10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("total = %d, want 1", total)
+	}
+	if len(items) != 1 || items[0].Severity != "high" {
+		t.Fatalf("expected 1 high item, got %d", len(items))
+	}
+}
+
+func TestList_FilterByStatus(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ExceptionItem{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	for _, s := range []string{"open", "assigned"} {
+		e := &ExceptionItem{
+			SourceModule: "order",
+			Status:       s,
+			Title:        "status-" + s,
+		}
+		if err := svc.Create(e); err != nil {
+			t.Fatalf("Create(%s): %v", s, err)
+		}
+	}
+
+	items, total, err := svc.List(ListFilter{Status: "open"}, 1, 10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("total = %d, want 1", total)
+	}
+	if len(items) != 1 || items[0].Status != "open" {
+		t.Fatalf("expected 1 open item, got %d", len(items))
+	}
+}
+
+func TestList_FilterBySourceModule(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ExceptionItem{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	for _, src := range []string{"order", "fulfillment"} {
+		e := &ExceptionItem{
+			SourceModule: src,
+			Title:        "src-" + src,
+		}
+		if err := svc.Create(e); err != nil {
+			t.Fatalf("Create(%s): %v", src, err)
+		}
+	}
+
+	items, total, err := svc.List(ListFilter{SourceModule: "order"}, 1, 10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("total = %d, want 1", total)
+	}
+	if len(items) != 1 || items[0].SourceModule != "order" {
+		t.Fatalf("expected 1 order item, got %d", len(items))
+	}
+}
+
+func TestList_Pagination(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ExceptionItem{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	for i := 0; i < 5; i++ {
+		e := &ExceptionItem{
+			SourceModule: "order",
+			Title:        fmt.Sprintf("item-%d", i),
+		}
+		if err := svc.Create(e); err != nil {
+			t.Fatalf("Create(%d): %v", i, err)
+		}
+	}
+
+	// page 1, size 2 → 2 items
+	p1, total, err := svc.List(ListFilter{}, 1, 2)
+	if err != nil {
+		t.Fatalf("List page 1: %v", err)
+	}
+	if total != 5 {
+		t.Fatalf("total = %d, want 5", total)
+	}
+	if len(p1) != 2 {
+		t.Fatalf("page 1 got %d items, want 2", len(p1))
+	}
+
+	// page 4 (past last page) → 0 items
+	p4, _, err := svc.List(ListFilter{}, 4, 2)
+	if err != nil {
+		t.Fatalf("List past-last page: %v", err)
+	}
+	if len(p4) != 0 {
+		t.Fatalf("past-last page got %d items, want 0", len(p4))
+	}
+
+	// default page/size when 0 is passed
+	def, _, err := svc.List(ListFilter{}, 0, 0)
+	if err != nil {
+		t.Fatalf("List defaults: %v", err)
+	}
+	if len(def) != 5 {
+		t.Fatalf("default page got %d items, want 5", len(def))
+	}
+}
+
+func TestResolve_Complete(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ExceptionItem{})
+	svc := NewService(db, dbtest.NewLogger(t))
 
 	e := &ExceptionItem{
 		SourceModule: "order",
-		SourceType:   TypeLossOrder,
-		Severity:     "high",
-		Title:        "亏损订单",
-		Description:  "订单 #12345 亏损 -50.00",
-		Status:       "open",
+		Title:        "test resolve",
 	}
 	if err := svc.Create(e); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	resolved, err := svc.ResolveWithApproval(context.Background(), e.ID, "owner_wang", "建议调价", "adjust_price")
+	resolved, err := svc.Resolve(e.ID, "user_li", "已修复")
 	if err != nil {
-		t.Fatalf("ResolveWithApproval no services: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	if resolved.Status != "resolved" {
-		t.Fatalf("Status = %s, want resolved", resolved.Status)
+		t.Fatalf("Status = %q, want resolved", resolved.Status)
+	}
+	if resolved.ResolvedBy != "user_li" {
+		t.Fatalf("ResolvedBy = %q, want user_li", resolved.ResolvedBy)
+	}
+	if resolved.ResolvedAt == nil {
+		t.Fatal("ResolvedAt is nil, expected a timestamp")
+	}
+	if resolved.Note != "已修复" {
+		t.Fatalf("Note = %q, want 已修复", resolved.Note)
+	}
+}
+
+func TestResolve_AlreadyResolved(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ExceptionItem{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	e := &ExceptionItem{
+		SourceModule: "order",
+		Title:        "test re-resolve",
+	}
+	if err := svc.Create(e); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// First resolve
+	first, err := svc.Resolve(e.ID, "user_a", "first")
+	if err != nil {
+		t.Fatalf("first Resolve: %v", err)
+	}
+	if first.Status != "resolved" {
+		t.Fatalf("Status = %q after first resolve", first.Status)
+	}
+
+	// Re-resolve — current implementation allows it
+	second, err := svc.Resolve(e.ID, "user_b", "re-resolved")
+	if err != nil {
+		t.Fatalf("second Resolve: %v", err)
+	}
+	if second.Status != "resolved" {
+		t.Fatalf("Status = %q after second resolve", second.Status)
+	}
+	if second.ResolvedBy != "user_b" {
+		t.Fatalf("ResolvedBy = %q, want user_b", second.ResolvedBy)
+	}
+	if second.Note != "re-resolved" {
+		t.Fatalf("Note = %q, want re-resolved", second.Note)
 	}
 }

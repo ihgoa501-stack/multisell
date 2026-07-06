@@ -88,7 +88,14 @@ func (s *Service) UpdateRule(rule *PersonalRule) error {
 
 // DeleteRule deletes (hard-deletes) a personal rule.
 func (s *Service) DeleteRule(id int64) error {
-	return s.db.Delete(&PersonalRule{}, id).Error
+	result := s.db.Delete(&PersonalRule{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // recordMarkChange writes a RuleMarkChange entry for a status transition.

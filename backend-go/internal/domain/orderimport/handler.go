@@ -182,31 +182,3 @@ func (h *Handler) Summary(c *gin.Context) {
 	}
 	response.Success(c, sum)
 }
-
-// GetStatus GET /order-import/status
-func (h *Handler) GetStatus(c *gin.Context) {
-	statuses, err := h.service.GetSyncStatus()
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, statuses)
-}
-
-// Retry POST /order-import/:id/retry
-func (h *Handler) Retry(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	batch, err := h.service.RetryImport(id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "batch not found")
-			return
-		}
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, batch)
-}

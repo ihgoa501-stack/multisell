@@ -223,6 +223,10 @@ export class ApiClient {
         if (this.inflightRequests.get(urlStr) === promise) {
           this.inflightRequests.delete(urlStr);
         }
+      }).catch(() => {
+        // Suppress: the .finally() promise inherits rejection from the
+        // original promise; errors propagate through the returned promise
+        // and are handled by the caller.
       });
       return promise;
     }

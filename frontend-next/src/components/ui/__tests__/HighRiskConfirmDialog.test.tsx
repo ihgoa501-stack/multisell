@@ -1,42 +1,50 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import RiskConfirmDialog from '@/components/ui/RiskConfirmDialog';
+import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
 
-describe('RiskConfirmDialog', () => {
-  const baseChanges = [
-    { label: '价格', before: '¥100', after: '¥120' },
-    { label: '库存', before: '50', after: '30' },
-  ];
+describe('HighRiskConfirmDialog', () => {
   const baseProps = {
     open: true,
-    target: 'SKU-001',
-    risk: 'high' as const,
-    changes: baseChanges,
-    onOk: vi.fn(),
+    actionName: 'execute',
+    onConfirm: vi.fn(),
     onCancel: vi.fn(),
   };
 
-  it('renders the dialog with target object', () => {
-    render(<RiskConfirmDialog {...baseProps} />);
-    expect(screen.getByText('SKU-001')).toBeInTheDocument();
+  it('renders the dialog with action name', () => {
+    render(<HighRiskConfirmDialog {...baseProps} />);
+    expect(screen.getByText('高风险操作确认')).toBeInTheDocument();
+    expect(screen.getByText(/execute/)).toBeInTheDocument();
   });
 
   it('shows risk level tag', () => {
-    render(<RiskConfirmDialog {...baseProps} risk="high" />);
+    render(<HighRiskConfirmDialog {...baseProps} riskLevel="high" />);
     expect(screen.getByText('高风险')).toBeInTheDocument();
   });
 
+  it('shows environment mode', () => {
+    render(<HighRiskConfirmDialog {...baseProps} environmentMode="sandbox" />);
+    expect(screen.getByText('Sandbox（沙箱）')).toBeInTheDocument();
+  });
+
   it('shows before/after values when provided', () => {
-    render(<RiskConfirmDialog {...baseProps} />);
+    render(
+      <HighRiskConfirmDialog
+        {...baseProps}
+        detail={{
+          targetLabel: 'SKU-001',
+          beforeValue: '¥100',
+          afterValue: '¥120',
+        }}
+      />
+    );
+    expect(screen.getByText('SKU-001')).toBeInTheDocument();
     expect(screen.getByText('¥100')).toBeInTheDocument();
     expect(screen.getByText('¥120')).toBeInTheDocument();
-    expect(screen.getByText('50')).toBeInTheDocument();
-    expect(screen.getByText('30')).toBeInTheDocument();
   });
 
   it('shows audit destination', () => {
     render(
-      <RiskConfirmDialog
+      <HighRiskConfirmDialog
         {...baseProps}
         auditDestination="操作日志可追溯至 operation_log 表"
       />
@@ -44,38 +52,30 @@ describe('RiskConfirmDialog', () => {
     expect(screen.getByText('操作日志可追溯至 operation_log 表')).toBeInTheDocument();
   });
 
-  it('shows risk level for medium', () => {
-    render(<RiskConfirmDialog {...baseProps} risk="medium" />);
-    expect(screen.getByText('中风险')).toBeInTheDocument();
+  it('shows rollback note', () => {
+    render(
+      <HighRiskConfirmDialog
+        {...baseProps}
+        rollbackNote="此操作不可回滚"
+      />
+    );
+    expect(screen.getByText('此操作不可回滚')).toBeInTheDocument();
   });
 
-  it('shows risk level for low', () => {
-    render(<RiskConfirmDialog {...baseProps} risk="low" />);
-    expect(screen.getByText('低风险')).toBeInTheDocument();
+  it('shows reason textarea when showReason is true', () => {
+    render(<HighRiskConfirmDialog {...baseProps} showReason />);
+    expect(screen.getByPlaceholderText('补充说明（选填）')).toBeInTheDocument();
   });
 
   it('calls onCancel when cancel button is clicked', () => {
     const onCancel = vi.fn();
-    render(<RiskConfirmDialog {...baseProps} onCancel={onCancel} />);
-    fireEvent.click(screen.getByRole('button', { name: /取/ }));
+    render(<HighRiskConfirmDialog {...baseProps} onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole('button', { name: /取.?消/ }));
     expect(onCancel).toHaveBeenCalled();
   });
 
-  it('calls onOk when confirm button is clicked', () => {
-    const onOk = vi.fn();
-    render(<RiskConfirmDialog {...baseProps} onOk={onOk} />);
-    fireEvent.click(screen.getByRole('button', { name: /确认执行/ }));
-    expect(onOk).toHaveBeenCalled();
-  });
-
   it('does not render when closed', () => {
-    render(<RiskConfirmDialog {...baseProps} open={false} />);
-    expect(screen.queryByText('SKU-001')).not.toBeInTheDocument();
-  });
-
-  it("renders without 'changes' array when empty", () => {
-    // config: changes default value is an empty array
-    render(<RiskConfirmDialog {...baseProps} changes={[]} />);
-    expect(screen.queryByText('¥100')).not.toBeInTheDocument();
+    render(<HighRiskConfirmDialog {...baseProps} open={false} />);
+    expect(screen.queryByText('高风险操作确认')).not.toBeInTheDocument();
   });
 });

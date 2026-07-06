@@ -46,3 +46,4 @@ frontend-next/e2e/test-results/
 frontend-next/e2e/node_modules/
 .gstack/
 .vscode/
+*.orig
