@@ -96,7 +96,7 @@ func (s *Service) ListTraces(p *common.Pagination, f *TraceListFilter) ([]AITrac
 	return items, total, nil
 }
 
-// GetTrace returns full trace detail.
+// GetTrace returns full trace detail.// GetTrace returns full trace detail.
 func (s *Service) GetTrace(traceID string) (*TraceDetail, error) {
 	return s.traces.GetDetail(traceID)
 }
@@ -248,9 +248,66 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 			if errors.Is(err, actioncatalog.ErrApprovalRequired) {
 				return nil, ErrApprovalRequired
 			}
+		}
+
+		// 3. Allowed source states: "suggested" (auto-approved) or "approved".
+
+		if a.Status != "suggested" && a.Status != "approved" {
+			return nil, &InvalidTransitionError{From: a.Status, To: "executing"}
+		}
+
+		// 4. If the action claims to require approval but hasn't been approved, refuse.
+		if a.RequiresApproval && a.Status == "suggested" {
+			return nil, ErrApprovalRequired
+		}
+
+		// 5. Run guardrails chain on execution (L4 execution guard).
+		if s.guard != nil {
+			payload := map[string]interface{}{}
+			if len(a.Payload) > 0 {
+				_ = json.Unmarshal(a.Payload, &payload)
+			}
+			gIn := &guardrails.GuardInput{
+				Level:   4,
+				AgentID: a.AgentID,
+				ToolName: a.ActionType,
+				ToolInput: map[string]interface{}{
+					"action_type": a.ActionType,
+					"risk_level":  a.RiskLevel,
+					"amount":      payload["amount"],
+					"quantity":    payload["quantity"],
+				},
+			}
+			if userID != nil {
+				gIn.UserID = *userID
+			}
+			gRes, gErr := s.guard.Check(context.Background(), gIn)
+			if gErr != nil {
+				s.logger.Warn("guardrails execution check failed",
+					zap.Int64("action_id", a.ID),
+					zap.Error(gErr))
+			} else if gRes.Blocked {
+				return nil, &InvalidTransitionError{
+					From: a.Status,
+					To:   "blocked_by_guardrails",
+				}
+			}
+		}
+
+		now := nowPtr()
+		executedByUserIDVal := interface{}(nil)
+		if userID != nil {
+			executedByUserIDVal = *userID
+		}
+		updates := map[string]interface{}{
+			"status":              "executing",
+			"executed_by":         operator,
+			"executing_at":        now,
+			"executed_by_user_id": executedByUserIDVal,
+		}
+		if err := s.db.Model(&a).Updates(updates).Error; err != nil {
 			return nil, err
 		}
-	}
 
 	// ── Gate 3: Status transition check ────────────────────────────
 	if a.Status != "suggested" && a.Status != "approved" {
