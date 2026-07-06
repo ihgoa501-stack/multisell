@@ -16,6 +16,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// PublishHook is an optional callback called after ExecuteTask successfully
+// transitions a listing task to "completed". The hook calls the platform
+// adapter's Publish to push the product live. If it returns an error, the
+// task status reverts to "failed" so the operator can retry.
+//
+// ponytail: synchronous, no idempotency key. If the adapter.Publish call
+// succeeds but the network response is lost, a retry may publish the
+// product twice on the platform. Upgrade to EventBus + WithIdempotencyKey
+// when duplicate-safety matters for the target platform.
+type PublishHook func(taskID int64) error
+
 // Service provides listing task business logic.
 type Service struct {
 	db          *gorm.DB
@@ -25,6 +36,7 @@ type Service struct {
 	approvalSvc *approval.Service
 	oplogSvc    *operationlog.Service
 	loopRec     LoopRecorder
+	publishHook PublishHook // nil = skip platform publish, task stays "completed"
 }
 
 // LoopRecorder is the interface for recording feedback back to the evaluation loop.
@@ -645,6 +657,29 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 	if s.loopRec != nil {
 		_ = s.loopRec.RecordExecutionResult(task.ProductID, task.ID, true, "")
 	}
+
+	// Platform publish hook: push product to the platform adapter.
+	// Called after the DB transaction commits so a platform failure
+	// doesn't roll back the completion. On error, revert to "failed"
+	// so the user can retry via the existing RetryFailed/RetryItem APIs.
+	if s.publishHook != nil {
+		if pubErr := s.publishHook(task.ID); pubErr != nil {
+			s.logger.Error("platform publish failed after task completed, reverting to failed",
+				zap.Int64("task_id", task.ID),
+				zap.Error(pubErr),
+			)
+			s.db.Model(&ListingTask{}).Where("id = ?", task.ID).
+				Updates(map[string]interface{}{
+					"status":     "failed",
+					"last_error": pubErr.Error(),
+				})
+			s.db.Model(&ListingTaskItem{}).Where("task_id = ?", task.ID).
+				Where("error_message = '' OR error_message IS NULL").
+				Update("error_message", pubErr.Error())
+				s.db.First(&task, task.ID)
+		}
+	}
+
 	return &task, nil
 }
 
