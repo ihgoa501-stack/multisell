@@ -139,6 +139,49 @@ type PlatformReturn struct {
 	RefundAmount string `json:"refund_amount,omitempty"`
 }
 
+// ---------- 执行模式 (Execution Mode) ----------
+
+// ExecutionMode controls whether platform write operations are actually executed.
+type ExecutionMode int8
+
+const (
+	// ExecutionModeProduction executes writes against the real platform API.
+	ExecutionModeProduction ExecutionMode = 0
+	// ExecutionModeDryRun logs the intended operation but does NOT call the platform.
+	ExecutionModeDryRun ExecutionMode = 1
+	// ExecutionModeSandbox routes writes through the platform's sandbox API.
+	ExecutionModeSandbox ExecutionMode = 2
+)
+
+// modeCtxKey is the context key for execution mode.
+type modeCtxKey struct{}
+
+// WithExecutionMode stores the execution mode in the context.
+func WithExecutionMode(ctx context.Context, mode ExecutionMode) context.Context {
+	return context.WithValue(ctx, modeCtxKey{}, mode)
+}
+
+// ExecutionModeFromCtx retrieves the execution mode from the context.
+// Returns ExecutionModeProduction if not set.
+func ExecutionModeFromCtx(ctx context.Context) ExecutionMode {
+	if v, ok := ctx.Value(modeCtxKey{}).(ExecutionMode); ok {
+		return v
+	}
+	return ExecutionModeProduction
+}
+
+// String returns a human-readable name for the execution mode.
+func (m ExecutionMode) String() string {
+	switch m {
+	case ExecutionModeDryRun:
+		return "dry_run"
+	case ExecutionModeSandbox:
+		return "sandbox"
+	default:
+		return "production"
+	}
+}
+
 // ---------- 平台事件域 (Platform Events) ----------
 
 // PlatformEvent represents an event received from an external e-commerce platform.

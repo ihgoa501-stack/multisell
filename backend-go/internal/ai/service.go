@@ -10,6 +10,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"go.uber.org/zap"
@@ -51,6 +52,13 @@ func (s *Service) WithDispatcher(cmd *command.Dispatcher) *Service {
 // WithCatalog attaches the action catalog for production validation.
 func (s *Service) WithCatalog(cat *actioncatalog.Catalog) *Service {
 	s.cat = cat
+	return s
+}
+
+// WithOperationLog attaches an optional operation-log service for audit logging.
+// If nil, audit logging is silently skipped (graceful degradation).
+func (s *Service) WithOperationLog(svc *operationlog.Service) *Service {
+	s.oplogSvc = svc
 	return s
 }
 
@@ -388,6 +396,11 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	if err := s.db.Model(&a).Updates(finalUpdates).Error; err != nil {
 		return nil, err
 	}
+
+	// Audit log: execution complete (success or failure).
+	status, _ := finalUpdates["status"].(string)
+	s.logExecuteAction(a, operator, status)
+
 	return &a, nil
 }
 

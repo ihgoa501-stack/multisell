@@ -255,6 +255,13 @@ type PublishToOzonInput struct {
 
 // PublishToOzon publishes a local product to the Ozon platform.
 func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*PublishResult, error) {
+	// Check execution mode — guard production writes.
+	if result, err := s.checkWriteMode(ctx, "publish_ozon", in); err != nil {
+		return nil, err
+	} else if result != nil {
+		return result, nil // dry-run: returned mock result
+	}
+
 	var prod sku.Product
 	if err := s.db.WithContext(ctx).First(&prod, in.ProductID).Error; err != nil {
 		return nil, fmt.Errorf("publish to ozon: product %d not found", in.ProductID)
@@ -313,6 +320,33 @@ func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*P
 		PackageWeight:  pkgWt,
 		MainImage:      in.ImageURL,
 	})
+}
+
+// checkWriteMode guards write operations based on the execution mode from context.
+// Returns:
+//   - (mockResult, nil) for dry-run mode (caller should return mockResult immediately)
+//   - (nil, nil) for production/sandbox mode (caller should proceed)
+//   - (nil, error) if mode validation fails
+func (s *Service) checkWriteMode(ctx context.Context, op string, in interface{}) (*PublishResult, error) {
+	mode := ExecutionModeFromCtx(ctx)
+	switch mode {
+	case ExecutionModeDryRun:
+		s.logger.Info("dry-run: skipping platform write",
+			zap.String("operation", op),
+			zap.Any("input", in),
+		)
+		// Return a mock success result so the caller can proceed without errors.
+		return &PublishResult{
+			PlatformProductID: "dry-run-simulated",
+			PlatformURL:       "dry-run://simulated",
+			SyncMessage:       "dry_run: no platform call was made",
+		}, nil
+	case ExecutionModeSandbox:
+		// Sandbox: pass through — the adapter uses sandbox API endpoints.
+		return nil, nil
+	default:
+		return nil, nil
+	}
 }
 
 // SyncOzonOrders fetches new orders from all active Ozon accounts via the adapter.

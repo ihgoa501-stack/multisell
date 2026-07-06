@@ -13,6 +13,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -43,7 +44,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get sql.DB: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&AITrace{}, &AITraceEvent{}, &AIEvidenceRef{}, &UnifiedAction{}, &trustscore.TrustScore{}, &actionpolicy.PolicyRule{}, &approval.ApprovalRequest{}); err != nil {
+	if err := db.AutoMigrate(&AITrace{}, &AITraceEvent{}, &AIEvidenceRef{}, &UnifiedAction{}, &trustscore.TrustScore{}, &actionpolicy.PolicyRule{}, &approval.ApprovalRequest{}, &operationlog.OperationLog{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db

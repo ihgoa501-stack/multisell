@@ -96,7 +96,7 @@ func (s *Service) Log(module, action, resourceID, operator, content string) erro
 		Action:     action,
 		ResourceID: resourceID,
 		Operator:   operator,
-		Content:    content,
+		Content:    RedactSensitive(content),
 	})
 }
 
@@ -107,7 +107,7 @@ func (s *Service) LogStructured(input *StructuredLogInput) error {
 		Action:            input.Action,
 		ResourceID:        input.ResourceID,
 		Operator:          input.Operator,
-		Content:           input.Content,
+		Content:           RedactSensitive(input.Content),
 		Result:            input.Result,
 		TriggerType:       input.TriggerType,
 		AgentSuggestionID: input.AgentSuggestionID,

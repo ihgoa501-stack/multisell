@@ -85,6 +85,57 @@ func TestTopicFiltering(t *testing.T) {
 	}
 }
 
+// TestBusLifecycle verifies the bus lifecycle: start → publish → receive →
+// stop → no more deliveries after stop.
+func TestBusLifecycle(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	b := New(logger, WithWorkers(4))
+
+	// Start the bus
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	// Publish → receive
+	received := make(chan struct{}, 5)
+	count := 0
+	var mu sync.Mutex
+	b.Subscribe("lifecycle.*", func(ctx context.Context, evt Event) error {
+		mu.Lock()
+		count++
+		mu.Unlock()
+		received <- struct{}{}
+		return nil
+	})
+
+	_, err := b.Publish(context.Background(), "lifecycle.1", "test", nil)
+	if err != nil {
+		t.Fatalf("Publish before stop returned error: %v", err)
+	}
+	select {
+	case <-received:
+	case <-time.After(time.Second):
+		t.Fatal("timeout: subscriber did not receive event before stop")
+	}
+
+	// Stop the bus
+	cancel()
+	b.Stop()
+
+	// After stop, publish should not reach subscriber.
+	// The bus may or may not return an error after stop — either is acceptable,
+	// but the subscriber should NOT be invoked.
+	_, postStopErr := b.Publish(context.Background(), "lifecycle.2", "test", nil)
+	_ = postStopErr // not relevant for this assertion
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	if count != 1 {
+		t.Errorf("expected 1 delivery total (pre-stop), got %d — subscriber received event after stop", count)
+	}
+	mu.Unlock()
+}
+
 // TestMultipleSubscribers verifies that all subscribers matching a topic receive
 // the event.
 func TestMultipleSubscribers(t *testing.T) {

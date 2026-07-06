@@ -7,7 +7,6 @@ import {
   Col,
   Empty,
   message,
-  Modal,
   Row,
   Space,
   Spin,
@@ -34,6 +33,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import { getCurrentOperator } from '@/lib/user';
+import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
 
 const { Text } = Typography;
 
@@ -774,28 +774,30 @@ export default function OwnerPage() {
         </Col>
       </Row>
 
-      {/* Approval confirmation modal */}
-      <Modal
-        title={approvalAction === 'approve' ? '确认批准上架' : '确认拒绝上架'}
+      {/* Approval confirmation dialog */}
+      <HighRiskConfirmDialog
         open={!!approvalModal}
-        onCancel={() => { setApprovalModal(null); setApprovalAction(null); }}
-        onOk={confirmApproval}
+        actionName={approvalAction === 'approve' ? '批准上架' : '拒绝上架'}
+        riskLevel={approvalModal?.risk_level === 'high' ? 'high' : approvalModal?.risk_level === 'medium' ? 'medium' : 'medium'}
+        detail={approvalModal ? {
+          targetLabel: approvalModal.product_title || `ID:${approvalModal.product_id}`,
+          afterValue: approvalAction === 'approve' ? '创建审批 → 执行上架任务' : '不创建上架任务',
+        } : undefined}
+        environmentMode="production"
+        expectedConsequence={
+          approvalAction === 'approve'
+            ? '将创建审批记录、触发上架任务执行，商品将在 Ozon 平台可见'
+            : '不创建上架任务，商品保留在候选列表中'
+        }
+        auditDestination="操作已记录至 operation_log 表，可追溯至操作人、时间、原因"
+        rollbackNote="上架后无法自动回滚，如需下线请在对应平台手动操作"
         confirmLoading={approveFlow.isPending || rejectFlow.isPending}
-        okText={approvalAction === 'approve' ? '批准' : '拒绝'}
-        cancelText="取消"
-        okButtonProps={{ danger: approvalAction === 'reject' }}
-      >
-        <p>
-          {approvalAction === 'approve'
-            ? `确定批准商品 "${approvalModal?.product_title || `ID:${approvalModal?.product_id}`}" 上架？`
-            : `确定拒绝商品 "${approvalModal?.product_title || `ID:${approvalModal?.product_id}`}" 上架？`}
-        </p>
-        {approvalModal && (
-          <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 6, marginTop: 8 }}>
-            <Text type="secondary">{approvalModal.reason}</Text>
-          </div>
-        )}
-      </Modal>
+        confirmText={approvalAction === 'approve' ? '批准上架' : '拒绝上架'}
+        showReason
+        reasonPlaceholder="补充说明（选填）"
+        onConfirm={() => confirmApproval()}
+        onCancel={() => { setApprovalModal(null); setApprovalAction(null); }}
+      />
     </div>
   );
 }
