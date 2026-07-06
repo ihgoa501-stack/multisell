@@ -1155,11 +1155,11 @@ func TestHandler_CreateAttribute(t *testing.T) {
 func TestExecutionModeDefaults(t *testing.T) {
 	ctx := context.Background()
 	mode := ExecutionModeFromCtx(ctx)
-	if mode != ExecutionModeProduction {
-		t.Errorf("default mode = %v, want ExecutionModeProduction", mode)
+	if mode != ExecutionModeDryRun {
+		t.Errorf("default mode = %v, want ExecutionModeDryRun", mode)
 	}
-	if mode.String() != "production" {
-		t.Errorf("default mode string = %q, want %q", mode.String(), "production")
+	if mode.String() != "dry_run" {
+		t.Errorf("default mode string = %q, want %q", mode.String(), "dry_run")
 	}
 }
 
@@ -1192,9 +1192,22 @@ func TestExecutionModeSandbox(t *testing.T) {
 func TestCheckWriteMode_DryRun_ReturnsMockResult(t *testing.T) {
 	svc := newTestDB(t)
 
-	// Without dry-run: mode should be production, no mock result.
-	prodCtx := context.Background()
-	result, err := svc.checkWriteMode(prodCtx, "test_op", "input")
+	// Without explicit mode: defaults to dry-run, returns mock result.
+	defaultCtx := context.Background()
+	result, err := svc.checkWriteMode(defaultCtx, "test_op", "input")
+	if err != nil {
+		t.Fatalf("checkWriteMode default: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result for default (dry-run) mode")
+	}
+	if result.PlatformProductID != "dry-run-simulated" {
+		t.Errorf("PlatformProductID = %q, want dry-run-simulated", result.PlatformProductID)
+	}
+
+	// With explicit production mode: returns nil (proceed with write).
+	prodCtx := WithExecutionMode(context.Background(), ExecutionModeProduction)
+	result, err = svc.checkWriteMode(prodCtx, "test_op", "input")
 	if err != nil {
 		t.Fatalf("checkWriteMode production: %v", err)
 	}
@@ -1202,7 +1215,7 @@ func TestCheckWriteMode_DryRun_ReturnsMockResult(t *testing.T) {
 		t.Fatalf("expected nil result for production mode, got %+v", result)
 	}
 
-	// With dry-run: should return mock PublishResult.
+	// With dry-run mode explicitly set: returns mock PublishResult.
 	dryCtx := WithExecutionMode(context.Background(), ExecutionModeDryRun)
 	result, err = svc.checkWriteMode(dryCtx, "test_op", "input")
 	if err != nil {
@@ -1216,5 +1229,44 @@ func TestCheckWriteMode_DryRun_ReturnsMockResult(t *testing.T) {
 	}
 	if result.SyncMessage != "dry_run: no platform call was made" {
 		t.Errorf("SyncMessage = %q, want dry_run: no platform call was made", result.SyncMessage)
+	}
+}
+
+func TestExecutionModeApprovalRequired(t *testing.T) {
+	ctx := WithExecutionMode(context.Background(), ExecutionModeApprovalRequired)
+
+	mode := ExecutionModeFromCtx(ctx)
+	if mode != ExecutionModeApprovalRequired {
+		t.Fatalf("mode = %v, want approval_required", mode)
+	}
+	if mode.String() != "approval_required" {
+		t.Errorf("String = %q, want %q", mode.String(), "approval_required")
+	}
+
+	// ModeApprovalRequired allows writes (does not block).
+	if !mode.IsWriteAllowed() {
+		t.Error("IsWriteAllowed: expected true for approval_required")
+	}
+
+	// checkWriteMode returns nil (proceed with write) for approval_required.
+	svc := newTestDB(t)
+	result, err := svc.checkWriteMode(ctx, "test_op", "input")
+	if err != nil {
+		t.Fatalf("checkWriteMode: %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for approval_required, got %+v", result)
+	}
+}
+
+func TestExecutionModeProduction_IsWriteAllowed(t *testing.T) {
+	if !ExecutionModeProduction.IsWriteAllowed() {
+		t.Error("IsWriteAllowed: expected true for production")
+	}
+	if ExecutionModeDryRun.IsWriteAllowed() {
+		t.Error("IsWriteAllowed: expected false for dry_run")
+	}
+	if ExecutionModeSandbox.IsWriteAllowed() {
+		t.Error("IsWriteAllowed: expected false for sandbox")
 	}
 }
