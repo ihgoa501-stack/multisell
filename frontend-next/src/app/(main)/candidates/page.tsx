@@ -23,6 +23,7 @@ import {
   DatabaseOutlined,
   EditOutlined,
   PlayCircleOutlined,
+  SendOutlined,
   StopOutlined,
   ThunderboltOutlined,
   ReloadOutlined,
@@ -198,6 +199,7 @@ export default function CandidatesPage() {
   const [fillingField, setFillingField] = useState<string | null>(null);
   const [fillValues, setFillValues] = useState<Record<string, string>>({});
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+  const [generatingTask, setGeneratingTask] = useState<number | null>(null);
 
   const fetchCandidates = useCallback(async (p: number, ps: number) => {
     setLoading(true);
@@ -238,6 +240,26 @@ export default function CandidatesPage() {
       message.error('评估请求失败');
     } finally {
       setEvaluating(null);
+    }
+  };
+
+  const handleCreateTaskFromSuggestion = async (candidateId: number) => {
+    setGeneratingTask(candidateId);
+    try {
+      const res = await apiClient.post(`/v1/listing-tasks/from-suggestion`, {
+        candidate_id: candidateId,
+      });
+      if (res.code === 0 && res.data) {
+        const task = res.data as { id: number; status: string; platform_id: number };
+        message.success(`上架任务 #${task.id} 已创建，待审批`);
+        await fetchCandidates(page, pageSize);
+      } else {
+        message.error(res.message || '创建上架任务失败');
+      }
+    } catch {
+      message.error('创建上架任务请求失败');
+    } finally {
+      setGeneratingTask(null);
     }
   };
 
@@ -471,6 +493,18 @@ export default function CandidatesPage() {
             }}
           >
             评估
+          </Button>
+          <Button
+            size="small"
+            icon={<SendOutlined />}
+            loading={generatingTask === record.id}
+            disabled={record.completeness_status !== 'listing_ready'}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCreateTaskFromSuggestion(record.id);
+            }}
+          >
+            上架
           </Button>
         </Space>
       ),

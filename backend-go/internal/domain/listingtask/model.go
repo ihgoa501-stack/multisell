@@ -91,6 +91,11 @@ type CreateTaskItemInput struct {
 	Result     json.RawMessage `json:"result"`
 }
 
+// CreateFromSuggestionInput is the payload for creating a listing task from a candidate suggestion.
+type CreateFromSuggestionInput struct {
+	CandidateID uint `json:"candidate_id" binding:"required"`
+}
+
 // UpdateTaskItemInput is the payload for updating a task item.
 type UpdateTaskItemInput struct {
 	Status       *string          `json:"status"`

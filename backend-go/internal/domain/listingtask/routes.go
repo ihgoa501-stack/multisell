@@ -26,6 +26,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger,
 		tasks.GET("", h.List)
 		tasks.GET("/:id", h.Get)
 		tasks.POST("", h.Create)
+		tasks.POST("/from-suggestion", h.CreateFromSuggestion)
 		tasks.PUT("/:id", h.Update)
 		tasks.DELETE("/:id", h.Delete)
 

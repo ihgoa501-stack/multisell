@@ -132,6 +132,92 @@ func (s *Service) Create(in *CreateTaskInput) (*ListingTask, error) {
 	return &t, nil
 }
 
+// CreateFromSuggestion creates a controlled listing task from a candidate suggestion.
+// It validates the candidate exists, requires approval, creates the task with
+// pending_approval status, and writes an audit log.
+func (s *Service) CreateFromSuggestion(candidateID uint, operator string) (*ListingTask, error) {
+	// 1. Look up candidate product.
+	type candidateRow struct {
+		ID                 int64
+		Title              string
+		PurchasePrice      float64
+		TargetSalePrice    float64
+		TargetPlatformID   *int64
+		DestinationCountry string
+	}
+	var row candidateRow
+	if err := s.db.Table("candidate_product").
+		Select("id, title, purchase_price, target_sale_price, target_platform_id, destination_country").
+		Where("id = ?", candidateID).Scan(&row).Error; err != nil {
+		return nil, fmt.Errorf("candidate lookup failed: %w", err)
+	}
+	if row.ID == 0 {
+		return nil, fmt.Errorf("candidate %d not found", candidateID)
+	}
+
+	// 2. Build decision snapshot from candidate data.
+	snapshot := map[string]interface{}{
+		"candidate_id":      candidateID,
+		"title":             row.Title,
+		"purchase_price":    row.PurchasePrice,
+		"target_sale_price": row.TargetSalePrice,
+		"source":            "suggestion",
+	}
+	snapshotBytes, _ := json.Marshal(snapshot)
+
+	// 3. Require approval via the approval service.
+	if s.approvalSvc == nil {
+		return nil, errors.New("approval service not configured")
+	}
+	apprReq, err := s.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+		ProductID:   int64(candidateID),
+		RequestType: "listing_task",
+		Requester:   operator,
+		NewValue:    fmt.Sprintf("create listing task from candidate %d", candidateID),
+		Reason:      "listing task creation requires owner approval",
+		TargetType:  "candidate",
+		TargetID:    int64(candidateID),
+		RiskLevel:   "high",
+		EntityType:  "listing_task",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("approval required: %w", err)
+	}
+
+	// 4. Create listing task with pending_approval status.
+	platformID := int64(0)
+	if row.TargetPlatformID != nil {
+		platformID = *row.TargetPlatformID
+	}
+	task := ListingTask{
+		ProductID:          int64(candidateID),
+		PlatformID:         platformID,
+		SourceType:         "suggestion",
+		SourceItemKey:      fmt.Sprintf("candidate:%d", candidateID),
+		Status:             "pending_approval",
+		DecisionSnapshot:   snapshotBytes,
+		TargetSalePrice:    &row.TargetSalePrice,
+		DestinationCountry: row.DestinationCountry,
+		ApprovalID:         &apprReq.ID,
+		CreatedBy:          operator,
+	}
+	if err := s.db.Create(&task).Error; err != nil {
+		return nil, err
+	}
+
+	// Update the approval entity ID now that the task exists.
+	s.db.Model(&approval.ApprovalRequest{}).Where("id = ?", apprReq.ID).
+		Update("entity_id", task.ID)
+
+	// 5. Write audit log.
+	s.writeAudit("listing_task.create_from_suggestion", "success",
+		fmt.Sprintf("%d", task.ID), operator,
+		fmt.Sprintf("candidate_id=%d listing_task_id=%d platform_id=%d", candidateID, task.ID, task.PlatformID),
+		&task)
+
+	return &task, nil
+}
+
 // Update patches a listing task by id.
 func (s *Service) Update(id int64, in *UpdateTaskInput) (*ListingTask, error) {
 	var t ListingTask

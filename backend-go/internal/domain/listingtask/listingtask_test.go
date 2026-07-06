@@ -699,3 +699,78 @@ func TestService_ExecuteTask_PublishHookFails(t *testing.T) {
 		}
 	}
 }
+
+// ── CreateFromSuggestion ──
+
+// TestService_CreateFromSuggestion tests the happy path: candidate found, approval created, task created.
+func TestService_CreateFromSuggestion(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+
+	// Create candidate_product table and insert a test candidate.
+	db.Exec("CREATE TABLE candidate_product (id INTEGER PRIMARY KEY, title TEXT, purchase_price REAL DEFAULT 0, target_sale_price REAL DEFAULT 0, target_platform_id INTEGER, destination_country TEXT DEFAULT 'US')")
+	db.Exec("INSERT INTO candidate_product (id, title, purchase_price, target_sale_price, target_platform_id, destination_country) VALUES (1, 'Test Product', 10.0, 25.0, 1, 'US')")
+
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+
+	task, err := svc.CreateFromSuggestion(1, "owner")
+	if err != nil {
+		t.Fatalf("CreateFromSuggestion: %v", err)
+	}
+	if task.Status != "pending_approval" {
+		t.Fatalf("Status = %s (expected pending_approval)", task.Status)
+	}
+	if task.ApprovalID == nil {
+		t.Fatal("ApprovalID should be set")
+	}
+	if task.SourceType != "suggestion" {
+		t.Fatalf("SourceType = %s (expected suggestion)", task.SourceType)
+	}
+
+	// Verify approval was created and linked.
+	var appr approval.ApprovalRequest
+	if err := db.First(&appr, *task.ApprovalID).Error; err != nil {
+		t.Fatalf("approval not found: %v", err)
+	}
+	if appr.Status != "pending" {
+		t.Fatalf("approval status = %s (expected pending)", appr.Status)
+	}
+	if appr.EntityType != "listing_task" {
+		t.Fatalf("EntityType = %s (expected listing_task)", appr.EntityType)
+	}
+	if appr.EntityID != task.ID {
+		t.Fatalf("EntityID = %d (expected %d)", appr.EntityID, task.ID)
+	}
+}
+
+// TestService_CreateFromSuggestion_NotFound tests error when candidate doesn't exist.
+func TestService_CreateFromSuggestion_NotFound(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &approval.ApprovalRequest{})
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+
+	// Create table but insert no rows.
+	db.Exec("CREATE TABLE candidate_product (id INTEGER PRIMARY KEY, title TEXT, purchase_price REAL, target_sale_price REAL, target_platform_id INTEGER, destination_country TEXT)")
+
+	_, err := svc.CreateFromSuggestion(999, "owner")
+	if err == nil {
+		t.Fatal("expected error for non-existent candidate")
+	}
+}
+
+// TestService_CreateFromSuggestion_NoApprovalService tests error when approvalSvc is nil.
+func TestService_CreateFromSuggestion_NoApprovalService(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &approval.ApprovalRequest{})
+	db.Exec("CREATE TABLE candidate_product (id INTEGER PRIMARY KEY, title TEXT)")
+	db.Exec("INSERT INTO candidate_product (id, title) VALUES (1, 'Test')")
+
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+
+	_, err := svc.CreateFromSuggestion(1, "owner")
+	if err == nil {
+		t.Fatal("expected error when approval service not configured")
+	}
+}
