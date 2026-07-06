@@ -366,6 +366,27 @@ func (h *Handler) RetryItem(c *gin.Context) {
 	response.Success(c, item)
 }
 
+// ---------- Review ----------
+
+// Review GET /listing-tasks/:id/review — returns the task review with
+// publish status, platform errors, and expected vs actual profit.
+func (h *Handler) Review(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	review, err := h.service.ReviewTask(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "listing task not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, review)
+}
+
 // ---------- Stats / Bulk Retry ----------
 
 // ListStats GET /listing-task/stats

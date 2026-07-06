@@ -35,6 +35,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger,
 		tasks.POST("/:id/items", h.CreateItem)
 		tasks.PUT("/:id/items/:item_id", h.UpdateItem)
 		tasks.DELETE("/:id/items/:item_id", h.DeleteItem)
+		tasks.GET("/:id/review", h.Review)
 	}
 
 	// Listing publish chain — uses /listing-task (singular) prefix.

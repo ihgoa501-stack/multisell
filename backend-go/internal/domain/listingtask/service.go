@@ -582,7 +582,75 @@ func (s *Service) statusChangeAudit(taskID int64, oldStatus, newStatus, operator
 	})
 }
 
-// ---------- Listing publish chain ----------
+// ---------- Review ----------
+
+// ReviewTask returns a review of the listing task: whether it was published,
+// any platform errors, and expected vs actual profit.
+func (s *Service) ReviewTask(taskID int64) (*TaskReview, error) {
+	var task ListingTask
+	if err := s.db.First(&task, taskID).Error; err != nil {
+		return nil, err
+	}
+
+	review := &TaskReview{
+		TaskID:    uint(task.ID),
+		Published: task.Status == "completed" && task.LastError == "",
+		Status:    task.Status,
+		CreatedAt: task.CreatedAt,
+	}
+
+	// Platform name
+	var plat platform.Platform
+	if err := s.db.First(&plat, task.PlatformID).Error; err == nil {
+		review.Platform = plat.Code
+	}
+
+	// Platform errors from task items
+	var items []ListingTaskItem
+	s.db.Where("task_id = ? AND error_message != ''", taskID).Find(&items)
+	for _, item := range items {
+		if item.ErrorMessage != "" {
+			review.PlatformErrors = append(review.PlatformErrors, item.ErrorMessage)
+		}
+	}
+	if len(review.PlatformErrors) == 0 {
+		review.PlatformErrors = nil
+	}
+
+	// Expected profit/margin from task target fields
+	if task.TargetProfitMargin != nil {
+		review.MarginExpected = task.TargetProfitMargin
+	}
+	if task.TargetSalePrice != nil && task.TargetProfitMargin != nil {
+		pe := *task.TargetSalePrice * *task.TargetProfitMargin
+		review.ProfitExpected = &pe
+	}
+
+	// Actual profit from orders (sales_order_item → sales_order)
+	type orderProfit struct {
+		ProfitAmount float64
+		ProfitMargin float64
+	}
+	var orders []orderProfit
+	s.db.Table("sales_order_item").
+		Select("so.profit_amount, so.profit_margin").
+		Joins("JOIN sales_order so ON so.id = sales_order_item.order_id").
+		Where("sales_order_item.product_id = ? AND so.platform_id = ?", task.ProductID, task.PlatformID).
+		Scan(&orders)
+	if len(orders) > 0 {
+		var totalProfit, totalMargin float64
+		for _, o := range orders {
+			totalProfit += o.ProfitAmount
+			totalMargin += o.ProfitMargin
+		}
+		pa := totalProfit
+		ma := totalMargin / float64(len(orders))
+		review.ProfitActual = &pa
+		review.MarginActual = &ma
+	}
+
+	return review, nil
+}
 
 // ExecuteTask triggers execution of a listing task after passing the execution gate.
 //
