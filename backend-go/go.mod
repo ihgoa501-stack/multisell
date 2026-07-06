@@ -11,6 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/viper v1.21.0
+	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6

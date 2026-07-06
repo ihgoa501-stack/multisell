@@ -39,7 +39,7 @@ func TestCandidateToApprovalFlow(t *testing.T) {
 
 	candSvc := candidate.NewService(db, log)
 	compSvc := completeness.NewService(db, log)
-	profitSvc := profit.NewService(db, log, nil)
+	profitSvc := profit.NewService(db, log, nil, 7.2)
 	approvalSvc := approval.NewService(db, log, nil)
 
 	// -- Step 1: Create CandidateProduct --

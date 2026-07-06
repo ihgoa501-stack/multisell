@@ -122,6 +122,19 @@ cat backup_file.sql | docker compose exec -T db psql -U postgres multisell
 docker run --rm -v db_backups:/backups alpine ls -lh /backups
 ```
 
+**独立脚本（非 Docker 环境）：**
+
+- `scripts/backup.sh` — pg_dump 备份，支持本地保留天数 + S3 上传
+- `scripts/restore.sh <backup_file>` — 从 custom-format dump 恢复，含完整性校验和危险确认
+- `scripts/backup.env.example` — 环境变量模板
+
+**定时备份（crontab 示例）：**
+
+```bash
+# 每天凌晨 3 点备份，保留 7 天
+0 3 * * * cd /path/to/project && ./scripts/backup.sh >> /var/log/db_backup.log 2>&1
+```
+
 ### 5.3 迁移
 
 ```bash

@@ -58,6 +58,14 @@ func main() {
 	}
 	defer sentry.Flush(2 * time.Second)
 
+	// JWT_SECRET validation: fail fast if using the default in production.
+	if cfg.JWT.Secret == "dev-secret-change-in-production" {
+		if cfg.Server.Mode == "release" {
+			sugar.Fatal("JWT_SECRET is still set to the default value — production is insecure. Set JWT_SECRET via .env or environment variable.")
+		}
+		sugar.Warn("JWT_SECRET is set to the default value — not suitable for production. Set JWT_SECRET via .env or environment variable.")
+	}
+
 	// Connect to database
 	db, err := database.Connect(cfg, logger)
 	if err != nil {
