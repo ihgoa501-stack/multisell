@@ -16,6 +16,28 @@ type PreListingDecision struct {
 	CountryCode string
 }
 
+// Candidate is the listing view of a candidate product.
+type Candidate struct {
+	ID                 int64
+	Title              string
+	PurchasePrice      float64
+	PackageWeightKg    float64
+	HSCode             string
+	OriginCountry      string
+	TargetSalePrice    float64
+	PlatformID         *int64
+	DestinationCountry string
+}
+
+// ProfitSummary is the listing view of a profit summary.
+type ProfitSummary struct {
+	TotalCost       float64
+	TargetRevenue   float64
+	EstimatedProfit float64
+	ProfitMargin    float64
+	Status          string
+}
+
 // SKUProvider provides SKU lookups without importing the sku package.
 type SKUProvider interface {
 	GetByIDs(ctx context.Context, ids []int64) ([]Sku, error)
@@ -24,4 +46,14 @@ type SKUProvider interface {
 // DecisionReader provides read access to pre-listing decisions without importing the decision package.
 type DecisionReader interface {
 	GetByIDs(ctx context.Context, ids []int64) ([]PreListingDecision, error)
+}
+
+// CandidateReader provides candidate product lookups without importing the candidate package.
+type CandidateReader interface {
+	GetByID(ctx context.Context, id uint) (*Candidate, error)
+}
+
+// ProfitReader provides profit summary lookups without importing the profit package.
+type ProfitReader interface {
+	GetByProductID(productID int64) (*ProfitSummary, error)
 }

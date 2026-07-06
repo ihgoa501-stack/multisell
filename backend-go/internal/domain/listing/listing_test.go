@@ -1,11 +1,18 @@
 package listing
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/domain/candidate"
+	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"gorm.io/gorm"
 )
@@ -18,7 +25,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 func newService(t *testing.T) *Service {
 	t.Helper()
 	db := newTestDB(t)
-	return NewService(db, dbtest.NewLogger(t), eventbus.New(dbtest.NewLogger(t)), NewSKUProvider(db), NewDecisionReader(db))
+	return NewService(db, dbtest.NewLogger(t), eventbus.New(dbtest.NewLogger(t)), NewSKUProvider(db), NewDecisionReader(db), nil, nil)
 }
 
 func TestListing_Create(t *testing.T) {
@@ -309,5 +316,223 @@ func TestListing_RejectedTransition(t *testing.T) {
 	}
 	if synced.Status != "rejected" {
 		t.Fatalf("Status=%q, want rejected", synced.Status)
+	}
+}
+
+func performRequest(db *gorm.DB, handler func(*gin.Context), method, path, body string) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, path, strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	handler(c)
+	return w
+}
+
+// ---------- Listing suggestion tests ----------
+
+func newSuggestionTestService(t *testing.T) *Service {
+	t.Helper()
+	db := dbtest.NewDB(t, &ProductListing{}, &candidate.CandidateProduct{}, &profit.ProfitSummary{})
+	return NewService(db, dbtest.NewLogger(t), eventbus.New(dbtest.NewLogger(t)), NewSKUProvider(db), NewDecisionReader(db), NewCandidateReader(db), NewProfitReader(db))
+}
+
+func TestListing_GenerateSuggestion_NoProfit(t *testing.T) {
+	svc := newSuggestionTestService(t)
+
+	// Seed a candidate product directly.
+	cp := candidate.CandidateProduct{
+		Title:              "Test Product",
+		PurchasePrice:      10.0,
+		PackageWeightKg:    0.5,
+		HSCode:             "851830",
+		OriginCountry:      "CN",
+		TargetSalePrice:    25.0,
+		DestinationCountry: "US",
+	}
+	if err := svc.db.Create(&cp).Error; err != nil {
+		t.Fatalf("seed candidate: %v", err)
+	}
+
+	s, err := svc.GenerateSuggestion(context.Background(), uint(cp.ID))
+	if err != nil {
+		t.Fatalf("GenerateSuggestion failed: %v", err)
+	}
+	if s.CandidateID != uint(cp.ID) {
+		t.Fatalf("CandidateID=%d, want %d", s.CandidateID, cp.ID)
+	}
+	if s.Title != "Test Product" {
+		t.Fatalf("Title=%q, want Test Product", s.Title)
+	}
+	if s.SuggestedPrice != 25.0 {
+		t.Fatalf("SuggestedPrice=%f, want 25.0", s.SuggestedPrice)
+	}
+	if s.SuggestedStock != 100 {
+		t.Fatalf("SuggestedStock=%d, want 100", s.SuggestedStock)
+	}
+	if s.RiskLevel != "unknown" {
+		t.Fatalf("RiskLevel=%q, want unknown (no profit data)", s.RiskLevel)
+	}
+	if len(s.PlatformFields) == 0 {
+		t.Fatal("expected at least 1 platform field")
+	}
+}
+
+func TestListing_GenerateSuggestion_WithProfit(t *testing.T) {
+	svc := newSuggestionTestService(t)
+
+	// Seed a candidate product.
+	cp := candidate.CandidateProduct{
+		Title:              "Profitable Product",
+		PurchasePrice:      5.0,
+		PackageWeightKg:    0.3,
+		HSCode:             "610910",
+		OriginCountry:      "CN",
+		TargetSalePrice:    30.0,
+		DestinationCountry: "US",
+	}
+	if err := svc.db.Create(&cp).Error; err != nil {
+		t.Fatalf("seed candidate: %v", err)
+	}
+
+	// Seed a profit summary for the same product.
+	ps := profit.ProfitSummary{
+		ProductID:       cp.ID,
+		TotalCost:       10.0,
+		TargetRevenue:   30.0,
+		EstimatedProfit: 20.0,
+		ProfitMargin:    66.67,
+		Status:          "profitable",
+		Currency:        "USD",
+	}
+	if err := svc.db.Create(&ps).Error; err != nil {
+		t.Fatalf("seed profit summary: %v", err)
+	}
+
+	s, err := svc.GenerateSuggestion(context.Background(), uint(cp.ID))
+	if err != nil {
+		t.Fatalf("GenerateSuggestion failed: %v", err)
+	}
+	if s.RiskLevel != "low" {
+		t.Fatalf("RiskLevel=%q, want low (profit margin=66.67)", s.RiskLevel)
+	}
+	if s.SuggestedPrice != 30.0 {
+		t.Fatalf("SuggestedPrice=%f, want 30.0", s.SuggestedPrice)
+	}
+}
+
+func TestListing_GenerateSuggestion_NotFound(t *testing.T) {
+	svc := newSuggestionTestService(t)
+
+	_, err := svc.GenerateSuggestion(context.Background(), 999)
+	if err == nil {
+		t.Fatal("expected error for non-existent candidate")
+	}
+}
+
+func TestListing_GenerateSuggestion_HighRisk(t *testing.T) {
+	svc := newSuggestionTestService(t)
+
+	cp := candidate.CandidateProduct{
+		Title:           "Unprofitable Product",
+		PurchasePrice:   50.0,
+		PackageWeightKg: 1.0,
+		HSCode:          "940540",
+		OriginCountry:   "CN",
+		TargetSalePrice: 30.0,
+	}
+	if err := svc.db.Create(&cp).Error; err != nil {
+		t.Fatalf("seed candidate: %v", err)
+	}
+
+	ps := profit.ProfitSummary{
+		ProductID:       cp.ID,
+		TotalCost:       50.0,
+		TargetRevenue:   30.0,
+		EstimatedProfit: -20.0,
+		ProfitMargin:    -66.67,
+		Status:          "unprofitable",
+		Currency:        "USD",
+	}
+	if err := svc.db.Create(&ps).Error; err != nil {
+		t.Fatalf("seed profit summary: %v", err)
+	}
+
+	s, err := svc.GenerateSuggestion(context.Background(), uint(cp.ID))
+	if err != nil {
+		t.Fatalf("GenerateSuggestion failed: %v", err)
+	}
+	if s.RiskLevel != "high" {
+		t.Fatalf("RiskLevel=%q, want high", s.RiskLevel)
+	}
+}
+
+func TestListing_GenerateSuggestion_MediumRisk(t *testing.T) {
+	svc := newSuggestionTestService(t)
+
+	cp := candidate.CandidateProduct{
+		Title:           "Marginal Product",
+		PurchasePrice:   20.0,
+		PackageWeightKg: 0.5,
+		HSCode:          "420222",
+		OriginCountry:   "CN",
+		TargetSalePrice: 22.0,
+	}
+	if err := svc.db.Create(&cp).Error; err != nil {
+		t.Fatalf("seed candidate: %v", err)
+	}
+
+	ps := profit.ProfitSummary{
+		ProductID:       cp.ID,
+		TotalCost:       20.0,
+		TargetRevenue:   22.0,
+		EstimatedProfit: 2.0,
+		ProfitMargin:    9.09,
+		Status:          "marginal",
+		Currency:        "USD",
+	}
+	if err := svc.db.Create(&ps).Error; err != nil {
+		t.Fatalf("seed profit summary: %v", err)
+	}
+
+	s, err := svc.GenerateSuggestion(context.Background(), uint(cp.ID))
+	if err != nil {
+		t.Fatalf("GenerateSuggestion failed: %v", err)
+	}
+	if s.RiskLevel != "medium" {
+		t.Fatalf("RiskLevel=%q, want medium", s.RiskLevel)
+	}
+}
+
+func TestListing_SuggestHandler_InvalidBody(t *testing.T) {
+	svc := newSuggestionTestService(t)
+	h := NewHandler(svc, nil)
+
+	w := performRequest(svc.db, h.Suggest, "POST", "/listings/suggest", `{}`)
+	if w.Code != 400 {
+		t.Fatalf("expected 400 for missing candidate_id, got %d", w.Code)
+	}
+}
+
+func TestListing_SuggestHandler_Success(t *testing.T) {
+	svc := newSuggestionTestService(t)
+	h := NewHandler(svc, nil)
+
+	cp := candidate.CandidateProduct{
+		Title:           "API Test Product",
+		PurchasePrice:   15.0,
+		PackageWeightKg: 0.4,
+		HSCode:          "847180",
+		OriginCountry:   "CN",
+		TargetSalePrice: 35.0,
+	}
+	if err := svc.db.Create(&cp).Error; err != nil {
+		t.Fatalf("seed candidate: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"candidate_id": %d}`, cp.ID)
+	w := performRequest(svc.db, h.Suggest, "POST", "/listings/suggest", body)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }

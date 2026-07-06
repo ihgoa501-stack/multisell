@@ -369,3 +369,22 @@ func (h *Handler) PublishTask(c *gin.Context) {
 	}
 	response.Success(c, task)
 }
+
+// Suggest POST /listings/suggest
+func (h *Handler) Suggest(c *gin.Context) {
+	var in SuggestInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	suggestion, err := h.service.GenerateSuggestion(c.Request.Context(), in.CandidateID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "candidate not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, suggestion)
+}

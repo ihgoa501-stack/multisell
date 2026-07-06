@@ -63,3 +63,27 @@ type CreateTasksFromDecisionsInput struct {
 type CancelTaskInput struct {
 	Reason string `json:"reason"`
 }
+
+// ListingSuggestion is a structured suggestion generated for a candidate product.
+type ListingSuggestion struct {
+	CandidateID    uint            `json:"candidate_id"`
+	Title          string          `json:"title"`
+	CategoryPath   string          `json:"category_path"`
+	SuggestedPrice float64         `json:"suggested_price"`
+	SuggestedStock int             `json:"suggested_stock"`
+	PlatformFields []PlatformField `json:"platform_fields"`
+	RiskLevel      string          `json:"risk_level"`
+	CreatedAt      time.Time       `json:"created_at"`
+}
+
+// PlatformField is a platform-specific field in a listing suggestion.
+type PlatformField struct {
+	Platform  string `json:"platform"`
+	FieldName string `json:"field_name"`
+	Value     string `json:"value"`
+}
+
+// SuggestInput is the payload for generating a listing suggestion.
+type SuggestInput struct {
+	CandidateID uint `json:"candidate_id" binding:"required"`
+}

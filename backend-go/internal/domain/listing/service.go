@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -21,11 +22,13 @@ type Service struct {
 	eventBus        *eventbus.Bus
 	skuProvider     SKUProvider
 	decisionReader  DecisionReader
+	candidateReader CandidateReader
+	profitReader    ProfitReader
 }
 
 // NewService creates a new listing service.
-func NewService(db *gorm.DB, logger *zap.Logger, eventBus *eventbus.Bus, skuProvider SKUProvider, decisionReader DecisionReader) *Service {
-	return &Service{db: db, logger: logger, eventBus: eventBus, skuProvider: skuProvider, decisionReader: decisionReader}
+func NewService(db *gorm.DB, logger *zap.Logger, eventBus *eventbus.Bus, skuProvider SKUProvider, decisionReader DecisionReader, candidateReader CandidateReader, profitReader ProfitReader) *Service {
+	return &Service{db: db, logger: logger, eventBus: eventBus, skuProvider: skuProvider, decisionReader: decisionReader, candidateReader: candidateReader, profitReader: profitReader}
 }
 
 // List returns paginated listings with platform/status filters and search.
@@ -398,4 +401,55 @@ func (s *Service) PublishTask(taskID int64) (*listingtask.ListingTask, error) {
 		return nil, err
 	}
 	return &task, nil
+}
+
+// GenerateSuggestion produces a structured ListingSuggestion for a candidate product.
+// It composes data from the candidate product and its profit summary, and generates
+// platform-specific fields based on the target platform.
+func (s *Service) GenerateSuggestion(ctx context.Context, candidateID uint) (*ListingSuggestion, error) {
+	c, err := s.candidateReader.GetByID(ctx, candidateID)
+	if err != nil {
+		return nil, fmt.Errorf("get candidate: %w", err)
+	}
+
+	// Determine risk level and suggested price from profit data (if available).
+	var riskLevel string
+	suggestedPrice := c.TargetSalePrice
+	ps, err := s.profitReader.GetByProductID(int64(candidateID))
+	if err == nil {
+		suggestedPrice = ps.TargetRevenue
+		switch {
+		case ps.ProfitMargin >= 15:
+			riskLevel = "low"
+		case ps.ProfitMargin >= 0:
+			riskLevel = "medium"
+		default:
+			riskLevel = "high"
+		}
+	} else {
+		riskLevel = "unknown"
+	}
+
+	// Build generic platform fields from candidate data.
+	platformFields := []PlatformField{
+		{Platform: "general", FieldName: "title", Value: c.Title},
+		{Platform: "general", FieldName: "origin_country", Value: c.OriginCountry},
+		{Platform: "general", FieldName: "hs_code", Value: c.HSCode},
+	}
+	if c.PlatformID != nil {
+		platformFields = append(platformFields, PlatformField{
+			Platform: "general", FieldName: "platform_id", Value: strconv.FormatInt(*c.PlatformID, 10),
+		})
+	}
+
+	return &ListingSuggestion{
+		CandidateID:    candidateID,
+		Title:          c.Title,
+		CategoryPath:   "",
+		SuggestedPrice: suggestedPrice,
+		SuggestedStock: 100,
+		PlatformFields: platformFields,
+		RiskLevel:      riskLevel,
+		CreatedAt:      time.Now(),
+	}, nil
 }
