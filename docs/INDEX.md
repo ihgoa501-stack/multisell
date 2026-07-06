@@ -54,6 +54,8 @@
 | 文档 | 当前用途 |
 |------|----------|
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
+| [实现路线图](implementation-roadmap.md) | 🆕 19 个 Open Issue × 6 轮迭代的整体路线图 |
+| [Iteration 1 Spec: 安全速赢 + 数据地基](specs/iteration-1-security-quick-wins.md) | 🆕 #280 JWT_SECRET / #281 DB备份 / #130 汇率硬编码 |
 | [项目状态](PROJECT_STATUS.md) | 当前事实快照、当前验证状态、历史更新入口 |
 | [模块目录](reference-module-catalog.md) | 模块、API 路由、前端页面清单 |
 | [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试报告 |

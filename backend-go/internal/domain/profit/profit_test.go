@@ -10,7 +10,7 @@ import (
 func TestService_Calculate_CreateErrorIsReturned(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ProfitSummary{}, &candidate.CandidateProduct{})
-	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, 7.2)
 
 	platformID := int64(1)
 	prod := candidate.CandidateProduct{
@@ -42,7 +42,7 @@ func TestService_Calculate_CreateErrorIsReturned(t *testing.T) {
 func TestService_ListSummaries(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ProfitSummary{})
-	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, 7.2)
 
 	db.Create(&ProfitSummary{ProductID: 1, Status: "profitable", EstimatedProfit: 25.0, ProfitMargin: 20.0})
 	db.Create(&ProfitSummary{ProductID: 2, Status: "unprofitable", EstimatedProfit: -5.0, ProfitMargin: -5.0})
@@ -62,7 +62,7 @@ func TestService_ListSummaries(t *testing.T) {
 func TestService_ListSummaries_Filtered(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ProfitSummary{})
-	svc := NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, 7.2)
 
 	db.Create(&ProfitSummary{ProductID: 1, Status: "profitable"})
 	db.Create(&ProfitSummary{ProductID: 2, Status: "unprofitable"})

@@ -15,29 +15,40 @@ import (
 
 // Service provides profit summary business logic.
 type Service struct {
-	db      *gorm.DB
-	logger  *zap.Logger
-	rateSvc *exchangerate.Service
+	db              *gorm.DB
+	logger          *zap.Logger
+	rateSvc         *exchangerate.Service
+	defaultCNYRate  float64
 }
 
 // NewService creates a new profit summary service.
-func NewService(db *gorm.DB, logger *zap.Logger, rateSvc *exchangerate.Service) *Service {
-	return &Service{db: db, logger: logger, rateSvc: rateSvc}
+// defaultCNYRate is the fallback when exchangerate lookup fails.
+func NewService(db *gorm.DB, logger *zap.Logger, rateSvc *exchangerate.Service, defaultCNYRate float64) *Service {
+	if defaultCNYRate <= 0 {
+		defaultCNYRate = 7.2 // sane default
+	}
+	return &Service{
+		db:             db,
+		logger:         logger,
+		rateSvc:        rateSvc,
+		defaultCNYRate: defaultCNYRate,
+	}
 }
 
 // getCNYRate returns the current CNY->USD exchange rate from the exchangerate module.
-// Falls back to 7.2 if the rate service is unavailable or the lookup fails.
+// Falls back to the configured default rate if the rate service is unavailable or the lookup fails.
 func (s *Service) getCNYRate() float64 {
 	if s.rateSvc == nil {
-		return 7.2
+		return s.defaultCNYRate
 	}
 	rate, err := s.rateSvc.GetLatest("CNY", "USD")
 	if err != nil {
-		s.logger.Warn("failed to get CNY/USD exchange rate, using default 7.2", zap.Error(err))
-		return 7.2
+		s.logger.Warn("failed to get CNY/USD exchange rate, using configured default",
+			zap.Float64("fallback", s.defaultCNYRate), zap.Error(err))
+		return s.defaultCNYRate
 	}
 	if rate.Rate <= 0 {
-		return 7.2
+		return s.defaultCNYRate
 	}
 	return rate.Rate
 }
