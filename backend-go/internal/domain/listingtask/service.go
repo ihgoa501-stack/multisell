@@ -668,15 +668,30 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 				zap.Int64("task_id", task.ID),
 				zap.Error(pubErr),
 			)
-			s.db.Model(&ListingTask{}).Where("id = ?", task.ID).
-				Updates(map[string]interface{}{
-					"status":     "failed",
-					"last_error": pubErr.Error(),
-				})
-			s.db.Model(&ListingTaskItem{}).Where("task_id = ?", task.ID).
-				Where("error_message = '' OR error_message IS NULL").
-				Update("error_message", pubErr.Error())
-				s.db.First(&task, task.ID)
+			// Wrap reversion in a transaction so the two writes are atomic.
+			if txErr := s.db.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Model(&ListingTask{}).Where("id = ?", task.ID).
+					Updates(map[string]interface{}{
+						"status":     "failed",
+						"last_error": pubErr.Error(),
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&ListingTaskItem{}).Where("task_id = ?", task.ID).
+					Where("error_message = '' OR error_message IS NULL").
+					Update("error_message", pubErr.Error()).Error; err != nil {
+					return err
+				}
+				if err := tx.First(&task, task.ID).Error; err != nil {
+					return err
+				}
+				return nil
+			}); txErr != nil {
+				s.logger.Error("failed to revert listing task after publish failure",
+					zap.Int64("task_id", task.ID),
+					zap.Error(txErr),
+				)
+			}
 		}
 	}
 
