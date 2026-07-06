@@ -469,69 +469,88 @@ func (e *Engine) execFork(ctx context.Context, runID int64, def StepDef) (map[st
 		Select("id").Scan(&parentID)
 
 	now := time.Now()
-	results := make(map[string]interface{})
+	type forkResult struct {
+		name   string
+		output map[string]interface{}
+		err    error
+	}
+	ch := make(chan forkResult, len(def.Forks))
 
-	// Run sub-steps sequentially within this goroutine to avoid SQLite
-	// concurrency issues. For PostgreSQL, this can be made parallel.
 	for _, f := range def.Forks {
-		stepType := f.Type
-		if stepType == "" {
-			stepType = StepTypeAgent
-		}
-		maxAttempts := f.RetryCount + 1
-		if maxAttempts < 1 {
-			maxAttempts = 1
-		}
+		f := f // capture
+		go func() {
+			stepType := f.Type
+			if stepType == "" {
+				stepType = StepTypeAgent
+			}
+			maxAttempts := f.RetryCount + 1
+			if maxAttempts < 1 {
+				maxAttempts = 1
+			}
 
-		sr := WorkflowStepRun{
-			WorkflowRunID:  runID,
-			StepName:       f.Name,
-			StepType:       stepType,
-			ParentID:       &parentID,
-			Status:         StepStatusRunning,
-			Input:          mustJSON(f.Inputs),
-			MaxAttempts:    maxAttempts,
-			TimeoutSeconds: f.TimeoutSeconds,
-			StartedAt:      &now,
-		}
-		if sr.TimeoutSeconds <= 0 {
-			sr.TimeoutSeconds = 300
-		}
-		e.db.WithContext(ctx).Create(&sr)
+			sr := WorkflowStepRun{
+				WorkflowRunID:  runID,
+				StepName:       f.Name,
+				StepType:       stepType,
+				ParentID:       &parentID,
+				Status:         StepStatusRunning,
+				Input:          mustJSON(f.Inputs),
+				MaxAttempts:    maxAttempts,
+				TimeoutSeconds: f.TimeoutSeconds,
+				StartedAt:      &now,
+			}
+			if sr.TimeoutSeconds <= 0 {
+				sr.TimeoutSeconds = 300
+			}
+			e.db.WithContext(ctx).Create(&sr)
 
-		// Dispatch by step type.
-		var out map[string]interface{}
-		var err error
-		switch f.Type {
-		case StepTypeEvent:
-			out, err = e.execEvent(ctx, runID, f)
-		case StepTypeCommand:
-			out, err = e.execCommand(ctx, runID, f)
-		case StepTypeAgent:
-			fallthrough
-		default:
-			out, err = e.execAgent(ctx, runID, f)
-		}
-		results[f.Name] = map[string]interface{}{"output": out, "error": errStr(err)}
+			// ponytail: global DB in goroutines — safe for PostgreSQL.
+			// SQLite concurrency is handled by dbtest.NewDB (single connection).
+			var out map[string]interface{}
+			var err error
+			switch f.Type {
+			case StepTypeEvent:
+				out, err = e.execEvent(ctx, runID, f)
+			case StepTypeCommand:
+				out, err = e.execCommand(ctx, runID, f)
+			case StepTypeAgent:
+				fallthrough
+			default:
+				out, err = e.execAgent(ctx, runID, f)
+			}
 
-		completedAt := time.Now()
-		status := StepStatusCompleted
-		errMsg := ""
-		if err != nil {
-			status = StepStatusFailed
-			errMsg = err.Error()
-		}
-		e.db.WithContext(ctx).Model(&WorkflowStepRun{}).
-			Where("id = ?", sr.ID).
-			Updates(map[string]interface{}{
-				"status":       status,
-				"output":       mustJSON(out),
-				"error":        errMsg,
-				"completed_at": completedAt,
-			})
+			completedAt := time.Now()
+			status := StepStatusCompleted
+			errMsg := ""
+			if err != nil {
+				status = StepStatusFailed
+				errMsg = err.Error()
+			}
+			e.db.WithContext(ctx).Model(&WorkflowStepRun{}).
+				Where("id = ?", sr.ID).
+				Updates(map[string]interface{}{
+					"status":       status,
+					"output":       mustJSON(out),
+					"error":        errMsg,
+					"completed_at": completedAt,
+				})
+
+			ch <- forkResult{name: f.Name, output: out, err: err}
+		}()
 	}
 
-	return map[string]interface{}{"fork": def.Name, "results": results}, nil
+	results := make(map[string]interface{})
+	var firstErr error
+	for range def.Forks {
+		r := <-ch
+		results[r.name] = map[string]interface{}{"output": r.output, "error": errStr(r.err)}
+		if r.err != nil && firstErr == nil {
+			firstErr = r.err
+		}
+	}
+	close(ch)
+
+	return map[string]interface{}{"fork": def.Name, "results": results, "error": errStr(firstErr)}, nil
 }
 
 func (e *Engine) execJoin(ctx context.Context, runID int64, def StepDef) (map[string]interface{}, error) {
@@ -602,16 +621,139 @@ func (e *Engine) execEvent(ctx context.Context, runID int64, def StepDef) (map[s
 	}
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// ── Event helpers ───────────────────────────────────────────────────────────
 
-func (e *Engine) evalCondition(ctx context.Context, runID int64, condition string) (bool, error) {
-	// Simple condition evaluation: check if condition starts with "!"
-	if strings.HasPrefix(condition, "!") {
-		return false, nil
+// PublishEvent wraps the event bus so callers don't need to import eventbus directly.
+func (e *Engine) PublishEvent(ctx context.Context, topic, source string, payload map[string]interface{}) (string, error) {
+	if e.bus == nil {
+		return "", nil
 	}
-	// For now, simple truthy check — always true unless specific patterns.
-	// ponytail: simple condition eval, expand to expression parser if needed.
-	return true, nil
+	return e.bus.Publish(ctx, topic, source, payload)
+}
+
+// ── Monitoring ──────────────────────────────────────────────────────────────
+
+// MonitorStats holds aggregated run statistics.
+type MonitorStats struct {
+	TotalRuns        int              `json:"total_runs"`
+	ByStatus         map[string]int   `json:"by_status"`
+	AverageDurationS float64          `json:"average_duration_s"`
+	FailureByStep    map[string]int   `json:"failure_by_step"`
+}
+
+// GetMonitorStats computes aggregated monitoring statistics.
+func (e *Engine) GetMonitorStats(ctx context.Context) (*MonitorStats, error) {
+	var total int64
+	e.db.WithContext(ctx).Model(&WorkflowRun{}).Count(&total)
+
+	var runs []WorkflowRun
+	e.db.WithContext(ctx).Order("id ASC").Find(&runs)
+
+	byStatus := map[string]int{}
+	var totalDurationS float64
+	var completedCount int
+
+	for _, r := range runs {
+		byStatus[r.Status]++
+		if r.StartedAt != nil && r.CompletedAt != nil && (r.Status == RunStatusCompleted || r.Status == RunStatusFailed) {
+			duration := r.CompletedAt.Sub(*r.StartedAt).Seconds()
+			totalDurationS += duration
+			completedCount++
+		}
+	}
+
+	var avgDurationS float64
+	if completedCount > 0 {
+		avgDurationS = totalDurationS / float64(completedCount)
+	}
+
+	// Failure by step name.
+	var failedSteps []struct {
+		StepName string
+		Count    int
+	}
+	e.db.WithContext(ctx).Model(&WorkflowStepRun{}).
+		Select("step_name, COUNT(*) as count").
+		Where("status = ?", StepStatusFailed).
+		Group("step_name").
+		Order("count DESC").
+		Limit(10).
+		Scan(&failedSteps)
+
+	failureByStep := make(map[string]int, len(failedSteps))
+	for _, fs := range failedSteps {
+		failureByStep[fs.StepName] = fs.Count
+	}
+
+	return &MonitorStats{
+		TotalRuns:        int(total),
+		ByStatus:         byStatus,
+		AverageDurationS: avgDurationS,
+		FailureByStep:    failureByStep,
+	}, nil
+}
+
+// evalCondition evaluates expressions in the format:
+//
+//	$steps.STEP_NAME.field == "value"
+//	$steps.STEP_NAME.field != "value"
+func (e *Engine) evalCondition(ctx context.Context, runID int64, condition string) (bool, error) {
+	condition = strings.TrimSpace(condition)
+	if condition == "" {
+		return true, nil
+	}
+
+	// Match: $steps.STEP_NAME.FIELD OP "VALUE"
+	parts := strings.SplitN(condition, " ", 3)
+	if len(parts) != 3 {
+		return false, fmt.Errorf("invalid condition format: %q", condition)
+	}
+
+	left := strings.TrimSpace(parts[0])
+	op := strings.TrimSpace(parts[1])
+	right := strings.TrimSpace(parts[2])
+
+	// Parse left side: $steps.STEP_NAME.FIELD
+	if !strings.HasPrefix(left, "$steps.") {
+		return false, fmt.Errorf("condition must reference $steps.*, got: %q", left)
+	}
+	ref := strings.TrimPrefix(left, "$steps.")
+	refParts := strings.SplitN(ref, ".", 2)
+	if len(refParts) != 2 {
+		return false, fmt.Errorf("condition reference must be step_name.field, got: %q", ref)
+	}
+	stepName, fieldName := refParts[0], refParts[1]
+
+	// Look up the referenced step run.
+	var sr WorkflowStepRun
+	if err := e.db.WithContext(ctx).
+		Where("workflow_run_id = ? AND step_name = ?", runID, stepName).
+		Order("id DESC").First(&sr).Error; err != nil {
+		return false, fmt.Errorf("reference step %q not found: %w", stepName, err)
+	}
+
+	// Get the field value from the step run.
+	var actual string
+	switch fieldName {
+	case "status":
+		actual = sr.Status
+	case "step_type":
+		actual = sr.StepType
+	default:
+		return false, fmt.Errorf("unsupported field: %q", fieldName)
+	}
+
+	// Strip quotes from right side.
+	expected := strings.Trim(right, `"'`)
+
+	switch op {
+	case "==":
+		return actual == expected, nil
+	case "!=":
+		return actual != expected, nil
+	default:
+		return false, fmt.Errorf("unsupported operator: %q", op)
+	}
 }
 
 func mustJSON(v interface{}) string {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 )
 
 func TestCreateDefAndList(t *testing.T) {
@@ -228,4 +229,204 @@ type RunResult struct {
 func mustPrettyJSON(v interface{}) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// ── Condition expression tests ───────────────────────────────────────────────
+
+func TestEvalCondition_stepStatusEq(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{
+		Name:  "condition-test",
+		Steps: `[{"name":"step_a","type":"agent","timeout_seconds":1},{"name":"step_b","type":"agent","timeout_seconds":1}]`,
+	}
+	e.CreateDef(context.Background(), def)
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+	<-time.After(50 * time.Millisecond)
+
+	// step_a should be completed.
+	ok, err := e.evalCondition(context.Background(), run.ID, `$steps.step_a.status == "completed"`)
+	if err != nil {
+		t.Fatalf("evalCondition: %v", err)
+	}
+	if !ok {
+		t.Error("expected step_a.status == 'completed' to be true")
+	}
+}
+
+func TestEvalCondition_stepStatusNe(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	def := &WorkflowDef{
+		Name:  "condition-ne-test",
+		Steps: `[{"name":"step_a","type":"event","wait_for_event":"never","timeout_seconds":1}]`,
+	}
+	e.CreateDef(context.Background(), def)
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+
+	ok, err := e.evalCondition(context.Background(), run.ID, `$steps.step_a.status != "completed"`)
+	if err != nil {
+		t.Fatalf("evalCondition: %v", err)
+	}
+	if !ok {
+		t.Error("expected step_a.status != 'completed' to be true when still running")
+	}
+}
+
+func TestEvalCondition_invalidFormat(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	_, err := e.evalCondition(context.Background(), 0, "not valid")
+	if err == nil {
+		t.Fatal("expected error for invalid condition format")
+	}
+}
+
+// ── Parallel fork tests ─────────────────────────────────────────────────────
+
+func TestForkParallel(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	// Use event steps for reliable SQLite testing — we control timing via AdvanceStep.
+	def := &WorkflowDef{
+		Name: "parallel-fork-test",
+		Steps: mustPrettyJSON([]StepDef{
+			{Name: "start", Type: StepTypeEvent, WaitForEvent: "advance", TimeoutSeconds: 5},
+			{Name: "fork_step", Type: StepTypeFork, TimeoutSeconds: 5,
+				Forks: []StepDef{
+					{Name: "worker_a", Type: StepTypeEvent, WaitForEvent: "advance", TimeoutSeconds: 5},
+					{Name: "worker_b", Type: StepTypeEvent, WaitForEvent: "advance", TimeoutSeconds: 5},
+					{Name: "worker_c", Type: StepTypeEvent, WaitForEvent: "advance", TimeoutSeconds: 5},
+				}},
+			{Name: "end", Type: StepTypeJoin, TimeoutSeconds: 10, JoinSteps: []string{"worker_a", "worker_b", "worker_c"}},
+		}),
+	}
+	e.CreateDef(context.Background(), def)
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+
+	// Advance start step manually.
+	e.AdvanceStep(context.Background(), run.ID, "start", nil, nil)
+	<-time.After(50 * time.Millisecond)
+
+	// Advance each worker.
+	e.AdvanceStep(context.Background(), run.ID, "worker_a", nil, nil)
+	e.AdvanceStep(context.Background(), run.ID, "worker_b", nil, nil)
+	e.AdvanceStep(context.Background(), run.ID, "worker_c", nil, nil)
+	<-time.After(50 * time.Millisecond)
+
+	// Advance join.
+	e.AdvanceStep(context.Background(), run.ID, "end", nil, nil)
+	<-time.After(50 * time.Millisecond)
+
+	var final WorkflowRun
+	db.First(&final, run.ID)
+	if final.Status != RunStatusCompleted {
+		t.Errorf("expected completed, got %s", final.Status)
+	}
+}
+
+// ── PublishEvent encapsulation tests ─────────────────────────────────────────
+
+func TestPublishEvent_noBus(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	id, err := e.PublishEvent(context.Background(), "test.topic", "workflow", map[string]interface{}{"key": "val"})
+	if err != nil {
+		t.Fatalf("PublishEvent with nil bus: %v", err)
+	}
+	if id != "" {
+		t.Errorf("expected empty ID with nil bus, got %s", id)
+	}
+}
+
+func TestPublishEvent_withBus(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{})
+	bus := eventbus.New(dbtest.NewLogger(t))
+	e := NewEngine(db, bus, nil, nil, dbtest.NewLogger(t))
+
+	var received map[string]interface{}
+	bus.Subscribe("test.topic", func(ctx context.Context, evt eventbus.Event) error {
+		received = evt.Payload
+		return nil
+	})
+	go bus.Start(context.Background())
+	defer bus.Stop()
+
+	id, err := e.PublishEvent(context.Background(), "test.topic", "workflow", map[string]interface{}{"key": "val"})
+	if err != nil {
+		t.Fatalf("PublishEvent: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected non-empty event ID")
+	}
+
+	<-time.After(50 * time.Millisecond)
+	if received == nil {
+		t.Fatal("expected event to be received by subscriber")
+	}
+	if received["key"] != "val" {
+		t.Errorf("expected key=val, got %v", received["key"])
+	}
+}
+
+// ── Condition step in workflow ──────────────────────────────────────────────
+
+func TestWorkflowWithConditionalStep(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	// step_a completes immediately, step_b has condition: only run if step_a completed.
+	def := &WorkflowDef{
+		Name: "conditional-test",
+		Steps: mustPrettyJSON([]StepDef{
+			{Name: "step_a", Type: StepTypeAgent, TimeoutSeconds: 1},
+			{Name: "step_b", Type: StepTypeAgent, TimeoutSeconds: 1, Condition: `$steps.step_a.status == "completed"`},
+		}),
+	}
+	e.CreateDef(context.Background(), def)
+	run, _ := e.StartRun(context.Background(), def.ID, nil)
+	<-time.After(100 * time.Millisecond)
+
+	var final WorkflowRun
+	db.First(&final, run.ID)
+	if final.Status != RunStatusCompleted {
+		t.Errorf("expected completed, got %s", final.Status)
+	}
+}
+
+// ── Monitor stats test ──────────────────────────────────────────────────────
+
+func TestGetMonitorStats(t *testing.T) {
+	db := dbtest.NewDB(t, &WorkflowDef{}, &WorkflowRun{}, &WorkflowStepRun{})
+	e := NewEngine(db, nil, nil, nil, dbtest.NewLogger(t))
+
+	stats, err := e.GetMonitorStats(context.Background())
+	if err != nil {
+		t.Fatalf("GetMonitorStats: %v", err)
+	}
+	if stats.TotalRuns != 0 {
+		t.Errorf("expected 0 total runs, got %d", stats.TotalRuns)
+	}
+	if stats.AverageDurationS != 0 {
+		t.Errorf("expected 0 avg duration, got %f", stats.AverageDurationS)
+	}
+
+	// Create a run and check stats again.
+	def := &WorkflowDef{
+		Name:  "stats-test",
+		Steps: `[{"name":"s1","type":"agent","timeout_seconds":1}]`,
+	}
+	e.CreateDef(context.Background(), def)
+	e.StartRun(context.Background(), def.ID, nil)
+	<-time.After(100 * time.Millisecond)
+
+	stats, _ = e.GetMonitorStats(context.Background())
+	if stats.TotalRuns != 1 {
+		t.Errorf("expected 1 total run, got %d", stats.TotalRuns)
+	}
 }

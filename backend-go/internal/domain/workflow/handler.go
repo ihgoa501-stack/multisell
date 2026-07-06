@@ -204,6 +204,28 @@ func (h *Handler) AdvanceStep(c *gin.Context) {
 	response.Success(c, gin.H{"advanced": req.StepName})
 }
 
+func (h *Handler) GetMonitorStats(c *gin.Context) {
+	stats, err := h.eng.GetMonitorStats(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, stats)
+}
+
+func (h *Handler) GetRunsStatusDistribution(c *gin.Context) {
+	stats, err := h.eng.GetMonitorStats(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{
+		"by_status":          stats.ByStatus,
+		"average_duration_s": stats.AverageDurationS,
+		"failure_by_step":    stats.FailureByStep,
+	})
+}
+
 type stepError struct{ msg string }
 
 func (e *stepError) Error() string { return e.msg }
