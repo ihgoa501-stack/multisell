@@ -207,3 +207,140 @@ func TestService_Calculate_StorageFeeType(t *testing.T) {
 		t.Fatalf("CalculatedFee = %v (expected 50)", res.CalculatedFee)
 	}
 }
+
+// ---------- pure computeFee unit tests ----------
+
+func TestComputeFee_Fixed(t *testing.T) {
+	r := &PlatformFeeRule{FeeType: "fixed", FixedAmount: 75}
+	if got := computeFee(r, 1000); got != 75 {
+		t.Fatalf("computeFee = %v, want 75", got)
+	}
+}
+
+func TestComputeFee_Commission(t *testing.T) {
+	r := &PlatformFeeRule{FeeType: "commission", FeeRatePct: 5.0}
+	if got := computeFee(r, 200); got != 10.0 {
+		t.Fatalf("computeFee = %v, want 10", got)
+	}
+}
+
+func TestComputeFee_Payment(t *testing.T) {
+	r := &PlatformFeeRule{FeeType: "payment", FeeRatePct: 2.5}
+	if got := computeFee(r, 1000); got != 25.0 {
+		t.Fatalf("computeFee = %v, want 25", got)
+	}
+}
+
+func TestComputeFee_Storage(t *testing.T) {
+	r := &PlatformFeeRule{FeeType: "storage", FixedAmount: 99.5}
+	if got := computeFee(r, 500); got != 99.5 {
+		t.Fatalf("computeFee = %v, want 99.5", got)
+	}
+}
+
+func TestComputeFee_Other(t *testing.T) {
+	r := &PlatformFeeRule{FeeType: "other", FixedAmount: 10, FeeRatePct: 2.0}
+	// other = fixed + amount*rate/100 = 10 + 200*2/100 = 14
+	if got := computeFee(r, 200); got != 14.0 {
+		t.Fatalf("computeFee = %v, want 14", got)
+	}
+}
+
+func TestComputeFee_Default(t *testing.T) {
+	r := &PlatformFeeRule{FeeType: "unknown", FixedAmount: 25}
+	// unknown type falls to r.FixedAmount
+	if got := computeFee(r, 1000); got != 25 {
+		t.Fatalf("computeFee = %v, want 25", got)
+	}
+}
+
+// ---------- Calculate integration edge cases ----------
+
+func TestService_Calculate_MultipleRules_Priority(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &PlatformFeeRule{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Low priority (higher number) — general commission rule
+	_, err := svc.Create(&CreateRuleInput{
+		FeeType:    "commission",
+		FeeRatePct: dbtest.FloatPtr(10),
+		PlatformID: int64Ptr(1),
+		Priority:   dbtest.IntPtr(100),
+	})
+	if err != nil {
+		t.Fatalf("Create low-priority: %v", err)
+	}
+
+	// High priority (lower number) — specific fixed-fee rule
+	_, err = svc.Create(&CreateRuleInput{
+		FeeType:     "fixed",
+		FixedAmount: dbtest.FloatPtr(200),
+		PlatformID:  int64Ptr(1),
+		Priority:    dbtest.IntPtr(10),
+	})
+	if err != nil {
+		t.Fatalf("Create high-priority: %v", err)
+	}
+
+	res, calcErr := svc.Calculate(&CalculateRequest{PlatformID: 1, Amount: 1000})
+	if calcErr != nil {
+		t.Fatalf("Calculate: %v", calcErr)
+	}
+	if !res.Matched {
+		t.Fatal("expected match")
+	}
+	if res.CalculatedFee != 200 {
+		t.Fatalf("CalculatedFee = %v, want 200 (high-priority fixed fee)", res.CalculatedFee)
+	}
+}
+
+func TestService_Calculate_MinAmountClamping(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &PlatformFeeRule{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Fixed fee of 5, but min amount is 50
+	svc.Create(&CreateRuleInput{
+		FeeType:     "fixed",
+		FixedAmount: dbtest.FloatPtr(5),
+		MinAmount:   dbtest.FloatPtr(50),
+		PlatformID:  int64Ptr(1),
+	})
+
+	res, err := svc.Calculate(&CalculateRequest{PlatformID: 1, Amount: 100})
+	if err != nil {
+		t.Fatalf("Calculate: %v", err)
+	}
+	if !res.Matched {
+		t.Fatal("expected match")
+	}
+	if res.CalculatedFee != 50 {
+		t.Fatalf("CalculatedFee = %v, want 50 (clamped to MinAmount)", res.CalculatedFee)
+	}
+}
+
+func TestService_Calculate_MaxAmountClamping(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &PlatformFeeRule{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Commission 30% of 1000 = 300, but max is 100
+	svc.Create(&CreateRuleInput{
+		FeeType:    "commission",
+		FeeRatePct: dbtest.FloatPtr(30),
+		MaxAmount:  dbtest.FloatPtr(100),
+		PlatformID: int64Ptr(1),
+	})
+
+	res, err := svc.Calculate(&CalculateRequest{PlatformID: 1, Amount: 1000})
+	if err != nil {
+		t.Fatalf("Calculate: %v", err)
+	}
+	if !res.Matched {
+		t.Fatal("expected match")
+	}
+	if res.CalculatedFee != 100 {
+		t.Fatalf("CalculatedFee = %v, want 100 (clamped to MaxAmount)", res.CalculatedFee)
+	}
+}

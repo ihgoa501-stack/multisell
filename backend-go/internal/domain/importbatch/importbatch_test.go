@@ -113,3 +113,116 @@ func TestService_ListBatches_FilterBySourceType(t *testing.T) {
 		t.Fatalf("SourceType = %s", items[0].SourceType)
 	}
 }
+
+func TestGetBatch_NotFound(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ImportBatch{}, &ImportBatchRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	_, err := svc.GetBatch(999)
+	if err == nil {
+		t.Fatal("expected error for non-existent batch")
+	}
+}
+
+func TestListBatches_FilterByStatus(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ImportBatch{}, &ImportBatchRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	_ = svc.CreateBatch(&ImportBatch{SourceType: "csv", FileName: "a.csv", Status: "pending"})
+	_ = svc.CreateBatch(&ImportBatch{SourceType: "csv", FileName: "b.csv", Status: "completed"})
+	_ = svc.CreateBatch(&ImportBatch{SourceType: "csv", FileName: "c.csv", Status: "failed"})
+
+	items, total, err := svc.ListBatches("", "completed", 1, 10)
+	if err != nil {
+		t.Fatalf("ListBatches: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 completed batch, got %d", total)
+	}
+	if items[0].Status != "completed" {
+		t.Fatalf("Status = %s", items[0].Status)
+	}
+}
+
+func TestListBatches_Pagination(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ImportBatch{}, &ImportBatchRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	for i := 0; i < 5; i++ {
+		_ = svc.CreateBatch(&ImportBatch{SourceType: "csv", FileName: "a.csv"})
+	}
+
+	// Page 1 with size 2
+	items, total, err := svc.ListBatches("", "", 1, 2)
+	if err != nil {
+		t.Fatalf("ListBatches: %v", err)
+	}
+	if total != 5 {
+		t.Fatalf("expected total 5, got %d", total)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items on page 1, got %d", len(items))
+	}
+
+	// Page 3 should have 1 item
+	items, total, err = svc.ListBatches("", "", 3, 2)
+	if err != nil {
+		t.Fatalf("ListBatches: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item on page 3, got %d", len(items))
+	}
+
+	// Page 4 should be empty
+	items, total, err = svc.ListBatches("", "", 4, 2)
+	if err != nil {
+		t.Fatalf("ListBatches: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items on page 4, got %d", len(items))
+	}
+}
+
+func TestListRows_ByStatus(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ImportBatch{}, &ImportBatchRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	_ = svc.CreateBatch(&ImportBatch{SourceType: "csv", FileName: "a.csv"})
+	batch, _ := svc.GetBatch(1)
+
+	_ = svc.CreateRow(&ImportBatchRow{BatchID: batch.ID, RowIndex: 1, Status: "pending"})
+	_ = svc.CreateRow(&ImportBatchRow{BatchID: batch.ID, RowIndex: 2, Status: "success"})
+	_ = svc.CreateRow(&ImportBatchRow{BatchID: batch.ID, RowIndex: 3, Status: "failed"})
+
+	items, total, err := svc.ListRows(batch.ID, "success", 1, 10)
+	if err != nil {
+		t.Fatalf("ListRows: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 success row, got %d", total)
+	}
+	if items[0].Status != "success" {
+		t.Fatalf("Status = %s", items[0].Status)
+	}
+}
+
+func TestListRows_BatchNotFound(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ImportBatch{}, &ImportBatchRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	items, total, err := svc.ListRows(999, "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListRows: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("expected 0 rows, got %d", total)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected empty slice, got %d items", len(items))
+	}
+}

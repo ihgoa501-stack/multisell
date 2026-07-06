@@ -2,6 +2,7 @@ package search
 
 import (
 	"strconv"
+	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -20,13 +21,13 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
 }
 
-// Search performs an ILIKE search across multiple tables.
+// Search performs a LIKE search across multiple tables.
 // Each table contributes at most limit/6 results; total is capped at limit.
 func (s *Service) Search(keyword string, limit int) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	if keyword == "" {
+	if keyword == "" || len(keyword) < 2 {
 		return []SearchResult{}, nil
 	}
 	like := "%" + keyword + "%"
@@ -45,7 +46,7 @@ func (s *Service) Search(keyword string, limit int) ([]SearchResult, error) {
 	var prods []prodRow
 	if err := s.db.Table("product").
 		Select("id, name").
-		Where("name ILIKE ?", like).
+		Where("LOWER(name) LIKE LOWER(?)", like).
 		Order("id DESC").
 		Limit(perTable).
 		Scan(&prods).Error; err != nil {
@@ -72,7 +73,7 @@ func (s *Service) Search(keyword string, limit int) ([]SearchResult, error) {
 	var skus []skuRow
 	if err := s.db.Table("sku").
 		Select("id, code, spec_desc").
-		Where("code ILIKE ? OR spec_desc ILIKE ?", like, like).
+		Where("LOWER(code) LIKE LOWER(?) OR LOWER(spec_desc) LIKE LOWER(?)", like, like).
 		Order("id DESC").
 		Limit(perTable).
 		Scan(&skus).Error; err != nil {
@@ -104,7 +105,7 @@ func (s *Service) Search(keyword string, limit int) ([]SearchResult, error) {
 	var ords []ordRow
 	if err := s.db.Table("sales_order").
 		Select("id, order_no, recipient_name").
-		Where("order_no ILIKE ? OR recipient_name ILIKE ?", like, like).
+		Where("LOWER(order_no) LIKE LOWER(?) OR LOWER(recipient_name) LIKE LOWER(?)", like, like).
 		Order("id DESC").
 		Limit(perTable).
 		Scan(&ords).Error; err != nil {
@@ -131,7 +132,7 @@ func (s *Service) Search(keyword string, limit int) ([]SearchResult, error) {
 	var ass []asRow
 	if err := s.db.Table("after_sales_order").
 		Select("id, reason").
-		Where("reason ILIKE ?", like).
+		Where("LOWER(reason) LIKE LOWER(?)", like).
 		Order("id DESC").
 		Limit(perTable).
 		Scan(&ass).Error; err != nil {
@@ -157,7 +158,7 @@ func (s *Service) Search(keyword string, limit int) ([]SearchResult, error) {
 	var exs []exRow
 	if err := s.db.Table("exception_item").
 		Select("id, title").
-		Where("title ILIKE ?", like).
+		Where("LOWER(title) LIKE LOWER(?)", like).
 		Order("id DESC").
 		Limit(perTable).
 		Scan(&exs).Error; err != nil {
@@ -177,13 +178,13 @@ func (s *Service) Search(keyword string, limit int) ([]SearchResult, error) {
 
 	// settlement: settlement_no
 	type stRow struct {
-		ID            int64
-		SettlementNo  string
+		ID           int64
+		SettlementNo string
 	}
 	var sts []stRow
 	if err := s.db.Table("settlement").
 		Select("id, settlement_no").
-		Where("settlement_no ILIKE ?", like).
+		Where("LOWER(settlement_no) LIKE LOWER(?)", like).
 		Order("id DESC").
 		Limit(perTable).
 		Scan(&sts).Error; err != nil {
@@ -204,8 +205,28 @@ func (s *Service) Search(keyword string, limit int) ([]SearchResult, error) {
 	return out, nil
 }
 
-// Recent returns the recent searches for a user. Currently a placeholder.
+// RecordRecentSearch stores a search query for a user.
+func (s *Service) RecordRecentSearch(userID, keyword string) {
+	if err := s.db.Exec("INSERT INTO recent_search (user_id, query, searched_at) VALUES (?, ?, ?)",
+		userID, keyword, time.Now().Format(time.RFC3339Nano)).Error; err != nil {
+		s.logger.Warn("failed to record recent search", zap.Error(err))
+	}
+}
+
+// Recent returns the recent searches for a user, ordered by time descending.
 func (s *Service) Recent(userID string) []RecentSearch {
-	_ = userID
-	return []RecentSearch{}
+	var results []RecentSearch
+	if err := s.db.Table("recent_search").
+		Select("query, searched_at AS timestamp").
+		Where("user_id = ?", userID).
+		Order("searched_at DESC").
+		Limit(20).
+		Scan(&results).Error; err != nil {
+		s.logger.Warn("failed to query recent searches", zap.Error(err))
+		return []RecentSearch{}
+	}
+	if results == nil {
+		return []RecentSearch{}
+	}
+	return results
 }

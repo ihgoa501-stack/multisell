@@ -1,6 +1,8 @@
 package orderimport
 
 import (
+	"errors"
+
 	"github.com/lingmirror/backend-go/internal/common"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -64,6 +66,9 @@ func (s *Service) Create(in *CreateInput) (*OrderImport, error) {
 	sourceType := in.SourceType
 	if sourceType == "" {
 		sourceType = "manual"
+	}
+	if in.FileName == "" {
+		return nil, errors.New("file_name is required")
 	}
 	o := OrderImport{
 		PlatformID: in.PlatformID,

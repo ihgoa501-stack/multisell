@@ -53,7 +53,7 @@ func setupRouter(t *testing.T) (*gin.Engine, *Service) {
 	rg.PUT("/product-suppliers/:id", h.UpdateProductSupplier)
 	rg.DELETE("/product-suppliers/:id", h.DeleteProductSupplier)
 
-	rg.GET("/products/:id/supplier-comparison", h.GetSupplierComparison)
+	rg.GET("/product-suppliers/comparison", h.GetSupplierComparison)
 
 	return r, svc
 }
@@ -1012,7 +1012,7 @@ func TestHandler_GetSupplierComparison(t *testing.T) {
 	_ = svc.CreateProductSupplier(ctx, &ProductSupplier{ProductID: 1, SupplierID: sup.ID, SupplyPrice: decimalPtr(12.50), MinOrderQty: 5})
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/products/1/supplier-comparison", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/product-suppliers/comparison?product_id=1", nil)
 	r.ServeHTTP(w, req)
 
 	// The underlying service query uses PostgreSQL ::bigint cast syntax, which
@@ -1034,7 +1034,7 @@ func TestHandler_GetSupplierComparison_InvalidID(t *testing.T) {
 	r, _ := setupRouter(t)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/products/abc/supplier-comparison", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/product-suppliers/comparison?product_id=abc", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
