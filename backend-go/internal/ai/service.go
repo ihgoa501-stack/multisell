@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ type Service struct {
 	cmd    *command.Dispatcher
 	cat    *actioncatalog.Catalog
 	guard  *guardrails.Chain
+	oplogSvc *operationlog.Service // optional audit logging sink
 }
 
 // NewService creates a new AI service.
@@ -404,6 +406,23 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 	return &a, nil
 }
 
+// logExecuteAction writes an audit log entry for an action execution event.
+// Silently skips if no operation-log service is configured (graceful degradation).
+func (s *Service) logExecuteAction(a UnifiedAction, operator, status string) {
+	if s.oplogSvc == nil {
+		return
+	}
+	content, _ := json.Marshal(a)
+	_ = s.oplogSvc.LogStructured(&operationlog.StructuredLogInput{
+		Action:      "ai.action." + status,
+		Module:      "ai.action",
+		ResourceID:  strconv.FormatInt(a.ID, 10),
+		Operator:    operator,
+		Content:     string(content),
+		Result:      status,
+		TriggerType: "agent",
+	})
+}
 
 func (s *Service) FailAction(id int64, reason string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "failed", map[string]interface{}{
