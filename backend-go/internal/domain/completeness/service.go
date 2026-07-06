@@ -3,17 +3,20 @@ package completeness
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
+	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides completeness check business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db        *gorm.DB
+	logger    *zap.Logger
+	profitSvc *profit.Service // optional; nil means economic estimates skipped
 }
 
 // NewService creates a new completeness service.
@@ -163,6 +166,114 @@ func (s *Service) makeDim(label string, complete bool, val string, failReason st
 		return CompletenessDimension{Label: label, Score: 100, Complete: true, Reason: ""}
 	}
 	return CompletenessDimension{Label: label, Score: 0, Complete: false, Reason: failReason}
+}
+
+// CheckEnhanced computes an enhanced completeness report including economic
+// estimates from the profit service (cost, logistics, platform fee, margin).
+func (s *Service) CheckEnhanced(productID int64, triggeredBy string) (*CompletenessReport, error) {
+	var prod candidate.CandidateProduct
+	if err := s.db.First(&prod, productID).Error; err != nil {
+		return nil, err
+	}
+
+	// 1. Base info completeness (also persists a CompletenessCheck record).
+	base, err := s.Check(productID, triggeredBy)
+	if err != nil {
+		return nil, err
+	}
+	baseScore := base.Score / 100.0
+
+	// 2. Cost score: purchase price + target sale price
+	costComplete := prod.PurchasePrice > 0 && prod.TargetSalePrice > 0
+	costScore := 0.0
+	if costComplete {
+		costScore = 1.0
+	}
+
+	// 3. Logistics score: package weight + dimensions
+	logComplete := prod.PackageWeightKg > 0 &&
+		prod.PackageLengthCm > 0 && prod.PackageWidthCm > 0 && prod.PackageHeightCm > 0
+	logisticsScore := 0.0
+	if logComplete {
+		logisticsScore = 1.0
+	}
+
+	// 4. Platform fee score: target platform set
+	platformFeeScore := 0.0
+	if prod.TargetPlatformID != nil && *prod.TargetPlatformID > 0 {
+		platformFeeScore = 1.0
+	}
+
+	// 5. Profit score: average of economic subscores
+	profitScore := (costScore + logisticsScore + platformFeeScore) / 3.0
+
+	// 6. Overall: base 40%, cost 20%, logistics 15%, platform fee 10%, profit 15%
+	overall := baseScore*0.40 + costScore*0.20 + logisticsScore*0.15 + platformFeeScore*0.10 + profitScore*0.15
+	overall = math.Round(overall*100) / 100
+
+	// 7. Collect economic missing fields
+	var econMissing []string
+	if prod.PurchasePrice <= 0 {
+		econMissing = append(econMissing, "采购成本")
+	}
+	if prod.TargetSalePrice <= 0 {
+		econMissing = append(econMissing, "目标售价")
+	}
+	if prod.PackageWeightKg <= 0 {
+		econMissing = append(econMissing, "包装重量")
+	}
+	if prod.PackageLengthCm <= 0 || prod.PackageWidthCm <= 0 || prod.PackageHeightCm <= 0 {
+		econMissing = append(econMissing, "包装尺寸")
+	}
+	if prod.TargetPlatformID == nil || *prod.TargetPlatformID <= 0 {
+		econMissing = append(econMissing, "目标平台")
+	}
+
+	// Merge with base missing fields, dedup by label.
+	seen := make(map[string]bool, len(base.MissingItems)+len(econMissing))
+	allMissing := make([]string, 0, len(base.MissingItems)+len(econMissing))
+	for _, m := range base.MissingItems {
+		if !seen[m] {
+			seen[m] = true
+			allMissing = append(allMissing, m)
+		}
+	}
+	for _, m := range econMissing {
+		if !seen[m] {
+			seen[m] = true
+			allMissing = append(allMissing, m)
+		}
+	}
+
+	// 8. Economic estimates via profit service (best-effort, nil ptrs on failure).
+	var estProfit, estMargin, estLogistics, estPlatformFee *float64
+	if s.profitSvc != nil {
+		pr, err := s.profitSvc.Calculate(productID, triggeredBy)
+		if err != nil {
+			s.logger.Warn("CheckEnhanced: profit.Calculate failed, estimates omitted",
+				zap.Int64("product_id", productID), zap.Error(err))
+		} else {
+			estProfit = &pr.EstimatedProfit
+			estMargin = &pr.ProfitMargin
+			estLogistics = &pr.ShippingCost
+			estPlatformFee = &pr.PlatformFee
+		}
+	}
+
+	return &CompletenessReport{
+		CandidateID:          productID,
+		BaseInfoScore:        math.Round(baseScore*100) / 100,
+		CostScore:            costScore,
+		LogisticsScore:       logisticsScore,
+		PlatformFeeScore:     platformFeeScore,
+		ProfitScore:          math.Round(profitScore*100) / 100,
+		OverallScore:         overall,
+		MissingFields:        allMissing,
+		EstimatedProfit:      estProfit,
+		EstimatedMargin:      estMargin,
+		EstimatedLogistics:   estLogistics,
+		EstimatedPlatformFee: estPlatformFee,
+	}, nil
 }
 
 // ListChecks returns paginated completeness checks with filter by status.
