@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
@@ -144,6 +145,128 @@ func TestService_AlertRule_CreateAndList(t *testing.T) {
 	}
 	if got.Name != "低库存预警" {
 		t.Fatalf("Name = %s", got.Name)
+	}
+}
+
+func TestList_Pagination(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &Notification{}, &AlertRule{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Create 25 notifications for user 1
+	for i := 0; i < 25; i++ {
+		db.Create(&Notification{UserID: 1, AlertType: "test", Title: fmt.Sprintf("T%d", i+1), Severity: "info"})
+	}
+
+	// Page 1, size 10
+	items, total, err := svc.List(ListFilter{UserID: 1}, 1, 10)
+	if err != nil {
+		t.Fatalf("List page 1: %v", err)
+	}
+	if total != 25 {
+		t.Fatalf("total = %d (expected 25)", total)
+	}
+	if len(items) != 10 {
+		t.Fatalf("page 1 len = %d (expected 10)", len(items))
+	}
+
+	// Page 3, size 10 → should return the last 5 items
+	items, total, err = svc.List(ListFilter{UserID: 1}, 3, 10)
+	if err != nil {
+		t.Fatalf("List page 3: %v", err)
+	}
+	if len(items) != 5 {
+		t.Fatalf("page 3 len = %d (expected 5)", len(items))
+	}
+
+	// Default size when size < 1
+	items, total, err = svc.List(ListFilter{UserID: 1}, 1, 0)
+	if err != nil {
+		t.Fatalf("List default size: %v", err)
+	}
+	if len(items) != 20 {
+		t.Fatalf("default size len = %d (expected 20)", len(items))
+	}
+}
+
+func TestDelete_NotFound(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &Notification{}, &AlertRule{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// Deleting a non-existent ID should not error (GORM behavior)
+	err := svc.Delete(99999)
+	if err != nil {
+		t.Fatalf("Delete non-existent: %v", err)
+	}
+
+	// Verify existing records are unaffected
+	svc.Create(&Notification{UserID: 1, AlertType: "test", Title: "T1"})
+	items, total, _ := svc.List(ListFilter{}, 1, 10)
+	if total != 1 {
+		t.Fatalf("total = %d (expected 1)", total)
+	}
+	_ = items
+}
+
+func TestAlertRule_ToggleEnabled(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &Notification{}, &AlertRule{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	r := &AlertRule{Name: "低库存预警", AlertType: "low_stock", Enabled: 0}
+	if err := svc.CreateAlertRule(r); err != nil {
+		t.Fatalf("CreateAlertRule: %v", err)
+	}
+
+	// Toggle disabled → enabled
+	r.Enabled = 1
+	if err := svc.UpdateAlertRule(r); err != nil {
+		t.Fatalf("UpdateAlertRule (enable): %v", err)
+	}
+	got, _ := svc.GetAlertRule(r.ID)
+	if got.Enabled != 1 {
+		t.Fatalf("Enabled = %d (expected 1)", got.Enabled)
+	}
+
+	// Toggle enabled → disabled
+	r.Enabled = 0
+	if err := svc.UpdateAlertRule(r); err != nil {
+		t.Fatalf("UpdateAlertRule (disable): %v", err)
+	}
+	got, _ = svc.GetAlertRule(r.ID)
+	if got.Enabled != 0 {
+		t.Fatalf("Enabled = %d (expected 0)", got.Enabled)
+	}
+}
+
+func TestUnreadCount_MultipleUsers(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &Notification{}, &AlertRule{})
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	// User 1: 3 unread + 1 read
+	// User 2: 1 unread
+	db.Create(&Notification{UserID: 1, AlertType: "test", Title: "U1a", IsRead: 0})
+	db.Create(&Notification{UserID: 1, AlertType: "test", Title: "U1b", IsRead: 0})
+	db.Create(&Notification{UserID: 1, AlertType: "test", Title: "U1c", IsRead: 0})
+	db.Create(&Notification{UserID: 1, AlertType: "test", Title: "U1d", IsRead: 1})
+	db.Create(&Notification{UserID: 2, AlertType: "test", Title: "U2a", IsRead: 0})
+
+	cnt, err := svc.UnreadCount(1)
+	if err != nil {
+		t.Fatalf("UnreadCount user 1: %v", err)
+	}
+	if cnt != 3 {
+		t.Fatalf("user 1 unread = %d (expected 3)", cnt)
+	}
+
+	cnt, err = svc.UnreadCount(2)
+	if err != nil {
+		t.Fatalf("UnreadCount user 2: %v", err)
+	}
+	if cnt != 1 {
+		t.Fatalf("user 2 unread = %d (expected 1)", cnt)
 	}
 }
 
