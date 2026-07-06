@@ -4,7 +4,40 @@ import (
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/domain/candidate"
 )
+
+func TestService_Calculate_CreateErrorIsReturned(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ProfitSummary{}, &candidate.CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+
+	platformID := int64(1)
+	prod := candidate.CandidateProduct{
+		Title:            "Test Product for Profit Calc",
+		PurchasePrice:    50,
+		PurchaseCurrency: "CNY",
+		PackageWeightKg:  0.5,
+		PackageLengthCm:  10,
+		PackageWidthCm:   8,
+		PackageHeightCm:  6,
+		HSCode:           "1234.56",
+		TargetSalePrice:  30,
+		TargetPlatformID: &platformID,
+		DestinationCountry: "US",
+	}
+	if err := db.Create(&prod).Error; err != nil {
+		t.Fatalf("create candidate: %v", err)
+	}
+
+	// Drop target table so Create fails
+	db.Exec("DROP TABLE profit_summary")
+
+	_, err := svc.Calculate(prod.ID, "tester")
+	if err == nil {
+		t.Fatal("expected error from Create (table dropped)")
+	}
+}
 
 func TestService_ListSummaries(t *testing.T) {
 	t.Parallel()

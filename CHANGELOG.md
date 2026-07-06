@@ -1,18 +1,27 @@
 # Changelog
 
-## v0.4.1.0 (2026-07-06) — 限制链路加固
+# Changelog
+
+## v0.4.1.0 (2026-07-06) — 限制链路加固 + DB 错误修复
 
 ### Added
 - **MutationGuard 全覆盖** — 8+ EventBus 变更处理器现在被 MutationGuard 包裹（trustscore/entropy/ozon sync/sourcing/aftersale/stock/listing/agentos/metabolism），审计日志覆盖 pending→executed/failed 全周期。
 - **系统动作注册** — 10 个 `system.*` 内部动作已注册到 ActionCatalog（信任分升级/熵防御/审批创建/集成同步/供应链流/售后/库存/上架/SLA/代谢），满足架构合规要求。
 - **DispatchSafe 架构文档** — KERNEL_CONTRACTS.md 明确 raw Dispatch vs DispatchSafe 选择策略。
+- **Tests** — 3 个新测试确认 Create 失败时会返回 error（completeness/profit/loop）
+- **Migration 000065** — 为 `listing_recommendation` 表添加 `feedback_status`、`feedback_note` 列和索引
+- **Smoke test** — `json_code` jq 修复（`.code // ""` 处理无 envelope 的端点）；写入步骤后增加回读验证确认数据持久化
 
 ### Fixed
+- **DB 写入错误不再被静默吞掉** — completeness/profit/loop 三个 service 的 `s.db.Create()` 返回值之前被丢弃或未检查，现在全部检查 `.Error`，失败时返回 HTTP 500
 - **Compilation 修复** — 解决 internal/ai 中 8 个文件的 Git 冲突标记，UserIDFromCtx 去重，所有调用点参数顺序统一。
 - **Scheduler JWT** — `GET /api/v1/aios/scheduler/tasks` 从未认证的 root engine 移至 JWT 保护的 protected 组。
 - **动作命名统一** — `inventory_update→inventory_change`, `platform_publish→listing_publish`, `data_delete→destructive_data_change`，涉及 6 个文件（migration seed + guardrails test + 3 doc + engine ponytail）。
 - **Dead code 清理** — 删除 handler.go 中未使用的局部 `userIDFromCtx` 函数。
 - **KERNEL_CONTRACTS 措辞修正** — "guard enforces" → "guard ensures"，明确目录注册为强制性约定而非代码执行。
+
+### Changed
+- **candidate/routes.go** — 移除 `db.AutoMigrate()` 调用，业务表 schema 完全由 SQL migrations 管理
 
 ### Governance
 - **限制清单文档** — `docs/RESTRICTION_LIST.md` 面向 Owner 的完整限制说明（自动放行/审批/禁止/审计查询/变更方法）。

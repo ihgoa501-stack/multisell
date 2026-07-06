@@ -92,7 +92,9 @@ func (s *Service) Check(productID int64, triggeredBy string) (*CheckResult, erro
 	if triggeredBy == "" {
 		check.TriggeredBy = "system"
 	}
-	_ = s.db.Create(&check)
+	if err := s.db.Create(&check).Error; err != nil {
+		return nil, fmt.Errorf("save completeness check: %w", err)
+	}
 
 	return &CheckResult{
 		ProductID:    productID,
