@@ -52,7 +52,7 @@
 - [ ] `docs/INDEX.md` 已更新（如涉及新模块或路径变更）
 - [ ] `docs/BETA_ACCEPTANCE_REPORT.md` 已更新（如声称 Beta/试运行验收）
 - [ ] `docs/KNOWN_ISSUES.md` 已更新（如存在 FAIL/BLOCKED/SKIPPED 验收项）
-- [ ] `docs/OWNER_DECISION_LOG.md` 已更新（如使用 Production-write 通道或有通道覆盖）
+- [ ] `docs/governance/OWNER_DECISION_LOG.md` 已更新（如使用 Production-write 通道或有通道覆盖）
 - [ ] 本 PR 不涉及文档变更
 
 ## 风险
