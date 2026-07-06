@@ -210,9 +210,12 @@ func TestBridgeTimeoutPropagation(t *testing.T) {
 
 	bridge := NewToolBridge([]DriverEntry{
 		{Name: "slow", Driver: d, Weight: 1},
-	}, time.Nanosecond, logger) // timeout so short it will expire
+	}, time.Nanosecond, logger)
 
-	ctx := context.Background()
+	// Use a parent context with a past deadline so the timeout fires reliably
+	// regardless of Go scheduler timing (time.Nanosecond alone is flaky).
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
 	_, err := bridge.FetchPage(ctx, "http://example.com/product")
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")

@@ -210,3 +210,47 @@ cd frontend-next && npm test && npm run build
 | 后端 build 通过但 lint 失败 | 已知问题 | 不阻断部署，但需尽快修复 |
 | Webhook 不回调 | Caddy 配置 / 签名过期 | 检查 `docker compose logs caddy` |
 | 前端 build 失败 | 依赖版本冲突 | `cd frontend-next && npm ci` 重新安装 |
+
+## 10. 告警通知渠道配置
+
+系统通过配置项 `llm.daily_budget_usd` 和 Webhook 通知渠道发送告警。
+
+### 10.1 LLM 预算控制
+
+| 配置项 | 环境变量 | 说明 | 默认值 |
+|--------|---------|------|--------|
+| `llm.daily_budget_usd` | `LLM_DAILY_BUDGET_USD` | 每日 LLM 调用预算上限 (USD) | `0` (不限制) |
+
+超限行为：
+- 调用 `Allow()` 返回 `ActionBlock`，拒绝 LLM 调用
+- 同时记录 `WARN` 级别日志
+- 可在 Grafana 仪表盘查看 `llm_cost_logs` 表的日消耗趋势
+
+### 10.2 Webhook 告警
+
+系统内置了 `WebhookSender` (`backend-go/internal/platform/alert/`)：
+
+```go
+sender := alert.NewWebhookSender([]string{"https://hooks.example.com/alert"})
+sender.SendHealthAlert(ctx, "backend", "service unreachable")
+```
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `title` | 告警标题 | `[backend] Health check failed` |
+| `message` | 详情描述 | `service unreachable` |
+| `level` | 级别 | `critical` / `error` / `warning` / `info` |
+| `timestamp` | ISO 8601 时间 | `2026-07-06T12:00:00Z` |
+| `source` | 服务名 | `backend` |
+
+支持的接收端：
+- **飞书机器人**：使用飞书 Webhook URL
+- **Slack Webhook**：使用 Slack Incoming Webhook URL
+- **自定义**：任意接受 POST JSON 的 HTTP 端点
+
+配置方式（`config.yaml`）：
+```yaml
+alert:
+  webhook_urls:
+    - "https://hooks.example.com/alert"
+```

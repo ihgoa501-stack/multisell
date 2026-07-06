@@ -19,9 +19,14 @@ type CostLog struct {
 	CostUSD     float64         `gorm:"column:cost_usd;type:numeric(12,6);not null;default:0"`
 	RequestHash string          `gorm:"column:request_hash;size:64;not null;default:''"`
 	Cached      bool            `gorm:"column:cached;not null;default:false"`
-	WindowDate  string          `gorm:"column:window_date;type:date;not null;default:CURRENT_DATE"`
+	WindowDate  time.Time       `gorm:"column:window_date;type:date;not null;default:CURRENT_DATE"`
 	CreatedAt   time.Time       `gorm:"column:created_at;autoCreateTime"`
 }
+
+// ponytail: WindowDate uses time.Time for portability across SQLite and PostgreSQL.
+// The DailySpend query uses DATE(window_date) = CURRENT_DATE to compare date-only
+// values regardless of how the driver stores the time component.
+
 
 // TableName overrides GORM's default table name.
 func (CostLog) TableName() string {
@@ -30,17 +35,17 @@ func (CostLog) TableName() string {
 
 // CostLogSummary is the daily rollup from a SUM query.
 type CostLogSummary struct {
-	WindowDate string  `json:"window_date"`
-	TotalCost  float64 `json:"total_cost_usd"`
-	TotalCalls int     `json:"total_calls"`
+	WindowDate string  `json:"window_date" gorm:"column:window_date"`
+	TotalCost  float64 `json:"total_cost_usd" gorm:"column:total_cost"`
+	TotalCalls int     `json:"total_calls" gorm:"column:total_calls"`
 }
 
 // DailySpend returns total cost in USD for today from the DB.
 func DailySpend(db *gorm.DB) (*CostLogSummary, error) {
 	var s CostLogSummary
 	err := db.Model(&CostLog{}).
-		Select("window_date, SUM(cost_usd) AS total_cost_usd, COUNT(*) AS total_calls").
-		Where("window_date = CURRENT_DATE").
+		Select("window_date, SUM(cost_usd) AS total_cost, COUNT(*) AS total_calls").
+		Where("DATE(window_date) = CURRENT_DATE").
 		Group("window_date").
 		Take(&s).Error
 	if err != nil {

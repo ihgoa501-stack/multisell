@@ -93,6 +93,11 @@ func (c *Controller) Allow(ctx context.Context, req AllowInput) (*Result, error)
 	// 1. Daily cap check.
 	remaining := c.dailyCapUSD - c.todayCost
 	if remaining <= 0 {
+		c.logger.Warn("costcontrol: daily budget exceeded",
+			zap.Float64("daily_spent", c.todayCost),
+			zap.Float64("daily_cap", c.dailyCapUSD),
+			zap.String("agent_id", req.AgentID),
+		)
 		return &Result{
 			Action:     ActionBlock,
 			Reason:     fmt.Sprintf("daily budget exhausted: $%.4f / $%.4f", c.todayCost, c.dailyCapUSD),

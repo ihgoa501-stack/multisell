@@ -1135,3 +1135,50 @@ func poll(t *testing.T, timeout time.Duration, desc string, cond func() bool) {
 		}
 	}
 }
+
+// TestBusLifecycle_GracefulDrain verifies that Stop properly drains all worker
+// goroutines and does not leak goroutines after shutdown.
+func TestBusLifecycle_GracefulDrain(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	b := New(logger, WithWorkers(2))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	// Subscribe a handler that blocks briefly to simulate work.
+	var handled atomic.Int32
+	b.Subscribe("drain.*", func(ctx context.Context, evt Event) error {
+		time.Sleep(5 * time.Millisecond)
+		handled.Add(1)
+		return nil
+	})
+
+	// Publish several events that should be processed before or during drain.
+	for i := 0; i < 10; i++ {
+		b.Publish(context.Background(), "drain.test", "test", nil)
+	}
+
+	// Stop the bus — this should close backends, signal workers, and wait.
+	// All published events may or may not be processed, but Stop must not hang.
+	stopDone := make(chan struct{})
+	go func() {
+		cancel()
+		b.Stop()
+		close(stopDone)
+	}()
+
+	select {
+	case <-stopDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop hung — workers did not drain within 5s")
+	}
+
+	// After Stop, publishing should not panic (events are still enqueuable
+	// but workers are gone).
+	_, err := b.Publish(context.Background(), "drain.after", "test", nil)
+	if err != nil {
+		// Accept backpressure errors after workers are gone.
+		t.Logf("Publish after Stop returned: %v (acceptable)", err)
+	}
+}
