@@ -137,3 +137,54 @@ func (h *Handler) FailedRuns(c *gin.Context) {
 	}
 	response.Success(c, items)
 }
+
+// TrafficSummary GET /agentos/traffic-summary
+func (h *Handler) TrafficSummary(c *gin.Context) {
+	summary, err := h.service.TrafficSummary()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, summary)
+}
+
+// InterceptedActions GET /agentos/intercepted-actions
+func (h *Handler) InterceptedActions(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	items, total, err := h.service.InterceptedActions(limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"items": items, "total": total})
+}
+
+// AgentMetrics GET /agentos/agent-metrics
+func (h *Handler) AgentMetrics(c *gin.Context) {
+	metrics, err := h.service.AgentMetrics()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"agents": metrics})
+}
+
+// ExternalHealth GET /agentos/external-health
+func (h *Handler) ExternalHealth(c *gin.Context) {
+	response.Success(c, h.service.ExternalHealth())
+}
+
+// AuditReplay GET /agentos/audit-replay/:correlation_id
+func (h *Handler) AuditReplay(c *gin.Context) {
+	correlationID := c.Param("correlation_id")
+	if correlationID == "" {
+		response.Error(c, http.StatusBadRequest, "correlation_id is required")
+		return
+	}
+	replay, err := h.service.AuditReplay(correlationID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, replay)
+}

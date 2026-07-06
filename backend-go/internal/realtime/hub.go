@@ -1,12 +1,30 @@
 package realtime
 
 import (
+	"encoding/json"
 	"errors"
 	"sync"
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
+
+// Event types for real-time action status push.
+const (
+	EventActionStatusChanged = "agent.action.status_changed"
+)
+
+// ActionStatusChangePayload is WS event payload for status changes.
+type ActionStatusChangePayload struct {
+	ActionID      int64  `json:"action_id"`
+	ActionType    string `json:"action_type"`
+	AgentID       string `json:"agent_id"`
+	RiskLevel     string `json:"risk_level"`
+	OldStatus     string `json:"old_status"`
+	NewStatus     string `json:"new_status"`
+	CorrelationID string `json:"correlation_id"`
+	Timestamp     string `json:"timestamp"`
+}
 
 var (
 	// ErrNoClient is returned when no client is connected for the given user ID.
@@ -105,6 +123,15 @@ func (h *Hub) BroadcastAndWait(message []byte) {
 		}
 	}
 	h.mu.Unlock()
+}
+
+// BroadcastActionStatusChange sends a status change event to all WS clients.
+func (h *Hub) BroadcastActionStatusChange(payload ActionStatusChangePayload) {
+	msg, _ := json.Marshal(map[string]interface{}{
+		"type":    EventActionStatusChanged,
+		"payload": payload,
+	})
+	h.Broadcast(msg)
 }
 
 // ClientCount returns the current number of connected clients.

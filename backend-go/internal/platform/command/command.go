@@ -35,7 +35,8 @@ type Dispatcher struct {
 	handlers      map[string]Handler
 	logger        *zap.Logger
 	catalog       *actioncatalog.Catalog // optional, nil means no catalog enforcement
-	auditRecorder AuditRecorder           // optional, nil means no audit logging
+	auditRecorder AuditRecorder          // optional, nil means no audit logging
+	rateLimiter   *RateLimiter           // optional, nil means no rate limiting
 }
 
 // DispatcherOption configures a Dispatcher.
@@ -55,6 +56,14 @@ func WithCatalog(cat *actioncatalog.Catalog) DispatcherOption {
 func WithAuditRecorder(ar AuditRecorder) DispatcherOption {
 	return func(d *Dispatcher) {
 		d.auditRecorder = ar
+	}
+}
+
+// WithRateLimiter sets an optional rate limiter that throttles production
+// actions by (agent, action_type) using a sliding window.
+func WithRateLimiter(rl *RateLimiter) DispatcherOption {
+	return func(d *Dispatcher) {
+		d.rateLimiter = rl
 	}
 }
 
@@ -164,6 +173,13 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 			if policy != nil && !policy.IsApproved(*action.ApprovalID) {
 				return nil, ErrApprovalRequired
 			}
+		}
+	}
+
+	// Rate limiting check: only enforced in production mode.
+	if d.rateLimiter != nil && action.Mode == ModeProduction {
+		if !d.rateLimiter.Allow(action.AgentID, action.ActionType) {
+			return nil, ErrRateLimited
 		}
 	}
 

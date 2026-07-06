@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/lingmirror/backend-go/internal/ai"
+	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 )
 
 // Service provides AgentOS cockpit aggregation.
@@ -16,14 +17,16 @@ type Service struct {
 	db       *gorm.DB
 	logger   *zap.Logger
 	registry *ai.AgentRegistry
+	tracker  *toolbridge.ExternalCallTracker
 }
 
 // NewService creates a new AgentOS service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
+func NewService(db *gorm.DB, logger *zap.Logger, tracker *toolbridge.ExternalCallTracker) *Service {
 	return &Service{
 		db:       db,
 		logger:   logger,
 		registry: ai.DefaultRegistry(),
+		tracker:  tracker,
 	}
 }
 
@@ -639,8 +642,385 @@ func (s *Service) AgentTimeline(limit int) ([]AgentTimelineEntry, error) {
 }
 
 // ---------------------------------------------------------------------------
-// FailedRun types and method
+// TrafficSummary types and method
 // ---------------------------------------------------------------------------
+
+// TrafficSummary is the funnel overview of all action statuses.
+type TrafficSummary struct {
+	StatusDistribution map[string]int64            `json:"status_distribution"`
+	InterceptedTotal   int64                       `json:"intercepted_total"`
+	Funnel             FunnelStats                 `json:"funnel"`
+	ByRisk             map[string]map[string]int64 `json:"by_risk"`
+}
+
+// FunnelStats is the derived funnel from status distribution.
+type FunnelStats struct {
+	Produced        int64 `json:"produced"`
+	Approved        int64 `json:"approved"`
+	Executed        int64 `json:"executed"`
+	BlockedByPolicy int64 `json:"blocked_by_policy"`
+	RejectedByOwner int64 `json:"rejected_by_owner"`
+}
+
+// TrafficSummary returns the distribution of all action statuses.
+func (s *Service) TrafficSummary() (*TrafficSummary, error) {
+	summary := &TrafficSummary{
+		StatusDistribution: map[string]int64{},
+		ByRisk:             map[string]map[string]int64{},
+	}
+
+	// Status distribution: single query with GROUP BY
+	type statusCount struct {
+		Status string
+		Count  int64
+	}
+	var statusCounts []statusCount
+	if err := s.db.Table("unified_action").
+		Select("status, COUNT(*) AS count").
+		Group("status").
+		Scan(&statusCounts).Error; err != nil {
+		return nil, err
+	}
+	for _, sc := range statusCounts {
+		summary.StatusDistribution[sc.Status] = sc.Count
+	}
+
+	// Intercepted total: blocked actions
+	var ic struct{ Count int64 }
+	s.db.Table("unified_action").Select("COUNT(*) AS count").Where("status = ?", "blocked").Scan(&ic)
+	summary.InterceptedTotal = ic.Count
+
+	// Funnel
+	var funnel struct {
+		Produced int64
+		Approved int64
+		Executed int64
+		Rejected int64
+		Blocked  int64
+	}
+	s.db.Raw(`
+		SELECT
+			COUNT(*) AS produced,
+			COUNT(*) FILTER (WHERE status = 'approved') AS approved,
+			COUNT(*) FILTER (WHERE status = 'executed') AS executed,
+			COUNT(*) FILTER (WHERE status = 'rejected') AS rejected,
+			COUNT(*) FILTER (WHERE status = 'blocked') AS blocked
+		FROM unified_action`,
+	).Scan(&funnel)
+	summary.Funnel = FunnelStats{
+		Produced:        funnel.Produced,
+		Approved:        funnel.Approved,
+		Executed:        funnel.Executed,
+		BlockedByPolicy: funnel.Blocked,
+		RejectedByOwner: funnel.Rejected,
+	}
+
+	// By risk x status cross-tab
+	type riskStatusCount struct {
+		RiskLevel string
+		Status    string
+		Count     int64
+	}
+	var cross []riskStatusCount
+	s.db.Table("unified_action").
+		Select("risk_level, status, COUNT(*) AS count").
+		Group("risk_level, status").
+		Scan(&cross)
+	for _, c := range cross {
+		if _, ok := summary.ByRisk[c.RiskLevel]; !ok {
+			summary.ByRisk[c.RiskLevel] = map[string]int64{}
+		}
+		summary.ByRisk[c.RiskLevel][c.Status] = c.Count
+	}
+
+	return summary, nil
+}
+
+// ---------------------------------------------------------------------------
+// InterceptedActions types and method
+// ---------------------------------------------------------------------------
+
+// InterceptedAction is a single blocked/rejected action for the dashboard.
+type InterceptedAction struct {
+	ID            int64  `json:"id"`
+	ActionType    string `json:"action_type"`
+	AgentID       string `json:"agent_id"`
+	RiskLevel     string `json:"risk_level"`
+	BlockReason   string `json:"block_reason"`
+	BlockedAt     string `json:"blocked_at"`
+	TargetSummary string `json:"target_summary"`
+}
+
+// InterceptedActions returns recently blocked/rejected actions.
+func (s *Service) InterceptedActions(limit int) ([]InterceptedAction, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	type row struct {
+		ID            int64
+		ActionType    string
+		AgentID       string
+		RiskLevel     string
+		BlockReason   string
+		CreatedAt     time.Time
+		TargetSummary string
+	}
+	var rows []row
+	q := s.db.Table("unified_action").
+		Select("id, action_type, agent_id, risk_level, COALESCE(block_reason,'') AS block_reason, created_at, COALESCE(description,'') AS target_summary").
+		Where("status IN ?", []string{"blocked", "rejected"})
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := q.Order("created_at DESC").Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	items := make([]InterceptedAction, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, InterceptedAction{
+			ID:            r.ID,
+			ActionType:    r.ActionType,
+			AgentID:       r.AgentID,
+			RiskLevel:     r.RiskLevel,
+			BlockReason:   r.BlockReason,
+			BlockedAt:     r.CreatedAt.Format("2006-01-02 15:04:05"),
+			TargetSummary: r.TargetSummary,
+		})
+	}
+	return items, total, nil
+}
+
+// ---------------------------------------------------------------------------
+// AuditReplay types and method
+// ---------------------------------------------------------------------------
+
+// AuditReplayEvent is one step in an action's full trace.
+type AuditReplayEvent struct {
+	Type      string `json:"type"`
+	Subtype   string `json:"subtype,omitempty"`
+	AgentID   string `json:"agent_id,omitempty"`
+	ActionID  *int64 `json:"action_id,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+	Timestamp string `json:"timestamp"`
+}
+
+// AuditReplayResponse is the full timeline for one correlation ID.
+type AuditReplayResponse struct {
+	CorrelationID string             `json:"correlation_id"`
+	Events        []AuditReplayEvent `json:"events"`
+}
+
+// AuditReplay returns the full event timeline for a correlation ID.
+func (s *Service) AuditReplay(correlationID string) (*AuditReplayResponse, error) {
+	resp := &AuditReplayResponse{
+		CorrelationID: correlationID,
+		Events:        []AuditReplayEvent{},
+	}
+
+	// 1. Find all unified_actions with this correlation_id
+	type actionRow struct {
+		ID         int64
+		ActionType string
+		AgentID    string
+		Status     string
+		CreatedAt  time.Time
+	}
+	var actions []actionRow
+	if err := s.db.Table("unified_action").
+		Select("id, action_type, agent_id, status, created_at").
+		Where("correlation_id = ?", correlationID).
+		Order("created_at ASC").
+		Scan(&actions).Error; err != nil {
+		return nil, err
+	}
+	for _, a := range actions {
+		aid := a.ID
+		resp.Events = append(resp.Events, AuditReplayEvent{
+			Type:      "action",
+			AgentID:   a.AgentID,
+			Subtype:   a.ActionType,
+			ActionID:  &aid,
+			Status:    a.Status,
+			Timestamp: a.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	// 2. Find approval requests linked to these actions
+	if len(actions) > 0 {
+		var ids []int64
+		for _, a := range actions {
+			ids = append(ids, a.ID)
+		}
+		type appRow struct {
+			ID        int64
+			Status    string
+			Reviewer  string
+			UpdatedAt time.Time
+		}
+		var approvals []appRow
+		if err := s.db.Table("approval_request").
+			Select("id, status, COALESCE(reviewer,'') AS reviewer, updated_at").
+			Where("entity_type = 'unified_action' AND entity_id IN ?", ids).
+			Order("updated_at ASC").
+			Scan(&approvals).Error; err != nil {
+			s.logger.Warn("audit replay: approval_request query failed", zap.Error(err))
+		}
+		for _, ap := range approvals {
+			resp.Events = append(resp.Events, AuditReplayEvent{
+				Type:      "approval",
+				Subtype:   "approval_request",
+				Status:    ap.Status,
+				Detail:    "reviewer: " + ap.Reviewer,
+				Timestamp: ap.UpdatedAt.Format("2006-01-02 15:04:05"),
+			})
+		}
+	}
+
+	// 3. Find operation_log entries
+	type logRow struct {
+		Action    string
+		Content   string
+		CreatedAt time.Time
+	}
+	var logs []logRow
+	if err := s.db.Table("operation_log").
+		Select("action, COALESCE(content,'') AS content, created_at").
+		Where("correlation_id = ?", correlationID).
+		Order("created_at ASC").
+		Scan(&logs).Error; err != nil {
+		s.logger.Warn("audit replay: operation_log query failed", zap.Error(err))
+	}
+	for _, l := range logs {
+		resp.Events = append(resp.Events, AuditReplayEvent{
+			Type:      "audit",
+			Subtype:   l.Action,
+			Detail:    l.Content,
+			Timestamp: l.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return resp, nil
+}
+
+// ---------------------------------------------------------------------------
+// AgentMetrics types and method
+// ---------------------------------------------------------------------------
+
+// AgentMetrics is the per-agent health and performance snapshot.
+type AgentMetrics struct {
+	AgentID             string  `json:"agent_id"`
+	RunCount            int64   `json:"run_count"`
+	SuccessCount        int64   `json:"success_count"`
+	FailureCount        int64   `json:"failure_count"`
+	BlockedCount        int64   `json:"blocked_count"`
+	ApprovalRate        float64 `json:"approval_rate"`
+	OwnerAcceptanceRate float64 `json:"owner_acceptance_rate"`
+	AvgLatencyMs        float64 `json:"avg_latency_ms"`
+	ExternalFailureRate float64 `json:"external_failure_rate"`
+	Health              string  `json:"health"`
+}
+
+// AgentMetrics returns per-agent metrics aggregated from unified_action and ai_trace.
+func (s *Service) AgentMetrics() ([]AgentMetrics, error) {
+	type rawMetrics struct {
+		AgentID   string
+		RunCount  int64
+		Succeeded int64
+		Failed    int64
+		Blocked   int64
+	}
+
+	var actions []rawMetrics
+	s.db.Table("unified_action").
+		Select(`
+			agent_id,
+			COUNT(*) AS run_count,
+			COUNT(*) FILTER (WHERE status = 'completed') AS succeeded,
+			COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+			COUNT(*) FILTER (WHERE status = 'blocked') AS blocked
+		`).
+		Group("agent_id").
+		Scan(&actions)
+
+	type latRow struct {
+		AgentID string
+		AvgLat  float64
+	}
+	var latencies []latRow
+	s.db.Table("ai_trace").
+		Select("agent_id, COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(completed_at, started_at) - started_at))), 0) AS avg_lat").
+		Where("completed_at IS NOT NULL").
+		Group("agent_id").
+		Scan(&latencies)
+	latMap := make(map[string]float64, len(latencies))
+	for _, l := range latencies {
+		latMap[l.AgentID] = l.AvgLat * 1000
+	}
+
+	type accRow struct {
+		AgentID  string
+		Approved int64
+		Rejected int64
+	}
+	var accRates []accRow
+	s.db.Table("unified_action").
+		Select(`
+			agent_id,
+			COUNT(*) FILTER (WHERE status = 'approved') AS approved,
+			COUNT(*) FILTER (WHERE status = 'rejected') AS rejected
+		`).
+		Group("agent_id").
+		Scan(&accRates)
+	accMap := make(map[string]float64, len(accRates))
+	for _, a := range accRates {
+		total := a.Approved + a.Rejected
+		if total > 0 {
+			accMap[a.AgentID] = float64(a.Approved) / float64(total)
+		}
+	}
+
+	result := make([]AgentMetrics, 0, len(actions))
+	for _, a := range actions {
+		total := a.Succeeded + a.Failed + a.Blocked
+		extFailRate := 0.0
+		if a.Failed > 0 && total > 0 {
+			extFailRate = float64(a.Failed) / float64(total)
+		}
+		lat := latMap[a.AgentID]
+
+		health := "ok"
+		if extFailRate > 0.2 || a.Failed > 10 {
+			health = "warn"
+		}
+		if extFailRate > 0.5 || a.Failed > 50 {
+			health = "critical"
+		}
+
+		result = append(result, AgentMetrics{
+			AgentID:             a.AgentID,
+			RunCount:            a.RunCount,
+			SuccessCount:        a.Succeeded,
+			FailureCount:        a.Failed,
+			BlockedCount:        a.Blocked,
+			ApprovalRate:        accMap[a.AgentID],
+			OwnerAcceptanceRate: accMap[a.AgentID],
+			AvgLatencyMs:        lat,
+			ExternalFailureRate: extFailRate,
+			Health:              health,
+		})
+	}
+	return result, nil
+}
+
+// ExternalHealth returns a generic external service health check for the cockpit.
+func (s *Service) ExternalHealth() []toolbridge.PlatformStatsSnapshot {
+	if s.tracker != nil {
+		return s.tracker.Stats()
+	}
+	return []toolbridge.PlatformStatsSnapshot{}
+}
 
 // FailedRun represents a failed agent run with error context.
 type FailedRun struct {

@@ -164,7 +164,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	// Create command dispatcher with action catalog and register Phase 1 handlers.
 	cat := actioncatalog.Default()
-	cmd := command.NewDispatcher(logger, command.WithCatalog(cat))
+	cmd := command.NewDispatcher(logger,
+		command.WithCatalog(cat),
+		command.WithRateLimiter(command.NewRateLimiter(20, time.Hour)),
+	)
 	cmd.Register("stock_alert", command.StockAlertHandler(db, logger))
 	cmd.Register("replenish", command.InventoryReplenishHandler(db, logger))
 	cmd.Register("price_review", command.PriceAdjustHandler(db, logger, approvalSvc))
@@ -193,7 +196,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	}, pipeline.DefaultEdges, logger)
 
 	// ToolBridge for sourcing data collection
-	toolBridge := toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge")) // drivers registered later
+	extTracker := toolbridge.NewExternalCallTracker(3)
+	toolBridge := toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge"), toolbridge.WithTracker(extTracker)) // drivers registered later
 
 	// Reverse logistics return rate tracker (DB-backed).
 	returnRateTracker := aftersales.NewReturnRateTracker(db, logger)
@@ -578,7 +582,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		})
 
 	// AgentOS routes
-	agentos.RegisterRoutes(protected, db, logger)
+	agentos.RegisterRoutes(protected, db, logger, extTracker)
 
 	// Domain routes (all require authentication)
 	category.RegisterRoutes(protected, db, logger)
@@ -865,7 +869,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	owner.RegisterRoutes(protected, db, logger)
 	agentlearning.RegisterRoutes(protected, db, logger)
-	approval.RegisterRoutes(protected, db, logger, auditSvc)
+
+
 	landedcost.RegisterRoutes(protected, db, logger)
 	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
 	workflow.RegisterRoutes(protected, db, bus, aiOrch, cmd, logger)
