@@ -1,7 +1,7 @@
 # 凌镜 LingMirror — 文档索引
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 更新日期：2026-07-04
+> 更新日期：2026-07-06
 
 ---
 
@@ -95,9 +95,29 @@
 | [平台宪法](governance/PLATFORM_CONSTITUTION.md) | 平台优先最高规则：系统分层、风险等级、禁止事项、Owner 决策边界 |
 | [Agent 开发协议](governance/AGENT_DEVELOPMENT_PROTOCOL.md) | 多 Agent 角色、开工检查、review、QA、交接规则 |
 | [Kernel 契约](governance/KERNEL_CONTRACTS.md) | EventBus、Command、Scheduler、ToolBridge、Approval、Audit 等内核契约 |
+| [交付治理体系 Spec](governance/DELIVERY_GOVERNANCE_SPEC.md) | 🆕 交付验收与生产就绪治理体系完整规范 |
+| [验收大门](ACCEPTANCE_GATE.md) | 🆕 完成定义、验收等级、发布通道、Owner 决策日志 |
+| [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境矩阵、角色矩阵、权限回归矩阵、高风险动作证据 |
+| [已知问题](KNOWN_ISSUES.md) | 🆕 未解决风险和失败项追踪、过期升级策略 |
+| [产品闭环验收](governance/PRODUCT_LOOP_ACCEPTANCE.md) | 🆕 候选商品→完整度→成本→审批→上架全链路验收证据 |
+| [订单闭环验收](governance/ORDER_LOOP_ACCEPTANCE.md) | 🆕 订单→结算→异常检测→Agent→Owner 全链路验收 |
+| [高风险动作验收](governance/HIGH_RISK_ACTION_ACCEPTANCE.md) | 🆕 价格/库存/订单/退款/平台发布等高风险门禁逐项验证 |
+| [Owner 决策日志](governance/OWNER_DECISION_LOG.md) | 🆕 风险接受决策记录模板，带有效期的 Owner 签收 |
+| [Agent 可信度标记](governance/AGENT_TRUST_MARKERS.md) | 🆕 5 级可信度：STUB→DETERMINISTIC_RULE→REAL_LLM→HUMAN_APPROVED→PRODUCTION_EXECUTED |
+| [数据质量门禁](governance/DATA_QUALITY_GATES.md) | 🆕 商品/成本/物流费/结算完整度阈值，数据不全 Agent 不给强结论 |
+| [审计可读性要求](governance/AUDIT_READABILITY.md) | 🆕 审计日志必须 Owner 能看懂：谁、何时、对什么、为什么、结果 |
+| [生产就绪检查清单](governance/PRODUCTION_READINESS_CHECKLIST.md) | 🆕 配置/secrets/migration/observability/cost control/kill switch/试运行边界 |
+| [发布就绪检查清单](governance/RELEASE_READINESS_CHECKLIST.md) | 🆕 风险分级发布通道（read-only/suggestion/approval-required/production-write）|
+| [事故演练检查清单](governance/INCIDENT_DRILL_CHECKLIST.md) | 🆕 事故等级、演练场景、人工接管机制、事后复盘模板 |
+| [回滚与恢复手册](governance/ROLLBACK_AND_RECOVERY.md) | 🆕 DB/迁移/平台写回/发布的逐项回滚流程和决策树 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
+| [交付治理脚本](scripts/verify_all.sh) | 🔄 全局验证脚本：build→vet→test→lint→build→E2E（E2E 默认必须运行）|
+| [文档漂移检查](scripts/check_doc_drift.sh) | 🆕 验证 INDEX.md/AGENTS.md/CLAUDE.md 所有 .md 引用是否存在、API 路由一致性 |
+| [已知问题过期检查](scripts/check_known_issues.sh) | 🆕 扫描 KNOWN_ISSUES.md OPEN/MITIGATED 项是否有超过 Target Fix 日期的 |
+| [每日健康报告](scripts/daily_health_report.sh) | 🆕 EventBus/Scheduler/Agent heartbeat、LLM 成本、队列积压 |
+| [每周验收报告](scripts/weekly_acceptance_report.sh) | 🆕 扫描决策日志过期项、已知问题截止日期、git 验收提交 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
