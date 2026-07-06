@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -593,18 +594,21 @@ func TestService_DryRunExecute_NoSideEffects(t *testing.T) {
 	}
 
 	// Execute dry-run — should return without changing status or writing executed_by.
-	result, err := svc.ExecuteAction(a.ID, "alice", "", nil)
+	result, err := svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err != nil {
 		t.Fatalf("ExecuteAction dry_run: %v", err)
 	}
-	if result.Status != "executed" {
-		t.Errorf("dry_run should transition to executed; got %q (wanted executed)", result.Status)
+	if result.Status != "suggested" {
+		t.Errorf("dry_run should not change status; got %q", result.Status)
 	}
-	if result.ExecutedBy != "alice" {
-		t.Errorf("dry_run should record executed_by; got %q", result.ExecutedBy)
+	if result.ExecutedBy != "" {
+		t.Errorf("dry_run should not write executed_by; got %q", result.ExecutedBy)
 	}
 	if result.ExecutedByUserID != nil {
 		t.Errorf("dry_run should not write executed_by_user_id; got %v", result.ExecutedByUserID)
+	}
+	if result.ExecutingAt != nil {
+		t.Errorf("dry_run should not write executing_at")
 	}
 
 	// Verify DB state unchanged.
@@ -612,13 +616,12 @@ func TestService_DryRunExecute_NoSideEffects(t *testing.T) {
 	if err := db.First(&fromDB, a.ID).Error; err != nil {
 		t.Fatalf("read from DB: %v", err)
 	}
-	if fromDB.Status != "executed" {
-		t.Errorf("DB status = %q after dry_run, want %q", fromDB.Status, "executed")
+	if fromDB.Status != "suggested" {
+		t.Errorf("DB status = %q after dry_run, want %q", fromDB.Status, "suggested")
 	}
 }
 
 func TestService_Execute_UnknownMode_ReturnsError(t *testing.T) {
-	t.Skip("ponytail: HEAD ExecuteAction does not validate execution mode")
 	db := newTestDB(t)
 	svc := NewService(db, testLogger())
 
@@ -633,7 +636,7 @@ func TestService_Execute_UnknownMode_ReturnsError(t *testing.T) {
 		t.Fatalf("CreateAction: %v", err)
 	}
 
-	_, err = svc.ExecuteAction(a.ID, "alice", "", nil)
+	_, err = svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err == nil {
 		t.Fatal("expected error for unknown execution mode")
 	}
@@ -650,7 +653,6 @@ func TestService_Execute_UnknownMode_ReturnsError(t *testing.T) {
 }
 
 func TestService_Execute_Sandbox_ReturnsError(t *testing.T) {
-	t.Skip("ponytail: HEAD ExecuteAction does not handle sandbox mode")
 	db := newTestDB(t)
 	svc := NewService(db, testLogger())
 
@@ -665,7 +667,7 @@ func TestService_Execute_Sandbox_ReturnsError(t *testing.T) {
 		t.Fatalf("CreateAction: %v", err)
 	}
 
-	_, err = svc.ExecuteAction(a.ID, "alice", "", nil)
+	_, err = svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err == nil {
 		t.Fatal("expected error for sandbox without configured executor")
 	}
@@ -695,7 +697,7 @@ func TestService_ApproveAction_SavesUserID(t *testing.T) {
 	}
 
 	uid := int64(42)
-	approved, err := svc.ApproveAction(a.ID, "alice", "", &uid)
+	approved, err := svc.ApproveAction(a.ID, "alice", &uid, "")
 	if err != nil {
 		t.Fatalf("ApproveAction: %v", err)
 	}
@@ -727,7 +729,7 @@ func TestService_ApproveAction_SavesUserID(t *testing.T) {
 		t.Fatalf("CreateAction: %v", err)
 	}
 	uid2 := int64(99)
-	rejected, err := svc.RejectAction(a2.ID, "bob", "not needed", &uid2)
+	rejected, err := svc.RejectAction(a2.ID, "bob", &uid2, "not needed")
 	if err != nil {
 		t.Fatalf("RejectAction: %v", err)
 	}
@@ -755,7 +757,7 @@ func TestService_ExecuteAction_SavesUserID(t *testing.T) {
 	}
 
 	uid := int64(77)
-	executed, err := svc.ExecuteAction(a.ID, "system", "", &uid)
+	executed, err := svc.ExecuteAction(a.ID, &uid, "system", "")
 	if err != nil {
 		t.Fatalf("ExecuteAction: %v", err)
 	}
@@ -789,10 +791,10 @@ func TestService_ExecuteAction_Idempotency_Reexecution(t *testing.T) {
 		RequiresApproval: &noApproval, IdempotencyKey: "idem-rex-001",
 	})
 	if err != nil { t.Fatalf("CreateAction: %v", err) }
-	first, err := svc.ExecuteAction(a.ID, "alice", "", nil)
+	first, err := svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err != nil { t.Fatalf("first ExecuteAction: %v", err) }
 	if first.Status != "executed" { t.Fatalf("first status = %q", first.Status) }
-	second, err := svc.ExecuteAction(a.ID, "alice", "", nil)
+	second, err := svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err != nil { t.Fatalf("second (idempotent) ExecuteAction: %v", err) }
 	if second.Status != "executed" { t.Errorf("second status = %q, want %q", second.Status, "executed") }
 }
@@ -814,9 +816,9 @@ func TestService_ExecuteAction_GuardrailsCheck(t *testing.T) {
 			RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
 			Payload: json.RawMessage(`{"amount":100}`),
 		})
-		_, err := svc.ExecuteAction(a.ID, "alice", "", nil)
-		if err == nil || !strings.Contains(err.Error(), "blocked_by_guardrails") {
-			t.Fatalf("expected guard blocked_by_guardrails error, got %v", err)
+		_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
+		if err == nil || !errors.Is(err, ErrBlockedByGuardrails) {
+			t.Fatalf("expected guard blocked error, got %v", err)
 		}
 		var fromDB UnifiedAction
 		db.First(&fromDB, a.ID)
@@ -832,14 +834,13 @@ func TestService_ExecuteAction_GuardrailsCheck(t *testing.T) {
 			AgentID: "A2", ActionType: "listing_optimize", Title: "guard passes",
 			RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
 		})
-		result, err := svc.ExecuteAction(a.ID, "alice", "", nil)
+		result, err := svc.ExecuteAction(a.ID, nil, "alice", "")
 		if err != nil { t.Fatalf("expected success, got %v", err) }
 		if result.Status != "executed" { t.Errorf("status = %q, want %q", result.Status, "executed") }
 	})
 }
 
 func TestService_ExecuteAction_ConcurrentClaim(t *testing.T) {
-	t.Skip("ponytail: HEAD ExecuteAction does not use atomic claiming")
 	db := newTestDB(t)
 	svc := NewService(db, testLogger())
 	noApproval := false
@@ -856,7 +857,7 @@ func TestService_ExecuteAction_ConcurrentClaim(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := svc.ExecuteAction(a.ID, "alice", "", nil)
+			_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
 			results <- err
 		}()
 	}

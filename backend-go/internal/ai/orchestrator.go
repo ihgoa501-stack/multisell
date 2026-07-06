@@ -330,15 +330,16 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		Payload:   mustJSON(output),
 	})
 
-			// Every agent run creates a UnifiedAction for audit trail and structured output.
-		// Advisory agents create auto-approved actions (read-only suggestions).
-		// Supervised/guided agents create actions that require human approval.
-		// Autonomous agents create actions that execute without approval.
-		var action *UnifiedAction
-		dynamicAutonomy := agent.Autonomy
-		if ts, tsErr := trustscore.NewService(o.db, o.logger).GetByAgent(agent.ID); tsErr == nil && ts != nil {
-			dynamicAutonomy = ts.AutonomyLevel
-		}
+	// Optionally create a unified action if the agent's autonomy is non-advisory.
+	// The autonomy level is looked up from the trust score table (dynamic, with
+	// fallback to the in-memory registry spec) so that agent upgrades from the
+	// autonomy pipeline are reflected at runtime.
+	var action *UnifiedAction
+	dynamicAutonomy := agent.Autonomy
+	if ts, tsErr := trustscore.NewService(o.db, o.logger).GetByAgent(agent.ID); tsErr == nil && ts != nil {
+		dynamicAutonomy = ts.AutonomyLevel
+	}
+	if dynamicAutonomy != "advisory" {
 		actionInput := &CreateActionInput{
 			SourceTable:        "ai_trace",
 			SourceID:           traceID,
@@ -356,14 +357,12 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			Confidence:         &confidence,
 			ProposedBy:         "agent:" + agent.ID,
 		}
-		// advisory = no approval needed (read-only); guided/supervised = human approval required; autonomous = no approval needed
+		// advisory = no action; guided/supervised = human approval required; autonomous = no approval needed
 		requires := dynamicAutonomy == "supervised" || dynamicAutonomy == "guided"
 		actionInput.RequiresApproval = &requires
 		action, _ = o.persistAction(actionInput)
-
-		// For non-advisory agents, run policy evaluation, forbidden check, and approval flow.
-		if dynamicAutonomy != "advisory" && action != nil {
-			// Forbidden action check: block actions matching forbidden_action table.
+		// Forbidden action check: block actions matching forbidden_action table.
+		if action != nil {
 			if fbErr := actionpolicy.CheckForbidden(o.db, action.AgentID, action.ActionType, action.RiskLevel); fbErr != nil {
 				o.logger.Warn("action blocked by forbidden rules", zap.Int64("action_id", action.ID), zap.Error(fbErr))
 				aiSvc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
@@ -372,7 +371,9 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 				}
 				action, _ = aiSvc.GetAction(action.ID)
 			}
-			// Evaluate against approval policy for auto-approve/block decisions.
+		}
+		// Evaluate against approval policy for auto-approve/block decisions.
+		if action != nil {
 			policySvc := actionpolicy.NewService(o.db, o.logger)
 			amount, quantity := actionpolicy.UnmarshalPayload(action.Payload)
 			polCtx := &actionpolicy.ActionContext{
@@ -400,6 +401,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 					action, _ = aiSvc.GetAction(action.ID)
 				}
 			} else if result.FinalOutcome == "block" {
+				o.logger.Warn("policy blocked action", zap.Int64("action_id", action.ID))
 				aiSvc := NewService(o.db, o.logger).WithDispatcher(o.cmd).WithCatalog(o.cat)
 				if _, err := aiSvc.RejectAction(action.ID, "policy", nil, "blocked: "+result.Verdicts[0].Reason); err != nil {
 					o.logger.Warn("reject failed", zap.Error(err))
@@ -412,8 +414,9 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 				o.ensureApprovalCreated(action)
 			}
 		}
+	}
 
-		// Complete trace.
+	// Complete trace.
 	finalBytes, _ := json.Marshal(output)
 	_, _ = o.traces.Complete(traceID, &CompleteTraceInput{
 		FinalOutput: finalBytes,

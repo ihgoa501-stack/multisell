@@ -935,7 +935,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			Domain:       "agentos",
 			Description:  "定时SLA过期升级: 将超时的待审批动作升级处理",
 		}, func(ctx context.Context, evt eventbus.Event) error {
-			agentosSvc := agentos.NewService(db, logger)
+			agentosSvc := agentos.NewService(db, logger, extTracker)
 			return agentosSvc.SLAEscalation()
 		}))
 
