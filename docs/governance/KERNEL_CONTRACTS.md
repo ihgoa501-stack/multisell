@@ -48,9 +48,9 @@ Rules:
   6. DLQ replay may reclaim a `failed` row back to `state='processing'` with `processed_at=NULL`.
 
 - **Mutation Guard**: every EventBus subscriber that mutates business state MUST use
-  `eventbus.MutationGuard.Guard()` to wrap the handler. The guard enforces:
+  `eventbus.MutationGuard.Guard()` to wrap the handler. The guard ensures:
 
-  1. The mutation's `SystemAction` is registered in the ActionCatalog
+  1. The mutation's `SystemAction` is registered in the ActionCatalog (mandatory convention — enforced during review, not code-enforced by the guard itself).
      (`actioncatalog.DefaultEntries`) as a `system.*` action type.
   2. A structured audit entry (`pending` -> `executed`|`failed`) is written to
      `operation_log` with `trigger_type='eventbus'` before and after handler execution.

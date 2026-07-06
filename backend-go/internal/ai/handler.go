@@ -340,24 +340,6 @@ func parseID(c *gin.Context) (int64, bool) {
 }
 
 
-// userIDFromCtx extracts user id from the JWT context (set by auth middleware).
-func userIDFromCtx(c *gin.Context) *int64 {
-	v, exists := c.Get("user_id")
-	if !exists {
-		return nil
-	}
-	switch x := v.(type) {
-	case int64:
-		return &x
-	case int:
-		n := int64(x)
-		return &n
-	case float64:
-		n := int64(x)
-		return &n
-	}
-	return nil
-}
 
 func stringify(v interface{}) string {
 	if s, ok := v.(string); ok {
