@@ -1,7 +1,7 @@
 # 凌镜 LingMirror — 文档索引
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 更新日期：2026-07-06
+> 更新日期：2026-07-04
 
 ---
 
@@ -95,9 +95,13 @@
 | [平台宪法](governance/PLATFORM_CONSTITUTION.md) | 平台优先最高规则：系统分层、风险等级、禁止事项、Owner 决策边界 |
 | [Agent 开发协议](governance/AGENT_DEVELOPMENT_PROTOCOL.md) | 多 Agent 角色、开工检查、review、QA、交接规则 |
 | [Kernel 契约](governance/KERNEL_CONTRACTS.md) | EventBus、Command、Scheduler、ToolBridge、Approval、Audit 等内核契约 |
+| [验收大门](ACCEPTANCE_GATE.md) | 🆕 完成定义、验收等级、发布通道、Owner 决策日志 |
+| [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境矩阵、角色矩阵、权限回归矩阵、高风险动作证据 |
+| [已知问题](KNOWN_ISSUES.md) | 🆕 未解决风险和失败项追踪、过期升级策略 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
+| [全局验证脚本](scripts/verify_all.sh) | 🔄 全局验证脚本：build→vet→test→lint→build→E2E（E2E 默认必须运行）|
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
@@ -165,10 +169,8 @@
 | 06-15 | [项目稳定化与 MVP 交接](superpowers/plans/2026-06-15-project-stabilization-and-mvp-handoff.md) |
 | 06-15 | [运费手动计算器](superpowers/plans/2026-06-15-shipping-manual-calculator.md) |
 | 06-15 | [运费表导入](superpowers/plans/2026-06-15-shipping-rate-import.md) |
-| 06-16 | [订单导入运营链路](superpowers/plans/2026-06-16-order-import-operational-chain.md) |
 | 06-18 | [AgentOS Phase 1](superpowers/plans/2026-06-18-lingmirror-agentos-phase-1.md) |
-| 07-06 | [H1 Copilot OS 计划](superpowers/plans/2026-07-06-lingmirror-h1-copilot-os-plan.md) |
-| 07-06 | [H1 Copilot OS 规格](superpowers/specs/2026-07-06-lingmirror-h1-copilot-os-spec.md) |
+| 06-16 | [订单导入运营链路](superpowers/plans/2026-06-16-order-import-operational-chain.md) |
 
 ## 🆕 功能需求 (Feature Requests)
 
