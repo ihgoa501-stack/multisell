@@ -167,3 +167,16 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"id": id})
 }
+
+// AutoDetect POST /api/v1/exceptions/auto-detect
+func (h *Handler) AutoDetect(c *gin.Context) {
+	items, err := h.service.AutoDetect(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if items == nil {
+		items = []ExceptionItem{}
+	}
+	response.Success(c, items)
+}

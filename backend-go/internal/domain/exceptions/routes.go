@@ -19,6 +19,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		group.PUT("/:id", h.Update)
 		group.PUT("/:id/resolve", h.Resolve)
 		group.PUT("/:id/assign", h.Assign)
+		group.POST("/auto-detect", h.AutoDetect)
 		group.DELETE("/:id", h.Delete)
 	}
 }

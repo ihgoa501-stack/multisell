@@ -2,6 +2,14 @@ package exceptions
 
 import "time"
 
+// Exception type constants for auto-detection.
+const (
+	TypeLossOrder        = "loss_order"
+	TypeOutOfStock       = "out_of_stock"
+	TypeLogisticsAbnormal = "logistics_abnormal"
+	TypeFeeAbnormal      = "fee_abnormal"
+)
+
 // ExceptionItem maps to the `exception_item` table.
 type ExceptionItem struct {
 	ID                int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
