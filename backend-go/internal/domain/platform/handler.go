@@ -92,15 +92,6 @@ func (h *Handler) UpdatePlatform(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := h.service.UpdatePlatform(id, &in)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "platform not found")
-			return
-		}
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
 
 	operator := c.GetString("username")
 	if operator == "" {
@@ -124,6 +115,16 @@ func (h *Handler) UpdatePlatform(c *gin.Context) {
 			return
 		}
 		response.Error(c, http.StatusForbidden, fmt.Sprintf("platform update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
+	p, err := h.service.UpdatePlatform(id, &in)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "platform not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -237,15 +238,6 @@ func (h *Handler) UpdateStore(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	st, err := h.service.UpdateStore(id, &in)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "store not found")
-			return
-		}
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
 
 	operator := c.GetString("username")
 	if operator == "" {
@@ -269,6 +261,16 @@ func (h *Handler) UpdateStore(c *gin.Context) {
 			return
 		}
 		response.Error(c, http.StatusForbidden, fmt.Sprintf("store update requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
+	st, err := h.service.UpdateStore(id, &in)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "store not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 

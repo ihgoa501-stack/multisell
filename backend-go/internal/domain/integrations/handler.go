@@ -2,23 +2,26 @@ package integrations
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
 
 // Handler handles integrations HTTP requests.
 type Handler struct {
-	service *Service
+	service     *Service
+	approvalSvc *approval.Service
 }
 
 // NewHandler creates a new integrations handler.
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, approvalSvc *approval.Service) *Handler {
+	return &Handler{service: service, approvalSvc: approvalSvc}
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -225,6 +228,32 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "listing_publish_ozon",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("publish product id=%d to ozon account id=%d", in.ProductID, in.AccountID),
+			Reason:      "ozon publish requires approval",
+			TargetType:  "product",
+			TargetID:    in.ProductID,
+			RiskLevel:   "high",
+			EntityType:  "product",
+			EntityID:    in.ProductID,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("ozon publish requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	result, err := h.service.PublishToOzon(c.Request.Context(), &in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -232,6 +261,7 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 	}
 	response.Success(c, result)
 }
+
 func (h *Handler) ListCategories(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {

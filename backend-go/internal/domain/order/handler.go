@@ -134,11 +134,6 @@ func (h *Handler) Update(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	o, err := h.service.Update(id, &in)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
 
 	operator := c.GetString("username")
 	if operator == "" {
@@ -165,6 +160,11 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	o, err := h.service.Update(id, &in)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
 	response.Success(c, orderToResponse(*o))
 }
 

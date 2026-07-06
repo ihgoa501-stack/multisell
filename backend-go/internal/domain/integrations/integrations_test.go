@@ -58,7 +58,7 @@ func (m *mockAdapter) FetchReturns(_ context.Context, _ *FetchReturnsInput) ([]*
 func setupRouter(svc *Service) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewHandler(svc)
+	h := NewHandler(svc, nil)
 	g := r.Group("/api/v1")
 	g.GET("/platform-integrations", h.List)
 	g.POST("/platform-integrations", h.Create)

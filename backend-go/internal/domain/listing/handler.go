@@ -3,23 +3,26 @@ package listing
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
 
 // Handler handles listing HTTP requests.
 type Handler struct {
-	service *Service
+	service     *Service
+	approvalSvc *approval.Service
 }
 
 // NewHandler creates a new listing handler.
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, approvalSvc *approval.Service) *Handler {
+	return &Handler{service: service, approvalSvc: approvalSvc}
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -143,6 +146,32 @@ func (h *Handler) Publish(c *gin.Context) {
 		Payload json.RawMessage `json:"payload"`
 	}
 	_ = c.ShouldBindJSON(&body) // payload is optional
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "listing_publish",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("publish listing id=%d", id),
+			Reason:      "listing publish requires approval",
+			TargetType:  "listing",
+			TargetID:    id,
+			RiskLevel:   "high",
+			EntityType:  "listing",
+			EntityID:    id,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("listing publish requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	l, err := h.service.Publish(id, body.Payload)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -162,8 +191,8 @@ func (h *Handler) Sync(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Status       string `json:"status"`
-		SyncMessage  string `json:"sync_message"`
+		Status      string `json:"status"`
+		SyncMessage string `json:"sync_message"`
 	}
 	_ = c.ShouldBindJSON(&body) // optional body
 	l, err := h.service.SyncStatus(id, body.Status, body.SyncMessage)
@@ -192,6 +221,32 @@ func (h *Handler) PublishProduct(c *gin.Context) {
 	}
 	var in PublishProductInput
 	_ = c.ShouldBindJSON(&in) // body is optional
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "listing_publish_product",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("publish product id=%d to platform id=%d", productID, platformID),
+			Reason:      "product publish requires approval",
+			TargetType:  "product",
+			TargetID:    productID,
+			RiskLevel:   "high",
+			EntityType:  "product",
+			EntityID:    productID,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("product publish requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	l, err := h.service.PublishProduct(productID, platformID, &in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -277,6 +332,32 @@ func (h *Handler) PublishTask(c *gin.Context) {
 	if !ok {
 		return
 	}
+
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "listing_task_publish",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("publish listing task id=%d", taskID),
+			Reason:      "listing task publish requires approval",
+			TargetType:  "listing_task",
+			TargetID:    taskID,
+			RiskLevel:   "high",
+			EntityType:  "listing_task",
+			EntityID:    taskID,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("listing task publish requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
+
 	task, err := h.service.PublishTask(taskID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

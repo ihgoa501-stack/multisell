@@ -714,7 +714,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	platform.RegisterRoutes(protected, db, logger, approvalSvc)
 	listingRoutes := protected.Group("", middleware.RequirePermission(db, "listing.read"))
-	listing.RegisterRoutes(listingRoutes, db, logger, bus)
+	listing.RegisterRoutes(listingRoutes, db, logger, bus, approvalSvc)
 
 	// Initialize Prism client (config-driven; nil if disabled).
 	var prismSvc prismadapter.PrismService
@@ -906,7 +906,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	importbatch.RegisterRoutes(protected, db, logger)
 	content.RegisterRoutes(protected, db, logger, aiOrch)
 	operationlog.RegisterRoutes(protected, db, logger)
-	integrations.RegisterRoutes(protected, db, logger)
+	integrations.RegisterRoutes(protected, db, logger, approvalSvc)
 	integrations.RegisterWebhookAdminRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)

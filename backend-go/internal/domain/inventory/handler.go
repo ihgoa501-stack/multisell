@@ -293,12 +293,6 @@ func (h *Handler) SyncCrossPlatform(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.SyncAcrossPlatforms(c.Request.Context(), productID)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "sync failed: "+err.Error())
-		return
-	}
-
 	operator := c.GetString("username")
 	if operator == "" {
 		operator = "system"
@@ -324,6 +318,11 @@ func (h *Handler) SyncCrossPlatform(c *gin.Context) {
 		return
 	}
 
+	result, err := h.service.SyncAcrossPlatforms(c.Request.Context(), productID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "sync failed: "+err.Error())
+		return
+	}
 	response.Success(c, result)
 }
 
