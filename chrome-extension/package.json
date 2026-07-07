@@ -1,6 +1,7 @@
 {
   "name": "lingmirror-sourcing-agent",
   "version": "0.1.0",
+  "license": "UNLICENSED",
   "private": true,
   "description": "LingMirror AI sourcing extension — collect 1688 product data",
   "scripts": {

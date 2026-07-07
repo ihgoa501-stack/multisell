@@ -15,6 +15,12 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.3.0.0`.
 
+## License And Ownership
+
+This repository is proprietary and not open source. Do not add open-source
+license language or publish/distribute project code unless the Owner explicitly
+requests it. See `LICENSE`.
+
 ## Governance First
 
 This repository uses an Owner-first, platform-first multi-Agent workflow. Before non-trivial development, refactor, review, QA, or release work, read the governance documents:
