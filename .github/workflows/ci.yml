@@ -5,36 +5,38 @@ on:
     branches: [main, infra-q3-buildout]
   pull_request:
     branches: [main, infra-q3-buildout]
+  schedule:
+    - cron: '0 6 * * *'   # UTC 06:00 daily — triggers daily-health-report
 
 jobs:
-  doc-links:
+  # ==========================================
+  # Governance checks: doc drift + known issues
+  # ==========================================
+  governance-checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Check markdown file references exist
+      - name: Check documentation drift
         run: |
-          set +e
-          has_error=0
-          # Check AGENTS.md and CLAUDE.md for file references
-          for src in AGENTS.md CLAUDE.md; do
-            [ -f "$src" ] || continue
-            grep -oPn 'docs/[^()#,）)\s]+\.md' "$src" | while IFS=: read -r line path; do
-              if [ ! -f "$path" ]; then
-                echo "❌ $src:$line references missing file: $path"
-                has_error=1
-              fi
-            done
-          done
-          # Check docs/INDEX.md for file references
-          if [ -f docs/INDEX.md ]; then
-            grep -oPn '\[.*?\]\(([^)]+)\)' docs/INDEX.md | sed 's/.*(//;s/)//' | while read -r path; do
-              if [ ! -f "$path" ] && [ ! -d "$path" ]; then
-                echo "❌ docs/INDEX.md references missing: $path"
-                has_error=1
-              fi
-            done
-          fi
-          exit $has_error
+          chmod +x scripts/check_doc_drift.sh
+          ./scripts/check_doc_drift.sh
+      - name: Check known issue deadlines
+        run: |
+          chmod +x scripts/check_known_issues.sh
+          ./scripts/check_known_issues.sh
+
+  # ==========================================
+  # Daily health report (scheduled only)
+  # ==========================================
+  daily-health-report:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Run daily health report
+        run: |
+          chmod +x scripts/daily_health_report.sh
+          ./scripts/daily_health_report.sh
 
   go-lint:
     runs-on: ubuntu-latest
