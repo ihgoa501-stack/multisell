@@ -87,6 +87,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
+	"github.com/lingmirror/backend-go/internal/platform/killswitch"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge/drivers"
@@ -566,6 +567,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	protected := api.Group("")
 	protected.Use(middleware.Auth(cfg))
 
+	// High-risk route gating: approval middleware for production writes.
+	// The middleware checks against the routecatalog; routes not in the
+	// catalog pass through unmodified.
+	protected.Use(middleware.ApprovalRequired(db, logger))
+
 	// RBAC routes — require rbac.manage permission
 	rbacRoutes := protected.Group("", middleware.RequirePermission(db, "rbac.manage"))
 	rbac.RegisterRoutes(rbacRoutes, db, logger)
@@ -928,6 +934,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	cost.RegisterRoutes(protected, db, logger, cfg.LLM.DailyBudgetUSD)
 
 	reliability.RegisterRoutes(protected, db, logger)
+
+	// Production write kill switch management (highly restricted).
+	killswitch.RegisterRoutes(protected)
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)

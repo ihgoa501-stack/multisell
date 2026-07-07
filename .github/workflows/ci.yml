@@ -24,6 +24,25 @@ jobs:
         run: |
           chmod +x scripts/check_known_issues.sh
           ./scripts/check_known_issues.sh
+      - name: Check audit coverage
+        run: |
+          chmod +x scripts/check_audit_coverage.sh
+          ./scripts/check_audit_coverage.sh
+
+  # ==========================================
+  # PR compliance: validate template checkboxes
+  # ==========================================
+  pr-compliance:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validate PR template checkboxes
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          chmod +x scripts/verify_pr.py
+          echo "$PR_BODY" | python3 scripts/verify_pr.py
 
   # ==========================================
   # Daily health report (scheduled only)
