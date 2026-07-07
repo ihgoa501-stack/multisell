@@ -112,12 +112,15 @@
 | [回滚与恢复手册](governance/ROLLBACK_AND_RECOVERY.md) | 🆕 DB/迁移/平台写回/发布的逐项回滚流程和决策树 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
+| [E2E Docker 环境](docker-compose.e2e.yml) | 🆕 全栈 E2E 测试专用 Docker Compose（Postgres + 后端 + 前端）|
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
 | [全局验证脚本](scripts/verify_all.sh) | 🔄 全局验证脚本：build→vet→test→lint→build→E2E（E2E 默认必须运行）|
 | [文档漂移检查](scripts/check_doc_drift.sh) | 🆕 验证 INDEX.md/AGENTS.md/CLAUDE.md 所有 .md 引用是否存在 |
 | [已知问题过期检查](scripts/check_known_issues.sh) | 🆕 扫描 KNOWN_ISSUES.md 中超过 Target Fix 日期的项 |
 | [静态代码健康报告](scripts/daily_health_report.sh) | 🆕 仓库新鲜度、构建校验、KNOWN_ISSUES 过期检查、迁移完整性 |
 | [每周验收报告](scripts/weekly_acceptance_report.sh) | 🆕 扫描决策日志过期项、已知问题截止日期 |
+| [迁移回滚检查](scripts/check_migrations.sh) | 🆕 验证最新迁移的 down.sql 可回滚 |
+| [E2E 种子数据](scripts/e2e_seed.sh) | 🆕 为 E2E 全栈测试预填种子数据 |
 | [告警规则](ops/ALERT_RULES.md) | 🆕 各服务告警规则定义、阈值和响应流程 |
 | [备份策略](ops/BACKUP_POLICY.md) | 🆕 数据库/配置/文件备份策略、保留周期和恢复流程 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
