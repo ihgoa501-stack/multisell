@@ -578,10 +578,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	// AIOS routes (tool registry, runtime, guardrails health)
 	setup.RegisterAIOSRoutes(protected, aiosCfg)
-		// Scheduler health endpoint -- exposes task run state for AIOS dashboard.
-		protected.GET("/aios/scheduler/tasks", func(c *gin.Context) {
+	// Scheduler health endpoint -- exposes task run state for AIOS dashboard.
+	protected.GET("/aios/scheduler/tasks", func(c *gin.Context) {
 		c.JSON(200, gin.H{"tasks": sched.TaskRunState()})
-		})
+	})
 
 	// AgentOS routes
 	agentos.RegisterRoutes(protected, db, logger, extTracker)
@@ -596,7 +596,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	inventory.RegisterRoutes(inventoryRoutes, db, logger, approvalSvc)
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
-	reliability.RegisterRoutes(protected, db, logger)
 
 	// Supply chain event: purchase order received → auto-increment inventory.
 	// GUARDRAIL (mutation guard): audited via MutationGuard, registered as system.inventory.receive.
@@ -787,32 +786,32 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		pkgWt, _ := prod.PackageWeightKg.Float64()
 
 		result, err := adapter.Publish(context.Background(), &integrations.PublishInput{
-			ProductID:      t.ProductID,
-			PlatformID:     t.PlatformID,
-			AccountID:      acct.ID,
-			SKUs:           publishSKUs,
-			Prices:         prices,
-			Inventories:    inventories,
-			ProductName:    prod.Name,
-			Description:    prod.Description,
-			CategoryID:     prod.CategoryID,
-			MainImage:      prod.MainImage,
-			PackageHeight:  pkgH,
-			PackageWidth:   pkgW,
-			PackageLength:  pkgL,
-			PackageWeight:  pkgWt,
+			ProductID:     t.ProductID,
+			PlatformID:    t.PlatformID,
+			AccountID:     acct.ID,
+			SKUs:          publishSKUs,
+			Prices:        prices,
+			Inventories:   inventories,
+			ProductName:   prod.Name,
+			Description:   prod.Description,
+			CategoryID:    prod.CategoryID,
+			MainImage:     prod.MainImage,
+			PackageHeight: pkgH,
+			PackageWidth:  pkgW,
+			PackageLength: pkgL,
+			PackageWeight: pkgWt,
 		})
 		auditContent := fmt.Sprintf("publish product %d to platform %s (account %d)", t.ProductID, plat.Code, acct.ID)
 		if err != nil {
 			auditContent = fmt.Sprintf("publish product %d to platform %s failed: %v", t.ProductID, plat.Code, err)
 		}
 		auditSvc.LogStructured(&operationlog.StructuredLogInput{
-			Module:      "platform_publish",
-			Action:      "publish",
-			ResourceID:  fmt.Sprintf("listing_task:%d", taskID),
-			Operator:    "system",
-			Content:     auditContent,
-			Result:      func() string {
+			Module:     "platform_publish",
+			Action:     "publish",
+			ResourceID: fmt.Sprintf("listing_task:%d", taskID),
+			Operator:   "system",
+			Content:    auditContent,
+			Result: func() string {
 				if err != nil {
 					return "failure"
 				}
@@ -874,7 +873,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	owner.RegisterRoutes(protected, db, logger)
 	agentlearning.RegisterRoutes(protected, db, logger)
 
-
 	landedcost.RegisterRoutes(protected, db, logger)
 	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
 	workflow.RegisterRoutes(protected, db, bus, aiOrch, cmd, logger)
@@ -897,7 +895,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	allocation.RegisterRoutes(protected, db, logger)
 	feedback.RegisterRoutes(protected, cfg, db, logger, nil, nil, nil)
 	exceptions.RegisterRoutes(protected, db, logger)
-	notification.RegisterRoutes(protected, db, logger)
 	dashboard.RegisterRoutes(protected, db, logger)
 	support.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
@@ -929,6 +926,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	evolution.RegisterRoutes(protected, db, logger)
 	entropy.RegisterRoutes(protected, db, logger)
 	cost.RegisterRoutes(protected, db, logger, cfg.LLM.DailyBudgetUSD)
+
+	reliability.RegisterRoutes(protected, db, logger)
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
@@ -975,6 +974,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	}
 	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
 	ai.RegisterRoutes(protected, db, logger, hub, moaCoord, cmd, aiosCfg.Guardrails)
+	notification.RegisterRoutes(protected, db, logger, hub)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}

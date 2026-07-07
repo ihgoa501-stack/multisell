@@ -169,6 +169,48 @@ func (h *Handler) TestConnection(c *gin.Context) {
 	response.Success(c, r)
 }
 
+// GetMode GET /platform-integrations/:id/mode
+func (h *Handler) GetMode(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	mode, err := h.service.GetMode(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "integration account not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"execution_mode": mode})
+}
+
+// UpdateMode PUT /platform-integrations/:id/mode
+func (h *Handler) UpdateMode(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		ExecutionMode int8 `json:"execution_mode" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.service.UpdateMode(id, in.ExecutionMode); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "integration account not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"execution_mode": in.ExecutionMode})
+}
+
 // Sync POST /platform-integrations/:id/sync
 // @Summary      Sync integration
 // @Description  Trigger a sync of orders and products from the platform
@@ -228,12 +270,10 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	operator := c.GetString("username")
 	if operator == "" {
 		operator = "system"
 	}
-
 	if h.approvalSvc != nil {
 		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
 			RequestType: "listing_publish_ozon",
@@ -253,7 +293,6 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 		response.Error(c, http.StatusForbidden, fmt.Sprintf("ozon publish requires approval (approval_id=%d)", apprReq.ID))
 		return
 	}
-
 	result, err := h.service.PublishToOzon(c.Request.Context(), &in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -262,6 +301,39 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// WriteBack POST /platform-integrations/write-back
+func (h *Handler) WriteBack(c *gin.Context) {
+	var in WriteBackRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.Operator = c.GetString("username")
+	if in.Operator == "" {
+		in.Operator = "system"
+	}
+	result, err := h.service.WriteBack(c.Request.Context(), &in)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// RetryWriteBack POST /platform-integrations/write-back/:ref-id/retry
+func (h *Handler) RetryWriteBack(c *gin.Context) {
+	refID := c.Param("ref-id")
+	if refID == "" {
+		response.Error(c, http.StatusBadRequest, "reference id is required")
+		return
+	}
+	result, err := h.service.RetryWriteBack(c.Request.Context(), refID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
 func (h *Handler) ListCategories(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -325,74 +397,4 @@ func (h *Handler) CreateAttribute(c *gin.Context) {
 		return
 	}
 	response.Success(c, m)
-}
-
-// GetMode GET /platform-integrations/:id/mode
-func (h *Handler) GetMode(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	mode, err := h.service.GetMode(id)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, mode)
-}
-
-// SetMode PUT /platform-integrations/:id/mode
-func (h *Handler) SetMode(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	var in ModeRequest
-	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	if in.Mode < 0 || in.Mode > 3 {
-		response.Error(c, http.StatusBadRequest, "mode must be 0 (dry_run), 1 (sandbox), 2 (approval_required), or 3 (production)")
-		return
-	}
-	if err := h.service.SetMode(id, in.Mode); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, gin.H{"id": id, "mode": in.Mode})
-}
-
-// WriteBack POST /platform-integrations/write-back
-func (h *Handler) WriteBack(c *gin.Context) {
-	var in WriteBackRequest
-	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	in.Operator = c.GetString("username")
-	if in.Operator == "" {
-		in.Operator = "system"
-	}
-	result, err := h.service.WriteBack(c.Request.Context(), &in)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, result)
-}
-
-// RetryWriteBack POST /platform-integrations/write-back/:ref-id/retry
-func (h *Handler) RetryWriteBack(c *gin.Context) {
-	refID := c.Param("ref-id")
-	if refID == "" {
-		response.Error(c, http.StatusBadRequest, "reference id is required")
-		return
-	}
-	result, err := h.service.RetryWriteBack(c.Request.Context(), refID)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, result)
 }

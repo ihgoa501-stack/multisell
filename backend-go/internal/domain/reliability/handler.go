@@ -7,7 +7,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/response"
 )
 
-// Handler handles reliability HTTP requests.
+// Handler handles reliability / budget HTTP requests.
 type Handler struct {
 	service *Service
 }
@@ -17,26 +17,43 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
-// GetBudget GET /api/v1/reliability/budget
+// GetBudget GET /reliability/budget
+// @Summary      Get LLM monthly budget
+// @Description  View current LLM monthly budget and spend
+// @Tags         reliability
+// @Produce      json
+// @Success      200  {object}  response.Result
+// @Security     BearerAuth
+// @Router       /reliability/budget [get]
 func (h *Handler) GetBudget(c *gin.Context) {
 	b, err := h.service.GetBudget()
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(c, b)
+	response.Success(c, InBudgetResponse(b))
 }
 
-// SetBudget PUT /api/v1/reliability/budget
+// SetBudget PUT /reliability/budget
+// @Summary      Set LLM monthly budget
+// @Description  Set the monthly spending limit for LLM API calls
+// @Tags         reliability
+// @Accept       json
+// @Produce      json
+// @Param        body  body  BudgetInput  true  "Budget settings"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /reliability/budget [put]
 func (h *Handler) SetBudget(c *gin.Context) {
-	var in BudgetConfig
-	if err := c.ShouldBindJSON(&in); err != nil {
+	var input BudgetInput
+	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := h.service.SetBudget(in.MonthlyLimitUSD); err != nil {
+	b, err := h.service.SetBudget(input.MonthlyLimitUSD)
+	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(c, gin.H{"monthly_limit_usd": in.MonthlyLimitUSD})
+	response.Success(c, InBudgetResponse(b))
 }

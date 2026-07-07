@@ -18,21 +18,25 @@ import (
 
 // PlatformIntegrationAccount maps to "platform_integration_account".
 type PlatformIntegrationAccount struct {
-	ID              int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	PlatformID      int64           `gorm:"column:platform_id;not null;index" json:"platform_id"`
-	StoreName       string          `gorm:"column:store_name" json:"store_name"`
-	AccountID       string          `gorm:"column:account_id" json:"account_id"`
-	AccessToken     string          `gorm:"column:access_token" json:"-"`
-	RefreshToken    string          `gorm:"column:refresh_token" json:"-"`
-	TokenExpiresAt  *time.Time      `gorm:"column:token_expires_at" json:"token_expires_at,omitempty"`
-	Status          string          `gorm:"column:status;default:active" json:"status"`
-	LastSyncAt      *time.Time      `gorm:"column:last_sync_at" json:"last_sync_at,omitempty"`
-	SyncStatus      string          `gorm:"column:sync_status;default:idle" json:"sync_status"`
-	ExecutionMode   int8            `gorm:"column:execution_mode;default:0" json:"execution_mode"`
-	LastError       string          `gorm:"column:last_error" json:"last_error"`
-	Config          json.RawMessage `gorm:"column:config;type:jsonb" json:"config,omitempty"`
-	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt       time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	// ponytail: ExecutionMode persisted per-account so the pilot dashboard
+	// can display and change it without relying on a per-request context value.
+	ID             int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	PlatformID     int64           `gorm:"column:platform_id;not null;index" json:"platform_id"`
+	StoreName      string          `gorm:"column:store_name" json:"store_name"`
+	AccountID      string          `gorm:"column:account_id" json:"account_id"`
+	AccessToken    string          `gorm:"column:access_token" json:"-"`
+	RefreshToken   string          `gorm:"column:refresh_token" json:"-"`
+	TokenExpiresAt *time.Time      `gorm:"column:token_expires_at" json:"token_expires_at,omitempty"`
+	Status         string          `gorm:"column:status;default:active" json:"status"`
+	LastSyncAt     *time.Time      `gorm:"column:last_sync_at" json:"last_sync_at,omitempty"`
+	SyncStatus     string          `gorm:"column:sync_status;default:idle" json:"sync_status"`
+	LastError      string          `gorm:"column:last_error" json:"last_error"`
+	ExecutionMode  int8            `gorm:"column:execution_mode;default:0" json:"execution_mode"`
+	Config         json.RawMessage `gorm:"column:config;type:jsonb" json:"config,omitempty"`
+	CreatedAt      time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt      time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	// PlatformName is populated by List via platform table lookup. Not a DB column.
+	PlatformName string `gorm:"-" json:"platform_name,omitempty"`
 }
 
 func (PlatformIntegrationAccount) TableName() string { return "platform_integration_account" }
@@ -102,25 +106,25 @@ func isEncrypted(s string) bool {
 
 // PlatformCategoryMapping maps to "platform_category_mapping".
 type PlatformCategoryMapping struct {
-	ID                  int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	AccountID           int64     `gorm:"column:account_id;not null;index" json:"account_id"`
-	LocalCategoryID     int64     `gorm:"column:local_category_id;not null" json:"local_category_id"`
-	PlatformCategoryID  string    `gorm:"column:platform_category_id" json:"platform_category_id"`
-	PlatformCategoryName string   `gorm:"column:platform_category_name" json:"platform_category_name"`
-	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	ID                   int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	AccountID            int64     `gorm:"column:account_id;not null;index" json:"account_id"`
+	LocalCategoryID      int64     `gorm:"column:local_category_id;not null" json:"local_category_id"`
+	PlatformCategoryID   string    `gorm:"column:platform_category_id" json:"platform_category_id"`
+	PlatformCategoryName string    `gorm:"column:platform_category_name" json:"platform_category_name"`
+	CreatedAt            time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 
 func (PlatformCategoryMapping) TableName() string { return "platform_category_mapping" }
 
 // PlatformAttributeMapping maps to "platform_attribute_mapping".
 type PlatformAttributeMapping struct {
-	ID                int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	AccountID         int64     `gorm:"column:account_id;not null;index" json:"account_id"`
-	LocalAttrName     string    `gorm:"column:local_attr_name;not null" json:"local_attr_name"`
-	PlatformAttrID    string    `gorm:"column:platform_attr_id" json:"platform_attr_id"`
-	PlatformAttrName  string    `gorm:"column:platform_attr_name" json:"platform_attr_name"`
-	Required          bool      `gorm:"column:required;default:false" json:"required"`
-	CreatedAt         time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	ID               int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	AccountID        int64     `gorm:"column:account_id;not null;index" json:"account_id"`
+	LocalAttrName    string    `gorm:"column:local_attr_name;not null" json:"local_attr_name"`
+	PlatformAttrID   string    `gorm:"column:platform_attr_id" json:"platform_attr_id"`
+	PlatformAttrName string    `gorm:"column:platform_attr_name" json:"platform_attr_name"`
+	Required         bool      `gorm:"column:required;default:false" json:"required"`
+	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 
 func (PlatformAttributeMapping) TableName() string { return "platform_attribute_mapping" }
@@ -182,15 +186,15 @@ type TestConnectionResult struct {
 
 // WriteBackRecord persists write-back attempts for audit and retry.
 type WriteBackRecord struct {
-	ID          uint      `gorm:"primaryKey"`
-	ReferenceID string    `gorm:"uniqueIndex;size:64"`
-	AccountID   int64     `gorm:"not null;index"`
-	Action      string    `gorm:"size:50;not null"`
-	Payload     string    `gorm:"type:text"`
-	Status      string    `gorm:"size:20;default:pending"` // pending, success, failed
-	Result      string    `gorm:"type:text"`
-	Error       string    `gorm:"type:text"`
-	RetryCount  int       `gorm:"default:0"`
+	ID          uint   `gorm:"primaryKey"`
+	ReferenceID string `gorm:"uniqueIndex;size:64"`
+	AccountID   int64  `gorm:"not null;index"`
+	Action      string `gorm:"size:50;not null"`
+	Payload     string `gorm:"type:text"`
+	Status      string `gorm:"size:20;default:pending"` // pending, success, failed
+	Result      string `gorm:"type:text"`
+	Error       string `gorm:"type:text"`
+	RetryCount  int    `gorm:"default:0"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

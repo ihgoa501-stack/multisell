@@ -2,7 +2,6 @@ package integrations
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,11 +26,12 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
 }
 
-// WithApproval sets the approval service dependency (optional, for write-back gating).
+// WithApproval sets the optional approval service used by write-back gates.
 func (s *Service) WithApproval(svc *approval.Service) *Service {
 	s.approvalSvc = svc
 	return s
 }
+
 // List returns paginated integration accounts with optional filter.
 func (s *Service) List(p *common.Pagination, f *AccountListFilter) ([]PlatformIntegrationAccount, int64, error) {
 	q := s.db.Model(&PlatformIntegrationAccount{})
@@ -56,6 +56,30 @@ func (s *Service) List(p *common.Pagination, f *AccountListFilter) ([]PlatformIn
 		return nil, 0, err
 	}
 	return items, total, nil
+}
+
+// enrichPlatformNames populates PlatformName for each account via batch lookup.
+func (s *Service) enrichPlatformNames(items []PlatformIntegrationAccount) {
+	if len(items) == 0 {
+		return
+	}
+	ids := make([]int64, len(items))
+	for i, it := range items {
+		ids[i] = it.PlatformID
+	}
+	type platRow struct {
+		ID   int64
+		Name string
+	}
+	var plats []platRow
+	_ = s.db.Table("platform").Where("id IN ?", ids).Select("id, name").Find(&plats).Error
+	m := make(map[int64]string, len(plats))
+	for _, p := range plats {
+		m[p.ID] = p.Name
+	}
+	for i := range items {
+		items[i].PlatformName = m[ids[i]]
+	}
 }
 
 // Get returns a single integration account.
@@ -187,7 +211,7 @@ func (s *Service) TriggerSync(id int64) (*PlatformIntegrationAccount, error) {
 	}
 	now := time.Now()
 	if err := s.db.Model(&a).Updates(map[string]interface{}{
-		"sync_status": "syncing",
+		"sync_status":  "syncing",
 		"last_sync_at": now,
 		"last_error":   "",
 	}).Error; err != nil {
@@ -197,6 +221,21 @@ func (s *Service) TriggerSync(id int64) (*PlatformIntegrationAccount, error) {
 		return nil, err
 	}
 	return &a, nil
+}
+
+// GetMode returns the execution mode for an integration account.
+func (s *Service) GetMode(id int64) (int8, error) {
+	var a PlatformIntegrationAccount
+	if err := s.db.Select("execution_mode").First(&a, id).Error; err != nil {
+		return 0, err
+	}
+	return a.ExecutionMode, nil
+}
+
+// UpdateMode sets the execution mode for an integration account.
+func (s *Service) UpdateMode(id int64, mode int8) error {
+	return s.db.Model(&PlatformIntegrationAccount{}).Where("id = ?", id).
+		Update("execution_mode", mode).Error
 }
 
 // ListCategoryMappings returns the category mappings for an account.
@@ -252,39 +291,7 @@ func (s *Service) CreateAttributeMapping(accountID int64, in *CreateAttributeMap
 	return &m, nil
 }
 
-// GetMode returns the current execution mode for an integration account.
-// ponytail: stored in Config JSON to avoid migration. Mode 0 (dry_run) is default.
-func (s *Service) GetMode(id int64) (*ModeResponse, error) {
-	var a PlatformIntegrationAccount
-	if err := s.db.First(&a, id).Error; err != nil {
-		return nil, err
-	}
-	return &ModeResponse{
-		Mode:        ExecutionMode(a.ExecutionMode),
-		AccountID:   a.ID,
-		AccountName: a.StoreName,
-	}, nil
-}
-
-// SetMode updates the execution mode for an integration account.
-func (s *Service) SetMode(id int64, mode ExecutionMode) error {
-	return s.db.Model(&PlatformIntegrationAccount{}).Where("id = ?", id).
-		Update("execution_mode", int8(mode)).Error
-}
-
-// executionModeFromConfig reads ExecutionMode from account DB field.
-func executionModeFromConfig(config json.RawMessage) ExecutionMode {
-	if len(config) == 0 {
-		return ExecutionModeDryRun
-	}
-	var cfg struct {
-		Mode ExecutionMode `json:"execution_mode"`
-	}
-	if err := json.Unmarshal(config, &cfg); err != nil {
-		return ExecutionModeDryRun
-	}
-	return cfg.Mode
-}
+// PublishToOzonInput is the request payload for publishing a product to Ozon.
 type PublishToOzonInput struct {
 	ProductID    int64   `json:"product_id" binding:"required"`
 	AccountID    int64   `json:"account_id" binding:"required"`
@@ -345,20 +352,20 @@ func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*P
 	pkgWt, _ := prod.PackageWeightKg.Float64()
 
 	return adapter.Publish(ctx, &PublishInput{
-		ProductID:      prod.ID,
-		PlatformID:     acct.PlatformID,
-		AccountID:      in.AccountID,
-		ProductName:    prod.Name,
-		Description:    prod.Description,
-		CategoryID:     prod.CategoryID,
-		SKUs:           publishSKUs,
-		Prices:         prices,
-		Inventories:    inventories,
-		PackageHeight:  pkgH,
-		PackageWidth:   pkgW,
-		PackageLength:  pkgL,
-		PackageWeight:  pkgWt,
-		MainImage:      in.ImageURL,
+		ProductID:     prod.ID,
+		PlatformID:    acct.PlatformID,
+		AccountID:     in.AccountID,
+		ProductName:   prod.Name,
+		Description:   prod.Description,
+		CategoryID:    prod.CategoryID,
+		SKUs:          publishSKUs,
+		Prices:        prices,
+		Inventories:   inventories,
+		PackageHeight: pkgH,
+		PackageWidth:  pkgW,
+		PackageLength: pkgL,
+		PackageWeight: pkgWt,
+		MainImage:     in.ImageURL,
 	})
 }
 

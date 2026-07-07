@@ -2,19 +2,15 @@ package reliability
 
 import "time"
 
-// LLMBudget tracks monthly LLM spending with a hard cap.
+// LLMBudget is the monthly LLM spend budget with a hard cap.
+// There should be exactly one row; BudgetMonth is "YYYY-MM" to scope the current
+// month's spend. When CurrentMonthUSD >= MonthlyLimitUSD (or IsPaused is true),
+// the AI orchestrator blocks further LLM calls.
 type LLMBudget struct {
 	ID              uint      `gorm:"primaryKey"`
-	MonthlyLimitUSD float64   `gorm:"column:monthly_limit_usd;not null;default:200"`
-	CurrentMonthUSD float64   `gorm:"column:current_month_usd;default:0"`
-	BudgetMonth     string    `gorm:"column:budget_month;size:7"`
-	IsPaused        bool      `gorm:"column:is_paused;default:false"`
-	UpdatedAt       time.Time `gorm:"column:updated_at"`
-}
-
-func (LLMBudget) TableName() string { return "llm_budgets" }
-
-// BudgetConfig is the request/response for the budget API.
-type BudgetConfig struct {
-	MonthlyLimitUSD float64 `json:"monthly_limit_usd"`
+	MonthlyLimitUSD float64   `gorm:"not null"`
+	CurrentMonthUSD float64   `gorm:"default:0"`
+	BudgetMonth     string    `gorm:"size:7"`
+	IsPaused        bool      `gorm:"default:false"`
+	UpdatedAt       time.Time
 }
