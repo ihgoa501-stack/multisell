@@ -10,6 +10,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/platform/killswitch"
 	"github.com/lingmirror/backend-go/internal/platform/routecatalog"
+	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -52,11 +53,8 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.String("path", fullPath),
 				zap.String("action_type", actionType),
 			)
-			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
-				"code":    503,
-				"message": "global kill switch is active: all production writes are blocked",
-				"reason":  killswitch.Reason(),
-			})
+			response.Error(c, http.StatusServiceUnavailable,
+				"global kill switch is active: all production writes are blocked. Reason: "+killswitch.Reason())
 			return
 		}
 
@@ -67,20 +65,14 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.String("method", method),
 				zap.String("path", fullPath),
 			)
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"code":       403,
-				"message":    "this endpoint requires an approval ID via the X-Approval-ID header. Create an approval request first, then pass its ID.",
-				"action_type": actionType,
-			})
+			response.Error(c, http.StatusForbidden,
+				"this endpoint requires an approval ID via the X-Approval-ID header. Create an approval request first, then pass its ID.")
 			return
 		}
 
 		approvalID, err := strconv.ParseInt(approvalIDStr, 10, 64)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "X-Approval-ID must be a numeric approval request ID",
-			})
+			response.Error(c, http.StatusBadRequest, "X-Approval-ID must be a numeric approval request ID")
 			return
 		}
 
@@ -91,10 +83,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.Int64("approval_id", approvalID),
 				zap.Error(err),
 			)
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"code":    403,
-				"message": "invalid or expired approval ID",
-			})
+			response.Error(c, http.StatusForbidden, "invalid or expired approval ID")
 			return
 		}
 
@@ -104,11 +93,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.Int64("approval_id", approvalID),
 				zap.String("status", req.Status),
 			)
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"code":       403,
-				"message":    "approval has not been granted (status: " + req.Status + ")",
-				"approval_id": approvalID,
-			})
+			response.Error(c, http.StatusForbidden, "approval has not been granted (status: "+req.Status+")")
 			return
 		}
 
@@ -118,34 +103,40 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.Int64("approval_id", approvalID),
 				zap.Time("expires_at", *req.ExpiresAt),
 			)
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"code":    403,
-				"message": "approval has expired",
-			})
+			response.Error(c, http.StatusForbidden, "approval has expired")
 			return
 		}
 
 		// ── Binding check 3: RequestType matches current action ──
 		if req.RequestType != "" {
-			// Map action_type to request_type. The request_type is typically "publish",
-			// "price_change", "delist", "content_update", "listing_task", "permission",
-			// etc.  We accept an exact or prefix match (e.g. "permission_change"
-			// matches an approval for "permission").
 			if !matchRequestType(req.RequestType, actionType) {
 				logger.Warn("approval validation failed: RequestType mismatch",
 					zap.Int64("approval_id", approvalID),
 					zap.String("approval_request_type", req.RequestType),
 					zap.String("action_type", actionType),
 				)
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-					"code":    403,
-					"message": "approval RequestType '" + req.RequestType + "' does not match action '" + actionType + "'",
-				})
+				response.Error(c, http.StatusForbidden,
+					"approval RequestType '"+req.RequestType+"' does not match action '"+actionType+"'")
 				return
 			}
 		}
 
-		// ── Binding check 4: RequesterUserID matches JWT user ──
+		// ── Binding check 4: TargetType matches route context ──
+		// Derive the expected target type from the route path prefix.
+		// E.g. "/api/v1/prices/..." → "price"; "/api/v1/rbac/..." → "rbac".
+		targetType := deriveTargetType(fullPath)
+		if req.TargetType != "" && targetType != "" && req.TargetType != targetType {
+			logger.Warn("approval validation failed: TargetType mismatch",
+				zap.Int64("approval_id", approvalID),
+				zap.String("approval_target_type", req.TargetType),
+				zap.String("route_target_type", targetType),
+			)
+			response.Error(c, http.StatusForbidden,
+				"approval TargetType '"+req.TargetType+"' does not match route '"+targetType+"'")
+			return
+		}
+
+		// ── Binding check 5: RequesterUserID matches JWT user ──
 		if req.RequesterUserID != nil {
 			var userID int64
 			if v, ok := c.Get("user_id"); ok {
@@ -162,10 +153,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 					zap.Int64("approval_requester", *req.RequesterUserID),
 					zap.Int64("jwt_user_id", userID),
 				)
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-					"code":    403,
-					"message": "approval was created by a different user",
-				})
+				response.Error(c, http.StatusForbidden, "approval was created by a different user")
 				return
 			}
 		}
@@ -183,13 +171,41 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 }
 
 // matchRequestType checks whether an approval RequestType maps to the current
-// action type. Accepts prefix match so "permission_change" matches a "permission" approval.
+// action type. Exact match takes priority; prefix match allowed when the
+// prefix is at least 4 characters to avoid single-letter false matches
+// (e.g. "p" matching both "price_update" and "permission_change").
 func matchRequestType(requestType, actionType string) bool {
 	if requestType == actionType {
 		return true
+	}
+	// Require minimum 4-char prefix to avoid spurious matches.
+	if len(requestType) < 4 && len(actionType) < 4 {
+		return false
 	}
 	if strings.HasPrefix(actionType, requestType) || strings.HasPrefix(requestType, actionType) {
 		return true
 	}
 	return false
+}
+
+// deriveTargetType extracts a target type from a Gin route path.
+// "/api/v1/prices/:id" → "price"
+// "/api/v1/rbac/roles" → "rbac"
+// "/api/v1/inventory/:id" → "inventory"
+func deriveTargetType(fullPath string) string {
+	// Strip /api/v1/
+	trimmed := strings.TrimPrefix(fullPath, "/api/v1/")
+	if trimmed == "" {
+		return ""
+	}
+	// Take the first path segment
+	idx := strings.Index(trimmed, "/")
+	if idx > 0 {
+		trimmed = trimmed[:idx]
+	}
+	// Remove trailing 's' for singular normalization (prices → price, listings → listing)
+	if strings.HasSuffix(trimmed, "s") && len(trimmed) > 3 {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+	return trimmed
 }

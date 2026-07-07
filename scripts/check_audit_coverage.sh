@@ -87,6 +87,46 @@ if [[ -f "$CATALOG_FILE" ]]; then
 fi
 echo "  Done."
 
+# ── Check 5: Cross-reference registered Gin routes against routecatalog ──
+echo ""
+echo "[5/5] Cross-referencing Gin route registrations against routecatalog..."
+missing_count=0
+
+# Source the list of expected high-risk route patterns from domain routes.go files
+# and check each appears in the routecatalog's PathPattern field.
+# ponytail: simple grep-based cross-ref — upgrade to full parse if false negatives appear.
+for entry in "price|/prices" "price|/competitor-prices" "price|/pricing-recommendations" \
+  "order|/order" "inventory|/inventory" "integrations|/platform-integrations" \
+  "settlement|/settlement" "finance|/finance/accounts" "finance|/finance/transactions" \
+  "listing|/listings" "listing|/listing" "listingtask|/listing-tasks" "listingtask|/listing-task" \
+  "rbac|/rbac" "sku|/skus" "aftersales|/aftersales" "platform|/platforms" "platform|/stores"; do
+  domain="${entry%|*}"
+  path="${entry#*|}"
+
+  # Get mutating endpoints from this domain's routes.go
+  routes_file="$REPO_ROOT/backend-go/internal/domain/$domain/routes.go"
+  [[ -f "$routes_file" ]] || continue
+
+  # Count mutating endpoints under this group, and count registered entries for this path.
+  endpoint_count=$(grep -cE '\.(POST|PUT|PATCH|DELETE)\(' "$routes_file" 2>/dev/null || echo 0)
+  # Check if the routecatalog has at least one entry referencing this path.
+  # Use simple grep (no -P) for macOS/linux compatibility.
+  registered_count=$(grep -cE "Method:.*PathPattern:.*${path}" "$REGISTRY_FILE" 2>/dev/null || echo 0)
+
+  if [[ "$endpoint_count" -gt 0 && "$registered_count" -eq 0 ]]; then
+    echo "  ⚠  $domain ($path): $endpoint_count mutation endpoints found, $registered_count registered in routecatalog"
+    missing_count=$((missing_count + 1))
+  fi
+done
+
+if [[ "$missing_count" -gt 0 ]]; then
+  echo "  ❌ $missing_count domains with mutation routes missing from routecatalog"
+  has_violation=1
+else
+  echo "  ✓ All domains have registered routecatalog entries"
+fi
+echo "  Done."
+
 echo ""
 if [[ "$has_violation" -eq 1 ]]; then
   echo "❌ Audit coverage violations found."

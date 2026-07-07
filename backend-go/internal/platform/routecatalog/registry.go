@@ -11,6 +11,10 @@
 // Routes not in this registry are allowed through (safe default — existing
 // non-high-risk routes are unaffected). Only mutating methods
 // (POST/PUT/PATCH/DELETE) are gated by the middleware.
+//
+// CI check: check_audit_coverage.sh step [5/5] cross-references registered
+// Gin routes against this catalog and warns about any unregistered routes.
+// Currently warning-only; make it a hard error once all routes are audited.
 package routecatalog
 
 // Binding links a Gin route template to an action type.

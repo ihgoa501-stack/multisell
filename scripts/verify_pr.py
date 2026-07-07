@@ -21,9 +21,6 @@ from typing import List, Optional
 from pathlib import Path
 
 
-def strip_markdown(s: str) -> str:
-    """Strip whitespace and markdown formatting from a line."""
-    return s.strip().strip('`').strip()
 
 
 def parse_checkbox(line: str):

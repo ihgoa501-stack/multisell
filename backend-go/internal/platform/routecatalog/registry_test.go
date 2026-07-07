@@ -2,6 +2,7 @@ package routecatalog
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -93,7 +94,7 @@ func TestAllBindingsHaveValidPaths(t *testing.T) {
 		if b.PathPattern == "" {
 			t.Errorf("binding for %s has empty path", b.ActionType)
 		}
-		if !hasPrefix(b.PathPattern, "/api/v1/") {
+		if !strings.HasPrefix(b.PathPattern, "/api/v1/") {
 			t.Errorf("binding %s %s path must start with /api/v1/", b.Method, b.PathPattern)
 		}
 	}
@@ -119,10 +120,6 @@ func TestBindingsCount(t *testing.T) {
 	if n > 80 {
 		t.Fatalf("expected at most 80 high-risk route bindings, got %d — review if all need approval", n)
 	}
-}
-
-func hasPrefix(s, prefix string) bool {
-	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
 
 func TestMain(m *testing.M) {

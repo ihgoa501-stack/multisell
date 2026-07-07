@@ -14,6 +14,8 @@
 package killswitch
 
 import (
+	"log/slog"
+	"os"
 	"sync"
 	"sync/atomic"
 )
@@ -23,6 +25,15 @@ var (
 	active atomic.Bool
 	reason string
 )
+
+// auditLogger returns a structured logger for kill switch audit events.
+// Uses slog for zero-dependency audit; upgrade to zap/operationlog when
+// a DB reference is available at the middleware level.
+var auditLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+func auditLogger() *slog.Logger {
+	return auditLog
+}
 
 // IsActive returns true if the production write kill switch is engaged.
 func IsActive() bool {
