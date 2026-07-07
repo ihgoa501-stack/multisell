@@ -215,7 +215,7 @@ export default function OwnerPage() {
       // 1. Create approval request
       const approvalResult = await apiClient.post<ApprovalRequestResponse>('/v1/approval', {
         product_id: params.productId,
-        request_type: 'publish',
+        request_type: 'listing_task',
         requester: operator,
         reason: params.reason,
       });
@@ -238,11 +238,11 @@ export default function OwnerPage() {
         note: 'Owner approved listing task',
       });
 
-      // 4. Trigger execution
-      await apiClient.post(`/v1/listing-task/${params.taskId}/execute`);
+      // 4. Navigate to listing task detail page for execution
+      router.push(`/listing-tasks/${params.taskId}`);
     },
     onSuccess: () => {
-      message.success('已批准上架并开始执行');
+      message.success('已批准，正在跳转到任务详情页');
       setApprovalModal(null);
       setApprovalAction(null);
       qc.invalidateQueries({ queryKey: ['owner-decision-queue'] });
@@ -258,7 +258,7 @@ export default function OwnerPage() {
       // 1. Create approval request
       const approvalResult = await apiClient.post<ApprovalRequestResponse>('/v1/approval', {
         product_id: params.productId,
-        request_type: 'publish',
+        request_type: 'listing_task',
         requester: operator,
         reason: params.reason,
       });

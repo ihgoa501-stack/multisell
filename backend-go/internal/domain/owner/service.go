@@ -16,7 +16,7 @@ import (
 type Service struct {
 	db            *gorm.DB
 	logger        *zap.Logger
-	trustscoreSvc *trustscore.Service // optional, may be nil
+	trustscoreSvc *trustscore.Service   // optional, may be nil
 	oplogSvc      *operationlog.Service // optional, may be nil
 }
 
@@ -30,16 +30,16 @@ func NewService(db *gorm.DB, logger *zap.Logger, trustscoreSvc *trustscore.Servi
 // RiskSummary returns aggregated risk metrics for the Owner cockpit.
 func (s *Service) RiskSummary() (map[string]interface{}, error) {
 	result := map[string]interface{}{
-		"low_profit_products":     0,
-		"missing_data_products":   0,
-		"pending_approvals":       0,
-		"pending_approval_count":  0,
+		"low_profit_products":        0,
+		"missing_data_products":      0,
+		"pending_approvals":          0,
+		"pending_approval_count":     0,
 		"blocked_listing_task_count": 0,
 		"recommended_listing_count":  0,
-		"sync_errors":             0,
-		"total_candidates":        0,
-		"total_recommendations":   0,
-		"list_ready_products":     0,
+		"sync_errors":                0,
+		"total_candidates":           0,
+		"total_recommendations":      0,
+		"list_ready_products":        0,
 	}
 
 	var totalCandidates int64
@@ -124,19 +124,19 @@ func (s *Service) Suggestions(limit int) ([]SuggestionResponse, error) {
 		limit = 20
 	}
 	type Rec struct {
-		ID                  int64
-		ProductID           int64
-		CompletenessScore   float64
-		ProfitMargin        float64
-		EstimatedProfit     float64
-		Decision            string
-		Confidence          float64
-		Reason              string
-		RiskFlags           string
-		FeedbackStatus      string
-		FeedbackNote        string
+		ID                   int64
+		ProductID            int64
+		CompletenessScore    float64
+		ProfitMargin         float64
+		EstimatedProfit      float64
+		Decision             string
+		Confidence           float64
+		Reason               string
+		RiskFlags            string
+		FeedbackStatus       string
+		FeedbackNote         string
 		CreatedListingTaskID *int64
-		CreatedAt           time.Time
+		CreatedAt            time.Time
 	}
 	var recs []Rec
 	if err := s.db.Table("listing_recommendation").
@@ -213,7 +213,6 @@ func (s *Service) Suggestions(limit int) ([]SuggestionResponse, error) {
 			taskStatus = taskStatusMap[*r.CreatedListingTaskID]
 		}
 
-
 		var approvalID *int64
 		approvalStatus := ""
 		if r.CreatedListingTaskID != nil {
@@ -271,11 +270,11 @@ func (s *Service) recordTrustScoreFeedback(agentID string) {
 func (s *Service) RecordFeedback(recommendationID int64, input *FeedbackInput) error {
 	// Fetch the recommendation
 	type Rec struct {
-		ID                  int64
-		ProductID           int64
-		Decision            string
+		ID                   int64
+		ProductID            int64
+		Decision             string
 		CreatedListingTaskID *int64
-		TriggeredBy         string
+		TriggeredBy          string
 	}
 	var rec Rec
 	if err := s.db.Table("listing_recommendation").First(&rec, recommendationID).Error; err != nil {
@@ -313,22 +312,40 @@ func (s *Service) RecordFeedback(recommendationID int64, input *FeedbackInput) e
 				}
 			}
 
-			// Create approval request for the listing task
 			approvalSvc := approval.NewService(s.db, s.logger, nil)
-			reason := "Owner adopted the recommendation, pending approval for listing"
-			if input.Note != "" {
-				reason = input.Note
-			}
-			approvalRec, err := approvalSvc.Create(&approval.CreateApprovalInput{
-				ProductID:   rec.ProductID,
-				RequestType: "listing_task",
-				Requester:   "owner",
-				Reason:      reason,
-				EntityType:  "listing_task",
-				EntityID:    *rec.CreatedListingTaskID,
-			})
+
+			// Use existing pending approval for this listing_task if one exists,
+			// rather than creating a duplicate. The loop already created one.
+			var approvalRec *approval.ApprovalRequest
+			existing, err := s.HasPendingForListingTask(*rec.CreatedListingTaskID)
 			if err != nil {
-				return fmt.Errorf("create approval request: %w", err)
+				return fmt.Errorf("check existing approval: %w", err)
+			}
+			if existing {
+				existingID, _ := s.findPendingApprovalID(*rec.CreatedListingTaskID)
+				if existingID > 0 {
+					s.logger.Info("reusing existing pending approval for listing_task",
+						zap.Int64("approval_id", existingID),
+						zap.Int64("listing_task_id", *rec.CreatedListingTaskID))
+					approvalRec = &approval.ApprovalRequest{ID: existingID}
+				}
+			}
+			if approvalRec == nil {
+				reason := "Owner adopted the recommendation, pending approval for listing"
+				if input.Note != "" {
+					reason = input.Note
+				}
+				approvalRec, err = approvalSvc.Create(&approval.CreateApprovalInput{
+					ProductID:   rec.ProductID,
+					RequestType: "listing_task",
+					Requester:   "owner",
+					Reason:      reason,
+					EntityType:  "listing_task",
+					EntityID:    *rec.CreatedListingTaskID,
+				})
+				if err != nil {
+					return fmt.Errorf("create approval request: %w", err)
+				}
 			}
 
 			// Audit: record structured audit log for adopt action
@@ -433,14 +450,14 @@ func (s *Service) PlatformSyncStatus() ([]map[string]interface{}, error) {
 				lastSyncStr = r.LastSyncAt.Format("2006-01-02 15:04:05")
 			}
 			platforms[r.PlatformID] = map[string]interface{}{
-				"platform_id":    r.PlatformID,
-				"platform_name":  r.PlatformName,
-				"mode":           mode,
-				"orders_sync":    "-",
-				"products_sync":  "-",
-				"fees_sync":      "-",
+				"platform_id":      r.PlatformID,
+				"platform_name":    r.PlatformName,
+				"mode":             mode,
+				"orders_sync":      "-",
+				"products_sync":    "-",
+				"fees_sync":        "-",
 				"settlements_sync": "-",
-				"last_sync_time":  lastSyncStr,
+				"last_sync_time":   lastSyncStr,
 			}
 		}
 		entry := platforms[r.PlatformID]
@@ -660,4 +677,30 @@ func (s *Service) PipelineChain() (*PipelineChainResponse, error) {
 	}
 
 	return result, nil
+}
+
+// HasPendingForListingTask checks if there is a pending approval for the given listing_task.
+func (s *Service) HasPendingForListingTask(listingTaskID int64) (bool, error) {
+	var count int64
+	err := s.db.Table("approval_request").
+		Where("entity_type = ? AND entity_id = ? AND status = ?", "listing_task", listingTaskID, approval.StatusPending).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// findPendingApprovalID returns the ID of the pending approval for the given listing_task.
+func (s *Service) findPendingApprovalID(listingTaskID int64) (int64, error) {
+	var id int64
+	if err := s.db.Table("approval_request").
+		Select("id").
+		Where("entity_type = ? AND entity_id = ? AND status = ?", "listing_task", listingTaskID, approval.StatusPending).
+		Order("id DESC").
+		Limit(1).
+		Scan(&id).Error; err != nil {
+		return 0, err
+	}
+	return id, nil
 }

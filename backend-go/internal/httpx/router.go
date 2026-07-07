@@ -729,6 +729,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		logger.Info("Prism client disabled")
 	}
 	approvalSvc = approval.NewService(db, logger, auditSvc).WithBus(bus)
+	approval.RegisterRoutes(protected, approvalSvc)
 	rbacSvc := rbac.NewService(db, logger)
 	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
 	// Build platform publish hook for listing task execution.
@@ -738,7 +739,20 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		if err := db.First(&t, taskID).Error; err != nil {
 			return fmt.Errorf("load listing task %d: %w", taskID, err)
 		}
-		// Resolve platform code → adapter.
+
+		// ponytail: dry-run mode guard — skip platform publish when mode=dry_run.
+		var snap struct {
+			Mode string `json:"mode"`
+		}
+		if len(t.DecisionSnapshot) > 0 {
+			if err := json.Unmarshal(t.DecisionSnapshot, &snap); err == nil && snap.Mode == "dry_run" {
+				logger.Info("publishHook: dry-run mode, skipping platform publish",
+					zap.Int64("task_id", taskID))
+				return nil
+			}
+		}
+
+		// Resolve platform code to adapter.
 		var plat struct{ Code string }
 		if err := db.Table("platform").Select("code").Where("id = ?", t.PlatformID).Scan(&plat).Error; err != nil {
 			return fmt.Errorf("load platform %d: %w", t.PlatformID, err)
@@ -747,7 +761,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		if !ok {
 			return fmt.Errorf("no adapter for platform %q", plat.Code)
 		}
-		// Load product data.
 		var prod sku.Product
 		if err := db.First(&prod, t.ProductID).Error; err != nil {
 			return fmt.Errorf("load product %d: %w", t.ProductID, err)
@@ -760,9 +773,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		if err := db.Table("sku").Where("product_id = ?", t.ProductID).Find(&skus).Error; err != nil {
 			return fmt.Errorf("load SKUs for product %d: %w", t.ProductID, err)
 		}
-		// Find first active account for this platform.
-		// ponytail: picks the first active account by insertion order.
-		// Add account_id to ListingTask if multi-store routing becomes needed.
 		var acct integrations.PlatformIntegrationAccount
 		if err := db.Where("platform_id = ? AND status = ?", t.PlatformID, "active").First(&acct).Error; err != nil {
 			return fmt.Errorf("no active account for platform %d: %w", t.PlatformID, err)
@@ -824,10 +834,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		if err != nil {
 			return fmt.Errorf("platform %s publish failed: %w", plat.Code, err)
 		}
-		// Merge platform publish result into existing item result
-		// (which already contains Prism compliance data from ExecuteTask).
 		resultJSON, _ := json.Marshal(result)
-		db.Exec(`UPDATE listing_task_item SET result = COALESCE(result, '{}')::jsonb || ?::jsonb WHERE task_id = ?`,
+		db.Exec("UPDATE listing_task_item SET result = COALESCE(result, '{}')::jsonb || ?::jsonb WHERE task_id = ?",
 			string(resultJSON), taskID)
 
 		logger.Info("listing task platform publish succeeded",
@@ -840,20 +848,82 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	}
 	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc, publishHook)
 
-	// Closed-loop: approval approved for listing_task → execute the task.
+	// Closed-loop: approval approved for listing_task → approve the listing task.
+	// The subscriber writes back approval_id, transitions listing_task to "approved",
+	// and records recommendation feedback. It does NOT auto-execute the task —
+	// the Owner or system calls ExecuteTask separately after verifying the approved state.
 	bus.Subscribe("approval.approved.listing_task",
 		mutationGuard.Guard(eventbus.MutationInfo{
-			SystemAction: "system.listingtask.execute",
+			SystemAction: "system.listingtask.approval_approved",
 			Domain:       "listingtask",
-			Description:  "审批通过: 执行上架任务",
+			Description:  "审批通过: 推进上架任务到已批准",
 		}, func(ctx context.Context, evt eventbus.Event) error {
+			entityType, _ := evt.Payload["entity_type"].(string)
+			if entityType != "listing_task" {
+				return nil
+			}
 			entityID, ok := evt.Payload["entity_id"].(float64)
 			if !ok || int64(entityID) == 0 {
 				return nil
 			}
-			ltSvc := listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, loopSvc)
-			_, err := ltSvc.ExecuteTask(int64(entityID), "system")
-			return err
+			approvalID, ok := evt.Payload["approval_id"].(float64)
+			if !ok {
+				return nil
+			}
+			reviewer, _ := evt.Payload["reviewer"].(string)
+			taskID := int64(entityID)
+			aid := int64(approvalID)
+
+			var task listingtask.ListingTask
+			if err := db.First(&task, taskID).Error; err != nil {
+				return fmt.Errorf("load listing task %d: %w", taskID, err)
+			}
+
+			sm := listingtask.NewListingTaskStateMachine()
+
+			err := db.Transaction(func(tx *gorm.DB) error {
+				if task.Status == "blocked" {
+					if !sm.CanTransition("blocked", "pending_approval") {
+						return fmt.Errorf("listing task %d: blocked -> pending_approval not allowed", taskID)
+					}
+					if err := tx.Model(&task).Update("status", "pending_approval").Error; err != nil {
+						return err
+					}
+				}
+				if task.Status != "pending_approval" {
+					return nil
+				}
+				if !sm.CanTransition("pending_approval", "approved") {
+					return nil
+				}
+				return tx.Model(&task).Updates(map[string]interface{}{
+					"status":      "approved",
+					"approval_id": aid,
+				}).Error
+			})
+			if err != nil {
+				return err
+			}
+
+			auditSvc.LogStructured(&operationlog.StructuredLogInput{
+				Module:      "listing_task",
+				Action:      "listing_task.approval_approved",
+				ResourceID:  fmt.Sprintf("%d", taskID),
+				Operator:    reviewer,
+				Content:     fmt.Sprintf("listing_task_id=%d approval_id=%d status=approved", taskID, aid),
+				Result:      "approved",
+				TriggerType: "eventbus",
+				EntityType:  "listing_task",
+				EntityID:    taskID,
+				ApprovalID:  &aid,
+			})
+
+			_ = loopSvc.RecordExecutionResult(task.ProductID, taskID, true, "")
+
+			logger.Info("listing task approved via approval event",
+				zap.Int64("task_id", taskID),
+				zap.Int64("approval_id", aid))
+			return nil
 		}))
 
 	candidate.RegisterRoutes(protected, db, logger)

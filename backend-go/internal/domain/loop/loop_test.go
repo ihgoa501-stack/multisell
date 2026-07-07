@@ -216,7 +216,7 @@ func TestService_EvaluateCreatesBlockedListingTaskAndApproval(t *testing.T) {
 	}
 
 	var req approval.ApprovalRequest
-	if err := db.Where("target_type = ? AND target_id = ? AND request_type = ?", "listing_task", task.ID, "publish").First(&req).Error; err != nil {
+	if err := db.Where("target_type = ? AND target_id = ? AND request_type = ?", "listing_task", task.ID, "listing_task").First(&req).Error; err != nil {
 		t.Fatalf("approval request: %v", err)
 	}
 	if req.Status != "pending" || req.RiskLevel != "high" {
