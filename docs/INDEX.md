@@ -102,10 +102,20 @@
 | [产品闭环验收](governance/PRODUCT_LOOP_ACCEPTANCE.md) | 🆕 候选商品→完整度→成本→审批→上架全链路验收证据 |
 | [订单闭环验收](governance/ORDER_LOOP_ACCEPTANCE.md) | 🆕 订单→结算→异常检测→Agent→Owner 全链路验收 |
 | [高风险动作验收](governance/HIGH_RISK_ACTION_ACCEPTANCE.md) | 🆕 价格/库存/订单/退款/平台发布等高风险门禁逐项验证 |
+| [交付治理体系 Spec](governance/DELIVERY_GOVERNANCE_SPEC.md) | 🆕 交付验收与生产就绪治理体系完整规范 |
+| [Agent 可信度标记](governance/AGENT_TRUST_MARKERS.md) | 🆕 5 级可信度：STUB→DETERMINISTIC_RULE→REAL_LLM→HUMAN_APPROVED→PRODUCTION_EXECUTED |
+| [数据质量门禁](governance/DATA_QUALITY_GATES.md) | 🆕 商品/成本/物流费/结算完整度阈值，数据不全 Agent 不给强结论 |
+| [审计可读性要求](governance/AUDIT_READABILITY.md) | 🆕 审计日志必须 Owner 能看懂：谁、何时、对什么、为什么、结果 |
+| [生产就绪检查清单](governance/PRODUCTION_READINESS_CHECKLIST.md) | 🆕 配置/secrets/migration/observability/cost control/kill switch/试运行边界 |
+| [发布就绪检查清单](governance/RELEASE_READINESS_CHECKLIST.md) | 🆕 风险分级发布通道（read-only/suggestion/approval-required/production-write）|
+| [事故演练检查清单](governance/INCIDENT_DRILL_CHECKLIST.md) | 🆕 事故等级、演练场景、人工接管机制、事后复盘模板 |
+| [回滚与恢复手册](governance/ROLLBACK_AND_RECOVERY.md) | 🆕 DB/迁移/平台写回/发布的逐项回滚流程和决策树 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
 | [全局验证脚本](scripts/verify_all.sh) | 🔄 全局验证脚本：build→vet→test→lint→build→E2E（E2E 默认必须运行）|
+| [告警规则](ops/ALERT_RULES.md) | 🆕 各服务告警规则定义、阈值和响应流程 |
+| [备份策略](ops/BACKUP_POLICY.md) | 🆕 数据库/配置/文件备份策略、保留周期和恢复流程 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
@@ -135,6 +145,7 @@
 | [演示场景](DEMO_SCENARIO.md) | 新栈 demo seed 待重建说明 |
 | [验收报告](DEMO_ACCEPTANCE_REPORT.md) | 旧栈验收归档与新栈验收待办 |
 | [订单导入冒烟检查](ORDER_IMPORT_SMOKE_CHECKLIST.md) | Go 新栈订单导入 smoke 待重建说明 |
+| [Beta 验收报告](BETA_ACCEPTANCE_REPORT.md) | 🆕 Beta 试运行验收状态和已知问题记录 |
 
 ### Demo 数据
 
