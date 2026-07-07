@@ -573,7 +573,12 @@ export default function OwnerPage() {
               </Space>
               <Spin spinning={decisionsLoading}>
                 {filteredDecisions.length === 0 && !decisionsLoading ? (
-                  <Empty description="暂无决策数据" />
+                  <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                    <Empty description="暂无决策数据" />
+                    <Button type="link" icon={<BulbOutlined />} onClick={() => router.push('/candidates')}>
+                      前往候选商品生成决策
+                    </Button>
+                  </div>
                 ) : (
                   <Table
                     rowKey="id"
@@ -732,7 +737,11 @@ export default function OwnerPage() {
             <div style={{ padding: 16 }}>
               <Spin spinning={syncLoading}>
                 {(platformSync ?? []).length === 0 && !syncLoading ? (
-                  <Empty description="暂无数据" />
+                  <Empty description="暂无数据">
+                    <Button type="link" onClick={() => router.push('/platform-integrations')}>
+                      前往平台集成配置
+                    </Button>
+                  </Empty>
                 ) : (
                   <Space direction="vertical" style={{ width: '100%' }} size="small">
                     {(platformSync ?? []).map((p) => (
