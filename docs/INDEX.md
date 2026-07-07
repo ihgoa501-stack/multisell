@@ -99,6 +99,9 @@
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境矩阵、角色矩阵、权限回归矩阵、高风险动作证据 |
 | [已知问题](KNOWN_ISSUES.md) | 🆕 未解决风险和失败项追踪、过期升级策略 |
 | [Owner 决策日志](governance/OWNER_DECISION_LOG.md) | 🆕 风险接受决策记录模板，带有效期的 Owner 签收 |
+| [产品闭环验收](governance/PRODUCT_LOOP_ACCEPTANCE.md) | 🆕 候选商品→完整度→成本→审批→上架全链路验收证据 |
+| [订单闭环验收](governance/ORDER_LOOP_ACCEPTANCE.md) | 🆕 订单→结算→异常检测→Agent→Owner 全链路验收 |
+| [高风险动作验收](governance/HIGH_RISK_ACTION_ACCEPTANCE.md) | 🆕 价格/库存/订单/退款/平台发布等高风险门禁逐项验证 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
