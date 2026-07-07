@@ -64,7 +64,7 @@ func TestEvidenceTraceAPI(t *testing.T) {
 	}
 
 	// Seed: listing task
-	task := &listingtask.ListingTask{ProductID: productID, PlatformID: 1, Status: "pending"}
+	task := &listingtask.ListingTask{ProductID: productID, PlatformID: 1, Status: "completed"}
 	if err := db.Create(task).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -158,6 +158,10 @@ func TestEvidenceTraceAPI(t *testing.T) {
 		t.Fatal("expected operation_log_summary")
 	}
 	if !resp.Data.CompleteChain {
+				var s1, s2 []string
+		for _, ar := range resp.Data.ApprovalRequests { s1 = append(s1, ar.Status) }
+		for _, t := range resp.Data.ListingTasks { s2 = append(s2, t.Status) }
+		t.Logf("cchain fail: apprv=%v tasks=%v exec=%d", s1, s2, len(resp.Data.ExecutionResults))
 		t.Fatal("expected complete_chain to be true")
 	}
 }

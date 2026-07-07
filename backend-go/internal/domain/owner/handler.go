@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/response"
 )
 
@@ -155,16 +156,9 @@ func (h *Handler) GetDecisionQueue(c *gin.Context) {
 		SortBy:               c.Query("sort_by"),
 		SortOrder:            c.Query("sort_order"),
 	}
-	page := 1
-	if p, err := strconv.Atoi(c.DefaultQuery("page", "1")); err == nil && p > 0 {
-		page = p
-	}
-	size := 20
-	if s, err := strconv.Atoi(c.DefaultQuery("size", "20")); err == nil && s > 0 && s <= 100 {
-		size = s
-	}
-	filter.Page = page
-	filter.Size = size
+	p := common.ParsePagination(c)
+	filter.Page = p.Page
+	filter.Size = p.Size
 
 	items, total, err := h.service.DecisionQueue(filter)
 	if err != nil {
@@ -175,8 +169,8 @@ func (h *Handler) GetDecisionQueue(c *gin.Context) {
 	response.Success(c, gin.H{
 		"items":   items,
 		"total":   total,
-		"page":    page,
-		"size":    size,
+		"page":    p.Page,
+		"size":    p.Size,
 		"summary": summary,
 	})
 }

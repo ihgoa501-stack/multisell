@@ -70,6 +70,7 @@ type ExecutionReviewData struct {
 	PlatformReferenceID string `json:"platform_reference_id,omitempty"`
 	IsRetry             bool   `json:"is_retry,omitempty"`
 	ExternalReferenceID string `json:"external_reference_id,omitempty"`
+	Blocked             bool   `json:"blocked,omitempty"`
 }
 
 // ReviewItem is a single listing recommendation review entry.

@@ -338,11 +338,14 @@ func (s *Service) RecordExecutionResult(productID int64, listingTaskID int64, su
 // RecordExecutionResultV2 records execution feedback with detailed review metadata.
 // Review data is stored as JSON in feedback_note for structured access.
 func (s *Service) RecordExecutionResultV2(productID int64, listingTaskID int64, success bool, errorMsg string, reviewData *ExecutionReviewData) error {
-	updates := map[string]interface{}{
-		"feedback_status": "executed",
-	}
-	if !success {
+	updates := map[string]interface{}{}
+	switch {
+	case reviewData != nil && reviewData.Blocked:
+		updates["feedback_status"] = "blocked"
+	case !success:
 		updates["feedback_status"] = "execution_failed"
+	default:
+		updates["feedback_status"] = "executed"
 	}
 
 	// Store review data as JSON in feedback_note

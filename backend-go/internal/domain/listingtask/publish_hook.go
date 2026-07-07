@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
@@ -20,11 +21,9 @@ import (
 // mode is the ExecutionMode (0=dry_run, 1=sandbox, 2=approval_required, 3=production).
 // The hook should pass this mode through context to the platform adapter.
 //
-// ponytail: synchronous, no idempotency key. If the adapter.Publish call
-// succeeds but the network response is lost, a retry may publish the
-// product twice on the platform. Upgrade to EventBus + WithIdempotencyKey
-// when duplicate-safety matters for the target platform.
-type PublishHook func(taskID int64, mode int8) error
+// ponytail: idempotency key ("listing_task:<id>:<mode>:<created_at>") prevents duplicate publishes.
+// Upgrade to EventBus + outbox when cross-service idempotency matters.
+type PublishHook func(taskID int64, mode ExecutionMode) error
 
 // NewPublishHook creates the default PublishHook that:
 //  1. Loads the listing task
@@ -38,7 +37,7 @@ type PublishHook func(taskID int64, mode int8) error
 // ponytail: single-adapter resolve, no multi-store routing. Add account_id to
 // ListingTask if multi-store routing becomes needed.
 func NewPublishHook(db *gorm.DB, auditSvc *operationlog.Service, logger *zap.Logger) PublishHook {
-	return func(taskID int64, mode int8) error {
+	return func(taskID int64, mode ExecutionMode) error {
 		// 1. Load the listing task.
 		var task ListingTask
 		if err := db.First(&task, taskID).Error; err != nil {
@@ -88,7 +87,11 @@ func NewPublishHook(db *gorm.DB, auditSvc *operationlog.Service, logger *zap.Log
 			return fmt.Errorf("publish hook: no active account for platform %d: %w", task.PlatformID, err)
 		}
 
-		// 6. Build PublishInput from task and product data.
+		// 6. Build PublishInput with idempotency key to prevent duplicate publishes.
+		// Idempotency key = "listing_task:<id>:<mode>:<created_at_unix>"
+		ikey := "listing_task:" + strconv.FormatInt(task.ID, 10) +
+			":" + strconv.FormatInt(int64(mode), 10) +
+			":" + strconv.FormatInt(task.CreatedAt.Unix(), 10)
 		prices := make(map[int64]string)
 		inventories := make(map[int64]int)
 		publishSKUs := make([]integrations.PublishSKU, 0, len(skus))
@@ -105,8 +108,7 @@ func NewPublishHook(db *gorm.DB, auditSvc *operationlog.Service, logger *zap.Log
 		pkgWt, _ := prod.PackageWeightKg.Float64()
 
 		// 7. Set execution mode in context before calling the adapter.
-		execMode := integrations.ExecutionMode(mode)
-		ctx := integrations.WithExecutionMode(context.Background(), execMode)
+		ctx := integrations.WithExecutionMode(context.Background(), integrations.ExecutionMode(mode))
 
 		result, err := adapter.Publish(ctx, &integrations.PublishInput{
 			ProductID:     task.ProductID,
@@ -115,6 +117,7 @@ func NewPublishHook(db *gorm.DB, auditSvc *operationlog.Service, logger *zap.Log
 			SKUs:          publishSKUs,
 			Prices:        prices,
 			Inventories:   inventories,
+			IdempotencyKey: ikey,
 			ProductName:   prod.Name,
 			Description:   prod.Description,
 			CategoryID:    prod.CategoryID,

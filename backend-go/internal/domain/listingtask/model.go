@@ -5,16 +5,19 @@ import (
 	"time"
 )
 
+// ExecutionMode controls listing task execution behavior.
+type ExecutionMode int8
+
 // ExecutionMode constants for listing task execution mode column.
 const (
-	ExecutionModeDryRun           int8 = 0
-	ExecutionModeSandbox          int8 = 1
-	ExecutionModeApprovalRequired int8 = 2
-	ExecutionModeProduction       int8 = 3
+	ExecutionModeDryRun           ExecutionMode = 0
+	ExecutionModeSandbox          ExecutionMode = 1
+	ExecutionModeApprovalRequired ExecutionMode = 2
+	ExecutionModeProduction       ExecutionMode = 3
 )
 
 // ExecutionModeNames maps numeric execution mode to human-readable names.
-var ExecutionModeNames = map[int8]string{
+var ExecutionModeNames = map[ExecutionMode]string{
 	ExecutionModeDryRun:           "dry_run",
 	ExecutionModeSandbox:          "sandbox",
 	ExecutionModeApprovalRequired: "approval_required",
@@ -39,7 +42,7 @@ type ListingTask struct {
 	ApprovalID          *int64           `gorm:"column:approval_id" json:"approval_id,omitempty"`
 	LastError           string           `gorm:"column:last_error" json:"last_error"`
 	DryRun              bool             `gorm:"-" json:"dry_run"`
-	ExecutionMode       int8             `gorm:"column:execution_mode;default:0" json:"execution_mode"`
+	ExecutionMode            ExecutionMode  `gorm:"column:execution_mode;default:0" json:"execution_mode"`
 	ExternalReferenceID string           `gorm:"column:external_reference_id" json:"external_reference_id,omitempty"`
 	ExternalReferenceURL string          `gorm:"column:external_reference_url" json:"external_reference_url,omitempty"`
 	CreatedBy           string           `gorm:"column:created_by" json:"created_by"`
@@ -99,7 +102,7 @@ type UpdateTaskInput struct {
 	LastError            *string           `json:"last_error"`
 	ProductListingID     *int64            `json:"product_listing_id"`
 	UpdatedBy            *string           `json:"updated_by"`
-	ExecutionMode        *int8             `json:"execution_mode"`
+	ExecutionMode        *ExecutionMode    `json:"execution_mode"`
 	ExternalReferenceID  *string           `json:"external_reference_id"`
 	ExternalReferenceURL *string           `json:"external_reference_url"`
 }
