@@ -1,70 +1,131 @@
 package routecatalog
 
 import (
+	"os"
 	"testing"
 )
 
 func TestGetActionType(t *testing.T) {
 	tests := []struct {
 		method     string
-		path       string
+		fullPath   string // as returned by gin.Context.FullPath()
 		wantAction string
-		wantHigh   bool
 	}{
-		{"PUT", "/api/v1/price/123", "price_update", true},
-		{"POST", "/api/v1/price", "price_update", true},
-		{"PATCH", "/api/v1/price/123", "price_update", true},
-		{"PUT", "/api/v1/inventory/123", "sync_inventory", true},
-		{"POST", "/api/v1/inventory/adjust", "sync_inventory", true},
-		{"POST", "/api/v1/order/cancel/123", "order_cancel", true},
-		{"POST", "/api/v1/order/refund/123", "refund_issue", true},
-		{"PUT", "/api/v1/integrations/credentials", "credential_change", true},
-		{"GET", "/api/v1/price", "", false},
-		{"GET", "/api/v1/products", "", false},
-		{"POST", "/api/v1/products", "", false}, // not high-risk per registry
+		// Price
+		{"POST", "/api/v1/prices", "price_update"},
+		{"PUT", "/api/v1/prices/:id", "price_update"},
+		{"DELETE", "/api/v1/prices/:id", "price_update"},
+		{"POST", "/api/v1/competitor-prices", "price_update"},
+		{"POST", "/api/v1/pricing-recommendations/:id/apply", "price_update"},
+
+		// Order
+		{"POST", "/api/v1/order", "order_cancel"},
+		{"PUT", "/api/v1/order/:id", "order_cancel"},
+		{"POST", "/api/v1/order/:id/status", "order_cancel"},
+
+		// Inventory
+		{"PUT", "/api/v1/inventory/:id", "sync_inventory"},
+		{"POST", "/api/v1/inventory/sync-cross-platform/:productId", "sync_inventory"},
+
+		// Integrations
+		{"POST", "/api/v1/platform-integrations/publish-to-ozon", "auto_publish"},
+		{"POST", "/api/v1/platform-integrations/write-back", "auto_publish"},
+
+		// RBAC
+		{"POST", "/api/v1/rbac/roles", "permission_change"},
+		{"PUT", "/api/v1/rbac/roles/:id", "permission_change"},
+		{"POST", "/api/v1/rbac/permissions", "permission_change"},
+
+		// Listings
+		{"POST", "/api/v1/listings/:id/publish", "auto_publish"},
+		{"POST", "/api/v1/listing/products/:product_id/publish/:platform_id", "auto_publish"},
+
+		// Aftersales
+		{"POST", "/api/v1/aftersales/:id/refund", "refund_issue"},
+		{"POST", "/api/v1/aftersales/:id/approve", "refund_issue"},
+
+		// Non-matching
+		{"GET", "/api/v1/prices", ""},
+		{"GET", "/api/v1/products", ""},
+		{"POST", "/api/v1/products", ""},
+		{"POST", "/api/v1/order/summary", ""},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			got := GetActionType(tt.method, tt.path)
-			if (got != "") != tt.wantHigh {
-				t.Errorf("GetActionType(%q, %q) = %q, want high_risk=%v", tt.method, tt.path, got, tt.wantHigh)
-			}
+		t.Run(tt.method+" "+tt.fullPath, func(t *testing.T) {
+			got := GetActionType(tt.method, tt.fullPath)
 			if got != tt.wantAction {
-				t.Errorf("GetActionType(%q, %q) = %q, want %q", tt.method, tt.path, got, tt.wantAction)
+				t.Errorf("GetActionType(%q, %q) = %q, want %q", tt.method, tt.fullPath, got, tt.wantAction)
 			}
-			if IsHighRisk(tt.method, tt.path) != tt.wantHigh {
-				t.Errorf("IsHighRisk(%q, %q) = %v, want %v", tt.method, tt.path, !tt.wantHigh, tt.wantHigh)
+			if (got != "") != IsHighRisk(tt.method, tt.fullPath) {
+				t.Errorf("IsHighRisk(%q, %q) inconsistency", tt.method, tt.fullPath)
 			}
 		})
 	}
 }
 
 func TestUnknownRoutesNotHighRisk(t *testing.T) {
-	routes := []struct{ method, path string }{
+	routes := []struct{ method, fullPath string }{
 		{"GET", "/api/v1/health"},
 		{"POST", "/api/v1/auth/login"},
 		{"GET", "/api/v1/products"},
 		{"POST", "/api/v1/candidate"},
+		{"GET", "/api/v1/prices"},
+		{"GET", "/api/v1/order/summary"},
+		{"POST", "/api/v1/finance/profit/calculate"},
 	}
 
 	for _, r := range routes {
-		if IsHighRisk(r.method, r.path) {
-			t.Errorf("unexpected high-risk for %s %s", r.method, r.path)
+		if IsHighRisk(r.method, r.fullPath) {
+			t.Errorf("unexpected high-risk for %s %s", r.method, r.fullPath)
 		}
 	}
 }
 
-func TestAllBindingsHaveActionTypes(t *testing.T) {
-	for _, b := range AllBindings() {
+func TestAllBindingsHaveValidPaths(t *testing.T) {
+	for _, b := range DefaultBindings() {
 		if b.ActionType == "" {
-			t.Errorf("binding %s %s has empty action type", b.Method, b.PathPrefix)
+			t.Errorf("binding %s %s has empty action type", b.Method, b.PathPattern)
 		}
 		if b.Method == "" {
 			t.Errorf("binding for %s has empty method", b.ActionType)
 		}
-		if b.PathPrefix == "" {
-			t.Errorf("binding for %s has empty path prefix", b.ActionType)
+		if b.PathPattern == "" {
+			t.Errorf("binding for %s has empty path", b.ActionType)
+		}
+		if !hasPrefix(b.PathPattern, "/api/v1/") {
+			t.Errorf("binding %s %s path must start with /api/v1/", b.Method, b.PathPattern)
 		}
 	}
+}
+
+func TestValidateRoute(t *testing.T) {
+	at, ok := ValidateRoute("PUT", "/api/v1/prices/:id")
+	if !ok || at != "price_update" {
+		t.Errorf("ValidateRoute PUT /api/v1/prices/:id = (%q, %v), want (price_update, true)", at, ok)
+	}
+
+	at, ok = ValidateRoute("GET", "/api/v1/prices")
+	if ok {
+		t.Errorf("ValidateRoute GET /api/v1/prices should not be registered")
+	}
+}
+
+func TestBindingsCount(t *testing.T) {
+	n := len(DefaultBindings())
+	if n < 50 {
+		t.Fatalf("expected at least 50 high-risk route bindings, got %d — new routes added?", n)
+	}
+	if n > 80 {
+		t.Fatalf("expected at most 80 high-risk route bindings, got %d — review if all need approval", n)
+	}
+}
+
+func hasPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+func TestMain(m *testing.M) {
+	// init() already runs — matchTable is built.
+	os.Exit(m.Run())
 }

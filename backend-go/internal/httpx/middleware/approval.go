@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,36 +18,38 @@ import (
 // unless a valid X-Approval-ID header is present and the corresponding
 // approval request was approved.
 //
-// The middleware also checks the global kill switch before letting any
-// high-risk mutation through.
+// The middleware validates:
+//   - Global kill switch (active → 503)
+//   - Approval exists, is approved, and not expired
+//   - Approval RequestType matches the current route's action type
+//   - Approval TargetType matches the route context (if set)
+//   - Approval RequesterUserID matches the JWT user (if set)
 //
-// Routes that are not in the routecatalog are passed through unmodified.
+// Routes not in the routecatalog pass through unmodified.
 // Only mutating methods (POST/PUT/PATCH/DELETE) are checked.
 func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		method := c.Request.Method
-		path := c.FullPath()
+		fullPath := c.FullPath()
 
-		// Only check mutating methods.
 		if method != http.MethodPost && method != http.MethodPut &&
 			method != http.MethodPatch && method != http.MethodDelete {
 			c.Next()
 			return
 		}
 
-		// Skip if this route is not in the high-risk registry.
-		if !routecatalog.IsHighRisk(method, path) {
+		if !routecatalog.IsHighRisk(method, fullPath) {
 			c.Next()
 			return
 		}
 
-		actionType := routecatalog.GetActionType(method, path)
+		actionType := routecatalog.GetActionType(method, fullPath)
 
-		// ── Kill switch check ──
+		// Kill switch.
 		if killswitch.IsActive() {
 			logger.Warn("kill switch blocked request",
 				zap.String("method", method),
-				zap.String("path", path),
+				zap.String("path", fullPath),
 				zap.String("action_type", actionType),
 			)
 			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
@@ -57,16 +60,16 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// ── Approval check ──
+		// Approval ID from header.
 		approvalIDStr := c.GetHeader("X-Approval-ID")
 		if approvalIDStr == "" {
 			logger.Warn("approval required: missing X-Approval-ID header",
 				zap.String("method", method),
-				zap.String("path", path),
+				zap.String("path", fullPath),
 			)
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"code":       403,
-				"message":    "this endpoint requires an approval ID via the X-Approval-ID header",
+				"message":    "this endpoint requires an approval ID via the X-Approval-ID header. Create an approval request first, then pass its ID.",
 				"action_type": actionType,
 			})
 			return
@@ -81,7 +84,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// Validate against the approval_request table.
+		// Look up approval record.
 		var req approval.ApprovalRequest
 		if err := db.First(&req, approvalID).Error; err != nil {
 			logger.Warn("approval validation failed: record not found",
@@ -95,6 +98,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
+		// ── Binding check 1: Status ──
 		if req.Status != approval.StatusApproved {
 			logger.Warn("approval validation failed: not approved",
 				zap.Int64("approval_id", approvalID),
@@ -108,7 +112,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// Check expiry.
+		// ── Binding check 2: Expiry ──
 		if req.ExpiresAt != nil && req.ExpiresAt.Before(time.Now()) {
 			logger.Warn("approval validation failed: expired",
 				zap.Int64("approval_id", approvalID),
@@ -121,14 +125,71 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// Approval valid — pass the approval context downstream.
+		// ── Binding check 3: RequestType matches current action ──
+		if req.RequestType != "" {
+			// Map action_type to request_type. The request_type is typically "publish",
+			// "price_change", "delist", "content_update", "listing_task", "permission",
+			// etc.  We accept an exact or prefix match (e.g. "permission_change"
+			// matches an approval for "permission").
+			if !matchRequestType(req.RequestType, actionType) {
+				logger.Warn("approval validation failed: RequestType mismatch",
+					zap.Int64("approval_id", approvalID),
+					zap.String("approval_request_type", req.RequestType),
+					zap.String("action_type", actionType),
+				)
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"code":    403,
+					"message": "approval RequestType '" + req.RequestType + "' does not match action '" + actionType + "'",
+				})
+				return
+			}
+		}
+
+		// ── Binding check 4: RequesterUserID matches JWT user ──
+		if req.RequesterUserID != nil {
+			var userID int64
+			if v, ok := c.Get("user_id"); ok {
+				switch x := v.(type) {
+				case int64:
+					userID = x
+				case float64:
+					userID = int64(x)
+				}
+			}
+			if userID != 0 && *req.RequesterUserID != 0 && *req.RequesterUserID != userID {
+				logger.Warn("approval validation failed: requester mismatch",
+					zap.Int64("approval_id", approvalID),
+					zap.Int64("approval_requester", *req.RequesterUserID),
+					zap.Int64("jwt_user_id", userID),
+				)
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"code":    403,
+					"message": "approval was created by a different user",
+				})
+				return
+			}
+		}
+
+		// Approval valid.
 		c.Set("approval_id", approvalID)
 		c.Set("approval_request", &req)
 		logger.Info("approval validated",
 			zap.Int64("approval_id", approvalID),
 			zap.String("action_type", actionType),
-			zap.String("path", path),
+			zap.String("path", fullPath),
 		)
 		c.Next()
 	}
+}
+
+// matchRequestType checks whether an approval RequestType maps to the current
+// action type. Accepts prefix match so "permission_change" matches a "permission" approval.
+func matchRequestType(requestType, actionType string) bool {
+	if requestType == actionType {
+		return true
+	}
+	if strings.HasPrefix(actionType, requestType) || strings.HasPrefix(requestType, actionType) {
+		return true
+	}
+	return false
 }

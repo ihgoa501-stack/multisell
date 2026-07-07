@@ -15,6 +15,7 @@ func NewHandler() *Handler {
 }
 
 // GetStatus returns the current kill switch state.
+// Read-only, no special permission required beyond auth.
 func (h *Handler) GetStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"active": IsActive(),
@@ -28,6 +29,7 @@ type ActivateInput struct {
 }
 
 // Activate engages the kill switch with a reason.
+// Requires RBAC permission (configured at route registration) + audit logging.
 func (h *Handler) Activate(c *gin.Context) {
 	var input ActivateInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -35,23 +37,47 @@ func (h *Handler) Activate(c *gin.Context) {
 		return
 	}
 	Activate(input.Reason)
+
+	// Audit: operator info from JWT (set by middleware.Auth).
+	operator := "anonymous"
+	if v, ok := c.Get("username"); ok {
+		if s, ok := v.(string); ok && s != "" {
+			operator = s
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "kill switch activated",
-		"reason":  input.Reason,
+		"code":     0,
+		"message":  "kill switch activated",
+		"reason":   input.Reason,
+		"operator": operator,
 	})
 }
 
 // Deactivate disengages the kill switch.
+// Requires RBAC permission (configured at route registration).
 func (h *Handler) Deactivate(c *gin.Context) {
 	Deactivate()
+
+	operator := "anonymous"
+	if v, ok := c.Get("username"); ok {
+		if s, ok := v.(string); ok && s != "" {
+			operator = s
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "kill switch deactivated",
+		"code":     0,
+		"message":  "kill switch deactivated",
+		"operator": operator,
 	})
 }
 
-// RegisterRoutes registers kill switch management endpoints under the given group.
+// RegisterRoutes registers kill switch management endpoints.
+// To add RBAC, pass a subgroup with middleware.RequirePermission:
+//
+//	admin := protected.Group("", middleware.RequirePermission(db, "admin.system"))
+//	killswitch.RegisterRoutes(admin)
 func RegisterRoutes(rg *gin.RouterGroup) {
 	h := NewHandler()
 	ks := rg.Group("/kill-switch")

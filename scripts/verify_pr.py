@@ -17,6 +17,7 @@ Usage:
 
 import re
 import sys
+from typing import List, Optional
 from pathlib import Path
 
 
@@ -52,7 +53,7 @@ def section_lines(body: str, section_header: str) -> list:
     return result
 
 
-def find_checkbox(section_lines_list: list, keyword: str) -> bool | None:
+def find_checkbox(section_lines_list: List[str], keyword: str) -> Optional[bool]:
     """Find a checkbox in section by keyword in label. Returns checked state or None if not found."""
     for line in section_lines_list:
         result = parse_checkbox(line)
