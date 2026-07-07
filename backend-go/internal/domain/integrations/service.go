@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -15,13 +16,20 @@ import (
 
 // Service provides integrations business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db          *gorm.DB
+	logger      *zap.Logger
+	approvalSvc *approval.Service
 }
 
 // NewService creates a new integrations service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	return &Service{db: db, logger: logger}
+}
+
+// WithApproval sets the optional approval service used by write-back gates.
+func (s *Service) WithApproval(svc *approval.Service) *Service {
+	s.approvalSvc = svc
+	return s
 }
 
 // List returns paginated integration accounts with optional filter.
@@ -203,7 +211,7 @@ func (s *Service) TriggerSync(id int64) (*PlatformIntegrationAccount, error) {
 	}
 	now := time.Now()
 	if err := s.db.Model(&a).Updates(map[string]interface{}{
-		"sync_status": "syncing",
+		"sync_status":  "syncing",
 		"last_sync_at": now,
 		"last_error":   "",
 	}).Error; err != nil {
@@ -344,20 +352,20 @@ func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*P
 	pkgWt, _ := prod.PackageWeightKg.Float64()
 
 	return adapter.Publish(ctx, &PublishInput{
-		ProductID:      prod.ID,
-		PlatformID:     acct.PlatformID,
-		AccountID:      in.AccountID,
-		ProductName:    prod.Name,
-		Description:    prod.Description,
-		CategoryID:     prod.CategoryID,
-		SKUs:           publishSKUs,
-		Prices:         prices,
-		Inventories:    inventories,
-		PackageHeight:  pkgH,
-		PackageWidth:   pkgW,
-		PackageLength:  pkgL,
-		PackageWeight:  pkgWt,
-		MainImage:      in.ImageURL,
+		ProductID:     prod.ID,
+		PlatformID:    acct.PlatformID,
+		AccountID:     in.AccountID,
+		ProductName:   prod.Name,
+		Description:   prod.Description,
+		CategoryID:    prod.CategoryID,
+		SKUs:          publishSKUs,
+		Prices:        prices,
+		Inventories:   inventories,
+		PackageHeight: pkgH,
+		PackageWidth:  pkgW,
+		PackageLength: pkgL,
+		PackageWeight: pkgWt,
+		MainImage:     in.ImageURL,
 	})
 }
 

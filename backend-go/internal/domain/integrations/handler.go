@@ -2,23 +2,26 @@ package integrations
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
 
 // Handler handles integrations HTTP requests.
 type Handler struct {
-	service *Service
+	service     *Service
+	approvalSvc *approval.Service
 }
 
 // NewHandler creates a new integrations handler.
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, approvalSvc *approval.Service) *Handler {
+	return &Handler{service: service, approvalSvc: approvalSvc}
 }
 
 func parseID(c *gin.Context) (int64, bool) {
@@ -267,7 +270,64 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	operator := c.GetString("username")
+	if operator == "" {
+		operator = "system"
+	}
+	if h.approvalSvc != nil {
+		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
+			RequestType: "listing_publish_ozon",
+			Requester:   operator,
+			NewValue:    fmt.Sprintf("publish product id=%d to ozon account id=%d", in.ProductID, in.AccountID),
+			Reason:      "ozon publish requires approval",
+			TargetType:  "product",
+			TargetID:    in.ProductID,
+			RiskLevel:   "high",
+			EntityType:  "product",
+			EntityID:    in.ProductID,
+		})
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.Error(c, http.StatusForbidden, fmt.Sprintf("ozon publish requires approval (approval_id=%d)", apprReq.ID))
+		return
+	}
 	result, err := h.service.PublishToOzon(c.Request.Context(), &in)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// WriteBack POST /platform-integrations/write-back
+func (h *Handler) WriteBack(c *gin.Context) {
+	var in WriteBackRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.Operator = c.GetString("username")
+	if in.Operator == "" {
+		in.Operator = "system"
+	}
+	result, err := h.service.WriteBack(c.Request.Context(), &in)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// RetryWriteBack POST /platform-integrations/write-back/:ref-id/retry
+func (h *Handler) RetryWriteBack(c *gin.Context) {
+	refID := c.Param("ref-id")
+	if refID == "" {
+		response.Error(c, http.StatusBadRequest, "reference id is required")
+		return
+	}
+	result, err := h.service.RetryWriteBack(c.Request.Context(), refID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return

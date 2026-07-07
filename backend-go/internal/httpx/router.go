@@ -578,10 +578,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	// AIOS routes (tool registry, runtime, guardrails health)
 	setup.RegisterAIOSRoutes(protected, aiosCfg)
-		// Scheduler health endpoint -- exposes task run state for AIOS dashboard.
-		protected.GET("/aios/scheduler/tasks", func(c *gin.Context) {
+	// Scheduler health endpoint -- exposes task run state for AIOS dashboard.
+	protected.GET("/aios/scheduler/tasks", func(c *gin.Context) {
 		c.JSON(200, gin.H{"tasks": sched.TaskRunState()})
-		})
+	})
 
 	// AgentOS routes
 	agentos.RegisterRoutes(protected, db, logger, extTracker)
@@ -593,7 +593,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	productRoutes := protected.Group("", middleware.RequirePermission(db, "product.read"))
 	sku.RegisterRoutes(productRoutes, db, logger)
 	inventoryRoutes := protected.Group("", middleware.RequirePermission(db, "inventory.read"))
-	inventory.RegisterRoutes(inventoryRoutes, db, logger)
+	inventory.RegisterRoutes(inventoryRoutes, db, logger, approvalSvc)
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
 
@@ -711,9 +711,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			return supplyChainOrch.HandleStockCritical(ctx, evt)
 		}))
 
-	platform.RegisterRoutes(protected, db, logger)
+	platform.RegisterRoutes(protected, db, logger, approvalSvc)
 	listingRoutes := protected.Group("", middleware.RequirePermission(db, "listing.read"))
-	listing.RegisterRoutes(listingRoutes, db, logger, bus)
+	listing.RegisterRoutes(listingRoutes, db, logger, bus, approvalSvc)
 
 	// Initialize Prism client (config-driven; nil if disabled).
 	var prismSvc prismadapter.PrismService
@@ -786,32 +786,32 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		pkgWt, _ := prod.PackageWeightKg.Float64()
 
 		result, err := adapter.Publish(context.Background(), &integrations.PublishInput{
-			ProductID:      t.ProductID,
-			PlatformID:     t.PlatformID,
-			AccountID:      acct.ID,
-			SKUs:           publishSKUs,
-			Prices:         prices,
-			Inventories:    inventories,
-			ProductName:    prod.Name,
-			Description:    prod.Description,
-			CategoryID:     prod.CategoryID,
-			MainImage:      prod.MainImage,
-			PackageHeight:  pkgH,
-			PackageWidth:   pkgW,
-			PackageLength:  pkgL,
-			PackageWeight:  pkgWt,
+			ProductID:     t.ProductID,
+			PlatformID:    t.PlatformID,
+			AccountID:     acct.ID,
+			SKUs:          publishSKUs,
+			Prices:        prices,
+			Inventories:   inventories,
+			ProductName:   prod.Name,
+			Description:   prod.Description,
+			CategoryID:    prod.CategoryID,
+			MainImage:     prod.MainImage,
+			PackageHeight: pkgH,
+			PackageWidth:  pkgW,
+			PackageLength: pkgL,
+			PackageWeight: pkgWt,
 		})
 		auditContent := fmt.Sprintf("publish product %d to platform %s (account %d)", t.ProductID, plat.Code, acct.ID)
 		if err != nil {
 			auditContent = fmt.Sprintf("publish product %d to platform %s failed: %v", t.ProductID, plat.Code, err)
 		}
 		auditSvc.LogStructured(&operationlog.StructuredLogInput{
-			Module:      "platform_publish",
-			Action:      "publish",
-			ResourceID:  fmt.Sprintf("listing_task:%d", taskID),
-			Operator:    "system",
-			Content:     auditContent,
-			Result:      func() string {
+			Module:     "platform_publish",
+			Action:     "publish",
+			ResourceID: fmt.Sprintf("listing_task:%d", taskID),
+			Operator:   "system",
+			Content:    auditContent,
+			Result: func() string {
 				if err != nil {
 					return "failure"
 				}
@@ -873,7 +873,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	owner.RegisterRoutes(protected, db, logger)
 	agentlearning.RegisterRoutes(protected, db, logger)
 
-
 	landedcost.RegisterRoutes(protected, db, logger)
 	orchestration.RegisterRoutes(protected, db, bus, aiOrch, logger)
 	workflow.RegisterRoutes(protected, db, bus, aiOrch, cmd, logger)
@@ -885,13 +884,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	shipping.RegisterRoutes(shippingRoutes, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
 	orderRoutes := protected.Group("", middleware.RequirePermission(db, "order.read"))
-	order.RegisterRoutes(orderRoutes, db, logger)
+	order.RegisterRoutes(orderRoutes, db, logger, approvalSvc)
 	orderimport.RegisterRoutes(orderRoutes, db, logger)
 	settlementRoutes := protected.Group("", middleware.RequirePermission(db, "settlement.read"))
 	settlement.RegisterRoutes(settlementRoutes, db, logger)
 	financeRoutes := protected.Group("", middleware.RequirePermission(db, "finance.read"))
 	finance.RegisterRoutes(financeRoutes, db, logger)
-	price.RegisterRoutes(financeRoutes, db, logger)
+	price.RegisterRoutes(financeRoutes, db, logger, approvalSvc)
 	decision.RegisterRoutes(protected, db, logger)
 	allocation.RegisterRoutes(protected, db, logger)
 	feedback.RegisterRoutes(protected, cfg, db, logger, nil, nil, nil)
@@ -904,7 +903,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	importbatch.RegisterRoutes(protected, db, logger)
 	content.RegisterRoutes(protected, db, logger, aiOrch)
 	operationlog.RegisterRoutes(protected, db, logger)
-	integrations.RegisterRoutes(protected, db, logger)
+	integrations.RegisterRoutes(protected, db, logger, approvalSvc)
 	integrations.RegisterWebhookAdminRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
