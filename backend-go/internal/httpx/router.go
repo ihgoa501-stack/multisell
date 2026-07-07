@@ -593,10 +593,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	productRoutes := protected.Group("", middleware.RequirePermission(db, "product.read"))
 	sku.RegisterRoutes(productRoutes, db, logger)
 	inventoryRoutes := protected.Group("", middleware.RequirePermission(db, "inventory.read"))
-	inventory.RegisterRoutes(inventoryRoutes, db, logger, approvalSvc)
+	inventory.RegisterRoutes(inventoryRoutes, db, logger)
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
-	reliability.RegisterRoutes(protected, db, logger)
 
 	// Supply chain event: purchase order received → auto-increment inventory.
 	// GUARDRAIL (mutation guard): audited via MutationGuard, registered as system.inventory.receive.
@@ -712,9 +711,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			return supplyChainOrch.HandleStockCritical(ctx, evt)
 		}))
 
-	platform.RegisterRoutes(protected, db, logger, approvalSvc)
+	platform.RegisterRoutes(protected, db, logger)
 	listingRoutes := protected.Group("", middleware.RequirePermission(db, "listing.read"))
-	listing.RegisterRoutes(listingRoutes, db, logger, bus, approvalSvc)
+	listing.RegisterRoutes(listingRoutes, db, logger, bus)
 
 	// Initialize Prism client (config-driven; nil if disabled).
 	var prismSvc prismadapter.PrismService
@@ -886,18 +885,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	shipping.RegisterRoutes(shippingRoutes, db, logger)
 	platformfee.RegisterRoutes(protected, db, logger)
 	orderRoutes := protected.Group("", middleware.RequirePermission(db, "order.read"))
-	order.RegisterRoutes(orderRoutes, db, logger, approvalSvc)
+	order.RegisterRoutes(orderRoutes, db, logger)
 	orderimport.RegisterRoutes(orderRoutes, db, logger)
 	settlementRoutes := protected.Group("", middleware.RequirePermission(db, "settlement.read"))
 	settlement.RegisterRoutes(settlementRoutes, db, logger)
 	financeRoutes := protected.Group("", middleware.RequirePermission(db, "finance.read"))
 	finance.RegisterRoutes(financeRoutes, db, logger)
-	price.RegisterRoutes(financeRoutes, db, logger, approvalSvc)
+	price.RegisterRoutes(financeRoutes, db, logger)
 	decision.RegisterRoutes(protected, db, logger)
 	allocation.RegisterRoutes(protected, db, logger)
 	feedback.RegisterRoutes(protected, cfg, db, logger, nil, nil, nil)
 	exceptions.RegisterRoutes(protected, db, logger)
-	notification.RegisterRoutes(protected, db, logger)
 	dashboard.RegisterRoutes(protected, db, logger)
 	support.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
@@ -906,7 +904,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	importbatch.RegisterRoutes(protected, db, logger)
 	content.RegisterRoutes(protected, db, logger, aiOrch)
 	operationlog.RegisterRoutes(protected, db, logger)
-	integrations.RegisterRoutes(protected, db, logger, approvalSvc)
+	integrations.RegisterRoutes(protected, db, logger)
 	integrations.RegisterWebhookAdminRoutes(protected, db, logger)
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
@@ -929,6 +927,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	evolution.RegisterRoutes(protected, db, logger)
 	entropy.RegisterRoutes(protected, db, logger)
 	cost.RegisterRoutes(protected, db, logger, cfg.LLM.DailyBudgetUSD)
+
+	reliability.RegisterRoutes(protected, db, logger)
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
@@ -975,6 +975,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	}
 	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
 	ai.RegisterRoutes(protected, db, logger, hub, moaCoord, cmd, aiosCfg.Guardrails)
+	notification.RegisterRoutes(protected, db, logger, hub)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}

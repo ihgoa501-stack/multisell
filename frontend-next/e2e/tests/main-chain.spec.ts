@@ -13,8 +13,8 @@ import { test, expect, type Page } from '@playwright/test';
  *   - DB migrated (000001 + 000002 applied; AI tables exist)
  *   - A test user exists (created by /api/v1/auth/register or seed)
  *
- * If the backend is not reachable, tests that hit the API will be
- * skipped (not failed) so CI doesn't go red on infra issues.
+ * If the backend is not reachable, tests fail. Main-chain E2E is an
+ * acceptance gate, not a frontend-only smoke test.
  */
 
 const API_BASE = process.env.E2E_API_BASE || 'http://localhost:8080';
@@ -90,13 +90,12 @@ test.describe('LingMirror main chain', () => {
     const reachable = await apiReachable();
     console.log("E2E beforeAll: apiReachable =", reachable);
     if (!reachable) {
-      test.skip(true, 'Backend not reachable — skipping main-chain E2E');
-      return;
+      throw new Error(`Backend not reachable at ${API_BASE}; main-chain E2E cannot prove acceptance`);
     }
     const token = await ensureTestUser();
     console.log("E2E beforeAll: test user token =", token);
     if (!token) {
-      test.skip(true, 'Could not create/login test user — skipping main-chain E2E');
+      throw new Error('Could not create/login test user; main-chain E2E cannot prove acceptance');
     }
   });
 

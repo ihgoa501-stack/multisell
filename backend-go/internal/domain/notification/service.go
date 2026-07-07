@@ -1,6 +1,11 @@
 package notification
 
 import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -17,11 +22,16 @@ type ListFilter struct {
 type Service struct {
 	db     *gorm.DB
 	logger *zap.Logger
+	hub    *realtime.Hub
 }
 
 // NewService creates a new notification service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+func NewService(db *gorm.DB, logger *zap.Logger, hub ...*realtime.Hub) *Service {
+	var h *realtime.Hub
+	if len(hub) > 0 {
+		h = hub[0]
+	}
+	return &Service{db: db, logger: logger, hub: h}
 }
 
 // List returns notifications matching the filter with pagination.
@@ -123,4 +133,26 @@ func (s *Service) UpdateAlertRule(r *AlertRule) error {
 // DeleteAlertRule removes an alert rule.
 func (s *Service) DeleteAlertRule(id int64) error {
 	return s.db.Delete(&AlertRule{}, id).Error
+}
+
+// NotifyAlert creates a notification record and pushes via WebSocket.
+func (s *Service) NotifyAlert(ctx context.Context, level, title, message string) error {
+	n := &Notification{
+		AlertType: "alert",
+		Title:     title,
+		Content:   message,
+		Severity:  level,
+		CreatedAt: time.Now(),
+	}
+	if err := s.db.Create(n).Error; err != nil {
+		return err
+	}
+	if s.hub != nil {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"type":    "alert",
+			"payload": n,
+		})
+		s.hub.Broadcast(payload)
+	}
+	return nil
 }

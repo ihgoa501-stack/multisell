@@ -18,6 +18,8 @@ import (
 
 // PlatformIntegrationAccount maps to "platform_integration_account".
 type PlatformIntegrationAccount struct {
+	// ponytail: ExecutionMode persisted per-account so the pilot dashboard
+	// can display and change it without relying on a per-request context value.
 	ID              int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	PlatformID      int64           `gorm:"column:platform_id;not null;index" json:"platform_id"`
 	StoreName       string          `gorm:"column:store_name" json:"store_name"`
@@ -28,11 +30,13 @@ type PlatformIntegrationAccount struct {
 	Status          string          `gorm:"column:status;default:active" json:"status"`
 	LastSyncAt      *time.Time      `gorm:"column:last_sync_at" json:"last_sync_at,omitempty"`
 	SyncStatus      string          `gorm:"column:sync_status;default:idle" json:"sync_status"`
-	ExecutionMode   int8            `gorm:"column:execution_mode;default:0" json:"execution_mode"`
 	LastError       string          `gorm:"column:last_error" json:"last_error"`
+	ExecutionMode   int8            `gorm:"column:execution_mode;default:0" json:"execution_mode"`
 	Config          json.RawMessage `gorm:"column:config;type:jsonb" json:"config,omitempty"`
 	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	// PlatformName is populated by List via platform table lookup. Not a DB column.
+	PlatformName string `gorm:"-" json:"platform_name,omitempty"`
 }
 
 func (PlatformIntegrationAccount) TableName() string { return "platform_integration_account" }
@@ -179,20 +183,3 @@ type TestConnectionResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 }
-
-// WriteBackRecord persists write-back attempts for audit and retry.
-type WriteBackRecord struct {
-	ID          uint      `gorm:"primaryKey"`
-	ReferenceID string    `gorm:"uniqueIndex;size:64"`
-	AccountID   int64     `gorm:"not null;index"`
-	Action      string    `gorm:"size:50;not null"`
-	Payload     string    `gorm:"type:text"`
-	Status      string    `gorm:"size:20;default:pending"` // pending, success, failed
-	Result      string    `gorm:"type:text"`
-	Error       string    `gorm:"type:text"`
-	RetryCount  int       `gorm:"default:0"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-func (WriteBackRecord) TableName() string { return "write_back_record" }

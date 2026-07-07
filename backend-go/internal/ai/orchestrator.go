@@ -17,7 +17,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/agentrule"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
-	"github.com/lingmirror/backend-go/internal/domain/reliability"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
@@ -465,13 +464,6 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 		}
 	}(o.db, o.logger)
 
-	// Record agent heartbeat asynchronously.
-	go func(db *gorm.DB, log *zap.Logger) {
-		relSvc := reliability.NewService(db, log)
-		if err := relSvc.UpsertAgentHeartbeat(context.Background(), agent.ID, agent.Name, agent.Squad, "running", ""); err != nil {
-			log.Warn("failed to record agent heartbeat", zap.String("agent", agent.ID), zap.Error(err))
-		}
-	}(o.db, o.logger)
 	return &RunAgentResult{
 		TraceID:       traceID,
 		AgentID:       agent.ID,
@@ -588,6 +580,29 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 
 	// Budget check — can block or force downgrade to cheapest model.
 	if o.budget != nil {
+		// Monthly budget hard limit — check llm_budgets table first.
+		var mb struct {
+			MonthlyLimitUSD float64
+			CurrentMonthUSD float64
+			IsPaused        bool
+			BudgetMonth     string
+		}
+		if err := o.db.Table("llm_budgets").Select("monthly_limit_usd, current_month_usd, is_paused, budget_month").First(&mb).Error; err == nil {
+			currentMonth := time.Now().Format("2006-01")
+			if mb.BudgetMonth == currentMonth && mb.MonthlyLimitUSD > 0 {
+				if mb.IsPaused || mb.CurrentMonthUSD >= mb.MonthlyLimitUSD {
+					o.logger.Warn("monthly LLM budget exceeded",
+						zap.String("agent", agent.ID),
+						zap.Float64("current", mb.CurrentMonthUSD),
+						zap.Float64("limit", mb.MonthlyLimitUSD),
+						zap.Bool("paused", mb.IsPaused),
+					)
+					out, conf, risk := stubFinalOutput(agent, dp, params)
+					return out, conf, risk, nil
+				}
+			}
+		}
+
 		budgetIn := costcontrol.AllowInput{AgentID: agent.ID, Model: req.Model, Tokens: len(userMsg) / 4}
 		budgetRes, budgetErr := o.budget.Allow(context.Background(), budgetIn)
 		if budgetErr == nil && budgetRes.Action == costcontrol.ActionBlock {
