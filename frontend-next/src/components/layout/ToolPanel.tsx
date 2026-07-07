@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/stores/app-store';
 import apiClient from '@/lib/api-client';
+import {
+  ShoppingOutlined,
+  SendOutlined,
+  BarChartOutlined,
+  DollarOutlined,
+  BulbOutlined,
+} from '@ant-design/icons';
 
 /* ─── API response types ─── */
 
@@ -51,11 +58,11 @@ interface ListingTaskItem {
 /* ─── Tool definitions ─── */
 
 const tools = [
-  { id: 'products', icon: '📦', label: '商品管理', badge: '2,847' },
-  { id: 'publish', icon: '📤', label: '平台发布', badge: '8 待处理' },
-  { id: 'analytics', icon: '📊', label: '数据分析', badge: undefined },
-  { id: 'pricing', icon: '💰', label: '价格监控', badge: undefined },
-  { id: 'ai-copy', icon: '✦', label: 'AI 文案', badge: undefined },
+  { id: 'products', icon: <ShoppingOutlined />, label: '商品管理', badge: '2,847' },
+  { id: 'publish', icon: <SendOutlined />, label: '平台发布', badge: '8 待处理' },
+  { id: 'analytics', icon: <BarChartOutlined />, label: '数据分析', badge: undefined },
+  { id: 'pricing', icon: <DollarOutlined />, label: '价格监控', badge: undefined },
+  { id: 'ai-copy', icon: <BulbOutlined />, label: 'AI 文案', badge: undefined },
 ];
 
 /* ─── Shared style helpers ─── */
