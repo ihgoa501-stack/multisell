@@ -158,7 +158,8 @@ jobs:
         working-directory: backend-go
         run: migrate -path migrations -database "postgresql://postgres:postgres@localhost:5432/multisell_e2e?sslmode=disable" up
       - name: Check latest migration rollback
-        run: ../scripts/check_migrations.sh
+        working-directory: ./
+        run: scripts/check_migrations.sh
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/multisell_e2e?sslmode=disable
       - name: Seed E2E data
