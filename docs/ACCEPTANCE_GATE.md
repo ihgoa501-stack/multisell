@@ -65,14 +65,14 @@ count, and a set of allowed target environments.
 | **Read-only (fast track)** | UI-only changes, documentation, refactors that do not alter behaviour, test additions, config comment changes. | Dev Done | 1 reviewer | local, preview | None beyond normal CI. |
 | **Suggestion (standard)** | Agent recommendations, dashboard additions, read-only API additions, non-destructive reports. | Test Green | 1 reviewer + code owner | local, preview, staging | Changes that touch AI recommendation output must also include a before/after sample comparison in the PR. |
 | **Approval-required (slow)** | Price/inventory/order changes, platform publishing, permission changes, AI action execution logic. | Business Verified | 2 reviewers + code owner + explicit Owner approval | local, preview, staging, sandbox | Dry-run evidence must be included. High-risk action matrix from ACCEPTANCE_MATRIX.md must be satisfied. |
-| **Production-write (slowest + extra gates)** | External platform write-back, production data migrations, payment/refund flows, RBAC/Auth changes deployed to production. | Beta Accepted | 2 reviewers + code owner + Owner approval + sign-off from `docs/OWNER_DECISION_LOG.md` | local, preview, staging, sandbox, production (gradual) | Owner must document the decision in `docs/OWNER_DECISION_LOG.md`. Break-glass must be tested. Rollback plan must be attached and verified. Gradual rollout (canary / percentage) required before full production. |
+| **Production-write (slowest + extra gates)** | External platform write-back, production data migrations, payment/refund flows, RBAC/Auth changes deployed to production. | Beta Accepted | 2 reviewers + code owner + Owner approval + sign-off from `docs/governance/OWNER_DECISION_LOG.md` | local, preview, staging, sandbox, production (gradual) | Owner must document the decision in `docs/governance/OWNER_DECISION_LOG.md`. Break-glass must be tested. Rollback plan must be attached and verified. Gradual rollout (canary / percentage) required before full production. |
 
 **Lane escalation.** If a PR touches files from a higher-risk lane (e.g. a
 "read-only" PR modifies a price-calculation function), the higher lane's rules
 apply to the entire PR.
 
 **Lane overrides.** The Owner may explicitly downgrade a lane for a specific
-PR via `docs/OWNER_DECISION_LOG.md`. The override must name the PR, the
+PR via `docs/governance/OWNER_DECISION_LOG.md`. The override must name the PR, the
 reason, and the acceptance-status delta accepted.
 
 ### Choosing a Lane
@@ -111,7 +111,7 @@ Do not write `PASS with known issue`. A known failing required check is `FAIL`.
 ## Owner Decision Log
 
 All lane overrides, approval decisions, and risk acceptances for releases that
-reach production must be recorded in `docs/OWNER_DECISION_LOG.md`. Entries
+reach production must be recorded in `docs/governance/OWNER_DECISION_LOG.md`. Entries
 must include:
 
 - date and PR reference
