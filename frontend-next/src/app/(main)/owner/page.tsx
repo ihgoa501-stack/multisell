@@ -28,6 +28,9 @@ import {
   ThunderboltOutlined,
   ApiOutlined,
   ArrowRightOutlined,
+  SearchOutlined,
+  BulbOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -399,10 +402,10 @@ export default function OwnerPage() {
           本地闭环流程 →
         </div>
         {[
-          { label: '候选商品', href: '/candidates', icon: '📦', color: 'var(--i4)' },
-          { label: '完整性评估', icon: '🔍', color: 'var(--c4)' },
-          { label: '上架建议', icon: '💡', color: 'var(--g4)' },
-          { label: 'Owner 审批', href: '/approval', icon: '✅', color: 'var(--g4)' },
+          { label: '候选商品', href: '/candidates', icon: <ShoppingOutlined />, color: 'var(--i4)' },
+          { label: '完整性评估', icon: <SearchOutlined />, color: 'var(--c4)' },
+          { label: '上架建议', icon: <BulbOutlined />, color: 'var(--g4)' },
+          { label: 'Owner 审批', href: '/approval', icon: <CheckCircleOutlined />, color: 'var(--g4)' },
         ].map((step, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {i > 0 && <ArrowRightOutlined style={{ fontSize: '0.6rem', color: 'var(--t4)' }} />}
@@ -417,7 +420,7 @@ export default function OwnerPage() {
                   border: '1px solid var(--bd)', textDecoration: 'none',
                 }}
               >
-                <span style={{ fontSize: '0.75rem' }}>{step.icon}</span>
+                <span style={{ fontSize: '0.75rem', display: 'flex' }}>{step.icon}</span>
                 {step.label}
               </a>
             ) : (
@@ -429,7 +432,7 @@ export default function OwnerPage() {
                   background: 'var(--s2)', color: 'var(--t2)',
                 }}
               >
-                <span style={{ fontSize: '0.75rem' }}>{step.icon}</span>
+                <span style={{ fontSize: '0.75rem', display: 'flex' }}>{step.icon}</span>
                 {step.label}
               </span>
             )}
