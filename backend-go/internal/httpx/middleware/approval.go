@@ -15,6 +15,34 @@ import (
 	"gorm.io/gorm"
 )
 
+// requestTypeToAction is the explicit mapping from ApprovalRequest.RequestType
+// (as used in the approval UI and agents) to routecatalog action type names
+// (as used by the approval middleware). This replaces prefix guessing.
+//
+// The approval system uses human-readable types like "publish", "price_change",
+// "listing_task". The actioncatalog uses names like "auto_publish",
+// "price_update", "listing_optimize". This map bridges the two naming systems.
+var requestTypeToAction = map[string][]string{
+	"publish":       {"auto_publish", "listing_optimize"},
+	"price_change":  {"price_update"},
+	"listing_task":  {"listing_optimize"},
+	"list_generation": {"listing_optimize", "auto_publish"},
+	"order_update":  {"order_cancel"},
+	"order_cancel":  {"order_cancel"},
+	"refund":        {"refund_issue"},
+	"sync_inventory": {"sync_inventory"},
+	"credential":    {"credential_change"},
+	"credential_change": {"credential_change"},
+	"permission":    {"permission_change"},
+	"permission_change": {"permission_change"},
+	"finance":       {"destructive_data_change"},
+	"settlement":    {"destructive_data_change"},
+	"content_update": {"listing_optimize"},
+	"delist":        {"listing_optimize"},
+	"agent_action":  {"agent_approve"},
+	"destructive_data_change": {"destructive_data_change"},
+}
+
 // ApprovalRequired returns a middleware that blocks high-risk mutations
 // unless a valid X-Approval-ID header is present and the corresponding
 // approval request was approved.
@@ -22,8 +50,9 @@ import (
 // The middleware validates:
 //   - Global kill switch (active → 503)
 //   - Approval exists, is approved, and not expired
-//   - Approval RequestType matches the current route's action type
+//   - Approval RequestType explicitly maps to the route's action type
 //   - Approval TargetType matches the route context (if set)
+//   - Approval TargetID/EntityID/ProductID matches the request path ID (if set)
 //   - Approval RequesterUserID matches the JWT user (if set)
 //
 // Routes not in the routecatalog pass through unmodified.
@@ -107,36 +136,52 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// ── Binding check 3: RequestType matches current action ──
+		// ── Binding check 3: RequestType → ActionType explicit mapping ──
 		if req.RequestType != "" {
-			if !matchRequestType(req.RequestType, actionType) {
+			if !requestTypeMatchesAction(req.RequestType, actionType) {
 				logger.Warn("approval validation failed: RequestType mismatch",
 					zap.Int64("approval_id", approvalID),
-					zap.String("approval_request_type", req.RequestType),
+					zap.String("request_type", req.RequestType),
 					zap.String("action_type", actionType),
 				)
 				response.Error(c, http.StatusForbidden,
-					"approval RequestType '"+req.RequestType+"' does not match action '"+actionType+"'")
+					"approval type '"+req.RequestType+"' does not cover action '"+actionType+"'")
 				return
 			}
 		}
 
 		// ── Binding check 4: TargetType matches route context ──
-		// Derive the expected target type from the route path prefix.
-		// E.g. "/api/v1/prices/..." → "price"; "/api/v1/rbac/..." → "rbac".
 		targetType := deriveTargetType(fullPath)
 		if req.TargetType != "" && targetType != "" && req.TargetType != targetType {
 			logger.Warn("approval validation failed: TargetType mismatch",
 				zap.Int64("approval_id", approvalID),
-				zap.String("approval_target_type", req.TargetType),
-				zap.String("route_target_type", targetType),
+				zap.String("target_type", req.TargetType),
+				zap.String("route_target", targetType),
 			)
 			response.Error(c, http.StatusForbidden,
-				"approval TargetType '"+req.TargetType+"' does not match route '"+targetType+"'")
+				"approval target type '"+req.TargetType+"' does not match route '"+targetType+"'")
 			return
 		}
 
-		// ── Binding check 5: RequesterUserID matches JWT user ──
+		// ── Binding check 5: TargetID / EntityID / ProductID match path ──
+		paramIDStr := resolvePathID(c)
+		if paramIDStr != "" {
+			paramID, parseErr := strconv.ParseInt(paramIDStr, 10, 64)
+			if parseErr == nil && hasApprovalIDConstraint(&req) && !matchesAnyID(&req, paramID) {
+				logger.Warn("approval validation failed: entity ID mismatch",
+					zap.Int64("approval_id", approvalID),
+					zap.Int64("param_id", paramID),
+					zap.Int64("approval_product_id", req.ProductID),
+					zap.Int64("approval_target_id", req.TargetID),
+					zap.Int64("approval_entity_id", req.EntityID),
+				)
+				response.Error(c, http.StatusForbidden,
+					"approval was created for a different entity (ID mismatch)")
+				return
+			}
+		}
+
+		// ── Binding check 6: RequesterUserID matches JWT user ──
 		if req.RequesterUserID != nil {
 			var userID int64
 			if v, ok := c.Get("user_id"); ok {
@@ -170,19 +215,48 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 	}
 }
 
-// matchRequestType checks whether an approval RequestType maps to the current
-// action type. Exact match takes priority; prefix match allowed when the
-// prefix is at least 4 characters to avoid single-letter false matches
-// (e.g. "p" matching both "price_update" and "permission_change").
-func matchRequestType(requestType, actionType string) bool {
-	if requestType == actionType {
-		return true
-	}
-	// Require minimum 4-char prefix to avoid spurious matches.
-	if len(requestType) < 4 && len(actionType) < 4 {
+// requestTypeMatchesAction checks whether an approval RequestType explicitly
+// maps to a routecatalog action type. Uses the requestTypeToAction table.
+// Exact table lookup only — no prefix guessing.
+func requestTypeMatchesAction(requestType, actionType string) bool {
+	allowed, ok := requestTypeToAction[requestType]
+	if !ok {
 		return false
 	}
-	if strings.HasPrefix(actionType, requestType) || strings.HasPrefix(requestType, actionType) {
+	for _, a := range allowed {
+		if a == actionType {
+			return true
+		}
+	}
+	return false
+}
+
+// resolvePathID returns the first matched numeric path parameter from the Gin
+// context. Checks common ID param names in order of specificity.
+func resolvePathID(c *gin.Context) string {
+	for _, key := range []string{"id", "task_id", "order_id", "product_id", "productId", "sku_id", "item_id", "ref-id"} {
+		if v := c.Param(key); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// hasApprovalIDConstraint returns true if the approval request has at least
+// one specific ID field set (ProductID, TargetID, or EntityID > 0).
+func hasApprovalIDConstraint(req *approval.ApprovalRequest) bool {
+	return req.ProductID > 0 || req.TargetID > 0 || req.EntityID > 0
+}
+
+// matchesAnyID returns true if paramID matches any of the approval's ID fields.
+func matchesAnyID(req *approval.ApprovalRequest, paramID int64) bool {
+	if req.ProductID > 0 && req.ProductID == paramID {
+		return true
+	}
+	if req.TargetID > 0 && req.TargetID == paramID {
+		return true
+	}
+	if req.EntityID > 0 && req.EntityID == paramID {
 		return true
 	}
 	return false
@@ -193,12 +267,11 @@ func matchRequestType(requestType, actionType string) bool {
 // "/api/v1/rbac/roles" → "rbac"
 // "/api/v1/inventory/:id" → "inventory"
 func deriveTargetType(fullPath string) string {
-	// Strip /api/v1/
 	trimmed := strings.TrimPrefix(fullPath, "/api/v1/")
 	if trimmed == "" {
 		return ""
 	}
-	// Take the first path segment
+	// Take the first path segment.
 	idx := strings.Index(trimmed, "/")
 	if idx > 0 {
 		trimmed = trimmed[:idx]

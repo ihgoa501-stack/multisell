@@ -114,11 +114,11 @@ func TestValidateRoute(t *testing.T) {
 
 func TestBindingsCount(t *testing.T) {
 	n := len(DefaultBindings())
-	if n < 50 {
-		t.Fatalf("expected at least 50 high-risk route bindings, got %d — new routes added?", n)
+	if n < 90 {
+		t.Fatalf("expected at least 90 high-risk route bindings, got %d — new routes added?", n)
 	}
-	if n > 80 {
-		t.Fatalf("expected at most 80 high-risk route bindings, got %d — review if all need approval", n)
+	if n > 130 {
+		t.Fatalf("expected at most 130 high-risk route bindings, got %d — review if all need approval", n)
 	}
 }
 
