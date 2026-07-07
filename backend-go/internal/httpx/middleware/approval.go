@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,23 +26,23 @@ import (
 // "listing_task". The actioncatalog uses names like "auto_publish",
 // "price_update", "listing_optimize". This map bridges the two naming systems.
 var requestTypeToAction = map[string][]string{
-	"publish":       {"auto_publish", "listing_optimize"},
-	"price_change":  {"price_update"},
-	"listing_task":  {"listing_optimize"},
-	"list_generation": {"listing_optimize", "auto_publish"},
-	"order_update":  {"order_cancel"},
-	"order_cancel":  {"order_cancel"},
-	"refund":        {"refund_issue"},
-	"sync_inventory": {"sync_inventory"},
-	"credential":    {"credential_change"},
-	"credential_change": {"credential_change"},
-	"permission":    {"permission_change"},
-	"permission_change": {"permission_change"},
-	"finance":       {"destructive_data_change"},
-	"settlement":    {"destructive_data_change"},
-	"content_update": {"listing_optimize"},
-	"delist":        {"listing_optimize"},
-	"agent_action":  {"agent_approve"},
+	"publish":                 {"auto_publish", "listing_optimize"},
+	"price_change":            {"price_update"},
+	"listing_task":            {"listing_optimize"},
+	"list_generation":         {"listing_optimize", "auto_publish"},
+	"order_update":            {"order_cancel"},
+	"order_cancel":            {"order_cancel"},
+	"refund":                  {"refund_issue"},
+	"sync_inventory":          {"sync_inventory"},
+	"credential":              {"credential_change"},
+	"credential_change":       {"credential_change"},
+	"permission":              {"permission_change"},
+	"permission_change":       {"permission_change"},
+	"finance":                 {"destructive_data_change"},
+	"settlement":              {"destructive_data_change"},
+	"content_update":          {"listing_optimize"},
+	"delist":                  {"listing_optimize"},
+	"agent_action":            {"agent_approve"},
 	"destructive_data_change": {"destructive_data_change"},
 }
 
@@ -163,22 +166,19 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// ── Binding check 5: TargetID / EntityID / ProductID match path ──
-		paramIDStr := resolvePathID(c)
-		if paramIDStr != "" {
-			paramID, parseErr := strconv.ParseInt(paramIDStr, 10, 64)
-			if parseErr == nil && hasApprovalIDConstraint(&req) && !matchesAnyID(&req, paramID) {
-				logger.Warn("approval validation failed: entity ID mismatch",
-					zap.Int64("approval_id", approvalID),
-					zap.Int64("param_id", paramID),
-					zap.Int64("approval_product_id", req.ProductID),
-					zap.Int64("approval_target_id", req.TargetID),
-					zap.Int64("approval_entity_id", req.EntityID),
-				)
-				response.Error(c, http.StatusForbidden,
-					"approval was created for a different entity (ID mismatch)")
-				return
-			}
+		// ── Binding check 5: TargetID / EntityID / ProductID match request identity ──
+		requestIDs := resolveRequestIDs(c, targetType)
+		if hasApprovalIDConstraint(&req) && !approvalMatchesRequestIDs(&req, requestIDs) {
+			logger.Warn("approval validation failed: entity ID mismatch",
+				zap.Int64("approval_id", approvalID),
+				zap.Any("request_ids", requestIDs),
+				zap.Int64("approval_product_id", req.ProductID),
+				zap.Int64("approval_target_id", req.TargetID),
+				zap.Int64("approval_entity_id", req.EntityID),
+			)
+			response.Error(c, http.StatusForbidden,
+				"approval was created for a different entity, or this request does not expose a verifiable target ID")
+			return
 		}
 
 		// ── Binding check 6: RequesterUserID matches JWT user ──
@@ -231,35 +231,159 @@ func requestTypeMatchesAction(requestType, actionType string) bool {
 	return false
 }
 
-// resolvePathID returns the first matched numeric path parameter from the Gin
-// context. Checks common ID param names in order of specificity.
-func resolvePathID(c *gin.Context) string {
-	for _, key := range []string{"id", "task_id", "order_id", "product_id", "productId", "sku_id", "item_id", "ref-id"} {
-		if v := c.Param(key); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // hasApprovalIDConstraint returns true if the approval request has at least
 // one specific ID field set (ProductID, TargetID, or EntityID > 0).
 func hasApprovalIDConstraint(req *approval.ApprovalRequest) bool {
 	return req.ProductID > 0 || req.TargetID > 0 || req.EntityID > 0
 }
 
-// matchesAnyID returns true if paramID matches any of the approval's ID fields.
-func matchesAnyID(req *approval.ApprovalRequest, paramID int64) bool {
-	if req.ProductID > 0 && req.ProductID == paramID {
-		return true
+// requestIdentity captures IDs exposed by the current HTTP request. The fields
+// keep their business meaning so approvals cannot pass just because an unrelated
+// numeric ID happens to match.
+type requestIdentity struct {
+	PrimaryID int64
+	ProductID int64
+	TargetID  int64
+	EntityID  int64
+	TaskID    int64
+	OrderID   int64
+	SkuID     int64
+	ItemID    int64
+}
+
+// resolveRequestIDs returns typed IDs from path params, query params, and JSON
+// body. The body is restored after reading so handlers can bind it normally.
+func resolveRequestIDs(c *gin.Context, targetType string) requestIdentity {
+	ids := requestIdentity{}
+	assignID := func(key, value string) {
+		if value == "" {
+			return
+		}
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || n <= 0 {
+			return
+		}
+		switch normalizeIDKey(key) {
+		case "id":
+			ids.PrimaryID = n
+			assignPrimaryAlias(&ids, targetType, n)
+		case "product_id":
+			ids.ProductID = n
+		case "target_id":
+			ids.TargetID = n
+		case "entity_id":
+			ids.EntityID = n
+		case "task_id":
+			ids.TaskID = n
+			if ids.EntityID == 0 {
+				ids.EntityID = n
+			}
+		case "order_id":
+			ids.OrderID = n
+			if ids.EntityID == 0 {
+				ids.EntityID = n
+			}
+		case "sku_id":
+			ids.SkuID = n
+		case "item_id":
+			ids.ItemID = n
+		}
 	}
-	if req.TargetID > 0 && req.TargetID == paramID {
-		return true
+
+	for _, key := range []string{"id", "task_id", "order_id", "product_id", "productId", "sku_id", "item_id", "target_id", "entity_id"} {
+		assignID(key, c.Param(key))
+		assignID(key, c.Query(key))
 	}
-	if req.EntityID > 0 && req.EntityID == paramID {
-		return true
+
+	if c.Request != nil && c.Request.Body != nil {
+		body, err := io.ReadAll(c.Request.Body)
+		if err == nil {
+			c.Request.Body = io.NopCloser(bytes.NewReader(body))
+			if len(bytes.TrimSpace(body)) > 0 && bytes.HasPrefix(bytes.TrimSpace(body), []byte("{")) {
+				var payload map[string]interface{}
+				if json.Unmarshal(body, &payload) == nil {
+					for _, key := range []string{"id", "product_id", "productId", "target_id", "targetId", "entity_id", "entityId", "task_id", "taskId", "order_id", "orderId", "sku_id", "skuId", "item_id", "itemId"} {
+						assignJSONID(assignID, key, payload[key])
+					}
+				}
+			}
+		}
 	}
-	return false
+
+	return ids
+}
+
+func assignJSONID(assign func(string, string), key string, value interface{}) {
+	switch v := value.(type) {
+	case float64:
+		assign(key, strconv.FormatInt(int64(v), 10))
+	case string:
+		assign(key, v)
+	case json.Number:
+		assign(key, string(v))
+	}
+}
+
+func normalizeIDKey(key string) string {
+	key = strings.ReplaceAll(key, "-", "_")
+	var b strings.Builder
+	for i, r := range key {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + ('a' - 'A'))
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func assignPrimaryAlias(ids *requestIdentity, targetType string, id int64) {
+	switch targetType {
+	case "product-master", "product":
+		ids.ProductID = id
+	case "listing-task", "listing":
+		ids.EntityID = id
+	case "order", "aftersale", "settlement", "platform-integration", "finance", "rbac", "sku":
+		ids.TargetID = id
+	}
+}
+
+func approvalMatchesRequestIDs(req *approval.ApprovalRequest, ids requestIdentity) bool {
+	matched := false
+	if req.ProductID > 0 && ids.ProductID > 0 {
+		if req.ProductID != ids.ProductID {
+			return false
+		}
+		matched = true
+	}
+	if req.TargetID > 0 && ids.TargetID > 0 {
+		if req.TargetID != ids.TargetID {
+			return false
+		}
+		matched = true
+	}
+	if req.EntityID > 0 && ids.EntityID > 0 {
+		if req.EntityID != ids.EntityID {
+			return false
+		}
+		matched = true
+	}
+	if req.TargetID > 0 && ids.TargetID == 0 && ids.PrimaryID > 0 {
+		if req.TargetID != ids.PrimaryID {
+			return false
+		}
+		matched = true
+	}
+	if req.EntityID > 0 && ids.EntityID == 0 && ids.PrimaryID > 0 {
+		if req.EntityID != ids.PrimaryID {
+			return false
+		}
+		matched = true
+	}
+	return matched
 }
 
 // deriveTargetType extracts a target type from a Gin route path.

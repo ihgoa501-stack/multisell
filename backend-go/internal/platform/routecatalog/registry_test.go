@@ -73,7 +73,6 @@ func TestUnknownRoutesNotHighRisk(t *testing.T) {
 		{"POST", "/api/v1/candidate"},
 		{"GET", "/api/v1/prices"},
 		{"GET", "/api/v1/order/summary"},
-		{"POST", "/api/v1/finance/profit/calculate"},
 	}
 
 	for _, r := range routes {

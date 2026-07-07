@@ -91,75 +91,97 @@ echo "  Done."
 echo ""
 echo "[5/5] Per-route cross-reference: every mutation endpoint vs routecatalog..."
 
+if ! python3 - "$REPO_ROOT" <<'PY'
+import pathlib
+import re
+import sys
 
-REGISTRY_FILE="$REPO_ROOT/backend-go/internal/platform/routecatalog/registry.go"
-missing_count=0
-total_routes=0
+repo = pathlib.Path(sys.argv[1])
+registry_file = repo / "backend-go/internal/platform/routecatalog/registry.go"
+registry_text = registry_file.read_text()
 
-# For each domain: extract all groups, extract all mutation endpoints per group,
-# build the full Gin path template, check against routecatalog PathPatterns.
-# ponytail: simple grep chain — several false-positive/negative edge cases
-#     (e.g. duplicate "/" in path templates) tolerated because the build/test
-#     pipeline catches actual missing routes; upgrade to a Go-based cross-ref
-#     when the route catalog stabilizes.
-for entry in "price|/api/v1" "order|/api/v1" "inventory|/api/v1" \
-  "integrations|/api/v1" "settlement|/api/v1" "finance|/api/v1" \
-  "listing|/api/v1" "listingtask|/api/v1" "rbac|/api/v1" \
-  "sku|/api/v1" "aftersales|/api/v1" "platform|/api/v1"; do
-  domain="${entry%|*}"
-  api_prefix="${entry#*|}"
+registered = {
+    (m.group(1), m.group(2))
+    for m in re.finditer(
+        r'Method:\s*"([A-Z]+)"\s*,\s*PathPattern:\s*"([^"]+)"',
+        registry_text,
+    )
+}
 
-  routes_file="$REPO_ROOT/backend-go/internal/domain/$domain/routes.go"
-  [[ -f "$routes_file" ]] || continue
+domains = [
+    "price",
+    "order",
+    "inventory",
+    "integrations",
+    "settlement",
+    "finance",
+    "listing",
+    "listingtask",
+    "sku",
+    "aftersales",
+    "platform",
+]
 
-  # Collect all Group paths for this domain: Group("/prices"), Group("/order") etc.
-  while IFS= read -r group_line; do
-    group_path=$(echo "$group_line" | sed -n 's/.*Group("\/\([^"]*\)").*/\1/p')
-    [[ -z "$group_path" ]] && continue
-    # Derive the group variable name (prices, group, tasks, chain, etc.)
-    group_var=$(echo "$group_line" | sed -n 's/^[[:space:]]*\([a-zA-Z_][a-zA-Z0-9_]*\).*/\1/p')
-    [[ -z "$group_var" ]] && continue
+def join_path(*parts: str) -> str:
+    out = "/".join(p.strip("/") for p in parts if p is not None and p != "")
+    return "/" + re.sub(r"/+", "/", out)
 
-    # Get all mutation endpoints within this group's block (lines between this Group and the next '}' at col 0)
-    sed -n "/${group_var}[[:space:]]*:=.*Group/,/^}/p" "$routes_file" 2>/dev/null | \
-      grep -E "\.(POST|PUT|PATCH|DELETE)\(" | while IFS= read -r route_line; do
-      total_routes=$((total_routes + 1))
-      method=$(echo "$route_line" | sed -n 's/.*\.\(POST\|PUT\|PATCH\|DELETE\)(.*/\1/p')
-      subpath=$(echo "$route_line" | sed -n 's/.*\.POST\|PUT\|PATCH\|DELETE("\([^"]*\)".*/\1/p')
+def extract_routes(routes_file: pathlib.Path) -> list[tuple[str, str]]:
+    text = routes_file.read_text()
+    bases: dict[str, str] = {"rg": "/api/v1"}
+    routes: list[tuple[str, str]] = []
 
-      # Build full path: /api/v1/{group_path}/{subpath}
-      if [[ -z "$subpath" ]]; then
-        full_path="/${api_prefix}/${group_path}"
-      else
-        subpath_clean="${subpath#/}"
-        full_path="/${api_prefix}/${group_path}/${subpath_clean}"
-      fi
-      # Normalize: remove double slashes and escape for grep
-      full_path=$(echo "$full_path" | sed 's#//#/#g')
+    for line in text.splitlines():
+        group_match = re.search(
+            r'\b([A-Za-z_][A-Za-z0-9_]*)\s*:=\s*([A-Za-z_][A-Za-z0-9_]*)\.Group\("([^"]*)"\)',
+            line,
+        )
+        if group_match:
+            child, parent, path = group_match.groups()
+            bases[child] = join_path(bases.get(parent, "/api/v1"), path)
+            continue
 
-      # Escape slashes for grep
-      esc_path=$(echo "$full_path" | sed 's#/#\\/#g')
+        route_match = re.search(
+            r'\b([A-Za-z_][A-Za-z0-9_]*)\.(POST|PUT|PATCH|DELETE)\("([^"]*)"',
+            line,
+        )
+        if route_match:
+            group, method, path = route_match.groups()
+            if group in bases:
+                routes.append((method, join_path(bases[group], path)))
 
-      # Check: does the routecatalog contain a PathPattern matching this full path?
-      if grep -q "PathPattern:.*${esc_path}" "$REGISTRY_FILE" 2>/dev/null; then
-        :  # registered — ok
-      else
-        echo "  ⚠  $method $full_path from $domain/routes.go NOT registered in routecatalog"
-        missing_count=$((missing_count + 1))
-      fi
-    done
-  done < <(grep -n 'Group("' "$routes_file" 2>/dev/null || true)
-done
+    return routes
 
-if [[ "$missing_count" -gt 0 ]]; then
-  echo "  ❌ $missing_count unregistered mutation routes found"
+missing: list[tuple[str, str, str]] = []
+total = 0
+for domain in domains:
+    routes_file = repo / f"backend-go/internal/domain/{domain}/routes.go"
+    if not routes_file.exists():
+        continue
+    for method, path in extract_routes(routes_file):
+        total += 1
+        if (method, path) not in registered:
+            missing.append((domain, method, path))
+
+if missing:
+    for domain, method, path in missing:
+        print(f"  ❌ {method} {path} from {domain}/routes.go NOT registered in routecatalog")
+    print(f"  ❌ {len(missing)} of {total} mutation routes are missing from routecatalog")
+    sys.exit(1)
+
+print(f"  ✓ All {total} mutation endpoints are registered in routecatalog")
+PY
+then
   has_violation=1
-else
-  echo "  ✓ All mutation endpoints are registered in routecatalog"
 fi
 echo "  Done."
 
 echo ""
+
+if [[ "$has_violation" -eq 1 ]]; then
+  echo "❌ Audit coverage violations found."
+  exit 1
+fi
 
 echo "✅ Audit coverage: all layers have logging infrastructure."
 exit 0

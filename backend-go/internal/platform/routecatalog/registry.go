@@ -63,6 +63,7 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/inventory/:id/unlock", ActionType: "sync_inventory", Description: "解锁库存"},
 		{Method: "POST", PathPattern: "/api/v1/inventory/sync-cross-platform/:productId", ActionType: "sync_inventory", Description: "跨平台库存同步"},
 		{Method: "PUT", PathPattern: "/api/v1/inventory/safety-config/:sku_id", ActionType: "sync_inventory", Description: "更新安全库存配置"},
+		{Method: "POST", PathPattern: "/api/v1/inventory/dead-stock/analyze", ActionType: "sync_inventory", Description: "分析滞销库存"},
 
 		// ── Platform integrations mutations ──
 		{Method: "POST", PathPattern: "/api/v1/platform-integrations", ActionType: "credential_change", Description: "创建平台集成"},
@@ -91,6 +92,9 @@ func DefaultBindings() []Binding {
 		{Method: "DELETE", PathPattern: "/api/v1/finance/accounts/:id", ActionType: "destructive_data_change", Description: "删除财务账户"},
 		{Method: "POST", PathPattern: "/api/v1/finance/transactions", ActionType: "destructive_data_change", Description: "创建财务流水"},
 		{Method: "POST", PathPattern: "/api/v1/finance/orders/:order_id/ledger/rebuild", ActionType: "destructive_data_change", Description: "重建订单账本"},
+		{Method: "POST", PathPattern: "/api/v1/finance/profit/calculate", ActionType: "destructive_data_change", Description: "利润测算"},
+		{Method: "POST", PathPattern: "/api/v1/finance/profit/batch-calculate", ActionType: "destructive_data_change", Description: "批量利润测算"},
+		{Method: "POST", PathPattern: "/api/v1/finance/mock", ActionType: "destructive_data_change", Description: "财务模拟"},
 
 		// ── RBAC mutations ──
 		{Method: "POST", PathPattern: "/api/v1/rbac/roles", ActionType: "permission_change", Description: "创建角色"},
@@ -108,13 +112,16 @@ func DefaultBindings() []Binding {
 		{Method: "DELETE", PathPattern: "/api/v1/listings/:id", ActionType: "listing_optimize", Description: "删除 listing"},
 		{Method: "POST", PathPattern: "/api/v1/listings/:id/publish", ActionType: "auto_publish", Description: "发布 listing"},
 		{Method: "POST", PathPattern: "/api/v1/listings/:id/sync", ActionType: "listing_optimize", Description: "同步 listing"},
+		{Method: "POST", PathPattern: "/api/v1/listings/suggest", ActionType: "listing_optimize", Description: "生成 listing 建议"},
 		{Method: "POST", PathPattern: "/api/v1/listing", ActionType: "listing_optimize", Description: "创建 listing chain"},
 		{Method: "POST", PathPattern: "/api/v1/listing/products/:product_id/publish/:platform_id", ActionType: "auto_publish", Description: "发布产品到平台"},
 		{Method: "POST", PathPattern: "/api/v1/listing/listing-tasks/:task_id/publish", ActionType: "auto_publish", Description: "发布 listing 任务"},
 		{Method: "POST", PathPattern: "/api/v1/listing/listing-tasks/:task_id/recheck", ActionType: "listing_optimize", Description: "重新检查 listing 任务"},
 		{Method: "POST", PathPattern: "/api/v1/listing/listing-tasks/:task_id/cancel", ActionType: "listing_optimize", Description: "取消 listing 任务"},
 		{Method: "POST", PathPattern: "/api/v1/listing/listing-tasks/from-decisions", ActionType: "listing_optimize", Description: "从决策创建任务"},
+		{Method: "POST", PathPattern: "/api/v1/listing-tasks", ActionType: "listing_optimize", Description: "创建 listing 任务"},
 		{Method: "PUT", PathPattern: "/api/v1/listing-tasks/:id", ActionType: "listing_optimize", Description: "更新 listing 任务"},
+		{Method: "DELETE", PathPattern: "/api/v1/listing-tasks/:id", ActionType: "listing_optimize", Description: "删除 listing 任务"},
 		{Method: "POST", PathPattern: "/api/v1/listing-tasks/from-suggestion", ActionType: "listing_optimize", Description: "从建议创建任务"},
 		{Method: "POST", PathPattern: "/api/v1/listing-tasks/:id/items", ActionType: "listing_optimize", Description: "创建 listing 任务条目"},
 		{Method: "PUT", PathPattern: "/api/v1/listing-tasks/:id/items/:item_id", ActionType: "listing_optimize", Description: "更新 listing 任务条目"},
