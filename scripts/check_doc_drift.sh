@@ -41,7 +41,13 @@ for src in AGENTS.md CLAUDE.md; do
     ref="${ref%\'}"; ref="${ref%\"}"
     [[ -z "$ref" ]] && continue
     check_file "$ref" "$src"
-  done < <(grep -oP 'docs/[^()#,\s)]+\.md' "$src_path" 2>/dev/null || true)
+  done < <(awk '{
+    line = $0
+    while (match(line, /docs\/[^()#,[:space:])]+\.md/)) {
+      print substr(line, RSTART, RLENGTH)
+      line = substr(line, RSTART + RLENGTH)
+    }
+  }' "$src_path")
 done
 
 # ── References in docs/INDEX.md ──────────────────────────────────
@@ -56,7 +62,7 @@ if [[ -f "$INDEX" ]]; then
     [[ -z "$ref" ]] && continue
     [[ "$ref" =~ ^https?:// ]] && continue
     check_file "$ref" "docs/INDEX.md"
-  done < <(grep -oP '\(([^)]+)\)' "$INDEX" | sed 's/^(//;s/)$//' 2>/dev/null || true)
+  done < <(sed -n 's/.*](\([^)]*\)).*/\1/p' "$INDEX")
 fi
 
 # ── API route consistency (skipped) ──────────────────────────────

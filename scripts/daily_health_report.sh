@@ -67,7 +67,7 @@ if [ -f "$KI" ]; then
   expired=0
   # ponytail: naive line-by-line check for dates before today
   while IFS= read -r line; do
-    deadline=$(echo "$line" | grep -oP '\|\s*\d{4}-\d{2}-\d{2}\s*\|' | tr -d '| ')
+    deadline=$(echo "$line" | sed -n 's/.*|[[:space:]]*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)[[:space:]]*|.*/\1/p')
     [ -z "$deadline" ] && continue
     if [[ "$deadline" < "$today" ]]; then
       echo "⚠️  Past deadline: ${line}"
