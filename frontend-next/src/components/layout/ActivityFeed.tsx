@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useAppStore } from '@/stores/app-store';
+import {
+  ShoppingOutlined,
+  EditOutlined,
+  BellOutlined,
+} from '@ant-design/icons';
 
 interface Activity {
   id: string;
-  icon: string;
+  icon: ReactNode;
   message: string;
   timestamp: Date;
 }
@@ -13,19 +18,19 @@ interface Activity {
 const activitiesData: Activity[] = [
   {
     id: '1',
-    icon: '📦',
+    icon: <ShoppingOutlined />,
     message: 'Agent 补货 Shopee 完成 (3 件)',
     timestamp: new Date(Date.now() - 3 * 60 * 1000),
   },
   {
     id: '2',
-    icon: '✏️',
+    icon: <EditOutlined />,
     message: 'Agent 标题优化 更新 (5/12)',
     timestamp: new Date(Date.now() - 15 * 60 * 1000),
   },
   {
     id: '3',
-    icon: '🔔',
+    icon: <BellOutlined />,
     message: 'Agent 价格监控 发现 3 件预警',
     timestamp: new Date(Date.now() - 60 * 60 * 1000),
   },

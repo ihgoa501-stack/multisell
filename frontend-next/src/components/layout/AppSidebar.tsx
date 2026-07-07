@@ -6,6 +6,13 @@ import { useAppStore } from '@/stores/app-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { menuGroups, statusLabels, type MenuItem } from '@/config/menu';
 import { ApiClient } from '@/lib/api-client';
+import {
+  ShoppingOutlined,
+  SendOutlined,
+  BarChartOutlined,
+  DollarOutlined,
+  BulbOutlined,
+} from '@ant-design/icons';
 
 type SessionItem = {
   key: string;
@@ -80,11 +87,11 @@ export default function AppSidebar() {
   ]);
 
   const toolButtons = [
-    { icon: '📦', label: '商品管理', badge: '2,847', tool: 'products' },
-    { icon: '📤', label: '平台发布', badge: '8 待处理', tool: 'publish' },
-    { icon: '📊', label: '数据分析', badge: null, tool: 'analytics' },
-    { icon: '💰', label: '价格监控', badge: null, tool: 'price' },
-    { icon: '✦', label: 'AI 文案', badge: null, tool: 'copywriting' },
+    { icon: <ShoppingOutlined />, label: '商品管理', badge: '2,847', tool: 'products' },
+    { icon: <SendOutlined />, label: '平台发布', badge: '8 待处理', tool: 'publish' },
+    { icon: <BarChartOutlined />, label: '数据分析', badge: null, tool: 'analytics' },
+    { icon: <DollarOutlined />, label: '价格监控', badge: null, tool: 'price' },
+    { icon: <BulbOutlined />, label: 'AI 文案', badge: null, tool: 'copywriting' },
   ];
 
   return (
