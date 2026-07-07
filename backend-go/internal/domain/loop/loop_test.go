@@ -3,6 +3,7 @@ package loop
 import (
 	"testing"
 
+	"encoding/json"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
@@ -221,5 +222,75 @@ func TestService_EvaluateCreatesBlockedListingTaskAndApproval(t *testing.T) {
 	}
 	if req.Status != "pending" || req.RiskLevel != "high" {
 		t.Fatalf("unexpected approval: %+v", req)
+	}
+}
+
+func TestService_Evaluate_DecisionSnapshotContainsMode(t *testing.T) {
+	db := dbtest.NewDB(t,
+		&candidate.CandidateProduct{},
+		&completeness.CompletenessCheck{},
+		&profit.ProfitSummary{},
+		&listingtask.ListingTask{}, &listingtask.ListingTaskItem{},
+		&ListingRecommendation{},
+		&approval.ApprovalRequest{},
+	)
+	logger := dbtest.NewLogger(t)
+	svc := NewService(db, logger, nil, false)
+
+	categoryID := int64(1)
+	brandID := int64(1)
+	platformID := int64(1)
+
+	product := candidate.CandidateProduct{
+		Title:              "Test Candidate DS",
+		Description:        "Testing DecisionSnapshot mode",
+		MainImage:          "https://example.test/image.jpg",
+		Images:             []byte(`["https://example.test/img1.jpg"]`),
+		CategoryID:         &categoryID,
+		BrandID:            &brandID,
+		SpecJSON:           []byte(`{"color": "red", "size": "M"}`),
+		PurchasePrice:      10,
+		PurchaseCurrency:   "CNY",
+		PackageWeightKg:    0.4,
+		PackageLengthCm:    10,
+		PackageWidthCm:     8,
+		PackageHeightCm:    6,
+		HSCode:             "1234.56",
+		OriginCountry:      "CN",
+		TargetSalePrice:    30,
+		TargetCurrency:     "USD",
+		TargetPlatformID:   &platformID,
+		DestinationCountry: "RU",
+	}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+
+	result, err := svc.Evaluate(product.ID, "A8")
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if result.Decision != "list" {
+		t.Skipf("decision = %s, not 'list' — skipping snapshot check", result.Decision)
+	}
+	if result.ListingTaskID == nil {
+		t.Fatal("expected listing_task_id to be set")
+	}
+
+	var task listingtask.ListingTask
+	if err := db.First(&task, *result.ListingTaskID).Error; err != nil {
+		t.Fatalf("load listing task: %v", err)
+	}
+	if len(task.DecisionSnapshot) == 0 {
+		t.Fatal("DecisionSnapshot is empty")
+	}
+	var ds struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.Unmarshal(task.DecisionSnapshot, &ds); err != nil {
+		t.Fatalf("unmarshal DecisionSnapshot: %v", err)
+	}
+	if ds.Mode != "dry_run" {
+		t.Fatalf("DecisionSnapshot.mode = %q, want dry_run", ds.Mode)
 	}
 }

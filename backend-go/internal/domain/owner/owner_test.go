@@ -469,3 +469,86 @@ func TestService_RiskSummaryIncludesPendingApprovalsAndBlockedTasks(t *testing.T
 		t.Fatalf("recommended listings = %d, want 1", recommendedListings)
 	}
 }
+
+// TestService_RecordFeedback_Adopt_NoDuplicateApproval verifies that when a pending
+// approval already exists for a listing_task, RecordFeedback("adopt") does not create
+// a duplicate.
+func TestService_RecordFeedback_Adopt_NoDuplicateApproval(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	listingTaskID := int64(100)
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_recommendation (
+		id INTEGER PRIMARY KEY, product_id INTEGER, decision TEXT,
+		confidence REAL, feedback_status TEXT, feedback_note TEXT,
+		created_listing_task_id INTEGER
+	)`)
+	exec(t, db, `INSERT INTO listing_recommendation (id, product_id, decision, created_listing_task_id)
+		VALUES (10, 1, 'list', ?)`, listingTaskID)
+	exec(t, db, `CREATE TABLE IF NOT EXISTS listing_task (id INTEGER PRIMARY KEY, status TEXT, updated_at TIMESTAMP, created_at TIMESTAMP)`)
+	exec(t, db, `INSERT INTO listing_task (id, status) VALUES (100, 'blocked')`)
+	exec(t, db, `CREATE TABLE IF NOT EXISTS approval_request (
+		id INTEGER PRIMARY KEY, product_id INTEGER, request_type TEXT,
+		requester TEXT, reviewer TEXT, status TEXT, risk_level TEXT, old_value TEXT,
+		new_value TEXT, reason TEXT, review_note TEXT, target_type TEXT,
+		target_id INTEGER, entity_type TEXT,
+		entity_id INTEGER, requester_user_id INTEGER, reviewer_user_id INTEGER, expires_at TIMESTAMP, updated_at TIMESTAMP, created_at TIMESTAMP
+	)`)
+	// Pre-insert a pending approval for this listing_task (simulating loop-created approval).
+	exec(t, db, `INSERT INTO approval_request (id, product_id, request_type, requester, status, entity_type, entity_id)
+		VALUES (50, 1, 'listing_task', 'A8', 'pending', 'listing_task', ?)`, listingTaskID)
+
+	err := svc.RecordFeedback(10, &FeedbackInput{Action: "adopt", Note: "approve this"})
+	if err != nil {
+		t.Fatalf("RecordFeedback adopt failed: %v", err)
+	}
+
+	// Verify only 1 approval request exists (no duplicate created).
+	var approvalCount int64
+	db.Table("approval_request").Count(&approvalCount)
+	if approvalCount != 1 {
+		t.Fatalf("expected 1 approval request (reuse existing), got %d", approvalCount)
+	}
+
+	// Verify the existing pending approval is still pending (not accidentally modified).
+	var status string
+	db.Table("approval_request").Select("status").Where("id = ?", 50).Scan(&status)
+	if status != "pending" {
+		t.Fatalf("existing approval status = %s, want pending (should not be modified by feedback)", status)
+	}
+}
+
+// TestService_HasPendingForListingTask verifies that HasPendingForListingTask correctly
+// returns true when a pending approval exists for the given listing_task ID.
+func TestService_HasPendingForListingTask(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil)
+
+	exec(t, db, `CREATE TABLE IF NOT EXISTS approval_request (
+		id INTEGER PRIMARY KEY, product_id INTEGER, request_type TEXT,
+		requester TEXT, reviewer TEXT, status TEXT, risk_level TEXT, old_value TEXT,
+		new_value TEXT, reason TEXT, review_note TEXT, target_type TEXT,
+		target_id INTEGER, entity_type TEXT,
+		entity_id INTEGER, requester_user_id INTEGER, reviewer_user_id INTEGER, expires_at TIMESTAMP, updated_at TIMESTAMP, created_at TIMESTAMP
+	)`)
+	// Insert a pending approval for listing_task 200.
+	exec(t, db, `INSERT INTO approval_request (id, product_id, request_type, requester, status, entity_type, entity_id)
+		VALUES (60, 1, 'listing_task', 'A8', 'pending', 'listing_task', 200)`)
+
+	has, err := svc.HasPendingForListingTask(200)
+	if err != nil {
+		t.Fatalf("HasPendingForListingTask: %v", err)
+	}
+	if !has {
+		t.Fatal("expected HasPendingForListingTask(200) = true, got false")
+	}
+
+	// Should be false for a listing_task with no pending approval.
+	has, err = svc.HasPendingForListingTask(999)
+	if err != nil {
+		t.Fatalf("HasPendingForListingTask(999): %v", err)
+	}
+	if has {
+		t.Fatal("expected HasPendingForListingTask(999) = false, got true")
+	}
+}
