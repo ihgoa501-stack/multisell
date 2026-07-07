@@ -167,7 +167,9 @@ export default function ProductDashboardPage() {
         {decisionLoading ? (
           <Skeleton active paragraph={{ rows: 4 }} />
         ) : !decisionData || decisionData.length === 0 ? (
-          <Empty description="暂无决策记录" />
+          <Empty description="暂无决策记录">
+            <Link href="/products"><Button type="link" icon={<ArrowRightOutlined />}>前往商品列表</Button></Link>
+          </Empty>
         ) : (
           <Table
             dataSource={decisionData}

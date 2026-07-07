@@ -33,7 +33,7 @@ export default function SettingsLlmPage() {
             <Spin tip="加载中..." />
           </div>
         ) : !data || data.length === 0 ? (
-          <Empty description="暂无 LLM 配置" />
+          <Empty description="暂无 LLM 配置 — 请先在系统配置中添加 LLM 模型" />
         ) : (
           <Table
             rowKey="agent_id"
