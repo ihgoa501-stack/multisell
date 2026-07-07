@@ -109,12 +109,23 @@ Pagination: `common.ParsePagination(c)`, `common.ParseSort(c)` from `internal/co
 
 ### Platform Infrastructure (`internal/platform/`)
 
-Four in-process coordination primitives for agent-to-agent and agent-to-system communication:
+Six in-process coordination primitives + two compliance registries:
 
 - **Event Bus** (`eventbus/bus.go`) — pub/sub with glob topic matching (`order.*`). Used for agent pipeline chains, scheduler ticks, and cross-module async events. ~15 subscriptions in `router.go`.
 - **Command Dispatcher** (`command/command.go`) — typed handler registry bridging agent decisions to domain services: `stock_alert`, `replenish`, `price_review`, `listing_optimize`, `compliance_check`.
 - **Scheduler** (`scheduler/`) — periodic task runner (5 min to 6 hr intervals). Publishes `scheduler.tick.{agent_id}` events.
 - **ToolBridge** (`toolbridge/bridge.go`) — plugin-driver-based tool execution bridge that lets agents run external tools via registered plugins.
+- **Action Catalog** (`actioncatalog/catalog.go`) — canonical registry of all action types with risk level, autonomy level, and approval requirements. Used by `command.DispatchSafe` for production mode gating.
+- **Route Catalog** (`routecatalog/registry.go`) — HTTP route ↔ action type binding table. The approval middleware checks against this before allowing high-risk mutations.
+- **Kill Switch** (`killswitch/switch.go`) — global production write kill switch. When active, all high-risk mutations return HTTP 503. Toggle via `POST /kill-switch/activate`.
+
+### Compliance & Security Middleware (`internal/httpx/middleware/`)
+
+- **Auth** (`auth.go`) — JWT validation on the `/api/v1` protected group.
+- **RBAC** (`rbac.go`) — permission check per route group (`product.read`, `order.write`, etc.).
+- **Audit** (`audit.go`) — operation log for all mutating requests (POST/PUT/PATCH/DELETE) + sensitive GET paths.
+- **ApprovalRequired** (`approval.go`) — intercepts high-risk routes (price, inventory, order, integrations, rbac), validates `X-Approval-ID` header against the `approval_request` table. Checks kill switch first.
+- **CI validation** — scripts/verify_pr.py parses PR body checkboxes; scripts/check_known_issues.sh checks KNOWN_ISSUES expiry; scripts/check_audit_coverage.sh validates middleware/registry alignment.
 
 ### Agent Pipeline Chain
 
