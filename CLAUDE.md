@@ -23,6 +23,12 @@ When these governance docs conflict with older project docs, follow the governan
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.3.0.0` in `VERSION`, tracked on `main`.
 
+## License And Ownership
+
+This repository is proprietary and not open source. Do not add open-source
+license language or publish/distribute project code unless the Owner explicitly
+requests it. See `LICENSE`.
+
 | Stack | Dir | Entry |
 |-------|-----|-------|
 | Backend | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
