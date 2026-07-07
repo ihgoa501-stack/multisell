@@ -119,20 +119,83 @@ jobs:
         run: npm run lint
 
   # ==========================================
-  # E2E tests (mocked backend, no real backend needed)
+  # E2E tests (full stack: backend + frontend + DB)
   # ==========================================
   e2e-test:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend-next/e2e
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: multisell_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.25"
+          cache: true
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend-next/e2e/package-lock.json
+      - name: Install migrate CLI
+        working-directory: backend-go
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+      - name: Run migrations
+        working-directory: backend-go
+        run: migrate -path migrations -database "postgresql://postgres:postgres@localhost:5432/multisell_e2e?sslmode=disable" up
+      - name: Check latest migration rollback
+        run: ../scripts/check_migrations.sh
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/multisell_e2e?sslmode=disable
+      - name: Seed E2E data
+        run: |
+          cd ../..
+          chmod +x scripts/e2e_seed.sh
+          ./scripts/e2e_seed.sh
+        env:
+          DB_DRIVER: postgres
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: multisell_e2e
+          DB_SSLMODE: disable
+      - name: Start backend
+        working-directory: backend-go
+        run: |
+          go run cmd/server/main.go > /tmp/lingmirror-backend.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/lingmirror-backend.log
+          exit 1
+        env:
+          DB_DRIVER: postgres
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: multisell_e2e
+          DB_SSLMODE: disable
+          SERVER_PORT: "8080"
+          JWT_SECRET: e2e-test-secret-do-not-use-in-production
       - name: Install frontend dependencies (for web server)
         run: cd .. && npm ci
       - name: Install e2e dependencies
@@ -141,6 +204,11 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run E2E tests
         run: npx playwright test --reporter=list
+        env:
+          API_BASE_URL: http://localhost:8080
+      - name: Stop backend
+        if: always()
+        run: pkill -f "cmd/server/main.go" 2>/dev/null || true
 
   # ==========================================
   # CD: 自动部署到生产（仅合并到 main 时触发）
