@@ -98,6 +98,7 @@
 | [验收大门](ACCEPTANCE_GATE.md) | 🆕 完成定义、验收等级、发布通道、Owner 决策日志 |
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境矩阵、角色矩阵、权限回归矩阵、高风险动作证据 |
 | [已知问题](KNOWN_ISSUES.md) | 🆕 未解决风险和失败项追踪、过期升级策略 |
+| [Owner 决策日志](governance/OWNER_DECISION_LOG.md) | 🆕 风险接受决策记录模板，带有效期的 Owner 签收 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
