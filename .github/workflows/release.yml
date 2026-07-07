@@ -16,14 +16,27 @@ jobs:
       - name: Read VERSION
         id: version
         run: echo "value=$(cat VERSION)" >> "$GITHUB_OUTPUT"
-      - name: Create tag
+      - name: Check release tag
+        id: tag
         run: |
-          git tag v${{ steps.version.outputs.value }} ${{ github.sha }}
-          git push origin v${{ steps.version.outputs.value }}
+          tag="v${{ steps.version.outputs.value }}"
+          echo "name=${tag}" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release tag ${tag} already exists; skipping release creation."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create tag
+        if: steps.tag.outputs.exists == 'false'
+        run: |
+          git tag ${{ steps.tag.outputs.name }} ${{ github.sha }}
+          git push origin ${{ steps.tag.outputs.name }}
       - name: Create GitHub Release
+        if: steps.tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.value }}
+          tag_name: ${{ steps.tag.outputs.name }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           make_latest: true
