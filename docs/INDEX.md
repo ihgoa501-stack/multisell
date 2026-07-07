@@ -116,7 +116,7 @@
 | [全局验证脚本](scripts/verify_all.sh) | 🔄 全局验证脚本：build→vet→test→lint→build→E2E（E2E 默认必须运行）|
 | [文档漂移检查](scripts/check_doc_drift.sh) | 🆕 验证 INDEX.md/AGENTS.md/CLAUDE.md 所有 .md 引用是否存在 |
 | [已知问题过期检查](scripts/check_known_issues.sh) | 🆕 扫描 KNOWN_ISSUES.md 中超过 Target Fix 日期的项 |
-| [静态健康报告](scripts/daily_health_report.sh) | 🆕 检查 git freshness、backend build dry-run、KNOWN_ISSUES deadline、migration 完整性 |
+| [静态代码健康报告](scripts/daily_health_report.sh) | 🆕 仓库新鲜度、构建校验、KNOWN_ISSUES 过期检查、迁移完整性 |
 | [每周验收报告](scripts/weekly_acceptance_report.sh) | 🆕 扫描决策日志过期项、已知问题截止日期 |
 | [告警规则](ops/ALERT_RULES.md) | 🆕 各服务告警规则定义、阈值和响应流程 |
 | [备份策略](ops/BACKUP_POLICY.md) | 🆕 数据库/配置/文件备份策略、保留周期和恢复流程 |
