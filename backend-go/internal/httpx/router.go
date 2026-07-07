@@ -889,6 +889,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 					if err := tx.Model(&task).Update("status", "pending_approval").Error; err != nil {
 						return err
 					}
+					task.Status = "pending_approval"
 				}
 				if task.Status != "pending_approval" {
 					return nil
