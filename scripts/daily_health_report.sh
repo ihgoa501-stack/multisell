@@ -49,7 +49,7 @@ fi
 section "Backend Build (dry-run)"
 
 if [ -d "${ROOT_DIR}/backend-go" ]; then
-  if go build -o /dev/null "${ROOT_DIR}/backend-go/cmd/server/..." 2>/dev/null; then
+  if (cd "${ROOT_DIR}/backend-go" && go build -o /dev/null ./cmd/server/...) 2>/dev/null; then
     ok "backend-go compiles"
   else
     warn "backend-go does NOT compile — run \`go build ./...\` to see errors"
