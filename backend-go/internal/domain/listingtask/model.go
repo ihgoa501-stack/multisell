@@ -5,6 +5,22 @@ import (
 	"time"
 )
 
+// ExecutionMode constants for listing task execution mode column.
+const (
+	ExecutionModeDryRun           int8 = 0
+	ExecutionModeSandbox          int8 = 1
+	ExecutionModeApprovalRequired int8 = 2
+	ExecutionModeProduction       int8 = 3
+)
+
+// ExecutionModeNames maps numeric execution mode to human-readable names.
+var ExecutionModeNames = map[int8]string{
+	ExecutionModeDryRun:           "dry_run",
+	ExecutionModeSandbox:          "sandbox",
+	ExecutionModeApprovalRequired: "approval_required",
+	ExecutionModeProduction:       "production",
+}
+
 // ListingTask maps to the "listing_task" table — the listing task queue.
 type ListingTask struct {
 	ID                  int64            `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
@@ -23,6 +39,9 @@ type ListingTask struct {
 	ApprovalID          *int64           `gorm:"column:approval_id" json:"approval_id,omitempty"`
 	LastError           string           `gorm:"column:last_error" json:"last_error"`
 	DryRun              bool             `gorm:"-" json:"dry_run"`
+	ExecutionMode       int8             `gorm:"column:execution_mode;default:0" json:"execution_mode"`
+	ExternalReferenceID string           `gorm:"column:external_reference_id" json:"external_reference_id,omitempty"`
+	ExternalReferenceURL string          `gorm:"column:external_reference_url" json:"external_reference_url,omitempty"`
 	CreatedBy           string           `gorm:"column:created_by" json:"created_by"`
 	UpdatedBy           string           `gorm:"column:updated_by" json:"updated_by"`
 	CreatedAt           time.Time        `gorm:"column:created_at;autoCreateTime" json:"created_at"`
@@ -69,17 +88,20 @@ type CreateTaskInput struct {
 
 // UpdateTaskInput is the payload for updating a listing task.
 type UpdateTaskInput struct {
-	Status              *string           `json:"status"`
-	SourceItemKey       *string           `json:"source_item_key"`
-	MissingRequirements *json.RawMessage  `json:"missing_requirements"`
-	DecisionSnapshot    *json.RawMessage  `json:"decision_snapshot"`
-	TargetSalePrice     *float64          `json:"target_sale_price"`
-	TargetProfitMargin  *float64          `json:"target_profit_margin"`
-	DestinationCountry  *string           `json:"destination_country"`
-	ApprovalID          *int64            `json:"approval_id"`
-	LastError           *string           `json:"last_error"`
-	ProductListingID    *int64            `json:"product_listing_id"`
-	UpdatedBy           *string           `json:"updated_by"`
+	Status               *string           `json:"status"`
+	SourceItemKey        *string           `json:"source_item_key"`
+	MissingRequirements  *json.RawMessage  `json:"missing_requirements"`
+	DecisionSnapshot     *json.RawMessage  `json:"decision_snapshot"`
+	TargetSalePrice      *float64          `json:"target_sale_price"`
+	TargetProfitMargin   *float64          `json:"target_profit_margin"`
+	DestinationCountry   *string           `json:"destination_country"`
+	ApprovalID           *int64            `json:"approval_id"`
+	LastError            *string           `json:"last_error"`
+	ProductListingID     *int64            `json:"product_listing_id"`
+	UpdatedBy            *string           `json:"updated_by"`
+	ExecutionMode        *int8             `json:"execution_mode"`
+	ExternalReferenceID  *string           `json:"external_reference_id"`
+	ExternalReferenceURL *string           `json:"external_reference_url"`
 }
 
 // CreateTaskItemInput is the payload for creating a task item.

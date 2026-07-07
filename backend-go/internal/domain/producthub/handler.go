@@ -414,3 +414,17 @@ func (h *Handler) ListRecentDecisions(c *gin.Context) {
 	}
 	response.Success(c, rows)
 }
+
+// GetEvidence GET /api/v1/product-hub/:id/evidence
+func (h *Handler) GetEvidence(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	evidence, err := h.service.GetEvidenceTrace(id)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, evidence)
+}

@@ -269,6 +269,20 @@ func (h *Handler) ListByProduct(c *gin.Context) {
 	response.Success(c, gin.H{"items": items, "total": len(items)})
 }
 
+// GetPlatformComparison GET /listing/products/:product_id/platform-comparison
+func (h *Handler) GetPlatformComparison(c *gin.Context) {
+	productID, ok := parseParamInt64(c, "product_id")
+	if !ok {
+		return
+	}
+	results, err := h.service.GetPlatformComparison(productID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"items": results, "total": len(results)})
+}
+
 // CreateTasksFromDecisions POST /listing/listing-tasks/from-decisions
 func (h *Handler) CreateTasksFromDecisions(c *gin.Context) {
 	var in CreateTasksFromDecisionsInput

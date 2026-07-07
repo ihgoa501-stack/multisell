@@ -16,16 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// PublishHook is an optional callback called after ExecuteTask successfully
-// transitions a listing task to "completed". The hook calls the platform
-// adapter's Publish to push the product live. If it returns an error, the
-// task status reverts to "failed" so the operator can retry.
-//
-// ponytail: synchronous, no idempotency key. If the adapter.Publish call
-// succeeds but the network response is lost, a retry may publish the
-// product twice on the platform. Upgrade to EventBus + WithIdempotencyKey
-// when duplicate-safety matters for the target platform.
-type PublishHook func(taskID int64) error
+// Service provides listing task business logic.
 
 // Service provides listing task business logic.
 type Service struct {
@@ -524,17 +515,28 @@ func (s *Service) validateExecutePreconditions(task *ListingTask) error {
 	if approvalRec.EntityID != task.ID {
 		return fmt.Errorf("approval %d entity_id is %d, expected listing task %d", *task.ApprovalID, approvalRec.EntityID, task.ID)
 	}
-	// 7. Sandbox/dry-run mode — check DecisionSnapshot for mode flag
+	// 7. Execution mode — check DecisionSnapshot for mode flag
 	if len(task.DecisionSnapshot) > 0 {
 		var snapshot struct {
 			Mode string `json:"mode"`
 		}
 		if err := json.Unmarshal(task.DecisionSnapshot, &snapshot); err == nil {
-			if snapshot.Mode == "sandbox" || snapshot.Mode == "dry_run" {
+			switch snapshot.Mode {
+			case "dry_run":
 				task.DryRun = true
-				s.logger.Warn("listing task in sandbox/dry-run mode, skipping real publish",
+				task.ExecutionMode = ExecutionModeDryRun
+				s.logger.Info("listing task in dry-run mode, skipping real publish",
 					zap.Int64("task_id", task.ID),
-					zap.String("mode", snapshot.Mode),
+				)
+			case "sandbox":
+				task.ExecutionMode = ExecutionModeSandbox
+				s.logger.Info("listing task in sandbox mode, platform publish will use sandbox API",
+					zap.Int64("task_id", task.ID),
+				)
+			case "production":
+				task.ExecutionMode = ExecutionModeProduction
+				s.logger.Info("listing task in production mode, platform publish will use production API",
+					zap.Int64("task_id", task.ID),
 				)
 			}
 		}
@@ -817,7 +819,7 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 	// doesn't roll back the completion. On error, revert to "failed"
 	// so the user can retry via the existing RetryFailed/RetryItem APIs.
 	if s.publishHook != nil {
-		if pubErr := s.publishHook(task.ID); pubErr != nil {
+		if pubErr := s.publishHook(task.ID, task.ExecutionMode); pubErr != nil {
 			s.logger.Error("platform publish failed after task completed, reverting to failed",
 				zap.Int64("task_id", task.ID),
 				zap.Error(pubErr),

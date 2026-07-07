@@ -125,3 +125,70 @@ func (h *Handler) PipelineChain(c *gin.Context) {
 	}
 	response.Success(c, data)
 }
+
+// GetDecisionQueue GET /owner/decision-queue
+// @Summary      Decision queue
+// @Description  Get paginated decision queue with filtering, sorting, and status summary
+// @Tags         owner
+// @Produce      json
+// @Param        display_status          query  string  false  "Filter by status: waiting_data, ready_for_decision, pending_approval, executing, completed, failed"
+// @Param        min_completeness_score  query  number  false  "Minimum completeness score filter"
+// @Param        min_profit_margin       query  number  false  "Minimum profit margin filter"
+// @Param        platform_id             query  int     false  "Filter by target platform ID"
+// @Param        destination_country     query  string  false  "Filter by destination country"
+// @Param        search                  query  string  false  "Search by title or reason"
+// @Param        sort_by                 query  string  false  "Sort field: completeness_score, profit_margin, estimated_profit, confidence, created_at"
+// @Param        sort_order              query  string  false  "Sort order: asc or desc"
+// @Param        page                    query  int     false  "Page number"
+// @Param        size                    query  int     false  "Page size"
+// @Success      200     {object}  response.Result
+// @Security     BearerAuth
+// @Router       /owner/decision-queue [get]
+func (h *Handler) GetDecisionQueue(c *gin.Context) {
+	filter := &DecisionQueueFilter{
+		DisplayStatus:       c.Query("display_status"),
+		MinCompletenessScore: parseQueryFloat(c.Query("min_completeness_score")),
+		MinProfitMargin:      parseQueryFloat(c.Query("min_profit_margin")),
+		PlatformID:           parseQueryInt(c.Query("platform_id")),
+		DestinationCountry:   c.Query("destination_country"),
+		Search:               c.Query("search"),
+		SortBy:               c.Query("sort_by"),
+		SortOrder:            c.Query("sort_order"),
+	}
+	page := 1
+	if p, err := strconv.Atoi(c.DefaultQuery("page", "1")); err == nil && p > 0 {
+		page = p
+	}
+	size := 20
+	if s, err := strconv.Atoi(c.DefaultQuery("size", "20")); err == nil && s > 0 && s <= 100 {
+		size = s
+	}
+	filter.Page = page
+	filter.Size = size
+
+	items, total, err := h.service.DecisionQueue(filter)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	summary, _ := h.service.DecisionQueueSummary()
+	response.Success(c, gin.H{
+		"items":   items,
+		"total":   total,
+		"page":    page,
+		"size":    size,
+		"summary": summary,
+	})
+}
+
+// parseQueryFloat safely parses a float64 from a query string.
+func parseQueryFloat(s string) float64 {
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
+}
+
+// parseQueryInt safely parses an int64 from a query string.
+func parseQueryInt(s string) int64 {
+	n, _ := strconv.ParseInt(s, 10, 64)
+	return n
+}

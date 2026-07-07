@@ -2,6 +2,8 @@ package owner
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/approval"
@@ -116,6 +118,72 @@ type SuggestionResponse struct {
 	ApprovalStatus string `json:"approval_status"`
 
 	CreatedAt string `json:"created_at"`
+
+	// Decision queue display fields
+	DisplayStatus      string  `json:"display_status"`
+	CandidateStatus    string  `json:"candidate_status"`
+	TargetSalePrice    float64 `json:"target_sale_price"`
+	CompletenessStatus string  `json:"completeness_status"`
+}
+
+// DecisionQueueFilter contains filtering, sorting, and pagination options for the Owner decision queue.
+type DecisionQueueFilter struct {
+	DisplayStatus        string  `json:"display_status"`
+	MinCompletenessScore float64 `json:"min_completeness_score"`
+	MinProfitMargin      float64 `json:"min_profit_margin"`
+	PlatformID           int64   `json:"platform_id"`
+	DestinationCountry   string  `json:"destination_country"`
+	Search               string  `json:"search"`
+	SortBy               string  `json:"sort_by"`
+	SortOrder            string  `json:"sort_order"`
+	Page                 int     `json:"page"`
+	Size                 int     `json:"size"`
+}
+
+// sortedFieldWhitelist prevents SQL injection via SortBy in the decision queue.
+var sortedFieldWhitelist = map[string]bool{
+	"completeness_score": true,
+	"profit_margin":      true,
+	"estimated_profit":   true,
+	"confidence":         true,
+	"created_at":         true,
+}
+
+// computeDisplayStatus determines the lifecycle display status for a decision queue item.
+func computeDisplayStatus(sr *SuggestionResponse) string {
+	// No recommendation yet
+	if sr.ID == 0 {
+		if sr.CompletenessStatus == "complete" {
+			return "ready_for_decision"
+		}
+		return "waiting_data"
+	}
+
+	// Check terminal task statuses first
+	switch sr.TaskStatus {
+	case "executing":
+		return "executing"
+	case "completed":
+		return "completed"
+	case "failed", "rejected":
+		return "failed"
+	}
+
+	// Check feedback to determine stage
+	switch sr.FeedbackStatus {
+	case "adopted":
+		return "pending_approval"
+	case "rejected", "executed":
+		return "completed"
+	case "execution_failed":
+		return "failed"
+	}
+
+	// Feedback pending — use recommendation completeness_score
+	if sr.CompletenessScore >= 50 {
+		return "ready_for_decision"
+	}
+	return "waiting_data"
 }
 
 // Suggestions returns the latest listing recommendations as Owner-facing suggestions.
@@ -458,6 +526,274 @@ func (s *Service) PlatformSyncStatus() ([]map[string]interface{}, error) {
 	for _, v := range platforms {
 		result = append(result, v)
 	}
+	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// DecisionQueue — batch candidate evaluation and Owner decision queue
+// ---------------------------------------------------------------------------
+
+type rawDecisionRow struct {
+	ID                  *int64
+	ProductID           int64
+	ProductTitle        string
+	CompletenessScore   float64
+	ProfitMargin        float64
+	EstimatedProfit     float64
+	Decision            *string
+	Confidence          *float64
+	Reason              string
+	RiskFlags           string
+	FeedbackStatus      string
+	FeedbackNote        string
+	CreatedListingTaskID *int64
+	TaskStatus          string
+	ApprovalID          *int64
+	ApprovalStatus      string
+	CreatedAt           time.Time
+	CandidateStatus     string
+	TargetSalePrice     float64
+	CompletenessStatus  string
+}
+
+// DecisionQueue returns the Owner decision queue with filtering, sorting, and pagination.
+func (s *Service) DecisionQueue(filter *DecisionQueueFilter) ([]SuggestionResponse, int64, error) {
+	if filter == nil {
+		filter = &DecisionQueueFilter{}
+	}
+	if filter.Page <= 0 {
+		filter.Page = 1
+	}
+	if filter.Size <= 0 || filter.Size > 100 {
+		filter.Size = 20
+	}
+
+	// Build SQL query
+	baseSQL := `
+FROM candidate_product cp
+LEFT JOIN listing_recommendation lr ON lr.product_id = cp.id
+    AND lr.id = (SELECT MAX(lr2.id) FROM listing_recommendation lr2 WHERE lr2.product_id = cp.id)
+LEFT JOIN listing_task lt ON lt.id = lr.created_listing_task_id
+LEFT JOIN approval_request ar ON ar.entity_type = 'listing_task' AND ar.entity_id = lr.created_listing_task_id
+WHERE 1=1`
+
+	args := []interface{}{}
+	if filter.MinCompletenessScore > 0 {
+		baseSQL += " AND COALESCE(lr.completeness_score, 0) >= ?"
+		args = append(args, filter.MinCompletenessScore)
+	}
+	if filter.MinProfitMargin > 0 {
+		baseSQL += " AND COALESCE(lr.profit_margin, 0) >= ?"
+		args = append(args, filter.MinProfitMargin)
+	}
+	if filter.PlatformID > 0 {
+		baseSQL += " AND cp.target_platform_id = ?"
+		args = append(args, filter.PlatformID)
+	}
+	if filter.DestinationCountry != "" {
+		baseSQL += " AND cp.destination_country = ?"
+		args = append(args, filter.DestinationCountry)
+	}
+	if filter.Search != "" {
+		like := "%" + filter.Search + "%"
+		baseSQL += " AND (cp.title ILIKE ? OR COALESCE(lr.reason, '') ILIKE ?)"
+		args = append(args, like, like)
+	}
+
+	// Validate and build sort clause (whitelisted to prevent SQL injection)
+	sortField := "created_at"
+	if filter.SortBy != "" && sortedFieldWhitelist[filter.SortBy] {
+		sortField = filter.SortBy
+	}
+	sortOrder := "DESC"
+	if strings.EqualFold(filter.SortOrder, "asc") {
+		sortOrder = "ASC"
+	}
+
+	selectSQL := `SELECT lr.id, cp.id as product_id, cp.title as product_title,
+	COALESCE(lr.completeness_score, 0) as completeness_score,
+	COALESCE(lr.profit_margin, 0) as profit_margin,
+	COALESCE(lr.estimated_profit, 0) as estimated_profit,
+	lr.decision, lr.confidence,
+	COALESCE(lr.reason, '') as reason,
+	COALESCE(lr.risk_flags, '') as risk_flags,
+	COALESCE(lr.feedback_status, '') as feedback_status,
+	COALESCE(lr.feedback_note, '') as feedback_note,
+	lr.created_listing_task_id,
+	COALESCE(lt.status, '') as task_status,
+	ar.id as approval_id,
+	COALESCE(ar.status, '') as approval_status,
+	COALESCE(lr.created_at, cp.created_at) as created_at,
+	cp.status as candidate_status,
+	cp.target_sale_price,
+	cp.completeness_status
+	` + baseSQL + ` ORDER BY ` + sortField + ` ` + sortOrder
+
+	var rows []rawDecisionRow
+	if err := s.db.Raw(selectSQL, args...).Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Build items with computed display status
+	type itemWithStatus struct {
+		item          SuggestionResponse
+		displayStatus string
+	}
+	var allItems []itemWithStatus
+
+	for _, row := range rows {
+		riskLevel := "low"
+		if row.Decision != nil && *row.Decision == "skip" {
+			riskLevel = "high"
+		} else if row.Confidence != nil && *row.Confidence < 0.6 {
+			riskLevel = "medium"
+		}
+
+		decision := ""
+		if row.Decision != nil {
+			decision = *row.Decision
+		}
+		confidence := 0.0
+		if row.Confidence != nil {
+			confidence = *row.Confidence
+		}
+
+		sr := SuggestionResponse{
+			ProductID:          row.ProductID,
+			ProductTitle:       row.ProductTitle,
+			CompletenessScore:  row.CompletenessScore,
+			ProfitMargin:       row.ProfitMargin,
+			EstimatedProfit:    row.EstimatedProfit,
+			Decision:           decision,
+			Confidence:         confidence,
+			Reason:             row.Reason,
+			RiskFlags:          row.RiskFlags,
+			RiskLevel:          riskLevel,
+			FeedbackStatus:     row.FeedbackStatus,
+			FeedbackNote:       row.FeedbackNote,
+			ListingTaskID:      row.CreatedListingTaskID,
+			TaskStatus:         row.TaskStatus,
+			ApprovalID:         row.ApprovalID,
+			ApprovalStatus:     row.ApprovalStatus,
+			CreatedAt:          row.CreatedAt.Format("2006-01-02 15:04:05"),
+			CandidateStatus:    row.CandidateStatus,
+			TargetSalePrice:    row.TargetSalePrice,
+			CompletenessStatus: row.CompletenessStatus,
+		}
+		if row.ID != nil {
+			sr.ID = *row.ID
+		}
+		sr.DisplayStatus = computeDisplayStatus(&sr)
+
+		allItems = append(allItems, itemWithStatus{item: sr, displayStatus: sr.DisplayStatus})
+	}
+
+	// Filter by display status if specified
+	var filtered []itemWithStatus
+	for _, iws := range allItems {
+		if filter.DisplayStatus == "" || iws.displayStatus == filter.DisplayStatus {
+			filtered = append(filtered, iws)
+		}
+	}
+	total := int64(len(filtered))
+
+	// Sort in Go (sortField is whitelisted, no injection risk)
+	sort.Slice(filtered, func(i, j int) bool {
+		a, b := filtered[i].item, filtered[j].item
+		var less bool
+		switch sortField {
+		case "completeness_score":
+			less = a.CompletenessScore < b.CompletenessScore
+		case "profit_margin":
+			less = a.ProfitMargin < b.ProfitMargin
+		case "estimated_profit":
+			less = a.EstimatedProfit < b.EstimatedProfit
+		case "confidence":
+			less = a.Confidence < b.Confidence
+		default:
+			less = a.ID < b.ID
+		}
+		if sortOrder == "DESC" {
+			return !less
+		}
+		return less
+	})
+
+	// Paginate
+	offset := (filter.Page - 1) * filter.Size
+	end := offset + filter.Size
+	if offset >= len(filtered) {
+		return []SuggestionResponse{}, total, nil
+	}
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	paged := filtered[offset:end]
+
+	result := make([]SuggestionResponse, len(paged))
+	for i, iws := range paged {
+		result[i] = iws.item
+	}
+	return result, total, nil
+}
+
+// DecisionQueueSummary returns summary counts for each decision queue status category.
+func (s *Service) DecisionQueueSummary() (map[string]int64, error) {
+	result := map[string]int64{
+		"waiting_for_data_count":     0,
+		"ready_for_decision_count":   0,
+		"pending_approval_count":     0,
+		"executing_count":            0,
+		"completed_count":            0,
+		"failed_count":               0,
+	}
+
+	// waiting_for_data: no completeness check or completeness < 50
+	var waitingForData int64
+	s.db.Raw(`
+		SELECT COUNT(*) FROM candidate_product cp
+		LEFT JOIN listing_recommendation lr ON lr.product_id = cp.id
+			AND lr.id = (SELECT MAX(id) FROM listing_recommendation WHERE product_id = cp.id)
+		WHERE (lr.id IS NULL AND (cp.completeness_status != 'complete' OR cp.completeness_status IS NULL))
+		   OR (lr.id IS NOT NULL AND lr.completeness_score < 50 AND lr.feedback_status = 'pending')
+	`).Scan(&waitingForData)
+	result["waiting_for_data_count"] = waitingForData
+
+	// ready_for_decision: completeness >= 50 and pending feedback
+	var readyForDecision int64
+	s.db.Raw(`
+		SELECT COUNT(*) FROM candidate_product cp
+		LEFT JOIN listing_recommendation lr ON lr.product_id = cp.id
+			AND lr.id = (SELECT MAX(id) FROM listing_recommendation WHERE product_id = cp.id)
+		WHERE ((lr.id IS NULL AND cp.completeness_status = 'complete')
+		   OR (lr.id IS NOT NULL AND lr.completeness_score >= 50 AND lr.feedback_status = 'pending'))
+	`).Scan(&readyForDecision)
+	result["ready_for_decision_count"] = readyForDecision
+
+	// pending_approval: feedback adopted, listing task blocked/pending_approval
+	var pendingApproval int64
+	s.db.Raw(`
+		SELECT COUNT(*) FROM listing_recommendation lr
+		JOIN listing_task lt ON lt.id = lr.created_listing_task_id
+		WHERE lr.feedback_status = 'adopted' AND lt.status IN ('blocked', 'pending_approval')
+	`).Scan(&pendingApproval)
+	result["pending_approval_count"] = pendingApproval
+
+	// executing
+	var executing int64
+	s.db.Raw(`SELECT COUNT(*) FROM listing_task WHERE status = 'executing'`).Scan(&executing)
+	result["executing_count"] = executing
+
+	// completed
+	var completed int64
+	s.db.Raw(`SELECT COUNT(*) FROM listing_task WHERE status = 'completed'`).Scan(&completed)
+	result["completed_count"] = completed
+
+	// failed / rejected
+	var failed int64
+	s.db.Raw(`SELECT COUNT(*) FROM listing_task WHERE status IN ('failed', 'rejected')`).Scan(&failed)
+	result["failed_count"] = failed
+
 	return result, nil
 }
 

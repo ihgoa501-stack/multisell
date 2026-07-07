@@ -16,5 +16,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, prismS
 	{
 		r.GET("/recommendations", h.GetRecommendations)
 		r.POST("/evaluate/:productId", h.Evaluate)
+	r.POST("/batch-evaluate", h.BatchEvaluate)
 	}
 }
