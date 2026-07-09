@@ -1,6 +1,7 @@
 package listingtask
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -912,5 +913,121 @@ func TestService_ReviewTask_WithActualProfit(t *testing.T) {
 	}
 	if *review.MarginActual != 0.225 {
 		t.Fatalf("margin_actual = %f (want 0.225)", *review.MarginActual)
+	}
+}
+
+// TestService_ExecuteTask_DryRunFromDecisionSnapshot verifies that when DecisionSnapshot
+// contains mode="dry_run", ExecuteTask enters the dry-run path (no real platform publish).
+func TestService_ExecuteTask_DryRunFromDecisionSnapshot(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+
+	// Create a listing task with DecisionSnapshot containing mode=dry_run.
+	ds := json.RawMessage(`{"mode":"dry_run","completeness_score":90}`)
+	task := ListingTask{
+		ProductID:        20,
+		PlatformID:       1,
+		Status:           "approved",
+		CreatedBy:        "A8",
+		DecisionSnapshot: ds,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	item := ListingTaskItem{TaskID: task.ID, ProductID: 20, PlatformID: 1, Status: "pending"}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	// Create approved approval.
+	req := approval.ApprovalRequest{
+		ProductID:   20,
+		RequestType: "listing_task",
+		Requester:   "A8",
+		Status:      "approved",
+		EntityType:  "listing_task",
+		EntityID:    task.ID,
+		RiskLevel:   "high",
+	}
+	if err := db.Create(&req).Error; err != nil {
+		t.Fatalf("create approval: %v", err)
+	}
+	db.Model(&task).Update("approval_id", req.ID)
+
+	updated, err := svc.ExecuteTask(task.ID, "A8")
+	if err != nil {
+		t.Fatalf("ExecuteTask: %v", err)
+	}
+	if updated.Status != "completed" {
+		t.Fatalf("status = %s, want completed", updated.Status)
+	}
+	// Verify items were completed (dry-run path marks items completed).
+	var items []ListingTaskItem
+	db.Where("task_id = ?", task.ID).Find(&items)
+	for _, it := range items {
+		if it.Status != "completed" {
+			t.Fatalf("item %d status = %s, want completed", it.ID, it.Status)
+		}
+		// Dry-run result should contain dry_run=true.
+		var result map[string]interface{}
+		if err := json.Unmarshal(it.Result, &result); err != nil {
+			t.Fatalf("unmarshal item result: %v", err)
+		}
+		dryRun, ok := result["dry_run"].(bool)
+		if !ok || !dryRun {
+			t.Fatalf("item %d result does not have dry_run=true: %v", it.ID, result)
+		}
+	}
+}
+
+// TestService_ExecuteTask_NonDryRunSkipsDryRunPath verifies that without mode=dry_run
+// in DecisionSnapshot, ExecuteTask goes through the normal path (requires publishHook).
+func TestService_ExecuteTask_NonDryRunSkipsDryRunPath(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	var publishCalled bool
+	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc.publishHook = func(taskID int64, mode ExecutionMode) error {
+		publishCalled = true
+		return nil
+	}
+
+	// Task without dry_run mode — DecisionSnapshot is nil.
+	task := ListingTask{
+		ProductID:  21,
+		PlatformID: 1,
+		Status:     "approved",
+		CreatedBy:  "A8",
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	item := ListingTaskItem{TaskID: task.ID, ProductID: 21, PlatformID: 1, Status: "pending"}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	req := approval.ApprovalRequest{
+		ProductID:   21,
+		RequestType: "listing_task",
+		Requester:   "A8",
+		Status:      "approved",
+		EntityType:  "listing_task",
+		EntityID:    task.ID,
+		RiskLevel:   "high",
+	}
+	if err := db.Create(&req).Error; err != nil {
+		t.Fatalf("create approval: %v", err)
+	}
+	db.Model(&task).Update("approval_id", req.ID)
+
+	_, err := svc.ExecuteTask(task.ID, "A8")
+	if err != nil {
+		t.Fatalf("ExecuteTask: %v", err)
+	}
+	// Without dry-run mode and with publishHook set, publishHook should have been called.
+	if !publishCalled {
+		t.Fatal("expected publishHook to be called (non-dry-run mode)")
 	}
 }

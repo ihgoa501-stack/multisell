@@ -88,7 +88,7 @@ function EvdSection({ data }: { data: Record<string, unknown> }) {
 function ReviewSection({ productId }: { productId: string }) {
   const { data, isLoading } = useQuery<Record<string, unknown>>({
     queryKey: ['evidence-trace-summary', productId],
-    queryFn: async () => (await apiClient.get(`/v1/product-hub/${productId}/evidence`)).data,
+    queryFn: async () => (await apiClient.get<Record<string, unknown>>(`/v1/product-hub/${productId}/evidence`)).data ?? {},
     enabled: !!productId,
   });
   if (isLoading) return null;
@@ -112,7 +112,10 @@ function ReviewSection({ productId }: { productId: string }) {
 function PlatformComparisonSection({ productId }: { productId: string }) {
   const { data, isLoading } = useQuery<Array<Record<string, unknown>>>({
     queryKey: ['platform-comparison', productId],
-    queryFn: async () => (await apiClient.get(`/v1/listing/products/${productId}/platform-comparison`)).data,
+    queryFn: async () => {
+      const res = await apiClient.get<{ items: Array<Record<string, unknown>> }>(`/v1/listing/products/${productId}/platform-comparison`);
+      return res.data?.items ?? [];
+    },
     enabled: !!productId,
   });
   if (isLoading || !data || (data as Array<unknown>).length === 0) return null;
@@ -150,7 +153,7 @@ export default function ProductHubDetailPage() {
 
   const { data: evd, isLoading: evdLoading } = useQuery<Record<string, unknown>>({
     queryKey: ['evidence-trace', id],
-    queryFn: async () => (await apiClient.get(`/v1/product-hub/${id}/evidence`)).data,
+    queryFn: async () => (await apiClient.get<Record<string, unknown>>(`/v1/product-hub/${id}/evidence`)).data ?? {},
     enabled: !!id,
   });
 

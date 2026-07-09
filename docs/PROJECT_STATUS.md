@@ -5,8 +5,8 @@
 更新时间：2026-07-07
 
 > 2026-07-07 direction note:
-> 商品出海决策与执行层 Phases 2-6 已交付。Phase 1 之上新增：ProductHub 证据链、Execution Mode 统一与 Sandbox 支持、批量评估与 Owner 决策队列、执行结果回流与复盘、多平台对比。
-> 详见 [features/product-export-decision-execution-layer.md](features/product-export-decision-execution-layer.md)。
+> 商品出海决策与执行层 Phase 1 + Phases 2-6 已交付。Phase 1 修复审批-任务-执行断点并打通单商品 dry-run 闭环；Phase 2-6 在此基础上新增 ProductHub 证据链、Execution Mode 统一与 Sandbox 支持、批量评估与 Owner 决策队列、执行结果回流与复盘、多平台对比。
+> 详见 [features/phase1-dry-run-closed-loop-spec.md](features/phase1-dry-run-closed-loop-spec.md) 和 [features/product-export-decision-execution-layer.md](features/product-export-decision-execution-layer.md)。
 
 ## 2026-07-07 商品出海决策与执行层 Phase 2-6 交付
 
@@ -44,6 +44,7 @@
 | P0 | 统一执行门禁 `/ai/actions/:id/execute` | ✅ 已完成 | ExecuteAction 审计写入 + 幂等守卫 + RBAC 权限路由 |
 | P0 | 审批/执行绑定登录用户和 RBAC | ✅ 已完成 | ActionDecisionInput 移除 operator 字段；approve/execute/reject 路由需 `ai.action` 权限 |
 | P1 | 外部平台写 dry-run/sandbox 模式 | ✅ 已完成 | ExecutionMode 类型 + context 传递 + PublishToOzon dry-run 守卫 |
+| P1 | 商品出海决策与执行层 Phase 1 | ✅ 已完成 (2026-07-07) | 修复5个断点: approval topic统一→事件写回approval_id+状态→dry_run mode传播→防止重复审批→publishHook门禁; PR #318 |
 | P1 | 审计日志敏感字段脱敏 | ✅ 已完成 | `operationlog.RedactSensitive` 正则脱敏；Log 和 LogStructured 自动应用 |
 | P1 | 前端高风险操作确认 UX | ✅ 已完成 | `HighRiskConfirmDialog` 组件含风险等级/目标/前后值/环境模式/审计去向/回滚说明 |
 
