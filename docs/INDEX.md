@@ -10,10 +10,12 @@
 | 文档 | 说明 |
 |------|------|
 | [入门教程](tutorial-getting-started.md) | 🆕 从零搭建开发环境到创建第一个商品——新人首选 |
+| [端到端教程](tutorial-first-workflow.md) | 🆕 从安装到运行业务闭环，30 分钟端到端体验 |
 | [API 快速参考](reference-api-quick.md) | 🆕 路由、认证、响应格式、中间件栈速查 |
 | [模块目录](reference-module-catalog.md) | 🆕 全部 60+ 后端领域模块一览 |
 | [配置参考](reference-configuration.md) | 🆕 config.yaml + 环境变量完整说明 |
 | [Agent Pipeline 解释](explanation-agent-pipeline.md) | 🆕 Agent 间如何通过 EventBus 通信和协作 |
+| [AI & Agent 系统参考](reference-ai-agent-system.md) | 🆕 LLM 编排、Agent 注册表、AgentOS 控制台、Trace 系统 |
 
 ## 🛠️ 操作指南 (How-to)
 
@@ -25,6 +27,14 @@
 | [运行测试与验证](howto-test-and-verify.md) | 🆕 Go 测试、前端测试、E2E |
 | [配置与部署](howto-deploy.md) | 🆕 Docker 生产部署、Nginx/Caddy |
 | [使用 WebSocket 流式更新](howto-websocket.md) | 🆕 连接 /ws 端点接收实时数据 |
+| [执行第一个业务闭环](howto-first-business-loop.md) | 🆕 候选商品→完整度→利润→审批→上架的操作指南 |
+
+## 🧠 解释 (Explanation)
+
+| 文档 | 说明 |
+|------|------|
+| [两个核心业务闭环](explanation-business-loops.md) | 🆕 商品→上架与订单→履约→结算两个主循环的设计 |
+| [领域模块架构](explanation-domain-architecture.md) | 🆕 60+ 模块的组织方式、协作模式和依赖关系 |
 
 ## 📋 项目概览
 
