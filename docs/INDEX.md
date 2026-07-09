@@ -54,10 +54,15 @@
 | 文档 | 当前用途 |
 |------|----------|
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
+| [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | 🆕 未来半年商品出海业务层开发总纲：目标、阶段、架构和验收标准 |
+| [验收门禁](ACCEPTANCE_GATE.md) | 🆕 Dev Done / Test Green / Business Verified / Beta Accepted 的完成定义和证据要求 |
+| [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |
+| [已知问题台账](KNOWN_ISSUES.md) | 🆕 红灯问题 owner / deadline / impact 跟踪，防止长期合理化 |
 | [实现路线图](implementation-roadmap.md) | 🆕 19 个 Open Issue × 6 轮迭代的整体路线图 |
 | [Iteration 1 Spec: 安全速赢 + 数据地基](specs/iteration-1-security-quick-wins.md) | 🆕 #280 JWT_SECRET / #281 DB备份 / #130 汇率硬编码 |
 | [项目状态](PROJECT_STATUS.md) | 当前事实快照、当前验证状态、历史更新入口 |
 | [模块目录](reference-module-catalog.md) | 模块、API 路由、前端页面清单 |
+| [Agent 项目病历归档 2026-07-06](archive/AGENT_PROJECT_MEDICAL_RECORD_2026-07-06.md) | 从 AGENTS.md 移出的历史快照；不作为当前优先级或执行指令 |
 | [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试报告 |
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 前端历史测试报告 |
 
@@ -96,6 +101,9 @@
 | [Agent 开发协议](governance/AGENT_DEVELOPMENT_PROTOCOL.md) | 多 Agent 角色、开工检查、review、QA、交接规则 |
 | [Kernel 契约](governance/KERNEL_CONTRACTS.md) | EventBus、Command、Scheduler、ToolBridge、Approval、Audit 等内核契约 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
+| [验收门禁](ACCEPTANCE_GATE.md) | Dev Done / Test Green / Business Verified / Beta Accepted 的统一完成定义 |
+| [验收矩阵](ACCEPTANCE_MATRIX.md) | 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |
+| [已知问题台账](KNOWN_ISSUES.md) | 已知失败项 owner / deadline / impact 跟踪 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
@@ -113,8 +121,13 @@
 | [物流费率引擎指南](logistics-guide.md) | Logistics Rate Engine：四种定价模式、YAML 配置、A10 接线 |
 | [ToolBridge 工具桥接](toolbridge-guide.md) | 插件驱动工具执行、添加 Driver、降级策略 |
 | [Chrome 扩展指南](chrome-extension-guide.md) | 凌镜选品助手扩展：安装、WebSocket 协议、内容脚本 |
-| [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试状态、已知问题和覆盖面 |
+| [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试状态、已知问题 and 覆盖面 |
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 `frontend-next` build/test/lint 历史状态 |
+| [AI-Native 统一开发框架总览](guides/ai-native-framework-overview.md) | 🆕 AI 程序员开发规范入口，概述系统机制 |
+| [ARCS 上下文同步指南](guides/ai-native-arcs-guide.md) | 🆕 解决 AI 记忆 amnesia 的 manifests 与交接账本规范 |
+| [沙盒 staging 与 E2E 测试指南](guides/ai-native-sandbox-guide.md) | 🆕 Docker 容器沙盒与 Playwright E2E 测试门禁规则 |
+| [状态模拟器与网络阻回拦截](guides/ai-native-mocking-guide.md) | 🆕 Stateful Mock DB 设计与 Fail-Safe 网络防火墙拦截规则 |
+| [AI 研发死循环监控与熔断](guides/ai-native-loop-prevention-guide.md) | 🆕 归一化报错哈希、Ping-Pong 震荡与 Stagnation 熔断算法 |
 
 | [API 清单](api-inventory.md) | 🆕 全部 71+ 后端模块 API 路由、方法、参数清单 |
 | [Swagger API 文档](http://localhost:8080/swagger/index.html) | 🆕 交互式 OpenAPI 文档 — `GET /swagger/index.html` |
@@ -172,6 +185,7 @@
 
 > 新功能需求请添加到 `docs/features/` 目录，使用标准模板。
 
+- [商品出海决策与执行层](features/product-export-decision-execution-layer.md) — 未来半年商品出海业务层开发总纲
 - [功能需求模板](features/TEMPLATE.md)
 
 ---
