@@ -157,6 +157,12 @@ export default function HighRiskConfirmDialog({
           <Tag color={modeColors[environmentMode]}>{modeLabels[environmentMode]}</Tag>
         </Descriptions.Item>
 
+        <Descriptions.Item label="审批要求">
+          <Tag color={requiresApproval ? 'orange' : 'green'}>
+            {requiresApproval ? '需要审批' : '不需要审批'}
+          </Tag>
+        </Descriptions.Item>
+
         {expectedConsequence && (
           <Descriptions.Item label="预期后果">{expectedConsequence}</Descriptions.Item>
         )}

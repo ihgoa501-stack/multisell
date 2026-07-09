@@ -166,6 +166,48 @@ func (h *Handler) TestConnection(c *gin.Context) {
 	response.Success(c, r)
 }
 
+// GetMode GET /platform-integrations/:id/mode
+func (h *Handler) GetMode(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	mode, err := h.service.GetMode(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "integration account not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"execution_mode": mode})
+}
+
+// UpdateMode PUT /platform-integrations/:id/mode
+func (h *Handler) UpdateMode(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		ExecutionMode int8 `json:"execution_mode" binding:"gte=0,lte=3"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.service.UpdateMode(id, in.ExecutionMode); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "integration account not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"execution_mode": in.ExecutionMode})
+}
+
 // Sync POST /platform-integrations/:id/sync
 // @Summary      Sync integration
 // @Description  Trigger a sync of orders and products from the platform
@@ -225,7 +267,20 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := h.service.PublishToOzon(c.Request.Context(), &in)
+	mode, err := h.service.GetMode(in.AccountID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "integration account not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx := WithExecutionMode(c.Request.Context(), ExecutionMode(mode))
+	if in.ApprovalID != nil {
+		ctx = WithApprovalID(ctx, *in.ApprovalID)
+	}
+	result, err := h.service.PublishToOzon(ctx, &in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return

@@ -195,6 +195,10 @@ export default function CandidatesPage() {
   const [completenessResult, setCompletenessResult] = useState<CompletenessCheckResult | null>(null);
   const [completenessLoading, setCompletenessLoading] = useState(false);
   const [completenessFilter, setCompletenessFilter] = useState<string>('');
+  const [platformFilter, setPlatformFilter] = useState<string>('');
+  const [countryFilter, setCountryFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('');
   const [fillingField, setFillingField] = useState<string | null>(null);
   const [fillValues, setFillValues] = useState<Record<string, string>>({});
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
@@ -204,6 +208,10 @@ export default function CandidatesPage() {
     try {
       const params: Record<string, string> = { page: String(p), size: String(ps) };
       if (completenessFilter) params.completeness_status = completenessFilter;
+      if (platformFilter) params.target_platform_id = platformFilter;
+      if (countryFilter) params.destination_country = countryFilter;
+      if (statusFilter) params.status = statusFilter;
+      if (sortBy) params.sort_by = sortBy;
       const res = await apiClient.get<CandidateProduct[]>('/v1/candidates', params);
       const body = res as unknown as { data: CandidateProduct[]; total: number };
       setData(body.data || []);
@@ -213,7 +221,7 @@ export default function CandidatesPage() {
     } finally {
       setLoading(false);
     }
-  }, [completenessFilter]);
+  }, [completenessFilter, platformFilter, countryFilter, statusFilter, sortBy]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -258,24 +266,6 @@ export default function CandidatesPage() {
     }
   };
 
-  const refreshDetail = useCallback(async (productId: number) => {
-    try {
-      const [detailRes, completenessRes] = await Promise.all([
-        apiClient.get<CandidateDetail>(`/v1/candidates/${productId}`),
-        apiClient.post<CompletenessCheckResult>(`/v1/completeness/check/${productId}`),
-      ]);
-      if (detailRes.data) {
-        setDetailProduct(detailRes.data);
-        setDetailMissingFields(detailRes.data.missing_fields || []);
-      }
-      if (completenessRes.data) {
-        setCompletenessResult(completenessRes.data);
-      }
-    } catch {
-      // partial failure — degrade gracefully
-    }
-  }, []);
-
   const handleOpenDetail = useCallback(async (product: CandidateProduct) => {
     setDetailProduct(product);
     setDetailMissingFields([]);
@@ -319,8 +309,9 @@ export default function CandidatesPage() {
       });
       if (res.code === 0 && res.data) {
         message.success(`"${FIELD_LABELS[field] || field}" 已更新`);
-        setDetailProduct(res.data as unknown as CandidateProduct);
-        setDetailMissingFields((res.data as any).missing_fields || []);
+        const updated = res.data as unknown as CandidateDetail;
+        setDetailProduct(updated);
+        setDetailMissingFields(updated.missing_fields || []);
         setFillingField(null);
         setFillValues((prev) => ({ ...prev, [field]: '' }));
       } else {
@@ -339,8 +330,9 @@ export default function CandidatesPage() {
       const res = await apiClient.post(`/v1/candidates/${productId}/skip-field`, { field });
       if (res.code === 0 && res.data) {
         message.success(`"${FIELD_LABELS[field] || field}" 已标记为无法补齐`);
-        setDetailProduct(res.data as unknown as CandidateProduct);
-        setDetailMissingFields((res.data as any).missing_fields || []);
+        const updated = res.data as unknown as CandidateDetail;
+        setDetailProduct(updated);
+        setDetailMissingFields(updated.missing_fields || []);
       } else {
         message.error(res.message || '操作失败');
       }
@@ -357,8 +349,9 @@ export default function CandidatesPage() {
       const res = await apiClient.post(`/v1/candidates/${productId}/rescrape`);
       if (res.code === 0 && res.data) {
         message.success('已尝试重新采集');
-        setDetailProduct(res.data as unknown as CandidateProduct);
-        setDetailMissingFields((res.data as any).missing_fields || []);
+        const updated = res.data as unknown as CandidateDetail;
+        setDetailProduct(updated);
+        setDetailMissingFields(updated.missing_fields || []);
       } else {
         message.error(res.message || '重新采集失败');
       }
@@ -397,6 +390,21 @@ export default function CandidatesPage() {
         ) : (
           <Tag>未检查</Tag>
         ),
+    },
+    {
+      title: '就绪度',
+      dataIndex: 'completeness_status',
+      width: 70,
+      render: (s: string) => {
+        const m: Record<string, { color: 'success' | 'error' | 'processing' | 'warning' | 'default'; label: string }> = {
+          incomplete: { color: 'error', label: '低' },
+          needs_review: { color: 'warning', label: '中' },
+          research_ready: { color: 'processing', label: '高' },
+          listing_ready: { color: 'success', label: '就绪' },
+        };
+        const r = m[s] || { color: 'default', label: s || '-' };
+        return <Badge status={r.color} text={r.label} />;
+      },
     },
     {
       title: '采购价',
@@ -544,26 +552,47 @@ export default function CandidatesPage() {
       {/* Table */}
       <Card
         size="small"
-        styles={{ body: { padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 12 } }}
+        styles={{ body: { padding: '8px 20px' } }}
         style={{ marginBottom: 'var(--space-sm)' }}
       >
-        <div style={{ flex: 1 }} />
-        <Select
-          allowClear
-          placeholder="按完整度筛选"
-          style={{ width: 160 }}
-          value={completenessFilter || undefined}
-          onChange={(val) => {
-            setCompletenessFilter(val || '');
-            setPage(1);
-          }}
-          options={[
-            { value: 'incomplete', label: '不完整' },
-            { value: 'needs_review', label: '待补充' },
-            { value: 'research_ready', label: '可调研' },
-            { value: 'listing_ready', label: '可上架' },
-          ]}
-        />
+        <Space wrap>
+          <Select allowClear placeholder="按完整度" style={{ width: 130 }} value={completenessFilter || undefined}
+            onChange={(val) => { setCompletenessFilter(val || ''); setPage(1); }}
+            options={[
+              { value: 'incomplete', label: '不完整' },
+              { value: 'needs_review', label: '待补充' },
+              { value: 'research_ready', label: '可调研' },
+              { value: 'listing_ready', label: '可上架' },
+            ]}
+          />
+          <Select allowClear placeholder="目标平台" style={{ width: 120 }} value={platformFilter || undefined}
+            onChange={(val) => { setPlatformFilter(val || ''); setPage(1); }}
+            options={[
+              { value: '1', label: 'Ozon' },
+              { value: '2', label: 'Shopee' },
+              { value: '3', label: 'Lazada' },
+            ]}
+          />
+          <Input placeholder="目的国" style={{ width: 100 }} value={countryFilter}
+            onChange={(e) => { setCountryFilter(e.target.value); setPage(1); }}
+          />
+          <Select allowClear placeholder="状态" style={{ width: 110 }} value={statusFilter || undefined}
+            onChange={(val) => { setStatusFilter(val || ''); setPage(1); }}
+            options={[
+              { value: 'draft', label: '草稿' },
+              { value: 'in_review', label: '审核中' },
+              { value: 'approved', label: '已通过' },
+              { value: 'rejected', label: '已拒绝' },
+            ]}
+          />
+          <Select allowClear placeholder="排序" style={{ width: 130 }} value={sortBy || undefined} onChange={(val) => setSortBy(val || '')}
+            options={[
+              { value: 'created_at_desc', label: '最新优先' },
+              { value: 'created_at_asc', label: '最早优先' },
+              { value: 'completeness_desc', label: '完整度高优先' },
+            ]}
+          />
+        </Space>
       </Card>
       <Card size="small" styles={{ body: { padding: 0 } }}>
         <Table<CandidateProduct>

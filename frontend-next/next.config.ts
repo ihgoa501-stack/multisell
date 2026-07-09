@@ -3,6 +3,9 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  turbopack: {
+    root: process.cwd(),
+  },
   async rewrites() {
     return [
       {
@@ -17,4 +20,10 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig);
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
+
+export default sentryAuthToken
+  ? withSentryConfig(nextConfig, {
+      authToken: sentryAuthToken,
+    })
+  : nextConfig;

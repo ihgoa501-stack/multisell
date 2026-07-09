@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react';
-
 export interface WorkItemDetail {
   id: number;
   title: string;

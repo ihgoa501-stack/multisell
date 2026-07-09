@@ -66,6 +66,8 @@ func setupRouter(svc *Service) *gin.Engine {
 	g.PUT("/platform-integrations/:id", h.Update)
 	g.DELETE("/platform-integrations/:id", h.Delete)
 	g.POST("/platform-integrations/:id/test", h.TestConnection)
+	g.GET("/platform-integrations/:id/mode", h.GetMode)
+	g.PUT("/platform-integrations/:id/mode", h.UpdateMode)
 	g.POST("/platform-integrations/:id/sync", h.Sync)
 	g.GET("/platform-integrations/:id/categories", h.ListCategories)
 	g.POST("/platform-integrations/:id/categories", h.CreateCategory)
@@ -1205,14 +1207,24 @@ func TestCheckWriteMode_DryRun_ReturnsMockResult(t *testing.T) {
 		t.Errorf("PlatformProductID = %q, want dry-run-simulated", result.PlatformProductID)
 	}
 
-	// With explicit production mode: returns nil (proceed with write).
+	// With explicit production mode and no approval: blocks.
 	prodCtx := WithExecutionMode(context.Background(), ExecutionModeProduction)
 	result, err = svc.checkWriteMode(prodCtx, "test_op", "input")
-	if err != nil {
-		t.Fatalf("checkWriteMode production: %v", err)
+	if err == nil {
+		t.Fatal("expected production mode without approval to fail")
 	}
 	if result != nil {
-		t.Fatalf("expected nil result for production mode, got %+v", result)
+		t.Fatalf("expected nil result for blocked production mode, got %+v", result)
+	}
+
+	// With explicit production mode and approval: returns nil (proceed with write).
+	prodCtx = WithApprovalID(prodCtx, 42)
+	result, err = svc.checkWriteMode(prodCtx, "test_op", "input")
+	if err != nil {
+		t.Fatalf("checkWriteMode production with approval: %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for approved production mode, got %+v", result)
 	}
 
 	// With dry-run mode explicitly set: returns mock PublishResult.
@@ -1243,19 +1255,46 @@ func TestExecutionModeApprovalRequired(t *testing.T) {
 		t.Errorf("String = %q, want %q", mode.String(), "approval_required")
 	}
 
-	// ModeApprovalRequired allows writes (does not block).
 	if !mode.IsWriteAllowed() {
 		t.Error("IsWriteAllowed: expected true for approval_required")
 	}
 
-	// checkWriteMode returns nil (proceed with write) for approval_required.
 	svc := newTestDB(t)
 	result, err := svc.checkWriteMode(ctx, "test_op", "input")
-	if err != nil {
-		t.Fatalf("checkWriteMode: %v", err)
+	if err == nil {
+		t.Fatal("expected approval_required without approval to fail")
 	}
 	if result != nil {
-		t.Fatalf("expected nil result for approval_required, got %+v", result)
+		t.Fatalf("expected nil result for blocked approval_required, got %+v", result)
+	}
+
+	ctx = WithApprovalID(ctx, 99)
+	result, err = svc.checkWriteMode(ctx, "test_op", "input")
+	if err != nil {
+		t.Fatalf("checkWriteMode with approval: %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for approved approval_required, got %+v", result)
+	}
+}
+
+func TestApprovalIDContext(t *testing.T) {
+	ctx := WithApprovalID(context.Background(), 123)
+	id, ok := ApprovalIDFromCtx(ctx)
+	if !ok || id != 123 {
+		t.Fatalf("ApprovalIDFromCtx = %d, %v; want 123, true", id, ok)
+	}
+}
+
+func TestCheckWriteMode_UnknownMode_Blocked(t *testing.T) {
+	svc := newTestDB(t)
+	ctx := WithExecutionMode(context.Background(), ExecutionMode(99))
+	result, err := svc.checkWriteMode(ctx, "test_op", "input")
+	if err == nil {
+		t.Fatal("expected unknown mode to fail")
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for unknown mode, got %+v", result)
 	}
 }
 

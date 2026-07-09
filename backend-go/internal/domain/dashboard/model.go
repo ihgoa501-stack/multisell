@@ -17,6 +17,13 @@ type DashboardOverview struct {
 	MonthRevenue          float64          `json:"month_revenue"`
 	MonthCost             float64          `json:"month_cost"`
 
+	// M6.1 overview fields
+	TodaySales       float64      `json:"today_sales"`
+	PendingApprovals int64        `json:"pending_approvals"`
+	AnomalyCount     int64        `json:"anomaly_count"`
+	AgentSuggestions int64        `json:"agent_suggestions"`
+	RecentAlerts     []AlertBrief `json:"recent_alerts"`
+
 	// Platform connections summary
 	PlatformConnections []PlatformConnectionStatus `json:"platform_connections"`
 	// Agent status summary
@@ -137,4 +144,12 @@ type UrgentConversationBrief struct {
 	Priority      string  `json:"priority"`
 	Platform      string  `json:"platform"`
 	LastMessageAt *string `json:"last_message_at,omitempty"`
+}
+
+// AlertBrief is a recent alert/exception entry for the dashboard overview.
+type AlertBrief struct {
+	ID        int64  `json:"id"`
+	Severity  string `json:"severity"`
+	Title     string `json:"title"`
+	CreatedAt string `json:"created_at"`
 }

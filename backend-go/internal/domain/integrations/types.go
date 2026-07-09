@@ -81,15 +81,15 @@ type FetchOrdersInput struct {
 
 // PlatformOrder represents an order fetched from a platform.
 type PlatformOrder struct {
-	OrderSN        string              `json:"order_sn"`
-	Status         string              `json:"status"`
-	TotalAmount    string              `json:"total_amount"`
-	ShippingFee    string              `json:"shipping_fee"`
-	PaidAt         string              `json:"paid_at"`
-	RecipientName  string              `json:"recipient_name"`
-	RecipientPhone string              `json:"recipient_phone"`
-	ShippingAddress string             `json:"shipping_address"`
-	Items          []PlatformOrderItem `json:"items"`
+	OrderSN         string              `json:"order_sn"`
+	Status          string              `json:"status"`
+	TotalAmount     string              `json:"total_amount"`
+	ShippingFee     string              `json:"shipping_fee"`
+	PaidAt          string              `json:"paid_at"`
+	RecipientName   string              `json:"recipient_name"`
+	RecipientPhone  string              `json:"recipient_phone"`
+	ShippingAddress string              `json:"shipping_address"`
+	Items           []PlatformOrderItem `json:"items"`
 }
 
 // PlatformOrderItem is a single line item within a PlatformOrder.
@@ -162,9 +162,23 @@ const (
 // modeCtxKey is the context key for execution mode.
 type modeCtxKey struct{}
 
+// approvalIDCtxKey is the context key for an approval authorizing a platform write.
+type approvalIDCtxKey struct{}
+
 // WithExecutionMode stores the execution mode in the context.
 func WithExecutionMode(ctx context.Context, mode ExecutionMode) context.Context {
 	return context.WithValue(ctx, modeCtxKey{}, mode)
+}
+
+// WithApprovalID stores the approval ID authorizing a guarded write.
+func WithApprovalID(ctx context.Context, approvalID int64) context.Context {
+	return context.WithValue(ctx, approvalIDCtxKey{}, approvalID)
+}
+
+// ApprovalIDFromCtx retrieves an approval ID from context.
+func ApprovalIDFromCtx(ctx context.Context) (int64, bool) {
+	v, ok := ctx.Value(approvalIDCtxKey{}).(int64)
+	return v, ok && v > 0
 }
 
 // ExecutionModeFromCtx retrieves the execution mode from the context.

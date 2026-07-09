@@ -106,6 +106,61 @@ func (s *Service) Overview() (*DashboardOverview, error) {
 	o.MonthRevenue = fin.Revenue
 	o.MonthCost = fin.Cost
 
+	// M6.1: Today sales (pay_amount for orders created today)
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	tomorrowStart := todayStart.AddDate(0, 0, 1)
+	if err := s.db.Table("sales_order").
+		Select("COALESCE(SUM(pay_amount),0)").
+		Where("created_at >= ? AND created_at < ?", todayStart, tomorrowStart).
+		Scan(&o.TodaySales).Error; err != nil {
+		s.logger.Error("failed to query today sales", zap.Error(err))
+	}
+
+	// M6.1: Pending approval requests
+	if err := s.db.Table("approval_request").
+		Where("status = ?", "pending").
+		Count(&o.PendingApprovals).Error; err != nil {
+		s.logger.Error("failed to count pending approvals", zap.Error(err))
+	}
+
+	// M6.1: Anomaly count from exception_item (same as ExceptionOpenCount)
+	o.AnomalyCount = o.ExceptionOpenCount
+
+	// M6.1: Agent suggestions (unified_action with status 'suggested')
+	if err := s.db.Table("unified_action").
+		Where("status = ?", "suggested").
+		Count(&o.AgentSuggestions).Error; err != nil {
+		s.logger.Error("failed to count agent suggestions", zap.Error(err))
+	}
+
+	// M6.1: Recent alerts (top 5 open exceptions)
+	type alertRow struct {
+		ID        int64
+		Severity  string
+		Title     string
+		CreatedAt time.Time
+	}
+	var alertRows []alertRow
+	if err := s.db.Table("exception_item").
+		Select("id, severity, COALESCE(title,'') AS title, created_at").
+		Where("status = ?", "open").
+		Order("created_at DESC").
+		Limit(5).
+		Scan(&alertRows).Error; err != nil {
+		s.logger.Error("failed to query recent alerts", zap.Error(err))
+	}
+	for _, r := range alertRows {
+		o.RecentAlerts = append(o.RecentAlerts, AlertBrief{
+			ID:        r.ID,
+			Severity:  r.Severity,
+			Title:     r.Title,
+			CreatedAt: r.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	if o.RecentAlerts == nil {
+		o.RecentAlerts = []AlertBrief{}
+	}
+
 	// Platform connections
 	o.PlatformConnections = s.getPlatformConnections()
 

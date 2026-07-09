@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { Alert, Card, Descriptions, Table, Spin, Result, Button, Space, Tag, message } from 'antd';
+import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftOutlined, PlayCircleOutlined, RedoOutlined } from '@ant-design/icons';
@@ -23,6 +25,9 @@ interface ListingTask {
   target_profit_margin?: number;
   destination_country: string;
   last_error: string;
+  execution_mode: number;
+  external_reference_id?: string;
+  platform_validation?: Array<{ field: string; valid: boolean }>;
   created_by: string;
   updated_by: string;
   created_at: string;
@@ -54,6 +59,24 @@ interface ApprovalRequest {
   target_id?: number;
   risk_level?: string;
   reason?: string;
+}
+
+const EXECUTION_MODE_LABELS: Record<number, string> = {
+  0: 'Dry-Run',
+  1: 'Sandbox',
+  2: 'Approval Required',
+  3: 'Production',
+};
+
+const EXECUTION_MODE_COLORS: Record<number, string> = {
+  0: 'default',
+  1: 'orange',
+  2: 'purple',
+  3: 'red',
+};
+
+function needsExecutionConfirmation(mode?: number) {
+  return mode === 2 || mode === 3;
 }
 
 export default function ListingTaskDetailPage() {
@@ -122,6 +145,8 @@ export default function ListingTaskDetailPage() {
     },
   });
 
+  const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
+
   const columns = [
     { title: '明细 ID', dataIndex: 'id', key: 'id', width: 80 },
     { title: '商品 ID', dataIndex: 'product_id', key: 'product_id', width: 90 },
@@ -172,15 +197,31 @@ export default function ListingTaskDetailPage() {
             重试失败项
           </Button>
         ) : (
-          <Button
-            type="primary"
-            icon={<PlayCircleOutlined />}
-            loading={executeMutation.isPending}
-            onClick={() => executeMutation.mutate()}
-            disabled={task?.status === 'success' || task?.status === 'running'}
-          >
-            启动执行
-          </Button>
+          <>
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              loading={executeMutation.isPending}
+              onClick={() => {
+                if (needsExecutionConfirmation(task?.execution_mode)) setExecuteDialogOpen(true);
+                else executeMutation.mutate();
+              }}
+              disabled={task?.status === 'success' || task?.status === 'running'}
+            >
+              启动执行
+            </Button>
+            <HighRiskConfirmDialog
+              open={executeDialogOpen}
+              actionName="执行刊登任务"
+              riskLevel="high"
+              detail={{ targetLabel: task?.id ? `Listing Task #${task.id}` : '' }}
+              environmentMode="production"
+              expectedConsequence="将发布商品到线上平台，买家可见，此操作不可撤回"
+              confirmLoading={executeMutation.isPending}
+              onConfirm={() => { executeMutation.mutate(); setExecuteDialogOpen(false); }}
+              onCancel={() => setExecuteDialogOpen(false)}
+            />
+          </>
         )}
       </Space>
 
@@ -219,9 +260,16 @@ export default function ListingTaskDetailPage() {
                 {task?.target_profit_margin ? `${task.target_profit_margin.toFixed(2)}%` : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Tag color={task?.status === 'success' ? 'green' : task?.status === 'running' ? 'orange' : 'red'}>
-                  {task?.status?.toUpperCase()}
-                </Tag>
+                <Space>
+                  <Tag color={task?.status === 'success' ? 'green' : task?.status === 'running' ? 'orange' : task?.status === 'failed' ? 'red' : 'default'}>
+                    {task?.status?.toUpperCase()}
+                  </Tag>
+                  {task?.execution_mode !== undefined && (
+                    <Tag color={EXECUTION_MODE_COLORS[task.execution_mode] ?? 'default'}>
+                      {EXECUTION_MODE_LABELS[task.execution_mode] ?? 'Unknown'}
+                    </Tag>
+                  )}
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="创建者">{task?.created_by || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">
@@ -237,6 +285,41 @@ export default function ListingTaskDetailPage() {
               )}
             </Descriptions>
           </Card>
+
+          {/* ===== Phase 3: External Reference ===== */}
+          {task?.external_reference_id && (
+            <Card title="外部参考" size="small">
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="外部平台ID">{task.external_reference_id}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+          )}
+
+          {/* ===== Phase 3: Platform Validation ===== */}
+          {task?.platform_validation && task.platform_validation.length > 0 && (
+            <Card title="平台字段校验" size="small">
+              <Table
+                dataSource={task.platform_validation}
+                rowKey="field"
+                size="small"
+                pagination={false}
+                columns={[
+                  { title: '字段', dataIndex: 'field', key: 'field', render: (v: string) => v },
+                  { title: '状态', dataIndex: 'valid', key: 'valid', render: (v: boolean) => v ? <Tag color="green">有效</Tag> : <Tag color="red">无效</Tag> },
+                ]}
+              />
+            </Card>
+          )}
+
+          {/* ===== Phase 3: Failure Section ===== */}
+          {task?.status === 'failed' && (
+            <Card title="失败详情" size="small">
+              <pre style={{ color: '#ff4d4f', whiteSpace: 'pre-wrap', margin: 0 }}>{task.last_error || '未知错误'}</pre>
+              <Button type="primary" icon={<RedoOutlined />} loading={retryMutation.isPending} onClick={() => retryMutation.mutate()} style={{ marginTop: 8 }}>
+                重试
+              </Button>
+            </Card>
+          )}
 
           <Card title="任务执行明细">
             <Table

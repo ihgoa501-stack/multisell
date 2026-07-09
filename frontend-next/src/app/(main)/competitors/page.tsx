@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Card, Input, Modal, Space, Table, Tag, Form, InputNumber, Select, message, Statistic, Row, Col } from 'antd';
+import { Button, Input, Modal, Space, Table, Tag, Form, InputNumber, Select, message, Statistic, Row, Col } from 'antd';
 import { PlusOutlined, DollarOutlined, LineChartOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -42,6 +42,23 @@ interface PriceTrend {
   snapshots: PriceSnapshot[];
 }
 
+interface CompetitorFormValues {
+  name: string;
+  platform: string;
+  sku_code?: string;
+  category?: string;
+  brand?: string;
+}
+
+interface PriceFormValues {
+  competitor_id: number;
+  price: number;
+  currency?: string;
+  sales_last_30d?: number;
+  rating?: number;
+  review_count?: number;
+}
+
 export default function CompetitorsPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
@@ -60,13 +77,8 @@ export default function CompetitorsPage() {
 
   const competitors: Competitor[] = listRes?.data ?? [];
 
-  const { data: scoreRes } = useQuery({
-    queryKey: ['competitor-score'],
-    queryFn: async () => { const res = await apiClient.getPage<Competitor>('/v1/competitors', { page: '1', size: '1' }); return res; },
-  });
-
   const createMut = useMutation({
-    mutationFn: (values: any) => apiClient.post('/v1/competitors', values),
+    mutationFn: (values: CompetitorFormValues) => apiClient.post('/v1/competitors', values),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['competitors'] }); message.success('竞品已添加'); setCreateOpen(false); form.resetFields(); },
   });
 
@@ -76,7 +88,7 @@ export default function CompetitorsPage() {
   });
 
   const priceMut = useMutation({
-    mutationFn: (values: any) => apiClient.post(`/v1/competitors/${values.competitor_id}/prices`, values),
+    mutationFn: (values: PriceFormValues) => apiClient.post(`/v1/competitors/${values.competitor_id}/prices`, values),
     onSuccess: () => { message.success('价格已记录'); setPriceOpen(null); },
   });
 

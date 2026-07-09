@@ -164,6 +164,7 @@ function CanvasPreview({ data }: { data: CanvasData }) {
           );
         }
         return (
+          // eslint-disable-next-line @next/next/no-img-element
           <img key={layer.id} src={layer.src} alt="" style={{ position: 'absolute', left: sx, top: sy, width: layer.width * SCALE, height: layer.height * SCALE, userSelect: 'none', pointerEvents: 'none' }} />
         );
       })}

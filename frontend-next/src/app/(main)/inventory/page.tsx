@@ -1,7 +1,7 @@
 'use client';
 
 import CrudListPage, { fmtDate } from '@/components/crud/CrudListPage';
-import { Button, Form, InputNumber, Input, Modal, Row, Col, Statistic, Space, message, Table, Tag, Tabs } from 'antd';
+import { Button, Input, Modal, Space, message, Table, Tag, Tabs } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 
@@ -26,6 +26,43 @@ interface InventoryTransfer {
   carrier?: string;
   estimated_arrival?: string;
   created_at: string;
+}
+
+interface SafetyConfig {
+  sku_id: number;
+  min_stock_level: number;
+  max_stock_level: number;
+  lead_time_days: number;
+  safety_days: number;
+  daily_avg_sales: number;
+  auto_reorder: boolean;
+}
+
+interface DeadStockItem {
+  sku_id: number;
+  sku_code: string;
+  product_name: string;
+  warehouse: string;
+  current_qty: number;
+  days_since_move: number;
+  status: string;
+  suggestion: string;
+}
+
+interface AllocationRecommendation {
+  platform_id: number;
+  platform_name: string;
+  sales_share: number;
+  current_stock: number;
+  recommended: number;
+  priority: string;
+}
+
+interface AllocationResponse {
+  total_available: number;
+  reserved_total: number;
+  unallocated: number;
+  recommendations: AllocationRecommendation[];
 }
 
 export default function InventoryPage() {
@@ -59,52 +96,7 @@ export default function InventoryPage() {
       width: 100,
       render: (_: unknown, r: BinLocation) => {
         const pct = r.capacity > 0 ? Math.round((r.used / r.capacity) * 100) : 0;
-        // P3: Safety config, allocation, dead stock (#201)
-  const qc = useQueryClient();
-  const { data: safetyConfigs } = useQuery({
-    queryKey: ['inventory-safety-configs'],
-    queryFn: async () => { const res = await apiClient.get<any[]>('/v1/inventory/safety-configs'); return res.data; },
-  });
-  const safetyItems: any[] = (safetyConfigs as any) ?? [];
-
-  const upsertSafetyMut = useMutation({
-    mutationFn: (values: any) => apiClient.put<any>('/v1/inventory/safety-config/'+values.sku_id, values),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-safety-configs'] }); message.success('安全库存配置已保存'); },
-  });
-
-  const { data: deadStockRes } = useQuery({
-    queryKey: ['inventory-dead-stock'],
-    queryFn: async () => { const res = await apiClient.post<any[]>('/v1/inventory/dead-stock/analyze', {}); return res; },
-  });
-  const deadStockItems: any[] = (deadStockRes as any) ?? [];
-
-  const { mutate: analyzeDeadStock, isPending: deadLoading } = useMutation({
-    mutationFn: () => apiClient.post<any>('/v1/inventory/dead-stock/analyze', {}),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-dead-stock'] }); message.success('死库存分析完成'); },
-  });
-
-  const safetyColumns = [
-    { title: 'SKU ID', dataIndex: 'sku_id', key: 'sku_id' },
-    { title: '最低库存', dataIndex: 'min_stock_level', key: 'min_stock_level' },
-    { title: '最高库存', dataIndex: 'max_stock_level', key: 'max_stock_level' },
-    { title: '提前期(天)', dataIndex: 'lead_time_days', key: 'lead_time_days' },
-    { title: '安全天数', dataIndex: 'safety_days', key: 'safety_days' },
-    { title: '日均销量', dataIndex: 'daily_avg_sales', key: 'daily_avg_sales' },
-    { title: '自动补货', dataIndex: 'auto_reorder', key: 'auto_reorder', render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '开启' : '关闭'}</Tag> },
-  ];
-
-  const deadStockColumns = [
-    { title: 'SKU ID', dataIndex: 'sku_id', key: 'sku_id' },
-    { title: 'SKU编码', dataIndex: 'sku_code', key: 'sku_code' },
-    { title: '产品名', dataIndex: 'product_name', key: 'product_name' },
-    { title: '仓库', dataIndex: 'warehouse', key: 'warehouse' },
-    { title: '数量', dataIndex: 'current_qty', key: 'current_qty' },
-    { title: '未动天数', dataIndex: 'days_since_move', key: 'days_since_move' },
-    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <Tag color={v === 'dead' ? 'red' : 'orange'}>{v === 'dead' ? '死库存' : '滞销'}</Tag> },
-    { title: '建议', dataIndex: 'suggestion', key: 'suggestion' },
-  ];
-
-  return (
+        return (
           <Tag color={pct >= 90 ? 'red' : pct >= 70 ? 'orange' : 'green'}>
             {pct}%
           </Tag>
@@ -149,23 +141,24 @@ export default function InventoryPage() {
   const qc = useQueryClient();
   const { data: safetyConfigs } = useQuery({
     queryKey: ['inventory-safety-configs'],
-    queryFn: async () => { const res = await apiClient.get<any[]>('/v1/inventory/safety-configs'); return res.data; },
+    queryFn: async () => { const res = await apiClient.get<SafetyConfig[]>('/v1/inventory/safety-configs'); return res.data; },
   });
-  const safetyItems: any[] = (safetyConfigs as any) ?? [];
+  const safetyItems: SafetyConfig[] = safetyConfigs ?? [];
 
   const upsertSafetyMut = useMutation({
-    mutationFn: (values: any) => apiClient.put<any>('/v1/inventory/safety-config/'+values.sku_id, values),
+    mutationFn: (values: SafetyConfig) => apiClient.put<SafetyConfig>('/v1/inventory/safety-config/'+values.sku_id, values),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-safety-configs'] }); message.success('安全库存配置已保存'); },
   });
+  void upsertSafetyMut;
 
   const { data: deadStockRes } = useQuery({
     queryKey: ['inventory-dead-stock'],
-    queryFn: async () => { const res = await apiClient.post<any[]>('/v1/inventory/dead-stock/analyze', {}); return res; },
+    queryFn: async () => { const res = await apiClient.post<DeadStockItem[]>('/v1/inventory/dead-stock/analyze', {}); return res; },
   });
-  const deadStockItems: any[] = (deadStockRes as any) ?? [];
+  const deadStockItems: DeadStockItem[] = deadStockRes?.data ?? [];
 
   const { mutate: analyzeDeadStock, isPending: deadLoading } = useMutation({
-    mutationFn: () => apiClient.post<any>('/v1/inventory/dead-stock/analyze', {}),
+    mutationFn: () => apiClient.post<DeadStockItem[]>('/v1/inventory/dead-stock/analyze', {}),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory-dead-stock'] }); message.success('死库存分析完成'); },
   });
 
@@ -279,16 +272,21 @@ export default function InventoryPage() {
                   <Input.Search placeholder="输入SKU ID查看分配建议" style={{ width: 300, marginBottom: 16 }} onSearch={async (val) => {
                     if (!val) return;
                     try {
-                      const res = await apiClient.get<any>('/v1/inventory/allocate/' + val);
+                      const res = await apiClient.get<AllocationResponse>('/v1/inventory/allocate/' + val);
+                      const allocation = res.data;
+                      if (!allocation) {
+                        message.error('查询失败');
+                        return;
+                      }
                       Modal.info({
                         title: '分配建议',
                         width: 600,
                         content: (
                           <div>
-                            <p>总可用: {res.data.total_available}</p>
-                            <p>已分配: {res.data.reserved_total}</p>
-                            <p>未分配: {res.data.unallocated}</p>
-                            <Table dataSource={res.data.recommendations || []} rowKey="platform_id" size="small" pagination={false}
+                            <p>总可用: {allocation.total_available}</p>
+                            <p>已分配: {allocation.reserved_total}</p>
+                            <p>未分配: {allocation.unallocated}</p>
+                            <Table dataSource={allocation.recommendations || []} rowKey="platform_id" size="small" pagination={false}
                               columns={[
                                 { title: '平台ID', dataIndex: 'platform_id', key: 'platform_id' },
                                 { title: '平台名称', dataIndex: 'platform_name', key: 'platform_name' },
@@ -301,8 +299,8 @@ export default function InventoryPage() {
                           </div>
                         ),
                       });
-                    } catch(e: any) {
-                      message.error(e?.message || '查询失败');
+                    } catch(e: unknown) {
+                      message.error(e instanceof Error ? e.message : '查询失败');
                     }
                   }} />
                 </div>

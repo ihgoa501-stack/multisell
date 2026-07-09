@@ -36,7 +36,10 @@ func TestService_Overview(t *testing.T) {
 	)`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS exception_item (
 		id INTEGER PRIMARY KEY,
-		status TEXT
+		severity TEXT,
+		title TEXT,
+		status TEXT,
+		created_at TEXT
 	)`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS finance_ledger_entry (
 		id INTEGER PRIMARY KEY,
@@ -54,17 +57,33 @@ func TestService_Overview(t *testing.T) {
 	db.Exec(`INSERT INTO product_listing (status) VALUES ('online')`)
 	db.Exec(`INSERT INTO product_listing (status) VALUES ('offline')`)
 	db.Exec(`INSERT INTO after_sales_order (status) VALUES ('pending')`)
-	db.Exec(`INSERT INTO exception_item (status) VALUES ('open')`)
+	db.Exec(`INSERT INTO exception_item (status, severity, title) VALUES ('open', 'high', 'Test alert')`)
+
+	// Extra data for M6.1 fields
+	db.Exec(`INSERT INTO sales_order (status, pay_amount, created_at) VALUES ('pending', 500, datetime('now'))`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS approval_request (
+		id INTEGER PRIMARY KEY,
+		status TEXT
+	)`)
+	db.Exec(`INSERT INTO approval_request (status) VALUES ('pending')`)
+	db.Exec(`INSERT INTO approval_request (status) VALUES ('pending')`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS unified_action (
+		id INTEGER PRIMARY KEY,
+		status TEXT
+	)`)
+	db.Exec(`INSERT INTO unified_action (status) VALUES ('suggested')`)
+	db.Exec(`INSERT INTO unified_action (status) VALUES ('suggested')`)
+	db.Exec(`INSERT INTO unified_action (status) VALUES ('executed')`)
 
 	o, err := svc.Overview()
 	if err != nil {
 		t.Fatalf("Overview: %v", err)
 	}
-	if o.OrderTotal != 2 {
-		t.Fatalf("OrderTotal = %d", o.OrderTotal)
+	if o.OrderTotal != 3 {
+		t.Fatalf("OrderTotal = %d (expected 3)", o.OrderTotal)
 	}
-	if o.OrderRevenue != 300 {
-		t.Fatalf("OrderRevenue = %v", o.OrderRevenue)
+	if o.OrderRevenue != 800 {
+		t.Fatalf("OrderRevenue = %v (expected 800)", o.OrderRevenue)
 	}
 	if o.OrderProfit != 60 {
 		t.Fatalf("OrderProfit = %v", o.OrderProfit)
@@ -86,6 +105,23 @@ func TestService_Overview(t *testing.T) {
 	}
 	if o.ExceptionOpenCount != 1 {
 		t.Fatalf("ExceptionOpenCount = %d", o.ExceptionOpenCount)
+	}
+
+	// M6.1 field assertions
+	if o.PendingApprovals != 2 {
+		t.Fatalf("PendingApprovals = %d (expected 2)", o.PendingApprovals)
+	}
+	if o.AnomalyCount != 1 {
+		t.Fatalf("AnomalyCount = %d (expected 1)", o.AnomalyCount)
+	}
+	if o.AgentSuggestions != 2 {
+		t.Fatalf("AgentSuggestions = %d (expected 2)", o.AgentSuggestions)
+	}
+	if o.TodaySales == 0 {
+		t.Fatalf("TodaySales = %v (expected >0)", o.TodaySales)
+	}
+	if len(o.RecentAlerts) != 1 {
+		t.Fatalf("RecentAlerts = %d (expected 1)", len(o.RecentAlerts))
 	}
 }
 

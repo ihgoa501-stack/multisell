@@ -22,6 +22,10 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ActionConfirmModal, { ConfirmAction } from '@/components/actions/ActionConfirmModal';
+import ActionRiskConfirmDialog, {
+  ActionRiskConfirmMode,
+  RiskConfirmAction,
+} from '@/components/actions/ActionRiskConfirmDialog';
 import apiClient from '@/lib/api-client';
 import type { PageResult } from '@/types/api';
 
@@ -40,6 +44,11 @@ interface UnifiedAction {
   proposed_by: string;
   proposed_at: string;
   rejection_reason: string | null;
+  requires_approval?: boolean;
+  execution_mode?: string;
+  trace_id?: string;
+  before_snapshot?: Record<string, unknown> | null;
+  after_snapshot?: Record<string, unknown> | null;
   payload: Record<string, unknown>;
 }
 
@@ -69,7 +78,7 @@ export default function ActionsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
-  const [actionMode, setActionMode] = useState<'approve' | 'reject' | 'execute' | null>(null);
+  const [actionMode, setActionMode] = useState<ActionRiskConfirmMode | null>(null);
   const [selectedAction, setSelectedAction] = useState<UnifiedAction | null>(null);
 
   const { data: actionsData, isLoading } = useQuery<PageResult<UnifiedAction>>({
@@ -86,7 +95,7 @@ export default function ActionsPage() {
 
   const approveMutation = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) =>
-      apiClient.post('/v1/ai/actions/' + id + '/approve', { operator: 'user', reason }),
+      apiClient.post('/v1/ai/actions/' + id + '/approve', { reason }),
     onSuccess: () => {
       message.success('已批准');
       setModalOpen(false);
@@ -97,7 +106,7 @@ export default function ActionsPage() {
 
   const rejectMutation = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) =>
-      apiClient.post('/v1/ai/actions/' + id + '/reject', { operator: 'user', reason }),
+      apiClient.post('/v1/ai/actions/' + id + '/reject', { reason }),
     onSuccess: () => {
       message.success('已拒绝');
       setModalOpen(false);
@@ -107,8 +116,8 @@ export default function ActionsPage() {
   });
 
   const executeMutation = useMutation({
-    mutationFn: ({ id }: { id: number }) =>
-      apiClient.post('/v1/ai/actions/' + id + '/execute', { operator: 'user' }),
+    mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
+      apiClient.post('/v1/ai/actions/' + id + '/execute', { reason }),
     onSuccess: () => {
       message.success('已执行');
       queryClient.invalidateQueries({ queryKey: ['actions'] });
@@ -116,7 +125,7 @@ export default function ActionsPage() {
     onError: () => message.error('执行失败'),
   });
 
-  const openModal = (action: UnifiedAction, mode: 'approve' | 'reject' | 'execute' | null) => {
+  const openModal = (action: UnifiedAction, mode: ActionRiskConfirmMode | null) => {
     setSelectedAction(action);
     setActionMode(mode);
     setModalOpen(true);
@@ -129,6 +138,17 @@ export default function ActionsPage() {
       rejectMutation.mutate({ id: action.id, reason });
     } else if (actionMode === 'execute') {
       executeMutation.mutate({ id: action.id });
+    }
+  };
+
+  const handleRiskConfirm = (action: RiskConfirmAction, reason?: string) => {
+    const id = Number(action.id);
+    if (actionMode === 'approve') {
+      approveMutation.mutate({ id, reason: reason ?? '' });
+    } else if (actionMode === 'reject') {
+      rejectMutation.mutate({ id, reason: reason?.trim() || 'manual reject' });
+    } else if (actionMode === 'execute') {
+      executeMutation.mutate({ id, reason });
     }
   };
 
@@ -322,11 +342,19 @@ export default function ActionsPage() {
 
       <ActionConfirmModal
         action={selectedAction}
-        open={modalOpen}
-        mode={actionMode}
+        open={modalOpen && actionMode === null}
+        mode={null}
         loading={approveMutation.isPending || rejectMutation.isPending || executeMutation.isPending}
         onClose={() => setModalOpen(false)}
         onConfirm={handleConfirm}
+      />
+      <ActionRiskConfirmDialog
+        action={selectedAction}
+        open={modalOpen && actionMode !== null}
+        mode={actionMode}
+        loading={approveMutation.isPending || rejectMutation.isPending || executeMutation.isPending}
+        onCancel={() => setModalOpen(false)}
+        onConfirm={handleRiskConfirm}
       />
     </div>
   );

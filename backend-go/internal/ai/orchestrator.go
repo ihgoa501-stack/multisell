@@ -580,6 +580,36 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 
 	// Budget check — can block or force downgrade to cheapest model.
 	if o.budget != nil {
+		// Monthly budget hard limit — check llm_budgets table first.
+		var mb struct {
+			MonthlyLimitUSD float64
+			CurrentMonthUSD float64
+			IsPaused        bool
+			BudgetMonth     string
+		}
+		if err := o.db.Table("llm_budgets").Select("monthly_limit_usd, current_month_usd, is_paused, budget_month").First(&mb).Error; err == nil {
+			currentMonth := time.Now().Format("2006-01")
+			if mb.MonthlyLimitUSD > 0 {
+				observedSpend := 0.0
+				if mb.BudgetMonth == currentMonth {
+					observedSpend = mb.CurrentMonthUSD
+				}
+				if spend, err := o.monthlyLLMSpendUSD(currentMonth); err == nil && spend > observedSpend {
+					observedSpend = spend
+				}
+				if mb.IsPaused || observedSpend >= mb.MonthlyLimitUSD {
+					o.logger.Warn("monthly LLM budget exceeded",
+						zap.String("agent", agent.ID),
+						zap.Float64("current", observedSpend),
+						zap.Float64("limit", mb.MonthlyLimitUSD),
+						zap.Bool("paused", mb.IsPaused),
+					)
+					out, conf, risk := stubFinalOutput(agent, dp, params)
+					return out, conf, risk, nil
+				}
+			}
+		}
+
 		budgetIn := costcontrol.AllowInput{AgentID: agent.ID, Model: req.Model, Tokens: len(userMsg) / 4}
 		budgetRes, budgetErr := o.budget.Allow(context.Background(), budgetIn)
 		if budgetErr == nil && budgetRes.Action == costcontrol.ActionBlock {
@@ -683,6 +713,20 @@ func clampConfidence(v float64) float64 {
 		return 0.99
 	}
 	return v
+}
+
+func (o *Orchestrator) monthlyLLMSpendUSD(month string) (float64, error) {
+	start, err := time.Parse("2006-01", month)
+	if err != nil {
+		return 0, err
+	}
+	end := start.AddDate(0, 1, 0)
+	var total float64
+	err = o.db.Model(&costcontrol.CostLog{}).
+		Select("COALESCE(SUM(cost_usd),0)").
+		Where("window_date >= ? AND window_date < ?", start, end).
+		Scan(&total).Error
+	return total, err
 }
 
 // recordLLMCost writes the cost of an LLM call to the budget controller.

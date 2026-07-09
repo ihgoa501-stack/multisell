@@ -41,6 +41,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		// Aggregation
 		group.GET("/:id/hub", hubH.GetHub)
 
+		// Evidence trace
+		group.GET("/:id/evidence", h.GetEvidence)
+
 		// Variants sub-resource
 		group.GET("/:id/variants", h.ListVariants)
 		group.POST("/variants", h.CreateVariant)

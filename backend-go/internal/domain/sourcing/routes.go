@@ -25,6 +25,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bridge
 
 	group := rg.Group("/sourcing")
 	{
+		// r.GET("/api/v1/mock/unregistered-test")
 		group.POST("/fetch", h.Fetch)
 		group.GET("/recommendations", h.ListRecommendations)
 		group.GET("/market-trends", h.MarketTrends)

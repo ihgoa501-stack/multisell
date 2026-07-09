@@ -1,9 +1,7 @@
 'use client';
 
-import { Divider, Drawer, Empty, Space, Table, Tag, Typography, Descriptions } from 'antd';
+import { Divider, Drawer, Empty, Space, Table, Tag, Descriptions } from 'antd';
 import type { WorkItemDetail } from './types';
-
-const { Text } = Typography;
 
 const riskColor = (v: string): string => {
   if (v === 'high' || v === 'critical') return 'red';

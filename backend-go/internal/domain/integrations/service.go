@@ -50,6 +50,30 @@ func (s *Service) List(p *common.Pagination, f *AccountListFilter) ([]PlatformIn
 	return items, total, nil
 }
 
+// enrichPlatformNames populates PlatformName for each account via batch lookup.
+func (s *Service) enrichPlatformNames(items []PlatformIntegrationAccount) {
+	if len(items) == 0 {
+		return
+	}
+	ids := make([]int64, len(items))
+	for i, it := range items {
+		ids[i] = it.PlatformID
+	}
+	type platRow struct {
+		ID   int64
+		Name string
+	}
+	var plats []platRow
+	_ = s.db.Table("platform").Where("id IN ?", ids).Select("id, name").Find(&plats).Error
+	m := make(map[int64]string, len(plats))
+	for _, p := range plats {
+		m[p.ID] = p.Name
+	}
+	for i := range items {
+		items[i].PlatformName = m[ids[i]]
+	}
+}
+
 // Get returns a single integration account.
 func (s *Service) Get(id int64) (*PlatformIntegrationAccount, error) {
 	var a PlatformIntegrationAccount
@@ -179,7 +203,7 @@ func (s *Service) TriggerSync(id int64) (*PlatformIntegrationAccount, error) {
 	}
 	now := time.Now()
 	if err := s.db.Model(&a).Updates(map[string]interface{}{
-		"sync_status": "syncing",
+		"sync_status":  "syncing",
 		"last_sync_at": now,
 		"last_error":   "",
 	}).Error; err != nil {
@@ -189,6 +213,31 @@ func (s *Service) TriggerSync(id int64) (*PlatformIntegrationAccount, error) {
 		return nil, err
 	}
 	return &a, nil
+}
+
+// GetMode returns the execution mode for an integration account.
+func (s *Service) GetMode(id int64) (int8, error) {
+	var a PlatformIntegrationAccount
+	if err := s.db.Select("execution_mode").First(&a, id).Error; err != nil {
+		return 0, err
+	}
+	return a.ExecutionMode, nil
+}
+
+// UpdateMode sets the execution mode for an integration account.
+func (s *Service) UpdateMode(id int64, mode int8) error {
+	if mode < int8(ExecutionModeDryRun) || mode > int8(ExecutionModeProduction) {
+		return fmt.Errorf("unknown execution mode: %d", mode)
+	}
+	res := s.db.Model(&PlatformIntegrationAccount{}).Where("id = ?", id).
+		Update("execution_mode", mode)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // ListCategoryMappings returns the category mappings for an account.
@@ -251,6 +300,7 @@ type PublishToOzonInput struct {
 	Price        float64 `json:"price" binding:"required"`
 	CurrencyCode string  `json:"currency_code"`
 	ImageURL     string  `json:"image_url,omitempty"`
+	ApprovalID   *int64  `json:"approval_id,omitempty"`
 }
 
 // PublishToOzon publishes a local product to the Ozon platform.
@@ -305,20 +355,20 @@ func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*P
 	pkgWt, _ := prod.PackageWeightKg.Float64()
 
 	return adapter.Publish(ctx, &PublishInput{
-		ProductID:      prod.ID,
-		PlatformID:     acct.PlatformID,
-		AccountID:      in.AccountID,
-		ProductName:    prod.Name,
-		Description:    prod.Description,
-		CategoryID:     prod.CategoryID,
-		SKUs:           publishSKUs,
-		Prices:         prices,
-		Inventories:    inventories,
-		PackageHeight:  pkgH,
-		PackageWidth:   pkgW,
-		PackageLength:  pkgL,
-		PackageWeight:  pkgWt,
-		MainImage:      in.ImageURL,
+		ProductID:     prod.ID,
+		PlatformID:    acct.PlatformID,
+		AccountID:     in.AccountID,
+		ProductName:   prod.Name,
+		Description:   prod.Description,
+		CategoryID:    prod.CategoryID,
+		SKUs:          publishSKUs,
+		Prices:        prices,
+		Inventories:   inventories,
+		PackageHeight: pkgH,
+		PackageWidth:  pkgW,
+		PackageLength: pkgL,
+		PackageWeight: pkgWt,
+		MainImage:     in.ImageURL,
 	})
 }
 
@@ -344,8 +394,18 @@ func (s *Service) checkWriteMode(ctx context.Context, op string, in interface{})
 	case ExecutionModeSandbox:
 		// Sandbox: pass through — the adapter uses sandbox API endpoints.
 		return nil, nil
-	default:
+	case ExecutionModeApprovalRequired:
+		if _, ok := ApprovalIDFromCtx(ctx); !ok {
+			return nil, errors.New("execution mode is approval_required: approval context is required but not provided")
+		}
 		return nil, nil
+	case ExecutionModeProduction:
+		if _, ok := ApprovalIDFromCtx(ctx); !ok {
+			return nil, errors.New("execution mode is production: approval context is required but not provided")
+		}
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unknown execution mode: %d (%s)", mode, mode.String())
 	}
 }
 

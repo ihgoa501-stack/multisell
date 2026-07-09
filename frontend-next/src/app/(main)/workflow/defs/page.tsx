@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  Button, Card, Input, message, Modal, Space, Table, Tag, Typography,
+  Button, Card, Input, message, Modal, Space, Table, Typography,
 } from 'antd';
 import { PlusOutlined, PlayCircleOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';

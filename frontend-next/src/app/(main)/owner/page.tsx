@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Badge,
   Button,
   Col,
   Empty,
+  Input,
   message,
   Row,
+  Select,
   Space,
   Spin,
   Statistic,
@@ -30,7 +31,6 @@ import {
   ArrowRightOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import { getCurrentOperator } from '@/lib/user';
 import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
@@ -69,6 +69,9 @@ interface DecisionQueueItem {
   approval_status?: string;
   agent_feedback_status?: string | null;
   blocking_reasons?: string[];
+  status?: string;
+  execution_mode?: number;
+  expected_outcome?: string;
   can_approve?: boolean;
 }
 
@@ -173,9 +176,11 @@ const feedbackStatusLabel = (s: string | null | undefined): string => {
 
 // ---------- Page ----------
 export default function OwnerPage() {
-  const router = useRouter();
   const qc = useQueryClient();
   const [suggestionFilter, setSuggestionFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('');
+  const [searchText, setSearchText] = useState<string>('');
   const [approvalModal, setApprovalModal] = useState<DecisionQueueItem | null>(null);
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject' | null>(null);
 
@@ -296,15 +301,14 @@ export default function OwnerPage() {
     qc.invalidateQueries({ queryKey: ['owner-platform-sync'] });
   };
 
-  const listReady = useMemo(
-    () => (decisions ?? []).filter((s) => s.decision === 'list').length,
-    [decisions],
-  );
-
   const filteredDecisions = useMemo(() => {
-    if (!suggestionFilter) return decisions ?? [];
-    return (decisions ?? []).filter((s) => s.decision === suggestionFilter);
-  }, [decisions, suggestionFilter]);
+    let result = decisions ?? [];
+    if (suggestionFilter) result = result.filter((s) => s.decision === suggestionFilter);
+    if (statusFilter) result = result.filter((s) => s.status === statusFilter || s.approval_status === statusFilter || s.task_status === statusFilter);
+    if (searchText) result = result.filter((s) => s.product_title?.toLowerCase().includes(searchText.toLowerCase()));
+    if (sortBy === 'confidence') result = [...result].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    return result;
+  }, [decisions, suggestionFilter, statusFilter, searchText, sortBy]);
 
   const handleApprove = (s: DecisionQueueItem) => {
     setApprovalModal(s);
@@ -535,39 +539,33 @@ export default function OwnerPage() {
               <Tag color="orange" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>Mock</Tag>
             </div>
             <div style={{ padding: 16 }}>
-              <Space style={{ marginBottom: 12 }}>
-                <Button
-                  size="small"
-                  onClick={() => setSuggestionFilter('')}
-                  type={suggestionFilter === '' ? 'primary' : 'default'}
-                >
-                  全部
-                </Button>
-                <Button
-                  size="small"
-                  type={suggestionFilter === 'list' ? 'primary' : 'default'}
-                  style={suggestionFilter === 'list' ? { backgroundColor: 'var(--g4)', borderColor: 'var(--g4)' } : {}}
-                  onClick={() => setSuggestionFilter('list')}
-                >
-                  推荐上架
-                </Button>
-                <Button
-                  size="small"
-                  type={suggestionFilter === 'cautious' ? 'primary' : 'default'}
-                  style={suggestionFilter === 'cautious' ? { backgroundColor: 'var(--y4)', borderColor: 'var(--y4)' } : {}}
-                  onClick={() => setSuggestionFilter('cautious')}
-                >
-                  谨慎
-                </Button>
-                <Button
-                  size="small"
-                  danger
-                  type={suggestionFilter === 'skip' ? 'primary' : 'default'}
-                  onClick={() => setSuggestionFilter('skip')}
-                >
-                  不建议
-                </Button>
+              <Space style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+                <Button size="small" onClick={() => setSuggestionFilter('')} type={suggestionFilter === '' ? 'primary' : 'default'}>全部</Button>
+                <Button size="small" type={suggestionFilter === 'list' ? 'primary' : 'default'} style={suggestionFilter === 'list' ? { backgroundColor: 'var(--g4)', borderColor: 'var(--g4)' } : {}} onClick={() => setSuggestionFilter('list')}>推荐上架</Button>
+                <Button size="small" type={suggestionFilter === 'cautious' ? 'primary' : 'default'} style={suggestionFilter === 'cautious' ? { backgroundColor: 'var(--y4)', borderColor: 'var(--y4)' } : {}} onClick={() => setSuggestionFilter('cautious')}>谨慎</Button>
+                <Button size="small" danger type={suggestionFilter === 'skip' ? 'primary' : 'default'} onClick={() => setSuggestionFilter('skip')}>不建议</Button>
+                <Select allowClear placeholder="按状态筛选" style={{ width: 140 }} value={statusFilter || undefined} onChange={(v) => setStatusFilter(v || '')}
+                  options={[
+                    { value: 'waiting_data', label: '等待数据' },
+                    { value: 'ready_for_decision', label: '待决策' },
+                    { value: 'pending_approval', label: '待审批' },
+                    { value: 'executing', label: '执行中' },
+                    { value: 'completed', label: '已完成' },
+                    { value: 'failed', label: '失败' },
+                  ]}
+                />
+                <Select allowClear placeholder="排序" style={{ width: 120 }} value={sortBy || undefined} onChange={(v) => setSortBy(v || '')}
+                  options={[{ value: 'confidence', label: '置信度' }, { value: 'created_at', label: '创建时间' }]}
+                />
+                <Input.Search allowClear placeholder="搜索商品标题" style={{ width: 200 }} value={searchText} onChange={(e) => setSearchText(e.target.value)} onSearch={(v) => setSearchText(v)} />
               </Space>
+              {/* Summary stats */}
+              <div style={{ display: 'flex', gap: 24, marginBottom: 12, padding: '8px 0', borderBottom: '1px solid var(--bd)' }}>
+                <span><Tag>等待数据</Tag> {(decisions ?? []).filter(d => d.status === 'waiting_data' || (!d.task_status && !d.approval_status)).length}</span>
+                <span><Tag color="blue">待决策</Tag> {(decisions ?? []).filter(d => d.status === 'ready_for_decision' || (d.decision && !d.approval_status)).length}</span>
+                <span><Tag color="orange">待审批</Tag> {(decisions ?? []).filter(d => d.approval_status === 'pending' || d.status === 'pending_approval').length}</span>
+                <span><Tag color="green">已完成</Tag> {(decisions ?? []).filter(d => d.task_status === 'completed' || d.status === 'completed').length}</span>
+              </div>
               <Spin spinning={decisionsLoading}>
                 {filteredDecisions.length === 0 && !decisionsLoading ? (
                   <Empty description="暂无决策数据" />
@@ -612,6 +610,22 @@ export default function OwnerPage() {
                         render: (v: number) => (
                           <Tag color={confidenceColor(v)}>{(v * 100).toFixed(0)}%</Tag>
                         ),
+                      },
+                      {
+                        title: '风险',
+                        dataIndex: 'risk_level',
+                        width: 60,
+                        render: (v: string) => <Tag color={v === 'high' ? 'red' : v === 'medium' ? 'orange' : 'green'}>{v === 'high' ? '高' : v === 'medium' ? '中' : '低'}</Tag>,
+                      },
+                      {
+                        title: '模式',
+                        dataIndex: 'execution_mode',
+                        width: 65,
+                        render: (v: number) => {
+                          const labels: Record<number, string> = { 0: '模拟', 1: '沙箱', 2: '需审批', 3: '生产' };
+                          const colors: Record<number, string> = { 0: 'default', 1: 'orange', 2: 'purple', 3: 'red' };
+                          return <Tag color={colors[v] ?? 'default'}>{labels[v] ?? '未知'}</Tag>;
+                        },
                       },
                       {
                         title: '任务状态',

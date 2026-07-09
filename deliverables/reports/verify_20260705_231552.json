@@ -1,0 +1,22 @@
+{
+  "page": "/dashboard",
+  "timestamp": "2026-07-05T23:15:52.208576",
+  "checks": [
+    {
+      "name": "\u540e\u7aef\u5065\u5eb7",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "\u767b\u5f55\u6210\u529f",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "\u9875\u9762 /dashboard \u53ef\u8bbf\u95ee",
+      "pass": true,
+      "detail": "HTTP 200"
+    }
+  ],
+  "passed": true
+}

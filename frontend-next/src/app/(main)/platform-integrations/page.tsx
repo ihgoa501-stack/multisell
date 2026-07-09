@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Form, Input, message, Modal, Space, Table, Tag, Tooltip } from 'antd';
+import { Badge, Button, Card, Col, Form, Input, message, Modal, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { LinkOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -17,6 +17,44 @@ interface IntegrationAccount {
   last_sync_at?: string;
   last_error?: string;
   created_at: string;
+  execution_mode?: number;
+  platform_name?: string;
+}
+
+const MODE_LABELS: Record<number, string> = {
+  0: 'dry_run',
+  1: 'sandbox',
+  2: 'approval_required',
+  3: 'production',
+};
+
+const MODE_TAG_COLORS: Record<string, string> = {
+  dry_run: 'blue',
+  sandbox: 'orange',
+  production: 'red',
+  approval_required: 'purple',
+};
+
+const STATUS_BADGE: Record<string, 'success' | 'error' | 'default' | 'processing' | 'warning'> = {
+  active: 'success',
+  error: 'error',
+  inactive: 'default',
+  draft: 'default',
+};
+
+function relativeTime(dateStr?: string): string {
+  if (!dateStr) return '-';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 0) return '刚刚';
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}秒前`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  return new Date(dateStr).toLocaleDateString('zh-CN');
 }
 
 export default function PlatformIntegrationsPage() {
@@ -65,6 +103,45 @@ export default function PlatformIntegrationsPage() {
         <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', margin: 0 }}>平台对接</h1>
         <Button type="primary" icon={<LinkOutlined />} onClick={() => setModalOpen(true)}>连接 Ozon 店铺</Button>
       </div>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        {items.map((account) => {
+          const modeKey = MODE_LABELS[account.execution_mode ?? 0] ?? 'unknown';
+          return (
+            <Col key={account.id} xs={24} sm={12} lg={8}>
+              <Card
+                styles={{ body: { paddingBottom: 12 } }}
+                title={
+                  <Space>
+                    <Badge status={STATUS_BADGE[account.status] ?? 'default'} />
+                    <Typography.Text strong>{account.store_name}</Typography.Text>
+                  </Space>
+                }
+                extra={<Tag color={MODE_TAG_COLORS[modeKey] ?? 'default'}>{modeKey}</Tag>}
+              >
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+                  {account.platform_name ?? `平台 #${account.platform_id}`}
+                </Typography.Paragraph>
+                <Typography.Paragraph style={{ marginBottom: 8 }}>
+                  上次同步: {relativeTime(account.last_sync_at)}
+                </Typography.Paragraph>
+                {account.last_error ? (
+                  <Typography.Text type="warning" style={{ display: 'block', marginBottom: 8 }}>
+                    {account.last_error}
+                  </Typography.Text>
+                ) : null}
+                <Button
+                  size="small"
+                  loading={testMut.isPending}
+                  onClick={() => testMut.mutate(account.id)}
+                >
+                  验证连接
+                </Button>
+              </Card>
+            </Col>
+          );
+        })}
+      </Row>
 
       <Table rowKey="id" loading={isLoading} dataSource={items}
         columns={[

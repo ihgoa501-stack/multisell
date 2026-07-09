@@ -66,6 +66,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/producthub"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
+	"github.com/lingmirror/backend-go/internal/domain/reliability"
 	"github.com/lingmirror/backend-go/internal/domain/report"
 	"github.com/lingmirror/backend-go/internal/domain/search"
 	"github.com/lingmirror/backend-go/internal/domain/sentiment"
@@ -895,7 +896,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	allocation.RegisterRoutes(protected, db, logger)
 	feedback.RegisterRoutes(protected, cfg, db, logger, nil, nil, nil)
 	exceptions.RegisterRoutes(protected, db, logger)
-	notification.RegisterRoutes(protected, db, logger)
 	dashboard.RegisterRoutes(protected, db, logger)
 	support.RegisterRoutes(protected, db, logger)
 	search.RegisterRoutes(protected, db, logger)
@@ -927,6 +927,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	evolution.RegisterRoutes(protected, db, logger)
 	entropy.RegisterRoutes(protected, db, logger)
 	cost.RegisterRoutes(protected, db, logger, cfg.LLM.DailyBudgetUSD)
+
+	reliability.RegisterRoutes(protected, db, logger)
 
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
@@ -973,6 +975,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	}
 	moaCoord := ai.NewMOACoordinator(aiOrch, bus, approvalSvc, moaCatalog, logger)
 	ai.RegisterRoutes(protected, db, logger, hub, moaCoord, cmd, aiosCfg.Guardrails)
+	notification.RegisterRoutes(protected, db, logger, hub)
 
 	// Browser Extension WebSocket + A12 Collection Agent
 	extSvc := &hubExtensionService{hub: hub}

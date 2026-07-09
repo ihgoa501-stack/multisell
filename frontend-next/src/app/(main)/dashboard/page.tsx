@@ -1,15 +1,25 @@
 'use client';
 
-import { Card, Collapse, Empty, Row, Col, Table, Tag, Tabs, Alert } from 'antd';
+import { Card, Collapse, Empty, Row, Col, Table, Tag, Tabs, Alert, Statistic } from 'antd';
 import {
   CheckCircleFilled, ExclamationCircleFilled,
   ExclamationCircleOutlined, FallOutlined,
   RiseOutlined, ShoppingCartOutlined, WarningFilled,
+  DollarOutlined, ClockCircleOutlined, BugOutlined, BulbOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 
 /* ─── Types ─── */
+
+interface DashboardOverview {
+  today_sales: number;
+  pending_approvals: number;
+  anomaly_count: number;
+  agent_suggestions: number;
+  recent_alerts: Array<{ id: number; severity: string; title: string; created_at: string }>;
+  agent_statuses: Array<{ agent_id: string; name: string; status: string; last_activity?: string }>;
+}
 
 interface DailyBrief {
   today_profit: number;
@@ -250,6 +260,41 @@ function BriefSkeleton() {
   );
 }
 
+/* ─── Dashboard overview KPI cards ─── */
+
+const overviewKpis = [
+  { key: 'sales', icon: <DollarOutlined />, label: '今日销售额', dataIndex: 'today_sales', fmt: (v: number) => `$${v.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}` },
+  { key: 'approvals', icon: <ClockCircleOutlined />, label: '待审批', dataIndex: 'pending_approvals', color: 'var(--y4)' },
+  { key: 'anomalies', icon: <BugOutlined />, label: '异常数', dataIndex: 'anomaly_count', color: 'var(--r4)' },
+  { key: 'suggestions', icon: <BulbOutlined />, label: 'Agent建议', dataIndex: 'agent_suggestions', color: 'var(--b4)' },
+];
+
+function OverviewCards({ data }: { data: DashboardOverview }) {
+  return (
+    <Row gutter={[16, 16]}>
+      {overviewKpis.map((kpi) => {
+        const val = (data as unknown as Record<string, unknown>)[kpi.dataIndex];
+        const isNumber = typeof val === 'number';
+        return (
+          <Col xs={12} sm={12} md={6} key={kpi.key}>
+            <Card style={{ borderRadius: 'var(--r4)', border: '1px solid var(--bd)', background: 'var(--s2)' }}>
+              <Statistic
+                title={
+                  <span style={{ color: 'var(--t3)', fontSize: 'var(--text-small)' }}>
+                    {kpi.icon} {kpi.label}
+                  </span>
+                }
+                value={isNumber ? (kpi.fmt ? kpi.fmt(val as number) : val as number) : '-'}
+                valueStyle={{ color: kpi.color || 'var(--t1)', fontWeight: 700, fontFamily: 'var(--ds)' }}
+              />
+            </Card>
+          </Col>
+        );
+      })}
+    </Row>
+  );
+}
+
 /* ─── Page ─── */
 
 export default function DashboardPage() {
@@ -257,6 +302,14 @@ export default function DashboardPage() {
     queryKey: ['dashboard', 'brief'],
     queryFn: async () => {
       const res = await apiClient.get<DailyBrief>('/v1/dashboard/brief');
+      return res.data;
+    },
+  });
+
+  const overview = useQuery({
+    queryKey: ['dashboard', 'overview'],
+    queryFn: async () => {
+      const res = await apiClient.get<DashboardOverview>('/v1/dashboard/overview');
       return res.data;
     },
   });
@@ -274,6 +327,9 @@ export default function DashboardPage() {
   return (
     <div style={{ padding: 'var(--space-xl)', display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)' }}>
       <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', margin: 0, color: 'var(--t1)' }}>Daily Brief</h1>
+
+      {/* Overview KPIs */}
+      {overview.data && <OverviewCards data={overview.data} />}
 
       {/* Top: profit */}
       <ProfitCard data={data} />
