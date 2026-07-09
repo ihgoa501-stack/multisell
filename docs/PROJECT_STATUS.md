@@ -5,12 +5,28 @@
 更新时间：2026-07-07
 
 > 2026-07-07 direction note:
-> 商品出海决策与执行层 Phase 1 完成。本期交付：5个审批-任务-执行断点修复,打通单商品dry-run闭环。
-> 详见 [features/phase1-dry-run-closed-loop-spec.md](features/phase1-dry-run-closed-loop-spec.md)。
+> 商品出海决策与执行层 Phase 1 + Phases 2-6 已交付。Phase 1 修复审批-任务-执行断点并打通单商品 dry-run 闭环；Phase 2-6 在此基础上新增 ProductHub 证据链、Execution Mode 统一与 Sandbox 支持、批量评估与 Owner 决策队列、执行结果回流与复盘、多平台对比。
+> 详见 [features/phase1-dry-run-closed-loop-spec.md](features/phase1-dry-run-closed-loop-spec.md) 和 [features/product-export-decision-execution-layer.md](features/product-export-decision-execution-layer.md)。
 
-## 2026-07-06 H1 Copilot OS 方案阶段
+## 2026-07-07 商品出海决策与执行层 Phase 2-6 交付
 
-凌镜下一阶段应从“继续增加模块和 Agent”转为“可信 AgentOS 执行门禁收口”。
+当前北极星保持不变：
+
+```text
+商品能不能卖，系统能说清楚；
+订单和履约会不会亏，系统能说清楚；
+高风险动作是否可执行，Owner 能看懂并审批。
+```
+
+### 本期交付汇总
+
+| Phase | 能力 | 状态 |
+|-------|------|------|
+| Phase 2 | ProductHub 证据链聚合 API + 前端生命周期时间线 | ✅ Dev Done / Test Green |
+| Phase 3 | Execution Mode 统一 (dry_run/sandbox/production) + PublishHook 重构 + 外部引用 ID | ✅ Dev Done / Test Green |
+| Phase 4 | 批量评估 API + Owner 决策队列排序/过滤/搜索/摘要统计 | ✅ Dev Done / Test Green |
+| Phase 5 | 执行结果回流 + 推荐反馈汇总 API + 复盘卡片 | ✅ Dev Done / Test Green |
+| Phase 6 | 平台对比 API + 跨平台 Listing 记录查询 | ✅ Dev Done / Test Green |
 
 当前北极星：
 
@@ -72,17 +88,17 @@
 
 | 检查 | 当前状态 | 说明 |
 |------|----------|------|
-| `cd backend-go && go test ./...` | ✅ 通过（2026-07-06） | 全绿（M1.1 修复后 supplier 预存失败已解决） |
+| `cd backend-go && go test ./...` | ✅ 通过（2026-07-07） | Phase 2-6 新增测试全绿 |
 | `cd backend-go && go vet ./...` | ✅ 通过 | 无 vet 输出 |
-| `cd frontend-next && npm run build` | ✅ 通过（2026-07-06） | M1.1 修复后构建正常 |
+| `cd backend-go && go build ./...` | ✅ 通过 | 商品出海闭环全模块编译通过 |
+| `cd frontend-next && npm run build` | ⏳ 需 node_modules | worktree 无 node_modules |
 
 ## 当前结论
 
 凌镜已完成全站新技术栈迁移，旧栈（Python/FastAPI + Vue 3）已于 2026-06-30 删除。
-Git history 保留了全部历史代码，可随时回溯。
 
-Version: v0.4.1.0 — 2026-07-06, H1 Copilot OS 方案制定中。
-详见 [H1 Copilot OS 计划](superpowers/plans/2026-07-06-lingmirror-h1-copilot-os-plan.md)。
+Version: v0.5.0.0 — 2026-07-07，商品出海决策与执行层 Phase 1-6 全链路交付。
+详见 [features/product-export-decision-execution-layer.md](features/product-export-decision-execution-layer.md)。
 
 当前唯一活跃开发线：
 

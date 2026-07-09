@@ -33,6 +33,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *e
 
 		chain.POST("/products/:product_id/publish/:platform_id", h.PublishProduct)
 		chain.GET("/products/:product_id/listings", h.ListByProduct)
+		chain.GET("/products/:product_id/platform-comparison", h.GetPlatformComparison)
 
 		// Static path from-decisions must be registered before :task_id.
 		chain.POST("/listing-tasks/from-decisions", h.CreateTasksFromDecisions)

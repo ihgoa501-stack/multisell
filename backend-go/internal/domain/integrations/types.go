@@ -17,6 +17,11 @@ type PublishInput struct {
 	Prices      map[int64]string // sku_id -> price
 	Inventories map[int64]int    // sku_id -> quantity
 
+	// IdempotencyKey prevents duplicate publishes when network failures cause retries.
+	// Generated from listing_task.id + execution_mode + created_at by NewPublishHook.
+	// ponytail: simple string key. Upgrade to EventBus + outbox when cross-service idempotency matters.
+	IdempotencyKey string
+
 	// Product metadata for platform publication
 	ProductName   string
 	Description   string

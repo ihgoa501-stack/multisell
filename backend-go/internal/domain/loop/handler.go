@@ -39,6 +39,30 @@ func (h *Handler) Evaluate(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// BatchEvaluate POST /loop/batch-evaluate
+// @Summary      Batch evaluate products
+// @Description  Run the full evaluation pipeline for multiple products at once
+// @Tags         loop
+// @Accept       json
+// @Produce      json
+// @Param        body  body  BatchEvaluateInput  true  "Batch evaluate input"
+// @Success      200   {object}  response.Result
+// @Security     BearerAuth
+// @Router       /loop/batch-evaluate [post]
+func (h *Handler) BatchEvaluate(c *gin.Context) {
+	var in BatchEvaluateInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(in.ProductIDs) == 0 {
+		response.Error(c, http.StatusBadRequest, "product_ids is required")
+		return
+	}
+	results := h.service.BatchEvaluate(in.ProductIDs, in.TriggeredBy)
+	response.Success(c, results)
+}
+
 // GetRecommendations GET /loop/recommendations
 func (h *Handler) GetRecommendations(c *gin.Context) {
 	p := common.ParsePagination(c)

@@ -41,9 +41,45 @@ type EvaluateResult struct {
 	Reason              string          `json:"reason"`
 	RiskFlags           []string        `json:"risk_flags"`
 	ListingTaskID       *int64          `json:"listing_task_id,omitempty"`
+	Error               string          `json:"error,omitempty"`
 }
 
 // EvaluateInput is the payload for triggering an evaluation.
 type EvaluateInput struct {
 	TriggeredBy string `json:"triggered_by"`
+}
+
+// RecommendationFeedbackSummary aggregates feedback on listing recommendations.
+type RecommendationFeedbackSummary struct {
+	TotalRecommendations int          `json:"total_recommendations"`
+	AdoptedCount         int          `json:"adopted_count"`
+	RejectedCount        int          `json:"rejected_count"`
+	ExecutedCount        int          `json:"executed_count"`
+	FailedCount          int          `json:"failed_count"`
+	AdoptRate            float64      `json:"adopt_rate"`
+	SuccessRate          float64      `json:"success_rate"`
+	Reviews              []ReviewItem `json:"reviews"`
+	LastUpdated          time.Time    `json:"last_updated"`
+}
+
+// ExecutionReviewData carries detailed execution metadata for V2 results.
+type ExecutionReviewData struct {
+	ExecutionMode       string `json:"execution_mode"`
+	DurationMs          int64  `json:"duration_ms"`
+	FailureType         string `json:"failure_type,omitempty"`
+	PlatformReferenceID string `json:"platform_reference_id,omitempty"`
+	IsRetry             bool   `json:"is_retry,omitempty"`
+	ExternalReferenceID string `json:"external_reference_id,omitempty"`
+	Blocked             bool   `json:"blocked,omitempty"`
+}
+
+// ReviewItem is a single listing recommendation review entry.
+type ReviewItem struct {
+	RecommendationID int64     `json:"recommendation_id"`
+	Decision         string    `json:"decision"`
+	Confidence       float64   `json:"confidence"`
+	FeedbackStatus   string    `json:"feedback_status"`
+	ExecutionSuccess *bool     `json:"execution_success,omitempty"`
+	FailureType      string    `json:"failure_type,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }

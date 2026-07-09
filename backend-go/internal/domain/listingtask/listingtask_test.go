@@ -620,7 +620,7 @@ func TestService_ExecuteTask_PublishHookSucceeds(t *testing.T) {
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
 	var hookCalled bool
 	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
-	svc.publishHook = func(taskID int64) error {
+	svc.publishHook = func(taskID int64, mode ExecutionMode) error {
 		hookCalled = true
 		return nil
 	}
@@ -661,7 +661,7 @@ func TestService_ExecuteTask_PublishHookFails(t *testing.T) {
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
 	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
-	svc.publishHook = func(taskID int64) error {
+	svc.publishHook = func(taskID int64, mode ExecutionMode) error {
 		return errPublishHookFailed
 	}
 
@@ -989,7 +989,7 @@ func TestService_ExecuteTask_NonDryRunSkipsDryRunPath(t *testing.T) {
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
 	var publishCalled bool
 	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
-	svc.publishHook = func(taskID int64) error {
+	svc.publishHook = func(taskID int64, mode ExecutionMode) error {
 		publishCalled = true
 		return nil
 	}

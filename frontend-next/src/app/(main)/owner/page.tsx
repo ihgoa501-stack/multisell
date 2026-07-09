@@ -73,6 +73,11 @@ interface DecisionQueueItem {
   agent_feedback_status?: string | null;
   blocking_reasons?: string[];
   can_approve?: boolean;
+  display_status?: string;
+  execution_mode?: number;
+  target_sale_price?: number;
+  completeness_score?: number;
+  estimated_profit?: number;
 }
 
 interface PlatformSync {
@@ -179,6 +184,9 @@ export default function OwnerPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [suggestionFilter, setSuggestionFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('created_at');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [approvalModal, setApprovalModal] = useState<DecisionQueueItem | null>(null);
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject' | null>(null);
 
@@ -305,9 +313,19 @@ export default function OwnerPage() {
   );
 
   const filteredDecisions = useMemo(() => {
-    if (!suggestionFilter) return decisions ?? [];
-    return (decisions ?? []).filter((s) => s.decision === suggestionFilter);
-  }, [decisions, suggestionFilter]);
+    let list = decisions ?? [];
+    if (suggestionFilter) list = list.filter((s) => s.decision === suggestionFilter);
+    if (statusFilter) list = list.filter((s) => (s.display_status || '') === statusFilter);
+    if (searchQuery) list = list.filter((s) => (s.product_title || '').toLowerCase().includes(searchQuery.toLowerCase()));
+    // Sort
+    list = [...list].sort((a, b) => {
+      if (sortBy === 'completeness_score') return (b.completeness_score || 0) - (a.completeness_score || 0);
+      if (sortBy === 'estimated_profit') return (b.estimated_profit || 0) - (a.estimated_profit || 0);
+      if (sortBy === 'confidence') return (b.confidence || 0) - (a.confidence || 0);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    return list;
+  }, [decisions, suggestionFilter, statusFilter, searchQuery, sortBy]);
 
   const handleApprove = (s: DecisionQueueItem) => {
     setApprovalModal(s);
@@ -612,6 +630,22 @@ export default function OwnerPage() {
                         width: 200,
                         ellipsis: true,
                         render: (v: string) => <Text type="secondary" ellipsis={{ tooltip: v }}>{v}</Text>,
+                      },
+                      {
+                        title: '风险',
+                        dataIndex: 'risk_level',
+                        width: 70,
+                        render: (v: string) => <Tag color={v === 'high' ? 'red' : v === 'medium' ? 'orange' : 'green'}>{v || '-'}</Tag>,
+                      },
+                      {
+                        title: '状态',
+                        dataIndex: 'display_status',
+                        width: 90,
+                        render: (v: string) => {
+                          const sc: Record<string, string> = {'waiting_data':'default','ready_for_decision':'green','pending_approval':'gold','executing':'blue','completed':'success','failed':'error'};
+                          const sl: Record<string, string> = {'waiting_data':'等待数据','ready_for_decision':'待决策','pending_approval':'审批中','executing':'执行中','completed':'已完成','failed':'失败'};
+                          return <Tag color={sc[v] || 'default'}>{sl[v] || v || '-'}</Tag>;
+                        },
                       },
                       {
                         title: '置信度',

@@ -335,3 +335,51 @@ func (s *Service) RecordExecutionResult(productID int64, listingTaskID int64, su
 	}
 	return nil
 }
+
+// RecordExecutionResultV2 records execution feedback with detailed review metadata.
+// Review data is stored as JSON in feedback_note for structured access.
+func (s *Service) RecordExecutionResultV2(productID int64, listingTaskID int64, success bool, errorMsg string, reviewData *ExecutionReviewData) error {
+	updates := map[string]interface{}{}
+	switch {
+	case reviewData != nil && reviewData.Blocked:
+		updates["feedback_status"] = "blocked"
+	case !success:
+		updates["feedback_status"] = "execution_failed"
+	default:
+		updates["feedback_status"] = "executed"
+	}
+
+	// Store review data as JSON in feedback_note
+	if reviewData != nil {
+		data := map[string]interface{}{
+			"execution_mode":        reviewData.ExecutionMode,
+			"duration_ms":           reviewData.DurationMs,
+			"platform_reference_id": reviewData.PlatformReferenceID,
+			"is_retry":              reviewData.IsRetry,
+			"external_reference_id": reviewData.ExternalReferenceID,
+		}
+		if errorMsg != "" {
+			data["error_message"] = errorMsg
+		}
+		if reviewData.FailureType != "" {
+			data["failure_type"] = reviewData.FailureType
+		}
+		reviewJSON, _ := json.Marshal(data)
+		updates["feedback_note"] = string(reviewJSON)
+	} else if errorMsg != "" {
+		updates["feedback_note"] = errorMsg
+	}
+
+	res := s.db.Model(&ListingRecommendation{}).
+		Where("product_id = ? AND created_listing_task_id = ?", productID, listingTaskID).
+		Updates(updates)
+	if res.Error != nil {
+		return fmt.Errorf("record execution result v2: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		s.logger.Warn("RecordExecutionResultV2: no recommendation found",
+			zap.Int64("product_id", productID),
+			zap.Int64("listing_task_id", listingTaskID))
+	}
+	return nil
+}

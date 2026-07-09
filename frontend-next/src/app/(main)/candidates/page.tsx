@@ -196,6 +196,10 @@ export default function CandidatesPage() {
   const [completenessResult, setCompletenessResult] = useState<CompletenessCheckResult | null>(null);
   const [completenessLoading, setCompletenessLoading] = useState(false);
   const [completenessFilter, setCompletenessFilter] = useState<string>('');
+  const [platformFilter, setPlatformFilter] = useState<string>('');
+  const [countryFilter, setCountryFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('id');
   const [fillingField, setFillingField] = useState<string | null>(null);
   const [fillValues, setFillValues] = useState<Record<string, string>>({});
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
@@ -598,6 +602,10 @@ export default function CandidatesPage() {
             { value: 'listing_ready', label: '可上架' },
           ]}
         />
+        <Select allowClear placeholder="平台" style={{ width: 120 }} value={platformFilter || undefined} onChange={(v) => { setPlatformFilter(v || ''); setPage(1); }} options={[{ value: '1', label: 'Ozon' }, { value: '2', label: 'Shopee' }]} />
+        <Input placeholder="目的国" style={{ width: 120 }} value={countryFilter} onChange={(e) => { setCountryFilter(e.target.value); setPage(1); }} />
+        <Select allowClear placeholder="状态" style={{ width: 120 }} value={statusFilter || undefined} onChange={(v) => { setStatusFilter(v || ''); setPage(1); }} options={[{ value: 'draft', label: '草稿' }, { value: 'needs_review', label: '待审查' }, { value: 'listing_ready', label: '可上架' }]} />
+        <Select style={{ width: 140 }} value={sortBy} onChange={(v) => { setSortBy(v); setPage(1); }} options={[{ value: 'id', label: '最新创建' }, { value: 'completeness', label: '完整度降序' }, { value: 'estimated_profit', label: '利润降序' }]} />
       </Card>
       <Card size="small" styles={{ body: { padding: 0 } }}>
         <Table<CandidateProduct>
@@ -622,6 +630,10 @@ export default function CandidatesPage() {
           }}
           scroll={{ x: 850 }}
         />
+        <Select allowClear placeholder="平台" style={{ width: 120 }} value={platformFilter || undefined} onChange={(v) => { setPlatformFilter(v || ''); setPage(1); }} options={[{ value: '1', label: 'Ozon' }, { value: '2', label: 'Shopee' }]} />
+        <Input placeholder="目的国" style={{ width: 120 }} value={countryFilter} onChange={(e) => { setCountryFilter(e.target.value); setPage(1); }} />
+        <Select allowClear placeholder="状态" style={{ width: 120 }} value={statusFilter || undefined} onChange={(v) => { setStatusFilter(v || ''); setPage(1); }} options={[{ value: 'draft', label: '草稿' }, { value: 'needs_review', label: '待审查' }, { value: 'listing_ready', label: '可上架' }]} />
+        <Select style={{ width: 140 }} value={sortBy} onChange={(v) => { setSortBy(v); setPage(1); }} options={[{ value: 'id', label: '最新创建' }, { value: 'completeness', label: '完整度降序' }, { value: 'estimated_profit', label: '利润降序' }]} />
       </Card>
 
       {/* Detail card */}

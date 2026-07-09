@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"go.uber.org/zap"
@@ -452,4 +453,40 @@ func (s *Service) GenerateSuggestion(ctx context.Context, candidateID uint) (*Li
 		RiskLevel:      riskLevel,
 		CreatedAt:      time.Now(),
 	}, nil
+}
+
+// CreateFromTask creates a ProductListing record from a completed listing task.
+// It sets platform_product_id, platform_sku, and platform_url from the publish result,
+// then links the listing back to the task.
+func (s *Service) CreateFromTask(task *listingtask.ListingTask, publishResult *integrations.PublishResult) (*ProductListing, error) {
+	var pdBytes []byte
+	if publishResult.PublishedData != nil {
+		pdBytes, _ = json.Marshal(publishResult.PublishedData)
+	}
+
+	l := ProductListing{
+		ProductID:         task.ProductID,
+		PlatformID:        task.PlatformID,
+		PlatformProductID: publishResult.PlatformProductID,
+		PlatformSKU:       publishResult.PlatformSKU,
+		PlatformURL:       publishResult.PlatformURL,
+		Status:            "active",
+		PublishedData:     pdBytes,
+		SyncMessage:       publishResult.SyncMessage,
+	}
+	if err := s.db.Create(&l).Error; err != nil {
+		return nil, fmt.Errorf("create product listing from task: %w", err)
+	}
+
+	// Link back to listing task
+	if err := s.db.Model(&listingtask.ListingTask{}).Where("id = ?", task.ID).
+		Update("product_listing_id", l.ID).Error; err != nil {
+		s.logger.Warn("CreateFromTask: failed to link listing task",
+			zap.Int64("task_id", task.ID),
+			zap.Int64("listing_id", l.ID),
+			zap.Error(err),
+		)
+	}
+
+	return &l, nil
 }
