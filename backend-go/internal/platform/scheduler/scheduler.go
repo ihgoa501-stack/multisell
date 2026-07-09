@@ -3,11 +3,15 @@
 //
 // Scheduler creates one goroutine per registered task. Each goroutine uses
 // time.NewTicker and publishes a "scheduler.tick.{agent_id}" event on each tick.
+//
+// On publish failure, the scheduler retries with exponential backoff
+// (default: 500ms, 1s, 2s — configurable via RetryConfig).
 package scheduler
 
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -30,7 +34,7 @@ var (
 
 	schedulerTickErrors = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "multisell_scheduler_tick_errors_total",
-		Help: "Total number of scheduler tick publish errors.",
+		Help: "Total number of scheduler tick publish errors (final, after retries).",
 	})
 
 	schedulerTicksTotal = promauto.NewCounterVec(
@@ -40,7 +44,44 @@ var (
 		},
 		[]string{"agent_id", "decision_point"},
 	)
+
+	// defaultRetryBackoff is the default exponential backoff sequence (attempt 0..N-1).
+	defaultRetryBackoff = []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second}
 )
+
+// RetryConfig controls retry behavior for tick publish failures.
+// Zero value uses defaults (3 attempts, 500ms/1s/2s backoff).
+type RetryConfig struct {
+	// MaxAttempts is the maximum number of publish attempts including the
+	// initial attempt. Must be >= 1. Default: 3.
+	MaxAttempts int
+
+	// Backoff is the per-attempt delay before the next retry, indexed by
+	// failed attempt number (0 = first failure). The last element is used
+	// for any additional attempts beyond the defined slice. Default:
+	// [500ms, 1s, 2s].
+	Backoff []time.Duration
+
+	// ConsecutiveErrorThreshold is the number of consecutive failures after
+	// which the log level escalates from Warn to Error. 0 = always Error on
+	// final failure. Default: 3.
+	ConsecutiveErrorThreshold int
+}
+
+// safe returns a usable RetryConfig, replacing zero fields with defaults.
+func (c *RetryConfig) safe() RetryConfig {
+	out := *c
+	if out.MaxAttempts < 1 {
+		out.MaxAttempts = 3
+	}
+	if len(out.Backoff) == 0 {
+		out.Backoff = defaultRetryBackoff
+	}
+	if out.ConsecutiveErrorThreshold <= 0 {
+		out.ConsecutiveErrorThreshold = 3
+	}
+	return out
+}
 
 // TaskRunState captures the live runtime state of a scheduled task.
 type TaskRunState struct {
@@ -74,11 +115,15 @@ type Scheduler struct {
 	running bool
 	guards  sync.Map // key=task.ID, value=*sync.Mutex
 
+	// retry config — defaults used if zero.
+	retry RetryConfig
+
 	// Runtime tracking per task.
-	lastTickAt       sync.Map // key=task.ID, value=*time.Time
-	lastTickDuration sync.Map // key=task.ID, value=time.Duration
-	cumulativeTicks  sync.Map // key=task.ID, value=int64
-	cumulativeSkips  sync.Map // key=task.ID, value=int64
+	lastTickAt        sync.Map // key=task.ID, value=*time.Time
+	lastTickDuration  sync.Map // key=task.ID, value=time.Duration
+	cumulativeTicks   sync.Map // key=task.ID, value=int64
+	cumulativeSkips   sync.Map // key=task.ID, value=int64
+	consecutiveErrors sync.Map // key=task.ID, value=int64
 }
 
 // New creates a new scheduler. The bus is used to publish tick events.
@@ -87,6 +132,12 @@ func New(bus *eventbus.Bus, logger *zap.Logger) *Scheduler {
 		bus:    bus,
 		logger: logger,
 	}
+}
+
+// WithRetryConfig sets the retry configuration for publish failures.
+func (s *Scheduler) WithRetryConfig(cfg RetryConfig) *Scheduler {
+	s.retry = cfg
+	return s
 }
 
 // Register adds a task to the scheduler. If the scheduler is already running,
@@ -171,12 +222,15 @@ func (s *Scheduler) runTask(ctx context.Context, task Task) {
 			mu := guard.(*sync.Mutex)
 			if mu.TryLock() {
 				start := time.Now()
-				s.emitTick(ctx, task)
+				ok := s.emitTick(ctx, task)
 				elapsed := time.Since(start)
 				schedulerTickDuration.WithLabelValues(task.AgentID, task.DecisionPoint).Observe(elapsed.Seconds())
 				s.lastTickAt.Store(task.ID, &start)
 				s.lastTickDuration.Store(task.ID, elapsed)
 				s.incCumulativeTicks(task.ID)
+				if ok {
+					s.consecutiveErrors.Store(task.ID, int64(0))
+				}
 				mu.Unlock()
 			} else {
 				s.logger.Debug("skipping tick — previous run still in progress",
@@ -192,7 +246,8 @@ func (s *Scheduler) runTask(ctx context.Context, task Task) {
 }
 
 // emitTick publishes a scheduler tick event to the event bus.
-func (s *Scheduler) emitTick(ctx context.Context, task Task) {
+// Returns true if the publish succeeded (after any retries).
+func (s *Scheduler) emitTick(ctx context.Context, task Task) bool {
 	payload := map[string]interface{}{
 		"agent_id":       task.AgentID,
 		"decision_point": task.DecisionPoint,
@@ -201,19 +256,71 @@ func (s *Scheduler) emitTick(ctx context.Context, task Task) {
 	}
 	tickID := fmt.Sprintf("sched-tick-%s-%d", task.AgentID, time.Now().UnixMilli())
 	ctx = eventbus.WithCorrelationID(ctx, tickID)
-	_, err := s.bus.Publish(ctx,
-		"scheduler.tick."+task.AgentID,
-		"scheduler",
-		payload,
-	)
-	if err != nil {
-		s.logger.Warn("scheduler tick publish failed",
-			zap.String("agent_id", task.AgentID),
-			zap.Error(err))
-		schedulerTickErrors.Inc()
+
+	cfg := s.retry.safe()
+
+	var lastErr error
+	for attempt := 0; attempt < cfg.MaxAttempts; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff before retry. Index into Backoff at
+			// attempt-1 (the failed attempt index), clamping to the last
+			// defined value for any excess.
+			backoffIdx := attempt - 1
+			if backoffIdx >= len(cfg.Backoff) {
+				backoffIdx = len(cfg.Backoff) - 1
+			}
+			delay := cfg.Backoff[backoffIdx]
+
+			// Context-aware sleep — return early on shutdown.
+			select {
+			case <-ctx.Done():
+				s.logger.Warn("scheduler tick retry cancelled by shutdown",
+					zap.String("agent_id", task.AgentID),
+					zap.Int("attempt", attempt+1),
+					zap.Duration("slept", 0))
+				return false
+			case <-time.After(delay):
+			}
+		}
+
+		_, lastErr = s.bus.Publish(ctx,
+			"scheduler.tick."+task.AgentID,
+			"scheduler",
+			payload,
+		)
+		if lastErr == nil {
+			schedulerTicksTotal.WithLabelValues(task.AgentID, task.DecisionPoint).Inc()
+			return true
+		}
+
+		// Failed this attempt. Log at Warn for early failures, escalate
+		// to Error when consecutive error count exceeds threshold.
+		raw, _ := s.consecutiveErrors.LoadOrStore(task.ID, int64(0))
+		consecutive := raw.(int64) + 1
+		s.consecutiveErrors.Store(task.ID, consecutive)
+
+		isLast := attempt == cfg.MaxAttempts-1
+		if isLast || consecutive >= int64(cfg.ConsecutiveErrorThreshold) {
+			s.logger.Error("scheduler tick publish failed after retries",
+				zap.String("agent_id", task.AgentID),
+				zap.Int("attempt", attempt+1),
+				zap.Int("max_attempts", cfg.MaxAttempts),
+				zap.Int64("consecutive_errors", consecutive),
+				zap.Error(lastErr))
+		} else {
+			s.logger.Warn("scheduler tick publish failed, retrying",
+				zap.String("agent_id", task.AgentID),
+				zap.Int("attempt", attempt+1),
+				zap.Int("max_attempts", cfg.MaxAttempts),
+				zap.Int64("consecutive_errors", consecutive),
+				zap.Duration("next_retry_in", cfg.Backoff[int(math.Min(float64(attempt), float64(len(cfg.Backoff)-1)))]),
+				zap.Error(lastErr))
+		}
 	}
 
-	schedulerTicksTotal.WithLabelValues(task.AgentID, task.DecisionPoint).Inc()
+	// All retries exhausted.
+	schedulerTickErrors.Inc()
+	return false
 }
 
 // Shutdown stops all running tasks gracefully.
@@ -253,8 +360,8 @@ func (s *Scheduler) TaskRunState() []TaskRunState {
 	states := make([]TaskRunState, 0, len(tasks))
 	for _, t := range tasks {
 		state := TaskRunState{
-			ID:      t.ID,
-			AgentID: t.AgentID,
+			ID:       t.ID,
+			AgentID:  t.AgentID,
 			Interval: t.Interval.String(),
 		}
 
