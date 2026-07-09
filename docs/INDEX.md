@@ -200,6 +200,7 @@
 > 新功能需求请添加到 `docs/features/` 目录，使用标准模板。
 
 - [功能需求模板](features/TEMPLATE.md)
+- [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
 
 ---
 

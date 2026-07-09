@@ -19,6 +19,7 @@ interface ListingTask {
   status: string;
   missing_requirements?: unknown;
   decision_snapshot?: unknown;
+  approval_id?: number;
   target_sale_price?: number;
   target_profit_margin?: number;
   destination_country: string;
@@ -80,7 +81,7 @@ export default function ListingTaskDetailPage() {
     queryFn: async () => {
       const res = await apiClient.get<ApprovalRequest[]>('/v1/approval', {
         status: '',
-        request_type: 'publish',
+        request_type: 'listing_task',
         page: '1',
         size: '100',
       });
@@ -177,7 +178,7 @@ export default function ListingTaskDetailPage() {
             icon={<PlayCircleOutlined />}
             loading={executeMutation.isPending}
             onClick={() => executeMutation.mutate()}
-            disabled={task?.status === 'success' || task?.status === 'running'}
+            disabled={task?.status === 'completed' || task?.status === 'executing'}
           >
             启动执行
           </Button>
@@ -196,11 +197,17 @@ export default function ListingTaskDetailPage() {
         </Card>
       ) : (
         <Space direction="vertical" size="middle" style={{ display: 'flex' }}>
-          {task?.status === 'blocked' && (
+          {task?.status !== 'completed' && task?.status !== 'failed' && (
             <Alert
-              type={isApproved ? 'success' : isRejected ? 'error' : 'warning'}
-              message={isApproved ? '审批已通过，可以执行' : isRejected ? '审批已拒绝，任务保持阻塞' : '该任务等待 Owner 审批'}
-              description={publishApproval?.reason || '审批通过前，系统不会执行该刊登任务。'}
+              type={task?.status === 'approved' ? 'success' : task?.status === 'blocked' && (isApproved || isRejected) ? (isApproved ? 'success' : 'error') : 'warning'}
+              message={
+                task?.status === 'approved' ? '审批已通过，可以执行'
+                : task?.status === 'blocked' && isApproved ? '审批已通过，可以执行'
+                : task?.status === 'blocked' && isRejected ? '审批已拒绝，任务保持阻塞'
+                : task?.status === 'executing' ? '任务正在执行中'
+                : '该任务等待 Owner 审批'
+              }
+              description={publishApproval?.reason || '审批通过后，系统将允许该任务的执行。'}
               showIcon
             />
           )}
@@ -219,10 +226,11 @@ export default function ListingTaskDetailPage() {
                 {task?.target_profit_margin ? `${task.target_profit_margin.toFixed(2)}%` : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Tag color={task?.status === 'success' ? 'green' : task?.status === 'running' ? 'orange' : 'red'}>
+                <Tag color={task?.status === 'completed' ? 'green' : task?.status === 'executing' ? 'orange' : task?.status === 'approved' ? 'blue' : task?.status === 'failed' ? 'red' : 'default'}>
                   {task?.status?.toUpperCase()}
                 </Tag>
               </Descriptions.Item>
+              <Descriptions.Item label="审批 ID">{task?.approval_id ?? '-'}</Descriptions.Item>
               <Descriptions.Item label="创建者">{task?.created_by || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">
                 {task?.created_at ? dayjs(task.created_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
@@ -233,6 +241,13 @@ export default function ListingTaskDetailPage() {
               {task?.last_error && (
                 <Descriptions.Item label="最后一次错误" span={2}>
                   <pre style={{ color: '#ff4d4f', margin: 0, whiteSpace: 'pre-wrap' }}>{task.last_error}</pre>
+                </Descriptions.Item>
+              )}
+              {task?.decision_snapshot && task.decision_snapshot !== null && (
+                <Descriptions.Item label="评估快照" span={2}>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12, color: '#888' }}>
+                    {JSON.stringify(task.decision_snapshot, null, 2)}
+                  </pre>
                 </Descriptions.Item>
               )}
             </Descriptions>

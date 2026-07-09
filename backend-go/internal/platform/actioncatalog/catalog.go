@@ -374,9 +374,9 @@ func DefaultEntries() []Entry {
 			AutonomousBlocked: false,
 		},
 		{
-			ActionType:        "system.listingtask.execute",
-			Name:              "上架任务执行",
-			Description:       "EventBus approval.approved.listing_task 触发的在审批通过后执行上架任务。",
+			ActionType:        "system.listingtask.approval_approved",
+			Name:              "上架任务审批通过推进",
+			Description:       "EventBus approval.approved.listing_task 推进 listing_task 到已批准状态。",
 			RiskLevel:         RiskHigh,
 			Level:             Level3,
 			RequireApproval:   false,

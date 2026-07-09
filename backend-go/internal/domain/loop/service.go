@@ -6,13 +6,13 @@ import (
 	"math"
 	"strings"
 
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
-	"github.com/lingmirror/backend-go/internal/domain/profit"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
+	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -91,7 +91,7 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 			as := approval.NewService(tx, s.logger, s.oplogSvc)
 			req, err := as.Create(&approval.CreateApprovalInput{
 				ProductID:   prod.ID,
-				RequestType: "publish",
+				RequestType: "listing_task",
 				Requester:   triggeredBy,
 				TargetType:  "listing_task",
 				TargetID:    task.ID,
@@ -138,17 +138,17 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 	// 6. Store the recommendation record
 	riskJSON, _ := json.Marshal(riskFlags)
 	rec := ListingRecommendation{
-		ProductID:         productID,
-		CompletenessScore: compResult.Score,
-		ProfitMargin:      profitResult.ProfitMargin,
-		EstimatedProfit:   profitResult.EstimatedProfit,
-		Decision:          decision,
-		Confidence:        confidence,
-		Reason:            reason,
-		RiskFlags:         string(riskJSON),
+		ProductID:            productID,
+		CompletenessScore:    compResult.Score,
+		ProfitMargin:         profitResult.ProfitMargin,
+		EstimatedProfit:      profitResult.EstimatedProfit,
+		Decision:             decision,
+		Confidence:           confidence,
+		Reason:               reason,
+		RiskFlags:            string(riskJSON),
 		CreatedListingTaskID: listingTaskID,
-		TriggeredBy:       triggeredBy,
-		FeedbackStatus:    "pending",
+		TriggeredBy:          triggeredBy,
+		FeedbackStatus:       "pending",
 	}
 	if err := s.db.Create(&rec).Error; err != nil {
 		s.logger.Error("failed to save listing recommendation",
@@ -264,6 +264,7 @@ func (s *Service) createListingTask(db *gorm.DB, prod *candidate.CandidateProduc
 		"total_cost":         profitResult.TotalCost,
 		"status":             compResult.Status,
 		"evaluated_by":       triggeredBy,
+		"mode":               "dry_run",
 	}
 	dsJSON, _ := json.Marshal(ds)
 
