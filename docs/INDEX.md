@@ -55,7 +55,7 @@
 | 文档 | 当前用途 |
 |------|----------|
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
-| [AI-Native 整体开发规划蓝图](AI_NATIVE_DEVELOPMENT_PLAN.md) | 🆕 面向多领域可信自进化 AgentOS 的长期开发规约与路线图 |
+| [AI-Native AgentOS 长期愿景与架构方向](AI_NATIVE_DEVELOPMENT_PLAN.md) | 🆕 面向多领域可信自进化 AgentOS 的长期愿景；不覆盖当前执行优先级 |
 | [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | 🆕 未来半年商品出海业务层开发总纲：目标、阶段、架构 and 验收标准 |
 | [验收门禁](ACCEPTANCE_GATE.md) | 🆕 Dev Done / Test Green / Business Verified / Beta Accepted 的完成定义和证据要求 |
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |
