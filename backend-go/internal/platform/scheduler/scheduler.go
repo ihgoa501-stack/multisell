@@ -63,6 +63,17 @@ type Task struct {
 	Description   string
 }
 
+// RetryEntry represents a failed scheduler tick awaiting retry.
+type RetryEntry struct {
+	TaskID        string                 `json:"task_id"`
+	AgentID       string                 `json:"agent_id"`
+	DecisionPoint string                 `json:"decision_point"`
+	FailedAt      time.Time              `json:"failed_at"`
+	LastError     string                 `json:"last_error"`
+	Attempts      int                    `json:"attempts"`
+	Payload       map[string]interface{} `json:"payload"`
+}
+
 // Scheduler manages periodic task execution.
 type Scheduler struct {
 	bus     *eventbus.Bus
@@ -79,6 +90,10 @@ type Scheduler struct {
 	lastTickDuration sync.Map // key=task.ID, value=time.Duration
 	cumulativeTicks  sync.Map // key=task.ID, value=int64
 	cumulativeSkips  sync.Map // key=task.ID, value=int64
+
+	// Retry queue for failed ticks.
+	retryMu  sync.Mutex
+	retries  []RetryEntry
 }
 
 // New creates a new scheduler. The bus is used to publish tick events.
@@ -144,6 +159,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.mu.Unlock()
 
 	// Wait for shutdown signal.
+	// Start retry loop for failed ticks.
+	s.wg.Add(1)
+	go s.retryLoop(ctx)
 	<-ctx.Done()
 	s.logger.Info("scheduler shutting down")
 	s.Shutdown()
@@ -211,6 +229,7 @@ func (s *Scheduler) emitTick(ctx context.Context, task Task) {
 			zap.String("agent_id", task.AgentID),
 			zap.Error(err))
 		schedulerTickErrors.Inc()
+		s.pushRetry(task, payload, err.Error())
 	}
 
 	schedulerTicksTotal.WithLabelValues(task.AgentID, task.DecisionPoint).Inc()
@@ -304,4 +323,79 @@ func (s *Scheduler) incCumulativeTicks(taskID string) {
 func (s *Scheduler) incCumulativeSkips(taskID string) {
 	val, _ := s.cumulativeSkips.LoadOrStore(taskID, int64(0))
 	s.cumulativeSkips.Store(taskID, val.(int64)+1)
+}
+
+// pushRetry adds a failed tick to the retry queue.
+func (s *Scheduler) pushRetry(task Task, payload map[string]interface{}, errMsg string) {
+    s.retryMu.Lock()
+    defer s.retryMu.Unlock()
+    // Cap the queue at 100 entries (oldest dropped).
+    if len(s.retries) >= 100 {
+        s.retries = s.retries[len(s.retries)-99:]
+    }
+    s.retries = append(s.retries, RetryEntry{
+        TaskID:        task.ID,
+        AgentID:       task.AgentID,
+        DecisionPoint: task.DecisionPoint,
+        FailedAt:      time.Now(),
+        LastError:     errMsg,
+        Attempts:      1,
+        Payload:       payload,
+    })
+}
+
+// RetryQueue returns a copy of the current retry queue entries.
+func (s *Scheduler) RetryQueue() []RetryEntry {
+    s.retryMu.Lock()
+    defer s.retryMu.Unlock()
+    out := make([]RetryEntry, len(s.retries))
+    copy(out, s.retries)
+    return out
+}
+
+// retryLoop runs as a background goroutine, retrying failed ticks every 30s.
+// Max 3 attempts per entry; entries exhausted beyond that are dropped.
+func (s *Scheduler) retryLoop(ctx context.Context) {
+    defer s.wg.Done()
+    ticker := time.NewTicker(30 * time.Second)
+    defer ticker.Stop()
+    for {
+        select {
+        case <-ticker.C:
+            s.mu.Lock()
+            running := s.running
+            s.mu.Unlock()
+            if !running {
+                return
+            }
+            s.retryMu.Lock()
+            var kept []RetryEntry
+            for _, entry := range s.retries {
+                if entry.Attempts >= 3 {
+                    s.logger.Warn("retry exhausted, dropping tick",
+                        zap.String("agent_id", entry.AgentID),
+                        zap.String("task_id", entry.TaskID),
+                        zap.Int("attempts", entry.Attempts))
+                    continue
+                }
+                ctx2 := context.Background()
+                ctx2 = eventbus.WithCorrelationID(ctx2, "retry-"+entry.TaskID+"-"+fmt.Sprintf("%d", time.Now().UnixMilli()))
+                _, err := s.bus.Publish(ctx2, "scheduler.tick."+entry.AgentID, "scheduler", entry.Payload)
+                if err != nil {
+                    entry.Attempts++
+                    entry.LastError = err.Error()
+                    kept = append(kept, entry)
+                    schedulerTickErrors.Inc()
+                } else {
+                    s.logger.Info("retry succeeded",
+                        zap.String("agent_id", entry.AgentID),
+                        zap.String("task_id", entry.TaskID))
+                }
+            }
+            s.retries = kept
+            s.retryMu.Unlock()
+        case <-ctx.Done():
+            return
+        }
+    }
 }

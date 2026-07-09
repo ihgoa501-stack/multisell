@@ -588,6 +588,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	protected.GET("/aios/scheduler/tasks", func(c *gin.Context) {
 		c.JSON(200, gin.H{"tasks": sched.TaskRunState()})
 	})
+		// Scheduler retry queue -- failed ticks awaiting retry.
+		protected.GET("/aios/scheduler/retry-queue", func(c *gin.Context) {
+			c.JSON(200, gin.H{"retry_queue": sched.RetryQueue()})
+		})
 
 	// AgentOS routes
 	agentos.RegisterRoutes(protected, db, logger, extTracker)
