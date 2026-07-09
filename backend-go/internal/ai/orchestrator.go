@@ -320,7 +320,9 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 				RiskLevel:     riskLevel,
 			}, nil
 		}
-		output = ruleResult.Output
+		if ruleResult != nil {
+				output = ruleResult.Output
+			}
 	}
 
 	// Emit reasoning event.
@@ -746,6 +748,21 @@ func (o *Orchestrator) recordLLMCost(agent AgentSpec, req *LLMRequest, resp *LLM
 // Chat is a convenience entry point for /ai/chat. It maps a natural-language
 // message to an agent + decision point using simple keyword matching.
 func (o *Orchestrator) Chat(message string, userID *int64) (*RunAgentResult, error) {
+	// L1: Input guard — check raw user input before routing.
+	if o.guardrails != nil {
+		var uid int64
+		if userID != nil {
+			uid = *userID
+		}
+		gr, err := o.guardrails.Check(context.Background(), &guardrails.GuardInput{
+			RawInput: message,
+			UserID:   uid,
+		})
+		if err != nil || gr.Blocked {
+			return nil, ErrBlockedByGuardrails
+		}
+	}
+
 	agentID, decisionPoint := routeChat(message)
 	if agentID == "" {
 		agentID = "G1"
