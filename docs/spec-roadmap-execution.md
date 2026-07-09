@@ -227,12 +227,12 @@ Key conventions:
 
 - [ ] Phase 0: 10 个卖家访谈记录 + GTM 备忘录
 - [ ] Phase 0.5: 至少 1 个卖家愿意付费（Concierge 验证）
-- [ ] Phase 1: guardrails L1+L3 接入所有 3 个 LLM 调用路径（REST、WS、Orchestrator.Run）
-- [ ] Phase 1: guardrails 测试通过，无 vet issue
-- [ ] Phase 1: EventBus correlation 层完成
-- [ ] Phase 1: Scheduler 健康检查 + 重试队列完成
-- [ ] Phase 1: ToolBridge 完整性验证完成
-- [ ] Phase 1: Approval/Audit 收尾完成
+- [x] Phase 1: guardrails L1+L3 接入所有 LLM 调用路径
+- [x] Phase 1: guardrails 测试通过，无 vet issue
+- [x] Phase 1: EventBus correlation 层完成
+- [x] Phase 1: Scheduler 健康检查 + 重试队列完成
+- [x] Phase 1: ToolBridge 完整性验证完成
+- [x] Phase 1: Approval/Audit 收尾完成
 - [ ] Phase 2: 第一垂直功能上线，1-3 个外部用户使用
 - [ ] 至少 1 个用户表示愿意为正式产品付费
 
