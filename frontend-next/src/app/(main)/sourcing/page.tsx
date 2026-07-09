@@ -12,7 +12,7 @@ import {
 } from '@ant-design/icons';
 import apiClient from '@/lib/api-client';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 // ── Recommendation (existing) ─────────────────────────────────────────────
 
