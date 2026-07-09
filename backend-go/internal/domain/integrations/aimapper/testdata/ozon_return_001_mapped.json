@@ -1,0 +1,10 @@
+{
+  "return_id": "RET-001",
+  "order_sn": "123456-001",
+  "sku_code": "SKU-ABC-001",
+  "quantity": 1,
+  "reason": "Defective item",
+  "status": "accepted",
+  "created_at": "2026-07-05T08:00:00.000Z",
+  "refund_amount": "29.99"
+}

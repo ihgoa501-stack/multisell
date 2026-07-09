@@ -612,3 +612,7 @@ func (a *ShopifyAdapter) FetchReturns(ctx context.Context, input *FetchReturnsIn
 	}
 	return items, nil
 }
+
+func (a *ShopifyAdapter) FetchRaw(ctx context.Context, platformID int64, endpoint string, payload interface{}) ([]byte, error) {
+	return nil, fmt.Errorf("shopify FetchRaw: not yet implemented")
+}

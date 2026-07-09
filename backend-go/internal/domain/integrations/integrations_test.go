@@ -54,6 +54,9 @@ func (m *mockAdapter) FetchSettlements(_ context.Context, _ *FetchSettlementsInp
 func (m *mockAdapter) FetchReturns(_ context.Context, _ *FetchReturnsInput) ([]*PlatformReturn, error) {
 	return nil, nil
 }
+func (m *mockAdapter) FetchRaw(_ context.Context, _ int64, _ string, _ interface{}) ([]byte, error) {
+	return nil, nil
+}
 
 func setupRouter(svc *Service) *gin.Engine {
 	gin.SetMode(gin.TestMode)

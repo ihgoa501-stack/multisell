@@ -1,0 +1,10 @@
+{
+  "order_sn": "123456-001",
+  "status": "completed",
+  "total_amount": "109.97",
+  "shipping_fee": "15.50",
+  "items": [
+    {"sku_code": "SKU-ABC-001", "quantity": 2, "unit_price": "29.99"},
+    {"sku_code": "SKU-ABC-002", "quantity": 1, "unit_price": "49.99"}
+  ]
+}

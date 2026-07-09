@@ -1,0 +1,11 @@
+{
+  "operation_id": "OP-20260701-002",
+  "operation_type": "refund",
+  "operation_date": "2026-07-01T11:00:00.000Z",
+  "amount": "-29.99",
+  "currency_code": "RUB",
+  "description": "",
+  "posting": {
+    "posting_number": "123456-001"
+  }
+}
