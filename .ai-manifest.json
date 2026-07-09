@@ -1,0 +1,27 @@
+{
+  "manifest_version": "1.0.0",
+  "project_name": "LingMirror (MultiSell)",
+  "active_stack": {
+    "backend": "Go 1.21 / Gin",
+    "frontend": "Next.js 14 / App Router / AntD",
+    "database": "PostgreSQL 15 / GORM v2",
+    "event_bus": "In-memory Publisher-Subscriber (internal/platform/eventbus)"
+  },
+  "entrypoints": {
+    "backend_main": "backend-go/cmd/server/main.go",
+    "frontend_root": "frontend-next/src/app/"
+  },
+  "core_indexes": {
+    "module_catalog": "docs/reference-module-catalog.md",
+    "documentation_index": "docs/INDEX.md",
+    "governance_directory": "docs/governance/",
+    "session_state": ".loop/dev-state.md",
+    "codegraph_db": ".codegraph/codegraph.db",
+    "agent_instructions": "AGENTS.md",
+    "claude_instructions": "CLAUDE.md"
+  },
+  "safe_boundaries": {
+    "risk_manifest": "docs/governance/PLATFORM_CONSTITUTION.md",
+    "high_risk_layers": ["price", "inventory", "order", "finance", "audit", "auth"]
+  }
+}
