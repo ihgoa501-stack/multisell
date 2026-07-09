@@ -1,35 +1,84 @@
-# Module: imagegen
-
-> Base prefix: `/api/v1`
+# Module: `imagegen`
 
 Package: `backend-go/internal/domain/imagegen/`
 
-## Models
-
-- `ProductImageGen`
-- `ProductCanvas`
-- `PromptTemplate`
+**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| GET    | `/api/v1/image-gen` | `h.ListImageGens` |
-| GET    | `/api/v1/image-gen/:id` | `h.GetImageGen` |
-| POST   | `/api/v1/image-gen` | `h.CreateImageGen` |
-| PUT    | `/api/v1/image-gen/:id/status` | `h.UpdateImageGenStatus` |
-| DELETE | `/api/v1/image-gen/:id` | `h.DeleteImageGen` |
-| GET    | `/api/v1/image-gen/canvas` | `h.ListCanvases` |
-| POST   | `/api/v1/image-gen/canvas` | `h.CreateCanvas` |
-| GET    | `/api/v1/image-gen/canvas/:id` | `h.GetCanvas` |
-| PUT    | `/api/v1/image-gen/canvas/:id` | `h.UpdateCanvas` |
-| DELETE | `/api/v1/image-gen/canvas/:id` | `h.DeleteCanvas` |
-| GET    | `/api/v1/image-gen/templates` | `h.ListTemplates` |
-| POST   | `/api/v1/image-gen/templates` | `h.CreateTemplate` |
-| GET    | `/api/v1/image-gen/templates/:id` | `h.GetTemplate` |
-| PUT    | `/api/v1/image-gen/templates/:id` | `h.UpdateTemplate` |
-| POST   | `/api/v1/image-gen/templates/:id/use` | `h.UseTemplate` |
-| DELETE | `/api/v1/image-gen/templates/:id` | `h.DeleteTemplate` |
+| `GET` | `/api/v1/image-gen` | `h.ListImageGens` |
+| `POST` | `/api/v1/image-gen` | `h.CreateImageGen` |
+| `DELETE` | `/api/v1/image-gen/:id` | `h.DeleteImageGen` |
+| `GET` | `/api/v1/image-gen/:id` | `h.GetImageGen` |
+| `PUT` | `/api/v1/image-gen/:id/status` | `h.UpdateImageGenStatus` |
+| `GET` | `/api/v1/image-gen/canvas` | `h.ListCanvases` |
+| `POST` | `/api/v1/image-gen/canvas` | `h.CreateCanvas` |
+| `DELETE` | `/api/v1/image-gen/canvas/:id` | `h.DeleteCanvas` |
+| `GET` | `/api/v1/image-gen/canvas/:id` | `h.GetCanvas` |
+| `PUT` | `/api/v1/image-gen/canvas/:id` | `h.UpdateCanvas` |
+| `GET` | `/api/v1/image-gen/templates` | `h.ListTemplates` |
+| `POST` | `/api/v1/image-gen/templates` | `h.CreateTemplate` |
+| `DELETE` | `/api/v1/image-gen/templates/:id` | `h.DeleteTemplate` |
+| `GET` | `/api/v1/image-gen/templates/:id` | `h.GetTemplate` |
+| `PUT` | `/api/v1/image-gen/templates/:id` | `h.UpdateTemplate` |
+| `POST` | `/api/v1/image-gen/templates/:id/use` | `h.UseTemplate` |
+
+## Models
+
+### `ProductImageGen`
+**DB table:** `product_image_gen`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `id` | PK |
+| `ProductID` | `int64` | `product_id` | `product_id` | NOT NULL |
+| `Prompt` | `string` | `prompt` | `prompt` | NOT NULL |
+| `Style` | `string` | `style` | `style` | default:product_white |
+| `NegativePrompt` | `string` | `negative_prompt` | `negative_prompt` | default:'' |
+| `Size` | `string` | `size` | `size` | default:1024x1024 |
+| `RequestedCount` | `int` | `requested_count` | `requested_count` | default:1 |
+| `Status` | `string` | `status` | `status` | default:pending |
+| `ImageURLs` | `json.RawMessage` | `image_urls` | `image_urls` |  |
+| `ErrorMessage` | `string` | `error_message` | `error_message` |  |
+| `CreatedBy` | `int64` | `created_by` | `created_by` |  |
+| `BatchID` | `string` | `batch_id` | `batch_id` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `created_at` |  |
+| `UpdatedAt` | `time.Time` | `updated_at` | `updated_at` |  |
+
+### `ProductCanvas`
+**DB table:** `product_canvases`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `id` | PK |
+| `ProductID` | `int64` | `product_id` | `product_id` | NOT NULL |
+| `Name` | `string` | `name` | `name` | default:未命名画布 |
+| `Layers` | `json.RawMessage` | `layers` | `layers` |  |
+| `Thumbnail` | `string` | `thumbnail` | `thumbnail` |  |
+| `CreatedBy` | `int64` | `created_by` | `created_by` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `created_at` |  |
+| `UpdatedAt` | `time.Time` | `updated_at` | `updated_at` |  |
+
+### `PromptTemplate`
+**DB table:** `prompt_template`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `id` | PK |
+| `Name` | `string` | `name` | `name` | NOT NULL |
+| `Description` | `string` | `description` | `description` |  |
+| `Prompt` | `string` | `prompt` | `prompt` | NOT NULL |
+| `NegativePrompt` | `string` | `negative_prompt` | `negative_prompt` | default:'' |
+| `Style` | `string` | `style` | `style` | default:product_white |
+| `Size` | `string` | `size` | `size` | default:1024x1024 |
+| `PlatformCode` | `string` | `platform_code` | `platform_code` |  |
+| `IsShared` | `int` | `is_shared` | `is_shared` | default:1 |
+| `UsageCount` | `int` | `usage_count` | `usage_count` | default:0 |
+| `CreatedBy` | `int64` | `created_by` | `created_by` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `created_at` |  |
+| `UpdatedAt` | `time.Time` | `updated_at` | `updated_at` |  |
 
 ---
-_Auto-generated by docgen. Do not edit manually._
+_Auto-generated by `docgen`. Do not edit manually._
