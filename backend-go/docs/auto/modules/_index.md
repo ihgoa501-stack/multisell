@@ -1,11 +1,6 @@
 # Auto-generated Module Reference
 
-> Generated from Go source code. Update docs by running:
-> ```
-> cd backend-go && go run cmd/docgen/main.go
-> ```
-
-Regenerate with `make docs` in `backend-go/`.
+> Regenerate with `make docs` in `backend-go/`.
 
 | Module | Routes | Models | Permission |
 |--------|--------|--------|------------|

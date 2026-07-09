@@ -1,6 +1,5 @@
 # Route Catalog (auto-generated)
 
-> Generated from Go source. Source of truth for all registered API routes.
 > Total modules: 63 | Total routes: 566
 
 ## Overview

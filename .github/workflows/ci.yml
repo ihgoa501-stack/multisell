@@ -24,7 +24,7 @@ jobs:
         working-directory: backend-go
         run: |
           go run cmd/docgen/main.go
-          git diff --exit-code -- docs/auto/modules/ || {
+          git diff --exit-code -- docs/auto/ || {
             echo "ERROR: Auto-generated docs are stale. Run 'make docs' in backend-go/ and commit the changes."
             exit 1
           }
