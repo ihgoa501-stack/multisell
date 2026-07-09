@@ -136,3 +136,17 @@ func (h *Handler) KeywordTrends(c *gin.Context) {
 		"items":   items,
 	})
 }
+
+// MarketOverview GET /sourcing/market-overview
+// Returns aggregated market demand data across all product categories.
+func (h *Handler) MarketOverview(c *gin.Context) {
+	items, err := h.service.FetchMarketOverview(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"source": "market_overview",
+		"categories": items,
+	})
+}
