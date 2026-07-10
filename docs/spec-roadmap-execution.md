@@ -13,7 +13,7 @@ Four phases, parallel tracks where possible:
 | **0** | Week 1-2 | — | 卖家访谈（3-10 人），必问选品流程/痛点/付费意愿 |
 | **0.5** | Week 3-5 | Phase 1 基建并行 | Concierge 试点（人工代运营+真实付款验证） |
 | **1** | Week 2-6 | 5 层 guardrails 接入所有 LLM 调用路径 → EventBus correlation → Scheduler 健康 → ToolBridge → Approval/Audit 收尾 | — |
-| **2** | Week 6-10 | 第一垂直应用：需求挖掘 → 选品分析 | — |
+| **P3** | 待定 | ~~第一垂直应用：需求挖掘 → 选品分析~~ 降级。优先完成真实上架闭环 + 用户获取。 | — |
 
 **退出条件**：Phase 0.5 结束时无人愿意付费 → 重新评估方向。
 
@@ -44,7 +44,7 @@ Phase 1 的"可立即开工"部分——guardrails wiring——需要先理解�
 | Orchestrator.Run | `runWithTimeout()` → `synthesizeOutput()` | ✅ L1+L3 已有 | `synthesizeOutput()` 内 L1 (soft) + L3 (prod hard) |
 | ExecuteAction | `service.go:229` Gate 6 | ✅ L4 guardrails | 通过 `guard.Check()` |
 | ToolRegistry.Call | `registry.go:177` via hook | ✅ L1-L5 全部 | setup.go 注册为 pre-call hook |
-| LLM Gateway | `llmgateway/gateway.go:154` | 🔲 stub provider | 需 Phase 2 切换真实 provider |
+| LLM Gateway | `llmgateway/gateway.go:154` | 🔲 stub provider | 待用户验证后切换真实 provider |
 
 **结论**：Guardrails 已在所有 LLM 调用路径覆盖。修正：初始调研未发现 `synthesizeOutput()` 内已存在 L1+L3 检查。
 
@@ -72,8 +72,8 @@ docker compose up -d db
 cd backend-go && go run cmd/server/main.go
 cd frontend-next && npm run dev -- --hostname 127.0.0.1 --port 3000
 
-# ===== Phase 2 =====
-# 待 Phase 0 反馈确定
+# ===== P3（原 Phase 2） =====
+# 降级。当前优先级：真实上架闭环 → 用户获取。
 ```
 
 ## Project Structure
@@ -185,15 +185,15 @@ Key conventions:
 | 1 | `go test ./internal/aios/guardrails/...` | guardrails 单元测试全覆盖 |
 | 1 | `go vet ./...` | 静态分析无新增 issue |
 | 1 | 端到端 | API 启动后，发一条含 prompt injection 的消息，确认被 guardrails 拦截 |
-| 2 | TBD | 待 Phase 0 反馈确定 |
+| **P3** | TBD | 原 Phase 2 降级，待真实上架闭环 + 用户获取后重新评估方向 |
 
-### Guardrails 接入验收检查
-- [ ] REST `/api/v1/ai/chat` — L1 input guard 检查用户输入
-- [ ] WebSocket `/ws` — L1 input guard 检查用户消息
-- [ ] Orchestrator.Run — L1 + L3 检查 input/output
-- [ ] 所有 LLM 调用路径返回 guardrails-blocked 错误时不暴露内部细节
-- [ ] guardrails nil-safe（未配置时跳过，不 panic）
-- [ ] 测试覆盖率：每处新增检查点至少 2 个测试 case
+### Guardrails 接入验收检查（Phase 1 已完成）
+- [x] REST `/api/v1/ai/chat` — L1 input guard 检查用户输入
+- [x] WebSocket `/ws` — L1 input guard 检查用户消息
+- [x] Orchestrator.Run — L1 + L3 检查 input/output
+- [x] 所有 LLM 调用路径返回 guardrails-blocked 错误时不暴露内部细节
+- [x] guardrails nil-safe（未配置时跳过，不 panic）
+- [x] 测试覆盖率：每处新增检查点至少 2 个测试 case
 
 ## Boundaries
 
@@ -212,7 +212,7 @@ Key conventions:
 - 为 LLM Gateway 切换非 stub provider 到生产
 - 任何涉及外部平台写回、价格变更、库存变更、订单状态的代码
 - 扩大 Agent 的 autonomous execution 范围
-- 为 Phase 2 垂直应用做任何 scaffold（等 Phase 0 反馈）
+- 为 P3（原 Phase 2）做任何 scaffold（当前优先级：真实上架闭环 → 用户获取）
 
 ### Never Do
 - 不写 spec 就进入编码
@@ -220,7 +220,6 @@ Key conventions:
 - 在 guardrails 检查错误中泄露 LLM API key 或内部路径
 - 卖家访谈期间写功能代码（Phase 0 约束）
 - 删除或绕过已有的 guardrails 检查
-- 在 Phase 0 反馈到达前开始 Phase 2 的任何实现工作
 - 在真实卖家数据上使用非 stub LLM provider 之前未确认数据合规
 
 ## Success Criteria
@@ -233,13 +232,13 @@ Key conventions:
 - [x] Phase 1: Scheduler 健康检查 + 重试队列完成
 - [x] Phase 1: ToolBridge 完整性验证完成
 - [x] Phase 1: Approval/Audit 收尾完成
-- [ ] Phase 2: 第一垂直功能上线，1-3 个外部用户使用
+- [ ] P3（原 Phase 2）: ~~第一垂直功能上线~~ 降级。当前优先级：真实上架闭环 → 用户获取
 - [ ] 至少 1 个用户表示愿意为正式产品付费
 
 ## Open Questions
 
-1. **LLM 数据源**：Phase 2 需求分析工具的数据从哪来？Amazon Review API？爬虫？卖家手动输入？待 Phase 0 访谈中验证。
-2. **LLM Gateway**：当前使用 stub provider。短期内应继续使用 stub（无额外 LLM 成本），Phase 2 切换真实 provider。
+1. **LLM 数据源**：P3（原 Phase 2）需求分析工具的数据从哪来？Amazon Review API？爬虫？卖家手动输入？降级后待后续评估。
+2. **LLM Gateway**：当前使用 stub provider。短期内应继续使用 stub（无额外 LLM 成本），有真实用户后再切换。
 3. **EventBus correlation**：issue 列在 Phase 1 但优先级靠后。是否在 Phase 1 guardrails 之后自动进入？
 4. **定价模式**：SaaS/按结果/免费增值？待 Phase 0 访谈验证。
 5. **供应链整合**：AI 代替工厂沟通在实操中可行？待 Phase 0.5 Concierge 试点验证。
@@ -252,3 +251,4 @@ Key conventions:
 | 2026-07-09 | Phase 0 访谈 + Phase 1 guardrails 并行执行 | guardrails 接入已在代码知识范围内，可独立完成；Phase 0 不需开发时间 |
 | 2026-07-09 | 完整路线图 spec 覆盖 Phase 0-2 | 一个文档对齐所有阶段方向 |
 | 2026-07-09 | P0-P1 执行门禁视为已完成基础版 | PR #276 已合并，Guardrails L1-L5 都有实现但 LLM 入口未接入 |
+| 2026-07-10 | Phase 2 降级至 P3 | 没有卖家访谈验证选品方向。优先完成真实上架闭环 + 用户获取。 |
