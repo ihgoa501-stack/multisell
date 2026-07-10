@@ -834,6 +834,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	completeness.RegisterRoutes(protected, db, logger)
 	compliance.RegisterRoutes(protected, db, logger)
 	profit.RegisterRoutes(protected, db, logger)
+	evidenceHandler := profit.NewEvidenceHandler(db)
+	protected.GET("/profit/evidence-card/:productId", evidenceHandler.GetEvidenceCard)
 	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
 	mock.RegisterRoutes(protected, db, logger)
 	// Auto-seed mock demo data on startup

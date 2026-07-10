@@ -26,6 +26,7 @@ interface ListingTask {
   destination_country: string;
   last_error: string;
   execution_mode: number;
+  approval_id?: number;
   external_reference_id?: string;
   platform_validation?: Array<{ field: string; valid: boolean }>;
   created_by: string;
@@ -336,6 +337,38 @@ export default function ListingTaskDetailPage() {
               size="small"
             />
           </Card>
+          {/* Execution info */}
+          {task && (
+            <Card size="small" title="执行信息" style={{ marginTop: 16 }}>
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="执行模式">
+                  <Tag color={EXECUTION_MODE_COLORS[task.execution_mode ?? 0]}>
+                    {EXECUTION_MODE_LABELS[task.execution_mode ?? 0] ?? 'Unknown'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="审批 ID">
+                  {(task.approval_id ?? publishApproval?.id) ? (
+                    <Button type="link" size="small" onClick={() => router.push(`/approval/${task.approval_id ?? publishApproval?.id}`)}>
+                      #{task.approval_id ?? publishApproval?.id}
+                    </Button>
+                  ) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="外部引用 ID">
+                  {task.external_reference_id || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="审计记录">
+                  <Button type="link" size="small" onClick={() => router.push(`/operation-logs?resource=listing_task:${task.id}`)}>
+                    查看操作日志
+                  </Button>
+                </Descriptions.Item>
+              </Descriptions>
+              <div style={{ marginTop: 8 }}>
+                <Button type="link" size="small" onClick={() => router.push(`/sandbox-listing?candidate_id=${task.product_id}`)}>
+                  查看关联证据卡
+                </Button>
+              </div>
+            </Card>
+          )}
         </Space>
       )}
     </PageContainer>
