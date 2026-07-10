@@ -36,6 +36,7 @@
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 🆕 当前执行口径：产品方向、AgentOS 安全优先级、文档清理规则 |
 | [设计系统](DESIGN.md) | 🆕 UI 设计规范：色彩、字体、间距、动画、组件风格、无障碍 |
 | [项目状态](PROJECT_STATUS.md) | 当前版本、验证状态、更新历史 |
+| [AI 无人公司长远战略愿景](LONG_TERM_VISION_AND_STRATEGY.md) | 🆕 系统终极形态：“全自动驾驶”无人公司操作系统的四道门槛与落地路线图 |
 | [模块目录](reference-module-catalog.md) | 🆕 模块、API 路由和前端页面唯一事实源 |
 | [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | 长期方向、阶段路线、Owner 控制规则和 Agent 提案检查表 |
 | [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | Day 1-7 完整开发计划，5 条并行线 |
@@ -55,10 +56,19 @@
 | 文档 | 当前用途 |
 |------|----------|
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
+| [AI-Native AgentOS 长期愿景与架构方向](AI_NATIVE_DEVELOPMENT_PLAN.md) | 🆕 面向多领域可信自进化 AgentOS 的长期愿景；不覆盖当前执行优先级 |
+| [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
+| [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |
+| [AI-Native AgentOS 任务清单](../tasks/todo.md) | 🆕 可逐项执行的 Product Loop / Action Gate / E2E canonical 任务列表 |
+| [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | 🆕 未来半年商品出海业务层开发总纲：目标、阶段、架构 and 验收标准 |
+| [验收门禁](ACCEPTANCE_GATE.md) | 🆕 Dev Done / Test Green / Business Verified / Beta Accepted 的完成定义和证据要求 |
+| [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |
+| [已知问题台账](KNOWN_ISSUES.md) | 🆕 红灯问题 owner / deadline / impact 跟踪，防止长期合理化 |
 | [实现路线图](implementation-roadmap.md) | 🆕 19 个 Open Issue × 6 轮迭代的整体路线图 |
 | [Iteration 1 Spec: 安全速赢 + 数据地基](specs/iteration-1-security-quick-wins.md) | 🆕 #280 JWT_SECRET / #281 DB备份 / #130 汇率硬编码 |
 | [项目状态](PROJECT_STATUS.md) | 当前事实快照、当前验证状态、历史更新入口 |
 | [模块目录](reference-module-catalog.md) | 模块、API 路由、前端页面清单 |
+| [Agent 项目病历归档 2026-07-06](archive/AGENT_PROJECT_MEDICAL_RECORD_2026-07-06.md) | 从 AGENTS.md 移出的历史快照；不作为当前优先级或执行指令 |
 | [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试报告 |
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 前端历史测试报告 |
 
@@ -112,6 +122,9 @@
 | [事故演练检查清单](governance/INCIDENT_DRILL_CHECKLIST.md) | 🆕 事故等级、演练场景、人工接管机制、事后复盘模板 |
 | [回滚与恢复手册](governance/ROLLBACK_AND_RECOVERY.md) | 🆕 DB/迁移/平台写回/发布的逐项回滚流程和决策树 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
+| [验收门禁](ACCEPTANCE_GATE.md) | Dev Done / Test Green / Business Verified / Beta Accepted 的统一完成定义 |
+| [验收矩阵](ACCEPTANCE_MATRIX.md) | 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |
+| [已知问题台账](KNOWN_ISSUES.md) | 已知失败项 owner / deadline / impact 跟踪 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [E2E Docker 环境](docker-compose.e2e.yml) | 🆕 全栈 E2E 测试专用 Docker Compose（Postgres + 后端 + 前端）|
 | [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
@@ -139,8 +152,13 @@
 | [物流费率引擎指南](logistics-guide.md) | Logistics Rate Engine：四种定价模式、YAML 配置、A10 接线 |
 | [ToolBridge 工具桥接](toolbridge-guide.md) | 插件驱动工具执行、添加 Driver、降级策略 |
 | [Chrome 扩展指南](chrome-extension-guide.md) | 凌镜选品助手扩展：安装、WebSocket 协议、内容脚本 |
-| [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试状态、已知问题和覆盖面 |
+| [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试状态、已知问题 and 覆盖面 |
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 `frontend-next` build/test/lint 历史状态 |
+| [AI-Native 统一开发框架总览](guides/ai-native-framework-overview.md) | 🆕 AI 程序员开发规范入口，概述系统机制 |
+| [ARCS 上下文同步指南](guides/ai-native-arcs-guide.md) | 🆕 解决 AI 记忆 amnesia 的 manifests 与交接账本规范 |
+| [沙盒 staging 与 E2E 测试指南](guides/ai-native-sandbox-guide.md) | 🆕 Docker 容器沙盒与 Playwright E2E 测试门禁规则 |
+| [状态模拟器与网络阻回拦截](guides/ai-native-mocking-guide.md) | 🆕 Stateful Mock DB 设计与 Fail-Safe 网络防火墙拦截规则 |
+| [AI 研发死循环监控与熔断](guides/ai-native-loop-prevention-guide.md) | 🆕 归一化报错哈希、Ping-Pong 震荡与 Stagnation 熔断算法 |
 
 | [API 清单](api-inventory.md) | 🆕 全部 71+ 后端模块 API 路由、方法、参数清单 |
 | [Swagger API 文档](http://localhost:8080/swagger/index.html) | 🆕 交互式 OpenAPI 文档 — `GET /swagger/index.html` |
@@ -199,6 +217,7 @@
 
 > 新功能需求请添加到 `docs/features/` 目录，使用标准模板。
 
+- [商品出海决策与执行层](features/product-export-decision-execution-layer.md) — 未来半年商品出海业务层开发总纲
 - [功能需求模板](features/TEMPLATE.md)
 - [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
 

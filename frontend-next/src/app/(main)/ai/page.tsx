@@ -5,9 +5,12 @@ import { message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import dayjs from 'dayjs';
+import ActionRiskConfirmDialog, {
+  ActionRiskConfirmMode,
+  RiskConfirmAction,
+} from '@/components/actions/ActionRiskConfirmDialog';
 import apiClient from '@/lib/api-client';
 import { getToken } from '@/lib/auth';
-import { getCurrentOperator } from '@/lib/user';
 import { useAppStore } from '@/stores/app-store';
 import { useAIWebSocket, SSEEventData } from '@/lib/realtime';
 import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
@@ -28,11 +31,17 @@ interface AiAgent {
 interface UnifiedAction {
   id: string;
   title: string;
+  description?: string;
   agent_id: string;
+  action_type?: string;
   risk_level: string;
   confidence: number;
   status: string;
   trace_id?: string;
+  requires_approval?: boolean;
+  execution_mode?: string;
+  before_snapshot?: Record<string, unknown> | null;
+  after_snapshot?: Record<string, unknown> | null;
   payload?: Record<string, unknown>;
   proposed_at?: string;
 }
@@ -162,7 +171,8 @@ export default function AICommandPage() {
   const conversationRef = useRef<HTMLDivElement>(null);
   const streamingAbortRef = useRef<AbortController | null>(null);
   const [streaming, setStreaming] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<{type: 'approve' | 'execute'; action: UnifiedAction} | null>(null);
+  const [confirmAction, setConfirmAction] = useState<UnifiedAction | null>(null);
+  const [confirmMode, setConfirmMode] = useState<ActionRiskConfirmMode | null>(null);
 
   // Keep a reference to the app store
   useAppStore();
@@ -420,13 +430,12 @@ export default function AICommandPage() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: async (id: string) =>
-      apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, {
-        operator: getCurrentOperator(),
-      }),
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
+      apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, { reason }),
     onSuccess: () => {
       message.success('已批准');
       setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['ai-actions-suggested'] });
     },
     onError: (e: Error) => message.error(`批准失败: ${e.message}`),
@@ -434,26 +443,26 @@ export default function AICommandPage() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async (id: string) =>
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/reject`, {
-        operator: getCurrentOperator(),
-        reason: 'manual reject',
+        reason: reason?.trim() || 'manual reject',
       }),
     onSuccess: () => {
       message.success('已拒绝');
+      setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['ai-actions-suggested'] });
     },
     onError: (e: Error) => message.error(`拒绝失败: ${e.message}`),
   });
 
   const executeMutation = useMutation({
-    mutationFn: async (id: string) =>
-      apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, {
-        operator: getCurrentOperator(),
-      }),
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
+      apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, { reason }),
     onSuccess: () => {
       message.success('已执行');
       setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['ai-actions-suggested'] });
     },
     onError: (e: Error) => message.error(`执行失败: ${e.message}`),
@@ -481,6 +490,18 @@ export default function AICommandPage() {
 
   const isPending =
     chatMutation.isPending || runMutation.isPending || streaming;
+
+  const openActionConfirm = (action: UnifiedAction, mode: ActionRiskConfirmMode) => {
+    setConfirmAction(action);
+    setConfirmMode(mode);
+  };
+
+  const handleActionConfirm = (action: RiskConfirmAction, reason?: string) => {
+    const id = String(action.id);
+    if (confirmMode === 'approve') approveMutation.mutate({ id, reason });
+    if (confirmMode === 'reject') rejectMutation.mutate({ id, reason });
+    if (confirmMode === 'execute') executeMutation.mutate({ id, reason });
+  };
 
   // ---------- Render: message components ----------
   const renderUserMessage = (m: ChatMessage) => (
@@ -961,10 +982,10 @@ export default function AICommandPage() {
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button
-                        onClick={() => setConfirmAction({type: 'approve', action})}
+                        onClick={() => openActionConfirm(action, 'approve')}
                         disabled={
                           approveMutation.isPending &&
-                          approveMutation.variables === action.id
+                          approveMutation.variables?.id === action.id
                         }
                         style={{
                           fontSize: '0.65rem',
@@ -979,15 +1000,15 @@ export default function AICommandPage() {
                         }}
                       >
                         {approveMutation.isPending &&
-                        approveMutation.variables === action.id
+                        approveMutation.variables?.id === action.id
                           ? '...'
                           : '批准'}
                       </button>
                       <button
-                        onClick={() => rejectMutation.mutate(action.id)}
+                        onClick={() => openActionConfirm(action, 'reject')}
                         disabled={
                           rejectMutation.isPending &&
-                          rejectMutation.variables === action.id
+                          rejectMutation.variables?.id === action.id
                         }
                         style={{
                           fontSize: '0.65rem',
@@ -1002,15 +1023,15 @@ export default function AICommandPage() {
                         }}
                       >
                         {rejectMutation.isPending &&
-                        rejectMutation.variables === action.id
+                        rejectMutation.variables?.id === action.id
                           ? '...'
                           : '拒绝'}
                       </button>
                       <button
-                        onClick={() => setConfirmAction({type: 'execute', action})}
+                        onClick={() => openActionConfirm(action, 'execute')}
                         disabled={
                           executeMutation.isPending &&
-                          executeMutation.variables === action.id
+                          executeMutation.variables?.id === action.id
                         }
                         style={{
                           fontSize: '0.65rem',
@@ -1025,7 +1046,7 @@ export default function AICommandPage() {
                         }}
                       >
                         {executeMutation.isPending &&
-                        executeMutation.variables === action.id
+                        executeMutation.variables?.id === action.id
                           ? '...'
                           : '执行'}
                       </button>
@@ -1203,32 +1224,16 @@ export default function AICommandPage() {
         </div>
       )}
 
-      {/* High-risk action confirmation dialog */}
-      <HighRiskConfirmDialog
-        open={!!confirmAction}
-        actionName={confirmAction?.type === 'approve' ? '批准动作' : '执行动作'}
-        riskLevel={confirmAction?.action.risk_level === 'high' ? 'high' : confirmAction?.action.risk_level === 'medium' ? 'medium' : 'low'}
-        detail={confirmAction ? { targetLabel: confirmAction.action.title } : undefined}
-        environmentMode="production"
-        expectedConsequence={
-          confirmAction?.type === 'approve'
-            ? '批准后该动作将进入待执行队列'
-            : '执行后该动作将立即生效'
-        }
-        auditDestination="操作已记录至 operation_log 表"
-        confirmLoading={
-          (confirmAction?.type === 'approve' ? approveMutation.isPending : executeMutation.isPending) &&
-          confirmAction?.action.id === (confirmAction?.type === 'approve' ? approveMutation.variables : executeMutation.variables)
-        }
-        confirmText={confirmAction?.type === 'approve' ? '批准' : '执行'}
-        showReason
-        reasonPlaceholder="补充说明（选填）"
-        onConfirm={() => {
-          if (!confirmAction) return;
-          if (confirmAction.type === 'approve') approveMutation.mutate(confirmAction.action.id);
-          else executeMutation.mutate(confirmAction.action.id);
+      <ActionRiskConfirmDialog
+        action={confirmAction}
+        mode={confirmMode}
+        open={!!confirmAction && !!confirmMode}
+        loading={approveMutation.isPending || rejectMutation.isPending || executeMutation.isPending}
+        onCancel={() => {
+          setConfirmAction(null);
+          setConfirmMode(null);
         }}
-        onCancel={() => setConfirmAction(null)}
+        onConfirm={handleActionConfirm}
       />
 
       {/* ===== Input bar ===== */}

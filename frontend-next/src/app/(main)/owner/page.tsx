@@ -1,13 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  Badge,
   Button,
   Col,
   Empty,
+  Input,
   message,
   Row,
+  Select,
   Space,
   Spin,
   Statistic,
@@ -33,7 +35,6 @@ import {
   CheckCircleOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 import { getCurrentOperator } from '@/lib/user';
 import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
@@ -72,13 +73,14 @@ interface DecisionQueueItem {
   approval_status?: string;
   agent_feedback_status?: string | null;
   blocking_reasons?: string[];
+  status?: string;
+  execution_mode?: number;
+  expected_outcome?: string;
   can_approve?: boolean;
   display_status?: string;
-  execution_mode?: number;
   target_sale_price?: number;
   completeness_score?: number;
   estimated_profit?: number;
-  expected_outcome?: string;
 }
 
 interface PlatformSync {
@@ -206,8 +208,8 @@ export default function OwnerPage() {
   const qc = useQueryClient();
   const [suggestionFilter, setSuggestionFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [sortBy, setSortBy] = useState<string>('created_at');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('');
+  const [searchText, setSearchText] = useState<string>('');
   const [approvalModal, setApprovalModal] = useState<DecisionQueueItem | null>(null);
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject' | null>(null);
 
@@ -264,7 +266,7 @@ export default function OwnerPage() {
   // ---- Approval flow mutations ----
 
   const approveFlow = useMutation({
-    mutationFn: async (params: { productId: number; taskId: number; reason: string }) => {
+    mutationFn: async (params: { productId: number; taskId: number; reason: string; executionMode?: number }) => {
       const operator = getCurrentOperator();
 
       // 1. Create approval request
@@ -296,8 +298,12 @@ export default function OwnerPage() {
       // 4. Navigate to listing task detail page for execution
       router.push(`/listing-tasks/${params.taskId}`);
     },
-    onSuccess: () => {
-      message.success('已批准，正在跳转到任务详情页');
+    onSuccess: (_, variables) => {
+      if (variables.executionMode === 1) {
+        message.success('已批准上架，沙盒环境调度并执行成功');
+      } else {
+        message.success('已批准上架并开始执行');
+      }
       setApprovalModal(null);
       setApprovalAction(null);
       qc.invalidateQueries({ queryKey: ['owner-decision-queue'] });
@@ -351,25 +357,14 @@ export default function OwnerPage() {
     qc.invalidateQueries({ queryKey: ['owner-platform-sync'] });
   };
 
-  const listReady = useMemo(
-    () => (decisions ?? []).filter((s) => s.decision === 'list').length,
-    [decisions],
-  );
-
   const filteredDecisions = useMemo(() => {
-    let list = decisions ?? [];
-    if (suggestionFilter) list = list.filter((s) => s.decision === suggestionFilter);
-    if (statusFilter) list = list.filter((s) => (s.display_status || '') === statusFilter);
-    if (searchQuery) list = list.filter((s) => (s.product_title || '').toLowerCase().includes(searchQuery.toLowerCase()));
-    // Sort
-    list = [...list].sort((a, b) => {
-      if (sortBy === 'completeness_score') return (b.completeness_score || 0) - (a.completeness_score || 0);
-      if (sortBy === 'estimated_profit') return (b.estimated_profit || 0) - (a.estimated_profit || 0);
-      if (sortBy === 'confidence') return (b.confidence || 0) - (a.confidence || 0);
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-    return list;
-  }, [decisions, suggestionFilter, statusFilter, searchQuery, sortBy]);
+    let result = decisions ?? [];
+    if (suggestionFilter) result = result.filter((s) => s.decision === suggestionFilter);
+    if (statusFilter) result = result.filter((s) => s.status === statusFilter || s.approval_status === statusFilter || s.task_status === statusFilter);
+    if (searchText) result = result.filter((s) => s.product_title?.toLowerCase().includes(searchText.toLowerCase()));
+    if (sortBy === 'confidence') result = [...result].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    return result;
+  }, [decisions, suggestionFilter, statusFilter, searchText, sortBy]);
 
   const handleApprove = (s: DecisionQueueItem) => {
     setApprovalModal(s);
@@ -394,6 +389,7 @@ export default function OwnerPage() {
         productId: approvalModal.product_id,
         taskId,
         reason: approvalModal.reason,
+        executionMode: approvalModal.execution_mode,
       });
     } else {
       rejectFlow.mutate({
@@ -600,39 +596,33 @@ export default function OwnerPage() {
               <Tag color="orange" style={{ fontSize: '0.6rem', lineHeight: '1.4' }}>Mock</Tag>
             </div>
             <div style={{ padding: 16 }}>
-              <Space style={{ marginBottom: 12 }}>
-                <Button
-                  size="small"
-                  onClick={() => setSuggestionFilter('')}
-                  type={suggestionFilter === '' ? 'primary' : 'default'}
-                >
-                  全部
-                </Button>
-                <Button
-                  size="small"
-                  type={suggestionFilter === 'list' ? 'primary' : 'default'}
-                  style={suggestionFilter === 'list' ? { backgroundColor: 'var(--g4)', borderColor: 'var(--g4)' } : {}}
-                  onClick={() => setSuggestionFilter('list')}
-                >
-                  推荐上架
-                </Button>
-                <Button
-                  size="small"
-                  type={suggestionFilter === 'cautious' ? 'primary' : 'default'}
-                  style={suggestionFilter === 'cautious' ? { backgroundColor: 'var(--y4)', borderColor: 'var(--y4)' } : {}}
-                  onClick={() => setSuggestionFilter('cautious')}
-                >
-                  谨慎
-                </Button>
-                <Button
-                  size="small"
-                  danger
-                  type={suggestionFilter === 'skip' ? 'primary' : 'default'}
-                  onClick={() => setSuggestionFilter('skip')}
-                >
-                  不建议
-                </Button>
+              <Space style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+                <Button size="small" onClick={() => setSuggestionFilter('')} type={suggestionFilter === '' ? 'primary' : 'default'}>全部</Button>
+                <Button size="small" type={suggestionFilter === 'list' ? 'primary' : 'default'} style={suggestionFilter === 'list' ? { backgroundColor: 'var(--g4)', borderColor: 'var(--g4)' } : {}} onClick={() => setSuggestionFilter('list')}>推荐上架</Button>
+                <Button size="small" type={suggestionFilter === 'cautious' ? 'primary' : 'default'} style={suggestionFilter === 'cautious' ? { backgroundColor: 'var(--y4)', borderColor: 'var(--y4)' } : {}} onClick={() => setSuggestionFilter('cautious')}>谨慎</Button>
+                <Button size="small" danger type={suggestionFilter === 'skip' ? 'primary' : 'default'} onClick={() => setSuggestionFilter('skip')}>不建议</Button>
+                <Select allowClear placeholder="按状态筛选" style={{ width: 140 }} value={statusFilter || undefined} onChange={(v) => setStatusFilter(v || '')}
+                  options={[
+                    { value: 'waiting_data', label: '等待数据' },
+                    { value: 'ready_for_decision', label: '待决策' },
+                    { value: 'pending_approval', label: '待审批' },
+                    { value: 'executing', label: '执行中' },
+                    { value: 'completed', label: '已完成' },
+                    { value: 'failed', label: '失败' },
+                  ]}
+                />
+                <Select allowClear placeholder="排序" style={{ width: 120 }} value={sortBy || undefined} onChange={(v) => setSortBy(v || '')}
+                  options={[{ value: 'confidence', label: '置信度' }, { value: 'created_at', label: '创建时间' }]}
+                />
+                <Input.Search allowClear placeholder="搜索商品标题" style={{ width: 200 }} value={searchText} onChange={(e) => setSearchText(e.target.value)} onSearch={(v) => setSearchText(v)} />
               </Space>
+              {/* Summary stats */}
+              <div style={{ display: 'flex', gap: 24, marginBottom: 12, padding: '8px 0', borderBottom: '1px solid var(--bd)' }}>
+                <span><Tag>等待数据</Tag> {(decisions ?? []).filter(d => d.status === 'waiting_data' || (!d.task_status && !d.approval_status)).length}</span>
+                <span><Tag color="blue">待决策</Tag> {(decisions ?? []).filter(d => d.status === 'ready_for_decision' || (d.decision && !d.approval_status)).length}</span>
+                <span><Tag color="orange">待审批</Tag> {(decisions ?? []).filter(d => d.approval_status === 'pending' || d.status === 'pending_approval').length}</span>
+                <span><Tag color="green">已完成</Tag> {(decisions ?? []).filter(d => d.task_status === 'completed' || d.status === 'completed').length}</span>
+              </div>
               <Spin spinning={decisionsLoading}>
                 {filteredDecisions.length === 0 && !decisionsLoading ? (
                   <div style={{ textAlign: 'center', padding: '24px 0' }}>
@@ -700,12 +690,63 @@ export default function OwnerPage() {
                         ),
                       },
                       {
+                        title: '风险',
+                        dataIndex: 'risk_level',
+                        width: 60,
+                        render: (v: string) => <Tag color={v === 'high' ? 'red' : v === 'medium' ? 'orange' : 'green'}>{v === 'high' ? '高' : v === 'medium' ? '中' : '低'}</Tag>,
+                      },
+                      {
+                        title: '模式',
+                        dataIndex: 'execution_mode',
+                        width: 65,
+                        render: (v: number) => {
+                          const labels: Record<number, string> = { 0: '模拟', 1: '沙箱', 2: '需审批', 3: '生产' };
+                          const colors: Record<number, string> = { 0: 'default', 1: 'orange', 2: 'purple', 3: 'red' };
+                          return <Tag color={colors[v] ?? 'default'}>{labels[v] ?? '未知'}</Tag>;
+                        },
+                      },
+                      {
                         title: '任务状态',
                         dataIndex: 'task_status',
-                        width: 90,
-                        render: (v: string | undefined) => (
-                          <Tag color={taskStatusColor(v)}>{taskStatusLabel(v)}</Tag>
-                        ),
+                        width: 180,
+                        render: (v: string | undefined, record: DecisionQueueItem) => {
+                          const isSandbox = record.execution_mode === 1;
+                          if (isSandbox && v === 'executing') {
+                            return (
+                              <Space>
+                                <Spin size="small" />
+                                <span style={{ fontSize: 12, color: 'var(--t3)' }}>
+                                  正在调度沙盒环境并执行...
+                                </span>
+                              </Space>
+                            );
+                          }
+                          if (isSandbox && (v === 'completed' || v === 'failed')) {
+                            return (
+                              <Space direction="vertical" size={4} style={{ display: 'flex' }}>
+                                <Space>
+                                  <Tag color={taskStatusColor(v)}>{taskStatusLabel(v)}</Tag>
+                                  <Button
+                                    size="small"
+                                    type="link"
+                                    style={{ padding: 0, height: 'auto', fontSize: 12 }}
+                                    href={`/tmp/reports/pr-${record.id}/playwright-report`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    下载报告
+                                  </Button>
+                                </Space>
+                                {record.task_error && (
+                                  <Text type="danger" style={{ fontSize: 11 }} ellipsis={{ tooltip: record.task_error }}>
+                                    {record.task_error}
+                                  </Text>
+                                )}
+                              </Space>
+                            );
+                          }
+                          return <Tag color={taskStatusColor(v)}>{taskStatusLabel(v)}</Tag>;
+                        },
                       },
                       {
                         title: '审批状态',
@@ -873,7 +914,13 @@ export default function OwnerPage() {
           targetLabel: approvalModal.product_title || `ID:${approvalModal.product_id}`,
           afterValue: approvalAction === 'approve' ? '创建审批 → 执行上架任务' : '不创建上架任务',
         } : undefined}
-        environmentMode="production"
+        environmentMode={
+          approvalModal?.execution_mode === 1
+            ? 'sandbox'
+            : approvalModal?.execution_mode === 0
+            ? 'dry_run'
+            : 'production'
+        }
         expectedConsequence={
           approvalAction === 'approve'
             ? '将创建审批记录、触发上架任务执行，商品将在 Ozon 平台可见'

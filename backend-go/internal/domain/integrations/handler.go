@@ -2,7 +2,6 @@ package integrations
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -194,7 +193,7 @@ func (h *Handler) UpdateMode(c *gin.Context) {
 		return
 	}
 	var in struct {
-		ExecutionMode int8 `json:"execution_mode" binding:"required"`
+		ExecutionMode int8 `json:"execution_mode" binding:"gte=0,lte=3"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error())
@@ -270,30 +269,20 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	operator := c.GetString("username")
-	if operator == "" {
-		operator = "system"
-	}
-	if h.approvalSvc != nil {
-		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
-			RequestType: "listing_publish_ozon",
-			Requester:   operator,
-			NewValue:    fmt.Sprintf("publish product id=%d to ozon account id=%d", in.ProductID, in.AccountID),
-			Reason:      "ozon publish requires approval",
-			TargetType:  "product",
-			TargetID:    in.ProductID,
-			RiskLevel:   "high",
-			EntityType:  "product",
-			EntityID:    in.ProductID,
-		})
-		if err != nil {
-			response.Error(c, http.StatusInternalServerError, err.Error())
+	mode, err := h.service.GetMode(in.AccountID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "integration account not found")
 			return
 		}
-		response.Error(c, http.StatusForbidden, fmt.Sprintf("ozon publish requires approval (approval_id=%d)", apprReq.ID))
+		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	result, err := h.service.PublishToOzon(c.Request.Context(), &in)
+	ctx := WithExecutionMode(c.Request.Context(), ExecutionMode(mode))
+	if in.ApprovalID != nil {
+		ctx = WithApprovalID(ctx, *in.ApprovalID)
+	}
+	result, err := h.service.PublishToOzon(ctx, &in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return

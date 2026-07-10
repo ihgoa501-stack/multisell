@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Badge, Button, Card, Descriptions, message, Modal, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import type { BadgeProps } from 'antd';
 import {
   ReloadOutlined, PauseCircleOutlined, PlayCircleOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
@@ -41,7 +42,7 @@ interface WorkflowRun {
   steps?: WorkflowStepRun[];
 }
 
-const STATUS_COLORS: Record<string, string> = {
+const STATUS_COLORS: Record<string, BadgeProps['status']> = {
   running: 'processing',
   completed: 'success',
   failed: 'error',
@@ -106,7 +107,7 @@ export default function WorkflowRunsPage() {
     { title: '名称', dataIndex: 'name', ellipsis: true },
     {
       title: '状态', dataIndex: 'status', width: 90,
-      render: (s: string) => <Badge status={STATUS_COLORS[s] as any} text={STATUS_LABELS[s] || s} />,
+      render: (s: string) => <Badge status={STATUS_COLORS[s]} text={STATUS_LABELS[s] || s} />,
     },
     {
       title: '开始时间', dataIndex: 'started_at', width: 160,
@@ -180,7 +181,7 @@ export default function WorkflowRunsPage() {
             <Descriptions column={2} size="small" bordered>
               <Descriptions.Item label="名称">{detailRun.name}</Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Badge status={STATUS_COLORS[detailRun.status] as any} text={STATUS_LABELS[detailRun.status] || detailRun.status} />
+                <Badge status={STATUS_COLORS[detailRun.status]} text={STATUS_LABELS[detailRun.status] || detailRun.status} />
               </Descriptions.Item>
               <Descriptions.Item label="开始时间">
                 {detailRun.started_at ? dayjs(detailRun.started_at).format('YYYY-MM-DD HH:mm:ss') : '-'}

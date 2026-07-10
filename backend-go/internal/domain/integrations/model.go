@@ -20,21 +20,21 @@ import (
 type PlatformIntegrationAccount struct {
 	// ponytail: ExecutionMode persisted per-account so the pilot dashboard
 	// can display and change it without relying on a per-request context value.
-	ID             int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	PlatformID     int64           `gorm:"column:platform_id;not null;index" json:"platform_id"`
-	StoreName      string          `gorm:"column:store_name" json:"store_name"`
-	AccountID      string          `gorm:"column:account_id" json:"account_id"`
-	AccessToken    string          `gorm:"column:access_token" json:"-"`
-	RefreshToken   string          `gorm:"column:refresh_token" json:"-"`
-	TokenExpiresAt *time.Time      `gorm:"column:token_expires_at" json:"token_expires_at,omitempty"`
-	Status         string          `gorm:"column:status;default:active" json:"status"`
-	LastSyncAt     *time.Time      `gorm:"column:last_sync_at" json:"last_sync_at,omitempty"`
-	SyncStatus     string          `gorm:"column:sync_status;default:idle" json:"sync_status"`
-	LastError      string          `gorm:"column:last_error" json:"last_error"`
-	ExecutionMode  int8            `gorm:"column:execution_mode;default:0" json:"execution_mode"`
-	Config         json.RawMessage `gorm:"column:config;type:jsonb" json:"config,omitempty"`
-	CreatedAt      time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt      time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	ID              int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	PlatformID      int64           `gorm:"column:platform_id;not null;index" json:"platform_id"`
+	StoreName       string          `gorm:"column:store_name" json:"store_name"`
+	AccountID       string          `gorm:"column:account_id" json:"account_id"`
+	AccessToken     string          `gorm:"column:access_token" json:"-"`
+	RefreshToken    string          `gorm:"column:refresh_token" json:"-"`
+	TokenExpiresAt  *time.Time      `gorm:"column:token_expires_at" json:"token_expires_at,omitempty"`
+	Status          string          `gorm:"column:status;default:active" json:"status"`
+	LastSyncAt      *time.Time      `gorm:"column:last_sync_at" json:"last_sync_at,omitempty"`
+	SyncStatus      string          `gorm:"column:sync_status;default:idle" json:"sync_status"`
+	LastError       string          `gorm:"column:last_error" json:"last_error"`
+	ExecutionMode   int8            `gorm:"column:execution_mode;default:0" json:"execution_mode"`
+	Config          json.RawMessage `gorm:"column:config;type:jsonb" json:"config,omitempty"`
+	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 	// PlatformName is populated by List via platform table lookup. Not a DB column.
 	PlatformName string `gorm:"-" json:"platform_name,omitempty"`
 }

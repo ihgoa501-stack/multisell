@@ -2,7 +2,7 @@
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-07-07
+更新时间：2026-07-09
 
 > 2026-07-07 direction note:
 > 商品出海决策与执行层 Phase 1 + Phases 2-6 已交付。Phase 1 修复审批-任务-执行断点并打通单商品 dry-run 闭环；Phase 2-6 在此基础上新增 ProductHub 证据链、Execution Mode 统一与 Sandbox 支持、批量评估与 Owner 决策队列、执行结果回流与复盘、多平台对比。
@@ -50,9 +50,9 @@
 
 ### 当前建议优先推进
 
-- 执行 M1.3–M1.26 剩余的 25 个 H1 Copilot OS 实施任务
-- 将 `HighRiskConfirmDialog` 集成到 Owner 工作台和 AI action 页面的 approve/execute 操作中
-- 解决 `frontend-next` 已知 lint/TS 问题
+- 运行并修复主业务链路浏览器 / E2E 验证，证明 Owner 可从界面完成候选商品 -> 建议 -> 审批 -> 受控执行链路
+- 将 Owner 工作台仍直接调用审批 / listing-task 执行的流程继续收口到统一 Action 门禁
+- 清理和归档并行开发产生的未合并工作，避免后续 Agent 误判当前事实
 
 ### 当前不建议优先推进
 
@@ -81,17 +81,20 @@
 | 活跃代码栈 | `backend-go/` + `frontend-next/` |
 | 当前方向 | H1 Copilot OS 方案阶段，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
 | 模块 / API / 页面事实源 | [reference-module-catalog.md](reference-module-catalog.md) |
-| 最新全量验证 | 待重新运行并记录 |
+| 最新全量验证 | 2026-07-09：后端 `go test ./...` / `go vet ./...` 通过；前端 lint / typecheck / test / build 通过 |
 | 历史验证记录 | 本文下方各日期段落、[TEST_SUMMARY.md](TEST_SUMMARY.md)、[FRONTEND_TEST_REPORT.md](FRONTEND_TEST_REPORT.md) |
 
 ### 当前验证状态
 
 | 检查 | 当前状态 | 说明 |
 |------|----------|------|
-| `cd backend-go && go test ./...` | ✅ 通过（2026-07-07） | Phase 2-6 新增测试全绿 |
-| `cd backend-go && go vet ./...` | ✅ 通过 | 无 vet 输出 |
-| `cd backend-go && go build ./...` | ✅ 通过 | 商品出海闭环全模块编译通过 |
-| `cd frontend-next && npm run build` | ⏳ 需 node_modules | worktree 无 node_modules |
+| `cd backend-go && go test ./...` | ✅ 通过（2026-07-09） | supplier path 参数读取已修复；全量 Go 测试通过 |
+| `cd backend-go && go vet ./...` | ✅ 通过（2026-07-09） | 无 vet 输出 |
+| `cd frontend-next && npm run lint` | ✅ 通过（2026-07-09） | 0 errors / 0 warnings |
+| `cd frontend-next && npx tsc --noEmit --pretty false` | ✅ 通过（2026-07-09） | TypeScript 检查通过 |
+| `cd frontend-next && npm test` | ✅ 通过（2026-07-09） | 13 test files / 86 tests |
+| `cd frontend-next && npm run build` | ✅ 通过（2026-07-09） | Next production build 通过；local build 无 root / Sentry token warning |
+| `cd frontend-next/e2e && npx playwright test` | ⏳ 待验证 | 需要运行中的后端、前端和测试数据 |
 
 ## 当前结论
 

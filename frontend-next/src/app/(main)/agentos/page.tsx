@@ -34,12 +34,14 @@ import {
   BranchesOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import ActionRiskConfirmDialog, {
+  ActionRiskConfirmMode,
+  RiskConfirmAction,
+} from '@/components/actions/ActionRiskConfirmDialog';
 import apiClient from '@/lib/api-client';
-import { getCurrentOperator } from '@/lib/user';
 import StatCard from '@/components/ui/StatCard';
 import SectionCard from '@/components/ui/SectionCard';
 import WorkItemDrawer from './work-item-drawer';
-import HighRiskConfirmDialog from '@/components/ui/HighRiskConfirmDialog';
 import type { WorkItemDetail } from './types';
 
 const { Text } = Typography;
@@ -77,11 +79,16 @@ interface WorkItem {
   title: string;
   agent_id: string;
   squad_id?: string;
+  action_type?: string;
   risk_level: string;
   confidence: number;
   status: string;
+  requires_approval?: boolean;
+  execution_mode?: string;
   proposed_at?: string;
   trace_id?: string;
+  description?: string;
+  payload?: Record<string, unknown>;
 }
 
 interface AutonomyEntry {
@@ -212,6 +219,8 @@ export default function AgentOSPage() {
     status?: string;
     risk_level?: string;
   }>({});
+  const [confirmAction, setConfirmAction] = useState<WorkItem | null>(null);
+  const [confirmMode, setConfirmMode] = useState<ActionRiskConfirmMode | null>(null);
 
   // Overview
   const { data: overview, isLoading: overviewLoading } = useQuery({
@@ -278,13 +287,12 @@ export default function AgentOSPage() {
 
   // Action operations
   const approveMutation = useMutation({
-    mutationFn: async (id: string) =>
-      apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, {
-        operator: getCurrentOperator(),
-      }),
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
+      apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, { reason }),
     onSuccess: () => {
       message.success('已批准');
       setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
@@ -293,13 +301,14 @@ export default function AgentOSPage() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async (id: string) =>
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/reject`, {
-        operator: getCurrentOperator(),
-        reason: 'manual reject',
+        reason: reason?.trim() || 'manual reject',
       }),
     onSuccess: () => {
       message.success('已拒绝');
+      setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
@@ -307,13 +316,12 @@ export default function AgentOSPage() {
   });
 
   const executeMutation = useMutation({
-    mutationFn: async (id: string) =>
-      apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, {
-        operator: getCurrentOperator(),
-      }),
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
+      apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, { reason }),
     onSuccess: () => {
       message.success('已执行');
       setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
@@ -333,10 +341,21 @@ export default function AgentOSPage() {
     qc.invalidateQueries({ queryKey: ['external-health'] });
   };
 
+  const openActionConfirm = (action: WorkItem, mode: ActionRiskConfirmMode) => {
+    setConfirmAction(action);
+    setConfirmMode(mode);
+  };
+
+  const handleActionConfirm = (action: RiskConfirmAction, reason?: string) => {
+    const id = String(action.id);
+    if (confirmMode === 'approve') approveMutation.mutate({ id, reason });
+    if (confirmMode === 'reject') rejectMutation.mutate({ id, reason });
+    if (confirmMode === 'execute') executeMutation.mutate({ id, reason });
+  };
+
   // Work item detail drawer
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<{type: 'approve' | 'execute'; item: WorkItem} | null>(null);
 
   const { data: workItemDetail, isLoading: detailLoading } = useQuery({
     queryKey: ['agentos-work-item-detail', selectedWorkItemId],
@@ -453,10 +472,12 @@ export default function AgentOSPage() {
             size="small"
             type="primary"
             icon={<CheckOutlined />}
-            disabled={approveMutation.isPending && approveMutation.variables === record.id}
+            loading={
+              approveMutation.isPending && approveMutation.variables?.id === record.id
+            }
             onClick={(e) => {
               e.stopPropagation();
-              setConfirmAction({type: 'approve', item: record});
+              openActionConfirm(record, 'approve');
             }}
           >
             批准
@@ -466,11 +487,11 @@ export default function AgentOSPage() {
             danger
             icon={<CloseOutlined />}
             loading={
-              rejectMutation.isPending && rejectMutation.variables === record.id
+              rejectMutation.isPending && rejectMutation.variables?.id === record.id
             }
             onClick={(e) => {
               e.stopPropagation();
-              rejectMutation.mutate(record.id);
+              openActionConfirm(record, 'reject');
             }}
           >
             拒绝
@@ -478,10 +499,12 @@ export default function AgentOSPage() {
           <Button
             size="small"
             icon={<ThunderboltOutlined />}
-            disabled={executeMutation.isPending && executeMutation.variables === record.id}
+            loading={
+              executeMutation.isPending && executeMutation.variables?.id === record.id
+            }
             onClick={(e) => {
               e.stopPropagation();
-              setConfirmAction({type: 'execute', item: record});
+              openActionConfirm(record, 'execute');
             }}
           >
             执行
@@ -819,6 +842,7 @@ export default function AgentOSPage() {
             <Table
               rowKey="platform"
               dataSource={externalHealthData ?? []}
+              loading={extHealthLoading}
               size="small"
               pagination={false}
               columns={[
@@ -1030,6 +1054,18 @@ export default function AgentOSPage() {
         }}
       />
 
+      <ActionRiskConfirmDialog
+        action={confirmAction}
+        mode={confirmMode}
+        open={!!confirmAction && !!confirmMode}
+        loading={approveMutation.isPending || rejectMutation.isPending || executeMutation.isPending}
+        onCancel={() => {
+          setConfirmAction(null);
+          setConfirmMode(null);
+        }}
+        onConfirm={handleActionConfirm}
+      />
+
       {/* Audit Replay Drawer */}
       <Drawer
         title={`审计回放: ${auditReplayCorrelationId ?? ''}`}
@@ -1058,33 +1094,6 @@ export default function AgentOSPage() {
         )}
       </Drawer>
 
-      {/* High-risk action confirmation dialog */}
-      <HighRiskConfirmDialog
-        open={!!confirmAction}
-        actionName={confirmAction?.type === 'approve' ? '批准动作' : '执行动作'}
-        riskLevel={confirmAction?.item.risk_level === 'high' ? 'high' : confirmAction?.item.risk_level === 'medium' ? 'medium' : 'low'}
-        detail={confirmAction ? { targetLabel: confirmAction.item.title } : undefined}
-        environmentMode="production"
-        expectedConsequence={
-          confirmAction?.type === 'approve'
-            ? '批准后该动作将进入待执行队列'
-            : '执行后该动作将立即生效'
-        }
-        auditDestination="操作已记录至 operation_log 表"
-        confirmLoading={
-          (confirmAction?.type === 'approve' ? approveMutation.isPending : executeMutation.isPending) &&
-          confirmAction?.item.id === (confirmAction?.type === 'approve' ? approveMutation.variables : executeMutation.variables)
-        }
-        confirmText={confirmAction?.type === 'approve' ? '批准' : '执行'}
-        showReason
-        reasonPlaceholder="补充说明（选填）"
-        onConfirm={() => {
-          if (!confirmAction) return;
-          if (confirmAction.type === 'approve') approveMutation.mutate(confirmAction.item.id);
-          else executeMutation.mutate(confirmAction.item.id);
-        }}
-        onCancel={() => setConfirmAction(null)}
-      />
     </div>
   );
 }

@@ -157,6 +157,9 @@ func NewAgentPermissionHook(checker AgentToolChecker, logger ...*zap.Logger) *Ag
 func (h *AgentPermissionHook) Before(ctx context.Context, tool *Tool, _ map[string]interface{}) (context.Context, error) {
 	agentID := GetAgentID(ctx)
 	if agentID == "" {
+		if IsAgentWorkspace(ctx) {
+			return ctx, fmt.Errorf("agent permission check failed: missing agent identity in agent workspace context")
+		}
 		return ctx, nil // no agent identity — skip agent-level check
 	}
 	if h.checker == nil {

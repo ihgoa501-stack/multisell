@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
+	"github.com/lingmirror/backend-go/internal/rbac"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -130,6 +131,53 @@ func TestRegister_InvalidRole(t *testing.T) {
 	}
 	if user.Role != "user" {
 		t.Fatalf("expected role to fall back to 'user', got %q", user.Role)
+	}
+}
+
+func TestRegister_OperatorAssignedOpsRBACRole(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.AutoMigrate(&rbac.Role{}, &rbac.UserRole{}); err != nil {
+		t.Fatalf("automigrate rbac: %v", err)
+	}
+	ops := rbac.Role{Name: "Operations", Code: "ops", Status: 1}
+	if err := db.Create(&ops).Error; err != nil {
+		t.Fatalf("create ops role: %v", err)
+	}
+
+	svc := NewService(db, testConfig(), testLogger())
+	user, err := svc.Register("operator1", "password123", "Operator", "", "operator")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	var link rbac.UserRole
+	if err := db.Where("user_id = ? AND role_id = ?", user.ID, ops.ID).First(&link).Error; err != nil {
+		t.Fatalf("expected operator user_role link: %v", err)
+	}
+}
+
+func TestRegister_UserDoesNotGetOpsRBACRole(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.AutoMigrate(&rbac.Role{}, &rbac.UserRole{}); err != nil {
+		t.Fatalf("automigrate rbac: %v", err)
+	}
+	ops := rbac.Role{Name: "Operations", Code: "ops", Status: 1}
+	if err := db.Create(&ops).Error; err != nil {
+		t.Fatalf("create ops role: %v", err)
+	}
+
+	svc := NewService(db, testConfig(), testLogger())
+	user, err := svc.Register("plain-user", "password123", "Plain", "", "user")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&rbac.UserRole{}).Where("user_id = ?", user.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count user roles: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no RBAC role links for plain user, got %d", count)
 	}
 }
 

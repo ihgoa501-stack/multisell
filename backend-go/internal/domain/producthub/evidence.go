@@ -13,17 +13,17 @@ import (
 
 // EvidenceTraceResponse is the full evidence chain for a product.
 type EvidenceTraceResponse struct {
-	ProductID             int64                           `json:"product_id"`
-	CandidateInfo         *candidate.CandidateProduct     `json:"candidate_info,omitempty"`
-	Completeness          *completeness.CompletenessCheck `json:"completeness,omitempty"`
-	ProfitSummary         *profit.ProfitSummary           `json:"profit_summary,omitempty"`
-	ListingRecommendation *loop.ListingRecommendation     `json:"listing_recommendation,omitempty"`
-	ApprovalRequests      []approval.ApprovalRequest      `json:"approval_requests,omitempty"`
-	ListingTasks          []listingtask.ListingTask       `json:"listing_tasks,omitempty"`
-	ListingRecords        []listing.ProductListing        `json:"listing_records,omitempty"`
-	ExecutionResults      []listingtask.ListingTaskItem   `json:"execution_results,omitempty"`
-	OperationLogSummary   []operationlog.OperationLog     `json:"operation_log_summary,omitempty"`
-	CompleteChain         bool                            `json:"complete_chain"`
+	ProductID            int64                           `json:"product_id"`
+	CandidateInfo        *candidate.CandidateProduct     `json:"candidate_info,omitempty"`
+	Completeness         *completeness.CompletenessCheck `json:"completeness,omitempty"`
+	ProfitSummary        *profit.ProfitSummary           `json:"profit_summary,omitempty"`
+	ListingRecommendation *loop.ListingRecommendation    `json:"listing_recommendation,omitempty"`
+	ApprovalRequests     []approval.ApprovalRequest      `json:"approval_requests,omitempty"`
+	ListingTasks         []listingtask.ListingTask       `json:"listing_tasks,omitempty"`
+	ListingRecords       []listing.ProductListing        `json:"listing_records,omitempty"`
+	ExecutionResults     []listingtask.ListingTaskItem   `json:"execution_results,omitempty"`
+	OperationLogSummary  []operationlog.OperationLog     `json:"operation_log_summary,omitempty"`
+	CompleteChain        bool                            `json:"complete_chain"`
 }
 
 // GetEvidenceTrace aggregates the full lifecycle of a product from candidate
@@ -89,24 +89,10 @@ func (s *Service) GetEvidenceTrace(productID int64) (*EvidenceTraceResponse, err
 	logQuery.Order("created_at DESC").Limit(20).Find(&logs)
 	resp.OperationLogSummary = logs
 
-	// 10. Chain completeness: only true with approved approval + completed task + results
-	hasApproved := false
-	for _, ar := range resp.ApprovalRequests {
-		if ar.Status == "approved" {
-			hasApproved = true
-			break
-		}
-	}
-	hasCompletedTask := false
-	for _, t := range resp.ListingTasks {
-		if t.Status == "completed" {
-			hasCompletedTask = true
-			break
-		}
-	}
+	// 10. Chain completeness: recommendation + approval + task + result all exist
 	resp.CompleteChain = resp.ListingRecommendation != nil &&
-		hasApproved &&
-		hasCompletedTask &&
+		len(resp.ApprovalRequests) > 0 &&
+		len(resp.ListingTasks) > 0 &&
 		len(resp.ExecutionResults) > 0
 
 	return resp, nil

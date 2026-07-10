@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Alert,
   Button,
@@ -8,7 +8,6 @@ import {
   Input,
   Modal,
   Space,
-  Tag,
   Typography,
 } from 'antd';
 import {
@@ -63,13 +62,6 @@ const MODE_TITLES: Record<string, string> = {
 export default function ActionConfirmModal({ action, open, mode, loading, onClose, onConfirm }: Props) {
   const [reason, setReason] = useState('');
   const [titleConfirm, setTitleConfirm] = useState('');
-
-  useEffect(() => {
-    if (!open) {
-      setReason('');
-      setTitleConfirm('');
-    }
-  }, [open]);
 
   const isHighRisk = action?.risk_level === 'high' || action?.risk_level === 'critical';
   const title = mode ? MODE_TITLES[mode] : '操作确认';
@@ -129,6 +121,12 @@ export default function ActionConfirmModal({ action, open, mode, loading, onClos
       }
       open={open}
       onCancel={onClose}
+      afterOpenChange={(visible) => {
+        if (!visible) {
+          setReason('');
+          setTitleConfirm('');
+        }
+      }}
       footer={footerEls}
       width={640}
     >

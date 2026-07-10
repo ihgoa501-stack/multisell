@@ -52,6 +52,11 @@ export default function PageContainer({
     return (
       <div style={{ padding: 'var(--space-lg) var(--space-xl)', background: 'var(--bg)', minHeight: '100%' }}>
         <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)', marginBottom: 'var(--space-xl)' }}>{title}</h1>
+        {loadingDesc && (
+          <Text type="secondary" style={{ display: 'block', marginBottom: 'var(--space-md)' }}>
+            {loadingDesc}
+          </Text>
+        )}
         <StatRowSkeleton count={4} />
       </div>
     );

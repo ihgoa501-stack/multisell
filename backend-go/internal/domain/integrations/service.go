@@ -234,8 +234,18 @@ func (s *Service) GetMode(id int64) (int8, error) {
 
 // UpdateMode sets the execution mode for an integration account.
 func (s *Service) UpdateMode(id int64, mode int8) error {
-	return s.db.Model(&PlatformIntegrationAccount{}).Where("id = ?", id).
-		Update("execution_mode", mode).Error
+	if mode < int8(ExecutionModeDryRun) || mode > int8(ExecutionModeProduction) {
+		return fmt.Errorf("unknown execution mode: %d", mode)
+	}
+	res := s.db.Model(&PlatformIntegrationAccount{}).Where("id = ?", id).
+		Update("execution_mode", mode)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // ListCategoryMappings returns the category mappings for an account.
@@ -298,6 +308,7 @@ type PublishToOzonInput struct {
 	Price        float64 `json:"price" binding:"required"`
 	CurrencyCode string  `json:"currency_code"`
 	ImageURL     string  `json:"image_url,omitempty"`
+	ApprovalID   *int64  `json:"approval_id,omitempty"`
 }
 
 // PublishToOzon publishes a local product to the Ozon platform.
@@ -391,8 +402,18 @@ func (s *Service) checkWriteMode(ctx context.Context, op string, in interface{})
 	case ExecutionModeSandbox:
 		// Sandbox: pass through — the adapter uses sandbox API endpoints.
 		return nil, nil
-	default:
+	case ExecutionModeApprovalRequired:
+		if _, ok := ApprovalIDFromCtx(ctx); !ok {
+			return nil, errors.New("execution mode is approval_required: approval context is required but not provided")
+		}
 		return nil, nil
+	case ExecutionModeProduction:
+		if _, ok := ApprovalIDFromCtx(ctx); !ok {
+			return nil, errors.New("execution mode is production: approval context is required but not provided")
+		}
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unknown execution mode: %d (%s)", mode, mode.String())
 	}
 }
 

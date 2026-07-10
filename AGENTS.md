@@ -197,6 +197,7 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 - `docs/INDEX.md` — full doc index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
 - `docs/ACTIVE_STACK_POLICY.md` — active/legacy policy.
+- `docs/CODEBASE_ANALYSIS.md` — codebase analysis snapshot, knowledge graph usage, and regeneration guidance.
 - `docs/FRONTEND_PAGES_AND_ROUTING.md` — page map.
 
 ## Project Medical Record

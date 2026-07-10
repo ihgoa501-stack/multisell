@@ -1,10 +1,11 @@
 package guardrails
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 )
 
@@ -166,24 +167,33 @@ func (g *ExecutionGuard) Check(ctx context.Context, input *GuardInput) (*GuardRe
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	if input.ToolInput == nil || len(input.ToolInput) == 0 {
-		return &GuardResult{
-			Pass:    true,
-			Blocked: false,
-			Retry:   false,
-			Reason:  "no action parameters to check",
-			Risk:    "low",
-		}, nil
+	// Handle nil ToolInput safely
+	toolInput := input.ToolInput
+	if toolInput == nil {
+		toolInput = map[string]interface{}{}
 	}
 
-	// Extract action type and risk level from ToolInput.
-	actionType, _ := input.ToolInput["action_type"].(string)
-	riskLevel, _ := input.ToolInput["risk_level"].(string)
+	actionType, _ := toolInput["action_type"].(string)
+	if actionType == "" && !isReadOnlyTool(input.ToolName) {
+		// Fallback mapping from ToolName if omitted
+		lowerTool := strings.ToLower(input.ToolName)
+		if strings.Contains(lowerTool, "purchase") {
+			actionType = "purchase"
+		} else if strings.Contains(lowerTool, "replenish") {
+			actionType = "replenish"
+		} else if strings.Contains(lowerTool, "refund") {
+			actionType = "refund"
+		} else if strings.Contains(lowerTool, "discount") {
+			actionType = "discount"
+		} else if strings.Contains(lowerTool, "listing") {
+			actionType = "listing"
+		}
+	}
+	riskLevel, _ := toolInput["risk_level"].(string)
 
 	// Extract amount (monetary value) from ToolInput.
-	// Supports "amount" field as float64, json.Number, int, or string.
 	amount := 0.0
-	if rawAmount, exists := input.ToolInput["amount"]; exists {
+	if rawAmount, exists := toolInput["amount"]; exists {
 		switch v := rawAmount.(type) {
 		case float64:
 			amount = v
@@ -203,9 +213,8 @@ func (g *ExecutionGuard) Check(ctx context.Context, input *GuardInput) (*GuardRe
 	}
 
 	// Extract quantity from ToolInput.
-	// Supports "quantity" field as int, float64, json.Number, or string.
 	quantity := 0
-	if rawQty, exists := input.ToolInput["quantity"]; exists {
+	if rawQty, exists := toolInput["quantity"]; exists {
 		switch v := rawQty.(type) {
 		case float64:
 			quantity = int(math.Round(v))
@@ -240,6 +249,51 @@ func (g *ExecutionGuard) Check(ctx context.Context, input *GuardInput) (*GuardRe
 			}
 		}
 
+		// Block or warn if the required key is completely missing for a high-risk mutation
+		if rule.MaxAmount > 0 {
+			if _, exists := toolInput["amount"]; !exists {
+				reason := fmt.Sprintf("rule %q: missing required parameter 'amount' for action type %q", rule.Name, actionType)
+				if rule.RequireApproval {
+					return &GuardResult{
+						Pass:    false,
+						Blocked: false,
+						Retry:   false,
+						Reason:  reason + " — requires human approval",
+						Risk:    "medium",
+					}, nil
+				}
+				return &GuardResult{
+					Pass:    false,
+					Blocked: true,
+					Retry:   false,
+					Reason:  reason + " — blocked",
+					Risk:    "high",
+				}, nil
+			}
+		}
+
+		if rule.MaxQuantity > 0 {
+			if _, exists := toolInput["quantity"]; !exists {
+				reason := fmt.Sprintf("rule %q: missing required parameter 'quantity' for action type %q", rule.Name, actionType)
+				if rule.RequireApproval {
+					return &GuardResult{
+						Pass:    false,
+						Blocked: false,
+						Retry:   false,
+						Reason:  reason + " — requires human approval",
+						Risk:    "medium",
+					}, nil
+				}
+				return &GuardResult{
+					Pass:    false,
+					Blocked: true,
+					Retry:   false,
+					Reason:  reason + " — blocked",
+					Risk:    "high",
+				}, nil
+			}
+		}
+
 		// Check amount threshold.
 		amountExceeded := rule.MaxAmount > 0 && amount > rule.MaxAmount
 		// Check quantity threshold.
@@ -263,7 +317,6 @@ func (g *ExecutionGuard) Check(ctx context.Context, input *GuardInput) (*GuardRe
 		}
 
 		if rule.RequireApproval {
-			// Require approval — warn but don't block.
 			return &GuardResult{
 				Pass:    false,
 				Blocked: false,
@@ -273,7 +326,6 @@ func (g *ExecutionGuard) Check(ctx context.Context, input *GuardInput) (*GuardRe
 			}, nil
 		}
 
-		// Block the action outright.
 		return &GuardResult{
 			Pass:    false,
 			Blocked: true,
@@ -307,4 +359,17 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func isReadOnlyTool(toolName string) bool {
+	lower := strings.ToLower(toolName)
+	return strings.Contains(lower, "list") ||
+		strings.Contains(lower, "read") ||
+		strings.Contains(lower, "query") ||
+		strings.Contains(lower, "get") ||
+		strings.Contains(lower, "view") ||
+		strings.Contains(lower, "track") ||
+		strings.Contains(lower, "find") ||
+		strings.Contains(lower, "search") ||
+		strings.Contains(lower, "analyze")
 }

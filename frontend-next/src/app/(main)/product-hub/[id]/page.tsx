@@ -1,8 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { Badge, Card, Col, Descriptions, Row, Spin, Statistic, Table, Tag, Timeline, Typography } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { Badge, Card, Col, Descriptions, Row, Spin, Tag, Typography, Table, Statistic, Timeline } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import PageContainer from '@/components/ui/PageContainer';
@@ -32,111 +31,16 @@ interface ProductHubProfile {
   timeline: Array<Record<string, unknown>>;
 }
 
-const STATUS_COLORS: Record<string, string> = { list: 'success', skip: 'error', cautious: 'warning' };
-const MODE_TAGS: Record<string, string> = { dry_run: 'default', sandbox: 'orange', production: 'red' };
-const APPROVAL_COLORS: Record<string, string> = { pending: 'gold', approved: 'success', rejected: 'error' };
-const TASK_COLORS: Record<string, string> = {
-  completed: 'success', executing: 'processing', failed: 'error',
-  approved: 'blue', pending_approval: 'gold', blocked: 'default', rejected: 'error',
-};
-
-function EvdSection({ data }: { data: Record<string, unknown> }) {
-  const ci = data?.candidate_info as Record<string, unknown> || {};
-  const comp = data?.completeness as Record<string, unknown> || {};
-  const ps = data?.profit_summary as Record<string, unknown> || {};
-  const lr = data?.listing_recommendation as Record<string, unknown> || {};
-  const approvals = (data?.approval_requests || []) as Array<Record<string, unknown>>;
-  const tasks = (data?.listing_tasks || []) as Array<Record<string, unknown>>;
-  const records = (data?.listing_records || []) as Array<Record<string, unknown>>;
-  const complete = data?.complete_chain as boolean;
-
-  return (
-    <Card title={
-      <span>证据链 <Tag color={complete ? 'success' : 'error'}>{complete ? '闭环完成' : '链路不完整'}</Tag></span>
-    } size="small" style={{ marginTop: 16 }}>
-      <Timeline
-        items={[
-          { color: 'blue', children: <><Text strong>候选商品</Text><br /><Text>{ci?.title as string || '-'}（来源: {ci?.source as string || '-'}）</Text></> },
-          { color: comp?.score != null ? 'green' : 'gray', children: <><Text strong>完整度评分</Text><br /><Text>{comp?.score != null ? `${comp.score}/100` : '未评估'}{comp?.missing_items ? ` — 缺失: ${(comp.missing_items as string[])?.join(', ') || '无'}` : ''}</Text></> },
-          { color: ps?.profit_margin ? (ps.profit_margin as number) > 0 ? 'green' : 'red' : 'gray', children: <><Text strong>利润评估</Text><br /><Text>预估利润 ${ps?.estimated_profit as number ?? '-'}（利润率 {ps?.profit_margin as number ?? '-'}%）</Text></> },
-          { color: lr?.decision ? (lr.decision as string) === 'list' ? 'green' : 'orange' : 'gray', children: <><Text strong>上架建议</Text><br /><Tag color={STATUS_COLORS[lr?.decision as string] || 'default'}>{lr?.decision as string || '-'}</Tag> {lr?.reason as string || ''}</> },
-          ...approvals.map((a, i) => ({
-            color: (a?.status as string) === 'approved' ? 'green' : (a?.status as string) === 'rejected' ? 'red' : 'orange', children: <><Text strong>审批</Text><br /><Tag color={APPROVAL_COLORS[a?.status as string] || 'default'}>{a?.status as string || '-'}</Tag></>,
-            key: i,
-          })),
-          ...tasks.map((t, i) => {
-            const mode = t?.execution_mode as number ?? 0;
-            const modeKey = mode === 1 ? 'sandbox' : mode === 3 ? 'production' : 'dry_run';
-            return {
-              color: TASK_COLORS[t?.status as string] || 'default',
-              children: <><Text strong>上架任务 #{t?.id as number ?? ''}</Text><br /><Tag color={TASK_COLORS[t?.status as string] || 'default'}>{t?.status as string || '-'}</Tag><Tag color={MODE_TAGS[modeKey]}>{modeKey}</Tag>{t?.last_error ? <Text type="danger">: {t.last_error as string}</Text> : null}</>,
-              key: i,
-            };
-          }),
-          ...records.map((r, i) => ({
-            color: 'green',
-            children: <><Text strong>平台记录</Text><br /><Text>ID: {r?.platform_product_id as string || '-'} {r?.platform_url as string ? <a href={r.platform_url as string} target="_blank">查看</a> : ''}</Text></>,
-            key: i,
-          })),
-        ]}
-      />
-      {!complete ? <Text type="warning">证据链不完整，部分环节数据缺失。</Text> : null}
-    </Card>
-  );
-}
-
-function ReviewSection({ productId }: { productId: string }) {
-  const { data, isLoading } = useQuery<Record<string, unknown>>({
-    queryKey: ['evidence-trace-summary', productId],
-    queryFn: async () => (await apiClient.get<Record<string, unknown>>(`/v1/product-hub/${productId}/evidence`)).data ?? {},
-    enabled: !!productId,
-  });
-  if (isLoading) return null;
-  const lr = data?.listing_recommendation as Record<string, unknown> || {};
-  const feedback = lr?.feedback_status as string;
-  if (!feedback) return null;
-  return (
-    <Card title="推荐复盘" size="small" style={{ marginTop: 16 }}>
-      <Descriptions column={2} size="small">
-        <Descriptions.Item label="AI 建议">{lr?.decision as string || '-'}</Descriptions.Item>
-        <Descriptions.Item label="Owner 反馈">
-          <Tag color={feedback === 'adopted' ? 'success' : feedback === 'rejected' ? 'error' : feedback === 'executed' ? 'blue' : feedback === 'execution_failed' ? 'red' : 'default'}>{feedback}</Tag>
-        </Descriptions.Item>
-        {feedback === 'execution_failed' ? <Descriptions.Item label="失败原因">{lr?.feedback_note as string || '-'}</Descriptions.Item> : null}
-        <Descriptions.Item label="采纳/拒绝理由">{lr?.feedback_note as string || '-'}</Descriptions.Item>
-      </Descriptions>
-    </Card>
-  );
-}
-
-function PlatformComparisonSection({ productId }: { productId: string }) {
-  const { data, isLoading } = useQuery<Array<Record<string, unknown>>>({
-    queryKey: ['platform-comparison', productId],
-    queryFn: async () => {
-      const res = await apiClient.get<{ items: Array<Record<string, unknown>> }>(`/v1/listing/products/${productId}/platform-comparison`);
-      return res.data?.items ?? [];
-    },
-    enabled: !!productId,
-  });
-  if (isLoading || !data || (data as Array<unknown>).length === 0) return null;
-  return (
-    <Card title="平台对比建议" size="small" style={{ marginTop: 16 }}>
-      <Table
-        dataSource={data as Array<Record<string, unknown>>}
-        rowKey="_k"
-        size="small"
-        pagination={false}
-        columns={[
-          { title: '平台', dataIndex: 'platform_name', key: 'platform_name', render: (v) => (v as string) || '-' },
-          { title: '预估利润', dataIndex: 'estimated_profit', key: 'estimated_profit', render: (v) => `$${(v as number ?? 0).toFixed(2)}` },
-          { title: '利润率', dataIndex: 'profit_margin', key: 'profit_margin', render: (v) => `${(v as number ?? 0).toFixed(1)}%` },
-          { title: '风险', dataIndex: 'risk_level', key: 'risk_level', render: (v) => <Tag color={(v as string) === 'high' ? 'red' : (v as string) === 'medium' ? 'orange' : 'green'}>{v as string || '-'}</Tag> },
-          { title: '建议上架', dataIndex: 'suggested', key: 'suggested', render: (v) => v ? <CheckCircleOutlined style={{ color: '#52c41a' }} /> : null },
-          { title: '状态', dataIndex: 'listing_status', key: 'listing_status', render: (v) => <Tag color={TASK_COLORS[v as string] || 'default'}>{v as string || '-'}</Tag> },
-        ]}
-      />
-    </Card>
-  );
+interface EvidenceTrace {
+  candidate_info?: Record<string, unknown>;
+  completeness?: Record<string, unknown>;
+  profit_summary?: Record<string, unknown>;
+  listing_recommendation?: Record<string, unknown>;
+  approval_requests?: Array<Record<string, unknown>>;
+  listing_tasks: Array<Record<string, unknown>>;
+  execution_results: Array<Record<string, unknown>>;
+  listing_records: Array<Record<string, unknown>>;
+  complete_chain?: boolean;
 }
 
 export default function ProductHubDetailPage() {
@@ -151,16 +55,20 @@ export default function ProductHubDetailPage() {
     },
   });
 
-  const { data: evd, isLoading: evdLoading } = useQuery<Record<string, unknown>>({
-    queryKey: ['evidence-trace', id],
-    queryFn: async () => (await apiClient.get<Record<string, unknown>>(`/v1/product-hub/${id}/evidence`)).data ?? {},
-    enabled: !!id,
+  const { data: evidence } = useQuery<EvidenceTrace>({
+    queryKey: ['product-hub-evidence', id],
+    queryFn: async () => {
+      const res = await apiClient.get<EvidenceTrace>(`/v1/product-hub/${id}/evidence`);
+      return res.data ?? ({} as EvidenceTrace);
+    },
+    enabled: !!data,
   });
 
   if (isLoading) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />;
   if (!data) return <PageContainer title="产品档案"><Text type="danger">产品未找到</Text></PageContainer>;
 
   const { master, variants, concept, latest_cost, suppliers, samples, timeline } = data;
+  const latestApproval = evidence?.approval_requests?.[0];
 
   return (
     <PageContainer title={((master?.name as string) || '产品档案')}>
@@ -247,14 +155,72 @@ export default function ProductHubDetailPage() {
         ]} />) : (<Text type="secondary">暂无变体</Text>)}
       </Card>
 
-      {/* Phase 2: Evidence Trace */}
-      {!evdLoading && evd ? <EvdSection data={evd} /> : null}
+      {/* ===== Phase 2: Evidence Trace ===== */}
+      {evidence && (
+        <Card title="决策证据链" size="small" style={{ marginTop: 16 }}>
+          <Row gutter={16}>
+            <Col span={18}>
+              <Timeline items={[
+                { color: 'blue', children: <><Text strong>候选商品</Text> — {(evidence.candidate_info?.source as string) || '-'} / {(evidence.candidate_info?.status as string) || '-'} / {(evidence.candidate_info?.created_date as string)?.slice(0, 10) || '-'}</> },
+                { color: (evidence.completeness?.score as number ?? 0) >= 80 ? 'green' : 'orange', children: <><Text strong>完整性</Text> — {(evidence.completeness?.score as number ?? 0).toFixed(0)}/100 {(evidence.completeness?.missing_items as string[])?.length ? <Tag color="red">缺: {(evidence.completeness?.missing_items as string[]).join(', ')}</Tag> : <Tag color="green">完整</Tag>}</> },
+                { color: (evidence.profit_summary?.profit_status as string) === 'profitable' ? 'green' : 'red', children: <><Text strong>利润</Text> — 预估: ${(evidence.profit_summary?.estimated_profit as number ?? 0).toFixed(2)} / 利润率: {(evidence.profit_summary?.profit_margin as number ?? 0).toFixed(1)}% / {(evidence.profit_summary?.profit_status as string) || '-'}</> },
+                { color: (evidence.listing_recommendation?.decision as string) === 'list' ? 'green' : (evidence.listing_recommendation?.decision as string) === 'cautious' ? 'orange' : 'red', children: <><Text strong>上架建议</Text> — <Tag color={(evidence.listing_recommendation?.decision as string) === 'list' ? 'green' : (evidence.listing_recommendation?.decision as string) === 'cautious' ? 'orange' : 'red'}>{(evidence.listing_recommendation?.decision as string) || '-'}</Tag> / {((evidence.listing_recommendation?.confidence as number ?? 0) * 100).toFixed(0)}% / {(evidence.listing_recommendation?.reason as string) || '-'}</> },
+                { color: (latestApproval?.status as string) === 'approved' ? 'green' : 'orange', children: <><Text strong>审批</Text> — <Tag color={(latestApproval?.status as string) === 'approved' ? 'green' : (latestApproval?.status as string) === 'rejected' ? 'red' : 'orange'}>{(latestApproval?.status as string) || 'pending'}</Tag></> },
+                { color: (evidence.listing_tasks as Array<Record<string, unknown>>)?.length ? 'blue' : 'gray', children: <><Text strong>刊登任务</Text> — {(evidence.listing_tasks as Array<Record<string, unknown>>)?.length ?? 0} 个 / {(evidence.listing_tasks as Array<Record<string, unknown>>)?.[0]?.execution_mode as number === 3 ? <Tag color="red">Production</Tag> : (evidence.listing_tasks as Array<Record<string, unknown>>)?.[0]?.execution_mode as number === 2 ? <Tag color="purple">Approval Required</Tag> : (evidence.listing_tasks as Array<Record<string, unknown>>)?.[0]?.execution_mode as number === 1 ? <Tag color="orange">Sandbox</Tag> : <Tag>Dry-Run</Tag>}</> },
+                { color: (evidence.execution_results as Array<Record<string, unknown>>)?.some(r => r.status === 'success') ? 'green' : 'red', children: <><Text strong>执行结果</Text> — {(evidence.execution_results as Array<Record<string, unknown>>)?.filter(r => r.status === 'success').length ?? 0} 成功 / {(evidence.execution_results as Array<Record<string, unknown>>)?.filter(r => r.status === 'failed').length ?? 0} 失败</> },
+                { color: (evidence.listing_records as Array<Record<string, unknown>>)?.length ? 'green' : 'gray', children: <><Text strong>上架记录</Text> — {(evidence.listing_records as Array<Record<string, unknown>>)?.length ?? 0} 条 / {(evidence.listing_records as Array<Record<string, unknown>>)?.map(r => r.platform_product_id as string)?.filter(Boolean)?.join(', ') || '-'}</> },
+              ]} />
+            </Col>
+            <Col span={6}>
+              <Card size="small" title="全链状态">
+                <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                  <Badge status={evidence.complete_chain ? 'success' : 'error'} />
+                  <span style={{ fontSize: 16, fontWeight: 700, marginLeft: 8, color: evidence.complete_chain ? 'var(--g4)' : 'var(--r4)' }}>
+                    {evidence.complete_chain ? '全链完成' : '未完成'}
+                  </span>
+                </div>
+              </Card>
+            </Col>
+          </Row>
+        </Card>
+      )}
 
-      {/* Phase 5: Review Summary */}
-      <ReviewSection productId={id} />
+      {/* ===== Phase 5: Review Summary ===== */}
+      <Card title="审核摘要" size="small" style={{ marginTop: 16 }}>
+        <Descriptions column={1} size="small">
+          <Descriptions.Item label="AI建议">
+            <Tag color={(evidence?.listing_recommendation?.decision as string) === 'list' ? 'green' : (evidence?.listing_recommendation?.decision as string) === 'cautious' ? 'orange' : 'default'}>
+              {(evidence?.listing_recommendation?.decision as string) || '-'}
+            </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Owner决策">
+            {(latestApproval?.status as string) === 'approved' ? <Tag color="green">已采纳</Tag> : (latestApproval?.status as string) === 'rejected' ? <Tag color="red">已拒绝</Tag> : <Tag>待审批</Tag>}
+          </Descriptions.Item>
+          <Descriptions.Item label="执行结果">
+            {(evidence?.execution_results as Array<Record<string, unknown>>)?.some(r => r.status === 'success') ? <Tag color="green">成功</Tag> : (evidence?.execution_results as Array<Record<string, unknown>>)?.some(r => r.status === 'failed') ? <Tag color="red">失败</Tag> : <Tag>未执行</Tag>}
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
 
-      {/* Phase 6: Platform Comparison */}
-      <PlatformComparisonSection productId={id} />
+      {/* ===== Phase 6: Platform Comparison ===== */}
+      <Card title="平台对比" size="small" style={{ marginTop: 16 }}>
+        {(evidence?.listing_records as Array<Record<string, unknown>>)?.length ? (
+          <Table
+            dataSource={evidence?.listing_records as Array<Record<string, unknown>>}
+            rowKey={(_, i) => String(i)}
+            size="small"
+            pagination={false}
+            columns={[
+              { title: '平台', dataIndex: 'platform_name', key: 'platform', render: (v: string) => v || '-' },
+              { title: '平台商品ID', dataIndex: 'platform_product_id', key: 'pid', render: (v: string) => v || '-' },
+              { title: 'URL', dataIndex: 'url', key: 'url', render: (v: string) => v ? <a href={v} target="_blank" rel="noopener noreferrer">查看</a> : '-' },
+              { title: '状态', key: 'status', render: () => <Tag color="green">已发布</Tag> },
+            ]}
+          />
+        ) : (
+          <Text type="secondary">暂无平台对比数据</Text>
+        )}
+      </Card>
     </PageContainer>
   );
 }

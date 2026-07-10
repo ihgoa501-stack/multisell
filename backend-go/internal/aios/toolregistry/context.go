@@ -6,10 +6,11 @@ import "context"
 // to avoid import cycles. Both packages refer to the same string constants so
 // context values set by one are readable by the other.
 const (
-	ctxAgentID       = "toolregistry-agent-id"
-	ctxExecutionMode = "toolregistry-execution-mode"
-	ctxUserID        = "toolregistry-user-id"
-	ctxApprovalID    = "toolregistry-approval-id"
+	ctxAgentID        = "toolregistry-agent-id"
+	ctxExecutionMode  = "toolregistry-execution-mode"
+	ctxUserID         = "toolregistry-user-id"
+	ctxApprovalID     = "toolregistry-approval-id"
+	ctxAgentWorkspace = "toolregistry-agent-workspace"
 )
 
 // WithAgentID attaches the calling agent's ID to the context so hooks and
@@ -59,5 +60,16 @@ func WithApprovalID(ctx context.Context, id int64) context.Context {
 // GetApprovalID retrieves the approval ID from context. Returns 0 if not set.
 func GetApprovalID(ctx context.Context) int64 {
 	v, _ := ctx.Value(ctxApprovalID).(int64)
+	return v
+}
+
+// WithAgentWorkspace marks the context as originating from an agent execution workspace.
+func WithAgentWorkspace(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxAgentWorkspace, true)
+}
+
+// IsAgentWorkspace returns true if the context originated from an agent workspace.
+func IsAgentWorkspace(ctx context.Context) bool {
+	v, _ := ctx.Value(ctxAgentWorkspace).(bool)
 	return v
 }

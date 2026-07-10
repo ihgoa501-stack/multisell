@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  Badge, Card, Col, Row, Statistic, Table, Tag, Typography,
+  Card, Col, Row, Statistic, Table, Tag, Typography,
 } from 'antd';
 import {
   CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined,
