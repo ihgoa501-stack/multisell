@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/common"
@@ -652,14 +654,52 @@ func TestService_Execute_UnknownMode_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestService_Execute_Sandbox_ReturnsError(t *testing.T) {
+func TestService_ExecuteAction_Sandbox(t *testing.T) {
+	// Mock execCommand to avoid running actual Docker/Git commands in unit tests.
+	oldExecCommand := execCommand
+	defer func() { execCommand = oldExecCommand }()
+
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		return exec.Command("echo", "mock sandbox output")
+	}
+
 	db := newTestDB(t)
 	svc := NewService(db, testLogger())
+	noApproval := false
+	a, err := svc.CreateAction(&CreateActionInput{
+		SourceTable: "ai_trace", SourceID: "trc_sb_1", SourceType: "agent_run",
+		AgentID: "A2", ActionType: "listing_optimize", Title: "sandbox run",
+		RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
+		ExecutionMode: "sandbox",
+	})
+	if err != nil {
+		t.Fatalf("CreateAction: %v", err)
+	}
 
+	result, err := svc.ExecuteAction(a.ID, nil, "alice", "")
+	if err != nil {
+		t.Fatalf("expected sandbox trigger attempt, got: %v", err)
+	}
+	if result.Status != "executed" && result.Status != "failed" {
+		t.Errorf("expected executed/failed status from sandbox run, got: %s", result.Status)
+	}
+}
+
+func TestService_ExecuteAction_Sandbox_Failure(t *testing.T) {
+	// Mock execCommand to return an error (using "false" command).
+	oldExecCommand := execCommand
+	defer func() { execCommand = oldExecCommand }()
+
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		return exec.Command("false")
+	}
+
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
 	noApproval := false
 	a, err := svc.CreateAction(&CreateActionInput{
 		SourceTable: "ai_trace", SourceID: "trc_sbx_1", SourceType: "agent_run",
-		AgentID: "A2", ActionType: "listing_optimize", Title: "sandbox no executor",
+		AgentID: "A2", ActionType: "listing_optimize", Title: "sandbox failure test",
 		RiskLevel: "low", ProposedBy: "agent:A2",
 		RequiresApproval: &noApproval, ExecutionMode: "sandbox",
 	})
@@ -669,17 +709,17 @@ func TestService_Execute_Sandbox_ReturnsError(t *testing.T) {
 
 	_, err = svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err == nil {
-		t.Fatal("expected error for sandbox without configured executor")
+		t.Fatal("expected error for sandbox failure")
 	}
-	if !strings.Contains(err.Error(), "no sandbox configured") {
-		t.Errorf("error = %q, want 'no sandbox configured'", err.Error())
+	if !strings.Contains(err.Error(), "sandbox run failed") {
+		t.Errorf("error = %q, want 'sandbox run failed'", err.Error())
 	}
 
-	// Verify no state change in DB.
+	// Verify DB state updated to "failed".
 	var fromDB UnifiedAction
 	db.First(&fromDB, a.ID)
-	if fromDB.Status != "suggested" {
-		t.Errorf("status changed to %q after sandbox error", fromDB.Status)
+	if fromDB.Status != "failed" {
+		t.Errorf("status = %q after sandbox failure, want 'failed'", fromDB.Status)
 	}
 }
 
@@ -873,4 +913,22 @@ func TestService_ExecuteAction_ConcurrentClaim(t *testing.T) {
 		if e == nil { success++ }
 	}
 	if success != 1 { t.Errorf("expected exactly 1 success, got %d", success) }
+}
+
+func TestService_ExecuteAction_Expired(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+	noApproval := false
+	a, _ := svc.CreateAction(&CreateActionInput{
+		SourceTable: "ai_trace", SourceID: "trc_exp_1", SourceType: "agent_run",
+		AgentID: "A2", ActionType: "listing_optimize", Title: "expired action",
+		RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
+	})
+	// Force Creation Date to 3 hours ago
+	db.Model(&UnifiedAction{}).Where("id = ?", a.ID).Update("created_at", time.Now().Add(-3 * time.Hour))
+
+	_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
+	if err == nil || !errors.Is(err, ErrActionExpired) {
+		t.Fatalf("expected ErrActionExpired, got: %v", err)
+	}
 }
