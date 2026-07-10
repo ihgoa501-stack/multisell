@@ -160,5 +160,6 @@ If a relevant check cannot be run, state why in the final report.
 - `docs/reference-module-catalog.md` — canonical module, route, and page catalog.
 - `docs/INDEX.md` — documentation index.
 - `docs/ACTIVE_STACK_POLICY.md` — active stack and legacy policy.
+- `docs/CODEBASE_ANALYSIS.md` — codebase analysis snapshot, knowledge graph usage, and regeneration guidance.
 - `docs/features/` — feature specs; use `TEMPLATE.md`.
 - `CLAUDE.md` — Claude Code-specific companion guidance; keep it consistent with this file.
