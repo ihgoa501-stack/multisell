@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -433,13 +434,50 @@ func TestExecutionGuard_NoToolInput(t *testing.T) {
 	g := guardrails.NewExecutionGuard()
 	ctx := context.Background()
 
-	result, err := g.Check(ctx, &guardrails.GuardInput{})
+	result, err := g.Check(ctx, &guardrails.GuardInput{
+		ToolName: "query.some.data",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !result.Pass {
-		t.Errorf("empty tool input should pass, got Pass=%v", result.Pass)
+		t.Errorf("unrestricted empty tool input should pass, got Pass=%v", result.Pass)
 	}
+}
+
+func TestExecutionGuard_ParameterOmission(t *testing.T) {
+	g := guardrails.NewExecutionGuard()
+	ctx := context.Background()
+
+	t.Run("purchase tool name with missing amount blocks or warns", func(t *testing.T) {
+		result, err := g.Check(ctx, &guardrails.GuardInput{
+			ToolName: "purchase.order.create",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.Pass {
+			t.Fatal("expected fail-closed result for missing required amount parameter")
+		}
+		if !strings.Contains(result.Reason, "missing required parameter 'amount'") {
+			t.Errorf("expected missing parameter reason, got %q", result.Reason)
+		}
+	})
+
+	t.Run("replenish tool name with missing quantity blocks", func(t *testing.T) {
+		result, err := g.Check(ctx, &guardrails.GuardInput{
+			ToolName: "replenish.stock.update",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !result.Blocked {
+			t.Fatal("expected block result for missing required quantity parameter")
+		}
+		if !strings.Contains(result.Reason, "missing required parameter 'quantity'") {
+			t.Errorf("expected missing parameter reason, got %q", result.Reason)
+		}
+	})
 }
 
 func TestExecutionGuard_CustomRules(t *testing.T) {
