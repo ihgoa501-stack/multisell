@@ -1,0 +1,11 @@
+{
+  "posting_number": "123456-002",
+  "status": "awaiting_deliver",
+  "in_process_at": "2026-07-02T14:00:00.000Z",
+  "analytics_data": {},
+  "financial_data": {
+    "products": [
+      {"sku": "SKU-XYZ-001", "quantity": 3, "price": "19.99"}
+    ]
+  }
+}

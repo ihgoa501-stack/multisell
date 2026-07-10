@@ -44,6 +44,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/imagegen"
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
+	"github.com/lingmirror/backend-go/internal/domain/integrations/aimapper"
 	"github.com/lingmirror/backend-go/internal/domain/inventory"
 	"github.com/lingmirror/backend-go/internal/domain/landedcost"
 	"github.com/lingmirror/backend-go/internal/domain/listing"
@@ -537,7 +538,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		}, func(ctx context.Context, evt eventbus.Event) error {
 			integrations.InitAdapters(db, logger)
 			svc := integrations.NewService(db, logger)
-			return svc.SyncOzonOrders(ctx)
+			if err := svc.SyncOzonOrders(ctx); err != nil {
+				return err
+			}
+			pipeline := aimapper.NewPipeline(aimapper.NewMapper(), db, logger)
+			return svc.SyncOzonOrdersRaw(ctx, pipeline)
 		}))
 
 	// Start scheduler in background goroutine.
@@ -551,7 +556,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	api := r.Group("/api/v1")
 
 	// API v1 Health check (public)
-	integrations.RegisterWebhookRoutes(api, bus, logger)
+	integrations.RegisterWebhookRoutesWithPipeline(api, bus, logger,
+		aimapper.NewPipeline(aimapper.NewMapper(), db, logger), db)
 
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

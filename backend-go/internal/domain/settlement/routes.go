@@ -13,6 +13,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 
 	group := rg.Group("/settlement")
 	{
+		group.POST("/recalculate", h.RecalculateAll)
+
 		// Static routes first to avoid conflict with /:id
 		group.GET("/summary", h.Summary)
 

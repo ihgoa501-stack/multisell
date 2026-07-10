@@ -488,3 +488,7 @@ func (a *ShopeeAdapter) FetchReturns(ctx context.Context, input *FetchReturnsInp
 	}
 	return items, nil
 }
+
+func (a *ShopeeAdapter) FetchRaw(ctx context.Context, platformID int64, endpoint string, payload interface{}) ([]byte, error) {
+	return nil, fmt.Errorf("shopee FetchRaw: not yet implemented")
+}

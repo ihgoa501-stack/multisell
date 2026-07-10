@@ -1,0 +1,9 @@
+{
+  "transaction_id": "OP-20260701-002",
+  "transaction_type": "refund",
+  "order_sn": "123456-001",
+  "amount": "29.99",
+  "currency": "RUB",
+  "occurred_at": "2026-07-01T11:00:00.000Z",
+  "description": ""
+}

@@ -1,0 +1,14 @@
+{
+  "posting_number": "123456-003",
+  "status": "cancelled",
+  "in_process_at": "2026-07-03T09:15:00.000Z",
+  "analytics_data": {
+    "delivery_price": "0.00"
+  },
+  "financial_data": {
+    "products": [
+      {"sku": "SKU-DEF-001", "quantity": 0, "price": "15.00"},
+      {"sku": "SKU-DEF-002", "quantity": 1, "price": "25.00"}
+    ]
+  }
+}

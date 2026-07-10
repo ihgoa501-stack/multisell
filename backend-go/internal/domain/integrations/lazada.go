@@ -540,6 +540,10 @@ func (a *LazadaAdapter) FetchReturns(ctx context.Context, input *FetchReturnsInp
 	return items, nil
 }
 
+func (a *LazadaAdapter) FetchRaw(ctx context.Context, platformID int64, endpoint string, payload interface{}) ([]byte, error) {
+	return nil, fmt.Errorf("lazada FetchRaw: not yet implemented")
+}
+
 // VerifyWebhookSignature implements WebhookVerifier for Lazada.
 // Lazada signs webhooks with HMAC-SHA256 using the app secret.
 func (a *LazadaAdapter) VerifyWebhookSignature(ctx context.Context, body []byte, headers http.Header) bool {

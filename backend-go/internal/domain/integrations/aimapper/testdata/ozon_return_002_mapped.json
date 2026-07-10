@@ -1,0 +1,10 @@
+{
+  "return_id": "RET-002",
+  "order_sn": "123456-002",
+  "sku_code": "SKU-XYZ-001",
+  "quantity": 2,
+  "reason": "Wrong item sent",
+  "status": "awaiting_review",
+  "created_at": "2026-07-06T10:00:00.000Z",
+  "refund_amount": "0.00"
+}

@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/integrations/aimapper"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -455,6 +457,87 @@ func (s *Service) SyncOzonOrders(ctx context.Context) error {
 		s.logger.Info("ozon sync done", zap.Int64("account", acct.ID), zap.Int("orders", len(orders)))
 		s.db.Table("platform_integration_account").Where("id = ?", acct.ID).Updates(
 			map[string]interface{}{"last_sync_at": time.Now(), "last_error": "", "sync_status": "idle"})
+	}
+	return nil
+}
+
+// SyncOzonOrdersRaw fetches raw order data from Ozon, stores as RawEvent records,
+// and triggers the AI mapping pipeline for each posting.
+// Runs alongside the existing SyncOzonOrders (which logs structured order counts).
+func (s *Service) SyncOzonOrdersRaw(ctx context.Context, pipeline *aimapper.Pipeline) error {
+	type accountRow struct {
+		ID         int64
+		PlatformID int64
+	}
+	var accounts []accountRow
+	if err := s.db.Table("platform_integration_account AS a").
+		Select("a.id, a.platform_id").
+		Joins("JOIN platform p ON p.id = a.platform_id").
+		Where("p.code = ? AND a.status = ?", "ozon", "active").
+		Find(&accounts).Error; err != nil {
+		return fmt.Errorf("sync ozon raw: %w", err)
+	}
+	if len(accounts) == 0 {
+		return nil
+	}
+	adapter, ok := GetAdapter("ozon")
+	if !ok {
+		return fmt.Errorf("sync ozon raw: no adapter")
+	}
+	ozon, ok := adapter.(*OzonAdapter)
+	if !ok {
+		return fmt.Errorf("sync ozon raw: type error")
+	}
+	since := time.Now().Add(-72 * time.Hour)
+	for _, acct := range accounts {
+		payload := map[string]interface{}{
+			"dir": "ASC",
+			"filter": map[string]string{
+				"since": since.Format("2006-01-02T15:04:05.000Z"),
+			},
+			"limit": 100,
+		}
+		rawBody, err := ozon.FetchRaw(ctx, acct.PlatformID, "/v3/posting/fbs/list", payload)
+		if err != nil {
+			s.logger.Warn("ozon sync raw fetch error", zap.Int64("account", acct.ID), zap.Error(err))
+			continue
+		}
+		var r struct {
+			Result struct {
+				Postings []map[string]interface{} `json:"postings"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(rawBody, &r); err != nil {
+			s.logger.Warn("ozon sync raw unmarshal error", zap.Int64("account", acct.ID), zap.Error(err))
+			continue
+		}
+		for _, posting := range r.Result.Postings {
+			postingBytes, _ := json.Marshal(posting)
+			rawEvent := RawEvent{
+				PlatformCode:  "ozon",
+				EventType:     "order",
+				RawPayload:    postingBytes,
+				MappingStatus: "pending",
+			}
+			if err := s.db.Create(&rawEvent).Error; err != nil {
+				s.logger.Warn("ozon sync raw: failed to store raw event", zap.Error(err))
+				continue
+			}
+			if pipeline != nil {
+				go func(eid int64, rp []byte) {
+					_, err := pipeline.ProcessRawEvent(context.Background(), eid, "ozon", "order", rp)
+					if err != nil {
+						s.logger.Error("ozon sync raw pipeline failed",
+							zap.Int64("event_id", eid),
+							zap.Error(err))
+					}
+				}(rawEvent.ID, postingBytes)
+			}
+		}
+		s.logger.Info("ozon sync raw done",
+			zap.Int64("account", acct.ID),
+			zap.Int("postings", len(r.Result.Postings)),
+		)
 	}
 	return nil
 }
