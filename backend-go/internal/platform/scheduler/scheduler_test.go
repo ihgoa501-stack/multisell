@@ -393,6 +393,153 @@ func TestTickPayloadFields(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// RetryConfig
+// ---------------------------------------------------------------------------
+
+func TestRetryConfigDefaults(t *testing.T) {
+	var rc RetryConfig
+	safe := rc.safe()
+	if safe.MaxAttempts != 3 {
+		t.Errorf("expected default MaxAttempts=3, got %d", safe.MaxAttempts)
+	}
+	if len(safe.Backoff) != 3 {
+		t.Errorf("expected default Backoff length 3, got %d", len(safe.Backoff))
+	}
+	if safe.ConsecutiveErrorThreshold != 3 {
+		t.Errorf("expected default ConsecutiveErrorThreshold=3, got %d", safe.ConsecutiveErrorThreshold)
+	}
+}
+
+func TestRetryConfigCustom(t *testing.T) {
+	rc := RetryConfig{
+		MaxAttempts:               5,
+		Backoff:                   []time.Duration{10 * time.Millisecond, 20 * time.Millisecond},
+		ConsecutiveErrorThreshold: 10,
+	}
+	safe := rc.safe()
+	if safe.MaxAttempts != 5 {
+		t.Errorf("expected MaxAttempts=5, got %d", safe.MaxAttempts)
+	}
+	if len(safe.Backoff) != 2 {
+		t.Errorf("expected Backoff length 2, got %d", len(safe.Backoff))
+	}
+	if safe.ConsecutiveErrorThreshold != 10 {
+		t.Errorf("expected ConsecutiveErrorThreshold=10, got %d", safe.ConsecutiveErrorThreshold)
+	}
+}
+
+func TestRetryConfigPreservesNonZeroMaxAttempts(t *testing.T) {
+	rc := RetryConfig{MaxAttempts: 1}
+	safe := rc.safe()
+	if safe.MaxAttempts != 1 {
+		t.Errorf("expected MaxAttempts=1, got %d", safe.MaxAttempts)
+	}
+}
+
+// rejectingSchema always rejects any payload.
+type rejectingSchema struct{}
+
+func (r rejectingSchema) Validate(_ map[string]interface{}) error {
+	return eventbus.ErrSchemaValidation
+}
+
+// ---------------------------------------------------------------------------
+// Retry on publish failure
+// ---------------------------------------------------------------------------
+
+// TestSchedulerRetriesOnPublishFailure verifies that the scheduler retries
+// publish attempts when the event bus schema validation rejects the payload.
+func TestSchedulerRetriesOnPublishFailure(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+
+	sr := eventbus.NewSchemaRegistry()
+	sr.Register("scheduler.tick.*", rejectingSchema{})
+	bus := eventbus.New(logger, eventbus.WithSchema(sr))
+	bus.Start(context.Background())
+	t.Cleanup(bus.Stop)
+	time.Sleep(10 * time.Millisecond)
+
+	s := New(bus, logger).WithRetryConfig(RetryConfig{
+		MaxAttempts:               3,
+		Backoff:                   []time.Duration{5 * time.Millisecond},
+		ConsecutiveErrorThreshold: 1,
+	})
+
+	var tickCount atomic.Int32
+	bus.Subscribe("scheduler.tick.R1", func(_ context.Context, _ eventbus.Event) error {
+		tickCount.Add(1)
+		return nil
+	})
+
+	s.Register(Task{
+		ID: "retry-fail", AgentID: "R1", DecisionPoint: "check",
+		Interval: 10 * time.Millisecond,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := startAndWaitDone(t, s, ctx)
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Publish always fails due to schema rejection — no tick should reach subscriber.
+	if n := tickCount.Load(); n != 0 {
+		t.Errorf("expected 0 successful publishes (schema rejects), got %d", n)
+	}
+
+	// Consecutive errors should be tracked (>0) after multiple failed attempts.
+	raw, _ := s.consecutiveErrors.Load("retry-fail")
+	errs, _ := raw.(int64)
+	if errs < 1 {
+		t.Errorf("expected consecutive errors > 0 after failures, got %d", errs)
+	}
+}
+
+// TestSchedulerRetryResetsOnSuccess verifies that consecutive error counter
+// resets after a successful publish.
+func TestSchedulerRetryResetsOnSuccess(t *testing.T) {
+	logger := dbtest.NewLogger(t)
+
+	bus := eventbus.New(logger)
+	bus.Start(context.Background())
+	t.Cleanup(bus.Stop)
+	time.Sleep(10 * time.Millisecond)
+
+	s := New(bus, logger).WithRetryConfig(RetryConfig{
+		MaxAttempts: 2,
+		Backoff:     []time.Duration{5 * time.Millisecond},
+	})
+
+	var tickCount atomic.Int32
+	bus.Subscribe("scheduler.tick.R2", func(_ context.Context, _ eventbus.Event) error {
+		tickCount.Add(1)
+		return nil
+	})
+
+	s.Register(Task{
+		ID: "retry-reset", AgentID: "R2", DecisionPoint: "check",
+		Interval: 10 * time.Millisecond,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := startAndWaitDone(t, s, ctx)
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+
+	if n := tickCount.Load(); n < 1 {
+		t.Errorf("expected at least 1 tick, got %d", n)
+	}
+
+	// Consecutive errors should be 0 after success.
+	raw, _ := s.consecutiveErrors.Load("retry-reset")
+	errs, _ := raw.(int64)
+	if errs != 0 {
+		t.Errorf("expected consecutive errors 0 after success, got %d", errs)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
