@@ -81,18 +81,70 @@ func (d DefaultFallbackChain) buildChain(target ModelTarget) []ModelTarget {
 	primary := target.Model
 
 	switch {
-	case containsModel(primary, "opus"):
-		return []ModelTarget{
-			{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 15 * time.Second, CostWeight: 15.0},
-			{Model: "claude-sonnet-4", Priority: 1, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 3.0},
-			{Model: "claude-haiku-4", Priority: 2, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+	case containsModel(primary, "claude"):
+		if containsModel(primary, "opus") {
+			return []ModelTarget{
+				{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 15 * time.Second, CostWeight: 15.0},
+				{Model: "claude-sonnet-4", Priority: 1, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 3.0},
+				{Model: "claude-haiku-4", Priority: 2, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+			}
 		}
-	case containsModel(primary, "sonnet"):
+		if containsModel(primary, "sonnet") {
+			return []ModelTarget{
+				{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 3.0},
+				{Model: "claude-haiku-4", Priority: 1, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+			}
+		}
+		return []ModelTarget{
+			{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 5 * time.Second, CostWeight: 1.0},
+		}
+
+	case containsModel(primary, "gpt") || containsModel(primary, "o1") || containsModel(primary, "o3"):
+		if containsModel(primary, "gpt-4") || containsModel(primary, "o1") {
+			return []ModelTarget{
+				{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 15 * time.Second, CostWeight: 15.0},
+				{Model: "gpt-4o", Priority: 1, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 3.0},
+				{Model: "gpt-4o-mini", Priority: 2, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+			}
+		}
 		return []ModelTarget{
 			{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 3.0},
-			{Model: "claude-haiku-4", Priority: 1, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+			{Model: "gpt-4o-mini", Priority: 1, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
 		}
+
+	case containsModel(primary, "deepseek"):
+		return []ModelTarget{
+			{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 15 * time.Second, CostWeight: 2.0},
+			{Model: "deepseek-chat", Priority: 1, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 1.0},
+		}
+
+	case containsModel(primary, "qwen"):
+		if containsModel(primary, "max") {
+			return []ModelTarget{
+				{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 15 * time.Second, CostWeight: 4.0},
+				{Model: "qwen-plus", Priority: 1, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 2.0},
+				{Model: "qwen-turbo", Priority: 2, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+			}
+		}
+		return []ModelTarget{
+			{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 2.0},
+			{Model: "qwen-turbo", Priority: 1, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+		}
+
 	default:
+		if containsModel(primary, "opus") {
+			return []ModelTarget{
+				{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 15 * time.Second, CostWeight: 15.0},
+				{Model: "claude-sonnet-4", Priority: 1, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 3.0},
+				{Model: "claude-haiku-4", Priority: 2, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+			}
+		}
+		if containsModel(primary, "sonnet") {
+			return []ModelTarget{
+				{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 10 * time.Second, CostWeight: 3.0},
+				{Model: "claude-haiku-4", Priority: 1, MaxRetries: 1, Timeout: 5 * time.Second, CostWeight: 1.0},
+			}
+		}
 		return []ModelTarget{
 			{Model: primary, Priority: 0, MaxRetries: 2, Timeout: 5 * time.Second, CostWeight: 1.0},
 		}

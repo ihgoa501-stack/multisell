@@ -475,6 +475,46 @@ func TestMemoryCache_ConcurrentAccess(t *testing.T) {
 // Fallback tests
 // ---------------------------------------------------------------------------
 
+func TestDefaultFallbackChain_BuildChain_Providers(t *testing.T) {
+	chain := DefaultFallbackChain{}
+
+	// Test Claude/Anthropic
+	c1 := chain.buildChain(ModelTarget{Model: "claude-opus-4"})
+	if len(c1) != 3 || c1[1].Model != "claude-sonnet-4" || c1[2].Model != "claude-haiku-4" {
+		t.Errorf("incorrect claude opus fallback chain: %v", c1)
+	}
+	c2 := chain.buildChain(ModelTarget{Model: "claude-sonnet-4"})
+	if len(c2) != 2 || c2[1].Model != "claude-haiku-4" {
+		t.Errorf("incorrect claude sonnet fallback chain: %v", c2)
+	}
+
+	// Test GPT/OpenAI
+	g1 := chain.buildChain(ModelTarget{Model: "gpt-4-turbo"})
+	if len(g1) != 3 || g1[1].Model != "gpt-4o" || g1[2].Model != "gpt-4o-mini" {
+		t.Errorf("incorrect gpt-4 fallback chain: %v", g1)
+	}
+	g2 := chain.buildChain(ModelTarget{Model: "gpt-3.5-turbo"})
+	if len(g2) != 2 || g2[1].Model != "gpt-4o-mini" {
+		t.Errorf("incorrect gpt fallback chain: %v", g2)
+	}
+
+	// Test DeepSeek
+	d1 := chain.buildChain(ModelTarget{Model: "deepseek-coder"})
+	if len(d1) != 2 || d1[1].Model != "deepseek-chat" {
+		t.Errorf("incorrect deepseek fallback chain: %v", d1)
+	}
+
+	// Test Qwen
+	q1 := chain.buildChain(ModelTarget{Model: "qwen-max"})
+	if len(q1) != 3 || q1[1].Model != "qwen-plus" || q1[2].Model != "qwen-turbo" {
+		t.Errorf("incorrect qwen-max fallback chain: %v", q1)
+	}
+	q2 := chain.buildChain(ModelTarget{Model: "qwen-standard"})
+	if len(q2) != 2 || q2[1].Model != "qwen-turbo" {
+		t.Errorf("incorrect qwen fallback chain: %v", q2)
+	}
+}
+
 func TestDefaultFallbackChain_Execute_SuccessPrimary(t *testing.T) {
 	provider := &mockProvider{
 		name:     "test",
