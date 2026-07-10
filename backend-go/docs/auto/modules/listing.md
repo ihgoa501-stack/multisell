@@ -1,0 +1,130 @@
+# Module: `listing`
+
+Package: `backend-go/internal/domain/listing/`
+
+**Base mount prefix:** `/api/v1`
+**Required permission:** `listing.read`
+
+## API Routes
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `POST` | `/api/v1/listing` | `h.Create` |
+| `POST` | `/api/v1/listing/listing-tasks/:task_id/cancel` | `h.CancelTask` |
+| `POST` | `/api/v1/listing/listing-tasks/:task_id/publish` | `h.PublishTask` |
+| `POST` | `/api/v1/listing/listing-tasks/:task_id/recheck` | `h.RecheckTask` |
+| `POST` | `/api/v1/listing/listing-tasks/from-decisions` | `h.CreateTasksFromDecisions` |
+| `GET` | `/api/v1/listing/products/:product_id/listings` | `h.ListByProduct` |
+| `GET` | `/api/v1/listing/products/:product_id/platform-comparison` | `h.GetPlatformComparison` |
+| `POST` | `/api/v1/listing/products/:product_id/publish/:platform_id` | `h.PublishProduct` |
+| `GET` | `/api/v1/listings` | `h.List` |
+| `POST` | `/api/v1/listings` | `h.Create` |
+| `DELETE` | `/api/v1/listings/:id` | `h.Delete` |
+| `GET` | `/api/v1/listings/:id` | `h.Get` |
+| `PUT` | `/api/v1/listings/:id` | `h.Update` |
+| `POST` | `/api/v1/listings/:id/publish` | `h.Publish` |
+| `POST` | `/api/v1/listings/:id/sync` | `h.Sync` |
+| `POST` | `/api/v1/listings/suggest` | `h.Suggest` |
+
+## Models
+
+### `ProductListing`
+**DB table:** `product_listing`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `id` | PK |
+| `ProductID` | `int64` | `product_id` | `product_id` | NOT NULL |
+| `PlatformID` | `int64` | `platform_id` | `platform_id` | NOT NULL |
+| `PlatformProductID` | `string` | `platform_product_id` | `platform_product_id` |  |
+| `PlatformSKU` | `string` | `platform_sku` | `platform_sku` |  |
+| `Status` | `string` | `status` | `status` | default:draft |
+| `PlatformURL` | `string` | `platform_url` | `platform_url` |  |
+| `SyncMessage` | `string` | `sync_message` | `sync_message` |  |
+| `PublishedData` | `json.RawMessage` | `published_data,omitempty` | `published_data` |  |
+| `LastSyncAt` | `*time.Time` | `last_sync_at,omitempty` | `last_sync_at` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `created_at` |  |
+| `UpdatedAt` | `time.Time` | `updated_at` | `updated_at` |  |
+
+### `CreateListingInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ProductID` | `int64` | `product_id` | `—` |  |
+| `PlatformID` | `int64` | `platform_id` | `—` |  |
+| `PlatformProductID` | `string` | `platform_product_id` | `—` |  |
+| `PlatformSKU` | `string` | `platform_sku` | `—` |  |
+| `Status` | `string` | `status` | `—` |  |
+| `PlatformURL` | `string` | `platform_url` | `—` |  |
+| `PublishedData` | `json.RawMessage` | `published_data` | `—` |  |
+
+### `UpdateListingInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `PlatformProductID` | `*string` | `platform_product_id` | `—` |  |
+| `PlatformSKU` | `*string` | `platform_sku` | `—` |  |
+| `Status` | `*string` | `status` | `—` |  |
+| `PlatformURL` | `*string` | `platform_url` | `—` |  |
+| `SyncMessage` | `*string` | `sync_message` | `—` |  |
+| `PublishedData` | `*json.RawMessage` | `published_data` | `—` |  |
+
+### `PublishProductInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ExternalID` | `string` | `external_id` | `—` |  |
+| `ListingURL` | `string` | `listing_url` | `—` |  |
+| `Status` | `string` | `status` | `—` |  |
+| `PrismEnabled` | `bool` | `prism_enabled` | `—` |  |
+| `PrismOptions` | `json.RawMessage` | `prism_options,omitempty` | `—` |  |
+
+### `CreateTasksFromDecisionsInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `DecisionIDs` | `[]int64` | `decision_ids` | `—` |  |
+
+### `CancelTaskInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `Reason` | `string` | `reason` | `—` |  |
+
+### `ListingSuggestion`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `CandidateID` | `uint` | `candidate_id` | `—` |  |
+| `Title` | `string` | `title` | `—` |  |
+| `CategoryPath` | `string` | `category_path` | `—` |  |
+| `SuggestedPrice` | `float64` | `suggested_price` | `—` |  |
+| `SuggestedStock` | `int` | `suggested_stock` | `—` |  |
+| `PlatformFields` | `[]PlatformField` | `platform_fields` | `—` |  |
+| `RiskLevel` | `string` | `risk_level` | `—` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+
+### `PlatformField`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `Platform` | `string` | `platform` | `—` |  |
+| `FieldName` | `string` | `field_name` | `—` |  |
+| `Value` | `string` | `value` | `—` |  |
+
+### `SuggestInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `CandidateID` | `uint` | `candidate_id` | `—` |  |
+
+---
+_Auto-generated by `docgen`. Do not edit manually._

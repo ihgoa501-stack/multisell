@@ -16,6 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: Check auto-generated docs are up to date
+        working-directory: backend-go
+        run: |
+          go run cmd/docgen/main.go
+          git diff --exit-code -- docs/auto/ || {
+            echo "ERROR: Auto-generated docs are stale. Run 'make docs' in backend-go/ and commit the changes."
+            exit 1
+          }
       - name: Check documentation drift
         run: |
           chmod +x scripts/check_doc_drift.sh

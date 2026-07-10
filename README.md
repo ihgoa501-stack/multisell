@@ -108,6 +108,7 @@ npm run lint
 | 文档 | 用途 |
 |------|------|
 | [入门教程](docs/tutorial-getting-started.md) | 从零搭建开发环境到创建第一个商品（新手上路首选） |
+| [端到端教程](docs/tutorial-first-workflow.md) | 🆕 从安装到运行业务闭环，30 分钟端到端体验 |
 
 ### 📖 参考
 | 文档 | 用途 |
@@ -118,6 +119,7 @@ npm run lint
 | [配置参考](docs/reference-configuration.md) | config.yaml + 环境变量完整说明 |
 | [权限与审计](docs/PERMISSIONS_AND_AUDIT.md) | 鉴权规则、权限码、审计日志接入方式 |
 | [API 端点清单](docs/api-inventory.md) | 完整 API 路由/Handler 对照表 |
+| [AI & Agent 系统](docs/reference-ai-agent-system.md) | 🆕 LLM 编排、Agent 注册表、AgentOS 控制台、Trace 系统 |
 
 ### 🛠️ 操作指南
 | 文档 | 用途 |
@@ -128,11 +130,14 @@ npm run lint
 | [运行测试与验证](docs/howto-test-and-verify.md) | Go 测试、前端测试、E2E、冒烟测试 |
 | [配置与部署](docs/howto-deploy.md) | Docker 生产部署、Nginx/Caddy、备份恢复 |
 | [使用 WebSocket 流式更新](docs/howto-websocket.md) | 连接 /ws 端点，接收 AI 流式输出 |
+| [执行第一个业务闭环](docs/howto-first-business-loop.md) | 🆕 候选商品→完整度→利润→审批→上架的任务操作指南 |
 
 ### 🧠 解释
 | 文档 | 用途 |
 |------|------|
 | [Agent Pipeline 和事件驱动编排](docs/explanation-agent-pipeline.md) | Agent 间如何通过 EventBus 通信和协作 |
+| [两个核心业务闭环](docs/explanation-business-loops.md) | 🆕 商品→上架与订单→履约→结算两个主循环的设计 |
+| [领域模块架构](docs/explanation-domain-architecture.md) | 🆕 60+ 模块的组织方式、协作模式和依赖关系 |
 
 ### 📚 领域指南
 | 文档 | 用途 |
