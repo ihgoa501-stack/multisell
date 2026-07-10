@@ -79,12 +79,6 @@ function needsExecutionConfirmation(mode?: number) {
   return mode === 2 || mode === 3;
 }
 
-function executionModeToEnvironment(mode?: number): 'dry_run' | 'sandbox' | 'production' {
-  if (mode === 0) return 'dry_run';
-  if (mode === 1) return 'sandbox';
-  return 'production';
-}
-
 export default function ListingTaskDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -221,7 +215,7 @@ export default function ListingTaskDetailPage() {
               actionName="执行刊登任务"
               riskLevel="high"
               detail={{ targetLabel: task?.id ? `Listing Task #${task.id}` : '' }}
-              environmentMode={executionModeToEnvironment(task?.execution_mode)}
+              environmentMode="production"
               expectedConsequence="将发布商品到线上平台，买家可见，此操作不可撤回"
               confirmLoading={executeMutation.isPending}
               onConfirm={() => { executeMutation.mutate(); setExecuteDialogOpen(false); }}

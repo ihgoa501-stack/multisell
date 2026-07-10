@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Col, Row, Space, Tag, Typography, Divider } from 'antd';
+import { Col, Row, Space, Tag, Typography, Divider } from 'antd';
 import {
   ThunderboltOutlined, AlertOutlined, TeamOutlined, SafetyCertificateOutlined,
 } from '@ant-design/icons';
@@ -9,7 +9,7 @@ import SectionCard from '@/components/ui/SectionCard';
 import { CardSkeleton, TableSkeleton, StatRowSkeleton } from '@/components/ui/PageSkeleton';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 function Usage({ code, children }: { code: string; children?: React.ReactNode }) {
   return (

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -36,6 +37,7 @@ func (s *Service) GetBudget() (*LLMBudget, error) {
 		}
 		return nil, err
 	}
+	s.applyObservedMonthlySpend(&b)
 	return &b, nil
 }
 
@@ -56,6 +58,7 @@ func (s *Service) SetBudget(limitUSD float64) (*LLMBudget, error) {
 	if err := s.db.Save(b).Error; err != nil {
 		return nil, err
 	}
+	s.applyObservedMonthlySpend(b)
 	return b, nil
 }
 
@@ -68,6 +71,7 @@ func (s *Service) CheckBudget() (bool, error) {
 	if b.MonthlyLimitUSD <= 0 {
 		return true, nil // no limit = unlimited
 	}
+	s.applyObservedMonthlySpend(b)
 	if b.IsPaused {
 		s.logger.Warn("LLM calls paused by admin")
 		return false, ErrBudgetExceeded
@@ -140,7 +144,7 @@ func InBudgetResponse(b *LLMBudget) BudgetResponse {
 
 // BudgetInput is the JSON body for setting the budget.
 type BudgetInput struct {
-	MonthlyLimitUSD float64 `json:"monthly_limit_usd" binding:"required,min=0"`
+	MonthlyLimitUSD float64 `json:"monthly_limit_usd" binding:"min=0"`
 }
 
 // Ensure BudgetInput satisfies a common validation interface.
@@ -149,4 +153,36 @@ func (i *BudgetInput) Validate() error {
 		return fmt.Errorf("monthly_limit_usd must be >= 0")
 	}
 	return nil
+}
+
+func (s *Service) applyObservedMonthlySpend(b *LLMBudget) {
+	currentMonth := time.Now().Format("2006-01")
+	observed, err := s.monthlySpendUSD(currentMonth)
+	if err != nil {
+		s.logger.Warn("failed to aggregate monthly LLM spend", zap.Error(err))
+		return
+	}
+	if b.BudgetMonth != currentMonth {
+		b.CurrentMonthUSD = observed
+		b.BudgetMonth = currentMonth
+	} else if observed > b.CurrentMonthUSD {
+		b.CurrentMonthUSD = observed
+	}
+	if b.MonthlyLimitUSD > 0 && b.CurrentMonthUSD >= b.MonthlyLimitUSD {
+		b.IsPaused = true
+	}
+}
+
+func (s *Service) monthlySpendUSD(month string) (float64, error) {
+	start, err := time.Parse("2006-01", month)
+	if err != nil {
+		return 0, err
+	}
+	end := start.AddDate(0, 1, 0)
+	var total float64
+	err = s.db.Model(&costcontrol.CostLog{}).
+		Select("COALESCE(SUM(cost_usd),0)").
+		Where("window_date >= ? AND window_date < ?", start, end).
+		Scan(&total).Error
+	return total, err
 }

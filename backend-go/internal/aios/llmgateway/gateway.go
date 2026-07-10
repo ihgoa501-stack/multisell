@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -58,6 +59,7 @@ type Request struct {
 	System   string    `json:"system"`
 	Messages []Message `json:"messages"`
 	Tools    []ToolDef `json:"tools,omitempty"`
+	Model    string    `json:"model,omitempty"`
 
 	MinModel    string        `json:"min_model,omitempty"`
 	MaxLatency  time.Duration `json:"max_latency,omitempty"`
@@ -186,7 +188,7 @@ func (g *Gateway) Chat(ctx context.Context, req *Request) (*Response, error) {
 	if !req.Sensitive && !req.BypassCache {
 		cacheKey = req.CacheKey
 		if cacheKey == "" {
-			cacheKey = deriveCacheKey(req.System, lastMessage(req.Messages), req.Tools)
+			cacheKey = deriveCacheKey(req.System, req.Messages, req.Tools)
 		}
 		if cached, ok := g.cache.Get(ctx, cacheKey); ok {
 			g.logger.Debug("cache hit",
@@ -260,12 +262,13 @@ func lastMessage(msgs []Message) string {
 	return ""
 }
 
-func deriveCacheKey(system string, lastMsg string, tools []ToolDef) string {
+func deriveCacheKey(system string, msgs []Message, tools []ToolDef) string {
 	toolSig := ""
 	for _, t := range tools {
 		toolSig += t.Name + ","
 	}
-	input := system + "||" + lastMsg + "||" + toolSig
+	msgData, _ := json.Marshal(msgs)
+	input := system + "||" + string(msgData) + "||" + toolSig
 	h := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(h[:])
 }
@@ -367,6 +370,7 @@ func (a *aiProviderAdapter) Name() string { return a.inner.Name() }
 
 func (a *aiProviderAdapter) Chat(ctx context.Context, req *Request) (*Response, error) {
 	aiReq := &ai.LLMRequest{
+		Model:    req.Model,
 		System:   req.System,
 		Messages: make([]ai.LLMMessage, len(req.Messages)),
 	}

@@ -2,7 +2,9 @@ package reliability
 
 import (
 	"testing"
+	"time"
 
+	"github.com/lingmirror/backend-go/internal/aios/costcontrol"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"gorm.io/gorm"
 )
@@ -10,7 +12,7 @@ import (
 // setupDB creates a test DB with the llm_budgets table auto-migrated.
 func setupDB(t testing.TB) *gorm.DB {
 	t.Helper()
-	return dbtest.NewDB(t, &LLMBudget{})
+	return dbtest.NewDB(t, &LLMBudget{}, &costcontrol.CostLog{})
 }
 
 func TestService_GetBudget_Default(t *testing.T) {
@@ -92,6 +94,39 @@ func TestService_CheckBudget_Exceeded(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("CheckBudget = true (expected false)")
+	}
+}
+
+func TestService_CheckBudget_ExceededByCostLogs(t *testing.T) {
+	t.Parallel()
+	db := setupDB(t)
+	svc := NewService(db, dbtest.NewLogger(t))
+
+	_, err := svc.SetBudget(50)
+	if err != nil {
+		t.Fatalf("SetBudget: %v", err)
+	}
+	if err := db.Create(&costcontrol.CostLog{
+		AgentID:    "A1",
+		Model:      "claude-sonnet",
+		CostUSD:    60,
+		WindowDate: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("create cost log: %v", err)
+	}
+	ok, err := svc.CheckBudget()
+	if err != ErrBudgetExceeded {
+		t.Fatalf("CheckBudget err = %v (expected ErrBudgetExceeded)", err)
+	}
+	if ok {
+		t.Fatal("CheckBudget = true (expected false)")
+	}
+	b, err := svc.GetBudget()
+	if err != nil {
+		t.Fatalf("GetBudget: %v", err)
+	}
+	if b.CurrentMonthUSD != 60 {
+		t.Fatalf("CurrentMonthUSD = %v (expected 60)", b.CurrentMonthUSD)
 	}
 }
 

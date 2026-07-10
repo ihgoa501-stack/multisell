@@ -34,8 +34,11 @@ import {
   BranchesOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import ActionRiskConfirmDialog, {
+  ActionRiskConfirmMode,
+  RiskConfirmAction,
+} from '@/components/actions/ActionRiskConfirmDialog';
 import apiClient from '@/lib/api-client';
-import { getCurrentOperator } from '@/lib/user';
 import StatCard from '@/components/ui/StatCard';
 import SectionCard from '@/components/ui/SectionCard';
 import WorkItemDrawer from './work-item-drawer';
@@ -77,11 +80,16 @@ interface WorkItem {
   title: string;
   agent_id: string;
   squad_id?: string;
+  action_type?: string;
   risk_level: string;
   confidence: number;
   status: string;
+  requires_approval?: boolean;
+  execution_mode?: string;
   proposed_at?: string;
   trace_id?: string;
+  description?: string;
+  payload?: Record<string, unknown>;
 }
 
 interface AutonomyEntry {
@@ -212,6 +220,8 @@ export default function AgentOSPage() {
     status?: string;
     risk_level?: string;
   }>({});
+  const [confirmAction, setConfirmAction] = useState<WorkItem | null>(null);
+  const [confirmMode, setConfirmMode] = useState<ActionRiskConfirmMode | null>(null);
 
   // Overview
   const { data: overview, isLoading: overviewLoading } = useQuery({
@@ -278,13 +288,12 @@ export default function AgentOSPage() {
 
   // Action operations
   const approveMutation = useMutation({
-    mutationFn: async (id: string) =>
-      apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, {
-        operator: getCurrentOperator(),
-      }),
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
+      apiClient.post<unknown>(`/v1/ai/actions/${id}/approve`, { reason }),
     onSuccess: () => {
       message.success('已批准');
       setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
@@ -293,13 +302,14 @@ export default function AgentOSPage() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async (id: string) =>
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
       apiClient.post<unknown>(`/v1/ai/actions/${id}/reject`, {
-        operator: getCurrentOperator(),
-        reason: 'manual reject',
+        reason: reason?.trim() || 'manual reject',
       }),
     onSuccess: () => {
       message.success('已拒绝');
+      setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
@@ -307,13 +317,12 @@ export default function AgentOSPage() {
   });
 
   const executeMutation = useMutation({
-    mutationFn: async (id: string) =>
-      apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, {
-        operator: getCurrentOperator(),
-      }),
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
+      apiClient.post<unknown>(`/v1/ai/actions/${id}/execute`, { reason }),
     onSuccess: () => {
       message.success('已执行');
       setConfirmAction(null);
+      setConfirmMode(null);
       qc.invalidateQueries({ queryKey: ['agentos-work-items'] });
       qc.invalidateQueries({ queryKey: ['agentos-overview'] });
     },
@@ -331,6 +340,18 @@ export default function AgentOSPage() {
     qc.invalidateQueries({ queryKey: ['intercepted-actions'] });
     qc.invalidateQueries({ queryKey: ['agent-metrics'] });
     qc.invalidateQueries({ queryKey: ['external-health'] });
+  };
+
+  const openActionConfirm = (action: WorkItem, mode: ActionRiskConfirmMode) => {
+    setConfirmAction(action);
+    setConfirmMode(mode);
+  };
+
+  const handleActionConfirm = (action: RiskConfirmAction, reason?: string) => {
+    const id = String(action.id);
+    if (confirmMode === 'approve') approveMutation.mutate({ id, reason });
+    if (confirmMode === 'reject') rejectMutation.mutate({ id, reason });
+    if (confirmMode === 'execute') executeMutation.mutate({ id, reason });
   };
 
   // Work item detail drawer
@@ -453,10 +474,12 @@ export default function AgentOSPage() {
             size="small"
             type="primary"
             icon={<CheckOutlined />}
-            disabled={approveMutation.isPending && approveMutation.variables === record.id}
+            loading={
+              approveMutation.isPending && approveMutation.variables?.id === record.id
+            }
             onClick={(e) => {
               e.stopPropagation();
-              setConfirmAction({type: 'approve', item: record});
+              openActionConfirm(record, 'approve');
             }}
           >
             批准
@@ -466,11 +489,11 @@ export default function AgentOSPage() {
             danger
             icon={<CloseOutlined />}
             loading={
-              rejectMutation.isPending && rejectMutation.variables === record.id
+              rejectMutation.isPending && rejectMutation.variables?.id === record.id
             }
             onClick={(e) => {
               e.stopPropagation();
-              rejectMutation.mutate(record.id);
+              openActionConfirm(record, 'reject');
             }}
           >
             拒绝
@@ -478,10 +501,12 @@ export default function AgentOSPage() {
           <Button
             size="small"
             icon={<ThunderboltOutlined />}
-            disabled={executeMutation.isPending && executeMutation.variables === record.id}
+            loading={
+              executeMutation.isPending && executeMutation.variables?.id === record.id
+            }
             onClick={(e) => {
               e.stopPropagation();
-              setConfirmAction({type: 'execute', item: record});
+              openActionConfirm(record, 'execute');
             }}
           >
             执行
@@ -819,6 +844,7 @@ export default function AgentOSPage() {
             <Table
               rowKey="platform"
               dataSource={externalHealthData ?? []}
+              loading={extHealthLoading}
               size="small"
               pagination={false}
               columns={[
@@ -1028,6 +1054,18 @@ export default function AgentOSPage() {
           setDrawerOpen(false);
           setSelectedWorkItemId(null);
         }}
+      />
+
+      <ActionRiskConfirmDialog
+        action={confirmAction}
+        mode={confirmMode}
+        open={!!confirmAction && !!confirmMode}
+        loading={approveMutation.isPending || rejectMutation.isPending || executeMutation.isPending}
+        onCancel={() => {
+          setConfirmAction(null);
+          setConfirmMode(null);
+        }}
+        onConfirm={handleActionConfirm}
       />
 
       {/* Audit Replay Drawer */}

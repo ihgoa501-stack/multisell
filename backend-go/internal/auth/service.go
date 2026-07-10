@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lingmirror/backend-go/internal/config"
+	"github.com/lingmirror/backend-go/internal/rbac"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -155,10 +156,42 @@ func (s *Service) Register(username, password, displayName, email, role string) 
 		Role:         role,
 		Status:       1,
 	}
-	if err := s.db.Create(&user).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return assignDefaultRBACRole(tx, user.ID, role)
+	}); err != nil {
 		return nil, err
 	}
 	return &user, nil
+}
+
+func assignDefaultRBACRole(tx *gorm.DB, userID int64, legacyRole string) error {
+	if !tx.Migrator().HasTable(&rbac.Role{}) || !tx.Migrator().HasTable(&rbac.UserRole{}) {
+		return nil
+	}
+
+	roleCode := ""
+	switch legacyRole {
+	case "admin":
+		roleCode = "admin"
+	case "operator":
+		roleCode = "ops"
+	default:
+		return nil
+	}
+
+	var role rbac.Role
+	if err := tx.Where("code = ? AND status = ?", roleCode, 1).First(&role).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	return tx.Where(rbac.UserRole{UserID: userID, RoleID: role.ID}).
+		FirstOrCreate(&rbac.UserRole{UserID: userID, RoleID: role.ID}).Error
 }
 
 // Login authenticates a user and returns access+refresh tokens plus the user VO.

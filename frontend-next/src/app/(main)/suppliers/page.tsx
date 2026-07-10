@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Card, Collapse, Descriptions, Form, Input, InputNumber, Modal, Space, Table, Tag, message } from 'antd';
+import { Button, Collapse, Form, Input, InputNumber, Modal, Space, Table, Tag, message } from 'antd';
 import { ReloadOutlined, TrophyOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -63,8 +63,8 @@ export default function SuppliersPage() {
     queryFn: async () => { const res = await apiClient.get<SupplierScore[]>('/v1/suppliers/scoreboard'); return res.data; },
   });
 
-  const suppliers: Supplier[] = (listRes as any)?.data ?? [];
-  const scoreboard: SupplierScore[] = (scoreboardRes as any) ?? [];
+  const suppliers: Supplier[] = listRes?.data ?? [];
+  const scoreboard: SupplierScore[] = scoreboardRes ?? [];
 
   const updateScoreMut = useMutation({
     mutationFn: (params: { id: number; kpi_score: number }) =>
@@ -83,7 +83,7 @@ export default function SuppliersPage() {
     enabled: !!historySupplierId,
   });
 
-  const scoreHistory: ScoreHistory[] = (historyRes as any) ?? [];
+  const scoreHistory: ScoreHistory[] = historyRes ?? [];
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },

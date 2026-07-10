@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { Button, Card, Descriptions, Image, message, Result, Skeleton, Space, Tag, Typography } from 'antd';
+import { Button, Card, Descriptions, Image, message, Result, Skeleton, Tag, Typography } from 'antd';
 import { ArrowLeftOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';

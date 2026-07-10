@@ -269,6 +269,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	// otherwise fall back to the deterministic stub.
 	// Build a context with agent identity so tool calls carry caller info.
 	agentCtx := toolregistry.WithAgentID(context.Background(), agent.ID)
+	agentCtx = toolregistry.WithAgentWorkspace(agentCtx)
 	output, confidence, riskLevel, err := o.synthesizeOutput(agentCtx, agent, req.DecisionPoint, req.Context)
 	if err != nil {
 		// Complete the trace with failed status so the failure is recorded, not silent.
@@ -563,7 +564,7 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 	// Run guardrails on input before sending to LLM.
 	if o.guardrails != nil {
 		inp := &guardrails.GuardInput{RawInput: userMsg}
-		res, err := o.guardrails.Check(context.Background(), inp)
+		res, err := o.guardrails.Check(ctx, inp)
 		if err != nil {
 			o.logger.Warn("guardrails input check failed", zap.Error(err))
 		} else if res.Blocked {
@@ -589,11 +590,18 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 		}
 		if err := o.db.Table("llm_budgets").Select("monthly_limit_usd, current_month_usd, is_paused, budget_month").First(&mb).Error; err == nil {
 			currentMonth := time.Now().Format("2006-01")
-			if mb.BudgetMonth == currentMonth && mb.MonthlyLimitUSD > 0 {
-				if mb.IsPaused || mb.CurrentMonthUSD >= mb.MonthlyLimitUSD {
+			if mb.MonthlyLimitUSD > 0 {
+				observedSpend := 0.0
+				if mb.BudgetMonth == currentMonth {
+					observedSpend = mb.CurrentMonthUSD
+				}
+				if spend, err := o.monthlyLLMSpendUSD(currentMonth); err == nil && spend > observedSpend {
+					observedSpend = spend
+				}
+				if mb.IsPaused || observedSpend >= mb.MonthlyLimitUSD {
 					o.logger.Warn("monthly LLM budget exceeded",
 						zap.String("agent", agent.ID),
-						zap.Float64("current", mb.CurrentMonthUSD),
+						zap.Float64("current", observedSpend),
 						zap.Float64("limit", mb.MonthlyLimitUSD),
 						zap.Bool("paused", mb.IsPaused),
 					)
@@ -604,7 +612,7 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 		}
 
 		budgetIn := costcontrol.AllowInput{AgentID: agent.ID, Model: req.Model, Tokens: len(userMsg) / 4}
-		budgetRes, budgetErr := o.budget.Allow(context.Background(), budgetIn)
+		budgetRes, budgetErr := o.budget.Allow(ctx, budgetIn)
 		if budgetErr == nil && budgetRes.Action == costcontrol.ActionBlock {
 			o.logger.Warn("budget blocked LLM call",
 				zap.String("agent", agent.ID),
@@ -627,7 +635,7 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 	// Only call the real provider when it isn't the stub, to avoid silently
 	// depending on an API key in dev.
 	if o.provider != nil && o.provider.Name() != "stub" {
-		ctxTimeout, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctxTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		resp, err := o.provider.Chat(ctxTimeout, req)
 		if err != nil {
@@ -706,6 +714,20 @@ func clampConfidence(v float64) float64 {
 		return 0.99
 	}
 	return v
+}
+
+func (o *Orchestrator) monthlyLLMSpendUSD(month string) (float64, error) {
+	start, err := time.Parse("2006-01", month)
+	if err != nil {
+		return 0, err
+	}
+	end := start.AddDate(0, 1, 0)
+	var total float64
+	err = o.db.Model(&costcontrol.CostLog{}).
+		Select("COALESCE(SUM(cost_usd),0)").
+		Where("window_date >= ? AND window_date < ?", start, end).
+		Scan(&total).Error
+	return total, err
 }
 
 // recordLLMCost writes the cost of an LLM call to the budget controller.

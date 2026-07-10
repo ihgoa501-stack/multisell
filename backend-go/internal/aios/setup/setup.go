@@ -7,6 +7,7 @@ package setup
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -96,9 +97,12 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 	//    c) ApprovalCheckHook – blocks mutation tools in production without approval.
 	gc := chain.ToolCallCheck()
 	reg.AddHook(toolregistry.ToolHookFunc(func(ctx context.Context, t *toolregistry.Tool, input map[string]interface{}) (context.Context, error) {
-		_, err := gc(ctx, t.Name, input)
+		res, err := gc(ctx, t.Name, input)
 		if err != nil {
 			return ctx, err
+		}
+		if res != nil && (!res.Pass || res.Blocked) {
+			return ctx, fmt.Errorf("guardrail check blocked tool call: %s", res.Reason)
 		}
 		return ctx, nil
 	}))

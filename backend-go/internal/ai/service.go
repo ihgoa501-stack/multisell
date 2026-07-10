@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,9 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// For mocking in unit tests
+var execCommand = exec.Command
 
 // Service provides AI trace/action business logic.
 type Service struct {
@@ -257,6 +261,11 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 		return nil, &InvalidTransitionError{From: a.Status, To: "executing"}
 	}
 
+	// ── Gate 3b: Expiration check ──────────────────────────────────
+	if time.Since(a.CreatedAt) > 2*time.Hour {
+		return nil, ErrActionExpired
+	}
+
 	// ── Gate 4: Execution mode check ──────────────────────────
 	switch a.ExecutionMode {
 	case "", "production":
@@ -265,7 +274,19 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 		// isDryRun already set at Gate 2
 		// dry_run validates through all gates but does not dispatch or mutate.
 	case "sandbox":
-		return nil, fmt.Errorf("sandbox execution requires a sandbox executor; no sandbox configured")
+		// Execute scripts/run_sandbox.sh <action_id> in background/foreground subprocess
+		cmd := execCommand("bash", "../scripts/run_sandbox.sh", fmt.Sprintf("%d", a.ID))
+		cmd.Dir = ".."
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			s.logger.Error("sandbox run failed", zap.Error(err), zap.String("output", string(output)))
+			a.Status = "failed"
+			s.db.Save(&a)
+			return &a, fmt.Errorf("sandbox run failed: %w", err)
+		}
+		a.Status = "executed"
+		s.db.Save(&a)
+		return &a, nil
 	default:
 		return nil, fmt.Errorf("unknown execution mode: %s", a.ExecutionMode)
 	}
@@ -309,6 +330,18 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 				zap.String("reason", gr.Reason),
 			)
 			return nil, fmt.Errorf("%w: %s", ErrBlockedByGuardrails, gr.Reason)
+		}
+		if !gr.Pass && a.Status != "approved" {
+			s.logger.Info("action requires human approval based on execution guard rules",
+				zap.Int64("action_id", a.ID),
+				zap.String("action_type", a.ActionType),
+				zap.String("reason", gr.Reason),
+			)
+			a.RequiresApproval = true
+			s.db.Model(&UnifiedAction{}).Where("id = ?", a.ID).Updates(map[string]interface{}{
+				"requires_approval": true,
+			})
+			return nil, ErrApprovalRequired
 		}
 	}
 
@@ -559,6 +592,9 @@ var ErrApprovalRequired = &InvalidTransitionError{From: "suggested", To: "execut
 
 // ErrBlockedByGuardrails is returned when the execution guardrail chain blocks an action.
 var ErrBlockedByGuardrails = errors.New("action blocked by guardrails")
+
+// ErrActionExpired indicates the action has expired.
+var ErrActionExpired = errors.New("ai: action execution expired")
 
 // riskLevelToInt converts a risk level string to an actioncatalog risk constant.
 func riskLevelToInt(level string) int {

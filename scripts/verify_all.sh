@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUN_E2E="${RUN_E2E:-1}"
 
 section() {
   printf '\n==> %s\n' "$1"
@@ -31,8 +32,13 @@ npm run lint
 section "Frontend build"
 npm run build
 
-section "Frontend E2E"
-cd "$ROOT_DIR/frontend-next/e2e"
-npm run e2e
+if [[ "$RUN_E2E" == "1" ]]; then
+  section "Frontend E2E"
+  cd "$ROOT_DIR/frontend-next/e2e"
+  npm run e2e
+else
+  section "Frontend E2E skipped"
+  echo "RUN_E2E=$RUN_E2E"
+fi
 
 section "Verification complete"

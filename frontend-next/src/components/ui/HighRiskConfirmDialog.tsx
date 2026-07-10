@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Modal, Descriptions, Tag, Typography, Input, Divider, Alert } from 'antd';
+import { Modal, Descriptions, Tag, Typography, Input, Divider, Alert, Spin } from 'antd';
 import {
   ExclamationCircleOutlined,
   AuditOutlined,
@@ -104,91 +104,131 @@ export default function HighRiskConfirmDialog({
     onCancel();
   };
 
+  const titleLabels: Record<string, string> = {
+    dry_run: '模拟环境操作确认',
+    sandbox: '沙盒环境操作确认',
+    production: '高风险操作确认',
+  };
+
+  const warningBgs: Record<string, string> = {
+    dry_run: '#f9f0ff',
+    sandbox: '#e6f7ff',
+    production: riskLevel === 'high' ? '#fff1f0' : riskLevel === 'medium' ? '#fffbe6' : '#f6ffed',
+  };
+
+  const warningBorders: Record<string, string> = {
+    dry_run: '#d3adf7',
+    sandbox: '#91d5ff',
+    production: riskLevel === 'high' ? '#ffccc7' : riskLevel === 'medium' ? '#ffe58f' : '#b7eb8f',
+  };
+
   return (
     <Modal
       open={open}
       title={
         <span>
           <ExclamationCircleOutlined
-            style={{ color: riskColors[riskLevel], marginRight: 8 }}
+            style={{
+              color: environmentMode === 'production' ? riskColors[riskLevel] : modeColors[environmentMode],
+              marginRight: 8,
+            }}
           />
-          高风险操作确认
+          {titleLabels[environmentMode] || '高风险操作确认'}
         </span>
       }
       okText={confirmText}
       cancelText="取消"
-      okButtonProps={{ danger: true, type: 'primary' }}
+      okButtonProps={{ danger: environmentMode === 'production', type: 'primary' }}
       confirmLoading={confirmLoading}
       onOk={handleConfirm}
       onCancel={handleCancel}
       destroyOnClose
       width={520}
     >
-      <Alert
-        message={
-          <span>
-            即将执行 <Text strong>{actionName}</Text>
-            {riskLevel !== 'low' && (
-              <Tag color={riskColors[riskLevel]} style={{ marginLeft: 8 }}>
-                {riskLabels[riskLevel]}
-              </Tag>
-            )}
-          </span>
-        }
-        type={riskLevel === 'high' ? 'error' : riskLevel === 'medium' ? 'warning' : 'info'}
-        showIcon
-        style={{ marginBottom: 16 }}
-      />
-
-      <Descriptions column={1} size="small" bordered>
-        {detail?.targetLabel && (
-          <Descriptions.Item label="目标对象">
-            <Text code>{detail.targetLabel}</Text>
-          </Descriptions.Item>
-        )}
-        {detail?.beforeValue && (
-          <Descriptions.Item label="当前值">{detail.beforeValue}</Descriptions.Item>
-        )}
-        {detail?.afterValue && (
-          <Descriptions.Item label="变更后">{detail.afterValue}</Descriptions.Item>
-        )}
-
-        <Descriptions.Item label="环境模式">
-          <Tag color={modeColors[environmentMode]}>{modeLabels[environmentMode]}</Tag>
-        </Descriptions.Item>
-
-        {expectedConsequence && (
-          <Descriptions.Item label="预期后果">{expectedConsequence}</Descriptions.Item>
-        )}
-      </Descriptions>
-
-      {showReason && (
-        <>
-          <Divider style={{ margin: '12px 0' }} />
-          <TextArea
-            placeholder={reasonPlaceholder}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={2}
-          />
-        </>
-      )}
-
-      {(auditDestination || rollbackNote) && (
-        <div style={{ marginTop: 12, fontSize: 13, color: '#888' }}>
-          {auditDestination && (
-            <div style={{ marginBottom: 4 }}>
-              <AuditOutlined style={{ marginRight: 6 }} />
-              <Text type="secondary">{auditDestination}</Text>
-            </div>
-          )}
-          {rollbackNote && (
-            <div>
-              <RollbackOutlined style={{ marginRight: 6 }} />
-              <Text type="secondary">{rollbackNote}</Text>
-            </div>
-          )}
+      {confirmLoading && environmentMode === 'sandbox' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 0', gap: 12 }}>
+          <Spin size="large" />
+          <Text strong style={{ color: '#1890ff' }}>正在调度沙盒环境并执行...</Text>
         </div>
+      ) : (
+        <>
+          <Alert
+            message={
+              <span>
+                即将执行 <Text strong>{actionName}</Text>
+                {riskLevel !== 'low' && (
+                  <Tag color={riskColors[riskLevel]} style={{ marginLeft: 8 }}>
+                    {riskLabels[riskLevel]}
+                  </Tag>
+                )}
+              </span>
+            }
+            type={environmentMode === 'production' ? (riskLevel === 'high' ? 'error' : riskLevel === 'medium' ? 'warning' : 'info') : 'info'}
+            showIcon
+            style={{
+              marginBottom: 16,
+              backgroundColor: warningBgs[environmentMode],
+              borderColor: warningBorders[environmentMode],
+            }}
+          />
+
+          <Descriptions column={1} size="small" bordered>
+            {detail?.targetLabel && (
+              <Descriptions.Item label="目标对象">
+                <Text code>{detail.targetLabel}</Text>
+              </Descriptions.Item>
+            )}
+            {detail?.beforeValue && (
+              <Descriptions.Item label="当前值">{detail.beforeValue}</Descriptions.Item>
+            )}
+            {detail?.afterValue && (
+              <Descriptions.Item label="变更后">{detail.afterValue}</Descriptions.Item>
+            )}
+
+            <Descriptions.Item label="环境模式">
+              <Tag color={modeColors[environmentMode]}>{modeLabels[environmentMode]}</Tag>
+            </Descriptions.Item>
+
+            <Descriptions.Item label="审批要求">
+              <Tag color={requiresApproval ? 'orange' : 'green'}>
+                {requiresApproval ? '需要审批' : '不需要审批'}
+              </Tag>
+            </Descriptions.Item>
+
+            {expectedConsequence && (
+              <Descriptions.Item label="预期后果">{expectedConsequence}</Descriptions.Item>
+            )}
+          </Descriptions>
+
+          {showReason && (
+            <>
+              <Divider style={{ margin: '12px 0' }} />
+              <TextArea
+                placeholder={reasonPlaceholder}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+              />
+            </>
+          )}
+
+          {(auditDestination || rollbackNote) && (
+            <div style={{ marginTop: 12, fontSize: 13, color: '#888' }}>
+              {auditDestination && (
+                <div style={{ marginBottom: 4 }}>
+                  <AuditOutlined style={{ marginRight: 6 }} />
+                  <Text type="secondary">{auditDestination}</Text>
+                </div>
+              )}
+              {rollbackNote && (
+                <div>
+                  <RollbackOutlined style={{ marginRight: 6 }} />
+                  <Text type="secondary">{rollbackNote}</Text>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </Modal>
   );
