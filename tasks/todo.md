@@ -9,7 +9,7 @@ Source spec: `docs/specs/2026-07-09-ai-native-agentos-execution-path.md`
   - Acceptance: Document the actual path from candidate page to recommendation, approval, listing task, and result review.
   - Verify: Route/API notes are added to the task PR or follow-up doc.
   - Files: read-only first; likely `frontend-next/src/app/(main)/candidates`, `frontend-next/src/app/(main)/owner`, `frontend-next/src/app/(main)/listing-tasks`, backend candidate/listing/approval routes.
-  - Note 2026-07-10: Agent 1 completed mapping. Found 3 critical gaps (decision-queue 404, missing feedback route, listing task missing ApprovalID) and 2 high gaps (duplicate approval in OwnerPage, execute precondition block). See `docs/superpowers/plans/product-loop-map-2026-07-10.md` (writes to tmp dir — file name may vary).
+  - Note 2026-07-10: Agent 1 completed mapping. Found 3 critical gaps (decision-queue 404, missing feedback route, listing task missing ApprovalID) and 2 high gaps (duplicate approval in OwnerPage, execute precondition block). See `docs/superpowers/plans/2026-07-10-owner-cockpit-audit.md`.
 
 - [x] Task: Define minimum Product Loop seed data.
   - Acceptance: Five scenarios are defined: profitable listing, loss-making listing, missing logistics fee, missing platform/category fee, approval-to-sandbox listing task.
