@@ -30,5 +30,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bridge
 		group.GET("/recommendations", h.ListRecommendations)
 		group.GET("/market-trends", h.MarketTrends)
 		group.GET("/keyword-trends", h.KeywordTrends)
+			group.GET("/market-overview", h.MarketOverview)
 	}
 }

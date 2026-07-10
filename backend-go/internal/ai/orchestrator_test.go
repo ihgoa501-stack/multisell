@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -45,6 +46,18 @@ type passGuard struct{}
 func (g *passGuard) Name() string { return "test_pass_guard" }
 
 func (g *passGuard) Check(_ context.Context, _ *guardrails.GuardInput) (*guardrails.GuardResult, error) {
+	return &guardrails.GuardResult{Pass: true, Blocked: false, Reason: "test pass", Risk: "low"}, nil
+}
+
+// blockGuard blocks any input whose RawInput contains "blockme".
+type blockGuard struct{}
+
+func (g *blockGuard) Name() string { return "test_block_guard" }
+
+func (g *blockGuard) Check(_ context.Context, inp *guardrails.GuardInput) (*guardrails.GuardResult, error) {
+	if strings.Contains(inp.RawInput, "blockme") {
+		return &guardrails.GuardResult{Pass: false, Blocked: true, Reason: "test block", Risk: "high"}, nil
+	}
 	return &guardrails.GuardResult{Pass: true, Blocked: false, Reason: "test pass", Risk: "low"}, nil
 }
 
@@ -172,6 +185,75 @@ func TestOrchestrator_GuardrailsIntegration(t *testing.T) {
 	}
 	if result.Output["risk_reason"] == nil {
 		t.Fatal("missing risk_reason in output")
+	}
+}
+
+// ----- Chat guardrails -----
+
+func TestOrchestrator_ChatGuardrails_BlocksSuspiciousInput(t *testing.T) {
+	db := newTestDB(t)
+	orch := NewOrchestrator(db, testLogger())
+
+	chain := guardrails.NewChain()
+	chain.Add(&blockGuard{})
+	orch.WithGuardrails(chain)
+
+	uid := int64(1)
+	_, err := orch.Chat("this should blockme", &uid)
+	if err == nil {
+		t.Fatal("expected error from blocked input")
+	}
+	if !errors.Is(err, ErrBlockedByGuardrails) {
+		t.Fatalf("expected ErrBlockedByGuardrails, got: %v", err)
+	}
+}
+
+func TestOrchestrator_ChatGuardrails_PassesCleanInput(t *testing.T) {
+	db := newTestDB(t)
+	orch := NewOrchestrator(db, testLogger())
+
+	chain := guardrails.NewChain()
+	chain.Add(&passGuard{})
+	orch.WithGuardrails(chain)
+
+	uid := int64(1)
+	result, err := orch.Chat("what are my sales", &uid)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.TraceID == "" {
+		t.Fatal("expected non-empty traceID")
+	}
+}
+
+func TestOrchestrator_ChatGuardrails_NilChainSkipsCheck(t *testing.T) {
+	db := newTestDB(t)
+	orch := NewOrchestrator(db, testLogger())
+	// No guardrails set — chain is nil.
+	uid := int64(1)
+	result, err := orch.Chat("any message works", &uid)
+	if err != nil {
+		t.Fatalf("unexpected error with nil guardrails: %v", err)
+	}
+	if result.TraceID == "" {
+		t.Fatal("expected non-empty traceID")
+	}
+}
+
+func TestOrchestrator_ChatGuardrails_NilUserID(t *testing.T) {
+	db := newTestDB(t)
+	orch := NewOrchestrator(db, testLogger())
+
+	chain := guardrails.NewChain()
+	chain.Add(&passGuard{})
+	orch.WithGuardrails(chain)
+
+	result, err := orch.Chat("what are my sales", nil)
+	if err != nil {
+		t.Fatalf("unexpected error with nil userID: %v", err)
+	}
+	if result.TraceID == "" {
+		t.Fatal("expected non-empty traceID")
 	}
 }
 

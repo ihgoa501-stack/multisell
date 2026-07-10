@@ -36,6 +36,7 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '商品经营',
     items: [
+      { key: '/market-intelligence', icon: 'RiseOutlined', label: '市场情报' },
       { key: '/sourcing', icon: 'SearchOutlined', label: 'AI 选品' },
       { key: '/product-hub', icon: 'DatabaseOutlined', label: '产品档案' },
       { key: '/products', icon: 'ShoppingOutlined', label: '商品', permission: 'product.read' },

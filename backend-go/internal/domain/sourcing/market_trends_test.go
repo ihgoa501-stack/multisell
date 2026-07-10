@@ -97,10 +97,12 @@ func TestAmazonBSRSource_FetchTrends_UnknownCategory(t *testing.T) {
 func TestAmazonBSRSource_FetchTrends_EmptyQuery(t *testing.T) {
 	t.Parallel()
 	src := NewAmazonBSRSource()
-
-	_, err := src.FetchTrends(context.Background(), "")
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	items, err := src.FetchTrends(context.Background(), "")
+	if err != nil {
+		t.Fatalf("unexpected error for empty query: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected items for empty query")
 	}
 }
 

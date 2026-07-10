@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -319,6 +320,10 @@ func (a *MockPlatformAdapter) FetchReturns(ctx context.Context, input *FetchRetu
 // MockOzonAdapter is a MockPlatformAdapter specifically for Ozon.
 type MockOzonAdapter struct {
 	*MockPlatformAdapter
+}
+
+func (a *MockPlatformAdapter) FetchRaw(ctx context.Context, platformID int64, endpoint string, payload interface{}) ([]byte, error) {
+	return json.Marshal(map[string]interface{}{"mock": true, "platform": a.platform})
 }
 
 // NewMockOzonAdapter creates a new MockOzonAdapter.
