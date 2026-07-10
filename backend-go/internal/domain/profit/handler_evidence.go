@@ -67,6 +67,10 @@ func (h *EvidenceHandler) GetEvidenceCard(c *gin.Context) {
 		shippingCost = 8.0 + prod.PackageWeightKg*4.0
 	}
 
+	// Convert purchase price from CNY to USD (rough 7.2 rate)
+	// ponytail: hardcoded rate, read from exchange rate table when available
+	prod.PurchasePrice = prod.PurchasePrice / 7.2
+
 	card := BuildEvidenceCard(&prod, commissionRate, shippingCost)
 	card.ProductID = id
 

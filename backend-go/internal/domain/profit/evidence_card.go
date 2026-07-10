@@ -323,7 +323,16 @@ func (c *EvidenceCard) computeConfidenceAndBlocking(prod *candidateProductReader
 	}
 
 	// Check data source levels for cost items
+	// Skip categories already handled by direct field checks above
+	alreadyDirectChecked := map[string]bool{
+		"purchase_cost":          true,
+		"international_shipping": true,
+		"platform_commission":    true,
+	}
 	for _, item := range c.CostItems {
+		if alreadyDirectChecked[item.Category] {
+			continue
+		}
 		if item.DataSource == "missing" {
 			missing = append(missing, item.Label)
 		} else if item.DataSource == "estimated" {
