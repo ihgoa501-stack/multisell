@@ -154,6 +154,7 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 		Reason:            reason,
 		RiskFlags:         string(riskJSON),
 		CreatedListingTaskID: listingTaskID,
+		ApprovalID:         approvalID,
 		TriggeredBy:       triggeredBy,
 		FeedbackStatus:    "pending",
 	}
@@ -179,6 +180,7 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 		Reason:             reason,
 		RiskFlags:          riskFlags,
 		ListingTaskID:      listingTaskID,
+		ApprovalID:         approvalID,
 	}, nil
 }
 
