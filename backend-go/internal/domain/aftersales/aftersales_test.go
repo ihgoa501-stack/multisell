@@ -562,6 +562,9 @@ func (m *mockReturnFetcher) FetchSettlements(_ context.Context, _ *integrations.
 func (m *mockReturnFetcher) FetchReturns(_ context.Context, _ *integrations.FetchReturnsInput) ([]*integrations.PlatformReturn, error) {
 	return m.returns, nil
 }
+func (m *mockReturnFetcher) FetchRaw(_ context.Context, _ int64, _ string, _ interface{}) ([]byte, error) {
+	return nil, nil
+}
 
 // setupSyncDB creates an in-memory SQLite database with all models needed
 // for return sync worker tests.
@@ -986,6 +989,7 @@ func (m *fetchErrAdapter) PushTracking(_ context.Context, _ *integrations.PushTr
 func (m *fetchErrAdapter) FetchOrders(_ context.Context, _ *integrations.FetchOrdersInput) ([]*integrations.PlatformOrder, error) { return nil, nil }
 func (m *fetchErrAdapter) FetchSettlements(_ context.Context, _ *integrations.FetchSettlementsInput) ([]*integrations.PlatformSettlement, error) { return nil, nil }
 func (m *fetchErrAdapter) FetchReturns(_ context.Context, _ *integrations.FetchReturnsInput) ([]*integrations.PlatformReturn, error) { return nil, m.err }
+func (m *fetchErrAdapter) FetchRaw(_ context.Context, _ int64, _ string, _ interface{}) ([]byte, error) { return nil, nil }
 
 func TestService_Get_Found(t *testing.T) {
 	db := newTestDB(t)

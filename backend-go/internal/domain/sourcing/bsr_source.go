@@ -38,12 +38,13 @@ func (s *AmazonBSRSource) Name() string {
 // FetchTrends returns mock BSR data for the given product category.
 // The query parameter is a category name (e.g. "家居"). Returns only items
 // matching the category. Case-insensitive matching.
+// FetchTrends returns mock BSR data for the given product category.
+// The query parameter is a category name (e.g. "家居"). Returns only items
+// matching the category. An empty query returns all items (market overview).
+// Case-insensitive matching.
 func (s *AmazonBSRSource) FetchTrends(_ context.Context, query string) ([]MarketTrendItem, error) {
 	if s == nil {
 		return nil, fmt.Errorf("amazon_bsr: nil source")
-	}
-	if query == "" {
-		return nil, fmt.Errorf("amazon_bsr: query (category) is required")
 	}
 
 	data := s.CSVData
@@ -56,10 +57,7 @@ func (s *AmazonBSRSource) FetchTrends(_ context.Context, query string) ([]Market
 		return nil, fmt.Errorf("amazon_bsr: CSV data has no data rows")
 	}
 
-	// Skip header row (line 0).
-	queryLower := strings.ToLower(strings.TrimSpace(query))
 	var results []MarketTrendItem
-
 	for _, line := range lines[1:] {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -67,10 +65,10 @@ func (s *AmazonBSRSource) FetchTrends(_ context.Context, query string) ([]Market
 		}
 		item, err := parseBSRLine(line)
 		if err != nil {
-			continue // skip malformed rows gracefully
+			continue
 		}
-		if strings.ToLower(strings.TrimSpace(item.Category)) == queryLower {
-			item.Source = "amazon_bsr"
+		item.Source = "amazon_bsr"
+		if query == "" || strings.EqualFold(strings.TrimSpace(item.Category), strings.TrimSpace(query)) {
 			results = append(results, item)
 		}
 	}
@@ -78,8 +76,7 @@ func (s *AmazonBSRSource) FetchTrends(_ context.Context, query string) ([]Market
 	return results, nil
 }
 
-// parseBSRLine parses a single CSV line into a MarketTrendItem.
-// Expected format: category,rank,product_title,price_range,review_count,avg_rating
+
 func parseBSRLine(line string) (MarketTrendItem, error) {
 	parts := splitCSV(line)
 	if len(parts) < 6 {

@@ -1,0 +1,9 @@
+{
+  "transaction_id": "OP-20260701-001",
+  "transaction_type": "order_sale",
+  "order_sn": "123456-001",
+  "amount": "109.97",
+  "currency": "RUB",
+  "occurred_at": "2026-07-01T10:30:00.000Z",
+  "description": "Sale of 3 items"
+}

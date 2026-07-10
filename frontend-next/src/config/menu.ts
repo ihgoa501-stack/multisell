@@ -27,6 +27,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/owner', icon: 'DashboardOutlined', label: '卖家工作台' },
       { key: '/candidates', label: '候选商品', status: 'mock' },
       { key: '/approval', label: '审批管理', status: 'mock' },
+      { key: '/sandbox-listing', label: '沙箱上架', status: 'sandbox' },
       { key: '/profit', icon: 'DollarOutlined', label: '利润真相' },
       { key: '/support', icon: 'MessageOutlined', label: '统一客服' },
       { key: '/dashboard', label: '每日简报' },
@@ -35,6 +36,7 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '商品经营',
     items: [
+      { key: '/market-intelligence', icon: 'RiseOutlined', label: '市场情报' },
       { key: '/sourcing', icon: 'SearchOutlined', label: 'AI 选品' },
       { key: '/product-hub', icon: 'DatabaseOutlined', label: '产品档案' },
       { key: '/products', icon: 'ShoppingOutlined', label: '商品', permission: 'product.read' },

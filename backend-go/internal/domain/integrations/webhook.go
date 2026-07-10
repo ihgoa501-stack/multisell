@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/domain/integrations/aimapper"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
@@ -42,6 +44,13 @@ func RegisterWebhookRoutes(rg *gin.RouterGroup, bus *eventbus.Bus, logger *zap.L
 	rg.POST("/webhooks/:platform", h.ReceiveWebhook)
 }
 
+// RegisterWebhookRoutesWithPipeline registers webhook endpoints with an AI pipeline
+// that runs after raw event storage.
+func RegisterWebhookRoutesWithPipeline(rg *gin.RouterGroup, bus *eventbus.Bus, logger *zap.Logger, pipeline *aimapper.Pipeline, db *gorm.DB) {
+	h := &webhookHandler{bus: bus, logger: logger, pipeline: pipeline, db: db}
+	rg.POST("/webhooks/:platform", h.ReceiveWebhook)
+}
+
 // RegisterWebhookAdminRoutes registers webhook administration endpoints (JWT-protected).
 func RegisterWebhookAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	h := &webhookHandler{db: db, logger: logger}
@@ -50,9 +59,10 @@ func RegisterWebhookAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Lo
 }
 
 type webhookHandler struct {
-	db     *gorm.DB
-	bus    *eventbus.Bus
-	logger *zap.Logger
+	db       *gorm.DB
+	bus      *eventbus.Bus
+	logger   *zap.Logger
+	pipeline *aimapper.Pipeline
 }
 
 // ReceiveWebhook POST /api/webhooks/:platform
@@ -175,6 +185,30 @@ func (h *webhookHandler) ReceiveWebhook(c *gin.Context) {
 		}
 		if err := h.db.Create(&logEntry).Error; err != nil {
 			h.logger.Warn("failed to persist webhook log", zap.Error(err))
+		}
+
+		// Store as RawEvent and trigger AI pipeline in background.
+		rawEvent := RawEvent{
+			PlatformCode:  platform,
+			EventType:     eventType,
+			RawPayload:    payloadBytes,
+			MappingStatus: "pending",
+		}
+		if err := h.db.Create(&rawEvent).Error; err != nil {
+			h.logger.Warn("failed to persist raw event", zap.Error(err))
+		} else if h.pipeline != nil {
+			eventID := rawEvent.ID
+			h.logger.Info("triggering pipeline for raw event", zap.Int64("event_id", eventID))
+			go func(eid int64, pc, et string, rp json.RawMessage) {
+				_, err := h.pipeline.ProcessRawEvent(context.Background(), eid, pc, et, rp)
+				if err != nil {
+					h.logger.Error("pipeline processing failed",
+						zap.Int64("event_id", eid),
+						zap.String("platform", pc),
+						zap.Error(err),
+					)
+				}
+			}(eventID, platform, eventType, payloadBytes)
 		}
 	}
 

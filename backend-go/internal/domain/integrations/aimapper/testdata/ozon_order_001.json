@@ -1,0 +1,14 @@
+{
+  "posting_number": "123456-001",
+  "status": "delivered",
+  "in_process_at": "2026-07-01T10:30:00.000Z",
+  "analytics_data": {
+    "delivery_price": "15.50"
+  },
+  "financial_data": {
+    "products": [
+      {"sku": "SKU-ABC-001", "quantity": 2, "price": "29.99"},
+      {"sku": "SKU-ABC-002", "quantity": 1, "price": "49.99"}
+    ]
+  }
+}

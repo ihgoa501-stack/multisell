@@ -1,6 +1,7 @@
 package settlement
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -135,7 +136,30 @@ func (s *Service) Create(in *CreateSettlementInput) (*Settlement, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Recalculate profit for each unique order_no in the settlement items.
+	recalc := NewRecalculator(s.db, s.logger)
+	seen := make(map[string]bool)
+	for _, item := range in.Items {
+		if item.OrderNo == "" || seen[item.OrderNo] {
+			continue
+		}
+		seen[item.OrderNo] = true
+		if err := recalc.RecalculateProfit(context.Background(), item.OrderNo); err != nil {
+			s.logger.Error("profit recalculation after settlement create",
+				zap.String("order_no", item.OrderNo),
+				zap.Int64("settlement_id", st.ID),
+				zap.Error(err))
+		}
+	}
+
 	return &st, nil
+}
+
+// RecalculateAll triggers profit recalculation for all orders with settlement items.
+func (s *Service) RecalculateAll(ctx context.Context) error {
+	recalc := NewRecalculator(s.db, s.logger)
+	return recalc.RecalculateAllProfit(ctx)
 }
 
 // Update applies partial updates to a settlement.

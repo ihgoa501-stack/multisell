@@ -97,6 +97,10 @@ type DailyBrief struct {
 	MonthRevenue      float64 `json:"month_revenue"`
 	MonthCost         float64 `json:"month_cost"`
 
+	// ProfitSource is "real" when profit_amount from sales_order is available,
+	// "estimated" when falling back to profit_summary.
+	ProfitSource string `json:"profit_source"`
+
 	OpenExceptionCount     int64 `json:"open_exception_count"`
 	LowStockCount          int64 `json:"low_stock_count"`
 	OutOfStockCount        int64 `json:"out_of_stock_count"`

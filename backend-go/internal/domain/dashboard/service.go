@@ -223,33 +223,65 @@ func (s *Service) GetDailyBrief() (*DailyBrief, error) {
 	tomorrowStart := todayStart.AddDate(0, 0, 1)
 	monthStart, monthEnd := monthRange(now)
 
-	// Today profit/revenue from profit_summary
-	var todayAgg struct {
+	// Today profit/revenue — prefer real from sales_order, fall back to estimated
+	var todayReal struct {
 		Profit  float64
 		Revenue float64
 	}
-	if err := s.db.Table("profit_summary").
-		Select("COALESCE(SUM(estimated_profit),0) AS profit, COALESCE(SUM(target_revenue),0) AS revenue").
+	if err := s.db.Table("sales_order").
+		Select("COALESCE(SUM(profit_amount),0) AS profit, COALESCE(SUM(pay_amount),0) AS revenue").
 		Where("created_at >= ? AND created_at < ?", todayStart, tomorrowStart).
-		Scan(&todayAgg).Error; err != nil {
-		s.logger.Error("failed to query today profit", zap.Error(err))
+		Scan(&todayReal).Error; err != nil {
+		s.logger.Error("failed to query today real profit", zap.Error(err))
 	}
-	b.TodayProfit = todayAgg.Profit
-	b.TodayRevenue = todayAgg.Revenue
+	if todayReal.Revenue > 0 || todayReal.Profit != 0 {
+		b.TodayProfit = todayReal.Profit
+		b.TodayRevenue = todayReal.Revenue
+		b.ProfitSource = "real"
+	} else {
+		var todayEst struct {
+			Profit  float64
+			Revenue float64
+		}
+		if err := s.db.Table("profit_summary").
+			Select("COALESCE(SUM(estimated_profit),0) AS profit, COALESCE(SUM(target_revenue),0) AS revenue").
+			Where("created_at >= ? AND created_at < ?", todayStart, tomorrowStart).
+			Scan(&todayEst).Error; err != nil {
+			s.logger.Error("failed to query today estimated profit", zap.Error(err))
+		}
+		b.TodayProfit = todayEst.Profit
+		b.TodayRevenue = todayEst.Revenue
+		b.ProfitSource = "estimated"
+	}
 
-	// Month profit/revenue from profit_summary
-	var monthAgg struct {
+	// Month profit/revenue — same preference: real from sales_order, fall back to estimated
+	var monthReal struct {
 		Profit  float64
 		Revenue float64
 	}
-	if err := s.db.Table("profit_summary").
-		Select("COALESCE(SUM(estimated_profit),0) AS profit, COALESCE(SUM(target_revenue),0) AS revenue").
+	if err := s.db.Table("sales_order").
+		Select("COALESCE(SUM(profit_amount),0) AS profit, COALESCE(SUM(pay_amount),0) AS revenue").
 		Where("created_at >= ? AND created_at < ?", monthStart, monthEnd).
-		Scan(&monthAgg).Error; err != nil {
-		s.logger.Error("failed to query month profit", zap.Error(err))
+		Scan(&monthReal).Error; err != nil {
+		s.logger.Error("failed to query month real profit", zap.Error(err))
 	}
-	b.MonthProfit = monthAgg.Profit
-	b.MonthRevenue = monthAgg.Revenue
+	if monthReal.Revenue > 0 || monthReal.Profit != 0 {
+		b.MonthProfit = monthReal.Profit
+		b.MonthRevenue = monthReal.Revenue
+	} else {
+		var monthEst struct {
+			Profit  float64
+			Revenue float64
+		}
+		if err := s.db.Table("profit_summary").
+			Select("COALESCE(SUM(estimated_profit),0) AS profit, COALESCE(SUM(target_revenue),0) AS revenue").
+			Where("created_at >= ? AND created_at < ?", monthStart, monthEnd).
+			Scan(&monthEst).Error; err != nil {
+			s.logger.Error("failed to query month estimated profit", zap.Error(err))
+		}
+		b.MonthProfit = monthEst.Profit
+		b.MonthRevenue = monthEst.Revenue
+	}
 
 	// Month cost from finance_ledger_entry (same pattern as Overview)
 	var costAgg struct {

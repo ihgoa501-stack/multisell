@@ -1,0 +1,9 @@
+{
+  "order_sn": "123456-002",
+  "status": "pending",
+  "total_amount": "59.97",
+  "shipping_fee": "0.00",
+  "items": [
+    {"sku_code": "SKU-XYZ-001", "quantity": 3, "unit_price": "19.99"}
+  ]
+}

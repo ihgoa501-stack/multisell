@@ -1,6 +1,8 @@
 package loop
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
@@ -221,5 +223,21 @@ func TestService_EvaluateCreatesBlockedListingTaskAndApproval(t *testing.T) {
 	}
 	if req.Status != "pending" || req.RiskLevel != "high" {
 		t.Fatalf("unexpected approval: %+v", req)
+	}
+}
+
+func TestEvaluateResult_IncludesApprovalID(t *testing.T) {
+	id := int64(42)
+	r := EvaluateResult{
+		ProductID:     1,
+		ListingTaskID: &id,
+		ApprovalID:    &id,
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(b, []byte(`"approval_id"`)) {
+		t.Error("EvaluateResult JSON should contain approval_id")
 	}
 }

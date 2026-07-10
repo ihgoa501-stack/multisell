@@ -3,6 +3,8 @@ package sourcing
 import (
 	"context"
 	"encoding/json"
+	"sort"
+	"strings"
 	"fmt"
 	"time"
 
@@ -354,4 +356,88 @@ func (s *Service) FetchKeywordTrends(ctx context.Context, keyword string) ([]Mar
 		return nil, fmt.Errorf("sourcing: keyword trend source not configured")
 	}
 	return s.keywordSource.FetchTrends(ctx, keyword)
+}
+
+// CategorySummary aggregates market data for one product category.
+type CategorySummary struct {
+	Category     string  `json:"category"`
+	ProductCount int     `json:"product_count"`
+	AvgRank      float64 `json:"avg_rank"`
+	AvgPriceMin  float64 `json:"avg_price_min"`
+	AvgPriceMax  float64 `json:"avg_price_max"`
+	AvgRating    float64 `json:"avg_rating"`
+	TotalReviews int     `json:"total_reviews"`
+	DemandScore  float64 `json:"demand_score"`
+}
+
+// FetchMarketOverview returns aggregated market demand data across all categories.
+func (s *Service) FetchMarketOverview(ctx context.Context) ([]CategorySummary, error) {
+	if s.bsrSource == nil {
+		return nil, fmt.Errorf("sourcing: BSR source not configured")
+	}
+	items, err := s.bsrSource.FetchTrends(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	type agg struct {
+		count       int
+		rankSum     float64
+		priceMinSum float64
+		priceMaxSum float64
+		ratingSum   float64
+		reviews     int
+	}
+	groups := make(map[string]*agg)
+	for _, it := range items {
+		g, ok := groups[it.Category]
+		if !ok {
+			g = &agg{}
+			groups[it.Category] = g
+		}
+		g.count++
+		g.rankSum += float64(it.Rank)
+		g.reviews += it.ReviewCount
+		g.ratingSum += it.AvgRating
+		// Parse price range "CNY XX-YY"
+		parts := strings.Split(it.PriceRange, "-")
+		if len(parts) == 2 {
+			minP := parsePrice(parts[0])
+			maxP := parsePrice(parts[1])
+			g.priceMinSum += minP
+			g.priceMaxSum += maxP
+		}
+	}
+	var result []CategorySummary
+	for cat, g := range groups {
+		demandScore := (float64(g.reviews)/1000.0)*0.3 + (5.0-g.rankSum/float64(g.count))*0.3 + (g.ratingSum/float64(g.count))*0.2
+		if demandScore > 10 {
+			demandScore = 10
+		}
+		result = append(result, CategorySummary{
+			Category:     cat,
+			ProductCount: g.count,
+			AvgRank:      round2(g.rankSum / float64(g.count)),
+			AvgPriceMin:  round2(g.priceMinSum / float64(g.count)),
+			AvgPriceMax:  round2(g.priceMaxSum / float64(g.count)),
+			AvgRating:    round2(g.ratingSum / float64(g.count)),
+			TotalReviews: g.reviews,
+			DemandScore:  round2(demandScore),
+		})
+	}
+	// Sort by demand score descending.
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].DemandScore > result[j].DemandScore
+	})
+	return result, nil
+}
+
+func parsePrice(s string) float64 {
+	s = strings.TrimSpace(s)
+	var val float64
+	for _, r := range s {
+		if r >= '0' && r <= '9' || r == '.' {
+			val = val*10 + float64(r-'0')
+		}
+	}
+	return val
 }

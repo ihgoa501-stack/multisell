@@ -62,4 +62,14 @@ type PlatformAdapter interface {
 	// FetchReturns pulls return / refund requests from the platform since the
 	// given timestamp.
 	FetchReturns(ctx context.Context, input *FetchReturnsInput) ([]*PlatformReturn, error)
+
+	// ---------- 原始 API 域 ----------
+
+	// FetchRaw makes a raw API call to the platform and returns the response body
+	// as bytes. This is the base method for the AI mapper — it separates HTTP
+	// communication from data transformation.
+	// endpoint: the platform-specific API path (e.g. "/v3/posting/fbs/list")
+	// payload: the request body, nil for GET-like calls
+	// Returns the raw response body as bytes, or an error.
+	FetchRaw(ctx context.Context, platformID int64, endpoint string, payload interface{}) ([]byte, error)
 }

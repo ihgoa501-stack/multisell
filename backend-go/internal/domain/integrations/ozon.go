@@ -523,6 +523,16 @@ func (a *OzonAdapter) ListProducts(ctx context.Context, platformID int64) ([]Ozo
 	return products, nil
 }
 
+// FetchRaw calls an Ozon API endpoint and returns the raw JSON response bytes.
+// ponytail: wraps do() for callers that need the unparsed response (e.g. raw event pipeline).
+func (a *OzonAdapter) FetchRaw(ctx context.Context, platformID int64, path string, payload interface{}) ([]byte, error) {
+	auth, err := a.getAuth(ctx, platformID)
+	if err != nil {
+		return nil, err
+	}
+	return a.do(ctx, http.MethodPost, path, auth, payload)
+}
+
 func (a *OzonAdapter) VerifyWebhookSignature(ctx context.Context, body []byte, headers http.Header) bool {
 	signature := headers.Get("X-Ozon-Signature")
 	if signature == "" {

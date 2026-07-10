@@ -163,6 +163,15 @@ func (h *Handler) Summary(c *gin.Context) {
 	response.Success(c, sum)
 }
 
+// RecalculateAll POST /settlement/recalculate
+func (h *Handler) RecalculateAll(c *gin.Context) {
+	if err := h.service.RecalculateAll(c.Request.Context()); err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"status": "ok"})
+}
+
 // AddItem POST /settlement/:id/items
 func (h *Handler) AddItem(c *gin.Context) {
 	id, ok := parseID(c)
