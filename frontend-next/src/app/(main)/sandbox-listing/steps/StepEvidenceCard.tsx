@@ -21,7 +21,7 @@ export default function StepEvidenceCardPage() {
 
   return (
     <div>
-      <EvidenceCard data={data as any} />
+      <EvidenceCard data={data} />
       <div style={{ marginTop: 24, display: 'flex', gap: 8 }}>
         <Button onClick={goBack}>上一步</Button>
         <Button type="primary" onClick={goNext}>继续到上架建议</Button>

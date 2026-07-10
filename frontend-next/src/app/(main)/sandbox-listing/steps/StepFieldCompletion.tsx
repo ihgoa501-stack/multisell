@@ -10,19 +10,17 @@ export default function StepFieldCompletion() {
   const { candidateId, goNext, goBack } = useSandboxListingStore();
   const queryClient = useQueryClient();
 
-  const { data: candidate, isLoading } = useQuery({
+  const { isLoading } = useQuery({
     queryKey: ['candidate', candidateId],
     queryFn: () => apiClient.get(`/v1/candidates/${candidateId}`).then(r => r.data),
     enabled: !!candidateId,
   });
 
-  const { data: completeness, isLoading: completenessLoading } = useQuery({
+  const { data: completeness } = useQuery<{ missing_items: string[]; score: number }>({
     queryKey: ['completeness', candidateId],
     queryFn: () => apiClient.post(`/v1/completeness/check/${candidateId}`).then(r => r.data as { missing_items: string[]; score: number }),
     enabled: !!candidateId,
   });
-
-  const completenessData = completeness as { missing_items: string[]; score: number } | undefined;
 
   const fillMutation = useMutation({
     mutationFn: (fields: Array<{ field: string; value: unknown }>) =>
@@ -38,8 +36,8 @@ export default function StepFieldCompletion() {
 
   if (isLoading) return <Spin />;
 
-  const missingItems: string[] = completenessData?.missing_items || [];
-  const score = completenessData?.score || 0;
+  const missingItems: string[] = completeness?.missing_items || [];
+  const score = completeness?.score || 0;
 
   const handleFill = (field: string) => {
     const val = editValues[field];
