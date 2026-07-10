@@ -2,7 +2,6 @@ package integrations
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 

@@ -54,6 +54,34 @@ At minimum, Beta acceptance requires proof for these flows:
 Evidence may be Playwright output, smoke-test logs, screenshots, or a manual
 acceptance record, but it must be dated and reproducible.
 
+## Release Lanes
+
+Changes are categorised into one of four release lanes before merging or
+deploying. Each lane has a minimum required acceptance status, an approval
+count, and a set of allowed target environments.
+
+| Lane | Typical Change | Min Acceptance | Required Approvals | Allowed Environments | Extra Gates |
+|------|----------------|----------------|-------------------|---------------------|-------------|
+| **Read-only (fast track)** | UI-only changes, documentation, refactors that do not alter behaviour, test additions, config comment changes. | Dev Done | 1 reviewer | local, preview | None beyond normal CI. |
+| **Suggestion (standard)** | Agent recommendations, dashboard additions, read-only API additions, non-destructive reports. | Test Green | 1 reviewer + code owner | local, preview, staging | Changes that touch AI recommendation output must also include a before/after sample comparison in the PR. |
+| **Approval-required (slow)** | Price/inventory/order changes, platform publishing, permission changes, AI action execution logic. | Business Verified | 2 reviewers + code owner + explicit Owner approval | local, preview, staging, sandbox | Dry-run evidence must be included. High-risk action matrix from ACCEPTANCE_MATRIX.md must be satisfied. |
+| **Production-write (slowest + extra gates)** | External platform write-back, production data migrations, payment/refund flows, RBAC/Auth changes deployed to production. | Beta Accepted | 2 reviewers + code owner + Owner approval + sign-off from `docs/governance/OWNER_DECISION_LOG.md` | local, preview, staging, sandbox, production (gradual) | Owner must document the decision in `docs/governance/OWNER_DECISION_LOG.md`. Break-glass must be tested. Rollback plan must be attached and verified. Gradual rollout (canary / percentage) required before full production. |
+
+**Lane escalation.** If a PR touches files from a higher-risk lane (e.g. a
+"read-only" PR modifies a price-calculation function), the higher lane's rules
+apply to the entire PR.
+
+**Lane overrides.** The Owner may explicitly downgrade a lane for a specific
+PR via `docs/governance/OWNER_DECISION_LOG.md`. The override must name the PR, the
+reason, and the acceptance-status delta accepted.
+
+### Choosing a Lane
+
+- Always pick the **slowest lane** whose rules your change satisfies.
+- When in doubt between two lanes, pick the slower one.
+- CI must validate the lane tag in the PR template matches the actual diff
+  (see `scripts/verify_lane.sh`, Phase 4).
+
 ## Report Status Vocabulary
 
 Use only these result words in acceptance reports:
@@ -79,3 +107,22 @@ Do not write `PASS with known issue`. A known failing required check is `FAIL`.
 - high-risk action gate evidence
 - known issues and owner-facing impact
 - explicit decision: accepted for controlled trial or not accepted
+
+## Owner Decision Log
+
+All lane overrides, approval decisions, and risk acceptances for releases that
+reach production must be recorded in `docs/governance/OWNER_DECISION_LOG.md`. Entries
+must include:
+
+- date and PR reference
+- lane chosen and reason
+- any acceptance-status deltas accepted
+- risk acceptance statement
+- Owner name or handle
+
+## Lane Compliance Validation (Phase 4)
+
+A CI check (`scripts/verify_lane.sh`) will validate lane declarations against
+actual diff contents. It will reject a PR whose declared lane is lower than
+the lane its file changes require. Until that script is implemented, lane
+review is the Reviewer's responsibility.

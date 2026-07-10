@@ -897,6 +897,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	reliability.RegisterRoutes(protected, db, logger)
 
+	// Production write kill switch management (admin only).
+	// Activate/deactivate require admin.killswitch permission.
+	killswitchAdmin := protected.Group("", middleware.RequirePermission(db, "admin.killswitch"))
+	killswitch.RegisterRoutes(killswitchAdmin)
+
 	// Metabolism M1 -- scheduled excretion scoring
 	m1Svc := metabolism.NewService(db, logger.Named("metabolism"), nil, nil)
 	// scheduler.tick.agentos -> SLA escalation for overdue pending actions

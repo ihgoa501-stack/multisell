@@ -19,6 +19,41 @@ called business-verified or beta-accepted.
 Reports must name the environment. A result that passes in mock or dry-run does
 not prove production behavior.
 
+## Permission Regression Matrix
+
+Every permission-level change or RBAC addition must be tested against the full
+role matrix below. Regression means: a change must not accidentally grant an
+action to a role that previously could not perform it.
+
+| Role | CAN Do | CANNOT Do | Must Audit |
+|------|--------|-----------|------------|
+| Anonymous | Access public pages (login, landing, health endpoint). | Access any authenticated route, view any business data, trigger any Agent action or write operation. | Attempted access to protected routes (401/403 responses) via audit middleware. |
+| Viewer | Read permitted dashboards and reports (dashboard overview, product read views, order read views, agent activity log). | Write any data (create/update/delete), approve any action, change any configuration, trigger any Agent write action. | Read access to non-permitted dashboards (logged and blocked). |
+| Operator | Execute low/medium-risk business actions (prepare products, run reports, trigger Agent suggestions). Read most business data. | Bypass approval for high-risk actions (price changes, inventory mutations, refunds, platform publishing, AI action execution). Change RBAC or system settings. | Every write action (actor, resource, before/after, timestamp). High-risk action attempt that is blocked must log the blocked event. |
+| Owner | Approve or reject high-risk business actions. Configure Agent rules within permitted scope. View all business data including sensitive fields redacted by default. | Delegate approval authority to non-Owner roles. Bypass audit. Delete audit logs. Modify system-level RBAC or admin accounts. | Every approve/reject decision (action ID, approver, decision, timestamp, reason). Sensitive-field access must be logged. |
+| Admin | Manage system settings, RBAC, user accounts, and platform integrations. Read full audit logs. | Bypass the high-risk action approval flow for price/inventory/order/refund/publishing operations. Disable audit logging. Grant roles without documented Owner decision. | All RBAC mutations (who, what role, what user, timestamp). Admin-level read access to sensitive fields must be logged. System setting changes must be logged. |
+
+### Permission Regression Test Requirements
+
+A change that touches role checks or permission logic **must** include tests
+that verify:
+
+1. **Anonymous:** authenticated route returns 401/403, unauthenticated path does not leak business data.
+2. **Operator:** cannot approve high-risk actions, cannot modify RBAC, every write is audited.
+3. **Owner:** can approve high-risk actions, cannot bypass audit, sensitive-field access is logged.
+4. **Admin:** can manage users/roles but cannot bypass high-risk approval flow.
+
+High-risk action tests must include at least `anonymous`, `operator`, and
+`owner/admin` coverage.
+
+### Permission Regression Verification Command
+
+```bash
+cd backend-go && go test ./internal/rbac/... -run TestRoleRegression
+```
+
+If no such test exists for the modified area, the PR author must add one.
+
 ## Role Matrix
 
 | Role | Must Verify |

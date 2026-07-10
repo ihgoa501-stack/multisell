@@ -10,7 +10,7 @@ import (
 )
 
 // RegisterRoutes registers integrations routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service) {
 	// Dynamically register the stateful mock adapters if not already registered.
 	if _, ok := GetAdapter("mock_ozon"); !ok {
 		RegisterAdapter("mock_ozon", NewMockOzonAdapter(db, logger))
@@ -19,8 +19,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		RegisterAdapter("mock_shopee", NewMockShopeeAdapter(db, logger))
 	}
 
-	svc := NewService(db, logger)
-	h := NewHandler(svc)
+	svc := NewService(db, logger).WithApproval(approvalSvc)
+	h := NewHandler(svc, approvalSvc)
 
 	group := rg.Group("/platform-integrations")
 	{

@@ -35,6 +35,16 @@
 - [ ] Beta Accepted：允许进入受控试运行
 - [ ] 本 PR 不声称业务验收或 Beta 验收完成
 
+## 数据质量影响
+
+<!-- 如果本次变更有数据写操作，请回答以下问题 -->
+
+- [ ] 本 PR 无数据写操作
+- [ ] 有写操作：写前/写后数据钩子是否验证数据一致性？
+- [ ] 有写操作：数据是否可能超出预期范围？是否有数据校验逻辑？
+- [ ] 有写操作：是否影响已有报表/统计数据准确性？
+- [ ] 有数据迁移：是否做了回滚测试？（`down.sql` 可用且已验证）
+
 ## 文档同步
 
 - [ ] `AGENTS.md` 已更新（如涉及模块名/路径/API 变更）
@@ -42,6 +52,7 @@
 - [ ] `docs/INDEX.md` 已更新（如涉及新模块或路径变更）
 - [ ] `docs/BETA_ACCEPTANCE_REPORT.md` 已更新（如声称 Beta/试运行验收）
 - [ ] `docs/KNOWN_ISSUES.md` 已更新（如存在 FAIL/BLOCKED/SKIPPED 验收项）
+- [ ] `docs/governance/OWNER_DECISION_LOG.md` 已更新（如使用 Production-write 通道或有通道覆盖）
 - [ ] 本 PR 不涉及文档变更
 
 ## 风险
@@ -58,5 +69,5 @@
 
 ## 未通过 / 未运行项
 
-<!-- 只能使用 PASS / FAIL / SKIPPED / BLOCKED / NOT RUN。禁止写 “PASS with known issue”。 -->
+<!-- 只能使用 PASS / FAIL / SKIPPED / BLOCKED / NOT RUN。禁止写 "PASS with known issue"。 -->
 <!-- 对 FAIL/BLOCKED/SKIPPED 项，必须在 docs/KNOWN_ISSUES.md 写 owner / deadline / impact。 -->

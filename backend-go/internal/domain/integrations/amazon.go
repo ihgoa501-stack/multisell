@@ -3,6 +3,7 @@ package integrations
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,21 +13,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 const (
-	amazonLWAEndpoint     = "https://api.amazon.com/auth/o2/token"
-	amazonProdURLTemplate = "https://sellingpartnerapi-%s.amazon.com"
-	amazonSandboxURL      = "https://sellingpartnerapi-sandbox.amazon.com"
-	amazonService         = "execute-api"
-	amazonDefaultTimeout  = 30 * time.Second
+	AmazonSPAPIEndpoint   = "https://sellingpartnerapi-na.amazon.com" // default NA region
+	AmazonLWAEndpoint     = "https://api.amazon.com/auth/o2/token"
+	AmazonDefaultTimeout  = 30 * time.Second
 )
 
-// AmazonAdapter implements PlatformAdapter for Amazon SP-API / Selling Partner API.
+// AmazonAdapter implements PlatformAdapter for Amazon Selling Partner API (SP-API).
 type AmazonAdapter struct {
 	httpClient *http.Client
 	db         *gorm.DB
@@ -36,37 +33,39 @@ type AmazonAdapter struct {
 // NewAmazonAdapter creates a new Amazon adapter.
 func NewAmazonAdapter(db *gorm.DB, logger *zap.Logger) *AmazonAdapter {
 	return &AmazonAdapter{
-		httpClient: &http.Client{Timeout: amazonDefaultTimeout},
+		httpClient: &http.Client{Timeout: AmazonDefaultTimeout},
 		db:         db,
 		logger:     logger,
 	}
 }
 
-// amazonConfig maps the per-account JSON config stored in PlatformIntegrationAccount.Config.
-type amazonConfig struct {
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	AWSAccessKey string `json:"aws_access_key_id"`
-	AWSSecretKey string `json:"aws_secret_access_key"`
-	AWSRegion    string `json:"aws_region"`
-	// ponytail: marketplace_id is stored in config for symmetry with other
-	// platforms; callers pass it in payloads when needed.
-}
-
-// amazonAuth holds resolved credentials for one request batch.
+// amazonAuth stores Amazon SP-API authentication details.
 type amazonAuth struct {
-	AccessToken  string
-	RefreshToken string
-	ClientID     string
-	ClientSecret string
-	Creds        aws.Credentials
-	Region       string
-	BaseURL      string
+	AccessToken  string // LWA-issued access token for the seller
+	RefreshToken string // LWA refresh token (if available)
+	Region       string // na, eu, fe
+	MarketplaceID string // e.g., ATVPDKIKX0DER for US
+	SellerID     string // Merchant/Seller ID
+
+	// IAM role credentials for request signing
+	IAMAccessKeyID     string
+	IAMSecretAccessKey string
+	IAMRoleARN         string
+
+	APIEndpoint string
 }
 
-// getAuth resolves credentials for a platform integration account from the database.
-// Auto-refreshes the LWA access token when expired.
-func (a *AmazonAdapter) getAuth(ctx context.Context, platformID int64, mode ExecutionMode) (*amazonAuth, error) {
+// lwaTokenResponse is the response from LWA token exchange.
+type lwaTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
+// getAuth looks up the first active Amazon integration account and returns
+// SP-API authentication details.
+func (a *AmazonAdapter) getAuth(ctx context.Context, platformID int64) (*amazonAuth, error) {
 	var accts []PlatformIntegrationAccount
 	if err := a.db.WithContext(ctx).
 		Where("platform_id = ? AND status = ?", platformID, "active").
@@ -79,169 +78,163 @@ func (a *AmazonAdapter) getAuth(ctx context.Context, platformID int64, mode Exec
 	}
 	acct := accts[0]
 
-	var cfg amazonConfig
+	var cfg struct {
+		ClientID          string `json:"client_id"`
+		ClientSecret      string `json:"client_secret"`
+		IAMAccessKeyID    string `json:"iam_access_key_id"`
+		IAMSecretAccessKey string `json:"iam_secret_access_key"`
+		IAMRoleARN        string `json:"iam_role_arn"`
+		Region            string `json:"region"` // na, eu, fe
+		MarketplaceID     string `json:"marketplace_id"`
+		SellerID          string `json:"seller_id"`
+	}
 	if len(acct.Config) > 0 {
 		json.Unmarshal(acct.Config, &cfg)
 	}
-	if acct.RefreshToken == "" {
-		return nil, fmt.Errorf("amazon getAuth: account %d has empty refresh_token", acct.ID)
-	}
-	if cfg.AWSRegion == "" {
-		return nil, fmt.Errorf("amazon getAuth: account %d missing aws_region in config", acct.ID)
+
+	region := strings.ToLower(cfg.Region)
+	if region == "" {
+		region = "na"
 	}
 
-	// Auto-refresh LWA access token if expired or absent.
+	endpoint := AmazonSPAPIEndpoint
+	switch region {
+	case "eu":
+		endpoint = "https://sellingpartnerapi-eu.amazon.com"
+	case "fe":
+		endpoint = "https://sellingpartnerapi-fe.amazon.com"
+	}
+
+	// Exchange client credentials + refresh token for an access token via LWA
 	accessToken := acct.AccessToken
-	if accessToken == "" || acct.TokenExpiresAt == nil || time.Now().After(*acct.TokenExpiresAt) {
-		newToken, expiresIn, err := a.refreshLWAToken(ctx, cfg.ClientID, cfg.ClientSecret, acct.RefreshToken)
+	if acct.RefreshToken != "" && cfg.ClientID != "" && cfg.ClientSecret != "" {
+		token, err := a.exchangeLWA(ctx, cfg.ClientID, cfg.ClientSecret, acct.RefreshToken)
 		if err != nil {
-			return nil, fmt.Errorf("amazon getAuth: refresh LWA: %w", err)
+			a.logger.Warn("amazon LWA token refresh failed, using stored access_token",
+				zap.Error(err))
+		} else if token.AccessToken != "" {
+			accessToken = token.AccessToken
+			// Update stored token
+			a.db.WithContext(ctx).Model(&acct).Update("access_token", token.AccessToken)
 		}
-		accessToken = newToken
-		expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
-		// ponytail: best-effort persist — a failed write still lets this
-		// request proceed; the next request will retry the refresh.
-		a.db.Model(&acct).Updates(map[string]interface{}{
-			"access_token":     accessToken,
-			"token_expires_at": &expiresAt,
-		})
 	}
 
-	baseURL := fmt.Sprintf(amazonProdURLTemplate, cfg.AWSRegion)
-	if mode == ExecutionModeSandbox {
-		baseURL = amazonSandboxURL
+	if accessToken == "" {
+		return nil, fmt.Errorf("amazon getAuth: account %d has no valid access token", acct.ID)
+	}
+
+	if cfg.MarketplaceID == "" {
+		cfg.MarketplaceID = "ATVPDKIKX0DER" // default to US
 	}
 
 	return &amazonAuth{
-		AccessToken:  accessToken,
-		RefreshToken: acct.RefreshToken,
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		Creds: aws.Credentials{
-			AccessKeyID:     cfg.AWSAccessKey,
-			SecretAccessKey: cfg.AWSSecretKey,
-		},
-		Region:  cfg.AWSRegion,
-		BaseURL: baseURL,
+		AccessToken:        accessToken,
+		RefreshToken:       acct.RefreshToken,
+		Region:             region,
+		MarketplaceID:      cfg.MarketplaceID,
+		SellerID:           cfg.SellerID,
+		IAMAccessKeyID:     cfg.IAMAccessKeyID,
+		IAMSecretAccessKey: cfg.IAMSecretAccessKey,
+		IAMRoleARN:         cfg.IAMRoleARN,
+		APIEndpoint:        endpoint,
 	}, nil
 }
 
-// refreshLWAToken exchanges a refresh token for a new LWA access token.
-func (a *AmazonAdapter) refreshLWAToken(ctx context.Context, clientID, clientSecret, refreshToken string) (string, int, error) {
+// getAuthByAccountID resolves a platform integration account ID to Amazon creds.
+func (a *AmazonAdapter) getAuthByAccountID(ctx context.Context, accountID int64) (*amazonAuth, error) {
+	var acct PlatformIntegrationAccount
+	if err := a.db.WithContext(ctx).First(&acct, accountID).Error; err != nil {
+		return nil, fmt.Errorf("amazon getAuthByAccountID: %w", err)
+	}
+	return a.getAuth(ctx, acct.PlatformID)
+}
+
+// exchangeLWA exchanges a refresh token for a new LWA access token.
+func (a *AmazonAdapter) exchangeLWA(ctx context.Context, clientID, clientSecret, refreshToken string) (*lwaTokenResponse, error) {
 	payload := map[string]string{
 		"grant_type":    "refresh_token",
 		"client_id":     clientID,
 		"client_secret": clientSecret,
 		"refresh_token": refreshToken,
 	}
-	b, _ := json.Marshal(payload)
+	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, amazonLWAEndpoint, bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, AmazonLWAEndpoint, bytes.NewReader(body))
 	if err != nil {
-		return "", 0, fmt.Errorf("amazon LWA request: %w", err)
+		return nil, fmt.Errorf("amazon LWA request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return "", 0, fmt.Errorf("amazon LWA: %w", err)
+		return nil, fmt.Errorf("amazon LWA: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("amazon LWA: HTTP %d %s", resp.StatusCode, truncStr(string(respBody), 200))
+	}
+
+	var token lwaTokenResponse
+	if err := json.Unmarshal(respBody, &token); err != nil {
+		return nil, fmt.Errorf("amazon LWA parse: %w", err)
+	}
+	return &token, nil
+}
+
+// do makes an Amazon SP-API request.
+// Amazon SP-API requires x-amz-access-token header for authorization.
+// For simplicity, we use the LWA token directly (standard SP-API pattern
+// for third-party developers). Full IAM SigV4 signing is only required
+// for direct AWS role-based access; the LWA token pattern is the
+// recommended approach for SP-API applications.
+func (a *AmazonAdapter) do(ctx context.Context, method, path string, auth *amazonAuth, payload interface{}) ([]byte, error) {
+	url := strings.TrimRight(auth.APIEndpoint, "/") + path
+
+	var bodyReader io.Reader
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("amazon marshal: %w", err)
+		}
+		bodyReader = bytes.NewReader(b)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("amazon request: %w", err)
+	}
+
+	req.Header.Set("x-amz-access-token", auth.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("amazon %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", 0, fmt.Errorf("amazon LWA read: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", 0, fmt.Errorf("amazon LWA: HTTP %d %s", resp.StatusCode, truncStr(string(body), 300))
+		return nil, fmt.Errorf("amazon read %s: %w", path, err)
 	}
 
-	var r struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
+	if resp.StatusCode >= 400 {
+		var e struct {
+			Errors []struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		if json.Unmarshal(body, &e) == nil && len(e.Errors) > 0 {
+			return nil, fmt.Errorf("amazon %s: [%s] %s", path, e.Errors[0].Code, e.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("amazon %s: HTTP %d %s", path, resp.StatusCode, truncStr(string(body), 300))
 	}
-	if err := json.Unmarshal(body, &r); err != nil {
-		return "", 0, fmt.Errorf("amazon LWA parse: %w", err)
-	}
-	return r.AccessToken, r.ExpiresIn, nil
+
+	return body, nil
 }
-
-// FetchRaw performs a low-level HTTP request to the Amazon SP-API.
-// It resolves auth from the DB, auto-refreshes the LWA token if expired,
-// signs the request with AWS SigV4, and handles a single 401 retry.
-func (a *AmazonAdapter) FetchRaw(ctx context.Context, platformID int64, endpoint string, payload interface{}) ([]byte, error) {
-	mode := ExecutionModeFromCtx(ctx)
-	auth, err := a.getAuth(ctx, platformID, mode)
-	if err != nil {
-		return nil, err
-	}
-	return a.do(ctx, http.MethodPost, endpoint, auth, payload)
-}
-
-// do is the internal HTTP helper. It signs each request with AWS SigV4 and
-// retries once on 401 (stale LWA token).
-// ponytail: retry loop bounded at 2 — only retries on 401.
-func (a *AmazonAdapter) do(ctx context.Context, method, path string, auth *amazonAuth, payload interface{}) ([]byte, error) {
-	var bodyBytes []byte
-	if payload != nil {
-		var err error
-		bodyBytes, err = json.Marshal(payload)
-		if err != nil {
-			return nil, fmt.Errorf("amazon marshal: %w", err)
-		}
-	}
-	payloadHash := sha256Hex(bodyBytes)
-
-	for attempt := 0; attempt < 2; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, method, auth.BaseURL+path, bytes.NewReader(bodyBytes))
-		if err != nil {
-			return nil, fmt.Errorf("amazon request: %w", err)
-		}
-		req.Header.Set("x-amz-access-token", auth.AccessToken)
-		req.Header.Set("Content-Type", "application/json")
-
-		signer := v4.NewSigner()
-		if err := signer.SignHTTP(ctx, auth.Creds, req, payloadHash, amazonService, auth.Region, time.Now()); err != nil {
-			return nil, fmt.Errorf("amazon sign: %w", err)
-		}
-
-		resp, err := a.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("amazon %s: %w", path, err)
-		}
-		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			return nil, fmt.Errorf("amazon read %s: %w", path, readErr)
-		}
-
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
-			newToken, _, refreshErr := a.refreshLWAToken(ctx, auth.ClientID, auth.ClientSecret, auth.RefreshToken)
-			if refreshErr != nil {
-				return nil, fmt.Errorf("amazon %s: HTTP 401 and LWA refresh failed: %w", path, refreshErr)
-			}
-			auth.AccessToken = newToken
-			continue // retry once with fresh token
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests {
-			return nil, fmt.Errorf("amazon %s: rate limited (retry-after: %s)", path, resp.Header.Get("Retry-After"))
-		}
-
-		if resp.StatusCode >= 400 {
-			return nil, fmt.Errorf("amazon %s: HTTP %d %s", path, resp.StatusCode, truncStr(string(body), 300))
-		}
-		return body, nil
-	}
-	return nil, fmt.Errorf("amazon %s: unexpected retry exhaustion", path)
-}
-
-func sha256Hex(data []byte) string {
-	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:])
-}
-
-// --- Stub methods (keep existing return signatures) ---
 
 func (a *AmazonAdapter) Publish(ctx context.Context, input *PublishInput) (*PublishResult, error) {
 	if len(input.SKUs) == 0 {

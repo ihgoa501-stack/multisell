@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Button,
   Col,
@@ -77,11 +78,9 @@ interface DecisionQueueItem {
   expected_outcome?: string;
   can_approve?: boolean;
   display_status?: string;
-  execution_mode?: number;
   target_sale_price?: number;
   completeness_score?: number;
   estimated_profit?: number;
-  expected_outcome?: string;
 }
 
 interface PlatformSync {
@@ -205,6 +204,7 @@ const feedbackStatusLabel = (s: string | null | undefined): string => {
 
 // ---------- Page ----------
 export default function OwnerPage() {
+  const router = useRouter();
   const qc = useQueryClient();
   const [suggestionFilter, setSuggestionFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
