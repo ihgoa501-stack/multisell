@@ -657,15 +657,22 @@ func TestLastMessage(t *testing.T) {
 }
 
 func TestDeriveCacheKey(t *testing.T) {
-	key1 := deriveCacheKey("system", "last message", nil)
-	key2 := deriveCacheKey("system", "last message", nil)
+	msgs := []Message{{Role: "user", Content: "last message"}}
+	key1 := deriveCacheKey("system", msgs, nil)
+	key2 := deriveCacheKey("system", msgs, nil)
 	if key1 != key2 {
 		t.Error("same inputs should produce same cache key")
 	}
 
-	key3 := deriveCacheKey("different", "last message", nil)
+	key3 := deriveCacheKey("different", msgs, nil)
 	if key1 == key3 {
 		t.Error("different system prompts should produce different keys")
+	}
+
+	msgs2 := []Message{{Role: "user", Content: "different message"}}
+	key4 := deriveCacheKey("system", msgs2, nil)
+	if key1 == key4 {
+		t.Error("different message history should produce different keys")
 	}
 }
 

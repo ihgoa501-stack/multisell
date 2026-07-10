@@ -186,7 +186,7 @@ func (g *Gateway) Chat(ctx context.Context, req *Request) (*Response, error) {
 	if !req.Sensitive && !req.BypassCache {
 		cacheKey = req.CacheKey
 		if cacheKey == "" {
-			cacheKey = deriveCacheKey(req.System, lastMessage(req.Messages), req.Tools)
+			cacheKey = deriveCacheKey(req.System, req.Messages, req.Tools)
 		}
 		if cached, ok := g.cache.Get(ctx, cacheKey); ok {
 			g.logger.Debug("cache hit",
@@ -260,12 +260,16 @@ func lastMessage(msgs []Message) string {
 	return ""
 }
 
-func deriveCacheKey(system string, lastMsg string, tools []ToolDef) string {
+func deriveCacheKey(system string, msgs []Message, tools []ToolDef) string {
 	toolSig := ""
 	for _, t := range tools {
 		toolSig += t.Name + ","
 	}
-	input := system + "||" + lastMsg + "||" + toolSig
+	var msgBuilder strings.Builder
+	for _, m := range msgs {
+		msgBuilder.WriteString(m.Role + ":" + m.Content + "\n")
+	}
+	input := system + "||" + msgBuilder.String() + "||" + toolSig
 	h := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(h[:])
 }
