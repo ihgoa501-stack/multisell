@@ -50,6 +50,18 @@ export default function ListingTasksPage() {
         { title: '商品ID', dataIndex: 'product_id', width: 90 },
         { title: '平台ID', dataIndex: 'platform_id', width: 90 },
         {
+          title: '执行模式',
+          dataIndex: 'execution_mode',
+          width: 100,
+          render: (v: unknown) => {
+            const labels: Record<number, string> = { 0: 'Dry-Run', 1: 'Sandbox', 2: '需审批', 3: '生产' };
+            const colors: Record<number, string> = { 0: 'default', 1: 'orange', 2: 'purple', 3: 'red' };
+            const num = Number(v);
+            if (isNaN(num)) return <Text type="secondary">-</Text>;
+            return <Tag color={colors[num] || 'default'}>{labels[num] || '未知'}</Tag>;
+          },
+        },
+        {
           title: '状态',
           dataIndex: 'status',
           width: 100,

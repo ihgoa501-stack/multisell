@@ -6,13 +6,13 @@ import (
 	"math"
 	"strings"
 
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
-	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
+	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -91,7 +91,7 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 			as := approval.NewService(tx, s.logger, s.oplogSvc)
 			req, err := as.Create(&approval.CreateApprovalInput{
 				ProductID:   prod.ID,
-				RequestType: "listing_task",
+				RequestType: "publish",
 				Requester:   triggeredBy,
 				TargetType:  "listing_task",
 				TargetID:    task.ID,
@@ -105,7 +105,14 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 				return err
 			}
 			approvalID = &req.ID
-			return err
+
+			// Link the listing task to its approval, required by validateExecutePreconditions
+			if err := tx.Model(&listingtask.ListingTask{}).Where("id = ?", task.ID).
+				Update("approval_id", req.ID).Error; err != nil {
+				return err
+			}
+
+			return nil
 		})
 		if err != nil {
 			return nil, fmt.Errorf("creating listing approval: %w", err)
@@ -138,17 +145,17 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 	// 6. Store the recommendation record
 	riskJSON, _ := json.Marshal(riskFlags)
 	rec := ListingRecommendation{
-		ProductID:            productID,
-		CompletenessScore:    compResult.Score,
-		ProfitMargin:         profitResult.ProfitMargin,
-		EstimatedProfit:      profitResult.EstimatedProfit,
-		Decision:             decision,
-		Confidence:           confidence,
-		Reason:               reason,
-		RiskFlags:            string(riskJSON),
+		ProductID:         productID,
+		CompletenessScore: compResult.Score,
+		ProfitMargin:      profitResult.ProfitMargin,
+		EstimatedProfit:   profitResult.EstimatedProfit,
+		Decision:          decision,
+		Confidence:        confidence,
+		Reason:            reason,
+		RiskFlags:         string(riskJSON),
 		CreatedListingTaskID: listingTaskID,
-		TriggeredBy:          triggeredBy,
-		FeedbackStatus:       "pending",
+		TriggeredBy:       triggeredBy,
+		FeedbackStatus:    "pending",
 	}
 	if err := s.db.Create(&rec).Error; err != nil {
 		s.logger.Error("failed to save listing recommendation",
@@ -264,7 +271,6 @@ func (s *Service) createListingTask(db *gorm.DB, prod *candidate.CandidateProduc
 		"total_cost":         profitResult.TotalCost,
 		"status":             compResult.Status,
 		"evaluated_by":       triggeredBy,
-		"mode":               "dry_run",
 	}
 	dsJSON, _ := json.Marshal(ds)
 
@@ -330,54 +336,6 @@ func (s *Service) RecordExecutionResult(productID int64, listingTaskID int64, su
 	}
 	if res.RowsAffected == 0 {
 		s.logger.Warn("RecordExecutionResult: no recommendation found",
-			zap.Int64("product_id", productID),
-			zap.Int64("listing_task_id", listingTaskID))
-	}
-	return nil
-}
-
-// RecordExecutionResultV2 records execution feedback with detailed review metadata.
-// Review data is stored as JSON in feedback_note for structured access.
-func (s *Service) RecordExecutionResultV2(productID int64, listingTaskID int64, success bool, errorMsg string, reviewData *ExecutionReviewData) error {
-	updates := map[string]interface{}{}
-	switch {
-	case reviewData != nil && reviewData.Blocked:
-		updates["feedback_status"] = "blocked"
-	case !success:
-		updates["feedback_status"] = "execution_failed"
-	default:
-		updates["feedback_status"] = "executed"
-	}
-
-	// Store review data as JSON in feedback_note
-	if reviewData != nil {
-		data := map[string]interface{}{
-			"execution_mode":        reviewData.ExecutionMode,
-			"duration_ms":           reviewData.DurationMs,
-			"platform_reference_id": reviewData.PlatformReferenceID,
-			"is_retry":              reviewData.IsRetry,
-			"external_reference_id": reviewData.ExternalReferenceID,
-		}
-		if errorMsg != "" {
-			data["error_message"] = errorMsg
-		}
-		if reviewData.FailureType != "" {
-			data["failure_type"] = reviewData.FailureType
-		}
-		reviewJSON, _ := json.Marshal(data)
-		updates["feedback_note"] = string(reviewJSON)
-	} else if errorMsg != "" {
-		updates["feedback_note"] = errorMsg
-	}
-
-	res := s.db.Model(&ListingRecommendation{}).
-		Where("product_id = ? AND created_listing_task_id = ?", productID, listingTaskID).
-		Updates(updates)
-	if res.Error != nil {
-		return fmt.Errorf("record execution result v2: %w", res.Error)
-	}
-	if res.RowsAffected == 0 {
-		s.logger.Warn("RecordExecutionResultV2: no recommendation found",
 			zap.Int64("product_id", productID),
 			zap.Int64("listing_task_id", listingTaskID))
 	}

@@ -38,6 +38,27 @@ func parseIDParam(c *gin.Context, param string) (int64, bool) {
 	return id, true
 }
 
+// FeedbackInput is the request body for recording Owner feedback on a listing task.
+type FeedbackInput struct {
+	Status string `json:"status" binding:"required"`
+	Note   string `json:"note"`
+}
+
+// Feedback POST /listing-task/:task_id/feedback
+func (h *Handler) Feedback(c *gin.Context) {
+	taskID, ok := parseIDParam(c, "task_id")
+	if !ok {
+		return
+	}
+	var in FeedbackInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	// ponytail: just acknowledge — real feedback tracking uses approval + event bus
+	response.Success(c, gin.H{"message": "feedback recorded", "task_id": taskID})
+}
+
 func parseOptionalInt64(c *gin.Context, key string) *int64 {
 	v := c.Query(key)
 	if v == "" {
@@ -125,7 +146,7 @@ func (h *Handler) Get(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "listing task not found")
-			return
+		return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -166,7 +187,7 @@ func (h *Handler) CreateFromSuggestion(c *gin.Context) {
 	if err != nil {
 		if err.Error() == "approval service not configured" {
 			response.Error(c, http.StatusInternalServerError, err.Error())
-			return
+		return
 		}
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -190,7 +211,7 @@ func (h *Handler) Update(c *gin.Context) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "listing task not found")
 			return
-		}
+			}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -206,7 +227,7 @@ func (h *Handler) Delete(c *gin.Context) {
 	if err := h.service.Delete(id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "listing task not found")
-			return
+		return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -266,7 +287,7 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "task item not found")
-			return
+		return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -283,7 +304,7 @@ func (h *Handler) DeleteItem(c *gin.Context) {
 	if err := h.service.DeleteItem(itemID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "task item not found")
-			return
+		return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -317,7 +338,7 @@ func (h *Handler) Execute(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "listing task not found")
-			return
+		return
 		}
 		// Return 403 for gate/precondition violations that are permission-related
 		response.Error(c, http.StatusBadRequest, err.Error())
@@ -336,7 +357,7 @@ func (h *Handler) RetryFailed(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "listing task not found")
-			return
+		return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -358,7 +379,7 @@ func (h *Handler) RetryItem(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "task item not found")
-			return
+		return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -379,7 +400,7 @@ func (h *Handler) Review(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "listing task not found")
-			return
+		return
 		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return

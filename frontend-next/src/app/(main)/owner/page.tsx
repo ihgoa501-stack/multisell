@@ -78,6 +78,7 @@ interface DecisionQueueItem {
   target_sale_price?: number;
   completeness_score?: number;
   estimated_profit?: number;
+  expected_outcome?: string;
 }
 
 interface PlatformSync {
@@ -93,6 +94,26 @@ interface PlatformSync {
 
 interface ApprovalRequestResponse {
   id: number;
+}
+
+/** Response shape from GET /v1/owner/suggestions */
+interface SuggestionResponse {
+  id: number;
+  product_id: number;
+  product_title: string;
+  listing_task_id: number | null;
+  decision: string;
+  reason: string;
+  confidence: number;
+  risk_flags: string;
+  risk_level: string;
+  created_at: string;
+  task_status: string;
+  approval_status: string;
+  feedback_status: string | null;
+  completeness_score: number;
+  profit_margin: number;
+  estimated_profit: number;
 }
 
 // ---------- Color helpers ----------
@@ -199,12 +220,35 @@ export default function OwnerPage() {
     },
   });
 
-  // Decision queue (replaces old suggestions endpoint)
+  // Decision queue (maps from /v1/owner/suggestions)
   const { data: decisions, isLoading: decisionsLoading } = useQuery({
     queryKey: ['owner-decision-queue'],
     queryFn: async () => {
-      const res = await apiClient.get<DecisionQueueItem[]>('/v1/owner/decision-queue', { limit: '50' });
-      return res.data ?? [];
+      const res = await apiClient.get<SuggestionResponse[]>('/v1/owner/suggestions', { limit: '50' });
+      const items = res.data ?? [];
+      return items.map((s): DecisionQueueItem => ({
+        id: s.id,
+        product_id: s.product_id,
+        product_title: s.product_title,
+        listing_task_id: s.listing_task_id,
+        agent_source: '',
+        suggestion: '',
+        decision: s.decision,
+        reason: s.reason,
+        confidence: s.confidence,
+        risk_flags: s.risk_flags,
+        risk_level: s.risk_level,
+        created_at: s.created_at,
+        task_status: s.task_status,
+        task_error: '',
+        approval_status: s.approval_status,
+        agent_feedback_status: s.feedback_status,
+        blocking_reasons: [],
+        display_status: s.task_status || '',
+        execution_mode: 0,
+        expected_outcome: '',
+        can_approve: s.task_status === 'blocked' || s.task_status === 'pending_approval',
+      }));
     },
   });
 

@@ -55,6 +55,7 @@ interface UnifiedAction {
   rejected_at?: string;
   reject_reason?: string;
   operator?: string;
+  execution_mode?: string;
 }
 
 // ---------- Color helpers ----------
@@ -265,6 +266,16 @@ export default function ActionDetailPage() {
                     >
                       置信度 {(action.confidence * 100).toFixed(0)}%
                     </Tag>
+                    {action.execution_mode && (
+                      <Tag color={
+                        action.execution_mode === 'production' ? 'red' :
+                        action.execution_mode === 'sandbox' ? 'orange' : 'default'
+                      }>
+                        {action.execution_mode === 'dry_run' ? 'Dry-Run' :
+                         action.execution_mode === 'sandbox' ? 'Sandbox' :
+                         action.execution_mode === 'production' ? 'Production' : action.execution_mode}
+                      </Tag>
+                    )}
                   </Space>
                   <div style={{ marginTop: 8 }}>
                     <Space size={16}>
