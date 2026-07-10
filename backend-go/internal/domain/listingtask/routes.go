@@ -45,6 +45,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger,
 		chain.POST("/retry-all", h.RetryAll)
 		chain.POST("/:task_id/execute", h.Execute)
 		chain.POST("/:task_id/retry-failed", h.RetryFailed)
+		chain.POST("/:task_id/feedback", h.Feedback)
 		chain.POST("/:task_id/items/:item_id/retry", h.RetryItem)
 	}
 }
