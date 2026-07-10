@@ -173,9 +173,8 @@ func (g *ExecutionGuard) Check(ctx context.Context, input *GuardInput) (*GuardRe
 		toolInput = map[string]interface{}{}
 	}
 
-	// Extract action type and risk level from ToolInput.
 	actionType, _ := toolInput["action_type"].(string)
-	if actionType == "" {
+	if actionType == "" && !isReadOnlyTool(input.ToolName) {
 		// Fallback mapping from ToolName if omitted
 		lowerTool := strings.ToLower(input.ToolName)
 		if strings.Contains(lowerTool, "purchase") {
@@ -360,4 +359,17 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func isReadOnlyTool(toolName string) bool {
+	lower := strings.ToLower(toolName)
+	return strings.Contains(lower, "list") ||
+		strings.Contains(lower, "read") ||
+		strings.Contains(lower, "query") ||
+		strings.Contains(lower, "get") ||
+		strings.Contains(lower, "view") ||
+		strings.Contains(lower, "track") ||
+		strings.Contains(lower, "find") ||
+		strings.Contains(lower, "search") ||
+		strings.Contains(lower, "analyze")
 }

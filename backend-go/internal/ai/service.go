@@ -331,6 +331,18 @@ func (s *Service) ExecuteAction(id int64, userID *int64, operator, _ string) (*U
 			)
 			return nil, fmt.Errorf("%w: %s", ErrBlockedByGuardrails, gr.Reason)
 		}
+		if !gr.Pass && a.Status != "approved" {
+			s.logger.Info("action requires human approval based on execution guard rules",
+				zap.Int64("action_id", a.ID),
+				zap.String("action_type", a.ActionType),
+				zap.String("reason", gr.Reason),
+			)
+			a.RequiresApproval = true
+			s.db.Model(&UnifiedAction{}).Where("id = ?", a.ID).Updates(map[string]interface{}{
+				"requires_approval": true,
+			})
+			return nil, ErrApprovalRequired
+		}
 	}
 
 	// Dry-run: all validation passed, return without mutation.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -53,6 +54,7 @@ func (d DefaultFallbackChain) Execute(ctx context.Context, provider Provider, ta
 
 		for attempt := 0; attempt <= step.MaxRetries; attempt++ {
 			stepReq := copyRequest(req)
+			stepReq.Model = step.Model
 			resp, err := provider.Chat(stepCtx, stepReq)
 
 			if err == nil {
@@ -153,17 +155,7 @@ func (d DefaultFallbackChain) buildChain(target ModelTarget) []ModelTarget {
 
 // containsModel reports whether the model name contains the given fragment.
 func containsModel(model, fragment string) bool {
-	n := len(model)
-	m := len(fragment)
-	if m > n {
-		return false
-	}
-	for i := 0; i <= n-m; i++ {
-		if model[i:i+m] == fragment {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(strings.ToLower(model), strings.ToLower(fragment))
 }
 
 // copyRequest creates a shallow copy of a Request with a fresh Messages slice
@@ -181,6 +173,7 @@ func copyRequest(original *Request) *Request {
 		System:      original.System,
 		Messages:    msgs,
 		Tools:       tools,
+		Model:       original.Model,
 		MinModel:    original.MinModel,
 		MaxLatency:  original.MaxLatency,
 		CacheKey:    original.CacheKey,

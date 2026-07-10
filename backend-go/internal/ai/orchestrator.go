@@ -564,7 +564,7 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 	// Run guardrails on input before sending to LLM.
 	if o.guardrails != nil {
 		inp := &guardrails.GuardInput{RawInput: userMsg}
-		res, err := o.guardrails.Check(context.Background(), inp)
+		res, err := o.guardrails.Check(ctx, inp)
 		if err != nil {
 			o.logger.Warn("guardrails input check failed", zap.Error(err))
 		} else if res.Blocked {
@@ -612,7 +612,7 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 		}
 
 		budgetIn := costcontrol.AllowInput{AgentID: agent.ID, Model: req.Model, Tokens: len(userMsg) / 4}
-		budgetRes, budgetErr := o.budget.Allow(context.Background(), budgetIn)
+		budgetRes, budgetErr := o.budget.Allow(ctx, budgetIn)
 		if budgetErr == nil && budgetRes.Action == costcontrol.ActionBlock {
 			o.logger.Warn("budget blocked LLM call",
 				zap.String("agent", agent.ID),
@@ -635,7 +635,7 @@ func (o *Orchestrator) synthesizeOutput(ctx context.Context, agent AgentSpec, dp
 	// Only call the real provider when it isn't the stub, to avoid silently
 	// depending on an API key in dev.
 	if o.provider != nil && o.provider.Name() != "stub" {
-		ctxTimeout, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctxTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		resp, err := o.provider.Chat(ctxTimeout, req)
 		if err != nil {

@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -58,6 +59,7 @@ type Request struct {
 	System   string    `json:"system"`
 	Messages []Message `json:"messages"`
 	Tools    []ToolDef `json:"tools,omitempty"`
+	Model    string    `json:"model,omitempty"`
 
 	MinModel    string        `json:"min_model,omitempty"`
 	MaxLatency  time.Duration `json:"max_latency,omitempty"`
@@ -265,11 +267,8 @@ func deriveCacheKey(system string, msgs []Message, tools []ToolDef) string {
 	for _, t := range tools {
 		toolSig += t.Name + ","
 	}
-	var msgBuilder strings.Builder
-	for _, m := range msgs {
-		msgBuilder.WriteString(m.Role + ":" + m.Content + "\n")
-	}
-	input := system + "||" + msgBuilder.String() + "||" + toolSig
+	msgData, _ := json.Marshal(msgs)
+	input := system + "||" + string(msgData) + "||" + toolSig
 	h := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(h[:])
 }
@@ -371,6 +370,7 @@ func (a *aiProviderAdapter) Name() string { return a.inner.Name() }
 
 func (a *aiProviderAdapter) Chat(ctx context.Context, req *Request) (*Response, error) {
 	aiReq := &ai.LLMRequest{
+		Model:    req.Model,
 		System:   req.System,
 		Messages: make([]ai.LLMMessage, len(req.Messages)),
 	}
