@@ -27,6 +27,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/owner', icon: 'DashboardOutlined', label: '卖家工作台' },
       { key: '/candidates', label: '候选商品', status: 'mock' },
       { key: '/approval', label: '审批管理', status: 'mock' },
+      { key: '/sandbox-listing', label: '沙箱上架', status: 'sandbox' },
       { key: '/profit', icon: 'DollarOutlined', label: '利润真相' },
       { key: '/support', icon: 'MessageOutlined', label: '统一客服' },
       { key: '/dashboard', label: '每日简报' },

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import {
   Badge,
   Button,
+  Card,
   Col,
   Empty,
   message,
@@ -584,6 +585,18 @@ export default function OwnerPage() {
               prefix={<DatabaseOutlined style={{ color: 'var(--y4)' }} />}
             />
           </div>
+        </Col>
+      </Row>
+
+      {/* Sandbox listing entry card */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={24}>
+          <Card hoverable onClick={() => router.push('/sandbox-listing')}>
+            <Card.Meta
+              title="真实商品沙箱上架"
+              description="录入一个真实商品，完成利润评估、审批、沙箱执行全流程"
+            />
+          </Card>
         </Col>
       </Row>
 
