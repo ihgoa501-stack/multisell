@@ -192,6 +192,18 @@ export default function ActionsPage() {
       render: (v: number | null) => v ? (v * 100).toFixed(0) + '%' : '-',
     },
     {
+      title: '模式',
+      dataIndex: 'execution_mode',
+      key: 'execution_mode',
+      width: 90,
+      render: (v: string | undefined) => {
+        if (!v) return '-';
+        const mc: Record<string, string> = { dry_run: 'default', sandbox: 'orange', production: 'red' };
+        const ml: Record<string, string> = { dry_run: 'Dry-Run', sandbox: 'Sandbox', production: 'Production' };
+        return <Tag color={mc[v] || 'default'}>{ml[v] || v}</Tag>;
+      },
+    },
+    {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
