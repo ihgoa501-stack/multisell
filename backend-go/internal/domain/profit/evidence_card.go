@@ -56,17 +56,6 @@ type DataField struct {
 	Source    string `json:"source"` // confirmed | estimated | missing
 }
 
-// costDef defines one cost category computation.
-type costDef struct {
-	Category        string
-	Label           string
-	CalculationType string // fixed_amount | percent_of_revenue
-	Required        bool
-	DefaultRate     float64 // for percent_of_revenue defaults
-	// sourceFn returns (amount, dataSource, sourceNote) given the candidate product.
-	sourceFn func(prod *candidateProductReader) (float64, string, string)
-}
-
 // candidateProductReader is the subset of candidate.CandidateProduct the evidence
 // card needs. Keeps the profit package from depending on the full candidate package.
 type candidateProductReader struct {
@@ -261,13 +250,13 @@ func BuildEvidenceCard(prod *candidateProductReader, platformCommissionRate, int
 		card.ProfitMargin = round(estProfit/prod.TargetSalePrice*100, 2)
 	}
 
-	// Status
-	if card.ProfitMargin >= 15 {
+	// Status: unknown when no target price, otherwise classify by margin
+	if prod.TargetSalePrice <= 0 {
+		card.Status = "unknown"
+	} else if card.ProfitMargin >= 15 {
 		card.Status = "profitable"
 	} else if card.ProfitMargin >= 5 {
 		card.Status = "marginal"
-	} else if card.ProfitMargin >= 0 {
-		card.Status = "unprofitable"
 	} else {
 		card.Status = "unprofitable"
 	}
@@ -333,9 +322,11 @@ func (c *EvidenceCard) computeConfidenceAndBlocking(prod *candidateProductReader
 		blockingReasons = append(blockingReasons, "缺少平台佣金费率，无法完整核算成本")
 	}
 
-	// Check data source levels for non-required items
+	// Check data source levels for cost items
 	for _, item := range c.CostItems {
-		if item.DataSource == "estimated" {
+		if item.DataSource == "missing" {
+			missing = append(missing, item.Label)
+		} else if item.DataSource == "estimated" {
 			estimated = append(estimated, item.Label)
 		} else if item.DataSource == "template_default" {
 			estimated = append(estimated, item.Label+"(模板值)")
