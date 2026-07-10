@@ -3,6 +3,7 @@ package toolregistry
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1018,6 +1019,48 @@ func TestApprovalCheckHook_ThroughRegistry(t *testing.T) {
 		}
 		if out != "executed" {
 			t.Errorf("expected 'executed', got %v", out)
+		}
+	})
+}
+
+func TestAgentPermissionHook_WorkspaceFailClosed(t *testing.T) {
+	checker := func(ctx context.Context, agentID string) (map[string]bool, error) {
+		return map[string]bool{"test.tool": true}, nil
+	}
+	hook := NewAgentPermissionHook(checker)
+	tool := &Tool{Name: "test.tool"}
+
+	t.Run("agent workspace with missing agentID fails closed", func(t *testing.T) {
+		ctx := WithAgentWorkspace(context.Background())
+		_, err := hook.Before(ctx, tool, nil)
+		if err == nil {
+			t.Fatal("expected error when agentID is missing in agent workspace context")
+		}
+		if !strings.Contains(err.Error(), "missing agent identity") {
+			t.Errorf("expected missing identity error, got %v", err)
+		}
+	})
+
+	t.Run("agent workspace with agentID checks checker", func(t *testing.T) {
+		ctx := WithAgentWorkspace(context.Background())
+		ctx = WithAgentID(ctx, "agent-1")
+		_, err := hook.Before(ctx, tool, nil)
+		if err != nil {
+			t.Fatalf("expected allowed tool to pass, got %v", err)
+		}
+
+		deniedTool := &Tool{Name: "denied.tool"}
+		_, err = hook.Before(ctx, deniedTool, nil)
+		if err == nil {
+			t.Fatal("expected permission denied error for unallowed tool")
+		}
+	})
+
+	t.Run("non-agent workspace with missing agentID passes", func(t *testing.T) {
+		ctx := context.Background()
+		_, err := hook.Before(ctx, tool, nil)
+		if err != nil {
+			t.Fatalf("expected non-agent workspace without identity to bypass, got %v", err)
 		}
 	})
 }

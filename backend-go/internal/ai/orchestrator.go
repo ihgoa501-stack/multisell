@@ -269,6 +269,7 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 	// otherwise fall back to the deterministic stub.
 	// Build a context with agent identity so tool calls carry caller info.
 	agentCtx := toolregistry.WithAgentID(context.Background(), agent.ID)
+	agentCtx = toolregistry.WithAgentWorkspace(agentCtx)
 	output, confidence, riskLevel, err := o.synthesizeOutput(agentCtx, agent, req.DecisionPoint, req.Context)
 	if err != nil {
 		// Complete the trace with failed status so the failure is recorded, not silent.
