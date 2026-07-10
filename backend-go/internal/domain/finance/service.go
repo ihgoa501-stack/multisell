@@ -2,6 +2,7 @@ package finance
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -14,11 +15,18 @@ type Service struct {
 	db          *gorm.DB
 	logger      *zap.Logger
 	orderReader OrderFinanceReader
+	bankAdapter BankAdapter
 }
 
 // NewService creates a new finance service.
 func NewService(db *gorm.DB, logger *zap.Logger, orderReader OrderFinanceReader) *Service {
 	return &Service{db: db, logger: logger, orderReader: orderReader}
+}
+
+// WithBankAdapter sets the bank adapter on the service.
+func (s *Service) WithBankAdapter(ba BankAdapter) *Service {
+	s.bankAdapter = ba
+	return s
 }
 
 // ---------- FinanceAccount ----------
@@ -679,4 +687,106 @@ func (s *Service) Mock(count int) ([]FinanceLedgerEntry, error) {
 		return nil, err
 	}
 	return entries, nil
+}
+
+// ExecuteBankTransfer transfers money from one account to another, utilizing the BankAdapter.
+// It is transaction-safe.
+func (s *Service) ExecuteBankTransfer(ctx context.Context, fromAccountID, toAccountID int64, amountCents int64, currency string) (*TransferResponse, error) {
+	if s.bankAdapter == nil {
+		return nil, fmt.Errorf("bank adapter not configured")
+	}
+
+	var fromAcct, toAcct FinanceAccount
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&fromAcct, fromAccountID).Error; err != nil {
+			return err
+		}
+		if err := tx.First(&toAcct, toAccountID).Error; err != nil {
+			return err
+		}
+		if fromAcct.Status != "active" || toAcct.Status != "active" {
+			return fmt.Errorf("both accounts must be active")
+		}
+		amountFloat := float64(amountCents) / 100.0
+		if fromAcct.Balance < amountFloat {
+			return fmt.Errorf("insufficient balance: account has %.2f, transfer requires %.2f", fromAcct.Balance, amountFloat)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	req := &TransferRequest{
+		SourceAccount: fromAcct.Name,
+		TargetAccount: toAcct.Name,
+		AmountCents:   amountCents,
+		Currency:      currency,
+		Description:   fmt.Sprintf("Transfer from Account %d to %d", fromAccountID, toAccountID),
+	}
+
+	resp, err := s.bankAdapter.ExecuteTransfer(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.Status != "success" {
+		return resp, nil
+	}
+
+	amountFloat := float64(amountCents) / 100.0
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&FinanceAccount{}).Where("id = ?", fromAccountID).UpdateColumn("balance", gorm.Expr("balance - ?", amountFloat)).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&FinanceAccount{}).Where("id = ?", toAccountID).UpdateColumn("balance", gorm.Expr("balance + ?", amountFloat)).Error; err != nil {
+			return err
+		}
+
+		tFrom := FinanceTransaction{
+			AccountID:       fromAccountID,
+			TransactionType: "transfer",
+			Amount:          amountFloat,
+			Currency:        currency,
+			Description:     fmt.Sprintf("Bank Transfer to %s (Tx ID: %s)", toAcct.Name, resp.TransactionID),
+		}
+		if err := tx.Create(&tFrom).Error; err != nil {
+			return err
+		}
+
+		tTo := FinanceTransaction{
+			AccountID:       toAccountID,
+			TransactionType: "revenue",
+			Amount:          amountFloat,
+			Currency:        currency,
+			Description:     fmt.Sprintf("Bank Transfer from %s (Tx ID: %s)", fromAcct.Name, resp.TransactionID),
+		}
+		if err := tx.Create(&tTo).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+// CreateDoubleEntryLedger creates matching debit and credit entries.
+func (s *Service) CreateDoubleEntryLedger(ctx context.Context, entries []LedgerEntry) error {
+	var totalDebit int64
+	var totalCredit int64
+	for _, e := range entries {
+		totalDebit += e.DebitCents
+		totalCredit += e.CreditCents
+	}
+	if totalDebit != totalCredit {
+		return fmt.Errorf("ledger entries unbalanced: total debits (%d) must equal total credits (%d)", totalDebit, totalCredit)
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&entries).Error
+	})
 }

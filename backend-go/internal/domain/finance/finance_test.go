@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/domain/foreigntrade"
 	"github.com/lingmirror/backend-go/internal/domain/order"
 	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
@@ -847,5 +848,180 @@ func TestHandler_InvalidOrderID(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for invalid order_id, got %d", w.Code)
+	}
+}
+
+// MockBankAdapter is a mock implementation of BankAdapter.
+type MockBankAdapter struct {
+	ExecuteTransferFunc func(ctx context.Context, req *TransferRequest) (*TransferResponse, error)
+}
+
+func (m *MockBankAdapter) ExecuteTransfer(ctx context.Context, req *TransferRequest) (*TransferResponse, error) {
+	if m.ExecuteTransferFunc != nil {
+		return m.ExecuteTransferFunc(ctx, req)
+	}
+	return &TransferResponse{
+		TransactionID: "mock-tx-123",
+		Status:        "success",
+		TransferredAt: time.Now(),
+	}, nil
+}
+
+func TestExecuteBankTransfer(t *testing.T) {
+	svc := newTestDB(t, &FinanceAccount{}, &FinanceTransaction{}, &FinanceLedgerEntry{}, &order.Order{}, &order.OrderItem{}, &LedgerEntry{})
+
+	// Create test accounts
+	fromAcct, err := svc.CreateAccount(&CreateAccountInput{
+		Name:        "From Account",
+		AccountType: "bank",
+		Balance:     dbtest.FloatPtr(100.00),
+		Status:      "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateAccount failed: %v", err)
+	}
+
+	toAcct, err := svc.CreateAccount(&CreateAccountInput{
+		Name:        "To Account",
+		AccountType: "bank",
+		Balance:     dbtest.FloatPtr(50.00),
+		Status:      "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateAccount failed: %v", err)
+	}
+
+	mockAdapter := &MockBankAdapter{}
+	svc.WithBankAdapter(mockAdapter)
+
+	// Perform bank transfer
+	resp, err := svc.ExecuteBankTransfer(context.Background(), fromAcct.ID, toAcct.ID, 3000, "CNY") // 30.00 CNY
+	if err != nil {
+		t.Fatalf("ExecuteBankTransfer failed: %v", err)
+	}
+
+	if resp.Status != "success" {
+		t.Errorf("Expected status success, got %s", resp.Status)
+	}
+
+	// Verify updated balances
+	updatedFrom, _ := svc.GetAccount(fromAcct.ID)
+	updatedTo, _ := svc.GetAccount(toAcct.ID)
+
+	if updatedFrom.Balance != 70.00 {
+		t.Errorf("Expected from account balance to be 70.00, got %.2f", updatedFrom.Balance)
+	}
+	if updatedTo.Balance != 80.00 {
+		t.Errorf("Expected to account balance to be 80.00, got %.2f", updatedTo.Balance)
+	}
+}
+
+func TestCreateDoubleEntryLedger_BalanceValidation(t *testing.T) {
+	svc := newTestDB(t, &FinanceAccount{}, &FinanceTransaction{}, &FinanceLedgerEntry{}, &order.Order{}, &order.OrderItem{}, &LedgerEntry{})
+
+	// Define unbalanced ledger entries
+	unbalancedEntries := []LedgerEntry{
+		{
+			TransactionID: "tx-unbalanced",
+			AccountID:     1,
+			DebitCents:    1000, // 10.00
+			CreditCents:   0,
+			PriceCents:    1000,
+			Currency:      "CNY",
+		},
+		{
+			TransactionID: "tx-unbalanced",
+			AccountID:     2,
+			DebitCents:    0,
+			CreditCents:   500, // 5.00 (Unbalanced!)
+			PriceCents:    500,
+			Currency:      "CNY",
+		},
+	}
+
+	err := svc.CreateDoubleEntryLedger(context.Background(), unbalancedEntries)
+	if err == nil {
+		t.Fatalf("Expected error for unbalanced ledger entries, but got none")
+	}
+
+	// Define balanced ledger entries
+	balancedEntries := []LedgerEntry{
+		{
+			TransactionID: "tx-balanced",
+			AccountID:     1,
+			DebitCents:    1000, // 10.00
+			CreditCents:   0,
+			PriceCents:    1000,
+			Currency:      "CNY",
+		},
+		{
+			TransactionID: "tx-balanced",
+			AccountID:     2,
+			DebitCents:    0,
+			CreditCents:   1000, // 10.00 (Balanced!)
+			PriceCents:    1000,
+			Currency:      "CNY",
+		},
+	}
+
+	err = svc.CreateDoubleEntryLedger(context.Background(), balancedEntries)
+	if err != nil {
+		t.Fatalf("Expected balanced entries to succeed, got error: %v", err)
+	}
+}
+
+type MockRFQAdapter struct {
+	SubmitQuotationFunc func(ctx context.Context, rfqID string, quote *foreigntrade.Quotation) (*foreigntrade.QuotationResult, error)
+}
+
+func (m *MockRFQAdapter) SubmitQuotation(ctx context.Context, rfqID string, quote *foreigntrade.Quotation) (*foreigntrade.QuotationResult, error) {
+	if m.SubmitQuotationFunc != nil {
+		return m.SubmitQuotationFunc(ctx, rfqID, quote)
+	}
+	return &foreigntrade.QuotationResult{
+		ExternalQuoteID: "ext-quote-456",
+		Success:         true,
+		Message:         "Quotation submitted successfully",
+		SubmittedAt:     time.Now(),
+	}, nil
+}
+
+func TestRFQQuotationsFormatting(t *testing.T) {
+	db := dbtest.NewDB(t, &foreigntrade.RFQRecord{}, &foreigntrade.Quotation{})
+	tradeSvc := foreigntrade.NewService(db, zap.NewNop())
+
+	rfq := &foreigntrade.RFQRecord{
+		RFQID:       "rfq-789",
+		BuyerName:   "Global Trade Corp",
+		ProductName: "Solar Panel Model X",
+		Quantity:    1000,
+		TargetPrice: 85.50,
+		Currency:    "USD",
+		Status:      "pending",
+	}
+	if err := tradeSvc.CreateRFQ(context.Background(), rfq); err != nil {
+		t.Fatalf("CreateRFQ failed: %v", err)
+	}
+
+	mockAdapter := &MockRFQAdapter{}
+	res, err := tradeSvc.GenerateAndSubmitQuotation(context.Background(), mockAdapter, "rfq-789", 82.00, "USD", 45)
+	if err != nil {
+		t.Fatalf("GenerateAndSubmitQuotation failed: %v", err)
+	}
+
+	if !res.Success {
+		t.Errorf("Expected success, got false")
+	}
+	if res.ExternalQuoteID != "ext-quote-456" {
+		t.Errorf("Expected ext-quote-456, got %s", res.ExternalQuoteID)
+	}
+
+	// Verify status updated to quoted
+	updatedRFQ, err := tradeSvc.GetRFQByRFQID(context.Background(), "rfq-789")
+	if err != nil {
+		t.Fatalf("GetRFQByRFQID failed: %v", err)
+	}
+	if updatedRFQ.Status != "quoted" {
+		t.Errorf("Expected status 'quoted', got %s", updatedRFQ.Status)
 	}
 }

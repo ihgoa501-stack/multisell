@@ -1,6 +1,7 @@
 package finance
 
 import (
+	"context"
 	"time"
 )
 
@@ -167,3 +168,40 @@ type OrderProfit struct {
 type MockDataInput struct {
 	Count int `json:"count"`
 }
+
+// BankAdapter defines the contract for bank transfers.
+type BankAdapter interface {
+	ExecuteTransfer(ctx context.Context, req *TransferRequest) (*TransferResponse, error)
+}
+
+// TransferRequest is the input for ExecuteTransfer.
+type TransferRequest struct {
+	SourceAccount string `json:"source_account"`
+	TargetAccount string `json:"target_account"`
+	AmountCents   int64  `json:"amount_cents"`
+	Currency      string `json:"currency"`
+	Description   string `json:"description"`
+}
+
+// TransferResponse is the result of ExecuteTransfer.
+type TransferResponse struct {
+	TransactionID string    `json:"transaction_id"`
+	Status        string    `json:"status"` // success, pending, failed
+	TransferredAt time.Time `json:"transferred_at"`
+	ErrorMessage  string    `json:"error_message,omitempty"`
+}
+
+// LedgerEntry represents a ledger entry using cents to avoid floating point precision issues.
+type LedgerEntry struct {
+	ID            int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TransactionID string    `gorm:"column:transaction_id;index;not null" json:"transaction_id"`
+	AccountID     int64     `gorm:"column:account_id;index;not null" json:"account_id"`
+	Description   string    `gorm:"column:description" json:"description"`
+	DebitCents    int64     `gorm:"column:debit_cents;default:0;not null" json:"debit_cents"`
+	CreditCents   int64     `gorm:"column:credit_cents;default:0;not null" json:"credit_cents"`
+	PriceCents    int64     `gorm:"column:price_cents;default:0;not null" json:"price_cents"` // balance or transaction amount in cents
+	Currency      string    `gorm:"column:currency;default:CNY;not null" json:"currency"`
+	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+}
+
+func (LedgerEntry) TableName() string { return "ledger_entry" }
