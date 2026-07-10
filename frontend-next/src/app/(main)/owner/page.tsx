@@ -214,7 +214,7 @@ export default function OwnerPage() {
   // ---- Approval flow mutations ----
 
   const approveFlow = useMutation({
-    mutationFn: async (params: { productId: number; taskId: number; reason: string }) => {
+    mutationFn: async (params: { productId: number; taskId: number; reason: string; executionMode?: number }) => {
       const operator = getCurrentOperator();
 
       // 1. Create approval request
@@ -246,8 +246,12 @@ export default function OwnerPage() {
       // 4. Trigger execution
       await apiClient.post(`/v1/listing-task/${params.taskId}/execute`);
     },
-    onSuccess: () => {
-      message.success('已批准上架并开始执行');
+    onSuccess: (_, variables) => {
+      if (variables.executionMode === 1) {
+        message.success('已批准上架，沙盒环境调度并执行成功');
+      } else {
+        message.success('已批准上架并开始执行');
+      }
       setApprovalModal(null);
       setApprovalAction(null);
       qc.invalidateQueries({ queryKey: ['owner-decision-queue'] });
@@ -333,6 +337,7 @@ export default function OwnerPage() {
         productId: approvalModal.product_id,
         taskId,
         reason: approvalModal.reason,
+        executionMode: approvalModal.execution_mode,
       });
     } else {
       rejectFlow.mutate({
@@ -630,10 +635,45 @@ export default function OwnerPage() {
                       {
                         title: '任务状态',
                         dataIndex: 'task_status',
-                        width: 90,
-                        render: (v: string | undefined) => (
-                          <Tag color={taskStatusColor(v)}>{taskStatusLabel(v)}</Tag>
-                        ),
+                        width: 180,
+                        render: (v: string | undefined, record: DecisionQueueItem) => {
+                          const isSandbox = record.execution_mode === 1;
+                          if (isSandbox && v === 'executing') {
+                            return (
+                              <Space>
+                                <Spin size="small" />
+                                <span style={{ fontSize: 12, color: 'var(--t3)' }}>
+                                  正在调度沙盒环境并执行...
+                                </span>
+                              </Space>
+                            );
+                          }
+                          if (isSandbox && (v === 'completed' || v === 'failed')) {
+                            return (
+                              <Space direction="vertical" size={4} style={{ display: 'flex' }}>
+                                <Space>
+                                  <Tag color={taskStatusColor(v)}>{taskStatusLabel(v)}</Tag>
+                                  <Button
+                                    size="small"
+                                    type="link"
+                                    style={{ padding: 0, height: 'auto', fontSize: 12 }}
+                                    href={`/tmp/reports/pr-${record.id}/playwright-report`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    下载报告
+                                  </Button>
+                                </Space>
+                                {record.task_error && (
+                                  <Text type="danger" style={{ fontSize: 11 }} ellipsis={{ tooltip: record.task_error }}>
+                                    {record.task_error}
+                                  </Text>
+                                )}
+                              </Space>
+                            );
+                          }
+                          return <Tag color={taskStatusColor(v)}>{taskStatusLabel(v)}</Tag>;
+                        },
                       },
                       {
                         title: '审批状态',
@@ -797,7 +837,13 @@ export default function OwnerPage() {
           targetLabel: approvalModal.product_title || `ID:${approvalModal.product_id}`,
           afterValue: approvalAction === 'approve' ? '创建审批 → 执行上架任务' : '不创建上架任务',
         } : undefined}
-        environmentMode="production"
+        environmentMode={
+          approvalModal?.execution_mode === 1
+            ? 'sandbox'
+            : approvalModal?.execution_mode === 0
+            ? 'dry_run'
+            : 'production'
+        }
         expectedConsequence={
           approvalAction === 'approve'
             ? '将创建审批记录、触发上架任务执行，商品将在 Ozon 平台可见'
