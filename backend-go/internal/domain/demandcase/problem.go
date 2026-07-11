@@ -8,43 +8,47 @@ import (
 )
 
 const (
-	ProblemLead                = "lead"
-	ProblemEvidenceMissing     = "evidence_missing"
-	ProblemSurvives            = "survives_falsification"
-	ProblemRejected            = "rejected"
-	ResponsibilityConsumer     = "consumer_controlled"
-	ResponsibilityShared       = "shared"
-	ResponsibilityLandlord     = "landlord"
-	ResponsibilityEmployer     = "employer"
-	ResponsibilityManufacturer = "manufacturer"
-	ResponsibilityMedical      = "medical"
-	ResponsibilityPublic       = "public_service"
-	ResponsibilityUnknown      = "unknown"
-	SolvabilityPlausible       = "plausible"
-	SolvabilityPartial         = "partial"
-	SolvabilityStructural      = "structural"
-	SolvabilityUnknown         = "unknown"
-	HarmLow                    = "low"
-	HarmMedium                 = "medium"
-	HarmHigh                   = "high"
-	HarmUnknown                = "unknown"
+	ProblemLead                 = "lead"
+	ProblemEvidenceMissing      = "evidence_missing"
+	ProblemSurvives             = "survives_falsification"
+	ProblemRejected             = "rejected"
+	ResponsibilityConsumer      = "consumer_controlled"
+	ResponsibilityShared        = "shared"
+	ResponsibilityLandlord      = "landlord"
+	ResponsibilityEmployer      = "employer"
+	ResponsibilityManufacturer  = "manufacturer"
+	ResponsibilityMedical       = "medical"
+	ResponsibilityPublic        = "public_service"
+	ResponsibilityUnknown       = "unknown"
+	SolvabilityPlausible        = "plausible"
+	SolvabilityPartial          = "partial"
+	SolvabilityStructural       = "structural"
+	SolvabilityUnknown          = "unknown"
+	HarmLow                     = "low"
+	HarmMedium                  = "medium"
+	HarmHigh                    = "high"
+	HarmUnknown                 = "unknown"
+	ResidualBarrierUnknown      = "unknown"
+	ResidualBarrierConfirmed    = "confirmed"
+	ResidualBarrierNotConfirmed = "not_confirmed"
 )
 
 type ProblemCase struct {
-	ID                   int64     `gorm:"primaryKey" json:"id"`
-	OwnerID              int64     `gorm:"index;not null;uniqueIndex:uidx_problem_owner_key" json:"owner_id"`
-	ProblemKey           string    `gorm:"size:160;not null;uniqueIndex:uidx_problem_owner_key" json:"problem_key"`
-	Region               string    `gorm:"size:80;not null" json:"region"`
-	ObservablePopulation string    `gorm:"size:300;not null" json:"observable_population"`
-	ProblemScenario      string    `gorm:"type:text;not null" json:"problem_scenario"`
-	CurrentWorkaround    string    `gorm:"type:text;not null" json:"current_workaround"`
-	Responsibility       string    `gorm:"size:32;not null" json:"responsibility"`
-	ProductSolvability   string    `gorm:"size:24;not null" json:"product_solvability"`
-	HarmRisk             string    `gorm:"size:16;not null" json:"harm_risk"`
-	NextMinimumEvidence  string    `gorm:"type:text;not null" json:"next_minimum_evidence"`
-	Status               string    `gorm:"size:32;not null;default:lead" json:"status"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ID                    int64     `gorm:"primaryKey" json:"id"`
+	OwnerID               int64     `gorm:"index;not null;uniqueIndex:uidx_problem_owner_key" json:"owner_id"`
+	ProblemKey            string    `gorm:"size:160;not null;uniqueIndex:uidx_problem_owner_key" json:"problem_key"`
+	Region                string    `gorm:"size:80;not null" json:"region"`
+	ObservablePopulation  string    `gorm:"size:300;not null" json:"observable_population"`
+	ProblemScenario       string    `gorm:"type:text;not null" json:"problem_scenario"`
+	CurrentWorkaround     string    `gorm:"type:text;not null" json:"current_workaround"`
+	Responsibility        string    `gorm:"size:32;not null" json:"responsibility"`
+	ProductSolvability    string    `gorm:"size:24;not null" json:"product_solvability"`
+	HarmRisk              string    `gorm:"size:16;not null" json:"harm_risk"`
+	ResidualBarrierStatus string    `gorm:"size:24;not null;default:unknown" json:"residual_barrier_status"`
+	NextMinimumEvidence   string    `gorm:"type:text;not null" json:"next_minimum_evidence"`
+	Status                string    `gorm:"size:32;not null;default:lead" json:"status"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 func (ProblemCase) TableName() string { return "problem_case" }
@@ -79,9 +83,15 @@ func validSolvability(v string) bool {
 func validHarm(v string) bool {
 	return v == HarmLow || v == HarmMedium || v == HarmHigh || v == HarmUnknown
 }
+func validResidualBarrier(v string) bool {
+	return v == ResidualBarrierUnknown || v == ResidualBarrierConfirmed || v == ResidualBarrierNotConfirmed
+}
 
 func (s *Service) CreateProblem(ctx context.Context, p *ProblemCase) error {
-	if p.OwnerID <= 0 || strings.TrimSpace(p.ProblemKey) == "" || strings.TrimSpace(p.Region) == "" || strings.TrimSpace(p.ObservablePopulation) == "" || strings.TrimSpace(p.ProblemScenario) == "" || strings.TrimSpace(p.CurrentWorkaround) == "" || strings.TrimSpace(p.NextMinimumEvidence) == "" || !validResponsibility(p.Responsibility) || !validSolvability(p.ProductSolvability) || !validHarm(p.HarmRisk) {
+	if p.ResidualBarrierStatus == "" {
+		p.ResidualBarrierStatus = ResidualBarrierUnknown
+	}
+	if p.OwnerID <= 0 || strings.TrimSpace(p.ProblemKey) == "" || strings.TrimSpace(p.Region) == "" || strings.TrimSpace(p.ObservablePopulation) == "" || strings.TrimSpace(p.ProblemScenario) == "" || strings.TrimSpace(p.CurrentWorkaround) == "" || strings.TrimSpace(p.NextMinimumEvidence) == "" || !validResponsibility(p.Responsibility) || !validSolvability(p.ProductSolvability) || !validHarm(p.HarmRisk) || !validResidualBarrier(p.ResidualBarrierStatus) {
 		return errors.New("invalid problem-first case")
 	}
 	p.Status = ProblemLead
@@ -131,9 +141,9 @@ func (s *Service) EvaluateProblem(ctx context.Context, id, ownerID int64) (strin
 	}
 	status := ProblemEvidenceMissing
 	if independent && len(support) > 0 {
-		if p.Responsibility == ResponsibilityLandlord || p.Responsibility == ResponsibilityEmployer || p.Responsibility == ResponsibilityManufacturer || p.Responsibility == ResponsibilityMedical || p.Responsibility == ResponsibilityPublic || p.ProductSolvability == SolvabilityStructural || p.HarmRisk == HarmHigh {
+		if p.ResidualBarrierStatus == ResidualBarrierNotConfirmed || p.Responsibility == ResponsibilityLandlord || p.Responsibility == ResponsibilityEmployer || p.Responsibility == ResponsibilityManufacturer || p.Responsibility == ResponsibilityMedical || p.Responsibility == ResponsibilityPublic || p.ProductSolvability == SolvabilityStructural || p.HarmRisk == HarmHigh {
 			status = ProblemRejected
-		} else if (p.Responsibility == ResponsibilityConsumer || p.Responsibility == ResponsibilityShared) && (p.ProductSolvability == SolvabilityPlausible || p.ProductSolvability == SolvabilityPartial) && p.HarmRisk == HarmLow {
+		} else if p.ResidualBarrierStatus == ResidualBarrierConfirmed && (p.Responsibility == ResponsibilityConsumer || p.Responsibility == ResponsibilityShared) && (p.ProductSolvability == SolvabilityPlausible || p.ProductSolvability == SolvabilityPartial) && p.HarmRisk == HarmLow {
 			status = ProblemSurvives
 		}
 	}
@@ -147,7 +157,7 @@ func (s *Service) PromoteProblem(ctx context.Context, id, ownerID int64, channel
 	if err != nil {
 		return nil, err
 	}
-	if p.Status != ProblemSurvives || strings.TrimSpace(channel) == "" {
+	if p.Status != ProblemSurvives || p.ResidualBarrierStatus != ResidualBarrierConfirmed || strings.TrimSpace(channel) == "" {
 		return nil, errors.New("only a surviving problem can enter channel comparison")
 	}
 	d := &DemandCase{OwnerID: ownerID, Region: p.Region, Consumer: p.ObservablePopulation, NeedScenario: p.ProblemScenario, SalesChannel: channel, StopCondition: "下一证据失败或责任/伤害边界改变时停止"}

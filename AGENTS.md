@@ -34,6 +34,8 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 渠道比较之前统一使用同一 `demandcase` 模块的 `ProblemCase`：API `/api/v1/problem-cases`，Owner 页面 `/problem-cases`。案件不得预设商品或渠道；只有受信研究运行写入的支持证据与不同采集者独立反证才能参与裁决。证据保存原始内容与可复算 SHA-256，审阅批次以 `owner_id + problem_key` 幂等导入；只有 `survives_falsification` 才能晋升为 `DemandCase`。
 
+`ProblemCase.residual_barrier_status` 区分 `unknown / confirmed / not_confirmed`。安全且有独立证据不等于问题存活；还必须确认存在跨家庭重复、消费者可控、非结构且未被现有方案替代的残余障碍。Hoopa 2021 单事件审阅批次入口为 `/api/v1/problem-cases/research/reviewed-wildfire-event-batch`，裁决为 `not_confirmed + rejected`。
+
 带日期跨市场研究与独立反证分别位于 `deliverables/research/2026-07-11-live-market-permission-batch.md` 和 `2026-07-11-live-market-independent-falsification.md`。独立反证后本轮没有值得申请账号权限的候选：英国、美国保持 hold/evidence_missing，日本当前表述 reject。
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.

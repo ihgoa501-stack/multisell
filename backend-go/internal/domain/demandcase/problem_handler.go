@@ -143,3 +143,16 @@ func (h *Handler) ImportReviewedProblemBatch(c *gin.Context) {
 	}
 	response.Success(c, out)
 }
+
+func (h *Handler) ImportReviewedWildfireEventBatch(c *gin.Context) {
+	owner, ok := demandOwnerID(c)
+	if !ok {
+		return
+	}
+	out, err := h.service.ImportReviewedWildfireEventBatch(c.Request.Context(), owner)
+	if err != nil {
+		response.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	response.Success(c, out)
+}

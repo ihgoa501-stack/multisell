@@ -24,6 +24,7 @@ type reviewedProblem struct {
 	caseData                                 ProblemCase
 	supportTitle, supportURI, supportPayload string
 	counterTitle, counterURI, counterPayload string
+	supportCollector, counterCollector       string
 }
 
 func reviewedProblems() []reviewedProblem {
@@ -36,16 +37,23 @@ func reviewedProblems() []reviewedProblem {
 }
 
 func (s *Service) ImportReviewedProblemBatch(ctx context.Context, ownerID int64) (*ReviewedProblemBatchOutcome, error) {
+	return s.importReviewedProblems(ctx, ownerID, ReviewedProblemBatchKey, reviewedProblems())
+}
+
+func (s *Service) importReviewedProblems(ctx context.Context, ownerID int64, batchKey string, items []reviewedProblem) (*ReviewedProblemBatchOutcome, error) {
 	if ownerID <= 0 {
 		return nil, fmt.Errorf("owner is required")
 	}
 	observedAt := time.Date(2026, 7, 11, 0, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60))
-	out := &ReviewedProblemBatchOutcome{BatchKey: ReviewedProblemBatchKey, StatusCounts: map[string]int{}, PaidDemand: "unknown"}
+	out := &ReviewedProblemBatchOutcome{BatchKey: batchKey, StatusCounts: map[string]int{}, PaidDemand: "unknown"}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txService := NewService(tx, s.logger)
-		for _, item := range reviewedProblems() {
+		for _, item := range items {
 			desired := item.caseData
 			desired.OwnerID = ownerID
+			if desired.ResidualBarrierStatus == "" {
+				desired.ResidualBarrierStatus = ResidualBarrierUnknown
+			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&desired).Error; err != nil {
 				return err
 			}
@@ -56,9 +64,17 @@ func (s *Service) ImportReviewedProblemBatch(ctx context.Context, ownerID int64)
 			if !sameReviewedProblem(p, desired) {
 				return fmt.Errorf("problem %s conflicts with immutable reviewed batch", desired.ProblemKey)
 			}
+			supportCollector := item.supportCollector
+			if supportCollector == "" {
+				supportCollector = "agent:problem_first_scout"
+			}
+			counterCollector := item.counterCollector
+			if counterCollector == "" {
+				counterCollector = "agent:problem_first_falsifier"
+			}
 			for _, e := range []ProblemEvidence{
-				{ProblemCaseID: p.ID, Kind: EvidenceSupport, Title: item.supportTitle, SourceURI: item.supportURI, ObservedAt: observedAt, Collector: "agent:problem_first_scout", RawPayload: item.supportPayload, RawSHA256: payloadHash([]byte(item.supportPayload)), TrustedRun: true},
-				{ProblemCaseID: p.ID, Kind: EvidenceCounter, Title: item.counterTitle, SourceURI: item.counterURI, ObservedAt: observedAt, Collector: "agent:problem_first_falsifier", RawPayload: item.counterPayload, RawSHA256: payloadHash([]byte(item.counterPayload)), TrustedRun: true},
+				{ProblemCaseID: p.ID, Kind: EvidenceSupport, Title: item.supportTitle, SourceURI: item.supportURI, ObservedAt: observedAt, Collector: supportCollector, RawPayload: item.supportPayload, RawSHA256: payloadHash([]byte(item.supportPayload)), TrustedRun: true},
+				{ProblemCaseID: p.ID, Kind: EvidenceCounter, Title: item.counterTitle, SourceURI: item.counterURI, ObservedAt: observedAt, Collector: counterCollector, RawPayload: item.counterPayload, RawSHA256: payloadHash([]byte(item.counterPayload)), TrustedRun: true},
 			} {
 				if _, err := txService.requireProblemOwner(ctx, e.ProblemCaseID, ownerID); err != nil {
 					return err
@@ -88,7 +104,7 @@ func (s *Service) ImportReviewedProblemBatch(ctx context.Context, ownerID int64)
 }
 
 func sameReviewedProblem(a, b ProblemCase) bool {
-	return a.OwnerID == b.OwnerID && a.ProblemKey == b.ProblemKey && a.Region == b.Region && a.ObservablePopulation == b.ObservablePopulation && a.ProblemScenario == b.ProblemScenario && a.CurrentWorkaround == b.CurrentWorkaround && a.Responsibility == b.Responsibility && a.ProductSolvability == b.ProductSolvability && a.HarmRisk == b.HarmRisk && a.NextMinimumEvidence == b.NextMinimumEvidence
+	return a.OwnerID == b.OwnerID && a.ProblemKey == b.ProblemKey && a.Region == b.Region && a.ObservablePopulation == b.ObservablePopulation && a.ProblemScenario == b.ProblemScenario && a.CurrentWorkaround == b.CurrentWorkaround && a.Responsibility == b.Responsibility && a.ProductSolvability == b.ProductSolvability && a.HarmRisk == b.HarmRisk && a.ResidualBarrierStatus == b.ResidualBarrierStatus && a.NextMinimumEvidence == b.NextMinimumEvidence
 }
 
 func sameReviewedEvidence(a, b ProblemEvidence) bool {

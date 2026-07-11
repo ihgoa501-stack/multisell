@@ -97,6 +97,8 @@
 | [跨市场独立反证](../deliverables/research/2026-07-11-live-market-independent-falsification.md) | 独立攻击英美日候选并给出 hold/reject 裁决 |
 | [具体问题优先公开资料侦察](../deliverables/research/2026-07-11-problem-first-scout.md) | 不预设平台和商品的地区、人群、具体场景与责任边界侦察 |
 | [具体问题优先独立反证](../deliverables/research/2026-07-11-problem-first-independent-falsification.md) | 独立攻击责任、可控性、替代方案和伤害边界；本轮 0 个存活案件 |
+| [Hoopa 2021 野火家庭事件侦察](../deliverables/research/2026-07-11-us-wildfire-local-event-scout.md) | 单地区真实事件的家庭采用、PM2.5、设备、滤芯与停用证据审计 |
+| [Hoopa 2021 野火家庭事件独立反证](../deliverables/research/2026-07-11-us-wildfire-local-event-independent-falsification.md) | 事件—干预时间错位、商用替代和公共空间缺口的二选一裁决 |
 | [具体问题优先研究契约](features/PROBLEM_FIRST_RESEARCH_CONTRACT.md) | 问题状态、独立采集者、证据哈希、晋升和幂等导入边界 |
 | [真实付费需求只读权限预检](ops/PAID_DEMAND_READ_ONLY_PREFLIGHT.md) | 当前权限候选、禁止权限、通过与停止条件 |
 | [选市场、选类目、选产品统一方法](../deliverables/research/market-category-product-selection-synthesis.md) | 历史研究材料；固定漏斗数量已冻结，当前只保留其证据边界参考 |

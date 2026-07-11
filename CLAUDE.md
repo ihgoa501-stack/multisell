@@ -14,6 +14,8 @@ Owner 从 `/demand-cases` 查看候选市场。AI 研究 run 必须使用三类�
 
 渠道比较前的具体问题使用 `ProblemCase`、API `/api/v1/problem-cases` 和 Owner 页面 `/problem-cases`。问题案件不预设商品或渠道；只有受信研究运行的支持与独立反证可参与裁决，证据原始内容必须与 SHA-256 一致，审阅批次必须幂等，且只有 `survives_falsification` 可晋升为 `DemandCase`。
 
+问题存活还要求 `residual_barrier_status=confirmed`；`not_confirmed` 在独立证据齐全时确定性淘汰。Hoopa Valley × 2021 Monument Fire 审阅批次使用 `/api/v1/problem-cases/research/reviewed-wildfire-event-batch`，不得据此选择商品、平台或渠道。
+
 2026-07-11 独立反证后，英国和美国候选保持 hold/evidence_missing，日本当前表述 reject，本轮不申请任何账号权限。未来权限卡只能请求最小只读范围，需要 listing、交易或写入的字段不得出现在当前授权入口。
 
 This file gives Claude Code-specific guidance for working in this repository.

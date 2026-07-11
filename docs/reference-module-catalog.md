@@ -250,6 +250,7 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | POST | `/api/v1/problem-cases/:id/evaluate` | ✅ | 受保护确定性裁决入口 |
 | POST | `/api/v1/problem-cases/:id/promote` | ✅ | 仅反证后存活案件可进入渠道比较 |
 | POST | `/api/v1/problem-cases/research/reviewed-problem-batch` | ✅ | `problem-cases/page.tsx` |
+| POST | `/api/v1/problem-cases/research/reviewed-wildfire-event-batch` | ✅ | `problem-cases/page.tsx` |
 | **Products & SKU** | | | |
 | GET/POST/PUT/DELETE | `/api/v1/products[/:id]` | ✅ | `products/page.tsx`, `products/[id]/page.tsx`, `products/create/page.tsx` |
 | GET/POST/PUT/DELETE | `/api/v1/products/:id/specs[/:spec_id]` | ✅ | — |

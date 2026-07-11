@@ -13,6 +13,8 @@
 - `survives_falsification`：至少有支持证据和不同采集者的反证，且责任、可解性和伤害边界允许继续比较渠道。
 - `rejected`：房东、雇主、医疗、公共服务或结构性责任占主导，或伤害风险不可接受。
 
+案件另存 `residual_barrier_status`：`unknown / confirmed / not_confirmed`。只有独立反证确认存在跨家庭重复、消费者可控、非结构且未被替代的障碍时才可标记 `confirmed`；同一事件事实链证明不了该障碍时标记 `not_confirmed` 并淘汰。
+
 只有 `survives_falsification` 可以晋升为 `DemandCase` 并填写渠道。普通问题案件不得预设商品或渠道。
 
 ## 证据与审计
@@ -26,3 +28,9 @@
 ## Owner 验收
 
 打开 `/problem-cases`，点击“导入 2026-07-11 已审阅问题研究”。列表应稳定显示 4 个案件；重复点击不新增重复记录。进入详情可查看支持与独立反证，以及每个案件的下一份最小证据。
+
+## Hoopa Valley × 2021 Monument Fire 单地区裁决
+
+2026-07-11 锁定 Hoopa Valley、2021 Monument Fire 与 Tribe/EPA ASPIRE-Health 家庭研究。8 户中 7 户报告 DIY 噪声困扰，但烟霾只覆盖无干预基线并在 2021-09-26 前清除；自由选择期 8/8 户使用商用 PAC，滤芯更换由研究人员承担，公共洁净空间使用未测。独立反证因此将残余障碍标记为 `not_confirmed`，案件确定性输出 `rejected`。这不否认烟霾健康问题，也不推断商品、渠道或付费需求。
+
+Owner 可点击“导入 Hoopa 2021 事件审阅结果”。重复点击必须保持 1 个事件案件和 2 份受信证据。

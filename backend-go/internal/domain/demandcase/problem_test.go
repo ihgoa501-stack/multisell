@@ -17,7 +17,7 @@ func problemService(t *testing.T) *Service {
 func TestProblemFirstLeadHasNoChannelAndNeedsIndependentCounter(t *testing.T) {
 	s := problemService(t)
 	ctx := context.Background()
-	p := ProblemCase{OwnerID: 1, ProblemKey: "test-independent-counter", Region: "GB", ObservablePopulation: "可观察人群", ProblemScenario: "具体问题", CurrentWorkaround: "现有办法", Responsibility: ResponsibilityConsumer, ProductSolvability: SolvabilityPlausible, HarmRisk: HarmLow, NextMinimumEvidence: "验证问题频率"}
+	p := ProblemCase{OwnerID: 1, ProblemKey: "test-independent-counter", Region: "GB", ObservablePopulation: "可观察人群", ProblemScenario: "具体问题", CurrentWorkaround: "现有办法", Responsibility: ResponsibilityConsumer, ProductSolvability: SolvabilityPlausible, HarmRisk: HarmLow, ResidualBarrierStatus: ResidualBarrierConfirmed, NextMinimumEvidence: "验证问题频率"}
 	if err := s.CreateProblem(ctx, &p); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestClientSuppliedCollectorNamesCannotSatisfyIndependence(t *testing.T) {
 func TestOnlySurvivingProblemCanBecomeChannelCandidate(t *testing.T) {
 	s := problemService(t)
 	ctx := context.Background()
-	p := ProblemCase{OwnerID: 1, ProblemKey: "test-promotion", Region: "US", ObservablePopulation: "可观察人群", ProblemScenario: "具体问题", CurrentWorkaround: "现有办法", Responsibility: ResponsibilityConsumer, ProductSolvability: SolvabilityPlausible, HarmRisk: HarmLow, NextMinimumEvidence: "渠道字段"}
+	p := ProblemCase{OwnerID: 1, ProblemKey: "test-promotion", Region: "US", ObservablePopulation: "可观察人群", ProblemScenario: "具体问题", CurrentWorkaround: "现有办法", Responsibility: ResponsibilityConsumer, ProductSolvability: SolvabilityPlausible, HarmRisk: HarmLow, ResidualBarrierStatus: ResidualBarrierConfirmed, NextMinimumEvidence: "渠道字段"}
 	if err := s.CreateProblem(ctx, &p); err != nil {
 		t.Fatal(err)
 	}
@@ -119,5 +119,27 @@ func TestProblemEvidenceRejectsHashMismatch(t *testing.T) {
 	e := ProblemEvidence{ProblemCaseID: p.ID, Kind: EvidenceSupport, Title: "source", SourceURI: "https://official.example", ObservedAt: time.Now(), Collector: "agent:scout", RawPayload: "actual", RawSHA256: hashPayload([]byte("different"))}
 	if err := s.AddProblemEvidence(context.Background(), 1, &e); err == nil {
 		t.Fatal("mismatched evidence hash must be rejected")
+	}
+}
+
+func TestIndependentlyDisprovedResidualBarrierRejectsOtherwiseSafeProblem(t *testing.T) {
+	s := problemService(t)
+	ctx := context.Background()
+	p := ProblemCase{OwnerID: 1, ProblemKey: "test-no-residual", Region: "US-CA-HOOPA", ObservablePopulation: "monitored households", ProblemScenario: "wildfire smoke filtration barrier", CurrentWorkaround: "commercial and DIY air cleaners", Responsibility: ResponsibilityShared, ProductSolvability: SolvabilityPartial, HarmRisk: HarmLow, ResidualBarrierStatus: ResidualBarrierNotConfirmed, NextMinimumEvidence: "stop this event hypothesis"}
+	if err := s.CreateProblem(ctx, &p); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for _, e := range []ProblemEvidence{{ProblemCaseID: p.ID, Kind: EvidenceSupport, Title: "field study", SourceURI: "https://official.example/study", ObservedAt: now, Collector: "agent:scout", RawPayload: "support", RawSHA256: hashPayload([]byte("support")), TrustedRun: true}, {ProblemCaseID: p.ID, Kind: EvidenceCounter, Title: "timing counter", SourceURI: "https://official.example/counter", ObservedAt: now, Collector: "agent:falsifier", RawPayload: "counter", RawSHA256: hashPayload([]byte("counter")), TrustedRun: true}} {
+		if err := s.AddProblemEvidence(ctx, 1, &e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status, err := s.EvaluateProblem(ctx, p.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != ProblemRejected {
+		t.Fatalf("disproved residual barrier produced %s", status)
 	}
 }
