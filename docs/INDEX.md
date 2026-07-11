@@ -66,6 +66,7 @@
 | 文档 | 当前用途 |
 |------|----------|
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
+| [双产品十星架构设计](designs/dual-product-cathedral.md) | 🆕 CEO Review 通过的 Intelligence + Portfolio Launch OS 双产品边界、Phase 2 Gate、协议、安全、资金与交付计划 |
 | [AI-Native AgentOS 长期愿景与架构方向](AI_NATIVE_DEVELOPMENT_PLAN.md) | 🆕 面向多领域可信自进化 AgentOS 的长期愿景；不覆盖当前执行优先级 |
 | [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
 | [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |

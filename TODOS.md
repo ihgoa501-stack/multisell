@@ -1,5 +1,67 @@
 # TODOs
 
+## Dual-Product Cathedral — Phase 3 Activation
+
+### Capital Governor Enforcement
+
+**What:** Upgrade the Phase 2 advisory/shadow Capital Governor into a hard enforcement boundary for every pre-registered spend channel.
+
+**Why:** Advisory warnings cannot guarantee the experiment loss ceiling when purchases, advertising, inventory, logistics, fees, returns, labor or manual/off-platform spend remain outside enforcement.
+
+**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Phase 2 must enumerate the full spend universe and show `external_spend_unenforced` for every unknown or unintegrated channel. Enforcement may start per workspace only after coverage is 100%, unknown spend is zero, external drift reconciliation works, and partial-failure/kill-switch drills pass. Any newly discovered manual spend invalidates the ceiling and freezes the next tranche.
+
+**Effort:** L human / M with CC+gstack
+**Priority:** P1
+**Depends on:** Phase 2 advisory Capital Governor, all spend entry integrations, Finance Reviewer, external drift reconciliation and failure drills.
+
+### Cross-Customer Do-Not-Launch Aggregation
+
+**What:** Promote explicitly licensed reject, abstain and failure patterns from customer-private libraries into a rights-cleared cross-customer negative-evidence product.
+
+**Why:** Private memory prevents one customer repeating mistakes; safe cross-customer patterns can become a differentiated Intelligence data asset that helps customers avoid already-known failure modes.
+
+**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Phase 2 remains customer-private. Promotion requires multiple independent contributors, explicit purpose licenses, versioned quasi-identifier and attack-model configuration, reidentification testing, lineage deletion, unilateral consent withdrawal and downstream dossier invalidation. Never expose customer, SKU, supplier, contract-price or raw operating data.
+
+**Effort:** L human / M with CC+gstack
+**Priority:** P2
+**Depends on:** Real private-library usage, multiple authorized sources, Data/Legal Reviewer and verified deletion/revocation propagation.
+
+### Automated Evidence Warranty Remedies
+
+**What:** Automate low-risk, low-value Warranty remedies such as service credits, replacement research or contract-defined refunds while keeping high-value and disputed claims human-reviewed.
+
+**Why:** Manual Warranty operations validate liability boundaries, but become an SLA and gross-margin bottleneck as paid dossier volume grows.
+
+**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Phase 2 uses human triage, one appeal, Legal escalation and fully audited remedies. Automation starts only after real claims establish stable defect classes, fraud patterns, mean liability cost and Legal/Finance-approved caps. Roll out one defect class at a time with a canary and kill switch.
+
+**Effort:** M human / S–M with CC+gstack
+**Priority:** P2
+**Depends on:** Real Warranty claims, stable typed Error/Defect Registry, liability caps, fraud controls and Finance/Legal approval.
+
+### Capped Real Outcome Fee Pilot
+
+**What:** Convert shadow outcome billing into one capped, externally paid result-fee contract with a Design Partner.
+
+**Why:** Outcome-aligned pricing can reduce first-purchase friction and prove economic value, but charging before attribution and adjustment rules reconcile would create damaging invoice disputes.
+
+**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Phase 2 freezes baseline, attribution window, adjustments, cap and dispute SLA, then calculates but does not invoice shadow fees. A real pilot unlocks only after at least three finalized experiments reconcile inside the pre-registered tolerance with zero unresolved disputes. The recommendation system must never read contract fee rates.
+
+**Effort:** M human plus 1–3 real decision cycles / S–M with CC+gstack
+**Priority:** P2
+**Depends on:** Three finalized experiments, Decision Flight Recorder, Finance/Tax/Legal review and one customer contract.
+
+### Public API, Pricing and Self-Serve Onboarding
+
+**What:** Progress from invite-only Design Partners to an invite-only API, public packages, self-service billing, workspace creation and platform connection.
+
+**Why:** High-touch delivery validates value but cannot create repeatable low-marginal-cost software distribution.
+
+**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Do not build public SaaS surfaces while customers still need founder-operated workflows. Unlock invite-only API only after independent completion, natural repeat/renewal, positive account gross margin, bounded support, tenant isolation, abuse controls, credential rotation and offboarding/deletion drills pass. Public registration and pricing require a separate Gate after API design partners succeed.
+
+**Effort:** L–XL human / M–L with CC+gstack
+**Priority:** P2
+**Depends on:** S4 retention/economics, stable versioned API, billing, abuse prevention, support operations and security/deletion verification.
+
 ## Metabolism M1 — Phase 1 Migration
 
 - **What:** Migration for `metabolism_log` table + `event_outbox` indexed columns
