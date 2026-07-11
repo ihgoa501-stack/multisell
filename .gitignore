@@ -33,6 +33,8 @@ src/main/
 
 # Playwright MCP
 .playwright-mcp/
+.playwright-cli/
+output/
 test-screenshot-*.png
 frontend/.sdd_finale_base
 
