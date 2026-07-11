@@ -495,6 +495,22 @@ func TestContinueRevalidatesChangedSourceFacts(t *testing.T) {
 	if err := s.Update(ctx, c.ExperimentID, 1, &request); err == nil {
 		t.Fatal("continue trusted stale cached profit after the source became negative")
 	}
+	if err := s.db.Model(&profit).Updates(map[string]any{"total_cost": 90, "profit": 10}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Model(&cash).Update("amount", 90).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(ctx, c.ExperimentID, 1, &request); err != nil {
+		t.Fatalf("continue rejected refreshed positive source facts: %v", err)
+	}
+	var stored ExperimentCase
+	if err := s.db.Where("experiment_id = ?", c.ExperimentID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.FinalProfitAmount != 10 || stored.FinalTotalCost != 90 || stored.CashRecoveredAmount != 90 {
+		t.Fatalf("continue did not refresh terminal facts: %+v", stored)
+	}
 }
 
 func TestCashGateRejectsCurrencyDifferentFromSettlement(t *testing.T) {

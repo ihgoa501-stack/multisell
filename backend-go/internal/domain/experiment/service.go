@@ -132,47 +132,56 @@ func (s *Service) Update(ctx context.Context, id string, ownerID int64, c *Exper
 				return errors.New("cash recovery requires a passing cash gate")
 			}
 		}
+		updates := map[string]any{"name": candidate.Name, "stage": candidate.Stage, "status": candidate.Status, "final_profit_status": candidate.FinalProfitStatus, "cash_recovery_status": candidate.CashRecoveryStatus, "final_decision": candidate.FinalDecision}
 		if candidate.FinalDecision == "continue" {
-			if err := s.validateContinueClosure(tx, &candidate); err != nil {
+			profit, cash, err := s.validateContinueClosure(tx, &candidate)
+			if err != nil {
 				return err
 			}
+			updates["final_revenue"] = profit.Revenue
+			updates["final_total_cost"] = profit.TotalCost
+			updates["final_profit_amount"] = profit.Profit
+			updates["profit_currency"] = profit.Currency
+			updates["cash_recovered_amount"] = cash.Amount
+			updates["cash_currency"] = cash.Currency
+			updates["cash_recovered_at"] = cash.RecoveredAt
 		}
-		return tx.Model(&ExperimentCase{}).Where("experiment_id = ? AND owner_id = ?", id, ownerID).Updates(map[string]any{"name": candidate.Name, "stage": candidate.Stage, "status": candidate.Status, "final_profit_status": candidate.FinalProfitStatus, "cash_recovery_status": candidate.CashRecoveryStatus, "final_decision": candidate.FinalDecision}).Error
+		return tx.Model(&ExperimentCase{}).Where("experiment_id = ? AND owner_id = ?", id, ownerID).Updates(updates).Error
 	})
 }
 
-func (s *Service) validateContinueClosure(db *gorm.DB, c *ExperimentCase) error {
+func (s *Service) validateContinueClosure(db *gorm.DB, c *ExperimentCase) (*profitClosure, *cashClosure, error) {
 	profit, err := s.validateProfitClosureWithDB(db, c.ExperimentID)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	cash, err := s.validateCashClosureWithDB(db, c.ExperimentID)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if profit.Profit <= 0 {
-		return errors.New("continue requires positive final profit")
+		return nil, nil, errors.New("continue requires positive final profit")
 	}
 	if strings.TrimSpace(profit.Currency) == "" || profit.Currency != cash.Currency {
-		return errors.New("continue requires matching profit and cash currencies")
+		return nil, nil, errors.New("continue requires matching profit and cash currencies")
 	}
 	if cash.Amount <= 0 || cash.RecoveredAt == nil {
-		return errors.New("continue requires an actual positive cash receipt")
+		return nil, nil, errors.New("continue requires an actual positive cash receipt")
 	}
 	orderID, err := s.linkedNumericIDWithDB(db, c.ExperimentID, "order")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	var order struct {
 		PaidAt, DeliveredAt, CancelledAt *time.Time
 	}
 	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("sales_order").Where("id = ?", orderID).First(&order).Error; err != nil {
-		return errors.New("linked order not found")
+		return nil, nil, errors.New("linked order not found")
 	}
 	if order.PaidAt == nil || order.DeliveredAt == nil || order.CancelledAt != nil {
-		return errors.New("continue requires a paid, delivered, non-cancelled order")
+		return nil, nil, errors.New("continue requires a paid, delivered, non-cancelled order")
 	}
-	return nil
+	return profit, cash, nil
 }
 func stageIndex(stage string) int {
 	for i, candidate := range stageOrder {
@@ -283,13 +292,16 @@ func (s *Service) VerifyEvidence(ctx context.Context, id string, evidenceID, own
 	return &e, nil
 }
 func (s *Service) AddObjectLink(ctx context.Context, ownerID int64, l *ObjectLink) error {
-	if err := s.requireOwner(ctx, l.ExperimentID, ownerID); err != nil {
-		return err
-	}
 	if l.ExperimentID == "" || !objectTypes[l.ObjectType] || strings.TrimSpace(l.ObjectID) == "" {
 		return errors.New("invalid object link")
 	}
-	return s.db.WithContext(ctx).Create(l).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var c ExperimentCase
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("experiment_id = ? AND owner_id = ?", l.ExperimentID, ownerID).First(&c).Error; err != nil {
+			return err
+		}
+		return tx.Create(l).Error
+	})
 }
 func (s *Service) EvaluateGate(ctx context.Context, id string, ownerID int64, in GateInput) (*GateDecision, error) {
 	var c ExperimentCase
@@ -379,7 +391,7 @@ func (s *Service) linkedNumericID(ctx context.Context, experimentID, objectType 
 
 func (s *Service) linkedNumericIDWithDB(db *gorm.DB, experimentID, objectType string) (int64, error) {
 	var link ObjectLink
-	if err := db.Where("experiment_id = ? AND object_type = ?", experimentID, objectType).Order("id DESC").First(&link).Error; err != nil {
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("experiment_id = ? AND object_type = ?", experimentID, objectType).Order("id DESC").First(&link).Error; err != nil {
 		return 0, fmt.Errorf("%s link required: %w", objectType, err)
 	}
 	id, err := strconv.ParseInt(link.ObjectID, 10, 64)
@@ -416,6 +428,10 @@ func (s *Service) validateProfitClosureWithDB(db *gorm.DB, experimentID string) 
 	}
 	if (st.Status != "reconciled" && st.Status != "closed") || (st.SourceType != "platform_import" && st.SourceType != "api_sync") || st.ImportedAt == nil {
 		return nil, errors.New("linked settlement is not trusted and reconciled")
+	}
+	var lockedItems []struct{ ID int64 }
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("settlement_item").Where("settlement_id = ?", settlementID).Find(&lockedItems).Error; err != nil {
+		return nil, err
 	}
 	var itemCount, unmatched int64
 	q := db.Table("settlement_item").Where("settlement_id = ?", settlementID)
@@ -466,6 +482,10 @@ func (s *Service) validateCashClosureWithDB(db *gorm.DB, experimentID string) (*
 	if err != nil {
 		return nil, err
 	}
+	var settlementCurrency string
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("settlement").Where("id = ?", settlementID).Pluck("currency", &settlementCurrency).Error; err != nil {
+		return nil, errors.New("linked settlement not found")
+	}
 	var row struct {
 		ID                                     int64
 		Amount                                 float64
@@ -481,10 +501,6 @@ func (s *Service) validateCashClosureWithDB(db *gorm.DB, experimentID string) (*
 	}
 	if row.SettlementID == nil || *row.SettlementID != settlementID || row.OrderID == nil || *row.OrderID != orderID {
 		return nil, errors.New("cash transaction is not linked to the experiment order and settlement")
-	}
-	var settlementCurrency string
-	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("settlement").Where("id = ?", settlementID).Pluck("currency", &settlementCurrency).Error; err != nil {
-		return nil, errors.New("linked settlement not found")
 	}
 	if strings.TrimSpace(row.Currency) == "" || row.Currency != settlementCurrency {
 		return nil, errors.New("cash transaction currency does not match the linked settlement")

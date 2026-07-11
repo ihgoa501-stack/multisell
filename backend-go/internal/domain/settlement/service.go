@@ -10,6 +10,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/common"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Service provides settlement business logic.
@@ -253,7 +254,7 @@ func (s *Service) Reconcile(id int64, in *ReconcileInput) error {
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Verify settlement exists
 		var st Settlement
-		if err := tx.First(&st, id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&st, id).Error; err != nil {
 			return err
 		}
 		updates := map[string]interface{}{
@@ -388,14 +389,6 @@ type AddItemInput struct {
 
 // AddItem creates a settlement_item under the given settlement.
 func (s *Service) AddItem(settlementID int64, in *AddItemInput) (*SettlementItem, error) {
-	// Verify parent exists.
-	var count int64
-	if err := s.db.Model(&Settlement{}).Where("id = ?", settlementID).Count(&count).Error; err != nil {
-		return nil, err
-	}
-	if count == 0 {
-		return nil, errors.New("settlement not found")
-	}
 	item := SettlementItem{
 		SettlementID:         settlementID,
 		TransactionType:      in.TransactionType,
@@ -410,7 +403,16 @@ func (s *Service) AddItem(settlementID int64, in *AddItemInput) (*SettlementItem
 		OccurredAt:           in.OccurredAt,
 		ReconciliationStatus: "pending",
 	}
-	if err := s.db.Create(&item).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		var parent Settlement
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&parent, settlementID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("settlement not found")
+			}
+			return err
+		}
+		return tx.Create(&item).Error
+	}); err != nil {
 		return nil, err
 	}
 	return &item, nil
@@ -450,31 +452,40 @@ func (s *Service) UpdateItemReconciliation(itemID int64, in *UpdateReconciliatio
 	if in.ReconciliationStatus == "matched" && strings.TrimSpace(in.ReconciledBy) == "" {
 		return nil, errors.New("reconciled_by is required for matched items")
 	}
-	now := time.Now()
-	updates := map[string]interface{}{
-		"reconciliation_status": in.ReconciliationStatus,
-		"reconciliation_note":   in.ReconciliationNote,
-		"reconciled_by":         in.ReconciledBy,
-		"reconciled_at":         &now,
-	}
-	if err := s.db.Model(&item).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	if err := s.db.First(&item, itemID).Error; err != nil {
-		return nil, err
-	}
-	var itemCount, nonMatchedCount int64
-	if err := s.db.Model(&SettlementItem{}).Where("settlement_id = ?", item.SettlementID).Count(&itemCount).Error; err != nil {
-		return nil, err
-	}
-	if err := s.db.Model(&SettlementItem{}).Where("settlement_id = ? AND reconciliation_status <> ?", item.SettlementID, "matched").Count(&nonMatchedCount).Error; err != nil {
-		return nil, err
-	}
-	status := "reconciling"
-	if itemCount > 0 && nonMatchedCount == 0 {
-		status = "reconciled"
-	}
-	if err := s.db.Model(&Settlement{}).Where("id = ? AND status <> ?", item.SettlementID, "closed").Update("status", status).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		var parent Settlement
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&parent, item.SettlementID).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, itemID).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		updates := map[string]interface{}{
+			"reconciliation_status": in.ReconciliationStatus,
+			"reconciliation_note":   in.ReconciliationNote,
+			"reconciled_by":         in.ReconciledBy,
+			"reconciled_at":         &now,
+		}
+		if err := tx.Model(&item).Updates(updates).Error; err != nil {
+			return err
+		}
+		if err := tx.First(&item, itemID).Error; err != nil {
+			return err
+		}
+		var itemCount, nonMatchedCount int64
+		if err := tx.Model(&SettlementItem{}).Where("settlement_id = ?", item.SettlementID).Count(&itemCount).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&SettlementItem{}).Where("settlement_id = ? AND reconciliation_status <> ?", item.SettlementID, "matched").Count(&nonMatchedCount).Error; err != nil {
+			return err
+		}
+		status := "reconciling"
+		if itemCount > 0 && nonMatchedCount == 0 {
+			status = "reconciled"
+		}
+		return tx.Model(&parent).Where("status <> ?", "closed").Update("status", status).Error
+	}); err != nil {
 		return nil, err
 	}
 	if item.OrderNo != "" {
