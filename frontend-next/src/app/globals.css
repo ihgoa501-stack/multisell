@@ -54,3 +54,71 @@ body {
     animation-duration: 0ms !important;
   }
 }
+/* Responsive Agent Desktop shell */
+.app-shell-mobile-menu,
+.app-shell-mobile-backdrop {
+  display: none;
+}
+
+.app-shell-sidebar {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+@media (max-width: 1023px) {
+  .app-shell-copilot {
+    display: none !important;
+  }
+
+  .app-shell-main {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-shell-mobile-menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin: -4px 0 -4px -10px;
+    border: 0;
+    background: transparent;
+    color: var(--t1);
+    cursor: pointer;
+  }
+
+  .app-shell-mode-switcher {
+    display: none !important;
+  }
+
+  .app-shell-sidebar {
+    position: fixed;
+    z-index: 30;
+    top: 36px;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    transition: transform var(--dur-short) ease-out;
+  }
+
+  .app-shell-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .app-shell-mobile-backdrop {
+    display: block;
+    position: fixed;
+    z-index: 29;
+    inset: 36px 0 0;
+    border: 0;
+    background: rgb(0 0 0 / 55%);
+  }
+
+  .app-shell-main {
+    width: 100%;
+  }
+}

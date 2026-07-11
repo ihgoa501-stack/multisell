@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { MenuOutlined } from '@ant-design/icons';
 import AppSidebar from '@/components/layout/AppSidebar';
 import AppHeader from '@/components/layout/AppHeader';
 import ToolPanel from '@/components/layout/ToolPanel';
@@ -22,6 +24,7 @@ const modeLabels: Record<PanelMode, string> = {
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const { toolPanelOpen, panelMode, setPanelMode, toggleToolPanel } = useAppStore();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const flex = panelFlexMap[panelMode];
 
   return (
@@ -49,10 +52,20 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             height: 36,
           }}
         >
+          <button
+            type="button"
+            className="app-shell-mobile-menu"
+            aria-label="打开导航"
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <MenuOutlined />
+          </button>
           <AppHeader />
 
           {/* Mode indicator */}
           <div
+            className="app-shell-mode-switcher"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -102,8 +115,22 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             minHeight: 0,
           }}
         >
-          <AppSidebar />
+          {mobileNavOpen && (
+            <button
+              type="button"
+              className="app-shell-mobile-backdrop"
+              aria-label="关闭导航"
+              onClick={() => setMobileNavOpen(false)}
+            />
+          )}
+          <div
+            className={`app-shell-sidebar${mobileNavOpen ? ' is-open' : ''}`}
+            onClick={() => setMobileNavOpen(false)}
+          >
+            <AppSidebar />
+          </div>
           <main
+            className="app-shell-main"
             style={{
               flex: flex.main || 1,
               overflow: 'auto',
@@ -119,6 +146,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
           {/* Copilot panel (inline, not Drawer) */}
           <div
+            className="app-shell-copilot"
             style={{
               flex: flex.copilot,
               overflow: 'hidden',

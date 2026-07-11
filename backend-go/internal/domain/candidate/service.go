@@ -1,10 +1,14 @@
 package candidate
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -237,9 +241,58 @@ func (s *Service) Create(in *CreateCandidateInput) (*CandidateProduct, error) {
 
 // CreateCollectLead saves a new CollectLead entry and returns its ID.
 func (s *Service) CreateCollectLead(lead *CollectLead) error {
+	_, err := s.CreateCollectLeadIfNew(lead)
+	return err
+}
+
+// CreateCollectLeadIfNew persists a lead only when its detail URL has not
+// already been collected. The bool reports whether a new row was created.
+func (s *Service) CreateCollectLeadIfNew(lead *CollectLead) (bool, error) {
 	now := time.Now()
-	lead.CollectedAt = &now
-	return s.db.Create(lead).Error
+	if lead.CollectedAt == nil {
+		lead.CollectedAt = &now
+	}
+	if key := collectLeadCanonicalKey(lead.DetailURL); key != "" {
+		lead.CanonicalKey = &key
+	}
+	result := s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "canonical_key"}},
+		DoNothing: true,
+	}).Create(lead)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func collectLeadCanonicalKey(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	normalized := rawURL
+	if parsed, err := url.Parse(rawURL); err == nil && parsed.Host != "" {
+		host := strings.ToLower(strings.TrimPrefix(parsed.Hostname(), "www."))
+		path := strings.TrimRight(parsed.EscapedPath(), "/")
+		normalized = host + path
+	}
+	hash := sha256.Sum256([]byte(normalized))
+	return fmt.Sprintf("%x", hash[:])
+}
+
+// CreateCollectionEvidence stores one immutable page-level evidence snapshot.
+func (s *Service) CreateCollectionEvidence(evidence *CollectionEvidence) error {
+	return s.db.Create(evidence).Error
+}
+
+// GetCollectionEvidenceByID returns the immutable source snapshot referenced by
+// a collected lead so the Owner can independently inspect the AI's evidence.
+func (s *Service) GetCollectionEvidenceByID(id int64) (*CollectionEvidence, error) {
+	var evidence CollectionEvidence
+	if err := s.db.First(&evidence, id).Error; err != nil {
+		return nil, err
+	}
+	return &evidence, nil
 }
 
 // ListCollectLeads returns recent collect leads, newest first.
@@ -386,6 +439,9 @@ func (s *Service) Update(id int64, in *UpdateCandidateInput) (*CandidateProduct,
 		updates["destination_country"] = *in.DestinationCountry
 	}
 	if in.Status != nil {
+		if err := NewCandidateStateMachine().MustTransition(context.Background(), c.Status, *in.Status, nil); err != nil {
+			return nil, err
+		}
 		updates["status"] = *in.Status
 	}
 	if in.UpdatedBy != nil {

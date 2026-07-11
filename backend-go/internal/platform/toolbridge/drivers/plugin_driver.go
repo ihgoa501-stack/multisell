@@ -35,6 +35,12 @@ type PluginDriver struct {
 	requestTimeout time.Duration
 	mu             sync.RWMutex
 	pending        map[string]chan *toolbridge.PageData
+	pendingLists   map[string]chan listPageResponse
+}
+
+type listPageResponse struct {
+	data *toolbridge.ListPageData
+	err  error
 }
 
 // NewPluginDriver creates a PluginDriver.
@@ -49,6 +55,7 @@ func NewPluginDriver(svc ExtensionService, timeout time.Duration) *PluginDriver 
 		extensionSvc:   svc,
 		requestTimeout: timeout,
 		pending:        make(map[string]chan *toolbridge.PageData),
+		pendingLists:   make(map[string]chan listPageResponse),
 	}
 	// Attempt to register the response callback. If the service ignores
 	// RegisterCallback (T1 not merged), this is a no-op and HandleResponse
@@ -57,11 +64,56 @@ func NewPluginDriver(svc ExtensionService, timeout time.Duration) *PluginDriver 
 	return d
 }
 
+// FetchListPage asks the browser extension to discover all visible product
+// cards on a marketplace or supplier search page.
+func (d *PluginDriver) FetchListPage(ctx context.Context, url string) (*toolbridge.ListPageData, error) {
+	ownerUserID, ok := toolbridge.OwnerUserIDFromContext(ctx)
+	if !ok {
+		return nil, errors.New("plugin driver: authenticated owner user ID required")
+	}
+	reqID := fmt.Sprintf("list_%s", uuid.New().String())
+	resultCh := make(chan listPageResponse, 1)
+
+	d.mu.Lock()
+	d.pendingLists[reqID] = resultCh
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		delete(d.pendingLists, reqID)
+		d.mu.Unlock()
+	}()
+
+	msg, err := json.Marshal(map[string]interface{}{
+		"type":    "fetch_list_page",
+		"id":      reqID,
+		"payload": map[string]string{"url": url},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("plugin driver: marshal list request: %w", err)
+	}
+	if err := d.extensionSvc.SendToUser(ownerUserID, msg); err != nil {
+		return nil, fmt.Errorf("plugin driver: send list request: %w", err)
+	}
+
+	select {
+	case result := <-resultCh:
+		return result.data, result.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(d.requestTimeout):
+		return nil, errors.New("plugin driver: list request timeout")
+	}
+}
+
 // FetchPage sends a fetch request to the user's extension and waits for the
 // response. It generates a unique request ID, creates a pending channel, and
 // sends the request via the ExtensionService. The response is received through
 // the registered callback and routed to the pending channel.
 func (d *PluginDriver) FetchPage(ctx context.Context, url string) (*toolbridge.PageData, error) {
+	ownerUserID, ok := toolbridge.OwnerUserIDFromContext(ctx)
+	if !ok {
+		return nil, errors.New("plugin driver: authenticated owner user ID required")
+	}
 	reqID := fmt.Sprintf("req_%s", uuid.New().String())
 	resultCh := make(chan *toolbridge.PageData, 1)
 
@@ -84,8 +136,7 @@ func (d *PluginDriver) FetchPage(ctx context.Context, url string) (*toolbridge.P
 		return nil, fmt.Errorf("plugin driver: marshal request: %w", err)
 	}
 
-	// Send to the extension. In real usage, userID comes from context.
-	if err := d.extensionSvc.SendToUser(0, msg); err != nil {
+	if err := d.extensionSvc.SendToUser(ownerUserID, msg); err != nil {
 		return nil, fmt.Errorf("plugin driver: send: %w", err)
 	}
 
@@ -110,6 +161,15 @@ func (d *PluginDriver) HasPending(requestID string) bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	_, ok := d.pending[requestID]
+	return ok
+}
+
+// HasPendingList reports whether requestID belongs to an active list-page
+// collection request.
+func (d *PluginDriver) HasPendingList(requestID string) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	_, ok := d.pendingLists[requestID]
 	return ok
 }
 
@@ -142,9 +202,64 @@ func (d *PluginDriver) Execute(_ map[string]interface{}) (*toolbridge.ToolResult
 // realtime layer when a browser extension sends back a fetch result.
 func (d *PluginDriver) HandleResponse(data []byte) {
 	var resp struct {
-		Type string                `json:"type"`
-		ID   string                `json:"id"`
-		Data *toolbridge.PageData  `json:"data"`
+		Type    string               `json:"type"`
+		ID      string               `json:"id"`
+		Data    *toolbridge.PageData `json:"data"`
+		Payload *struct {
+			Status string               `json:"status"`
+			Data   *toolbridge.PageData `json:"data"`
+		} `json:"payload"`
+	}
+	var listResp struct {
+		Type    string `json:"type"`
+		ID      string `json:"id"`
+		Payload *struct {
+			Status string                   `json:"status"`
+			Data   *toolbridge.ListPageData `json:"data"`
+			Error  *struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(data, &listResp); err == nil && listResp.Type == "list_page_result" && listResp.ID != "" {
+		if listResp.Payload == nil {
+			return
+		}
+		d.mu.RLock()
+		ch, ok := d.pendingLists[listResp.ID]
+		d.mu.RUnlock()
+		if !ok {
+			return
+		}
+		if listResp.Payload.Status != "ok" {
+			code, message := "COLLECTION_FAILED", "browser extension could not collect list page"
+			if listResp.Payload.Error != nil {
+				if listResp.Payload.Error.Code != "" {
+					code = listResp.Payload.Error.Code
+				}
+				if listResp.Payload.Error.Message != "" {
+					message = listResp.Payload.Error.Message
+				}
+			}
+			select {
+			case ch <- listPageResponse{err: fmt.Errorf("%s: %s", code, message)}:
+			default:
+			}
+			return
+		}
+		if listResp.Payload.Data == nil {
+			return
+		}
+		if len(listResp.Payload.Data.RawData) == 0 {
+			listResp.Payload.Data.RawData, _ = json.Marshal(listResp.Payload.Data)
+		}
+		listResp.Payload.Data.Driver = "plugin"
+		select {
+		case ch <- listPageResponse{data: listResp.Payload.Data}:
+		default:
+		}
+		return
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return
@@ -152,6 +267,14 @@ func (d *PluginDriver) HandleResponse(data []byte) {
 	if resp.Type != "fetch_product_result" || resp.ID == "" {
 		return
 	}
+	result := resp.Data
+	if result == nil && resp.Payload != nil && resp.Payload.Status == "ok" {
+		result = resp.Payload.Data
+	}
+	if result == nil {
+		return
+	}
+	result.Driver = "plugin"
 
 	d.mu.RLock()
 	ch, ok := d.pending[resp.ID]
@@ -161,7 +284,7 @@ func (d *PluginDriver) HandleResponse(data []byte) {
 	}
 
 	select {
-	case ch <- resp.Data:
+	case ch <- result:
 	default:
 	}
 }

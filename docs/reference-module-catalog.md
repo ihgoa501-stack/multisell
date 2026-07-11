@@ -210,6 +210,8 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | `supplyevent` | — | 供应链事件模型 |
 | `tariff` | `/api/v1/tariffs` | 关税规则 |
 | `candidate` | `/api/v1/candidates` | 候选商品管理 |
+| `experiment` | `/api/v1/experiments` | Owner 自用经营实验统一事实链、证据/反证、阶段闸门与对象关联 |
+| `demandcase` | `/api/v1/demand-cases` | 候选市场八维证据、独立反证、确定性裁决与 Owner 六行决策卡 |
 | `completeness` | `/api/v1/completeness` | 商品完整度检查 |
 | `profit` | `/api/v1/profit` | 利润计算 |
 | `cost` | `/api/v1/costs` | 成本分摊 |
@@ -222,6 +224,23 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 
 | Method | Path | Status | 前端引用 |
 |--------|------|--------|----------|
+| **经营实验** | | | |
+| GET/POST | `/api/v1/experiments` | ✅ | `experiments/page.tsx` |
+| GET/PUT | `/api/v1/experiments/:experimentId` | ✅ | `experiments/[experimentId]/page.tsx` |
+| POST | `/api/v1/experiments/:experimentId/evidence` | ✅ | `experiments/[experimentId]/page.tsx` |
+| POST | `/api/v1/experiments/:experimentId/evidence/:evidenceId/verify` | ✅ | `experiments/[experimentId]/page.tsx` |
+| POST | `/api/v1/experiments/:experimentId/links` | ✅ | `experiments/[experimentId]/page.tsx` |
+| POST | `/api/v1/experiments/:experimentId/gates/evaluate` | ✅ | `experiments/[experimentId]/page.tsx` |
+| GET | `/api/v1/experiments/:experimentId/owner-summary` | ✅ | `experiments/[experimentId]/page.tsx` |
+| **候选市场案件** | | | |
+| GET/POST | `/api/v1/demand-cases` | ✅ | `demand-cases/page.tsx` |
+| GET | `/api/v1/demand-cases/:id` | ✅ | `demand-cases/[id]/page.tsx` |
+| POST | `/api/v1/demand-cases/:id/evidence` | ✅ | Owner 页面待建 |
+| POST | `/api/v1/demand-cases/:id/falsifications` | ✅ | Owner 页面待建 |
+| POST | `/api/v1/demand-cases/:id/evaluate` | ✅ | Owner 页面待建 |
+| GET | `/api/v1/demand-cases/:id/decision-card` | ✅ | `demand-cases/[id]/page.tsx` |
+| POST | `/api/v1/demand-cases/research/import` | ✅ | 受保护 AI 研究契约入口 |
+| POST | `/api/v1/demand-cases/research/first-public-batch` | ✅ | `demand-cases/page.tsx` |
 | **Products & SKU** | | | |
 | GET/POST/PUT/DELETE | `/api/v1/products[/:id]` | ✅ | `products/page.tsx`, `products/[id]/page.tsx`, `products/create/page.tsx` |
 | GET/POST/PUT/DELETE | `/api/v1/products/:id/specs[/:spec_id]` | ✅ | — |
@@ -551,6 +570,8 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | `/settings/rbac` | 权限管理 | `settings/rbac/page.tsx` |
 | `/settings/policy` | 审批策略 | `settings/policy/page.tsx` |
 | `/owner` | Owner 经营总控台 | `owner/page.tsx` |
+| `/experiments` | 经营实验案件列表与创建 | `experiments/page.tsx` |
+| `/experiments/[experimentId]` | 证据、反证、闸门、对象关联、利润与现金终态 | `experiments/[experimentId]/page.tsx` |
 
 ---
 

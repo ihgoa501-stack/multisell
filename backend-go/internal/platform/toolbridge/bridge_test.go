@@ -19,6 +19,19 @@ type mockDriver struct {
 	execFn   func(map[string]interface{}) (*ToolResult, error)
 }
 
+type mockListDriver struct {
+	mockDriver
+	listData *ListPageData
+	listErr  error
+}
+
+func (m *mockListDriver) FetchListPage(context.Context, string) (*ListPageData, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.listData, nil
+}
+
 func (m *mockDriver) FetchPage(ctx context.Context, url string) (*PageData, error) {
 	select {
 	case <-ctx.Done():
@@ -126,6 +139,29 @@ func TestBridgeFallback(t *testing.T) {
 	}
 	if data.Title != "Fallback Product" {
 		t.Errorf("expected data from fallback driver, got title=%q", data.Title)
+	}
+}
+
+func TestBridgeFetchListPageSkipsUnsupportedAndFallsBack(t *testing.T) {
+	unsupported := &mockDriver{name: "detail-only"}
+	listDriver := &mockListDriver{
+		mockDriver: mockDriver{name: "browser-list"},
+		listData: &ListPageData{
+			PageURL: "https://www.ozon.ru/search/?text=storage",
+			Items:   []ListItemData{{Title: "收纳架", DetailURL: "https://www.ozon.ru/product/1"}},
+		},
+	}
+	bridge := NewToolBridge([]DriverEntry{
+		{Name: "detail-only", Driver: unsupported, Weight: 1},
+		{Name: "browser-list", Driver: listDriver, Weight: 10},
+	}, time.Second, zap.NewNop())
+
+	data, err := bridge.FetchListPage(context.Background(), "https://www.ozon.ru/search/?text=storage")
+	if err != nil {
+		t.Fatalf("FetchListPage() error = %v", err)
+	}
+	if len(data.Items) != 1 || data.Items[0].Title != "收纳架" {
+		t.Fatalf("unexpected list data: %+v", data)
 	}
 }
 

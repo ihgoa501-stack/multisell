@@ -1,51 +1,64 @@
 # TODOs
 
-## Metabolism M1 — Phase 1 Migration
+> Current direction: Owner 自用真实付费需求发现循环。
+> Source of truth: `docs/SELF_USE_OPERATING_DIRECTION.md`。
 
-- **What:** Migration for `metabolism_log` table + `event_outbox` indexed columns
-- **Why:** M1 scores records and needs a table to store score results. `event_outbox` needs `excreted_at` (tagged for deletion) and `excretion_reason` (why it was scored/excreted) columns for scheduled cleanup in Phase 2.
-- **Context:** Added during /plan-eng-review on 2026-06-26. Phase 1 is dry-run (no actual deletion), but the schema should ship from day 1 so Phase 2 doesn't need a second migration.
-- **Action:** `backend-go/migrations/XXX_add_metabolism.sql` — CREATE TABLE metabolism_log + ALTER TABLE event_outbox ADD COLUMNS.
-- **Depends on:** Design approval of MetabolismModel fields (see design doc).
-- **Blocked by:** Nothing.
+## P0 — 需求案件与证据裁决
 
-## UI Redesign — 未完成项目
+- ✅ 已新建候选市场 `DemandCase`、Evidence 和 Verdict，并提供独立反证入口、确定性裁决与六行 Owner 决策卡。
+- 待补齐 DemandExperiment、不可变 Event、污染订单状态机和真实交易终局裁决。
+- 用状态机禁止代理信号跨级；关联单、测试单和不可剥离异常流量进入 polluted。
+- 用 `experiment_id` 串联流量、订单、支付、物流、售后、结算和最终贡献利润。
+- 任何晚到退款、拒付或费用自动重开终局裁决。
 
-### P5: 跨页一致性检查
+## P0 — AI 侦察、反证和数据现实契约
 
-- **What:** 检查 P2-P4 三个页面（prelisting、dashboard、agentos）之间是否存在样式 drift — 边距不一致、字体不一致、颜色偏差、共享组件使用方式不一致。
-- **Why:** P1 创建了 PageContainer / AgentDecisionPanel 等共享组件，P2-P4 可能各自改写了样式造成漂移。
-- **Action:** 逐页面对比 padding、font-size、color token、AgentDecisionPanel 使用方式。输出差异清单并修复。
-- **Blocked by:** P1-P4 完成（已交付）。
+- ✅ 已建立三个独立 AI run 契约：侦察只创建 lead，反证只追加 counterevidence，数据现实只记录字段现实；原始 payload 使用 SHA-256 不可变快照。
+- ✅ 已提供仓库内置静态公开资料基线与 Owner 候选市场页面；无账号数据时保持 evidence_missing。实时自动研究批次仍待完成。
+- 每个事实保存来源、时间、地区、官方字段、原始 payload、解析版本和事实状态。
+- 无来源数字、客户画像、销量、费用或利润自动拒绝；关键缺失保持 unknown。
+- 每个字段保存来源 URL/API、采集时间、驱动、原始 payload、解析版本和置信状态。
+- 不用 Agent 投票或置信分裁决；只输出线索、证据不足、被污染、已驳回或可实验。
+- 采集失败自动重试、切换驱动并进入异常队列；日常数据不得要求 Owner 手工抄录。
+- 保存需求、竞争、利润、物流/退货、合规和补货证据的来源、时间与原始值。
+- 增加硬淘汰项和确定性加权评分。
+- LLM 只能解释证据，不得生成无来源销量、费用或合规事实。
 
-### Mock 数据 → 真实 API 迁移
+## P0 — 实验资金账本
 
-- **What:** 三个新页面目前使用硬编码 mock 数据。替换为从后端 API 获取真实数据。
-  - `/decision/prelisting`：用 `/api/v1/decision` 系列接口
-  - `/dashboard`：用 `/api/v1/dashboard/overview`
-  - `/agentos`：用 `/api/v1/agentos`、`/api/v1/agentos/work-items`
-- **Why:** Mock 数据不能用于生产。
-- **Action:** 替换每个页面的 `mockSkus`/`mockPriority`/`mockWorkItems` 为 React Query 的 `useQuery` 调用后端 API。保留 mock 作为 fallback。
-- **Depends on:** 后端对应 API endpoint 已就绪。
-- **Blocked by:** `backend-go` 对应 handler 的验证。
+- 覆盖样品、采购、包装、国内运输、跨境物流、广告、平台费、税费、关税、支付提现、汇兑、退款退货、销毁和售后补偿。
+- 每项标记 actual、quoted、estimated 或 unknown，并保存币种、汇率时间和凭证。
+- 默认总预算 3,000 CNY，不可回收损失停止线 1,200 CNY。
+- unknown 关键成本或预算突破必须阻止新增投入并要求 Owner 重新批准。
 
-### 旧 40+ 页面在新 layout 中的视觉验证
+## P0 — 停止规则
 
-- **What:** P1 将 layout 从三栏改为四栏，20+ 原有 Ant Design CRUD 页面自动被新 shell 包裹。需要逐个验证它们在新 shell 中的渲染效果——宽度、滚动、边框、嵌套。
-- **Why:** 旧页面可能在窄的中心区域显示异常（表格被截断、按钮重叠等）。
-- **Action:** 在本地 dev 环境中逐一访问旧页面，截图检查布局。修复发现的异常。
-- **Blocked by:** P1 完成（已交付）。
+- 建立版本化规则与触发记录。
+- 首轮基线覆盖：账号/收款/合规/物流失败；利润门槛不足；广告 300 CNY 无单；不可回收损失 1,200 CNY；前 5 个已发货订单中 2 个取消/拒收/退款/退货。
+- Agent 只说明触发事实和建议；不得自动花钱、取消订单或扩大预算。
 
-### 组件测试覆盖
+## P0 — 有效成交与最终净利润
 
-- **What:** P1 新增的共享组件（DomainSidebar、AgentDecisionPanel、DecisionCard、RiskBadge、PageContainer）缺少测试，需要至少覆盖 loading/empty/error/normal 四种状态。
-- **Why:** 按 review 决策要求全量测试覆盖。
-- **Action:** 为每个新增组件创建 `*.test.tsx` 文件，使用 Vitest + React Testing Library 渲染四种状态并断言。
-- **Blocked by:** P1 完成（已交付）。
+- 增加非关联订单排除标记。
+- 区分 ordered、paid、shipped、delivered、有效成交和最终有效成交。
+- 用退货/争议窗口、未决售后和结算完整性控制 finalization。
+- 支持晚到费用或退款后从 finalized 重新打开。
+- 修复 settlement 利润潜在重复扣费并补齐完整成本分类。
+- 只输出停止、换品、修正后再试、小幅加码四种实验结论。
 
-### Ant Design 6 暗色 Token 收敛
+## P1 — 平台只读数据预检
 
-- **What:** P1 在 `AntdProvider.tsx` 中设置了基础 token 覆盖（colorBgBase、colorBgContainer），但部分 Ant Design 组件的暗色适配可能不完整（如 Table 表头、Modal 遮罩、Dropdown 菜单）。
-- **Why:** 如果 AntD 默认暗色 token 和新 DESIGN.md 不一致，会出现肉眼可见的对比度差异。
-- **Action:** 在浏览器中逐组件检查 Table、Modal、Dropdown、Select、DatePicker 的暗色渲染，补充 token 覆盖。
-- **Blocked by:** P1 完成（已交付）。
+- 验证 Ozon、Shopee、Shopify 各自真实账号权限和可取得字段；不打印凭证。
+- 区分 available、requires_owner_access、requires_listing、requires_transaction、unavailable 和 unknown。
+- Shopify 无目标流量时只作为自店测量工具；Shopee 未明确国家站点时不合并数据。
+- 只读预检失败不切换到猜测，保持 unknown 或淘汰该数据源。
+
+## P1 — 首个自动研究—反证批次
+
+- 最多生成 10 个真实来源假设，每条经过独立反证。
+- 最多保留 3 个值得请求更多只读数据的案件；无存活案件时不强行推荐。
+- 真实采购、发布和广告另开计划，并在动作时逐项取得 Owner 批准。
+
+## Frozen Backlog
+
+以下项目不进入当前开发队列：双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、Outcome Proof、Evidence Warranty、跨客户聚合、未经实证的平台扩张、更多内部 Agent/MoA/自治升级以及大型视觉重构。

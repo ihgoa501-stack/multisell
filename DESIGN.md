@@ -1,10 +1,12 @@
 # Design System — 凌镜 LingMirror
 
+> **Current product boundary — 2026-07-11:** 本设计系统只服务 Owner 自用内部经营工作台。下文中 B2B SaaS、merchants、operations teams 和 SaaS dashboard 是历史设计语境，不得驱动当前开发。当前界面优先级依次为：实验现金风险、证据完整性、停止条件、订单/退货状态和最终净利润；与首轮 Ozon 实验无关的视觉重构冻结。
+
 ## Product Context
-- **What this is:** 凌镜 LingMirror is a cross-border e-commerce AI AgentOS — an AI-native operations workspace where merchants manage products, apply AI processing (title gen, descriptions, SEO), and one-click publish to platforms like Ozon and Shopee.
-- **Who it's for:** Cross-border e-commerce merchants and operations teams selling on Ozon, Shopee, and other platforms.
-- **Space/industry:** B2B SaaS, e-commerce operations, AI agent tools.
-- **Project type:** AI Agent desktop application + SaaS dashboard (hybrid).
+- **What this is:** Owner 本人用于运行真实跨境商品实验的内部经营工作台。
+- **Who it's for:** 单一 Owner。
+- **Space/industry:** Internal commerce operations and product experimentation.
+- **Project type:** Internal decision and evidence workspace.
 
 ## Aesthetic Direction
 - **Direction:** AI Agent Desktop — conversation-first interface where AI agents are the primary interaction mode. Traditional SaaS functions (CRUD, batch ops, reports) are tools that expand from the right panel.

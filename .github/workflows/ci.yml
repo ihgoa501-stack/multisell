@@ -243,24 +243,6 @@ jobs:
         run: pkill -f "cmd/server/main.go" 2>/dev/null || true
 
   # ==========================================
-  # CD: 自动部署到生产（仅合并到 main 时触发）
-  # ==========================================
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [go-lint, go-test, next-build, e2e-test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          script: |
-            cd /opt/multisell
-            ./scripts/deploy.sh
-
-  # ==========================================
   # Push Docker images to GitHub Container Registry
   # ==========================================
   push-images:
@@ -297,22 +279,3 @@ jobs:
           context: frontend-next
           push: true
           tags: ${{ steps.meta.outputs.frontend }}
-
-  # ==========================================
-  # Deploy notification
-  # ==========================================
-  notify:
-    if: always()
-    needs: [deploy]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify Slack
-        uses: slackapi/slack-github-action@v1
-        if: secrets.SLACK_WEBHOOK_URL
-        with:
-          payload: |
-            {
-              "text": "LingMirror deploy ${{ needs.deploy.result == 'success' && 'succeeded' || needs.deploy.result == 'failure' && 'failed' || 'skipped' }} — ${{ github.sha }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "凌镜 AI 选品助手",
   "version": "0.1.0",
-  "description": "凌镜跨境电商 AI 选品采集助手 — 一键采集 1688 商品信息",
+  "description": "凌镜自用 AI 选品采集助手 — 自动采集 Ozon 与供应商证据",
   "permissions": [
     "storage",
     "activeTab"
@@ -10,6 +10,7 @@
   "host_permissions": [
     "https://*.1688.com/*",
     "https://*.taobao.com/*",
+    "https://*.ozon.ru/*",
     "http://localhost:8080/*",
     "wss://*.lingmirror.com/*"
   ],
@@ -24,7 +25,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["*://*.1688.com/*", "*://s.1688.com/*"],
+      "matches": ["*://*.1688.com/*", "*://s.1688.com/*", "https://*.ozon.ru/*"],
       "js": ["content-script-list.js"],
       "exclude_matches": ["*://detail.1688.com/offer/*"],
       "run_at": "document_idle"

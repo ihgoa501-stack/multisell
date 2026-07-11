@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/domain/order"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
@@ -19,6 +21,13 @@ type Recalculator struct {
 	logger *zap.Logger
 }
 
+type profitSettlementItem struct {
+	SettlementItem
+	SettlementStatus   string     `gorm:"column:settlement_status"`
+	SettlementSource   string     `gorm:"column:settlement_source"`
+	SettlementImported *time.Time `gorm:"column:settlement_imported_at"`
+}
+
 // NewRecalculator creates a new Recalculator.
 func NewRecalculator(db *gorm.DB, logger *zap.Logger) *Recalculator {
 	return &Recalculator{db: db, logger: logger}
@@ -27,14 +36,31 @@ func NewRecalculator(db *gorm.DB, logger *zap.Logger) *Recalculator {
 // RecalculateProfit computes real profit from settlement items for the given order.
 // Updates sales_order.profit_amount and profit_margin, and upserts order_profit_record.
 func (r *Recalculator) RecalculateProfit(ctx context.Context, orderNo string) error {
-	var items []SettlementItem
+	var rows []profitSettlementItem
 	if err := r.db.WithContext(ctx).
-		Where("order_no = ?", orderNo).
-		Find(&items).Error; err != nil {
+		Table("settlement_item AS si").
+		Select("si.*, s.status AS settlement_status, s.source_type AS settlement_source, s.imported_at AS settlement_imported_at").
+		Joins("JOIN settlement AS s ON s.id = si.settlement_id").
+		Where("si.order_no = ?", orderNo).
+		Scan(&rows).Error; err != nil {
 		return fmt.Errorf("query settlement items: %w", err)
 	}
-	if len(items) == 0 {
+	if len(rows) == 0 {
 		return nil
+	}
+	items := make([]SettlementItem, 0, len(rows))
+	settlementMissing := make([]string, 0)
+	for _, row := range rows {
+		items = append(items, row.SettlementItem)
+		if row.SettlementStatus != "reconciled" && row.SettlementStatus != "closed" {
+			settlementMissing = append(settlementMissing, "settlement_not_completed")
+		}
+		if row.SettlementImported == nil || (row.SettlementSource != "platform_import" && row.SettlementSource != "api_sync") {
+			settlementMissing = append(settlementMissing, "settlement_source_unverified")
+		}
+		if row.ReconciliationStatus != "matched" || row.ReconciledAt == nil || strings.TrimSpace(row.ReconciledBy) == "" {
+			settlementMissing = append(settlementMissing, "settlement_item_unreconciled")
+		}
 	}
 
 	var o order.Order
@@ -50,14 +76,22 @@ func (r *Recalculator) RecalculateProfit(ctx context.Context, orderNo string) er
 	if record == nil {
 		return nil
 	}
+	if len(settlementMissing) > 0 {
+		record.ProfitStatus = "provisional"
+		record.MissingCosts = mergeMissingReasons(record.MissingCosts, settlementMissing)
+	}
 
 	r2 := func(v float64) float64 { return math.Round(v*100) / 100 }
 
-	if err := r.db.WithContext(ctx).Model(&o).Updates(map[string]interface{}{
-		"profit_amount": r2(record.Profit),
-		"profit_margin": record.Margin,
-	}).Error; err != nil {
-		return fmt.Errorf("update sales_order profit: %w", err)
+	// sales_order profit fields are treated as final figures elsewhere. Do not
+	// populate them while a critical cost is still unsupported by evidence.
+	if record.ProfitStatus == "final" {
+		if err := r.db.WithContext(ctx).Model(&o).Updates(map[string]interface{}{
+			"profit_amount": r2(record.Profit),
+			"profit_margin": record.Margin,
+		}).Error; err != nil {
+			return fmt.Errorf("update sales_order profit: %w", err)
+		}
 	}
 
 	// Upsert order_profit_record
@@ -75,6 +109,19 @@ func (r *Recalculator) RecalculateProfit(ctx context.Context, orderNo string) er
 	}
 
 	return nil
+}
+
+func mergeMissingReasons(existing string, reasons []string) string {
+	seen := make(map[string]bool)
+	out := make([]string, 0, len(reasons)+1)
+	for _, reason := range append(strings.Split(existing, ","), reasons...) {
+		reason = strings.TrimSpace(reason)
+		if reason != "" && !seen[reason] {
+			seen[reason] = true
+			out = append(out, reason)
+		}
+	}
+	return strings.Join(out, ",")
 }
 
 // RecalculateAllProfit recalculates profit for every order that has settlement items.
@@ -100,7 +147,8 @@ func (r *Recalculator) RecalculateAllProfit(ctx context.Context) error {
 // computeProfit aggregates settlement items and returns the OrderProfitRecord.
 // Returns nil when no meaningful data exists.
 func computeProfit(items []SettlementItem, productCost float64) *profit.OrderProfitRecord {
-	var orderSaleAmt, orderSaleFee, platformFee, paymentFee, shippingFee, refundAmt float64
+	var orderSaleAmt, orderSaleFee, platformFee, paymentFee, shippingFee, tariffFee, refundAmt float64
+	var hasPlatformFee, hasPaymentFee, hasShippingFee, hasTariffFee bool
 
 	for _, item := range items {
 		switch item.TransactionType {
@@ -109,22 +157,30 @@ func computeProfit(items []SettlementItem, productCost float64) *profit.OrderPro
 			orderSaleFee += item.Fee
 		case "platform_fee":
 			platformFee += item.Amount
+			hasPlatformFee = true
 		case "payment_fee":
 			paymentFee += item.Amount
+			hasPaymentFee = true
 		case "shipping_fee":
 			shippingFee += item.Amount
+			hasShippingFee = true
+		case "tariff_fee":
+			tariffFee += item.Amount
+			hasTariffFee = true
 		case "refund":
 			// Refund amounts are positive; they reduce profit
 			refundAmt += math.Abs(item.Amount)
 		}
 	}
 
-	revenue := orderSaleAmt - orderSaleFee // net sale revenue after commission
+	// Revenue is gross settlement sale proceeds. Commission belongs in costs;
+	// subtracting it here as well would double-count it.
+	revenue := orderSaleAmt
 	if revenue == 0 {
 		return nil
 	}
 
-	totalCost := productCost + orderSaleFee + platformFee + paymentFee + shippingFee + refundAmt
+	totalCost := productCost + orderSaleFee + platformFee + paymentFee + shippingFee + tariffFee + refundAmt
 	profitVal := revenue - totalCost
 
 	margin := 0.0
@@ -137,15 +193,38 @@ func computeProfit(items []SettlementItem, productCost float64) *profit.OrderPro
 		return math.Round(v*100) / 100
 	}
 
+	missing := make([]string, 0, 5)
+	if productCost <= 0 {
+		missing = append(missing, "product_cost")
+	}
+	if orderSaleFee == 0 && !hasPlatformFee {
+		missing = append(missing, "platform_fee")
+	}
+	if !hasPaymentFee {
+		missing = append(missing, "payment_fee")
+	}
+	if !hasShippingFee {
+		missing = append(missing, "shipping_fee")
+	}
+	if !hasTariffFee {
+		missing = append(missing, "tariff_fee")
+	}
+	status := "final"
+	if len(missing) > 0 {
+		status = "provisional"
+	}
+
 	return &profit.OrderProfitRecord{
 		Revenue:      r2(revenue),
 		Cost:         r2(productCost),
 		ShippingCost: r2(shippingFee),
 		PlatformFee:  r2(orderSaleFee + platformFee),
 		PaymentFee:   r2(paymentFee),
-		TariffCost:   0, // tariff not available from settlement data
+		TariffCost:   r2(tariffFee),
 		TotalCost:    r2(totalCost),
 		Profit:       r2(profitVal),
 		Margin:       margin,
+		ProfitStatus: status,
+		MissingCosts: strings.Join(missing, ","),
 	}
 }

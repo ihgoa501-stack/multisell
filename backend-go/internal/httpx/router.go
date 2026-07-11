@@ -36,10 +36,12 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
+	"github.com/lingmirror/backend-go/internal/domain/demandcase"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
 	"github.com/lingmirror/backend-go/internal/domain/evolution"
 	"github.com/lingmirror/backend-go/internal/domain/exceptions"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
+	"github.com/lingmirror/backend-go/internal/domain/experiment"
 	"github.com/lingmirror/backend-go/internal/domain/finance"
 	"github.com/lingmirror/backend-go/internal/domain/imagegen"
 	"github.com/lingmirror/backend-go/internal/domain/importbatch"
@@ -594,10 +596,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	protected.GET("/aios/scheduler/tasks", func(c *gin.Context) {
 		c.JSON(200, gin.H{"tasks": sched.TaskRunState()})
 	})
-		// Scheduler retry queue -- failed ticks awaiting retry.
-		protected.GET("/aios/scheduler/retry-queue", func(c *gin.Context) {
-			c.JSON(200, gin.H{"retry_queue": sched.RetryQueue()})
-		})
+	// Scheduler retry queue -- failed ticks awaiting retry.
+	protected.GET("/aios/scheduler/retry-queue", func(c *gin.Context) {
+		c.JSON(200, gin.H{"retry_queue": sched.RetryQueue()})
+	})
 
 	// AgentOS routes
 	agentos.RegisterRoutes(protected, db, logger, extTracker)
@@ -838,17 +840,19 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	completeness.RegisterRoutes(protected, db, logger)
 	compliance.RegisterRoutes(protected, db, logger)
 	profit.RegisterRoutes(protected, db, logger)
+	experiment.RegisterRoutes(protected, db, logger)
+	demandcase.RegisterRoutes(protected, db, logger)
 	evidenceHandler := profit.NewEvidenceHandler(db)
 	protected.GET("/profit/evidence-card/:productId", evidenceHandler.GetEvidenceCard)
 	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
 	mock.RegisterRoutes(protected, db, logger)
-	// Auto-seed mock demo data on startup
-	func() {
+	// Mock data must never appear automatically in a production environment.
+	if cfg.Server.Mode != gin.ReleaseMode {
 		ms := mock.NewService(db, logger.Named("mock"))
 		if err := ms.SeedMockData(); err != nil {
 			logger.Warn("mock data seed failed", zap.Error(err))
 		}
-	}()
+	}
 
 	owner.RegisterRoutes(protected, db, logger)
 	agentlearning.RegisterRoutes(protected, db, logger)
@@ -1107,4 +1111,13 @@ func (b *extPluginBridge) OnFetchProductResult(_ int64, data json.RawMessage) er
 
 func (b *extPluginBridge) HasPending(requestID string) bool {
 	return b.driver.HasPending(requestID)
+}
+
+func (b *extPluginBridge) OnListPageResult(_ int64, data json.RawMessage) error {
+	b.driver.HandleResponse(data)
+	return nil
+}
+
+func (b *extPluginBridge) HasPendingList(requestID string) bool {
+	return b.driver.HasPendingList(requestID)
 }

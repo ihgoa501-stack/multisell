@@ -12,6 +12,24 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 ## Project
 
+### Current Owner Direction (2026-07-11)
+
+凌镜当前是 Owner 本人自用的跨境商品实验与经营内部系统，不面向外部客户。当前唯一主线是：候选市场比较 → Owner 批准已选市场 → 该市场的需求与反证 → 商品机会 → 最小真实实验 → 有效成交 → 退货/争议后最终净利润。不得预设国家、地区、平台、类目、商品或“20→3→1”等固定数量。完整边界见 `docs/SELF_USE_OPERATING_DIRECTION.md`，统一业务术语见 `CONTEXT.md`。
+
+开始任何非平凡研究、规划、开发、审查、QA 或发布前，还必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。它是当前代码与经营完成度的证据快照：严格区分 `policy / planned / implemented / automated_verified / manually_verified / external_observed / reconciled / mock / inferred / superseded`。不得把模块存在、测试通过、页面可见或多个 Agent 意见一致写成真实市场、真实成交、生产可用或最终利润已经成立。代码或真实经营状态变化后，应重新核验并生成新的带日期审计，不能静默覆盖证据限制。
+
+除非 Owner 再次明确解冻，不得主动建设双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、跨客户聚合、未经市场选择的平台扩张、更多 Agent/MoA/自治升级或大型视觉重构。自用不降低审批、审计和外部写安全要求。
+
+生产服务器初始化、SSH、部署、恢复、测试和回滚只有一个可执行入口：`docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md`。
+
+现有 Ozon 采集器只是平台连接器，不是当前市场方向。`GET /api/v1/candidates/collection-evidence/:id` 只读取已有采集证据；除非 Ozon 对应的国家、消费者和渠道已通过市场闸门，否则不得把该接口列为当前采集任务。所有平台采集线索都必须通过 `evidence_id` 引用不可变快照，并声明它服务的经营决策。
+
+经营实验统一事实链位于 `internal/domain/experiment/`，API 根路径为 `/api/v1/experiments`，前端入口为 `/experiments`。每个案件以 `experiment_id` 关联现有业务对象；证据作用区分 `support / counter / conflict`，真实性区分 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`，必须由 Owner 对来源和观察时间单独核验。最终利润必须关联可信且全部对账的结算、最终 `order_profit_record` 和同一订单；现金回收必须关联同一订单与结算的银行/现金账户交易。利润最终确认与现金回收是两个独立状态；模拟、未知或 AI 推断不得通过经营闸门。
+
+候选市场比较的统一入口位于 `internal/domain/demandcase/`，API 根路径为 `/api/v1/demand-cases`。每个候选必须明确“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，覆盖需求、竞争、获客、履约、合规、收款、售后和利润可验证性八个维度，并包含来自不同 run 的独立反证。关键维度为 unknown、mock、inferred 或缺少来源/观察时间时，只能保持 `evidence_missing`，不得生成可实验结论。
+
+候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，原始 payload 与 SHA-256 快照必须一致，重复 run 幂等。内置静态公开资料基线只建立俄罗斯/Ozon 的权限待验证基线，不是实时研究，也不代表该市场已选中。
+
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.3.0.0`.
 
@@ -211,7 +229,7 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 - `go vet ./...` — passes
 - `go test ./...` — 96 packages green, 11 pkgs no-test (107 total), 0 failures
 - Frontend: `npm run dev` — starts on port 3001 (but dev server can exit unexpectedly)
-- Login: admin / admin123456 (user table seeded, RBAC roles linked)
+- Login: the historical `admin / admin123456` credential is no longer valid in the current local database; use an existing valid Owner account or the approved credential-reset procedure.
 - All 30+ frontend pages render (product hub, categories, brands, SKU, inventory, orders, agents, AI command center, etc.)
 - Seed data in DB: 5 categories, 3 brands, 2 platforms (Ozon + Shopee), product + SKU + inventory
 

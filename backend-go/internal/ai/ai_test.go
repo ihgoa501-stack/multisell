@@ -14,14 +14,14 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
+	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"github.com/lingmirror/backend-go/internal/domain/trustscore"
-	"github.com/lingmirror/backend-go/internal/domain/actionpolicy"
 )
 
 // testDBCounter ensures each test gets a unique in-memory SQLite DB so
@@ -265,11 +265,11 @@ func TestService_ListTraces_Filtering(t *testing.T) {
 
 func TestRegistry_DefaultAgents(t *testing.T) {
 	r := DefaultRegistry()
-	if len(r.Agents) != 17 {
-		t.Fatalf("expected 17 agents, got %d", len(r.Agents))
+	if len(r.Agents) != 18 {
+		t.Fatalf("expected 18 agents, got %d", len(r.Agents))
 	}
 	ids := r.IDs()
-	want := []string{"A1", "A2", "A3", "A4", "A5", "A6", "A7", "G1", "G2", "G3", "G0", "A8", "A9", "A10", "A11", "content_ai", "scheduler"}
+	want := []string{"A1", "A2", "A3", "A4", "A5", "A6", "A7", "G1", "G2", "G3", "G0", "A8", "A9", "A10", "A11", "A12", "content_ai", "scheduler"}
 	for i, w := range want {
 		if ids[i] != w {
 			t.Fatalf("ids[%d] = %s, want %s", i, ids[i], w)
@@ -287,8 +287,30 @@ func TestRegistry_DefaultAgents(t *testing.T) {
 	if ok {
 		t.Fatal("expected Z9 to be unknown")
 	}
+}
 
+func TestDefaultRegistryIncludesAutomaticCollectionAgent(t *testing.T) {
+	r := DefaultRegistry()
+	agent, ok := r.Get("A12")
+	if !ok {
+		t.Fatal("A12 automatic collection agent is missing from canonical registry")
 	}
+	if agent.Autonomy != "supervised" {
+		t.Fatalf("A12 autonomy = %q, want supervised", agent.Autonomy)
+	}
+	want := map[string]bool{"market_discover": false, "product_collect": false, "supplier_scrape": false}
+	for _, point := range agent.DecisionPoints {
+		if _, exists := want[point]; exists {
+			want[point] = true
+		}
+	}
+	for point, found := range want {
+		if !found {
+			t.Fatalf("A12 decision point %q missing", point)
+		}
+	}
+}
+
 func TestOrchestrator_Run_StubProvider(t *testing.T) {
 	db := newTestDB(t)
 	orch := NewOrchestrator(db, testLogger())
@@ -298,13 +320,13 @@ func TestOrchestrator_Run_StubProvider(t *testing.T) {
 		AgentID:       "A5",
 		DecisionPoint: "stock_alert",
 		Context: map[string]interface{}{
-				"sku_code":          "TEST-SKU-001",
-				"sellable_stock":    float64(100),
-				"sales_7d":          float64(35),
-				"lead_time_days":    float64(30),
-				"safety_stock_days": float64(16),
-				"message":           "缺货",
-			},
+			"sku_code":          "TEST-SKU-001",
+			"sellable_stock":    float64(100),
+			"sales_7d":          float64(35),
+			"lead_time_days":    float64(30),
+			"safety_stock_days": float64(16),
+			"message":           "缺货",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -819,7 +841,6 @@ func TestService_ExecuteAction_SavesUserID(t *testing.T) {
 	}
 }
 
-
 func TestService_ExecuteAction_Idempotency_Reexecution(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewService(db, testLogger())
@@ -830,13 +851,23 @@ func TestService_ExecuteAction_Idempotency_Reexecution(t *testing.T) {
 		RiskLevel: "low", ProposedBy: "agent:A2",
 		RequiresApproval: &noApproval, IdempotencyKey: "idem-rex-001",
 	})
-	if err != nil { t.Fatalf("CreateAction: %v", err) }
+	if err != nil {
+		t.Fatalf("CreateAction: %v", err)
+	}
 	first, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-	if err != nil { t.Fatalf("first ExecuteAction: %v", err) }
-	if first.Status != "executed" { t.Fatalf("first status = %q", first.Status) }
+	if err != nil {
+		t.Fatalf("first ExecuteAction: %v", err)
+	}
+	if first.Status != "executed" {
+		t.Fatalf("first status = %q", first.Status)
+	}
 	second, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-	if err != nil { t.Fatalf("second (idempotent) ExecuteAction: %v", err) }
-	if second.Status != "executed" { t.Errorf("second status = %q, want %q", second.Status, "executed") }
+	if err != nil {
+		t.Fatalf("second (idempotent) ExecuteAction: %v", err)
+	}
+	if second.Status != "executed" {
+		t.Errorf("second status = %q, want %q", second.Status, "executed")
+	}
 }
 
 func TestService_ExecuteAction_GuardrailsCheck(t *testing.T) {
@@ -875,8 +906,12 @@ func TestService_ExecuteAction_GuardrailsCheck(t *testing.T) {
 			RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
 		})
 		result, err := svc.ExecuteAction(a.ID, nil, "alice", "")
-		if err != nil { t.Fatalf("expected success, got %v", err) }
-		if result.Status != "executed" { t.Errorf("status = %q, want %q", result.Status, "executed") }
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if result.Status != "executed" {
+			t.Errorf("status = %q, want %q", result.Status, "executed")
+		}
 	})
 }
 
@@ -890,7 +925,9 @@ func TestService_ExecuteAction_ConcurrentClaim(t *testing.T) {
 		RiskLevel: "low", ProposedBy: "agent:A2",
 		RequiresApproval: &noApproval,
 	})
-	if err != nil { t.Fatalf("CreateAction: %v", err) }
+	if err != nil {
+		t.Fatalf("CreateAction: %v", err)
+	}
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
 	for i := 0; i < 2; i++ {
@@ -907,12 +944,18 @@ func TestService_ExecuteAction_ConcurrentClaim(t *testing.T) {
 	for e := range results {
 		errs = append(errs, e)
 	}
-	if len(errs) != 2 { t.Fatalf("expected 2 results, got %d", len(errs)) }
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(errs))
+	}
 	success := 0
 	for _, e := range errs {
-		if e == nil { success++ }
+		if e == nil {
+			success++
+		}
 	}
-	if success != 1 { t.Errorf("expected exactly 1 success, got %d", success) }
+	if success != 1 {
+		t.Errorf("expected exactly 1 success, got %d", success)
+	}
 }
 
 func TestService_ExecuteAction_Expired(t *testing.T) {
@@ -925,7 +968,7 @@ func TestService_ExecuteAction_Expired(t *testing.T) {
 		RiskLevel: "low", ProposedBy: "agent:A2", RequiresApproval: &noApproval,
 	})
 	// Force Creation Date to 3 hours ago
-	db.Model(&UnifiedAction{}).Where("id = ?", a.ID).Update("created_at", time.Now().Add(-3 * time.Hour))
+	db.Model(&UnifiedAction{}).Where("id = ?", a.ID).Update("created_at", time.Now().Add(-3*time.Hour))
 
 	_, err := svc.ExecuteAction(a.ID, nil, "alice", "")
 	if err == nil || !errors.Is(err, ErrActionExpired) {

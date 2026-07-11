@@ -23,6 +23,12 @@ type ToolDriver interface {
 	Execute(input map[string]interface{}) (*ToolResult, error)
 }
 
+// ListPageDriver is an optional capability implemented by browser/search
+// drivers that can discover multiple product opportunities from one page.
+type ListPageDriver interface {
+	FetchListPage(ctx context.Context, url string) (*ListPageData, error)
+}
+
 // Bridge defines the public API for fetching page data through the bridge.
 type Bridge interface {
 	FetchPage(ctx context.Context, url string) (*PageData, error)
@@ -118,6 +124,39 @@ func (b *ToolBridge) FetchPage(ctx context.Context, url string) (*PageData, erro
 	return nil, lastErr
 }
 
+// FetchListPage routes list/search collection to the first capable driver and
+// falls back when a driver fails. Detail-only drivers are skipped.
+func (b *ToolBridge) FetchListPage(ctx context.Context, url string) (*ListPageData, error) {
+	b.mu.RLock()
+	drivers := make([]DriverEntry, len(b.drivers))
+	copy(drivers, b.drivers)
+	b.mu.RUnlock()
+
+	if len(drivers) == 0 {
+		return nil, ErrNoDrivers
+	}
+	var lastErr error
+	capable := false
+	for _, entry := range drivers {
+		driver, ok := entry.Driver.(ListPageDriver)
+		if !ok {
+			continue
+		}
+		capable = true
+		fetchCtx, cancel := context.WithTimeout(ctx, b.timeout)
+		data, err := driver.FetchListPage(fetchCtx, url)
+		cancel()
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+	}
+	if !capable {
+		return nil, ErrNoListDrivers
+	}
+	return nil, lastErr
+}
+
 // AddDriver registers an additional driver after construction. The bridge
 // re-sorts all drivers by weight after adding.
 func (b *ToolBridge) AddDriver(entry DriverEntry) {
@@ -163,6 +202,9 @@ func (b *ToolBridge) ExecuteTool(name string, input map[string]interface{}, appr
 
 // ErrNoDrivers is returned when FetchPage is called with no registered drivers.
 var ErrNoDrivers = errors.New("toolbridge: no drivers registered")
+
+// ErrNoListDrivers is returned when registered drivers only support detail pages.
+var ErrNoListDrivers = errors.New("toolbridge: no list-page drivers registered")
 
 // ErrToolNotRegistered is returned when ExecuteTool is called for an unknown tool.
 var ErrToolNotRegistered = errors.New("toolbridge: tool not registered")

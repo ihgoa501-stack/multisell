@@ -1,6 +1,6 @@
-# LingMirror — Cross-border E-commerce AgentOS
+# LingMirror — Owner 自用真实付费需求验证系统
 
-> 技术项目名暂保留 `MultiSell`；对外产品品牌为 `凌镜 LingMirror`。
+> 技术项目名暂保留 `MultiSell`；当前只服务 Owner 本人的真实跨境经营，不面向外部客户。
 
 凌镜现在以新技术栈为唯一活跃开发目标：
 
@@ -17,10 +17,10 @@
 
 ## 核心定位
 
-**商品在这里创建 → AI 加工和经营判断 → Owner 审批 → 生成受控发布任务。**
+**真实数据 → 需求假设 → 独立反证 → Owner 批准的最小实验 → 陌生客户付款与签收 → 售后闭合后的正贡献利润。**
 
 当前执行方向见 [docs/CURRENT_DIRECTION_AND_PRIORITIES.md](docs/CURRENT_DIRECTION_AND_PRIORITIES.md)。
-短期重点不是全自动生产执行，而是让商品、利润、履约、Agent 建议、审批和审计形成可信闭环。
+完整经营边界见 [docs/SELF_USE_OPERATING_DIRECTION.md](docs/SELF_USE_OPERATING_DIRECTION.md)。当前没有选定目标客户、市场、类目或商品；Ozon、Shopee 和 Shopify 都只是待实证数据源。短期唯一目标是发现或证伪一个可核查的真实付费需求。
 
 ## 功能模块
 
@@ -128,7 +128,7 @@ npm run lint
 | [配置平台集成](docs/howto-platform-integrations.md) | 接入 Ozon / Shopee API |
 | [创建自定义 Agent 规则](docs/howto-agent-rules.md) | 控制 Agent 决策边界和触发条件 |
 | [运行测试与验证](docs/howto-test-and-verify.md) | Go 测试、前端测试、E2E、冒烟测试 |
-| [配置与部署](docs/howto-deploy.md) | Docker 生产部署、Nginx/Caddy、备份恢复 |
+| [服务器部署与测试](docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md) | Owner 与 AI 共用的唯一服务器运行手册 |
 | [使用 WebSocket 流式更新](docs/howto-websocket.md) | 连接 /ws 端点，接收 AI 流式输出 |
 | [执行第一个业务闭环](docs/howto-first-business-loop.md) | 🆕 候选商品→完整度→利润→审批→上架的任务操作指南 |
 

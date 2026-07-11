@@ -117,17 +117,18 @@ export default function LoginPage() {
           >
             ✦
           </div>
-          <div
+          <h1
             style={{
               fontFamily: 'var(--ds)',
               fontWeight: 800,
               fontSize: '1.6rem',
               color: 'var(--t1)',
               letterSpacing: '-0.02em',
+              margin: 0,
             }}
           >
             凌镜
-          </div>
+          </h1>
           <Text
             style={{
               color: 'var(--t3)',
@@ -158,11 +159,12 @@ export default function LoginPage() {
           >
             <Form.Item
               name="username"
+              label="用户名或邮箱"
               rules={[{ required: true, message: '请输入用户名/邮箱' }]}
               style={{ marginBottom: 20 }}
             >
               <Input
-                aria-label="Email"
+                aria-label="用户名或邮箱"
                 prefix={<UserOutlined style={{ color: 'var(--t3)' }} />}
                 placeholder="用户名 / 邮箱"
                 size="large"
@@ -172,17 +174,19 @@ export default function LoginPage() {
                   color: 'var(--t1)',
                   borderRadius: 8,
                   fontFamily: 'var(--body)',
+                  height: 48,
                 }}
               />
             </Form.Item>
 
             <Form.Item
               name="password"
+              label="密码"
               rules={[{ required: true, message: '请输入密码' }]}
               style={{ marginBottom: 28 }}
             >
               <Input.Password
-                aria-label="Password"
+                aria-label="密码"
                 prefix={<LockOutlined style={{ color: 'var(--t3)' }} />}
                 placeholder="密码"
                 size="large"
@@ -192,6 +196,7 @@ export default function LoginPage() {
                   color: 'var(--t1)',
                   borderRadius: 8,
                   fontFamily: 'var(--body)',
+                  height: 48,
                 }}
               />
             </Form.Item>

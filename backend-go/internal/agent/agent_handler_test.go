@@ -51,8 +51,8 @@ func TestHandler_ListAgents(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	var resp struct {
-		Code int              `json:"code"`
-		Data []AgentSummary   `json:"data"`
+		Code int            `json:"code"`
+		Data []AgentSummary `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -136,7 +136,12 @@ func TestHandler_ExecuteAction_AgentNotFound(t *testing.T) {
 
 func TestHandler_ExecuteAction_Success(t *testing.T) {
 	h, _ := newTestAgentHandler(t)
-	r := setupAgentRouter(h)
+	r := gin.New()
+	r.POST("/agents/:id/actions", func(c *gin.Context) {
+		c.Set("user_id", int64(42))
+		c.Set("request_id", "test-action-request")
+		h.ExecuteAction(c)
+	})
 
 	w := httptest.NewRecorder()
 	body := `{"decision_point":"stock_alert"}`
@@ -148,6 +153,23 @@ func TestHandler_ExecuteAction_Success(t *testing.T) {
 	// The important thing is it doesn't panic and returns a valid HTTP status.
 	if w.Code != http.StatusOK && w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 200 or 500; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestEnrichAgentContextUsesServerAuthenticatedIdentity(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("user_id", int64(42))
+	c.Set("request_id", "request-abc")
+
+	got, err := enrichAgentContext(c, map[string]interface{}{
+		"_owner_user_id":  float64(999),
+		"_correlation_id": "client-forged",
+	})
+	if err != nil {
+		t.Fatalf("enrichAgentContext error = %v", err)
+	}
+	if got["_owner_user_id"] != int64(42) || got["_correlation_id"] != "request-abc" {
+		t.Fatalf("server identity was not enforced: %#v", got)
 	}
 }
 

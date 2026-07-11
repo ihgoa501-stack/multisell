@@ -1,5 +1,8 @@
 # Plan: AI-Native AgentOS Execution Path
 
+> [!CAUTION]
+> **2026-07-11 已冻结。** 当前执行计划已改为 `docs/ROADMAP.md` 的 Owner 自用商品实验 Sprint 0–5。本文件仅供历史参考，不得继续执行 AgentOS 扩张。
+
 Source spec: `docs/specs/2026-07-09-ai-native-agentos-execution-path.md`
 
 ## Goal

@@ -2,12 +2,16 @@ package impl
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	neturl "net/url"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"go.uber.org/zap"
 )
@@ -37,15 +41,170 @@ func NewCollectionAgent(tb *toolbridge.ToolBridge, cs *candidate.Service, logger
 //     params: { "urls": ["..."], "category_id": N, "collected_by": "A12" }
 //   - "supplier_scrape" — scrape all products from a supplier catalog
 //     params: { "supplier_url": "...", "max_products": 50 }
+//   - "market_discover" — automatically collect product cards from marketplace search pages
+//     params: { "search_urls": ["..."], "min_opportunities": 20 }
 func (a *CollectionAgent) Decide(ctx context.Context, decisionPoint string, params map[string]interface{}) (map[string]interface{}, float64, string, error) {
+	if ownerUserID, ok := positiveInt64(params["_owner_user_id"]); ok {
+		ctx = toolbridge.WithOwnerUserID(ctx, ownerUserID)
+	}
+	if correlationID := strings.TrimSpace(fmt.Sprintf("%v", params["_correlation_id"])); correlationID != "" && correlationID != "<nil>" {
+		ctx = eventbus.WithCorrelationID(ctx, correlationID)
+	}
 	switch decisionPoint {
 	case "product_collect":
 		return a.collectProducts(ctx, params)
 	case "supplier_scrape":
 		return a.scrapeSupplier(ctx, params)
+	case "market_discover":
+		return a.discoverMarket(ctx, params)
 	default:
 		return nil, 0, "unknown", fmt.Errorf("collection agent: unknown decision point %s", decisionPoint)
 	}
+}
+
+func (a *CollectionAgent) discoverMarket(ctx context.Context, params map[string]interface{}) (map[string]interface{}, float64, string, error) {
+	if a.toolBridge == nil || a.candSvc == nil {
+		return nil, 0, "error", fmt.Errorf("market discovery requires ToolBridge and candidate service")
+	}
+	_, ok := positiveInt64(params["_owner_user_id"])
+	if !ok {
+		return nil, 0, "error", fmt.Errorf("market discovery requires authenticated Owner identity")
+	}
+	rawURLs, _ := params["search_urls"].([]interface{})
+	if len(rawURLs) == 0 {
+		if queries, ok := params["queries"].([]interface{}); ok {
+			for _, rawQuery := range queries {
+				query := strings.TrimSpace(fmt.Sprintf("%v", rawQuery))
+				if query != "" {
+					rawURLs = append(rawURLs, "https://www.ozon.ru/search/?text="+neturl.QueryEscape(query))
+				}
+			}
+		}
+	}
+	if len(rawURLs) == 0 {
+		return nil, 0, "error", fmt.Errorf("search_urls or queries required")
+	}
+	minimum := 20
+	if v, ok := params["min_opportunities"].(float64); ok && v > 0 {
+		minimum = int(v)
+	}
+	if minimum < 20 {
+		minimum = 20
+	}
+
+	seen := make(map[string]struct{}, minimum)
+	collected := 0
+	pages := 0
+	failedPages := 0
+	duplicates := 0
+	invalidItems := 0
+	for _, rawURL := range rawURLs {
+		if collected >= minimum {
+			break
+		}
+		url := strings.TrimSpace(fmt.Sprintf("%v", rawURL))
+		if url == "" {
+			continue
+		}
+		page, err := a.toolBridge.FetchListPage(ctx, url)
+		if err != nil {
+			failedPages++
+			a.logger.Warn("market list collection failed", zap.String("url", url), zap.Error(err))
+			continue
+		}
+		pages++
+		correlationID := eventbus.CorrelationIDFromContext(ctx)
+		if correlationID == "" {
+			correlationID = "collect-" + uuid.NewString()
+		}
+		collectedAt := page.CollectedAt
+		if collectedAt.IsZero() {
+			collectedAt = time.Now()
+		}
+		if len(page.RawData) == 0 {
+			page.RawData, _ = json.Marshal(page)
+		}
+		hash := sha256.Sum256(page.RawData)
+		evidence := candidate.CollectionEvidence{
+			SourceURL:      page.PageURL,
+			Driver:         page.Driver,
+			RawPayload:     page.RawData,
+			ParserVersion:  "list-v1",
+			EvidenceSHA256: fmt.Sprintf("%x", hash[:]),
+			CorrelationID:  correlationID,
+			CollectedAt:    collectedAt,
+		}
+		if err := a.candSvc.CreateCollectionEvidence(&evidence); err != nil {
+			failedPages++
+			a.logger.Warn("save collection evidence failed", zap.String("url", url), zap.Error(err))
+			continue
+		}
+		for _, item := range page.Items {
+			if collected >= minimum {
+				break
+			}
+			if item.DetailURL == "" || strings.TrimSpace(item.Title) == "" || strings.TrimSpace(item.PriceRange) == "" {
+				invalidItems++
+				continue
+			}
+			if _, duplicate := seen[item.DetailURL]; duplicate {
+				continue
+			}
+			seen[item.DetailURL] = struct{}{}
+			lead := candidate.CollectLead{
+				Title:            item.Title,
+				PriceRange:       item.PriceRange,
+				DetailURL:        item.DetailURL,
+				ImageURL:         item.ImageURL,
+				SourcePageURL:    page.PageURL,
+				CollectionDriver: page.Driver,
+				EvidenceID:       &evidence.ID,
+				ConfidenceState:  "unverified",
+				Status:           "pending_detail_collect",
+			}
+			created, err := a.candSvc.CreateCollectLeadIfNew(&lead)
+			if err != nil {
+				a.logger.Warn("save market lead failed", zap.String("detail_url", item.DetailURL), zap.Error(err))
+				continue
+			}
+			if !created {
+				duplicates++
+				continue
+			}
+			collected++
+		}
+	}
+	if collected == 0 && duplicates == 0 && invalidItems == 0 {
+		return nil, 0, "error", fmt.Errorf("market discovery collected no traceable opportunities")
+	}
+	return map[string]interface{}{
+		"collected":        collected,
+		"minimum_required": minimum,
+		"target_reached":   collected >= minimum,
+		"pages_collected":  pages,
+		"pages_failed":     failedPages,
+		"duplicates":       duplicates,
+		"invalid_items":    invalidItems,
+		"agent_id":         "A12",
+		"decision":         "market_discover",
+	}, 1.0, "low", nil
+}
+
+func positiveInt64(value interface{}) (int64, bool) {
+	var result int64
+	switch v := value.(type) {
+	case int64:
+		result = v
+	case int:
+		result = int64(v)
+	case float64:
+		result = int64(v)
+	case float32:
+		result = int64(v)
+	default:
+		return 0, false
+	}
+	return result, result > 0
 }
 
 // supplier_scrape — scrape all products from a supplier catalog
@@ -222,7 +381,7 @@ func pageDataToCandidate(pd *toolbridge.PageData, params map[string]interface{})
 		SourceURL:        pd.SourceURL,
 		SourcePlatform:   detectPlatform(pd.SourceURL),
 		RawPayload:       pd.RawData,
-		CollectedAt:       timePtr(time.Now()),
+		CollectedAt:      timePtr(time.Now()),
 	}
 }
 

@@ -1,7 +1,11 @@
 # 凌镜 LingMirror — 文档索引
 
+> **当前方向（2026-07-11）**：先读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。双产品、外部 SaaS、多租户和商业化文档均为冻结历史材料，不得作为当前开发指令。
+
+> **当前事实入口**：再读 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。它区分政策、计划、代码实现、自动验证、真实外部观察、对账、mock、推断和已过期声明。
+
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 更新日期：2026-07-07
+> 更新日期：2026-07-11
 
 ---
 
@@ -12,6 +16,7 @@
 | [入门教程](tutorial-getting-started.md) | 🆕 从零搭建开发环境到创建第一个商品——新人首选 |
 | [端到端教程](tutorial-first-workflow.md) | 🆕 从安装到运行业务闭环，30 分钟端到端体验 |
 | [API 快速参考](reference-api-quick.md) | 🆕 路由、认证、响应格式、中间件栈速查 |
+| [完整经营闭环与系统边界](research/commerce-loop-system-boundaries.md) | 平台无关的经营闭环、六个业务能力模块、统一事实链与关键闸门 |
 | [模块目录](reference-module-catalog.md) | 🆕 全部 60+ 后端领域模块一览 |
 | [配置参考](reference-configuration.md) | 🆕 config.yaml + 环境变量完整说明 |
 | [Agent Pipeline 解释](explanation-agent-pipeline.md) | 🆕 Agent 间如何通过 EventBus 通信和协作 |
@@ -25,7 +30,7 @@
 | [配置平台集成](howto-platform-integrations.md) | 🆕 接入 Ozon / Shopee API |
 | [创建自定义 Agent 规则](howto-agent-rules.md) | 🆕 控制 Agent 决策边界和触发条件 |
 | [运行测试与验证](howto-test-and-verify.md) | 🆕 Go 测试、前端测试、E2E |
-| [配置与部署](howto-deploy.md) | 🆕 Docker 生产部署、Nginx/Caddy |
+| [Owner 与 AI 统一部署测试手册](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md) | ⭐ 服务器初始化、部署、恢复、测试、回滚与交付的唯一运行手册 |
 | [使用 WebSocket 流式更新](howto-websocket.md) | 🆕 连接 /ws 端点接收实时数据 |
 | [执行第一个业务闭环](howto-first-business-loop.md) | 🆕 候选商品→完整度→利润→审批→上架的操作指南 |
 
@@ -65,12 +70,24 @@
 
 | 文档 | 当前用途 |
 |------|----------|
+| [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律、开发路线与解冻门槛 |
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
+| [真实付费需求发现循环设计](superpowers/specs/2026-07-11-paid-demand-discovery-loop-design.md) | 候选市场、需求案件、独立反证和真实交易裁决边界 |
+| [真实付费需求发现循环实施计划](superpowers/plans/2026-07-11-paid-demand-discovery-loop.md) | Sprint 1 分阶段实施与验收计划 |
+| [付费需求信号地图](../deliverables/research/paid-demand-signal-map.md) | 代理信号与真实付款证据的边界 |
+| [付费需求反证协议](../deliverables/research/paid-demand-falsification-protocol.md) | 独立反证、污染和停止规则 |
+| [需求数据可得性现实审计](../deliverables/research/demand-data-access-reality.md) | 平台字段、权限和 unknown 边界 |
+| [选市场、选类目、选产品统一方法](../deliverables/research/market-category-product-selection-synthesis.md) | 历史研究材料；固定漏斗数量已冻结，当前只保留其证据边界参考 |
+| [市场选择研究](../deliverables/research/market-selection-method.md) | 国家市场、平台市场与需求市场的选择方法和 Ozon 实证闸门 |
+| [类目选择研究](../deliverables/research/category-selection-method.md) | 类目硬淘汰、七维筛选、评分与反例 |
+| [产品选择研究](../deliverables/research/product-selection-method.md) | 需求、竞品、供应商、成本、合规与真实商品机会定义 |
+| [双产品十星架构设计](designs/dual-product-cathedral.md) | ⛔ 2026-07-11 已冻结的历史决策，不得作为当前开发指令 |
 | [AI-Native AgentOS 长期愿景与架构方向](AI_NATIVE_DEVELOPMENT_PLAN.md) | 🆕 面向多领域可信自进化 AgentOS 的长期愿景；不覆盖当前执行优先级 |
 | [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
 | [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |
 | [AI-Native AgentOS 任务清单](../tasks/todo.md) | 🆕 可逐项执行的 Product Loop / Action Gate / E2E canonical 任务列表 |
-| [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | 🆕 未来半年商品出海业务层开发总纲：目标、阶段、架构 and 验收标准 |
+| [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) | 当前代码、测试、经营事实、mock、过期方向和未闭环部分的只读审计快照 |
+| [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | ⛔ 已被 2026-07-11 自用方向替代，仅供历史追溯 |
 | [验收门禁](ACCEPTANCE_GATE.md) | 🆕 Dev Done / Test Green / Business Verified / Beta Accepted 的完成定义和证据要求 |
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |
 | [已知问题台账](KNOWN_ISSUES.md) | 🆕 红灯问题 owner / deadline / impact 跟踪，防止长期合理化 |
@@ -137,7 +154,6 @@
 | [已知问题台账](KNOWN_ISSUES.md) | 已知失败项 owner / deadline / impact 跟踪 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [E2E Docker 环境](docker-compose.e2e.yml) | 🆕 全栈 E2E 测试专用 Docker Compose（Postgres + 后端 + 前端）|
-| [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
 | [全局验证脚本](scripts/verify_all.sh) | 🔄 全局验证脚本：build→vet→test→lint→build→E2E（E2E 默认必须运行）|
 | [文档漂移检查](scripts/check_doc_drift.sh) | 🆕 验证 INDEX.md/AGENTS.md/CLAUDE.md 所有 .md 引用是否存在 |
 | [已知问题过期检查](scripts/check_known_issues.sh) | 🆕 扫描 KNOWN_ISSUES.md 中超过 Target Fix 日期的项 |
@@ -227,7 +243,7 @@
 
 > 新功能需求请添加到 `docs/features/` 目录，使用标准模板。
 
-- [商品出海决策与执行层](features/product-export-decision-execution-layer.md) — 未来半年商品出海业务层开发总纲
+- [商品出海决策与执行层](features/product-export-decision-execution-layer.md) — ⛔ 已被当前 Owner 自用方向替代，仅供历史追溯
 - [功能需求模板](features/TEMPLATE.md)
 - [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
 

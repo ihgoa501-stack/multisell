@@ -63,7 +63,7 @@
 |---|--------|----------|--------|----------|
 | 1 | 当前版本有 tag | `git tag -l --points-at HEAD` | tag 存在 | 输出当前版本的 tag 名称 |
 | 2 | 回退脚本可用 | `./scripts/rollback.sh` (dry-run) | 脚本执行 | 健康检查通过，输出"回滚完成" |
-| 3 | 回退后恢复 | `./scripts/deploy.sh` | 部署流程 | 所有服务健康检查通过 |
+| 3 | 回退后恢复 | 按 `docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md` 第 14–15 节执行 | 部署流程 | 所有服务健康检查通过 |
 
 ---
 

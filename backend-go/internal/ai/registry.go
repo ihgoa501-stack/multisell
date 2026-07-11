@@ -6,8 +6,8 @@ import "strings"
 type AgentSpec struct {
 	ID             string   `json:"agent_id"`
 	Name           string   `json:"name"`
-	Squad          string   `json:"squad"`           // autonomous | governance | ops
-	Autonomy       string   `json:"autonomy"`        // advisory | guided | autonomous | supervised
+	Squad          string   `json:"squad"`    // autonomous | governance | ops
+	Autonomy       string   `json:"autonomy"` // advisory | guided | autonomous | supervised
 	DecisionPoints []string `json:"decision_points"`
 	Description    string   `json:"description"`
 	ModelHint      string   `json:"model_hint,omitempty"`
@@ -66,36 +66,40 @@ func DefaultRegistry() *AgentRegistry {
 		{ID: "G0", Name: "Coordinator", Squad: "governance", Autonomy: "supervised",
 			DecisionPoints: []string{"system_health", "anomaly_escalation", "cross_squad_coordinate", "agent_audit"},
 			Description:    "协调仲裁：系统健康、异常升级、跨Agent协作、Agent审计",
-			ModelHint: "gpt-4o", RiskFloor: "high"},
+			ModelHint:      "gpt-4o", RiskFloor: "high"},
 		// A8 — Sourcing Agent (Phase 2)
 		{ID: "A8", Name: "Sourcing Agent", Squad: "growth", Autonomy: "supervised",
 			DecisionPoints: []string{"sourcing_recommend"},
 			Description:    "AI 选品分析：1688 商品利润分析、采购推荐、选品到刊登全链路触发",
-			ModelHint: "gpt-4o", RiskFloor: "medium"},
+			ModelHint:      "gpt-4o", RiskFloor: "medium"},
 		// A9 — Batch Operations Agent (Phase 2)
 		{ID: "A9", Name: "Batch Ops", Squad: "ops", Autonomy: "guided",
 			DecisionPoints: []string{"batch_price_update", "batch_inventory_sync", "batch_listing_update", "import_validation"},
 			Description:    "批量运维：批量调价、库存同步、刊登更新、导入校验",
-			ModelHint: "gpt-4o-mini", RiskFloor: "high"},
+			ModelHint:      "gpt-4o-mini", RiskFloor: "high"},
 		{ID: "A10", Name: "Logistics Ops", Squad: "fulfillment", Autonomy: "supervised",
 			DecisionPoints: []string{"carrier_compare", "shipping_bill_audit", "carrier_performance", "logistics_route_opt"},
 			Description:    "物流优化：承运商比价、运费审计、绩效评估、仓配策略",
-			ModelHint: "gpt-4o-mini", RiskFloor: "medium"},
+			ModelHint:      "gpt-4o-mini", RiskFloor: "medium"},
 		// A11 — Aftersales Management (Phase 2)
 		{ID: "A11", Name: "Aftersales Mgmt", Squad: "settle", Autonomy: "supervised",
 			DecisionPoints: []string{"return_analysis", "refund_decision", "dispute_manage", "aftersales_report"},
 			Description:    "售后管理：退货分析、退款决策、纠纷处理、售后预警",
-			ModelHint: "gpt-4o", RiskFloor: "medium"},
+			ModelHint:      "gpt-4o", RiskFloor: "medium"},
+		{ID: "A12", Name: "Automatic Collection", Squad: "growth", Autonomy: "supervised",
+			DecisionPoints: []string{"market_discover", "product_collect", "supplier_scrape"},
+			Description:    "自动采集：市场搜索、商品详情、供应商证据与来源留痕",
+			ModelHint:      "gpt-4o-mini", RiskFloor: "low"},
 		// content_ai — product enrichment (Phase 2)
 		{ID: "content_ai", Name: "Content Generator", Squad: "growth", Autonomy: "supervised",
 			DecisionPoints: []string{"content_generate", "image_generate", "description_rewrite"},
 			Description:    "商品内容生成：标题/描述/关键词/图片自动生成与本地化",
-			ModelHint: "gpt-4o", RiskFloor: "low"},
+			ModelHint:      "gpt-4o", RiskFloor: "low"},
 		// scheduler — lifecycle management (Phase 2)
 		{ID: "scheduler", Name: "Lifecycle Scheduler", Squad: "ops", Autonomy: "autonomous",
 			DecisionPoints: []string{"delisting_evaluate", "price_expiry_check", "inventory_cleanup"},
 			Description:    "商品生命周期管理：定时下架、临期检查、库存清理",
-			ModelHint: "gpt-4o-mini", RiskFloor: "medium"},
+			ModelHint:      "gpt-4o-mini", RiskFloor: "medium"},
 	}
 	r := &AgentRegistry{Agents: agents, byID: make(map[string]AgentSpec, len(agents))}
 	for _, a := range agents {

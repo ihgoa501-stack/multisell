@@ -1,0 +1,38 @@
+{
+  "date": "2026-07-10",
+  "window": "7d",
+  "metrics": {
+    "commits": 128,
+    "contributors": 4,
+    "prs_merged": 16,
+    "insertions": 84812,
+    "deletions": 85073,
+    "net_loc": -261,
+    "test_loc": 24369,
+    "test_ratio": 0.29,
+    "active_days": 7,
+    "sessions": 32,
+    "deep_sessions": 6,
+    "avg_session_minutes": 32,
+    "loc_per_session_hour": 800,
+    "feat_pct": 0.25,
+    "fix_pct": 0.46,
+    "peak_hour": 9,
+    "ai_assisted_commits": 122
+  },
+  "authors": {
+    "Developer": { "commits": 58, "insertions": 25051, "deletions": 25312, "test_ratio": 0.10, "top_area": "backend-go/internal/" },
+    "eleven": { "commits": 35, "insertions": 50839, "deletions": 50839, "test_ratio": 0.36, "top_area": "backend-go/internal/" },
+    "ihgoa501-stack": { "commits": 29, "insertions": 8922, "deletions": 8922, "test_ratio": 0.42, "top_area": "backend-go/internal/" },
+    "dependabot[bot]": { "commits": 6, "insertions": 356, "deletions": 680, "test_ratio": 0, "top_area": "frontend-next/" }
+  },
+  "version_range": ["0.4.0", "0.4.1.0"],
+  "streak_days": 2,
+  "tweetable": "7/3-7/10: 128 commits (3 devs), 16 PRs, fix ratio 46%, test ratio 29%, peak: 9am | Version 0.4.0→0.4.1.0",
+  "test_health": {
+    "total_test_files": 3646,
+    "tests_added_this_period": 3,
+    "regression_test_commits": 0,
+    "test_files_changed": 3
+  }
+}

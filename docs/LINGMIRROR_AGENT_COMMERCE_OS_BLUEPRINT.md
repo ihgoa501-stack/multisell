@@ -1,8 +1,11 @@
 # LingMirror Agent Commerce OS 完整蓝图与开发路径
 
-产品品牌：凌镜 LingMirror  
-技术项目名：MultiSell  
-日期：2026-06-22  
+> [!CAUTION]
+> **已冻结的长期历史蓝图。** Owner 于 2026-07-11 决定只冲刺自用商品实验系统。本文的外部客户、SaaS、多租户、开放平台、生态和规模化路线不得进入当前 backlog。当前事实源见 `SELF_USE_OPERATING_DIRECTION.md`。
+
+产品品牌：凌镜 LingMirror
+技术项目名：MultiSell
+日期：2026-06-22
 定位：完整产品蓝图、架构原则、分阶段开发路径和验收标准
 
 ---
@@ -264,10 +267,10 @@ BusinessCommandExecution
 OutcomeReview
 ```
 
-`ActionProposal` 表示 Agent 或系统提出的动作。  
-`WorkItem` 表示人需要看到或处理的统一任务。  
-`ApprovalRequest` 表示需要人批准的动作。  
-`BusinessCommandExecution` 表示真实执行记录。  
+`ActionProposal` 表示 Agent 或系统提出的动作。
+`WorkItem` 表示人需要看到或处理的统一任务。
+`ApprovalRequest` 表示需要人批准的动作。
+`BusinessCommandExecution` 表示真实执行记录。
 `OutcomeReview` 表示执行后的经营结果复盘。
 
 状态流：

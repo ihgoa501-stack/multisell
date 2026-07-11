@@ -1,5 +1,8 @@
 # AI-Native AgentOS 长期愿景与架构方向 (2026-2027)
 
+> [!CAUTION]
+> **已冻结的长期参考。** 当前只开发 Owner 自用的跨市场选择、真实商品实验和最终净利润闭环；不得预设 Ozon、欧洲或任何平台。本文件不得驱动 AgentOS 扩张、多租户、外部 SaaS 或自治升级。见 `SELF_USE_OPERATING_DIRECTION.md`。
+
 > **文档状态**：长期愿景 / 架构方向文档，不是当前 Sprint、季度排期或自动执行计划
 > **面向对象**：后续入场的所有 AI 研发 Agent 与人类 Owner
 > **核心目标**：定义 LingMirror 在安全、可审计、Owner 可控前提下走向 AI-Native AgentOS 的长期方向，并说明业务层、认知层和多行业扩展的技术设计原因。

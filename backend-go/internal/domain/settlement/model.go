@@ -20,6 +20,7 @@ type Settlement struct {
 	Status       string          `gorm:"column:status;default:pending" json:"status"`
 	RawData      json.RawMessage `gorm:"column:raw_data;type:jsonb" json:"raw_data,omitempty"`
 	ImportedAt   *time.Time      `gorm:"column:imported_at" json:"imported_at,omitempty"`
+	SourceType   string          `gorm:"column:source_type;default:manual" json:"source_type"`
 	CreatedAt    time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt    time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
@@ -51,17 +52,17 @@ func (SettlementItem) TableName() string { return "settlement_item" }
 
 // PlatformSettlementBatch maps to "platform_settlement_batch".
 type PlatformSettlementBatch struct {
-	ID            int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	PlatformName  string    `gorm:"column:platform_name" json:"platform_name"`
-	Filename      string    `gorm:"column:filename;not null" json:"filename"`
-	RowCount      int       `gorm:"column:row_count;default:0" json:"row_count"`
-	MatchedCount  int       `gorm:"column:matched_count;default:0" json:"matched_count"`
-	UnmatchedCount int      `gorm:"column:unmatched_count;default:0" json:"unmatched_count"`
-	ImportStatus  string    `gorm:"column:import_status;default:imported" json:"import_status"`
-	Status        string    `gorm:"column:status;default:imported" json:"status"`
-	CreatedBy     string    `gorm:"column:created_by" json:"created_by"`
-	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	ID             int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	PlatformName   string    `gorm:"column:platform_name" json:"platform_name"`
+	Filename       string    `gorm:"column:filename;not null" json:"filename"`
+	RowCount       int       `gorm:"column:row_count;default:0" json:"row_count"`
+	MatchedCount   int       `gorm:"column:matched_count;default:0" json:"matched_count"`
+	UnmatchedCount int       `gorm:"column:unmatched_count;default:0" json:"unmatched_count"`
+	ImportStatus   string    `gorm:"column:import_status;default:imported" json:"import_status"`
+	Status         string    `gorm:"column:status;default:imported" json:"status"`
+	CreatedBy      string    `gorm:"column:created_by" json:"created_by"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (PlatformSettlementBatch) TableName() string { return "platform_settlement_batch" }
@@ -90,26 +91,27 @@ func (PlatformSettlementItem) TableName() string { return "platform_settlement_i
 
 // SettlementDetail is the composite detail payload.
 type SettlementDetail struct {
-	Settlement Settlement        `json:"settlement"`
-	Items      []SettlementItem  `json:"items"`
+	Settlement Settlement       `json:"settlement"`
+	Items      []SettlementItem `json:"items"`
 }
 
 // ---------- Input / DTO structs ----------
 
 // CreateSettlementInput is the payload for POST /settlement.
 type CreateSettlementInput struct {
-	PlatformID   *int64          `json:"platform_id"`
-	SettlementNo string          `json:"settlement_no" binding:"required"`
-	PeriodStart  *time.Time      `json:"period_start"`
-	PeriodEnd    *time.Time      `json:"period_end"`
-	Currency     string          `json:"currency"`
-	TotalRevenue *float64        `json:"total_revenue"`
-	TotalFee     *float64        `json:"total_fee"`
-	TotalRefund  *float64        `json:"total_refund"`
-	TotalNet     *float64        `json:"total_net"`
-	Status       string          `json:"status"`
-	RawData      json.RawMessage `json:"raw_data"`
-	ImportedAt   *time.Time      `json:"imported_at"`
+	PlatformID   *int64                `json:"platform_id"`
+	SettlementNo string                `json:"settlement_no" binding:"required"`
+	PeriodStart  *time.Time            `json:"period_start"`
+	PeriodEnd    *time.Time            `json:"period_end"`
+	Currency     string                `json:"currency"`
+	TotalRevenue *float64              `json:"total_revenue"`
+	TotalFee     *float64              `json:"total_fee"`
+	TotalRefund  *float64              `json:"total_refund"`
+	TotalNet     *float64              `json:"total_net"`
+	Status       string                `json:"status"`
+	RawData      json.RawMessage       `json:"raw_data"`
+	ImportedAt   *time.Time            `json:"imported_at"`
+	SourceType   string                `json:"source_type"`
 	Items        []SettlementItemInput `json:"items"`
 }
 
@@ -129,15 +131,15 @@ type SettlementItemInput struct {
 
 // UpdateSettlementInput allows partial updates.
 type UpdateSettlementInput struct {
-	PlatformID   *int64          `json:"platform_id"`
-	PeriodStart  *time.Time      `json:"period_start"`
-	PeriodEnd    *time.Time      `json:"period_end"`
-	Currency     *string         `json:"currency"`
-	TotalRevenue *float64        `json:"total_revenue"`
-	TotalFee     *float64        `json:"total_fee"`
-	TotalRefund  *float64        `json:"total_refund"`
-	TotalNet     *float64        `json:"total_net"`
-	Status       *string         `json:"status"`
+	PlatformID   *int64           `json:"platform_id"`
+	PeriodStart  *time.Time       `json:"period_start"`
+	PeriodEnd    *time.Time       `json:"period_end"`
+	Currency     *string          `json:"currency"`
+	TotalRevenue *float64         `json:"total_revenue"`
+	TotalFee     *float64         `json:"total_fee"`
+	TotalRefund  *float64         `json:"total_refund"`
+	TotalNet     *float64         `json:"total_net"`
+	Status       *string          `json:"status"`
 	RawData      *json.RawMessage `json:"raw_data"`
 }
 

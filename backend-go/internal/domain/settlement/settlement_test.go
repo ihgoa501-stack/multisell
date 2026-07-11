@@ -171,6 +171,13 @@ func TestService_Create_Validation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing settlement_no")
 	}
+
+	_, err = svc.Create(&CreateSettlementInput{
+		PlatformID: &pid, SettlementNo: "SETTLE-BYPASS", Status: "reconciled",
+	})
+	if err == nil {
+		t.Fatal("expected create to reject a reconciliation status bypass")
+	}
 }
 
 func TestService_Get_NotFound(t *testing.T) {
@@ -292,18 +299,8 @@ func TestService_Update(t *testing.T) {
 	})
 
 	newStatus := "closed"
-	updated, err := svc.Update(st.ID, &UpdateSettlementInput{Status: &newStatus})
-	if err != nil {
-		t.Fatalf("Update failed: %v", err)
-	}
-	if updated.Status != "closed" {
-		t.Errorf("expected status closed, got %s", updated.Status)
-	}
-
-	// Verify persistence
-	detail, _ := svc.Get(st.ID)
-	if detail.Settlement.Status != "closed" {
-		t.Errorf("persisted status should be closed, got %s", detail.Settlement.Status)
+	if _, err := svc.Update(st.ID, &UpdateSettlementInput{Status: &newStatus}); err == nil {
+		t.Fatal("pending settlement must not bypass reconciliation and close directly")
 	}
 }
 
@@ -344,7 +341,7 @@ func TestService_Delete(t *testing.T) {
 	rev := 500.0
 	st, _ := svc.Create(&CreateSettlementInput{
 		PlatformID: &pid, SettlementNo: "SETTLE-DEL",
-		Items:      []SettlementItemInput{{TransactionType: "sale", Amount: &rev}},
+		Items: []SettlementItemInput{{TransactionType: "sale", Amount: &rev}},
 	})
 
 	if err := svc.Delete(st.ID); err != nil {
@@ -383,7 +380,7 @@ func TestService_Reconcile_SingleItem(t *testing.T) {
 	rev := 200.0
 	st, _ := svc.Create(&CreateSettlementInput{
 		PlatformID: &pid, SettlementNo: "SETTLE-REC",
-		Items:      []SettlementItemInput{{TransactionType: "sale", Amount: &rev}},
+		Items: []SettlementItemInput{{TransactionType: "sale", Amount: &rev}},
 	})
 
 	detail, _ := svc.Get(st.ID)
@@ -567,7 +564,7 @@ func TestService_UpdateItemReconciliation(t *testing.T) {
 	rev := 100.0
 	st, _ := svc.Create(&CreateSettlementInput{
 		PlatformID: &pid, SettlementNo: "SETTLE-UPD-ITEM",
-		Items:      []SettlementItemInput{{TransactionType: "sale", Amount: &rev}},
+		Items: []SettlementItemInput{{TransactionType: "sale", Amount: &rev}},
 	})
 
 	detail, _ := svc.Get(st.ID)
@@ -597,7 +594,7 @@ func TestService_UpdateItemReconciliation_InvalidStatus(t *testing.T) {
 	rev := 100.0
 	st, _ := svc.Create(&CreateSettlementInput{
 		PlatformID: &pid, SettlementNo: "SETTLE-INVALID",
-		Items:      []SettlementItemInput{{TransactionType: "sale", Amount: &rev}},
+		Items: []SettlementItemInput{{TransactionType: "sale", Amount: &rev}},
 	})
 
 	detail, _ := svc.Get(st.ID)
@@ -622,15 +619,16 @@ func TestService_Summary(t *testing.T) {
 	net1 := 800.0
 	net2 := 1500.0
 
-	svc.Create(&CreateSettlementInput{
-		PlatformID: &pid1, SettlementNo: "S1", TotalRevenue: &rev1, TotalFee: floatPtr(100), TotalRefund: floatPtr(50), TotalNet: &net1, Status: "reconciled",
+	s1, _ := svc.Create(&CreateSettlementInput{
+		PlatformID: &pid1, SettlementNo: "S1", TotalRevenue: &rev1, TotalFee: floatPtr(100), TotalRefund: floatPtr(50), TotalNet: &net1,
 	})
 	svc.Create(&CreateSettlementInput{
 		PlatformID: &pid1, SettlementNo: "S2", TotalRevenue: &rev1, TotalFee: floatPtr(100), TotalRefund: floatPtr(50), TotalNet: &net1, Status: "pending",
 	})
-	svc.Create(&CreateSettlementInput{
-		PlatformID: &pid2, SettlementNo: "S3", TotalRevenue: &rev2, TotalFee: floatPtr(200), TotalRefund: floatPtr(100), TotalNet: &net2, Status: "reconciled",
+	s3, _ := svc.Create(&CreateSettlementInput{
+		PlatformID: &pid2, SettlementNo: "S3", TotalRevenue: &rev2, TotalFee: floatPtr(200), TotalRefund: floatPtr(100), TotalNet: &net2,
 	})
+	db.Model(&Settlement{}).Where("id IN ?", []int64{s1.ID, s3.ID}).Update("status", "reconciled")
 
 	summary, err := svc.Summary()
 	if err != nil {

@@ -1,371 +1,334 @@
 /**
- * 凌镜 AI 选品助手 — Background Service Worker (MV3)
+ * Background Service Worker (Manifest V3).
  *
- * Maintains a WebSocket connection to the LingMirror backend.
- * Relays fetch_product commands to content scripts and forwards
+ * Maintains a persistent WebSocket connection to the LingMirror backend,
+ * relays fetch_product requests to content scripts, and forwards
  * extraction results back to the server.
  */
-
-// ─── Configuration Constants ──────────────────────────────────────────────
-
-var WS_RECONNECT_MAX_RETRIES = 5;
-var WS_RECONNECT_BASE_DELAY = 1000; // 1 second
-var WS_HEARTBEAT_INTERVAL = 15000;  // 15 seconds
-var WS_URL_KEY = 'lingmirror_ws_url';
-var JWT_KEY = 'lingmirror_jwt';
-
-// ─── State ────────────────────────────────────────────────────────────────
-
-/** @type {WebSocket|null} */
-var ws = null;
-
-/** @type {number} */
-var reconnectAttempt = 0;
-
-/** @type {number|null} */
-var reconnectTimer = null;
-
-/** @type {number|null} */
-var heartbeatTimer = null;
-
-/** @type {boolean} */
-var isConnected = false;
-
-/** @type {boolean} */
-var isDestroyed = false; // Set to true on service worker shutdown
-
-// ─── Connection Status Broadcasting ───────────────────────────────────────
-
-/**
- * Notify popup and other listeners about connection status changes.
- * @param {'connected'|'disconnected'|'no_token'|'error'} status
- */
-function broadcastStatus(status) {
-  chrome.runtime.sendMessage({ type: 'connection_status', status: status }).catch(function () {
-    // No listeners (popup closed) — ok
-  });
+import { getJWT, getServerUrl, getWsUrl } from "./shared/auth.js";
+// ─── State ─────────────────────────────────────────────────────────────────
+let ws = null;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let pingInterval = null;
+let authenticated = false;
+let errored = false;
+let connectionStatus = "disconnected";
+const MAX_RECONNECT_DELAY = 30000; // 30 seconds
+const INITIAL_RECONNECT_DELAY = 1000; // 1 second
+const PING_INTERVAL = 15000; // 15 seconds
+// ─── Connection status broadcast ───────────────────────────────────────────
+function setConnectionStatus(status) {
+    connectionStatus = status;
+    const msg = { type: "connection_status", status };
+    chrome.runtime.sendMessage(msg).catch(() => {
+        // No listeners (popup closed) — that's fine
+    });
 }
-
-// ─── WebSocket Core ───────────────────────────────────────────────────────
-
-/**
- * Calculate the reconnect delay with exponential backoff.
- * Caps at ~30 seconds.
- * @param {number} attempt - Current retry attempt (0-based)
- * @returns {number} Delay in milliseconds
- */
-function getReconnectDelay(attempt) {
-  var delay = WS_RECONNECT_BASE_DELAY * Math.pow(2, attempt);
-  return Math.min(delay, 30000);
-}
-
-/**
- * Connect to the LingMirror backend WebSocket.
- * Reads JWT token and server URL from chrome.storage.
- */
-function connect() {
-  if (isDestroyed) return;
-
-  // Avoid duplicate connections
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-    return;
-  }
-
-  chrome.storage.local.get([JWT_KEY, WS_URL_KEY], function (result) {
-    var token = result[JWT_KEY];
-    var serverUrl = result[WS_URL_KEY] || 'ws://localhost:8080';
-
+// ─── WebSocket management ─────────────────────────────────────────────────
+async function connect() {
+    // Avoid duplicate connections
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+    // Reset auth state for fresh connection
+    authenticated = false;
+    errored = false;
+    const token = await getJWT();
     if (!token) {
-      broadcastStatus('no_token');
-      return;
+        setConnectionStatus("no_token");
+        return;
     }
-
-    // Build WebSocket URL with token for initial auth
-    var wsUrl = serverUrl + '/ws/extension';
+    const serverUrl = await getServerUrl();
+    const wsUrl = getWsUrl(serverUrl, token);
     try {
-      ws = new WebSocket(wsUrl);
-    } catch (err) {
-      console.error('[凌镜] WebSocket creation failed:', err);
-      broadcastStatus('error');
-      scheduleReconnect();
-      return;
+        ws = new WebSocket(wsUrl);
     }
-
-    ws.onopen = function () {
-      console.log('[凌镜] WebSocket connected');
-
-      // Send auth message with token
-      ws.send(JSON.stringify({
-        type: 'auth',
-        token: token
-      }));
-
-      isConnected = true;
-      reconnectAttempt = 0;
-      broadcastStatus('connected');
-
-      // Start heartbeat
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
-      heartbeatTimer = setInterval(function () {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'ping' }));
+    catch (err) {
+        console.error("[LingMirror] WebSocket creation failed:", err);
+        setConnectionStatus("error");
+        scheduleReconnect();
+        return;
+    }
+    ws.onopen = () => {
+        console.log("[LingMirror] WebSocket connected, sending auth...");
+        reconnectAttempt = 0;
+        ws?.send(JSON.stringify({ type: "auth", token }));
+    };
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            // Handle auth response first — before any other message processing
+            if (msg.type === "auth") {
+                if (msg.data === "ok") {
+                    console.log("[LingMirror] WebSocket authenticated");
+                    authenticated = true;
+                    setConnectionStatus("connected");
+                    startPing();
+                }
+                else {
+                    console.error("[LingMirror] WebSocket auth failed:", msg.message || "invalid token");
+                    setConnectionStatus("error");
+                    ws?.close();
+                }
+                return;
+            }
+            // Ignore messages received before authentication
+            if (!authenticated)
+                return;
+            switch (msg.type) {
+                case "pong":
+                    // Heartbeat acknowledged; nothing else to do
+                    break;
+                case "fetch_product":
+                    handleFetchProduct(msg);
+                    break;
+                case "fetch_list_page":
+                    handleFetchListPage(msg);
+                    break;
+                default:
+                    console.warn("[LingMirror] Unknown WS message type:", msg.type);
+            }
         }
-      }, WS_HEARTBEAT_INTERVAL);
-    };
-
-    ws.onmessage = function (event) {
-      try {
-        var msg = JSON.parse(event.data);
-
-        switch (msg.type) {
-          case 'pong':
-            // Heartbeat acknowledged
-            break;
-
-          case 'fetch_product':
-            handleFetchProduct(msg);
-            break;
-
-          case 'auth_ok':
-            // Auth acknowledged by server
-            console.log('[凌镜] Auth OK');
-            break;
-
-          case 'auth_error':
-            console.error('[凌镜] Auth error:', msg.message);
-            broadcastStatus('error');
-            break;
-
-          default:
-            console.warn('[凌镜] Unknown WS message type:', msg.type);
+        catch (err) {
+            console.error("[LingMirror] Failed to parse WS message:", err);
         }
-      } catch (err) {
-        console.error('[凌镜] Failed to parse WS message:', err);
-      }
     };
-
-    ws.onclose = function (event) {
-      console.log('[凌镜] WebSocket closed:', event.code, event.reason);
-      isConnected = false;
-      broadcastStatus('disconnected');
-      cleanup();
-      if (!isDestroyed) scheduleReconnect();
+    ws.onclose = (event) => {
+        console.log("[LingMirror] WebSocket closed:", event.code, event.reason);
+        if (authenticated && !errored) {
+            setConnectionStatus("disconnected");
+        }
+        authenticated = false;
+        errored = false;
+        cleanup();
+        scheduleReconnect();
     };
-
-    ws.onerror = function () {
-      console.error('[凌镜] WebSocket error');
-      broadcastStatus('error');
+    ws.onerror = () => {
+        console.error("[LingMirror] WebSocket error");
+        errored = true;
+        setConnectionStatus("error");
     };
-  });
 }
-
-/**
- * Clean up timers and WebSocket reference.
- */
 function cleanup() {
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-  }
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  ws = null;
+    if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+    }
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+    ws = null;
 }
-
-/**
- * Schedule a reconnection attempt with exponential backoff.
- * Stops after max retries.
- */
-function scheduleReconnect() {
-  if (reconnectTimer) return; // Already scheduled
-
-  if (reconnectAttempt >= WS_RECONNECT_MAX_RETRIES) {
-    console.error('[凌镜] Max reconnection attempts reached (' + WS_RECONNECT_MAX_RETRIES + ')');
-    broadcastStatus('error');
-    return;
-  }
-
-  var delay = getReconnectDelay(reconnectAttempt);
-  reconnectAttempt++;
-  console.log('[凌镜] Reconnecting in ' + delay + 'ms (attempt #' + reconnectAttempt + ')');
-
-  reconnectTimer = setTimeout(function () {
-    reconnectTimer = null;
-    connect();
-  }, delay);
-}
-
-// ─── Message Routing ──────────────────────────────────────────────────────
-
-/**
- * Handle a fetch_product request from the backend.
- * Finds the tab with the target URL and asks its content script to extract data.
- * @param {Object} msg - { type: "fetch_product", id: "req_uuid", payload: { url: "..." } }
- */
-function handleFetchProduct(msg) {
-  var url = msg.payload.url;
-
-  chrome.tabs.query({ url: url }, function (tabs) {
-    var targetTab = tabs && tabs[0];
-
-    if (!targetTab || !targetTab.id) {
-      // Tab not found by exact URL — try partial match
-      chrome.tabs.query({}, function (allTabs) {
-        var fallbackTab = null;
-        for (var i = 0; i < allTabs.length; i++) {
-          if (allTabs[i].url && (allTabs[i].url === url || allTabs[i].url.indexOf(url) !== -1)) {
-            fallbackTab = allTabs[i];
-            break;
-          }
+function startPing() {
+    if (pingInterval) {
+        clearInterval(pingInterval);
+    }
+    pingInterval = setInterval(() => {
+        if (ws?.readyState === WebSocket.OPEN && authenticated) {
+            ws.send(JSON.stringify({ type: "ping" }));
         }
-
-        if (!fallbackTab || !fallbackTab.id) {
-          sendToServer({
-            type: 'fetch_product_error',
+    }, PING_INTERVAL);
+}
+function scheduleReconnect() {
+    if (reconnectTimer)
+        return; // Already scheduled
+    const delay = Math.min(INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY);
+    reconnectAttempt++;
+    console.log(`[LingMirror] Reconnecting in ${delay}ms (attempt #${reconnectAttempt})`);
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+    }, delay);
+}
+// ─── Message routing ───────────────────────────────────────────────────────
+/**
+ * Handle a fetch_product request from the server.
+ * Finds the tab with the requested URL and asks its content script to extract data.
+ */
+async function handleFetchProduct(msg) {
+    const url = msg.payload.url;
+    try {
+        const tabs = await chrome.tabs.query({ url });
+        const targetTab = tabs[0]; // Use first matching tab
+        if (!targetTab?.id) {
+            // Tab not open — try all tabs by URL partial match
+            const allTabs = await chrome.tabs.query({});
+            const fallbackTab = allTabs.find((t) => t.url && (t.url === url || t.url.includes(url)));
+            if (!fallbackTab?.id) {
+                sendToServer({
+                    type: "fetch_product_error",
+                    id: msg.id,
+                    payload: {
+                        code: "TAB_NOT_FOUND",
+                        message: `No open tab found for URL: ${url}`,
+                    },
+                });
+                return;
+            }
+            // Send to content script in found tab
+            const fetchReq = {
+                type: "fetch_product_from_page",
+                requestId: msg.id,
+            };
+            const response = await chrome.tabs.sendMessage(fallbackTab.id, fetchReq);
+            forwardResult(msg.id, response);
+            return;
+        }
+        // Send fetch request to the content script
+        const fetchReq = {
+            type: "fetch_product_from_page",
+            requestId: msg.id,
+        };
+        const response = await chrome.tabs.sendMessage(targetTab.id, fetchReq);
+        forwardResult(msg.id, response);
+    }
+    catch (err) {
+        sendToServer({
+            type: "fetch_product_error",
             id: msg.id,
             payload: {
-              code: 'TAB_NOT_FOUND',
-              message: 'No open tab found for URL: ' + url
-            }
-          });
-          return;
-        }
-
-        // Send fetch request to content script in found tab
-        chrome.tabs.sendMessage(fallbackTab.id, {
-          type: 'fetch_product_from_page',
-          requestId: msg.id
-        }, function (response) {
-          forwardResult(msg.id, response);
+                code: "CONTENT_SCRIPT_ERROR",
+                message: err instanceof Error
+                    ? err.message
+                    : "Failed to communicate with content script",
+            },
         });
-      });
-      return;
     }
-
-    // Send fetch request to the content script
-    chrome.tabs.sendMessage(targetTab.id, {
-      type: 'fetch_product_from_page',
-      requestId: msg.id
-    }, function (response) {
-      forwardResult(msg.id, response);
-    });
-  });
 }
-
+async function waitForTabComplete(tabId, timeoutMs = 30000) {
+    const current = await chrome.tabs.get(tabId);
+    if (current.status === "complete")
+        return;
+    await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener);
+            reject(new Error("Timed out waiting for list page to load"));
+        }, timeoutMs);
+        const listener = (updatedTabId, changeInfo) => {
+            if (updatedTabId !== tabId || changeInfo.status !== "complete")
+                return;
+            clearTimeout(timer);
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+    });
+}
+/** Open a marketplace search page in the background and extract its cards. */
+async function handleFetchListPage(msg) {
+    let createdTabId;
+    try {
+        const existing = await chrome.tabs.query({ url: msg.payload.url });
+        let tab = existing[0];
+        if (!tab?.id) {
+            tab = await chrome.tabs.create({ url: msg.payload.url, active: false });
+            createdTabId = tab.id;
+        }
+        if (!tab.id)
+            throw new Error("Browser did not create a list page tab");
+        await waitForTabComplete(tab.id);
+        const response = await chrome.tabs.sendMessage(tab.id, { type: "fetch_list_page" });
+        const items = Array.isArray(response?.data) ? response.data : [];
+        sendToServer({
+            type: "list_page_result",
+            id: msg.id,
+            payload: {
+                status: "ok",
+                data: { page_url: msg.payload.url, collected_at: new Date().toISOString(), items },
+            },
+        });
+    }
+    catch (err) {
+        sendToServer({
+            type: "list_page_result",
+            id: msg.id,
+            payload: {
+                status: "error",
+                data: { page_url: msg.payload.url, collected_at: new Date().toISOString(), items: [] },
+                error: {
+                    code: "LIST_COLLECTION_FAILED",
+                    message: err instanceof Error ? err.message : "Unknown browser collection error",
+                },
+            },
+        });
+    }
+    finally {
+        if (createdTabId !== undefined)
+            chrome.tabs.remove(createdTabId).catch(() => { });
+    }
+}
 /**
  * Forward a content script result to the server.
- * @param {string} requestId
- * @param {Object} response - The response from the content script
  */
 function forwardResult(requestId, response) {
-  if (!response || response.type !== 'fetch_product_from_page_result') return;
-
-  if (response.payload && response.payload.status === 'ok') {
-    sendToServer({
-      type: 'fetch_product_result',
-      id: requestId,
-      payload: { status: 'ok', data: response.payload.data }
-    });
-  } else if (response.payload) {
-    sendToServer({
-      type: 'fetch_product_error',
-      id: requestId,
-      payload: {
-        code: response.payload.code || 'EXTRACTION_FAILED',
-        message: response.payload.message || 'Extraction failed'
-      }
-    });
-  }
+    if (response.type !== "fetch_product_from_page_result")
+        return;
+    if ("status" in response.payload && response.payload.status === "ok") {
+        sendToServer({
+            type: "fetch_product_result",
+            id: requestId,
+            payload: { status: "ok", data: response.payload.data },
+        });
+    }
+    else {
+        sendToServer({
+            type: "fetch_product_error",
+            id: requestId,
+            payload: {
+                code: response.payload.code || "EXTRACTION_FAILED",
+                message: response.payload.message || "Extraction failed",
+            },
+        });
+    }
 }
-
 /**
- * Send a JSON message to the backend via WebSocket.
- * @param {Object} msg
+ * Send a message to the backend WebSocket server.
  */
 function sendToServer(msg) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
-  }
-}
-
-// ─── Internal Message Handlers ────────────────────────────────────────────
-
-/**
- * Handle messages from content scripts and popup.
- */
-chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
-  // Popup status query
-  if (message.type === 'get_status') {
-    var status = isConnected ? 'connected' : (ws ? 'disconnected' : 'no_token');
-    sendResponse({ type: 'connection_status', status: status });
-    return;
-  }
-
-  // Content script auto-extraction result
-  if (message.type === 'fetch_product_from_page_result') {
-    if (message.payload && message.payload.status === 'ok') {
-      sendToServer({
-        type: 'fetch_product_result',
-        id: message.requestId,
-        payload: { status: 'ok', data: message.payload.data }
-      });
+    if (ws?.readyState === WebSocket.OPEN && authenticated) {
+        ws.send(JSON.stringify(msg));
     }
-    return;
-  }
-
-  // Popup: update server URL
-  if (message.type === 'set_server_url') {
-    chrome.storage.local.set({ lingmirror_ws_url: message.url }, function () {
-      // Disconnect and reconnect with new URL
-      if (ws) {
-        ws.close();
-        cleanup();
-      }
-      connect();
-    });
-    return;
-  }
-
-  // Popup: set JWT token
-  if (message.type === 'set_token') {
-    chrome.storage.local.set({ [JWT_KEY]: message.token }, function () {
-      if (ws) {
-        ws.close();
-        cleanup();
-      }
-      connect();
-    });
-    return;
-  }
-
-  // Popup: clear JWT (logout)
-  if (message.type === 'clear_token') {
-    chrome.storage.local.remove(JWT_KEY, function () {
-      if (ws) {
-        ws.close();
-        cleanup();
-      }
-      broadcastStatus('no_token');
-    });
-    return;
-  }
+}
+// ─── Internal message handlers (content script & popup) ────────────────────
+/**
+ * Handle messages from:
+ * 1. Content scripts (auto-extracted product data)
+ * 2. Popup (status queries)
+ */
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    // List page auto-extraction result from content script
+    if (message.type === "list_page_result") {
+        sendToServer(message);
+        return;
+    }
+    // Popup status query
+    if (message.type === "get_status") {
+        sendResponse({ type: "connection_status", status: connectionStatus });
+        return;
+    }
+    // Auto-extraction result from content script
+    if (message.type === "fetch_product_from_page_result") {
+        if ("status" in message.payload && message.payload.status === "ok") {
+            // Forward to server as anonymous product data
+            sendToServer({
+                type: "fetch_product_result",
+                id: message.requestId,
+                payload: {
+                    status: "ok",
+                    data: message.payload.data,
+                },
+            });
+        }
+        return;
+    }
 });
-
-// ─── Service Worker Lifecycle ─────────────────────────────────────────────
-
+// ─── Initialization ───────────────────────────────────────────────────────
 // Connect when service worker starts
 connect();
-
 // Reconnect on browser startup
-chrome.runtime.onStartup.addListener(function () {
-  isDestroyed = false;
-  connect();
-});
-
+chrome.runtime.onStartup.addListener(() => connect());
 // Reconnect on extension install/update
-chrome.runtime.onInstalled.addListener(function () {
-  isDestroyed = false;
-  connect();
-});
+chrome.runtime.onInstalled.addListener(() => connect());
+//# sourceMappingURL=background.js.map

@@ -1,10 +1,13 @@
 package agent
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/lingmirror/backend-go/internal/ai"
+	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
 	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
@@ -68,10 +71,15 @@ func (h *Handler) ExecuteAction(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	contextValues, err := enrichAgentContext(c, body.Context)
+	if err != nil {
+		response.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
 	result, err := h.orchestrator.Run(&ai.RunAgentRequest{
 		AgentID:       id,
 		DecisionPoint: body.DecisionPoint,
-		Context:       body.Context,
+		Context:       contextValues,
 		Stream:        body.Stream,
 	})
 	if err != nil {
@@ -81,13 +89,33 @@ func (h *Handler) ExecuteAction(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// enrichAgentContext binds agent work to server-trusted request identity. Any
+// client-provided internal identity fields are overwritten.
+func enrichAgentContext(c *gin.Context, values map[string]interface{}) (map[string]interface{}, error) {
+	userID := common.UserIDFromCtx(c)
+	if userID == nil || *userID <= 0 {
+		return nil, fmt.Errorf("not authenticated")
+	}
+	if values == nil {
+		values = make(map[string]interface{})
+	}
+	values["_owner_user_id"] = *userID
+	requestID, _ := c.Get("request_id")
+	correlationID, _ := requestID.(string)
+	if correlationID == "" {
+		correlationID = uuid.NewString()
+	}
+	values["_correlation_id"] = correlationID
+	return values, nil
+}
+
 // Evolution GET /agents/evolution — returns evolution config placeholder.
 func (h *Handler) Evolution(c *gin.Context) {
 	response.Success(c, gin.H{
-		"enabled":   true,
-		"rules":     []string{"margin_floor", "stock_alert_threshold", "discount_ceiling"},
-		"episodes":  0,
-		"last_run":  nil,
+		"enabled":  true,
+		"rules":    []string{"margin_floor", "stock_alert_threshold", "discount_ceiling"},
+		"episodes": 0,
+		"last_run": nil,
 	})
 }
 

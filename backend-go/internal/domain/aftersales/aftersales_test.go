@@ -66,7 +66,6 @@ func (m *mockEventPublisher) Publish(_ context.Context, _, _ string, _ map[strin
 	return "", nil
 }
 
-
 func setupOrder(t *testing.T, db *gorm.DB) *order.Order {
 	t.Helper()
 	o := order.Order{
@@ -168,7 +167,13 @@ func TestService_List_FilterByStatus(t *testing.T) {
 	o := setupOrder(t, db)
 	qty := 1
 	svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "待处理", Status: "pending", CreatedBy: "admin"})
-	svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "已处理", Status: "approved", CreatedBy: "admin"})
+	approved, err := svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "已处理", CreatedBy: "admin"})
+	if err != nil {
+		t.Fatalf("create approved fixture: %v", err)
+	}
+	if _, err := svc.Approve(approved.ID, &ApproveInput{ApprovedBy: "admin"}); err != nil {
+		t.Fatalf("approve fixture: %v", err)
+	}
 
 	items, total, err := svc.List(&common.Pagination{Page: 1, Size: 10}, &ListFilter{Status: "pending"})
 	if err != nil {
@@ -197,6 +202,39 @@ func TestService_Update(t *testing.T) {
 	}
 	if updated.Reason != "更新后" {
 		t.Errorf("expected reason 更新后, got %s", updated.Reason)
+	}
+}
+
+func TestService_CreateRejectsNonPendingStatus(t *testing.T) {
+	db := newTestDB(t)
+	svc := newSvc(db)
+	o := setupOrder(t, db)
+	qty := 1
+	if _, err := svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Status: "refunded"}); err == nil {
+		t.Fatal("expected create with terminal status to fail")
+	}
+}
+
+func TestService_UpdateStatusUsesStateMachine(t *testing.T) {
+	db := newTestDB(t)
+	svc := newSvc(db)
+	o := setupOrder(t, db)
+	qty := 1
+	as, err := svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refunded := "refunded"
+	if _, err := svc.Update(as.ID, &UpdateInput{Status: &refunded}); err == nil {
+		t.Fatal("expected pending to refunded transition to fail")
+	}
+	approved := "approved"
+	updated, err := svc.Update(as.ID, &UpdateInput{Status: &approved})
+	if err != nil {
+		t.Fatalf("valid transition failed: %v", err)
+	}
+	if updated.Status != "approved" {
+		t.Fatalf("expected approved, got %s", updated.Status)
 	}
 }
 
@@ -395,7 +433,13 @@ func TestService_Summary(t *testing.T) {
 	o := setupOrder(t, db)
 	qty := 1
 	svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "A", Status: "pending", CreatedBy: "admin"})
-	svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "B", Status: "approved", CreatedBy: "admin"})
+	approved, err := svc.Create(&CreateInput{OrderID: o.ID, ReturnQuantity: &qty, Reason: "B", CreatedBy: "admin"})
+	if err != nil {
+		t.Fatalf("create approved fixture: %v", err)
+	}
+	if _, err := svc.Approve(approved.ID, &ApproveInput{ApprovedBy: "admin"}); err != nil {
+		t.Fatalf("approve fixture: %v", err)
+	}
 
 	summary, err := svc.Summary()
 	if err != nil {
@@ -981,15 +1025,33 @@ type fetchErrAdapter struct {
 	err error
 }
 
-func (m *fetchErrAdapter) Publish(_ context.Context, _ *integrations.PublishInput) (*integrations.PublishResult, error) { return nil, nil }
-func (m *fetchErrAdapter) SyncStatus(_ context.Context, _ *integrations.SyncStatusInput) (string, error) { return "", nil }
-func (m *fetchErrAdapter) ValidateCredentials(_ context.Context, _ int64) (bool, error) { return false, nil }
-func (m *fetchErrAdapter) SyncInventory(_ context.Context, _ *integrations.SyncInventoryInput) (bool, error) { return false, nil }
-func (m *fetchErrAdapter) PushTracking(_ context.Context, _ *integrations.PushTrackingInput) (bool, error) { return false, nil }
-func (m *fetchErrAdapter) FetchOrders(_ context.Context, _ *integrations.FetchOrdersInput) ([]*integrations.PlatformOrder, error) { return nil, nil }
-func (m *fetchErrAdapter) FetchSettlements(_ context.Context, _ *integrations.FetchSettlementsInput) ([]*integrations.PlatformSettlement, error) { return nil, nil }
-func (m *fetchErrAdapter) FetchReturns(_ context.Context, _ *integrations.FetchReturnsInput) ([]*integrations.PlatformReturn, error) { return nil, m.err }
-func (m *fetchErrAdapter) FetchRaw(_ context.Context, _ int64, _ string, _ interface{}) ([]byte, error) { return nil, nil }
+func (m *fetchErrAdapter) Publish(_ context.Context, _ *integrations.PublishInput) (*integrations.PublishResult, error) {
+	return nil, nil
+}
+func (m *fetchErrAdapter) SyncStatus(_ context.Context, _ *integrations.SyncStatusInput) (string, error) {
+	return "", nil
+}
+func (m *fetchErrAdapter) ValidateCredentials(_ context.Context, _ int64) (bool, error) {
+	return false, nil
+}
+func (m *fetchErrAdapter) SyncInventory(_ context.Context, _ *integrations.SyncInventoryInput) (bool, error) {
+	return false, nil
+}
+func (m *fetchErrAdapter) PushTracking(_ context.Context, _ *integrations.PushTrackingInput) (bool, error) {
+	return false, nil
+}
+func (m *fetchErrAdapter) FetchOrders(_ context.Context, _ *integrations.FetchOrdersInput) ([]*integrations.PlatformOrder, error) {
+	return nil, nil
+}
+func (m *fetchErrAdapter) FetchSettlements(_ context.Context, _ *integrations.FetchSettlementsInput) ([]*integrations.PlatformSettlement, error) {
+	return nil, nil
+}
+func (m *fetchErrAdapter) FetchReturns(_ context.Context, _ *integrations.FetchReturnsInput) ([]*integrations.PlatformReturn, error) {
+	return nil, m.err
+}
+func (m *fetchErrAdapter) FetchRaw(_ context.Context, _ int64, _ string, _ interface{}) ([]byte, error) {
+	return nil, nil
+}
 
 func TestService_Get_Found(t *testing.T) {
 	db := newTestDB(t)

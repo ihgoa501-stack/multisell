@@ -33,6 +33,9 @@ export interface CollectLead {
   detail_url: string;
   image_url: string;
   source_page_url: string;
+  collection_driver: string;
+  evidence_id?: number;
+  confidence_state: string;
   status: string;
   created_at: string;
 }

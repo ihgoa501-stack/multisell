@@ -2,12 +2,45 @@ package realtime
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
+
+type extensionIncomingMessage struct {
+	Type    string
+	ID      string
+	Payload json.RawMessage
+}
+
+// decodeExtensionMessage normalizes the browser extension protocol. Current
+// clients send business data under "payload"; "data" remains accepted for
+// backwards compatibility with early development clients.
+func decodeExtensionMessage(raw []byte) (*extensionIncomingMessage, error) {
+	var envelope struct {
+		Type    string          `json:"type"`
+		ID      string          `json:"id"`
+		Payload json.RawMessage `json:"payload"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, err
+	}
+	if envelope.Type == "" {
+		return nil, fmt.Errorf("extension message type required")
+	}
+	payload := envelope.Payload
+	if len(payload) == 0 || string(payload) == "null" {
+		payload = envelope.Data
+	}
+	if envelope.Type != "ping" && (len(payload) == 0 || string(payload) == "null") {
+		return nil, fmt.Errorf("extension message payload required")
+	}
+	return &extensionIncomingMessage{Type: envelope.Type, ID: envelope.ID, Payload: payload}, nil
+}
 
 // PluginDriver defines callbacks for routing extension WebSocket results
 // back to the sourcing agent plugin.
@@ -17,6 +50,8 @@ type PluginDriver interface {
 	OnFetchProductResult(userID int64, data json.RawMessage) error
 	// HasPending checks if there is a pending request with the given ID.
 	HasPending(requestID string) bool
+	OnListPageResult(userID int64, data json.RawMessage) error
+	HasPendingList(requestID string) bool
 }
 
 // ExtensionHandler handles WebSocket connections for the A8 Sourcing Agent extension.
@@ -132,38 +167,39 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 		if err != nil {
 			break
 		}
-		var incoming struct {
-			Type string          `json:"type"`
-			Data json.RawMessage `json:"data"`
-		}
-		if err := json.Unmarshal(msgBytes, &incoming); err != nil {
+		incoming, err := decodeExtensionMessage(msgBytes)
+		if err != nil {
 			client.writeJSON(map[string]string{"type": "error", "data": "invalid JSON"})
 			continue
 		}
 		switch incoming.Type {
 		case "fetch_product_result":
-			var fetchResult struct {
-				ID string `json:"id"`
-			}
-			if err := json.Unmarshal(incoming.Data, &fetchResult); err != nil {
+			if incoming.ID == "" {
 				client.writeJSON(map[string]string{"type": "error", "data": "invalid fetch_product_result"})
 				continue
 			}
-			if h.pluginDriver != nil && h.pluginDriver.HasPending(fetchResult.ID) {
-				h.handleFetchProductResult(client, incoming.Data)
+			if h.pluginDriver != nil && h.pluginDriver.HasPending(incoming.ID) {
+				h.handleFetchProductResult(client, msgBytes)
 			} else if h.autoCollectHandler != nil && client.UserID != nil {
-				if err := h.autoCollectHandler(*client.UserID, incoming.Data); err != nil {
+				if err := h.autoCollectHandler(*client.UserID, msgBytes); err != nil {
 					h.logger.Error("auto-collect handler failed", zap.Int64("user_id", *client.UserID), zap.Error(err))
 					client.writeJSON(map[string]string{"type": "error", "data": "auto-collect failed: " + err.Error()})
 				}
 			} else {
-				h.logger.Warn("fetch_product_result dropped: no pending or auto-collect handler", zap.String("request_id", fetchResult.ID))
+				h.logger.Warn("fetch_product_result dropped: no pending or auto-collect handler", zap.String("request_id", incoming.ID))
 			}
 		case "ping":
 			client.writeJSON(map[string]string{"type": "pong"})
 		case "list_page_result":
-			if h.listCollectHandler != nil && client.UserID != nil {
-				if err := h.listCollectHandler(*client.UserID, incoming.Data); err != nil {
+			if h.pluginDriver != nil && incoming.ID != "" && h.pluginDriver.HasPendingList(incoming.ID) {
+				if err := h.pluginDriver.OnListPageResult(*client.UserID, msgBytes); err != nil {
+					h.logger.Error("extension ws: list plugin driver error", zap.Error(err))
+					client.writeJSON(map[string]string{"type": "error", "data": "list plugin error: " + err.Error()})
+				} else {
+					client.writeJSON(map[string]string{"type": "list_page_result", "data": "ack"})
+				}
+			} else if h.listCollectHandler != nil && client.UserID != nil {
+				if err := h.listCollectHandler(*client.UserID, incoming.Payload); err != nil {
 					h.logger.Error("list-collect handler failed", zap.Int64("user_id", *client.UserID), zap.Error(err))
 					client.writeJSON(map[string]string{"type": "error", "data": "list-collect failed: " + err.Error()})
 				} else {
