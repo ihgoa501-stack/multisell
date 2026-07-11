@@ -22,6 +22,7 @@ Package: `backend-go/internal/domain/integrations/`
 | `GET` | `/api/v1/platform-integrations/:id/ozon-products` | `h.ListOzonProducts` |
 | `POST` | `/api/v1/platform-integrations/:id/sync` | `h.Sync` |
 | `POST` | `/api/v1/platform-integrations/:id/test` | `h.TestConnection` |
+| `POST` | `/api/v1/platform-integrations/mock/seed` | `` |
 | `POST` | `/api/v1/platform-integrations/publish-to-ozon` | `h.PublishToOzon` |
 | `POST` | `/api/v1/platform-integrations/write-back` | `h.WriteBack` |
 | `POST` | `/api/v1/platform-integrations/write-back/:ref-id/retry` | `h.RetryWriteBack` |

@@ -19,15 +19,15 @@ import (
 	"github.com/lingmirror/backend-go/internal/database"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
-	"github.com/lingmirror/backend-go/internal/domain/category"
-	"github.com/lingmirror/backend-go/internal/domain/inventory"
-	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
+	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
-	"github.com/lingmirror/backend-go/internal/domain/loop"
+	"github.com/lingmirror/backend-go/internal/domain/inventory"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
+	"github.com/lingmirror/backend-go/internal/domain/loop"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
+	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -84,12 +84,12 @@ func seed(db *gorm.DB) error {
 
 	// --- Product ---
 	product := sku.Product{
-		Name:           "Demo Product — Low Stock Alert Target",
-		Subtitle:       "用于演示 A5 库存预警闭环",
-		BrandID:        b.ID,
-		CategoryID:     cat.ID,
-		Unit:           "件",
-		Status:         1,
+		Name:            "Demo Product — Low Stock Alert Target",
+		Subtitle:        "用于演示 A5 库存预警闭环",
+		BrandID:         b.ID,
+		CategoryID:      cat.ID,
+		Unit:            "件",
+		Status:          1,
 		ProductWeightKg: decimal.NewFromFloat(1.5),
 		PackageWeightKg: decimal.NewFromFloat(2.0),
 	}
@@ -153,7 +153,6 @@ func seed(db *gorm.DB) error {
 		return fmt.Errorf("product loop seed: %w", err)
 	}
 
-
 	return nil
 }
 
@@ -168,8 +167,7 @@ func seedProductLoopData(db *gorm.DB) error {
 	fmt.Println("  [product-loop-scenario-1] Profitable Listing")
 	{
 		title := "Premium Wireless Earbuds"
-		var prod candidate.CandidateProduct
-		prod = candidate.CandidateProduct{
+		prod := candidate.CandidateProduct{
 			Title:              title,
 			Description:        "High-quality wireless Bluetooth earbuds with noise cancellation",
 			MainImage:          "https://picsum.photos/seed/earbuds1/400",
@@ -252,8 +250,7 @@ func seedProductLoopData(db *gorm.DB) error {
 	fmt.Println("  [product-loop-scenario-2] Loss-Making Listing")
 	{
 		title := "Unknown Brand Charger"
-		var prod candidate.CandidateProduct
-		prod = candidate.CandidateProduct{
+		prod := candidate.CandidateProduct{
 			Title:              title,
 			Description:        "Generic phone charger, unknown brand quality",
 			MainImage:          "",
@@ -334,8 +331,7 @@ func seedProductLoopData(db *gorm.DB) error {
 	fmt.Println("  [product-loop-scenario-3] Missing Logistics Fee")
 	{
 		title := "Leather Phone Case"
-		var prod candidate.CandidateProduct
-		prod = candidate.CandidateProduct{
+		prod := candidate.CandidateProduct{
 			Title:              title,
 			Description:        "Premium leather phone case for iPhone 15",
 			MainImage:          "https://picsum.photos/seed/case1/400",
@@ -416,8 +412,7 @@ func seedProductLoopData(db *gorm.DB) error {
 	fmt.Println("  [product-loop-scenario-4] Missing Platform Fee")
 	{
 		title := "Portable Bluetooth Speaker"
-		var prod candidate.CandidateProduct
-		prod = candidate.CandidateProduct{
+		prod := candidate.CandidateProduct{
 			Title:              title,
 			Description:        "Portable waterproof Bluetooth speaker, 10W output",
 			MainImage:          "https://picsum.photos/seed/speaker1/400",
@@ -499,8 +494,7 @@ func seedProductLoopData(db *gorm.DB) error {
 	fmt.Println("  [product-loop-scenario-5] Approval Pipeline")
 	{
 		title := "Eco-Friendly Water Bottle"
-		var prod candidate.CandidateProduct
-		prod = candidate.CandidateProduct{
+		prod := candidate.CandidateProduct{
 			Title:              title,
 			Description:        "BPA-free reusable stainless steel water bottle, 500ml",
 			MainImage:          "https://picsum.photos/seed/bottle1/400",
@@ -631,5 +625,5 @@ func seedProductLoopData(db *gorm.DB) error {
 }
 
 // Helpers for pointer values.
-func int64Ptr(v int64) *int64     { return &v }
+func int64Ptr(v int64) *int64       { return &v }
 func float64Ptr(v float64) *float64 { return &v }

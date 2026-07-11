@@ -18,6 +18,7 @@ Package: `backend-go/internal/domain/settlement/`
 | `POST` | `/api/v1/settlement/:id/items` | `h.AddItem` |
 | `POST` | `/api/v1/settlement/:id/reconcile` | `h.Reconcile` |
 | `PUT` | `/api/v1/settlement/items/:item_id/reconciliation` | `h.UpdateItemReconciliation` |
+| `POST` | `/api/v1/settlement/recalculate` | `h.RecalculateAll` |
 | `GET` | `/api/v1/settlement/summary` | `h.Summary` |
 
 ## Models
@@ -40,6 +41,7 @@ Package: `backend-go/internal/domain/settlement/`
 | `Status` | `string` | `status` | `status` | default:pending |
 | `RawData` | `json.RawMessage` | `raw_data,omitempty` | `raw_data` |  |
 | `ImportedAt` | `*time.Time` | `imported_at,omitempty` | `imported_at` |  |
+| `SourceType` | `string` | `source_type` | `source_type` | default:manual |
 | `CreatedAt` | `time.Time` | `created_at` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` | `updated_at` |  |
 
@@ -130,6 +132,7 @@ Package: `backend-go/internal/domain/settlement/`
 | `Status` | `string` | `status` | `—` |  |
 | `RawData` | `json.RawMessage` | `raw_data` | `—` |  |
 | `ImportedAt` | `*time.Time` | `imported_at` | `—` |  |
+| `SourceType` | `string` | `source_type` | `—` |  |
 | `Items` | `[]SettlementItemInput` | `items` | `—` |  |
 
 ### `SettlementItemInput`
