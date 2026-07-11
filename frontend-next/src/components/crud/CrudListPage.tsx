@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
 import {
   PlusOutlined,
@@ -99,6 +99,8 @@ export default function CrudListPage({
   const [filterValues, setFilterValues] = useState<Record<string, string | number | null | undefined>>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
+  const [slowLoad, setSlowLoad] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [form] = Form.useForm();
 
   // ---------- Deletion confirmation ----------
@@ -131,6 +133,16 @@ export default function CrudListPage({
       return res as unknown as ListResponse;
     },
   });
+
+  useEffect(() => {
+    if (!isLoading) {
+      setSlowLoad(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => setSlowLoad(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [isLoading, loadAttempt]);
 
   // ---------- Mutations ----------
   const createMutation = useMutation({
@@ -323,14 +335,26 @@ export default function CrudListPage({
       )}
 
       {/* Table / bounded error state */}
-      {isError ? (
+      {isError || slowLoad ? (
         <Alert
-          type="error"
+          type={isError ? 'error' : 'warning'}
           showIcon
-          title={`无法加载${title}`}
-          description={error instanceof Error ? error.message : '数据请求失败，请稍后重试。'}
+          title={isError ? `无法加载${title}` : `${title}加载时间过长`}
+          description={
+            isError
+              ? error instanceof Error ? error.message : '数据请求失败，请稍后重试。'
+              : '服务暂时没有响应。请重新加载；如果问题持续，请检查网络或访问权限。'
+          }
           action={(
-            <Button size="small" icon={<ReloadOutlined />} onClick={() => refetch()}>
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                setSlowLoad(false);
+                setLoadAttempt((attempt) => attempt + 1);
+                void refetch();
+              }}
+            >
               重新加载
             </Button>
           )}
