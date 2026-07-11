@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
+import { Alert, Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
 import {
   PlusOutlined,
   ReloadOutlined,
@@ -112,7 +112,7 @@ export default function CrudListPage({
     () => ['crud', resource, page, size, search, JSON.stringify({ ...filterValues, ...extraFilters })],
     [filterValues, extraFilters, resource, page, size, search],
   );
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: listKey,
     queryFn: async () => {
       const params: Record<string, string> = {
@@ -322,7 +322,20 @@ export default function CrudListPage({
         />
       )}
 
-      {/* Table */}
+      {/* Table / bounded error state */}
+      {isError ? (
+        <Alert
+          type="error"
+          showIcon
+          title={`无法加载${title}`}
+          description={error instanceof Error ? error.message : '数据请求失败，请稍后重试。'}
+          action={(
+            <Button size="small" icon={<ReloadOutlined />} onClick={() => refetch()}>
+              重新加载
+            </Button>
+          )}
+        />
+      ) : (
       <Table
         rowKey={rowKey}
         loading={isLoading}
@@ -349,6 +362,7 @@ export default function CrudListPage({
           },
         }}
       />
+      )}
 
       {/* Create / Edit modal */}
       <Modal
