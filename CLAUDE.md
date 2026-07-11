@@ -2,6 +2,8 @@
 
 > **当前最高优先级方向（2026-07-11）**：凌镜只做 Owner 自用跨境商品实验系统。先比较“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，由 Owner 批准已选市场后，才采集该市场的需求、竞争、获客、履约、合规、收款和利润证据。不得预设 Ozon、欧洲或任何平台，也不得把“已有连接器”解释成经营方向。详见 `docs/SELF_USE_OPERATING_DIRECTION.md` 和 `CONTEXT.md`。
 
+开始非平凡工作前必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。该审计是当前完成度和证据限制的入口；模块存在、测试通过、页面可见、mock 或 Agent 共识均不得升级为真实经营事实。代码或现实状态变化时必须重新核验，而不是沿用旧完成声明。
+
 Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有明确决策用途和市场闸门时，不得启动平台商品采集。已有采集线索通过 `evidence_id` 引用不可变页面快照。
 
 经营实验统一事实链：后端 `internal/domain/experiment/`，API `/api/v1/experiments`，前端 `/experiments`。使用 `experiment_id` 关联机会、商品规格、供应、订单、履约、售后、利润与现金对象；闸门结果限定为 `pass / conditional / return / reject / expired`，证据作用限定为 `support / counter / conflict`，真实性限定为 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`；最终利润封账必须校验可信已对账结算和最终订单利润记录，现金回收必须校验同一订单与结算的银行/现金交易。最终利润与现金回收不得合并为一个状态。

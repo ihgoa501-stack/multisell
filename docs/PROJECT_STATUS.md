@@ -1,10 +1,25 @@
 # 凌镜 LingMirror Project Status
 
-> **当前方向覆盖（2026-07-11）**：凌镜只做 Owner 自用商品实验内部系统。双产品、外部 SaaS、多租户和未经市场选择的平台扩张均冻结。Ozon 等已有适配器只是连接器，不是默认经营方向。候选市场 `DemandCase`、八维证据、独立反证、确定性裁决和六行 Owner 决策卡后端基础已建立；当前剩余缺口是 AI 研究契约、Owner 页面、实验资金账本、确定性停止条件、最终有效成交和可复算的最终净利润。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md)。
+> **当前方向覆盖（2026-07-11）**：凌镜只做 Owner 自用经营实验内部系统。双产品、外部 SaaS、多租户和未经市场选择的平台扩张均冻结。Ozon 等已有适配器只是连接器，不是默认经营方向。当前已实现的是实验案卷与部分终局账务校验；候选市场比较、Owner 选定市场、独立 AI 反证、真实成交资格、售后观察期和正利润裁决尚未闭环。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md) 和 [项目真相审计](research/project-truth-audit-2026-07-11.md)。
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-更新时间：2026-07-09
+当前事实复核：2026-07-11
+
+## 当前完成度裁决
+
+| 声明 | 当前裁决 |
+|---|---|
+| 代码、迁移、API 或页面存在 | 只能标记 `implemented` |
+| 自动测试或构建通过 | 只能标记 `automated_verified`，不能代替真实经营验收 |
+| 候选市场比较与 Owner 选定市场 | 未完成 |
+| 实验案卷、证据等级和顺序闸门 | 基础实现完成 |
+| 同订单最终利润与现金关联校验 | 部分完成 |
+| 非关联买家付款、签收和售后窗口闭合 | 未形成确定性事实链 |
+| 正的最终贡献利润 | 未见真实经营证据；代码仍存在负利润可 `continue` 的漏口 |
+| 生产可用 | 未验证 |
+
+以下 2026-07-07 及更早的 “Dev Done / Test Green” 记录是历史工程交付记录，不代表当前经营主线完成，也不代表 Business Verified。
 
 > 2026-07-07 direction note:
 > 商品出海决策与执行层 Phase 1 + Phases 2-6 已交付。Phase 1 修复审批-任务-执行断点并打通单商品 dry-run 闭环；Phase 2-6 在此基础上新增 ProductHub 证据链、Execution Mode 统一与 Sandbox 支持、批量评估与 Owner 决策队列、执行结果回流与复盘、多平台对比。
@@ -83,27 +98,27 @@
 | 活跃代码栈 | `backend-go/` + `frontend-next/` |
 | 当前方向 | Owner 自用 Sprint 1：候选市场与独立反证闭环，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
 | 模块 / API / 页面事实源 | [reference-module-catalog.md](reference-module-catalog.md) |
-| 最新全量验证 | 2026-07-09：后端 `go test ./...` / `go vet ./...` 通过；前端 lint / typecheck / test / build 通过 |
+| 最新审计验证 | 2026-07-11：后端全量测试通过；前端 test / build 通过；lint 失败；E2E 未运行 |
 | 历史验证记录 | 本文下方各日期段落、[TEST_SUMMARY.md](TEST_SUMMARY.md)、[FRONTEND_TEST_REPORT.md](FRONTEND_TEST_REPORT.md) |
 
 ### 当前验证状态
 
 | 检查 | 当前状态 | 说明 |
 |------|----------|------|
-| `cd backend-go && go test ./...` | ✅ 通过（2026-07-09） | supplier path 参数读取已修复；全量 Go 测试通过 |
-| `cd backend-go && go vet ./...` | ✅ 通过（2026-07-09） | 无 vet 输出 |
-| `cd frontend-next && npm run lint` | ✅ 通过（2026-07-09） | 0 errors / 0 warnings |
-| `cd frontend-next && npx tsc --noEmit --pretty false` | ✅ 通过（2026-07-09） | TypeScript 检查通过 |
-| `cd frontend-next && npm test` | ✅ 通过（2026-07-09） | 13 test files / 86 tests |
-| `cd frontend-next && npm run build` | ✅ 通过（2026-07-09） | Next production build 通过；local build 无 root / Sentry token warning |
+| `cd backend-go && go test ./...` | ✅ 通过（2026-07-11） | 116 个包、约 2900 个测试通过 |
+| `cd backend-go && go vet ./...` | ⚪ 本次未重跑 | 2026-07-09 历史记录通过，不冒充本次验证 |
+| `cd frontend-next && npm run lint` | ❌ 失败（2026-07-11） | ESLint 10.7 与 `react/display-name` 插件接口不兼容；当前质量门不全绿 |
+| `cd frontend-next && npx tsc --noEmit --pretty false` | ⚪ 本次未单独重跑 | Next build 的类型检查通过，但不替代独立命令记录 |
+| `cd frontend-next && npm test` | ✅ 通过（2026-07-11） | 20 test files / 105 tests |
+| `cd frontend-next && npm run build` | ✅ 通过（2026-07-11） | Next production build 通过，生成约 89 个路由 |
 | `cd frontend-next/e2e && npx playwright test` | ⏳ 待验证 | 需要运行中的后端、前端和测试数据 |
 
 ## 当前结论
 
 凌镜已完成全站新技术栈迁移，旧栈（Python/FastAPI + Vue 3）已于 2026-06-30 删除。
 
-Version: v0.5.0.0 — 2026-07-07，商品出海决策与执行层 Phase 1-6 全链路交付。
-详见 [features/product-export-decision-execution-layer.md](features/product-export-decision-execution-layer.md)。
+历史发布标记：v0.5.0.0 — 2026-07-07，商品出海决策与执行层 Phase 1-6 工程交付；该方向已经冻结，且“工程交付”不等于当前经营闭环完成。
+历史规格见 [features/product-export-decision-execution-layer.md](features/product-export-decision-execution-layer.md)。
 
 当前唯一活跃开发线：
 

@@ -2,8 +2,10 @@
 
 > **当前方向（2026-07-11）**：先读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。双产品、外部 SaaS、多租户和商业化文档均为冻结历史材料，不得作为当前开发指令。
 
+> **当前事实入口**：再读 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。它区分政策、计划、代码实现、自动验证、真实外部观察、对账、mock、推断和已过期声明。
+
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 更新日期：2026-07-07
+> 更新日期：2026-07-11
 
 ---
 
@@ -84,7 +86,8 @@
 | [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
 | [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |
 | [AI-Native AgentOS 任务清单](../tasks/todo.md) | 🆕 可逐项执行的 Product Loop / Action Gate / E2E canonical 任务列表 |
-| [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | 🆕 未来半年商品出海业务层开发总纲：目标、阶段、架构 and 验收标准 |
+| [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) | 当前代码、测试、经营事实、mock、过期方向和未闭环部分的只读审计快照 |
+| [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | ⛔ 已被 2026-07-11 自用方向替代，仅供历史追溯 |
 | [验收门禁](ACCEPTANCE_GATE.md) | 🆕 Dev Done / Test Green / Business Verified / Beta Accepted 的完成定义和证据要求 |
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |
 | [已知问题台账](KNOWN_ISSUES.md) | 🆕 红灯问题 owner / deadline / impact 跟踪，防止长期合理化 |
@@ -240,7 +243,7 @@
 
 > 新功能需求请添加到 `docs/features/` 目录，使用标准模板。
 
-- [商品出海决策与执行层](features/product-export-decision-execution-layer.md) — 未来半年商品出海业务层开发总纲
+- [商品出海决策与执行层](features/product-export-decision-execution-layer.md) — ⛔ 已被当前 Owner 自用方向替代，仅供历史追溯
 - [功能需求模板](features/TEMPLATE.md)
 - [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
 

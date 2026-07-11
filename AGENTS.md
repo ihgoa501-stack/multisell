@@ -16,6 +16,8 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 凌镜当前是 Owner 本人自用的跨境商品实验与经营内部系统，不面向外部客户。当前唯一主线是：候选市场比较 → Owner 批准已选市场 → 该市场的需求与反证 → 商品机会 → 最小真实实验 → 有效成交 → 退货/争议后最终净利润。不得预设国家、地区、平台、类目、商品或“20→3→1”等固定数量。完整边界见 `docs/SELF_USE_OPERATING_DIRECTION.md`，统一业务术语见 `CONTEXT.md`。
 
+开始任何非平凡研究、规划、开发、审查、QA 或发布前，还必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。它是当前代码与经营完成度的证据快照：严格区分 `policy / planned / implemented / automated_verified / manually_verified / external_observed / reconciled / mock / inferred / superseded`。不得把模块存在、测试通过、页面可见或多个 Agent 意见一致写成真实市场、真实成交、生产可用或最终利润已经成立。代码或真实经营状态变化后，应重新核验并生成新的带日期审计，不能静默覆盖证据限制。
+
 除非 Owner 再次明确解冻，不得主动建设双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、跨客户聚合、未经市场选择的平台扩张、更多 Agent/MoA/自治升级或大型视觉重构。自用不降低审批、审计和外部写安全要求。
 
 生产服务器初始化、SSH、部署、恢复、测试和回滚只有一个可执行入口：`docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md`。
