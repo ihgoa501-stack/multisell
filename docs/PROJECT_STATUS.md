@@ -1,5 +1,7 @@
 # 凌镜 LingMirror Project Status
 
+> **当前方向覆盖（2026-07-11）**：凌镜只做 Owner 自用商品实验内部系统。双产品、外部 SaaS、多租户和非 Ozon 扩张均冻结。当前业务缺口是统一 `launch_experiment`、实验资金账本、确定性停止条件、最终有效成交和可复算的最终净利润。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md)。
+
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
 更新时间：2026-07-09

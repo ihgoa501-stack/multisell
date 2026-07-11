@@ -8,6 +8,7 @@
 
 import type {
   FetchProductMessage,
+  FetchListPageMessage,
   FetchProductResult,
   FetchProductError,
   WSOutgoingMessage,
@@ -112,6 +113,10 @@ async function connect(): Promise<void> {
 
         case "fetch_product":
           handleFetchProduct(msg as FetchProductMessage);
+          break;
+
+        case "fetch_list_page":
+          handleFetchListPage(msg as FetchListPageMessage);
           break;
 
         default:
@@ -241,6 +246,65 @@ async function handleFetchProduct(msg: FetchProductMessage): Promise<void> {
   }
 }
 
+async function waitForTabComplete(tabId: number, timeoutMs = 30_000): Promise<void> {
+  const current = await chrome.tabs.get(tabId);
+  if (current.status === "complete") return;
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error("Timed out waiting for list page to load"));
+    }, timeoutMs);
+    const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (updatedTabId !== tabId || changeInfo.status !== "complete") return;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+/** Open a marketplace search page in the background and extract its cards. */
+async function handleFetchListPage(msg: FetchListPageMessage): Promise<void> {
+  let createdTabId: number | undefined;
+  try {
+    const existing = await chrome.tabs.query({ url: msg.payload.url });
+    let tab = existing[0];
+    if (!tab?.id) {
+      tab = await chrome.tabs.create({ url: msg.payload.url, active: false });
+      createdTabId = tab.id;
+    }
+    if (!tab.id) throw new Error("Browser did not create a list page tab");
+    await waitForTabComplete(tab.id);
+    const response = await chrome.tabs.sendMessage(tab.id, { type: "fetch_list_page" });
+    const items = Array.isArray(response?.data) ? response.data : [];
+    sendToServer({
+      type: "list_page_result",
+      id: msg.id,
+      payload: {
+        status: "ok",
+        data: { page_url: msg.payload.url, collected_at: new Date().toISOString(), items },
+      },
+    });
+  } catch (err) {
+    sendToServer({
+      type: "list_page_result",
+      id: msg.id,
+      payload: {
+        status: "error",
+        data: { page_url: msg.payload.url, collected_at: new Date().toISOString(), items: [] },
+        error: {
+          code: "LIST_COLLECTION_FAILED",
+          message: err instanceof Error ? err.message : "Unknown browser collection error",
+        },
+      },
+    });
+  } finally {
+    if (createdTabId !== undefined) chrome.tabs.remove(createdTabId).catch(() => {});
+  }
+}
+
 /**
  * Forward a content script result to the server.
  */
@@ -318,14 +382,6 @@ chrome.runtime.onMessage.addListener(
       return;
     }
 
-    // List page extraction result from content script
-    if (message.type === "list_page_result") {
-      sendToServer({
-        type: "list_page_result",
-        payload: (message as any).payload,
-      });
-      return;
-    }
   }
 );
 

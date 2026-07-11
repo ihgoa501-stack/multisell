@@ -100,6 +100,8 @@ API client：
 | 路由 | 说明 |
 |---|---|
 | `/finance` | 财务总览 |
+| `/experiments` | 经营实验案件列表与创建 |
+| `/experiments/[experimentId]` | 端到端经营实验事实链与 Owner 决策 |
 | `/settlement` | 结算列表 |
 | `/settlement/[id]` | 结算详情 |
 | `/decision` | 决策总览 |

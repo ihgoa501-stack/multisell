@@ -5,19 +5,34 @@
 package toolbridge
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 )
 
+type ownerUserIDContextKey struct{}
+
+// WithOwnerUserID binds a read-only browser collection request to the
+// authenticated Owner whose extension is allowed to receive it.
+func WithOwnerUserID(ctx context.Context, userID int64) context.Context {
+	return context.WithValue(ctx, ownerUserIDContextKey{}, userID)
+}
+
+// OwnerUserIDFromContext returns the authenticated Owner target for a tool call.
+func OwnerUserIDFromContext(ctx context.Context) (int64, bool) {
+	userID, ok := ctx.Value(ownerUserIDContextKey{}).(int64)
+	return userID, ok && userID > 0
+}
+
 // PageData holds structured product data scraped from a source URL.
 type PageData struct {
-	SourceURL    string    `json:"source_url"`
-	Title        string    `json:"title"`
-	PriceCNY     float64   `json:"price_cny"`
-	PriceMinCNY  *float64  `json:"price_min_cny,omitempty"`
-	PriceMaxCNY  *float64  `json:"price_max_cny,omitempty"`
-	MOQ          int       `json:"moq"`
-	Images       []string  `json:"images,omitempty"`
+	SourceURL   string   `json:"source_url"`
+	Title       string   `json:"title"`
+	PriceCNY    float64  `json:"price_cny"`
+	PriceMinCNY *float64 `json:"price_min_cny,omitempty"`
+	PriceMaxCNY *float64 `json:"price_max_cny,omitempty"`
+	MOQ         int      `json:"moq"`
+	Images      []string `json:"images,omitempty"`
 
 	SpecVariants []SpecVariant `json:"spec_variants,omitempty"`
 
@@ -33,6 +48,27 @@ type PageData struct {
 	RawData     json.RawMessage `json:"raw_data,omitempty"`
 	CollectedAt time.Time       `json:"collected_at"`
 	Driver      string          `json:"driver"`
+}
+
+// ListItemData is one product opportunity discovered on a marketplace or
+// supplier search/list page. Detail collection happens in a separate step.
+type ListItemData struct {
+	Title      string `json:"title"`
+	PriceRange string `json:"price_range"`
+	DetailURL  string `json:"detail_url"`
+	ImageURL   string `json:"image_url,omitempty"`
+	RawText    string `json:"raw_text,omitempty"`
+	RawHTML    string `json:"raw_html,omitempty"`
+}
+
+// ListPageData is the evidence returned from an automatically collected
+// search/list page.
+type ListPageData struct {
+	PageURL     string          `json:"page_url"`
+	CollectedAt time.Time       `json:"collected_at"`
+	Items       []ListItemData  `json:"items"`
+	Driver      string          `json:"driver"`
+	RawData     json.RawMessage `json:"raw_data,omitempty"`
 }
 
 // UnmarshalJSON handles both content-script field names (price_1688, price_min, etc.)

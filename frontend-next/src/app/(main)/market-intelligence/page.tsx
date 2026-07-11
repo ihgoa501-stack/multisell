@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { ReactElement } from 'react';
 import { Card, Row, Col, Statistic, Table, Tag, Input, Spin, Empty, Typography, Space, Button, Tabs } from 'antd';
 import { SearchOutlined, ShoppingOutlined, ArrowUpOutlined, ArrowDownOutlined, MinusOutlined, RiseOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
@@ -53,12 +54,12 @@ function fmtCurrency(v: number): string {
   return `¥${v.toFixed(0)}`;
 }
 
-function scoreBadge(score: number): JSX.Element {
+function scoreBadge(score: number): ReactElement {
   const c = demandColor(score);
   return <Tag color={c} style={{ fontSize: 14, fontWeight: 600 }}>{score.toFixed(1)}</Tag>;
 }
 
-function trendIcon(dir: string): JSX.Element {
+function trendIcon(dir: string): ReactElement {
   switch (dir) {
     case 'up': return <ArrowUpOutlined style={{ color: '#52c41a' }} />;
     case 'down': return <ArrowDownOutlined style={{ color: '#ff4d4f' }} />;
@@ -218,7 +219,7 @@ export default function MarketIntelligencePage() {
   return (
     <PageContainer
       title="市场情报"
-      subTitle="基于 Amazon BSR 的需求信号 — 发现高潜力品类"
+      subtitle="基于 Amazon BSR 的需求信号 — 发现高潜力品类"
       extra={
         <Input
           prefix={<SearchOutlined />}

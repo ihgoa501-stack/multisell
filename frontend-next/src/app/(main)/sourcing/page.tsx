@@ -131,7 +131,7 @@ export default function SourcingPage() {
     setResearching(true);
     setResearchResult(null);
     try {
-      const res = await apiClient.post('/v1/ai/run', {
+	      const res = await apiClient.post<{ output: ResearchResult }>('/v1/ai/run', {
         agent_id: 'A1',
         decision_point: 'product_research',
         context: {

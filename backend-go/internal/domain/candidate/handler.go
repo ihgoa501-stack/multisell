@@ -96,6 +96,24 @@ func (h *Handler) GetCollectLead(c *gin.Context) {
 	response.Success(c, item)
 }
 
+// GetCollectionEvidence GET /candidates/collection-evidence/:id
+func (h *Handler) GetCollectionEvidence(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.GetCollectionEvidenceByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "collection evidence not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, item)
+}
+
 // Get GET /candidates/:id
 // @Summary      Get candidate detail
 // @Description  Get a single candidate product by ID

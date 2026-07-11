@@ -387,12 +387,17 @@ func TestOrderProfit(t *testing.T) {
 	oid := insertTestOrder(t, svc, 1000, 100, 50, 400, 30)
 	insertTestOrderItem(t, svc, oid, 101, 1000)
 
-	entries, err := svc.RebuildOrderLedger(context.Background(),oid)
+	entries, err := svc.RebuildOrderLedger(context.Background(), oid)
 	if err != nil {
 		t.Fatalf("RebuildOrderLedger: %v", err)
 	}
 	if len(entries) != 6 {
 		t.Errorf("expected 6 ledger entries, got %d", len(entries))
+	}
+	for _, entry := range entries {
+		if entry.CostLayer != "snapshot" {
+			t.Errorf("rebuilt %s layer = %q, want snapshot", entry.EntryType, entry.CostLayer)
+		}
 	}
 
 	profit, err := svc.OrderProfit(oid)
@@ -412,7 +417,7 @@ func TestListOrderLedger(t *testing.T) {
 	svc := newTestDB(t)
 
 	oid := insertTestOrder(t, svc, 500, 50, 25, 200, 10)
-	svc.RebuildOrderLedger(context.Background(),oid)
+	svc.RebuildOrderLedger(context.Background(), oid)
 
 	entries, err := svc.ListOrderLedger(oid)
 	if err != nil {
@@ -426,7 +431,7 @@ func TestListOrderLedger(t *testing.T) {
 func TestRebuildOrderLedger_NotFound(t *testing.T) {
 	svc := newTestDB(t)
 
-	_, err := svc.RebuildOrderLedger(context.Background(),99999)
+	_, err := svc.RebuildOrderLedger(context.Background(), 99999)
 	if err != gorm.ErrRecordNotFound {
 		t.Errorf("expected ErrRecordNotFound, got %v", err)
 	}
@@ -440,7 +445,7 @@ func TestRebuildOrderLedger_ZeroSubtotal(t *testing.T) {
 		t.Fatalf("create order: %v", err)
 	}
 
-	entries, err := svc.RebuildOrderLedger(context.Background(),o.ID)
+	entries, err := svc.RebuildOrderLedger(context.Background(), o.ID)
 	if err != nil {
 		t.Fatalf("RebuildOrderLedger: %v", err)
 	}
@@ -481,7 +486,6 @@ func TestSummary(t *testing.T) {
 }
 
 // -------- ProfitSummary Service Tests --------
-
 
 // -------- Mock Service Tests --------
 

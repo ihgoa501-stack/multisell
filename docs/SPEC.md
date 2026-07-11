@@ -3,6 +3,8 @@
 > 技术名：MultiSell · 版本 v0.3.0.0
 > 日期：2026-07-05
 
+> **2026-07-11 方向覆盖说明**：当前产品只服务 Owner 本人，是自用跨境商品实验与经营内部系统。本文中的泛化“跨境电商从业者”、外部产品或平台化描述不得覆盖 `SELF_USE_OPERATING_DIRECTION.md`。
+
 ---
 
 ## 1. 目标
@@ -18,13 +20,16 @@
 
 ### 用户
 
-- **主要用户**：跨境电商从业者，非技术的 Owner（老板/运营管理者）
-- **Agent 用户**：15 个内置 AI Agent（A1~A11 + G0~G3 + M1），各负责一个经营环节
+- **唯一主要用户**：本项目 Owner，本人承担商品实验预算、经营决策和最终损益
+- **Agent 用户**：包含 A12 自动采集 Agent 的内置 Agent 队列，各负责一个经营环节
 
 ### 成功标准
 
 ```
 Owner 打开凌镜可以确信：
+- 一轮实验的候选、预算、支出、停止条件、订单、退货和最终利润属于同一 experiment_id
+- 未结束退货/争议观察期的利润不会被标成最终
+- 最终净利润可以由平台结算与现金凭证复算
 - 系统不会静默修改价格、库存、订单、资金或外部 Listing
 - Agent 的建议清晰可见、可解释、可审核
 - 高风险操作需要明确批准
@@ -376,6 +381,7 @@ npm run lint         # 已知 ~34 problems（12 errors + 22 warnings），非阻
 | A9 | 批量运维 | ops | batch_price_update | guided | 按需 |
 | A10 | 物流运费引擎 | ops | carrier_compare | guided | 按需 |
 | A11 | 售后管理 | ops | return_analysis | guided | 按需 |
+| A12 | 自动采集 | insight | market_discover, product_collect, supplier_scrape | supervised | 按需 |
 | G0 | 系统健康 | governance | system_health | supervised | 5min |
 | G1 | 驾驶舱 | governance | dashboard_overview | advisory | 5min |
 | G3 | 折扣风控 | governance | discount_risk_check | supervised | 30min |

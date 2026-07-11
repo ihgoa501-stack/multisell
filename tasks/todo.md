@@ -1,5 +1,8 @@
 # Todo: AI-Native AgentOS Execution Path
 
+> [!CAUTION]
+> **2026-07-11 已冻结。** 当前任务唯一事实源是根目录 `TODOS.md`。本清单不得驱动 AgentOS、外部 SaaS 或多产品扩张。
+
 Source plan: `tasks/plan.md`
 Source spec: `docs/specs/2026-07-09-ai-native-agentos-execution-path.md`
 

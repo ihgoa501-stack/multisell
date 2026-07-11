@@ -481,12 +481,12 @@ func (s *Service) RebuildOrderLedger(ctx context.Context, orderID int64) ([]Fina
 	}
 
 	entries := []FinanceLedgerEntry{
-		{OrderID: &orderID, EntryType: "revenue", Amount: revenue, Currency: "CNY", CostLayer: "actual", SourceType: "sales_order", SourceID: &orderID, Description: "order revenue"},
-		{OrderID: &orderID, EntryType: "product_cost", Amount: o.ProductCost, Currency: "CNY", CostLayer: "actual", SourceType: "sales_order", SourceID: &orderID, Description: "product cost"},
+		{OrderID: &orderID, EntryType: "revenue", Amount: revenue, Currency: "CNY", CostLayer: "snapshot", SourceType: "sales_order", SourceID: &orderID, Description: "order revenue snapshot"},
+		{OrderID: &orderID, EntryType: "product_cost", Amount: o.ProductCost, Currency: "CNY", CostLayer: "snapshot", SourceType: "sales_order", SourceID: &orderID, Description: "product cost snapshot"},
 		{OrderID: &orderID, EntryType: "shipping_cost", Amount: o.ShippingFee, Currency: "CNY", CostLayer: "snapshot", SourceType: "sales_order", SourceID: &orderID, Description: "shipping snapshot"},
-		{OrderID: &orderID, EntryType: "platform_fee", Amount: o.PlatformFee, Currency: "CNY", CostLayer: "actual", SourceType: "sales_order", SourceID: &orderID, Description: "platform fee"},
-		{OrderID: &orderID, EntryType: "payment_fee", Amount: o.PaymentFee, Currency: "CNY", CostLayer: "actual", SourceType: "sales_order", SourceID: &orderID, Description: "payment fee"},
-		{OrderID: &orderID, EntryType: "other_fee", Amount: o.OtherFee, Currency: "CNY", CostLayer: "actual", SourceType: "sales_order", SourceID: &orderID, Description: "other fee"},
+		{OrderID: &orderID, EntryType: "platform_fee", Amount: o.PlatformFee, Currency: "CNY", CostLayer: "snapshot", SourceType: "sales_order", SourceID: &orderID, Description: "platform fee snapshot"},
+		{OrderID: &orderID, EntryType: "payment_fee", Amount: o.PaymentFee, Currency: "CNY", CostLayer: "snapshot", SourceType: "sales_order", SourceID: &orderID, Description: "payment fee snapshot"},
+		{OrderID: &orderID, EntryType: "other_fee", Amount: o.OtherFee, Currency: "CNY", CostLayer: "snapshot", SourceType: "sales_order", SourceID: &orderID, Description: "other fee snapshot"},
 	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -500,7 +500,6 @@ func (s *Service) RebuildOrderLedger(ctx context.Context, orderID int64) ([]Fina
 	}
 	return entries, nil
 }
-
 
 // ---------- Profit Calculation ----------
 

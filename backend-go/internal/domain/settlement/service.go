@@ -3,6 +3,7 @@ package settlement
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -73,6 +74,9 @@ func (s *Service) Create(in *CreateSettlementInput) (*Settlement, error) {
 	if status == "" {
 		status = "pending"
 	}
+	if status != "pending" {
+		return nil, errors.New("settlement must be created in pending status")
+	}
 	currency := in.Currency
 	if currency == "" {
 		currency = "CNY"
@@ -85,7 +89,11 @@ func (s *Service) Create(in *CreateSettlementInput) (*Settlement, error) {
 		Currency:     currency,
 		Status:       status,
 		RawData:      in.RawData,
-		ImportedAt:   in.ImportedAt,
+		// The public/manual create path cannot self-assert a trusted platform
+		// import. Trusted adapters persist their provenance through the internal
+		// integration pipeline, not client-supplied JSON fields.
+		ImportedAt: nil,
+		SourceType: "manual",
 	}
 	if in.TotalRevenue != nil {
 		st.TotalRevenue = *in.TotalRevenue
@@ -194,6 +202,9 @@ func (s *Service) Update(id int64, in *UpdateSettlementInput) (*Settlement, erro
 		updates["total_net"] = *in.TotalNet
 	}
 	if in.Status != nil {
+		if err := validateSettlementStatusUpdate(st.Status, *in.Status); err != nil {
+			return nil, err
+		}
 		updates["status"] = *in.Status
 	}
 	if in.RawData != nil {
@@ -231,8 +242,15 @@ func (s *Service) Delete(id int64) error {
 // Reconcile updates reconciliation_status of settlement items.
 // If ItemID is nil, all pending items of the settlement are updated.
 func (s *Service) Reconcile(id int64, in *ReconcileInput) error {
+	validStatuses := map[string]bool{"matched": true, "unmatched": true, "discrepancy": true}
+	if !validStatuses[in.ReconciliationStatus] {
+		return errors.New("invalid reconciliation_status")
+	}
+	if strings.TrimSpace(in.ReconciledBy) == "" {
+		return errors.New("reconciled_by is required")
+	}
 	now := time.Now()
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Verify settlement exists
 		var st Settlement
 		if err := tx.First(&st, id).Error; err != nil {
@@ -259,24 +277,58 @@ func (s *Service) Reconcile(id int64, in *ReconcileInput) error {
 		if res.Error != nil {
 			return res.Error
 		}
-		// If all items are matched, mark settlement as reconciled
-		var pendingCount int64
+		// Only a non-empty set of fully matched items is reconciled. Unmatched or
+		// discrepant rows must never be promoted merely because none are pending.
+		var itemCount, nonMatchedCount int64
 		if err := tx.Model(&SettlementItem{}).
-			Where("settlement_id = ? AND reconciliation_status = ?", id, "pending").
-			Count(&pendingCount).Error; err != nil {
+			Where("settlement_id = ?", id).Count(&itemCount).Error; err != nil {
 			return err
 		}
-		if pendingCount == 0 && st.Status != "closed" {
+		if err := tx.Model(&SettlementItem{}).
+			Where("settlement_id = ? AND reconciliation_status <> ?", id, "matched").
+			Count(&nonMatchedCount).Error; err != nil {
+			return err
+		}
+		if itemCount > 0 && nonMatchedCount == 0 && st.Status != "closed" {
 			if err := tx.Model(&st).Update("status", "reconciled").Error; err != nil {
 				return err
 			}
-		} else if pendingCount > 0 && st.Status == "pending" {
+		} else if st.Status == "pending" {
 			if err := tx.Model(&st).Update("status", "reconciling").Error; err != nil {
 				return err
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	var orderNos []string
+	if err := s.db.Model(&SettlementItem{}).Where("settlement_id = ? AND order_no <> ''", id).
+		Distinct("order_no").Pluck("order_no", &orderNos).Error; err != nil {
+		return err
+	}
+	recalc := NewRecalculator(s.db, s.logger)
+	for _, orderNo := range orderNos {
+		if err := recalc.RecalculateProfit(context.Background(), orderNo); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSettlementStatusUpdate(from, to string) error {
+	if from == to {
+		return nil
+	}
+	allowed := map[string]map[string]bool{
+		"pending":     {"reconciling": true},
+		"reconciling": {"pending": true},
+		"reconciled":  {"closed": true, "reconciling": true},
+	}
+	if !allowed[from][to] {
+		return fmt.Errorf("invalid settlement status transition %s -> %s", from, to)
+	}
+	return nil
 }
 
 // Summary returns aggregation for dashboard.
@@ -395,6 +447,9 @@ func (s *Service) UpdateItemReconciliation(itemID int64, in *UpdateReconciliatio
 	if !validStatuses[in.ReconciliationStatus] {
 		return nil, errors.New("invalid reconciliation_status")
 	}
+	if in.ReconciliationStatus == "matched" && strings.TrimSpace(in.ReconciledBy) == "" {
+		return nil, errors.New("reconciled_by is required for matched items")
+	}
 	now := time.Now()
 	updates := map[string]interface{}{
 		"reconciliation_status": in.ReconciliationStatus,
@@ -407,6 +462,25 @@ func (s *Service) UpdateItemReconciliation(itemID int64, in *UpdateReconciliatio
 	}
 	if err := s.db.First(&item, itemID).Error; err != nil {
 		return nil, err
+	}
+	var itemCount, nonMatchedCount int64
+	if err := s.db.Model(&SettlementItem{}).Where("settlement_id = ?", item.SettlementID).Count(&itemCount).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.Model(&SettlementItem{}).Where("settlement_id = ? AND reconciliation_status <> ?", item.SettlementID, "matched").Count(&nonMatchedCount).Error; err != nil {
+		return nil, err
+	}
+	status := "reconciling"
+	if itemCount > 0 && nonMatchedCount == 0 {
+		status = "reconciled"
+	}
+	if err := s.db.Model(&Settlement{}).Where("id = ? AND status <> ?", item.SettlementID, "closed").Update("status", status).Error; err != nil {
+		return nil, err
+	}
+	if item.OrderNo != "" {
+		if err := NewRecalculator(s.db, s.logger).RecalculateProfit(context.Background(), item.OrderNo); err != nil {
+			return nil, err
+		}
 	}
 	return &item, nil
 }

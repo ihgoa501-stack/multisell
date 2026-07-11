@@ -1,7 +1,9 @@
 package candidate
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -435,6 +437,34 @@ func TestService_Update(t *testing.T) {
 	}
 }
 
+func TestService_UpdateStatusUsesStateMachine(t *testing.T) {
+	db := dbtest.NewDB(t, &CandidateProduct{})
+	svc := NewService(db, dbtest.NewLogger(t))
+	c, err := svc.Create(&CreateCandidateInput{Title: "stateful candidate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	approved := "approved"
+	if _, err := svc.Update(c.ID, &UpdateCandidateInput{Status: &approved}); err == nil {
+		t.Fatal("expected draft to approved transition to be rejected")
+	}
+	var persisted CandidateProduct
+	db.First(&persisted, c.ID)
+	if persisted.Status != "draft" {
+		t.Fatalf("invalid status persisted: %s", persisted.Status)
+	}
+
+	inReview := "in_review"
+	updated, err := svc.Update(c.ID, &UpdateCandidateInput{Status: &inReview})
+	if err != nil {
+		t.Fatalf("valid transition failed: %v", err)
+	}
+	if updated.Status != "in_review" {
+		t.Fatalf("expected in_review, got %s", updated.Status)
+	}
+}
+
 func TestService_Delete(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &CandidateProduct{})
@@ -560,7 +590,7 @@ func TestListCollectLeads(t *testing.T) {
 	// Create some leads.
 	for i := 0; i < 3; i++ {
 		err := svc.CreateCollectLead(&CollectLead{
-			Title:   "测试商品",
+			Title:    "测试商品",
 			ShopHint: "店铺A",
 		})
 		if err != nil {
@@ -587,13 +617,54 @@ func TestListCollectLeads(t *testing.T) {
 	}
 }
 
+func TestCreateCollectLeadIfNewUsesCanonicalURLAtomically(t *testing.T) {
+	db := dbtest.NewDB(t, &CollectLead{})
+	svc := NewService(db, zap.NewNop())
+
+	first := &CollectLead{Title: "商品", DetailURL: "https://www.ozon.ru/product/storage-box-12345/?utm_source=test"}
+	created, err := svc.CreateCollectLeadIfNew(first)
+	if err != nil || !created {
+		t.Fatalf("first create = %v, %v; want true, nil", created, err)
+	}
+	second := &CollectLead{Title: "同一商品", DetailURL: "https://OZON.RU/product/storage-box-12345#reviews"}
+	created, err = svc.CreateCollectLeadIfNew(second)
+	if err != nil {
+		t.Fatalf("duplicate create error = %v", err)
+	}
+	if created {
+		t.Fatal("canonical duplicate was inserted")
+	}
+	if first.CanonicalKey == nil || *first.CanonicalKey == "" {
+		t.Fatal("canonical key was not persisted")
+	}
+}
+
+func TestGetCollectionEvidenceReturnsImmutableSnapshot(t *testing.T) {
+	db := dbtest.NewDB(t, &CollectionEvidence{})
+	svc := NewService(db, zap.NewNop())
+	evidence := &CollectionEvidence{
+		SourceURL: "https://www.ozon.ru/search/?text=storage", Driver: "plugin",
+		RawPayload:    json.RawMessage(`{"items":[{"raw_text":"真实商品卡"}]}`),
+		ParserVersion: "list-v1", EvidenceSHA256: "abc", CorrelationID: "request-1", CollectedAt: time.Now(),
+	}
+	if err := svc.CreateCollectionEvidence(evidence); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.GetCollectionEvidenceByID(evidence.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CorrelationID != "request-1" || !strings.Contains(string(got.RawPayload), "真实商品卡") {
+		t.Fatalf("unexpected evidence: %+v", got)
+	}
+}
 
 func TestComputeCompleteness_NeedsReview(t *testing.T) {
 	t.Parallel()
 	p := &CandidateProduct{
-		Title:           "Has Core Fields",
-		PurchasePrice:   100.0,
-		MainImage:       "https://example.com/img.jpg",
+		Title:         "Has Core Fields",
+		PurchasePrice: 100.0,
+		MainImage:     "https://example.com/img.jpg",
 		// Missing: supplier_id, package info
 	}
 	status, missing := computeCompleteness(p)

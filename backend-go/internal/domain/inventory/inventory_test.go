@@ -2,10 +2,12 @@ package inventory
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/domain/allocation"
 )
 
 func TestListInventory(t *testing.T) {
@@ -106,8 +108,22 @@ func TestInventoryTransfer_CreateAndStart(t *testing.T) {
 }
 
 func TestInventoryTransfer_Complete(t *testing.T) {
-	db := dbtest.NewDB(t, &InventoryTransfer{})
+	db := dbtest.NewDB(t, &InventoryTransfer{}, &InventoryWarehouse{}, &InventoryLog{}, &allocation.Warehouse{})
 	svc := NewService(db, dbtest.NewLogger(t))
+	from := allocation.Warehouse{Name: "上海仓", Code: "SHA"}
+	to := allocation.Warehouse{Name: "广州仓", Code: "CAN"}
+	if err := db.Create(&from).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&to).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&InventoryWarehouse{SkuID: 1001, WarehouseID: from.ID, Quantity: 80, LockedQuantity: 10}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&InventoryWarehouse{SkuID: 1001, WarehouseID: to.ID, Quantity: 5}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	tf, _ := svc.CreateTransfer("上海仓", "广州仓", 1001, 50, "")
 	svc.StartTransfer(tf.ID, "顺丰", "SF001")
@@ -118,6 +134,43 @@ func TestInventoryTransfer_Complete(t *testing.T) {
 	}
 	if tf2.Status != "completed" {
 		t.Fatalf("expected completed, got %s", tf2.Status)
+	}
+	var source, destination InventoryWarehouse
+	db.Where("sku_id = ? AND warehouse_id = ?", 1001, from.ID).First(&source)
+	db.Where("sku_id = ? AND warehouse_id = ?", 1001, to.ID).First(&destination)
+	if source.Quantity != 30 || destination.Quantity != 55 {
+		t.Fatalf("unexpected balances: source=%d destination=%d", source.Quantity, destination.Quantity)
+	}
+	var logCount int64
+	db.Model(&InventoryLog{}).Where("sku_id = ?", 1001).Count(&logCount)
+	if logCount != 2 {
+		t.Fatalf("expected 2 transfer logs, got %d", logCount)
+	}
+}
+
+func TestInventoryTransfer_CompleteInsufficientStockRollsBack(t *testing.T) {
+	db := dbtest.NewDB(t, &InventoryTransfer{}, &InventoryWarehouse{}, &InventoryLog{}, &allocation.Warehouse{})
+	svc := NewService(db, dbtest.NewLogger(t))
+	from := allocation.Warehouse{Name: "上海仓", Code: "SHA"}
+	to := allocation.Warehouse{Name: "广州仓", Code: "CAN"}
+	db.Create(&from)
+	db.Create(&to)
+	db.Create(&InventoryWarehouse{SkuID: 1001, WarehouseID: from.ID, Quantity: 50, LockedQuantity: 10})
+	tf, _ := svc.CreateTransfer("上海仓", "广州仓", 1001, 50, "")
+	svc.StartTransfer(tf.ID, "顺丰", "SF001")
+
+	if _, err := svc.CompleteTransfer(tf.ID); !errors.Is(err, ErrInsufficientTransferStock) {
+		t.Fatalf("expected insufficient stock, got %v", err)
+	}
+	var persisted InventoryTransfer
+	db.First(&persisted, tf.ID)
+	if persisted.Status != "in_transit" {
+		t.Fatalf("expected rollback to in_transit, got %s", persisted.Status)
+	}
+	var source InventoryWarehouse
+	db.Where("sku_id = ? AND warehouse_id = ?", 1001, from.ID).First(&source)
+	if source.Quantity != 50 {
+		t.Fatalf("source changed despite rollback: %d", source.Quantity)
 	}
 }
 

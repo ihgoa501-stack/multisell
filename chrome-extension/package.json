@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "license": "UNLICENSED",
   "private": true,
-  "description": "LingMirror AI sourcing extension — collect 1688 product data",
+  "description": "LingMirror Owner-only AI sourcing extension — collect Ozon and supplier evidence",
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",

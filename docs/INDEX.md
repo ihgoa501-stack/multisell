@@ -1,5 +1,7 @@
 # 凌镜 LingMirror — 文档索引
 
+> **当前方向（2026-07-11）**：先读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。双产品、外部 SaaS、多租户和商业化文档均为冻结历史材料，不得作为当前开发指令。
+
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
 > 更新日期：2026-07-07
 
@@ -12,6 +14,7 @@
 | [入门教程](tutorial-getting-started.md) | 🆕 从零搭建开发环境到创建第一个商品——新人首选 |
 | [端到端教程](tutorial-first-workflow.md) | 🆕 从安装到运行业务闭环，30 分钟端到端体验 |
 | [API 快速参考](reference-api-quick.md) | 🆕 路由、认证、响应格式、中间件栈速查 |
+| [完整经营闭环与系统边界](research/commerce-loop-system-boundaries.md) | 平台无关的经营闭环、六个业务能力模块、统一事实链与关键闸门 |
 | [模块目录](reference-module-catalog.md) | 🆕 全部 60+ 后端领域模块一览 |
 | [配置参考](reference-configuration.md) | 🆕 config.yaml + 环境变量完整说明 |
 | [Agent Pipeline 解释](explanation-agent-pipeline.md) | 🆕 Agent 间如何通过 EventBus 通信和协作 |
@@ -65,8 +68,13 @@
 
 | 文档 | 当前用途 |
 |------|----------|
+| [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律、开发路线与解冻门槛 |
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
-| [双产品十星架构设计](designs/dual-product-cathedral.md) | 🆕 CEO Review 通过的 Intelligence + Portfolio Launch OS 双产品边界、Phase 2 Gate、协议、安全、资金与交付计划 |
+| [选市场、选类目、选产品统一方法](../deliverables/research/market-category-product-selection-synthesis.md) | 当前首轮实验的商业漏斗、证据边界与正确的 20→3→1 定义 |
+| [市场选择研究](../deliverables/research/market-selection-method.md) | 国家市场、平台市场与需求市场的选择方法和 Ozon 实证闸门 |
+| [类目选择研究](../deliverables/research/category-selection-method.md) | 类目硬淘汰、七维筛选、评分与反例 |
+| [产品选择研究](../deliverables/research/product-selection-method.md) | 需求、竞品、供应商、成本、合规与真实商品机会定义 |
+| [双产品十星架构设计](designs/dual-product-cathedral.md) | ⛔ 2026-07-11 已冻结的历史决策，不得作为当前开发指令 |
 | [AI-Native AgentOS 长期愿景与架构方向](AI_NATIVE_DEVELOPMENT_PLAN.md) | 🆕 面向多领域可信自进化 AgentOS 的长期愿景；不覆盖当前执行优先级 |
 | [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
 | [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |

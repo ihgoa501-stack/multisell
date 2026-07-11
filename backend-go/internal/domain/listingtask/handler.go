@@ -211,7 +211,6 @@ func (h *Handler) Update(c *gin.Context) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "listing task not found")
 			return
-			return
 		}
 		return
 	}

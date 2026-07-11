@@ -1,266 +1,86 @@
 # LingMirror Current Direction and Priorities
 
-> Updated: 2026-07-06
+> Updated: 2026-07-11
 > Status: current execution guidance
-> Scope: product direction, documentation alignment, AgentOS safety priorities
 
-## Purpose
+## Current Direction
 
-This document is the current decision record for where LingMirror should go next.
-It does not replace detailed feature specs, module catalogs, or governance
-contracts. It exists to stop development from drifting across too many product
-ideas at once.
+凌镜当前是 **Owner 本人自用的真实付费需求发现与经营验证系统**，不是对外 SaaS，也不并行建设双产品。
 
-Some information in this repository is still incomplete or mixed with historical
-plans. Treat this document as a decision guide based on the latest repository
-review, not as a claim that every implementation detail has been fully verified.
+完整产品边界、结果定义、资金纪律和解冻门槛以 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 为准。
 
-## Current Product Direction
-
-**Product Positioning: Short-Term Copilot, Long-Term Autopilot.**
-
-In the current phase (through Q4 2026), LingMirror is an **AI-assisted business
-decision platform (Copilot)**:
+## Current North Star
 
 ```text
-The AI recommends; the Owner decides.
-Every suggestion includes what, why, risk level, and expected outcome.
+真实市场数据
+→ 有来源的需求假设
+→ 独立 AI 反证
+→ 可实验案件
+→ Owner 批准的最小实验
+→ 至少 3 名非关联买家真实付款
+→ 签收与售后窗口闭合
+→ 退货/争议/费用结清
+→ 正的最终贡献利润
+→ 停止、换品、修正后再试或小幅加码
 ```
 
-All of the following high-risk actions default to **require approval**:
+页面数、Agent 数、报告数、上架数、下单数和销售额都不能替代最终净利润。
 
-- Pricing changes (list price, sale price, discounts)
-- Inventory changes (quantity, reservation, allocation)
-- Procurement / purchase orders
-- Advertising budget and campaign changes
-- Platform publishing and listing changes
+## Immediate Priorities
 
-These actions are blocked from unsupervised execution even if an Agent has a
-high trust score. See `backend-go/internal/platform/actioncatalog/catalog.go`
-(L4 `AutonomousBlocked: true`).
+### P0. Strategic Source Alignment
 
-The long-term direction (2027+) is toward **AI-autonomous operations (Autopilot)**:
+- 冻结双产品、外部 SaaS、多租户、计费、公共 API 和展示性扩张；
+- 统一下单、有效成交、最终有效成交、预计利润和最终净利润定义；
+- 所有当前事实源指向同一开发路线。
 
-```text
-Agents may execute approved, bounded actions in well-scoped areas.
-The Owner sets strategy, monitors exceptions, and audits outcomes.
-```
+### P0. Launch Experiment Aggregate
 
-But the current product promise, and all current UI copy, should consistently
-communicate **Copilot** — not "fully automatic company operation" or
-"fully autonomous business".
+建立需求案件和稳定 `experiment_id`，串联假设、证据、反证、审批、流量、订单、支付、售后、结算和最终贡献利润。
 
-## What To Focus On
+### P0. AI Collection Pipeline
 
-### 1. Business Loop First
+复用 ToolBridge、平台 API 和浏览器驱动生成有来源的需求假设；侦察、反证和数据现实必须是独立 run。公开热度只能进入 `lead`，不能跨级到付款。Owner 不负责日常抄数，只处理授权、冲突、异常和高风险审批。
 
-The first useful loop remains:
+### P0. Capital Ledger And Stop Rules
 
-```text
-Candidate product
--> completeness check
--> cost, logistics, platform fee, and profit calculation
--> listing recommendation
--> Owner approval
--> controlled listing task
--> result review
-```
+- 实验总预算默认 3,000 CNY；
+- 不可回收损失默认 1,200 CNY；
+- 成本必须标记为 actual、quoted、estimated 或 unknown；
+- unknown 关键成本阻止生产批准；
+- 停止条件采用确定性规则，Agent 只解释，不得修改事实或阈值。
 
-The second loop should build from fulfillment:
+### P0. Finalized Outcome And Profit
 
-```text
-Order
--> inventory and logistics choice
--> shipping cost snapshot
--> settlement and profit check
--> exception detection
--> Agent recommendation
--> Owner approval or manual handling
-```
+- 区分有效成交与最终有效成交；
+- 退货、争议、结算和晚到调整共同控制 finalization；
+- 修复现有利润口径和潜在重复扣费；
+- 未完成观察窗口不得显示“最终净利润”。
 
-New work should explain which of these loops it makes more complete.
+### P1. Read-Only Platform Preflight
 
-### 2. Owner Control Before Autonomy
+先验证现有 Ozon、Shopee、Shopify 账号分别能取得什么真实数据；无权限保持 unknown。只有一个平台通过只读、收款、履约和费用闸门后，才可另行设计 production 实验。
 
-Owner should not need to read logs, trace code paths, or understand module
-internals to make a decision.
+## Safety Rules That Remain
 
-Every important Agent recommendation should answer:
+自用不降低安全要求。价格、库存、订单、采购、广告、退款、资金和外部平台写入仍需审批、审计、幂等、失败可见，并明确区分 read-only、dry-run、sandbox 和 production。
 
-- What happened?
-- Why is this important?
-- What does the Agent recommend?
-- What happens if the Owner approves?
-- What happens if the Owner rejects or waits?
-- Is this dry-run, sandbox, read-only, or production?
-- Where is the audit trail?
+## Explicitly Frozen
 
-### 3. Safety Gates Before Production Execution
+- Dual-Product Cathedral；
+- LingMirror Intelligence / Portfolio Launch OS 拆分；
+- 外部客户、自助注册、订阅、计费、公共 API；
+- Outcome Proof、Evidence Warranty、跨客户知识聚合；
+- 未通过只读预检的平台扩张；
+- 更多 Agent、MoA、自治等级和大型视觉工程。
 
-Prices, inventory, order state, money, refunds, platform publishing,
-credential changes, and account permissions are high-risk business areas.
+## Acceptance Path
 
-Until the safety gates are fully unified, these actions should remain in:
+当前方向只有在下列证据齐全时才算完成第一阶段：
 
-```text
-read-only -> suggestion -> approval required
-```
-
-Do not promote them to autonomous production execution just because an Agent has
-a high trust score.
-
-## What Not To Prioritize Now
-
-Avoid spending the next phase on:
-
-- More standalone CRUD pages that do not improve the two business loops.
-- A generic no-code Agent builder product.
-- Fully automatic production execution.
-- More Agent names without clearer inputs, outputs, risk boundaries, and review
-  metrics.
-- Real external write-back before sandbox/read-only behavior is observable and
-  auditable.
-
-These ideas may still be useful later, but they should not drive the current
-development queue.
-
-## Current High-Risk Gaps To Resolve First
-
-The following gaps were identified during repository review and should be
-verified and addressed before expanding autonomous behavior.
-
-### P0. Platform Runtime Lifecycle
-
-`backend-go/internal/httpx/router.go` starts EventBus and Scheduler-related
-infrastructure during router construction. The EventBus context is currently
-created with a cancel function deferred inside router setup. Verify and fix the
-lifecycle so EventBus workers and scheduled Agent ticks remain alive for the
-server lifetime.
-
-Business impact: scheduled Agent checks and event-driven workflows may appear
-configured but not actually run reliably.
-
-### P0. Unified Action Execution Gate
-
-`backend-go/internal/ai/service.go` executes actions through raw command
-dispatch. The production path should go through the canonical action contract:
-
-```text
-UnifiedAction / AgentAction
--> ActionCatalog
--> approval policy
--> DispatchSafe
--> audit
--> result and failure state
-```
-
-Business impact: high-risk actions may bypass the strongest approval and mode
-checks.
-
-### P0. Approval Identity And RBAC
-
-Approval, rejection, and execution should bind to the authenticated server-side
-user identity. The client should not be trusted to declare the operator.
-
-Business impact: audit and accountability are weak if the approver can be
-spoofed in request payloads.
-
-### P1. External Platform Write Safety
-
-External publishing, inventory sync, tracking push, and platform write-back
-must distinguish dry-run, sandbox, and production. Production writes require
-approval, audit, external reference IDs, and failure visibility.
-
-Business impact: wrong platform actions can affect real listings, stock,
-orders, and money.
-
-### P1. Sensitive Audit Redaction
-
-Mutation audit currently records request body snippets. Ensure credentials,
-tokens, API keys, secrets, and other sensitive fields are redacted before they
-enter operation logs.
-
-Business impact: audit logs should improve trust, not become a credential leak.
-
-### P1. Frontend High-Risk Action UX
-
-All publish, approve, execute, price, inventory, refund, order-state, and
-autonomy-upgrade actions should use one shared Owner-facing confirmation
-pattern.
-
-The confirmation must show:
-
-- target object
-- risk level
-- before and after values where applicable
-- environment mode
-- approval requirement
-- expected consequence
-- audit destination
-- rollback or recovery note when available
-
-Business impact: Owner can make informed decisions without reading technical
-details.
-
-## Documentation Cleanup Rules
-
-### Current Fact Sources
-
-Use these documents first:
-
-- `docs/governance/*`
-- `docs/CURRENT_DIRECTION_AND_PRIORITIES.md`
-- `README.md`
-- `AGENTS.md`
-- `CLAUDE.md`
-- `docs/PROJECT_STATUS.md`
-- `docs/ACTIVE_STACK_POLICY.md`
-- `docs/reference-module-catalog.md`
-
-When these sources conflict, the governance documents win unless the Owner
-explicitly overrides them.
-
-### Historical Or Research Sources
-
-The following types of documents are useful for context but should not override
-current direction:
-
-- old FastAPI/Vue plans
-- broad no-code Agent platform PRDs
-- market research deliverables
-- archived multi-agent execution plans
-- older roadmap phases that conflict with current governance docs
-
-If a document says to use `backend/`, `frontend/`, or legacy `/api/*` paths,
-treat it as historical unless a current fact source explicitly says otherwise.
-
-## Recommended Next Iteration
-
-The next development iteration should be:
-
-```text
-Trusted AgentOS execution gate cleanup
-```
-
-Acceptance path:
-
-1. EventBus and Scheduler lifecycle is verified by test or runtime check.
-2. `/api/v1/ai/actions/:id/execute` uses the safe action execution path.
-3. Approval and execution use authenticated identity and RBAC.
-4. High-risk external platform actions are blocked, dry-run, or approval-gated.
-5. Operation logs redact sensitive fields.
-6. Owner-facing UI uses a consistent high-risk action confirmation pattern.
-7. Project status documents clearly mark what is verified, what is known risk,
-   and what remains unverified.
-
-## Business-Level Success Definition
-
-The Owner should be able to open LingMirror and trust these statements:
-
-- The system will not silently change prices, inventory, orders, money, or
-  external listings.
-- Agent recommendations are visible, explainable, and reviewable.
-- High-risk actions require explicit approval.
-- Approved actions are traceable to a user, reason, target, and audit record.
-- Failures are visible with next steps.
-- Mock, sandbox, read-only, and production modes are clearly separated.
+1. 每个案件能从原始证据形成假设，并经过独立反证和数据可得性审计；
+2. 预算和停止条件在投入前冻结并可审计；
+3. 具体实验平台、SKU 和目标人群来自证据与 Owner 批准，而非预设；
+4. 至少 3 名非关联陌生买家在至少 2 个自然日付款并完成签收；
+5. 退货和争议窗口关闭，平台费用与现金支出对账完成；
+6. 系统给出可由凭证复算的正/负最终贡献利润与四选一结论。

@@ -1,113 +1,62 @@
 # TODOs
 
-## Dual-Product Cathedral — Phase 3 Activation
+> Current direction: Owner 自用真实付费需求发现循环。
+> Source of truth: `docs/SELF_USE_OPERATING_DIRECTION.md`。
 
-### Capital Governor Enforcement
+## P0 — 需求案件与证据裁决
 
-**What:** Upgrade the Phase 2 advisory/shadow Capital Governor into a hard enforcement boundary for every pre-registered spend channel.
+- 新建 `DemandCase`、Evidence、Falsification、Experiment、Event 和 Verdict。
+- 用状态机禁止代理信号跨级；关联单、测试单和不可剥离异常流量进入 polluted。
+- 用 `experiment_id` 串联流量、订单、支付、物流、售后、结算和最终贡献利润。
+- 任何晚到退款、拒付或费用自动重开终局裁决。
 
-**Why:** Advisory warnings cannot guarantee the experiment loss ceiling when purchases, advertising, inventory, logistics, fees, returns, labor or manual/off-platform spend remain outside enforcement.
+## P0 — AI 侦察、反证和数据现实契约
 
-**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Phase 2 must enumerate the full spend universe and show `external_spend_unenforced` for every unknown or unintegrated channel. Enforcement may start per workspace only after coverage is 100%, unknown spend is zero, external drift reconciliation works, and partial-failure/kill-switch drills pass. Any newly discovered manual spend invalidates the ceiling and freezes the next tranche.
+- 建立三个独立 AI run：侦察只创建 lead，反证只追加 counterevidence，数据现实只判断字段可得性。
+- 每个事实保存来源、时间、地区、官方字段、原始 payload、解析版本和事实状态。
+- 无来源数字、客户画像、销量、费用或利润自动拒绝；关键缺失保持 unknown。
+- 每个字段保存来源 URL/API、采集时间、驱动、原始 payload、解析版本和置信状态。
+- 不用 Agent 投票或置信分裁决；只输出线索、证据不足、被污染、已驳回或可实验。
+- 采集失败自动重试、切换驱动并进入异常队列；日常数据不得要求 Owner 手工抄录。
+- 保存需求、竞争、利润、物流/退货、合规和补货证据的来源、时间与原始值。
+- 增加硬淘汰项和确定性加权评分。
+- LLM 只能解释证据，不得生成无来源销量、费用或合规事实。
 
-**Effort:** L human / M with CC+gstack
-**Priority:** P1
-**Depends on:** Phase 2 advisory Capital Governor, all spend entry integrations, Finance Reviewer, external drift reconciliation and failure drills.
+## P0 — 实验资金账本
 
-### Cross-Customer Do-Not-Launch Aggregation
+- 覆盖样品、采购、包装、国内运输、跨境物流、广告、平台费、税费、关税、支付提现、汇兑、退款退货、销毁和售后补偿。
+- 每项标记 actual、quoted、estimated 或 unknown，并保存币种、汇率时间和凭证。
+- 默认总预算 3,000 CNY，不可回收损失停止线 1,200 CNY。
+- unknown 关键成本或预算突破必须阻止新增投入并要求 Owner 重新批准。
 
-**What:** Promote explicitly licensed reject, abstain and failure patterns from customer-private libraries into a rights-cleared cross-customer negative-evidence product.
+## P0 — 停止规则
 
-**Why:** Private memory prevents one customer repeating mistakes; safe cross-customer patterns can become a differentiated Intelligence data asset that helps customers avoid already-known failure modes.
+- 建立版本化规则与触发记录。
+- 首轮基线覆盖：账号/收款/合规/物流失败；利润门槛不足；广告 300 CNY 无单；不可回收损失 1,200 CNY；前 5 个已发货订单中 2 个取消/拒收/退款/退货。
+- Agent 只说明触发事实和建议；不得自动花钱、取消订单或扩大预算。
 
-**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Phase 2 remains customer-private. Promotion requires multiple independent contributors, explicit purpose licenses, versioned quasi-identifier and attack-model configuration, reidentification testing, lineage deletion, unilateral consent withdrawal and downstream dossier invalidation. Never expose customer, SKU, supplier, contract-price or raw operating data.
+## P0 — 有效成交与最终净利润
 
-**Effort:** L human / M with CC+gstack
-**Priority:** P2
-**Depends on:** Real private-library usage, multiple authorized sources, Data/Legal Reviewer and verified deletion/revocation propagation.
+- 增加非关联订单排除标记。
+- 区分 ordered、paid、shipped、delivered、有效成交和最终有效成交。
+- 用退货/争议窗口、未决售后和结算完整性控制 finalization。
+- 支持晚到费用或退款后从 finalized 重新打开。
+- 修复 settlement 利润潜在重复扣费并补齐完整成本分类。
+- 只输出停止、换品、修正后再试、小幅加码四种实验结论。
 
-### Automated Evidence Warranty Remedies
+## P1 — 平台只读数据预检
 
-**What:** Automate low-risk, low-value Warranty remedies such as service credits, replacement research or contract-defined refunds while keeping high-value and disputed claims human-reviewed.
+- 验证 Ozon、Shopee、Shopify 各自真实账号权限和可取得字段；不打印凭证。
+- 区分 available、requires_owner_access、requires_listing、requires_transaction、unavailable 和 unknown。
+- Shopify 无目标流量时只作为自店测量工具；Shopee 未明确国家站点时不合并数据。
+- 只读预检失败不切换到猜测，保持 unknown 或淘汰该数据源。
 
-**Why:** Manual Warranty operations validate liability boundaries, but become an SLA and gross-margin bottleneck as paid dossier volume grows.
+## P1 — 首个自动研究—反证批次
 
-**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Phase 2 uses human triage, one appeal, Legal escalation and fully audited remedies. Automation starts only after real claims establish stable defect classes, fraud patterns, mean liability cost and Legal/Finance-approved caps. Roll out one defect class at a time with a canary and kill switch.
+- 最多生成 10 个真实来源假设，每条经过独立反证。
+- 最多保留 3 个值得请求更多只读数据的案件；无存活案件时不强行推荐。
+- 真实采购、发布和广告另开计划，并在动作时逐项取得 Owner 批准。
 
-**Effort:** M human / S–M with CC+gstack
-**Priority:** P2
-**Depends on:** Real Warranty claims, stable typed Error/Defect Registry, liability caps, fraud controls and Finance/Legal approval.
+## Frozen Backlog
 
-### Capped Real Outcome Fee Pilot
-
-**What:** Convert shadow outcome billing into one capped, externally paid result-fee contract with a Design Partner.
-
-**Why:** Outcome-aligned pricing can reduce first-purchase friction and prove economic value, but charging before attribution and adjustment rules reconcile would create damaging invoice disputes.
-
-**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Phase 2 freezes baseline, attribution window, adjustments, cap and dispute SLA, then calculates but does not invoice shadow fees. A real pilot unlocks only after at least three finalized experiments reconcile inside the pre-registered tolerance with zero unresolved disputes. The recommendation system must never read contract fee rates.
-
-**Effort:** M human plus 1–3 real decision cycles / S–M with CC+gstack
-**Priority:** P2
-**Depends on:** Three finalized experiments, Decision Flight Recorder, Finance/Tax/Legal review and one customer contract.
-
-### Public API, Pricing and Self-Serve Onboarding
-
-**What:** Progress from invite-only Design Partners to an invite-only API, public packages, self-service billing, workspace creation and platform connection.
-
-**Why:** High-touch delivery validates value but cannot create repeatable low-marginal-cost software distribution.
-
-**Context:** Accepted during `/plan-ceo-review` on 2026-07-11. Do not build public SaaS surfaces while customers still need founder-operated workflows. Unlock invite-only API only after independent completion, natural repeat/renewal, positive account gross margin, bounded support, tenant isolation, abuse controls, credential rotation and offboarding/deletion drills pass. Public registration and pricing require a separate Gate after API design partners succeed.
-
-**Effort:** L–XL human / M–L with CC+gstack
-**Priority:** P2
-**Depends on:** S4 retention/economics, stable versioned API, billing, abuse prevention, support operations and security/deletion verification.
-
-## Metabolism M1 — Phase 1 Migration
-
-- **What:** Migration for `metabolism_log` table + `event_outbox` indexed columns
-- **Why:** M1 scores records and needs a table to store score results. `event_outbox` needs `excreted_at` (tagged for deletion) and `excretion_reason` (why it was scored/excreted) columns for scheduled cleanup in Phase 2.
-- **Context:** Added during /plan-eng-review on 2026-06-26. Phase 1 is dry-run (no actual deletion), but the schema should ship from day 1 so Phase 2 doesn't need a second migration.
-- **Action:** `backend-go/migrations/XXX_add_metabolism.sql` — CREATE TABLE metabolism_log + ALTER TABLE event_outbox ADD COLUMNS.
-- **Depends on:** Design approval of MetabolismModel fields (see design doc).
-- **Blocked by:** Nothing.
-
-## UI Redesign — 未完成项目
-
-### P5: 跨页一致性检查
-
-- **What:** 检查 P2-P4 三个页面（prelisting、dashboard、agentos）之间是否存在样式 drift — 边距不一致、字体不一致、颜色偏差、共享组件使用方式不一致。
-- **Why:** P1 创建了 PageContainer / AgentDecisionPanel 等共享组件，P2-P4 可能各自改写了样式造成漂移。
-- **Action:** 逐页面对比 padding、font-size、color token、AgentDecisionPanel 使用方式。输出差异清单并修复。
-- **Blocked by:** P1-P4 完成（已交付）。
-
-### Mock 数据 → 真实 API 迁移
-
-- **What:** 三个新页面目前使用硬编码 mock 数据。替换为从后端 API 获取真实数据。
-  - `/decision/prelisting`：用 `/api/v1/decision` 系列接口
-  - `/dashboard`：用 `/api/v1/dashboard/overview`
-  - `/agentos`：用 `/api/v1/agentos`、`/api/v1/agentos/work-items`
-- **Why:** Mock 数据不能用于生产。
-- **Action:** 替换每个页面的 `mockSkus`/`mockPriority`/`mockWorkItems` 为 React Query 的 `useQuery` 调用后端 API。保留 mock 作为 fallback。
-- **Depends on:** 后端对应 API endpoint 已就绪。
-- **Blocked by:** `backend-go` 对应 handler 的验证。
-
-### 旧 40+ 页面在新 layout 中的视觉验证
-
-- **What:** P1 将 layout 从三栏改为四栏，20+ 原有 Ant Design CRUD 页面自动被新 shell 包裹。需要逐个验证它们在新 shell 中的渲染效果——宽度、滚动、边框、嵌套。
-- **Why:** 旧页面可能在窄的中心区域显示异常（表格被截断、按钮重叠等）。
-- **Action:** 在本地 dev 环境中逐一访问旧页面，截图检查布局。修复发现的异常。
-- **Blocked by:** P1 完成（已交付）。
-
-### 组件测试覆盖
-
-- **What:** P1 新增的共享组件（DomainSidebar、AgentDecisionPanel、DecisionCard、RiskBadge、PageContainer）缺少测试，需要至少覆盖 loading/empty/error/normal 四种状态。
-- **Why:** 按 review 决策要求全量测试覆盖。
-- **Action:** 为每个新增组件创建 `*.test.tsx` 文件，使用 Vitest + React Testing Library 渲染四种状态并断言。
-- **Blocked by:** P1 完成（已交付）。
-
-### Ant Design 6 暗色 Token 收敛
-
-- **What:** P1 在 `AntdProvider.tsx` 中设置了基础 token 覆盖（colorBgBase、colorBgContainer），但部分 Ant Design 组件的暗色适配可能不完整（如 Table 表头、Modal 遮罩、Dropdown 菜单）。
-- **Why:** 如果 AntD 默认暗色 token 和新 DESIGN.md 不一致，会出现肉眼可见的对比度差异。
-- **Action:** 在浏览器中逐组件检查 Table、Modal、Dropdown、Select、DatePicker 的暗色渲染，补充 token 覆盖。
-- **Blocked by:** P1 完成（已交付）。
+以下项目不进入当前开发队列：双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、Outcome Proof、Evidence Warranty、跨客户聚合、未经实证的平台扩张、更多内部 Agent/MoA/自治升级以及大型视觉重构。

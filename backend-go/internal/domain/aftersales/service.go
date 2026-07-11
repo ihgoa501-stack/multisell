@@ -102,6 +102,9 @@ func (s *Service) Create(in *CreateInput) (*AfterSalesOrder, error) {
 	if status == "" {
 		status = "pending"
 	}
+	if status != "pending" {
+		return nil, fmt.Errorf("aftersales order must be created in pending status")
+	}
 	o := AfterSalesOrder{
 		OrderID:          in.OrderID,
 		ItemID:           in.ItemID,
@@ -170,6 +173,9 @@ func (s *Service) Update(id int64, in *UpdateInput) (*AfterSalesOrder, error) {
 		updates["reason"] = *in.Reason
 	}
 	if in.Status != nil {
+		if err := checkTransition(o.Status, *in.Status); err != nil {
+			return nil, err
+		}
 		updates["status"] = *in.Status
 	}
 	if in.RefundAmount != nil {

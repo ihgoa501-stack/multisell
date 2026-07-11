@@ -48,6 +48,13 @@ export interface FetchProductMessage {
   payload: { url: string };
 }
 
+/** Backend requests automatic extraction of a marketplace search/list page. */
+export interface FetchListPageMessage {
+  type: "fetch_list_page";
+  id: string;
+  payload: { url: string };
+}
+
 /** Extension sends extracted product data back to the backend. */
 export interface FetchProductResult {
   type: "fetch_product_result";
@@ -88,16 +95,28 @@ export interface AuthResponse {
 }
 
 /** Union of all messages the backend can send to the extension. */
-export type WSIncomingMessage = FetchProductMessage | PongMessage | AuthResponse;
+export type WSIncomingMessage = FetchProductMessage | FetchListPageMessage | PongMessage | AuthResponse;
 
 /** Extension sends a list of product cards extracted from a 1688 search/list page. */
 export interface ListPageResult {
   type: "list_page_result";
-  payload: { status: string; data: { page_url: string; collected_at: string; items: ListItemData[] } };
+  id?: string;
+  payload: {
+    status: string;
+    data: { page_url: string; collected_at: string; items: ListItemData[] };
+    error?: { code: string; message: string };
+  };
 }
 
 /** A single product card found on a search/list page. */
-export interface ListItemData { title: string; price_range: string; detail_url: string; image_url?: string; }
+export interface ListItemData {
+  title: string;
+  price_range: string;
+  detail_url: string;
+  image_url?: string;
+  raw_text?: string;
+  raw_html?: string;
+}
 
 /** Union of all messages the extension can send to the backend. */
 export type WSOutgoingMessage = FetchProductResult | FetchProductError | PingMessage | AuthMessage | ListPageResult;
