@@ -76,24 +76,25 @@ func (s *Service) Evaluate(ctx context.Context, id, ownerID int64) (*DemandVerdi
 	blockers := make([]string, 0)
 	support := map[string]bool{}
 	hasCounter := false
-	scoutRuns := map[string]bool{}
-	counterRuns := map[string]bool{}
+	snapshotIDs := make([]int64, 0)
+	fatalSnapshotIDs := map[int64]bool{}
 	for _, e := range evidence {
 		usable := usableEvidence(e)
 		if e.Kind == EvidenceSupport {
-			scoutRuns[e.RunID] = true
+			if e.SnapshotID > 0 {
+				snapshotIDs = append(snapshotIDs, e.SnapshotID)
+			}
 			if usable {
 				support[e.Dimension] = true
 			}
 		}
 		if e.Kind == EvidenceCounter {
-			counterRuns[e.RunID] = true
-			if usable {
+			if usable && e.SnapshotID > 0 {
+				snapshotIDs = append(snapshotIDs, e.SnapshotID)
 				hasCounter = true
 			}
-			if usable && e.Fatal {
-				status = VerdictRejected
-				blockers = append(blockers, "fatal_counterevidence")
+			if usable && e.Fatal && e.SnapshotID > 0 {
+				fatalSnapshotIDs[e.SnapshotID] = true
 			}
 		}
 		if e.Kind == EvidenceConflict && usable {
@@ -105,11 +106,41 @@ func (s *Service) Evaluate(ctx context.Context, id, ownerID int64) (*DemandVerdi
 			blockers = append(blockers, "missing:"+d)
 		}
 	}
+	var access []DataAccessRecord
+	if err := s.db.WithContext(ctx).Where("demand_case_id = ? AND preflight_required = ?", id, true).Order("id DESC").Find(&access).Error; err != nil {
+		return nil, err
+	}
+	latest := map[string]DataAccessRecord{}
+	for _, a := range access {
+		if _, ok := latest[a.FieldName]; !ok {
+			latest[a.FieldName] = a
+		}
+	}
+	for _, a := range latest {
+		if a.Status != AccessAvailable {
+			blockers = append(blockers, "data_access:"+a.FieldName+":"+a.Status)
+		}
+	}
 	independentCounter := false
-	for run := range counterRuns {
-		if !scoutRuns[run] {
-			independentCounter = true
-			break
+	if len(snapshotIDs) > 0 {
+		var snaps []ResearchSnapshot
+		if err := s.db.WithContext(ctx).Where("demand_case_id = ? AND id IN ?", id, snapshotIDs).Find(&snaps).Error; err != nil {
+			return nil, err
+		}
+		scouts := map[string]bool{}
+		for _, snap := range snaps {
+			if snap.RunType == RunScout {
+				scouts[snap.Collector] = true
+			}
+		}
+		for _, snap := range snaps {
+			if snap.RunType == RunFalsifier && !scouts[snap.Collector] {
+				independentCounter = true
+				if fatalSnapshotIDs[snap.ID] {
+					status = VerdictRejected
+					blockers = append(blockers, "fatal_counterevidence")
+				}
+			}
 		}
 	}
 	if !hasCounter || !independentCounter {
@@ -170,6 +201,9 @@ func (s *Service) Get(ctx context.Context, id, ownerID int64) (*Detail, error) {
 	if err == nil {
 		err = s.db.WithContext(ctx).Where("demand_case_id = ?", id).Order("id").Find(&d.Snapshots).Error
 	}
+	if err == nil {
+		err = s.db.WithContext(ctx).Where("demand_case_id = ?", id).Order("id").Find(&d.DataAccess).Error
+	}
 	return d, err
 }
 
@@ -207,6 +241,14 @@ func (s *Service) DecisionCard(ctx context.Context, id, ownerID int64) (*OwnerDe
 		}
 	}
 	next := "补齐决策卡中的缺失证据与独立反证"
+	permissionNeeds, err := s.PermissionRequests(ctx, id, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	if len(permissionNeeds) > 0 {
+		need := permissionNeeds[0]
+		next = fmt.Sprintf("申请只读权限 %s，用于%s；不授权则%s", need.RequiredScope, need.DecisionPurpose, need.RefusalImpact)
+	}
 	if d.Verdict.Status == VerdictExperimentReady {
 		next = "由 Owner 决定是否批准只读数据预检；尚不允许采购、发布或投放"
 	}

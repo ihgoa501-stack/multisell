@@ -77,6 +77,9 @@
 | [付费需求信号地图](../deliverables/research/paid-demand-signal-map.md) | 代理信号与真实付款证据的边界 |
 | [付费需求反证协议](../deliverables/research/paid-demand-falsification-protocol.md) | 独立反证、污染和停止规则 |
 | [需求数据可得性现实审计](../deliverables/research/demand-data-access-reality.md) | 平台字段、权限和 unknown 边界 |
+| [带日期跨市场公开资料侦察](../deliverables/research/2026-07-11-live-market-permission-batch.md) | 英国、美国、日本候选的公开证据、权限现实与停止线 |
+| [跨市场独立反证](../deliverables/research/2026-07-11-live-market-independent-falsification.md) | 独立攻击英美日候选并给出 hold/reject 裁决 |
+| [真实付费需求只读权限预检](ops/PAID_DEMAND_READ_ONLY_PREFLIGHT.md) | 当前权限候选、禁止权限、通过与停止条件 |
 | [选市场、选类目、选产品统一方法](../deliverables/research/market-category-product-selection-synthesis.md) | 历史研究材料；固定漏斗数量已冻结，当前只保留其证据边界参考 |
 | [市场选择研究](../deliverables/research/market-selection-method.md) | 国家市场、平台市场与需求市场的选择方法和 Ozon 实证闸门 |
 | [类目选择研究](../deliverables/research/category-selection-method.md) | 类目硬淘汰、七维筛选、评分与反例 |

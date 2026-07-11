@@ -28,7 +28,9 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 候选市场比较的统一入口位于 `internal/domain/demandcase/`，API 根路径为 `/api/v1/demand-cases`。每个候选必须明确“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，覆盖需求、竞争、获客、履约、合规、收款、售后和利润可验证性八个维度，并包含来自不同 run 的独立反证。关键维度为 unknown、mock、inferred 或缺少来源/观察时间时，只能保持 `evidence_missing`，不得生成可实验结论。
 
-候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，原始 payload 与 SHA-256 快照必须一致，重复 run 幂等。内置静态公开资料基线只建立俄罗斯/Ozon 的权限待验证基线，不是实时研究，也不代表该市场已选中。
+候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，研究输出 payload 与 SHA-256 快照必须一致，重复 run 幂等。带日期研究批次只导入已完成并审阅的研究输出，不在按钮点击时联网。
+
+带日期跨市场研究与独立反证分别位于 `deliverables/research/2026-07-11-live-market-permission-batch.md` 和 `2026-07-11-live-market-independent-falsification.md`。独立反证后本轮没有值得申请账号权限的候选：英国、美国保持 hold/evidence_missing，日本当前表述 reject。
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.3.0.0`.

@@ -10,7 +10,9 @@ Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有
 
 候选市场比较统一使用 `internal/domain/demandcase/` 和 `/api/v1/demand-cases`。候选市场必须包含地区、消费者、需求场景和销售渠道；八个决策维度及独立反证未齐全时保持 `evidence_missing`。平台连接器、AI 推断、mock 或无来源数字不能通过确定性裁决。
 
-Owner 从 `/demand-cases` 查看候选市场。AI 研究 run 必须使用三类固定契约并保存可重算 SHA-256 原始快照；内置公开研究批次只产生权限待验证基线，不得解释为俄罗斯/Ozon 已入选。
+Owner 从 `/demand-cases` 查看候选市场。AI 研究 run 必须使用三类固定契约并保存可重算 SHA-256 研究输出快照；页面按钮只导入已审阅的带日期研究，不在点击时联网。
+
+2026-07-11 独立反证后，英国和美国候选保持 hold/evidence_missing，日本当前表述 reject，本轮不申请任何账号权限。未来权限卡只能请求最小只读范围，需要 listing、交易或写入的字段不得出现在当前授权入口。
 
 This file gives Claude Code-specific guidance for working in this repository.
 Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.

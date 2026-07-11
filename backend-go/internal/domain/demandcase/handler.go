@@ -175,15 +175,52 @@ func (h *Handler) ImportResearch(c *gin.Context) {
 	response.Success(c, item)
 }
 
-func (h *Handler) RunFirstBatch(c *gin.Context) {
+func (h *Handler) RecordDataAccess(c *gin.Context) {
 	owner, ok := demandOwnerID(c)
 	if !ok {
 		return
 	}
-	cards, err := h.service.RunFirstPublicResearchBatch(c.Request.Context(), owner)
+	id, ok := demandCaseID(c)
+	if !ok {
+		return
+	}
+	var input DataAccessRecord
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	input.DemandCaseID = id
+	if err := h.service.RecordDataAccess(c.Request.Context(), owner, &input); err != nil {
+		response.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	response.Success(c, input)
+}
+func (h *Handler) PermissionRequests(c *gin.Context) {
+	owner, ok := demandOwnerID(c)
+	if !ok {
+		return
+	}
+	id, ok := demandCaseID(c)
+	if !ok {
+		return
+	}
+	items, err := h.service.PermissionRequests(c.Request.Context(), id, owner)
 	if err != nil {
 		response.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	response.Success(c, cards)
+	response.Success(c, items)
+}
+func (h *Handler) ImportReviewedBatch(c *gin.Context) {
+	owner, ok := demandOwnerID(c)
+	if !ok {
+		return
+	}
+	out, err := h.service.ImportReviewedMarketPermissionBatch(c.Request.Context(), owner)
+	if err != nil {
+		response.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	response.Success(c, out)
 }
