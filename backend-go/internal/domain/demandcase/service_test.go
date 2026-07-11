@@ -11,7 +11,7 @@ import (
 
 func newTestService(t *testing.T) *Service {
 	t.Helper()
-	db := dbtest.NewDB(t, &DemandCase{}, &DemandEvidence{}, &DemandVerdict{})
+	db := dbtest.NewDB(t, &DemandCase{}, &DemandEvidence{}, &DemandVerdict{}, &ResearchBatch{}, &ResearchSnapshot{})
 	return NewService(db, zap.NewNop())
 }
 

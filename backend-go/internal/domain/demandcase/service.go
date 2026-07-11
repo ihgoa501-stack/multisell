@@ -167,6 +167,9 @@ func (s *Service) Get(ctx context.Context, id, ownerID int64) (*Detail, error) {
 		return nil, err
 	}
 	d.Verdict, err = s.latestVerdict(ctx, id)
+	if err == nil {
+		err = s.db.WithContext(ctx).Where("demand_case_id = ?", id).Order("id").Find(&d.Snapshots).Error
+	}
 	return d, err
 }
 

@@ -156,3 +156,34 @@ func (h *Handler) DecisionCard(c *gin.Context) {
 	}
 	response.Success(c, card)
 }
+
+func (h *Handler) ImportResearch(c *gin.Context) {
+	owner, ok := demandOwnerID(c)
+	if !ok {
+		return
+	}
+	var input ResearchResult
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := h.service.ImportResearchResult(c.Request.Context(), owner, input)
+	if err != nil {
+		response.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	response.Success(c, item)
+}
+
+func (h *Handler) RunFirstBatch(c *gin.Context) {
+	owner, ok := demandOwnerID(c)
+	if !ok {
+		return
+	}
+	cards, err := h.service.RunFirstPublicResearchBatch(c.Request.Context(), owner)
+	if err != nil {
+		response.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	response.Success(c, cards)
+}

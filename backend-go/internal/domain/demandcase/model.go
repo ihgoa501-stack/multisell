@@ -53,9 +53,35 @@ type DemandEvidence struct {
 	SourceURI    string     `gorm:"type:text" json:"source_uri"`
 	ObservedAt   *time.Time `json:"observed_at"`
 	RunID        string     `gorm:"size:80;not null" json:"run_id"`
+	SnapshotID   int64      `gorm:"index;not null;default:0" json:"snapshot_id"`
 	Fatal        bool       `json:"fatal"`
 	CreatedAt    time.Time  `json:"created_at"`
 }
+
+type ResearchBatch struct {
+	ID        int64     `gorm:"primaryKey" json:"id"`
+	BatchKey  string    `gorm:"uniqueIndex:ux_owner_batch;size:100;not null" json:"batch_key"`
+	OwnerID   int64     `gorm:"uniqueIndex:ux_owner_batch;not null" json:"owner_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (ResearchBatch) TableName() string { return "demand_research_batch" }
+
+type ResearchSnapshot struct {
+	ID           int64     `gorm:"primaryKey" json:"id"`
+	BatchID      int64     `gorm:"index;not null" json:"batch_id"`
+	OwnerID      int64     `gorm:"uniqueIndex:ux_owner_research_run;not null" json:"-"`
+	DemandCaseID int64     `gorm:"index;not null" json:"demand_case_id"`
+	RunID        string    `gorm:"uniqueIndex:ux_owner_research_run;size:80;not null" json:"run_id"`
+	RunType      string    `gorm:"uniqueIndex:ux_owner_research_run;size:24;not null" json:"run_type"`
+	SourceURI    string    `gorm:"type:text;not null" json:"source_uri"`
+	CollectedAt  time.Time `json:"collected_at"`
+	RawPayload   string    `gorm:"type:text;not null" json:"-"`
+	RawSHA256    string    `gorm:"size:64;not null" json:"raw_sha256"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (ResearchSnapshot) TableName() string { return "demand_research_snapshot" }
 
 func (DemandEvidence) TableName() string { return "demand_evidence" }
 
@@ -73,9 +99,10 @@ type DemandVerdict struct {
 func (DemandVerdict) TableName() string { return "demand_verdict" }
 
 type Detail struct {
-	Case     DemandCase       `json:"case"`
-	Evidence []DemandEvidence `json:"evidence"`
-	Verdict  *DemandVerdict   `json:"verdict,omitempty"`
+	Case      DemandCase         `json:"case"`
+	Evidence  []DemandEvidence   `json:"evidence"`
+	Verdict   *DemandVerdict     `json:"verdict,omitempty"`
+	Snapshots []ResearchSnapshot `json:"snapshots"`
 }
 
 type OwnerDecisionCard struct {

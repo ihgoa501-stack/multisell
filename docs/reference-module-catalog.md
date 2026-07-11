@@ -233,12 +233,14 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | POST | `/api/v1/experiments/:experimentId/gates/evaluate` | ✅ | `experiments/[experimentId]/page.tsx` |
 | GET | `/api/v1/experiments/:experimentId/owner-summary` | ✅ | `experiments/[experimentId]/page.tsx` |
 | **候选市场案件** | | | |
-| GET/POST | `/api/v1/demand-cases` | ✅ | Owner 页面待建 |
-| GET | `/api/v1/demand-cases/:id` | ✅ | Owner 页面待建 |
+| GET/POST | `/api/v1/demand-cases` | ✅ | `demand-cases/page.tsx` |
+| GET | `/api/v1/demand-cases/:id` | ✅ | `demand-cases/[id]/page.tsx` |
 | POST | `/api/v1/demand-cases/:id/evidence` | ✅ | Owner 页面待建 |
 | POST | `/api/v1/demand-cases/:id/falsifications` | ✅ | Owner 页面待建 |
 | POST | `/api/v1/demand-cases/:id/evaluate` | ✅ | Owner 页面待建 |
-| GET | `/api/v1/demand-cases/:id/decision-card` | ✅ | Owner 页面待建 |
+| GET | `/api/v1/demand-cases/:id/decision-card` | ✅ | `demand-cases/[id]/page.tsx` |
+| POST | `/api/v1/demand-cases/research/import` | ✅ | 受保护 AI 研究契约入口 |
+| POST | `/api/v1/demand-cases/research/first-public-batch` | ✅ | `demand-cases/page.tsx` |
 | **Products & SKU** | | | |
 | GET/POST/PUT/DELETE | `/api/v1/products[/:id]` | ✅ | `products/page.tsx`, `products/[id]/page.tsx`, `products/create/page.tsx` |
 | GET/POST/PUT/DELETE | `/api/v1/products/:id/specs[/:spec_id]` | ✅ | — |

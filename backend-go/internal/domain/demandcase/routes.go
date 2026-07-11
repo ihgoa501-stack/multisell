@@ -16,4 +16,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	g.POST("/:id/falsifications", h.AddFalsification)
 	g.POST("/:id/evaluate", h.Evaluate)
 	g.GET("/:id/decision-card", h.DecisionCard)
+	g.POST("/research/import", h.ImportResearch)
+	g.POST("/research/first-public-batch", h.RunFirstBatch)
 }

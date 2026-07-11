@@ -15,7 +15,7 @@ import (
 func testRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	db := dbtest.NewDB(t, &DemandCase{}, &DemandEvidence{}, &DemandVerdict{})
+	db := dbtest.NewDB(t, &DemandCase{}, &DemandEvidence{}, &DemandVerdict{}, &ResearchBatch{}, &ResearchSnapshot{})
 	r := gin.New()
 	g := r.Group("/api/v1")
 	g.Use(func(c *gin.Context) { c.Set("user_id", int64(9)); c.Next() })
