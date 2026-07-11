@@ -10,11 +10,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const fetchPermissions = usePermissionStore((s) => s.fetchPermissions);
   const clearPermissions = usePermissionStore((s) => s.clearPermissions);
   const permissionsFetched = usePermissionStore((s) => s.fetched);
+  const [mounted, setMounted] = useState(false);
   const [takingTooLong, setTakingTooLong] = useState(false);
-  const isBrowser = typeof window !== 'undefined';
 
   useEffect(() => {
-    if (!isBrowser) return;
+    setMounted(true);
     const token = localStorage.getItem('token');
     if (!token) {
       router.replace('/login');
@@ -34,8 +34,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [permissionsFetched]);
 
-  // During SSR: render nothing to avoid hydration mismatch
-  if (!isBrowser) return null;
+  // Server and the first client render must match. Browser-only auth state is
+  // evaluated after mount so React never replaces an empty SSR tree with a spinner.
+  if (!mounted) return null;
 
   if (!permissionsFetched) {
     if (takingTooLong) {
