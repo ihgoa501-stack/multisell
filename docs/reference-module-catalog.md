@@ -211,6 +211,7 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | `tariff` | `/api/v1/tariffs` | 关税规则 |
 | `candidate` | `/api/v1/candidates` | 候选商品管理 |
 | `experiment` | `/api/v1/experiments` | Owner 自用经营实验统一事实链、证据/反证、阶段闸门与对象关联 |
+| `demandcase` | `/api/v1/demand-cases` | 候选市场八维证据、独立反证、确定性裁决与 Owner 六行决策卡 |
 | `completeness` | `/api/v1/completeness` | 商品完整度检查 |
 | `profit` | `/api/v1/profit` | 利润计算 |
 | `cost` | `/api/v1/costs` | 成本分摊 |
@@ -231,6 +232,13 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | POST | `/api/v1/experiments/:experimentId/links` | ✅ | `experiments/[experimentId]/page.tsx` |
 | POST | `/api/v1/experiments/:experimentId/gates/evaluate` | ✅ | `experiments/[experimentId]/page.tsx` |
 | GET | `/api/v1/experiments/:experimentId/owner-summary` | ✅ | `experiments/[experimentId]/page.tsx` |
+| **候选市场案件** | | | |
+| GET/POST | `/api/v1/demand-cases` | ✅ | Owner 页面待建 |
+| GET | `/api/v1/demand-cases/:id` | ✅ | Owner 页面待建 |
+| POST | `/api/v1/demand-cases/:id/evidence` | ✅ | Owner 页面待建 |
+| POST | `/api/v1/demand-cases/:id/falsifications` | ✅ | Owner 页面待建 |
+| POST | `/api/v1/demand-cases/:id/evaluate` | ✅ | Owner 页面待建 |
+| GET | `/api/v1/demand-cases/:id/decision-card` | ✅ | Owner 页面待建 |
 | **Products & SKU** | | | |
 | GET/POST/PUT/DELETE | `/api/v1/products[/:id]` | ✅ | `products/page.tsx`, `products/[id]/page.tsx`, `products/create/page.tsx` |
 | GET/POST/PUT/DELETE | `/api/v1/products/:id/specs[/:spec_id]` | ✅ | — |

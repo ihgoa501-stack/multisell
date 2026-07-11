@@ -6,6 +6,8 @@ Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有
 
 经营实验统一事实链：后端 `internal/domain/experiment/`，API `/api/v1/experiments`，前端 `/experiments`。使用 `experiment_id` 关联机会、商品规格、供应、订单、履约、售后、利润与现金对象；闸门结果限定为 `pass / conditional / return / reject / expired`，证据作用限定为 `support / counter / conflict`，真实性限定为 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`；最终利润封账必须校验可信已对账结算和最终订单利润记录，现金回收必须校验同一订单与结算的银行/现金交易。最终利润与现金回收不得合并为一个状态。
 
+候选市场比较统一使用 `internal/domain/demandcase/` 和 `/api/v1/demand-cases`。候选市场必须包含地区、消费者、需求场景和销售渠道；八个决策维度及独立反证未齐全时保持 `evidence_missing`。平台连接器、AI 推断、mock 或无来源数字不能通过确定性裁决。
+
 This file gives Claude Code-specific guidance for working in this repository.
 Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.
 

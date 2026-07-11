@@ -70,7 +70,12 @@
 |------|----------|
 | [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律、开发路线与解冻门槛 |
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
-| [选市场、选类目、选产品统一方法](../deliverables/research/market-category-product-selection-synthesis.md) | 当前首轮实验的商业漏斗、证据边界与正确的 20→3→1 定义 |
+| [真实付费需求发现循环设计](superpowers/specs/2026-07-11-paid-demand-discovery-loop-design.md) | 候选市场、需求案件、独立反证和真实交易裁决边界 |
+| [真实付费需求发现循环实施计划](superpowers/plans/2026-07-11-paid-demand-discovery-loop.md) | Sprint 1 分阶段实施与验收计划 |
+| [付费需求信号地图](../deliverables/research/paid-demand-signal-map.md) | 代理信号与真实付款证据的边界 |
+| [付费需求反证协议](../deliverables/research/paid-demand-falsification-protocol.md) | 独立反证、污染和停止规则 |
+| [需求数据可得性现实审计](../deliverables/research/demand-data-access-reality.md) | 平台字段、权限和 unknown 边界 |
+| [选市场、选类目、选产品统一方法](../deliverables/research/market-category-product-selection-synthesis.md) | 历史研究材料；固定漏斗数量已冻结，当前只保留其证据边界参考 |
 | [市场选择研究](../deliverables/research/market-selection-method.md) | 国家市场、平台市场与需求市场的选择方法和 Ozon 实证闸门 |
 | [类目选择研究](../deliverables/research/category-selection-method.md) | 类目硬淘汰、七维筛选、评分与反例 |
 | [产品选择研究](../deliverables/research/product-selection-method.md) | 需求、竞品、供应商、成本、合规与真实商品机会定义 |

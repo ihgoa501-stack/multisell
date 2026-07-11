@@ -1,6 +1,6 @@
 # 凌镜 LingMirror Project Status
 
-> **当前方向覆盖（2026-07-11）**：凌镜只做 Owner 自用商品实验内部系统。双产品、外部 SaaS、多租户和未经市场选择的平台扩张均冻结。Ozon 等已有适配器只是连接器，不是默认经营方向。当前业务缺口是跨市场选择、统一 `launch_experiment`、实验资金账本、确定性停止条件、最终有效成交和可复算的最终净利润。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md)。
+> **当前方向覆盖（2026-07-11）**：凌镜只做 Owner 自用商品实验内部系统。双产品、外部 SaaS、多租户和未经市场选择的平台扩张均冻结。Ozon 等已有适配器只是连接器，不是默认经营方向。候选市场 `DemandCase`、八维证据、独立反证、确定性裁决和六行 Owner 决策卡后端基础已建立；当前剩余缺口是 AI 研究契约、Owner 页面、实验资金账本、确定性停止条件、最终有效成交和可复算的最终净利润。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md)。
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
@@ -81,7 +81,7 @@
 | 项目 | 当前口径 |
 |------|----------|
 | 活跃代码栈 | `backend-go/` + `frontend-next/` |
-| 当前方向 | H1 Copilot OS 方案阶段，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
+| 当前方向 | Owner 自用 Sprint 1：候选市场与独立反证闭环，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
 | 模块 / API / 页面事实源 | [reference-module-catalog.md](reference-module-catalog.md) |
 | 最新全量验证 | 2026-07-09：后端 `go test ./...` / `go vet ./...` 通过；前端 lint / typecheck / test / build 通过 |
 | 历史验证记录 | 本文下方各日期段落、[TEST_SUMMARY.md](TEST_SUMMARY.md)、[FRONTEND_TEST_REPORT.md](FRONTEND_TEST_REPORT.md) |

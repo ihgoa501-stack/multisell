@@ -36,6 +36,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/cost"
 	"github.com/lingmirror/backend-go/internal/domain/dashboard"
 	"github.com/lingmirror/backend-go/internal/domain/decision"
+	"github.com/lingmirror/backend-go/internal/domain/demandcase"
 	"github.com/lingmirror/backend-go/internal/domain/entropy"
 	"github.com/lingmirror/backend-go/internal/domain/evolution"
 	"github.com/lingmirror/backend-go/internal/domain/exceptions"
@@ -840,6 +841,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	compliance.RegisterRoutes(protected, db, logger)
 	profit.RegisterRoutes(protected, db, logger)
 	experiment.RegisterRoutes(protected, db, logger)
+	demandcase.RegisterRoutes(protected, db, logger)
 	evidenceHandler := profit.NewEvidenceHandler(db)
 	protected.GET("/profit/evidence-card/:productId", evidenceHandler.GetEvidenceCard)
 	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)

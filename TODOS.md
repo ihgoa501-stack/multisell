@@ -5,7 +5,8 @@
 
 ## P0 — 需求案件与证据裁决
 
-- 新建 `DemandCase`、Evidence、Falsification、Experiment、Event 和 Verdict。
+- ✅ 已新建候选市场 `DemandCase`、Evidence 和 Verdict，并提供独立反证入口、确定性裁决与六行 Owner 决策卡。
+- 待补齐 DemandExperiment、不可变 Event、污染订单状态机和真实交易终局裁决。
 - 用状态机禁止代理信号跨级；关联单、测试单和不可剥离异常流量进入 polluted。
 - 用 `experiment_id` 串联流量、订单、支付、物流、售后、结算和最终贡献利润。
 - 任何晚到退款、拒付或费用自动重开终局裁决。
