@@ -379,8 +379,30 @@ func TestContinueUsesPersistedPositiveProfitAndConsistentClosure(t *testing.T) {
 			if err := s.db.Create(&order).Error; err != nil {
 				t.Fatal(err)
 			}
-			if err := s.AddObjectLink(ctx, 1, &ObjectLink{ExperimentID: c.ExperimentID, ObjectType: "order", ObjectID: strconv.FormatInt(order.ID, 10)}); err != nil {
+			settlement := settlementDomain.Settlement{PlatformID: 1, SettlementNo: "TERMINAL-ST-" + tt.name, Currency: tt.profitCur, Status: "reconciled", SourceType: "api_sync", ImportedAt: &now}
+			if err := s.db.Create(&settlement).Error; err != nil {
 				t.Fatal(err)
+			}
+			item := settlementDomain.SettlementItem{SettlementID: settlement.ID, TransactionType: "order_sale", OrderNo: order.OrderNo, OrderID: &order.ID, Amount: 100, ReconciliationStatus: "matched", ReconciledAt: &now, ReconciledBy: "owner"}
+			if err := s.db.Create(&item).Error; err != nil {
+				t.Fatal(err)
+			}
+			profit := profitDomain.OrderProfitRecord{OrderID: order.ID, Revenue: 100, TotalCost: 100 - tt.profit, Profit: tt.profit, ProfitStatus: "final"}
+			if err := s.db.Create(&profit).Error; err != nil {
+				t.Fatal(err)
+			}
+			account := financeDomain.FinanceAccount{Name: "terminal-bank", AccountType: "bank", Currency: tt.cashCur}
+			if err := s.db.Create(&account).Error; err != nil {
+				t.Fatal(err)
+			}
+			cash := financeDomain.FinanceTransaction{AccountID: account.ID, TransactionType: "revenue", Amount: 100, Currency: tt.cashCur, OrderID: &order.ID, SettlementID: &settlement.ID, TransactionDate: &now}
+			if err := s.db.Create(&cash).Error; err != nil {
+				t.Fatal(err)
+			}
+			for typ, objectID := range map[string]int64{"order": order.ID, "settlement": settlement.ID, "profit_record": profit.ID, "cash_transaction": cash.ID} {
+				if err := s.AddObjectLink(ctx, 1, &ObjectLink{ExperimentID: c.ExperimentID, ObjectType: typ, ObjectID: strconv.FormatInt(objectID, 10)}); err != nil {
+					t.Fatal(err)
+				}
 			}
 			for _, stage := range []string{StageProfit, StageCash} {
 				if err := s.db.Create(&GateDecision{ExperimentID: c.ExperimentID, Stage: stage, GateCode: canonicalGate[stage], Result: ResultPass, DecidedBy: 1}).Error; err != nil {
@@ -411,6 +433,67 @@ func TestContinueUsesPersistedPositiveProfitAndConsistentClosure(t *testing.T) {
 				t.Fatalf("valid continue was rejected: %v", err)
 			}
 		})
+	}
+}
+
+func TestContinueRevalidatesChangedSourceFacts(t *testing.T) {
+	s := closureService(t)
+	ctx := context.Background()
+	c := &ExperimentCase{Name: "changed-source", Stage: StageOpportunity, OwnerID: 1}
+	if err := s.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	order := orderDomain.Order{OrderNo: "CHANGED-SOURCE-1", PaidAt: &now, DeliveredAt: &now}
+	settlement := settlementDomain.Settlement{PlatformID: 1, SettlementNo: "CHANGED-SOURCE-ST", Currency: "CNY", Status: "reconciled", SourceType: "api_sync", ImportedAt: &now}
+	if err := s.db.Create(&order).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Create(&settlement).Error; err != nil {
+		t.Fatal(err)
+	}
+	item := settlementDomain.SettlementItem{SettlementID: settlement.ID, OrderNo: order.OrderNo, OrderID: &order.ID, ReconciliationStatus: "matched", ReconciledAt: &now, ReconciledBy: "owner"}
+	profit := profitDomain.OrderProfitRecord{OrderID: order.ID, Revenue: 100, TotalCost: 70, Profit: 30, ProfitStatus: "final"}
+	account := financeDomain.FinanceAccount{Name: "changed-bank", AccountType: "bank", Currency: "CNY"}
+	if err := s.db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Create(&profit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Create(&account).Error; err != nil {
+		t.Fatal(err)
+	}
+	cash := financeDomain.FinanceTransaction{AccountID: account.ID, TransactionType: "revenue", Amount: 100, Currency: "CNY", OrderID: &order.ID, SettlementID: &settlement.ID, TransactionDate: &now}
+	if err := s.db.Create(&cash).Error; err != nil {
+		t.Fatal(err)
+	}
+	for typ, objectID := range map[string]int64{"order": order.ID, "settlement": settlement.ID, "profit_record": profit.ID, "cash_transaction": cash.ID} {
+		if err := s.AddObjectLink(ctx, 1, &ObjectLink{ExperimentID: c.ExperimentID, ObjectType: typ, ObjectID: strconv.FormatInt(objectID, 10)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, stage := range []string{StageProfit, StageCash} {
+		if err := s.db.Create(&GateDecision{ExperimentID: c.ExperimentID, Stage: stage, GateCode: canonicalGate[stage], Result: ResultPass, DecidedBy: 1}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.db.Model(c).Updates(map[string]any{"stage": StageDecision, "final_profit_status": ProfitFinal, "final_profit_amount": 30, "profit_currency": "CNY", "cash_recovery_status": CashRecovered, "cash_recovered_amount": 100, "cash_currency": "CNY", "cash_recovered_at": &now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The source truth changes after the gates passed. The final decision must
+	// revalidate it instead of trusting the experiment_case snapshot.
+	if err := s.db.Model(&profit).Updates(map[string]any{"profit": -5, "profit_status": "final"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var request ExperimentCase
+	if err := s.db.Where("experiment_id = ?", c.ExperimentID).First(&request).Error; err != nil {
+		t.Fatal(err)
+	}
+	request.FinalDecision = "continue"
+	request.Status = StatusCompleted
+	if err := s.Update(ctx, c.ExperimentID, 1, &request); err == nil {
+		t.Fatal("continue trusted stale cached profit after the source became negative")
 	}
 }
 
