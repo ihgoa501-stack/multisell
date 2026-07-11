@@ -49,8 +49,8 @@ func validateCase(c *ExperimentCase) error {
 	if c.OwnerID <= 0 || strings.TrimSpace(c.Name) == "" || !stages[c.Stage] || !decisions[c.FinalDecision] || !statuses[c.Status] || !profitStatuses[c.FinalProfitStatus] || !cashStatuses[c.CashRecoveryStatus] {
 		return errors.New("invalid experiment case")
 	}
-	if c.FinalDecision == "continue" && (c.FinalProfitStatus != ProfitFinal || c.CashRecoveryStatus != CashRecovered || c.FinalProfitAmount <= 0) {
-		return errors.New("continue requires positive final profit and recovered cash")
+	if c.FinalDecision == "continue" && (c.FinalProfitStatus != ProfitFinal || c.CashRecoveryStatus != CashRecovered) {
+		return errors.New("continue requires final profit and recovered cash")
 	}
 	if c.Status == StatusCompleted && (c.FinalProfitStatus != ProfitFinal || c.CashRecoveryStatus != CashRecovered || c.FinalDecision == "") {
 		return errors.New("completed requires final profit, recovered cash, and a final decision")

@@ -501,6 +501,7 @@ func TestContinueRevalidatesChangedSourceFacts(t *testing.T) {
 	if err := s.db.Model(&cash).Update("amount", 90).Error; err != nil {
 		t.Fatal(err)
 	}
+	request.FinalProfitAmount = -5 // stale client snapshot must not block fresh positive truth
 	if err := s.Update(ctx, c.ExperimentID, 1, &request); err != nil {
 		t.Fatalf("continue rejected refreshed positive source facts: %v", err)
 	}
