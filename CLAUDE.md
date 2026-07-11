@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-> **当前最高优先级方向（2026-07-11）**：凌镜只做 Owner 自用跨境商品实验系统。先比较“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，由 Owner 批准已选市场后，才采集该市场的需求、竞争、获客、履约、合规、收款和利润证据。不得预设 Ozon、欧洲或任何平台，也不得把“已有连接器”解释成经营方向。详见 `docs/SELF_USE_OPERATING_DIRECTION.md` 和 `CONTEXT.md`。
+> **方向确认规则**：仓库没有可自动继承的当前最高产品方向。制定系统目标、商业方向、预算或经营主线前，必须先确认 Owner 的当前意图。`docs/SELF_USE_OPERATING_DIRECTION.md` 是 `superseded / unconfirmed` 的历史提案，不得自动采用其中的自用定位、3,000 CNY 预算、1,200 CNY 损失线或跨市场实验路线。
 
-开始非平凡工作前必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。该审计是当前完成度和证据限制的入口；模块存在、测试通过、页面可见、mock 或 Agent 共识均不得升级为真实经营事实。代码或现实状态变化时必须重新核验，而不是沿用旧完成声明。
+开始非平凡工作前必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。该审计只是带日期的仓库证据快照，不是当前产品方向或行动授权；模块存在、测试通过、页面可见、mock 或 Agent 共识均不得升级为真实经营事实。代码或现实状态变化时必须重新核验，而不是沿用旧完成声明。
 
 Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有明确决策用途和市场闸门时，不得启动平台商品采集。已有采集线索通过 `evidence_id` 引用不可变页面快照。
 
@@ -282,6 +282,8 @@ cd frontend-next/e2e && npx playwright test
 ## Documentation
 
 - `AGENTS.md` — canonical cross-agent project instructions. **Read the "Project Medical Record" section first — it lists known issues, what was fixed, and project rules.**
+- `docs/PRODUCT.md` — only source for Owner-confirmed product direction; keep unknowns explicit.
+- `docs/CURRENT.md` / `docs/BACKLOG.md` — current management state and work order; `NOW` may contain at most one task.
 - `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.
 - `docs/INDEX.md` — full documentation index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
@@ -293,6 +295,8 @@ cd frontend-next/e2e && npx playwright test
 - `docs/api-inventory.md` — complete API route inventory (71+ modules).
 - `backend-go/scripts/smoke_test.sh` — 10-step end-to-end pipeline verification.
 - Swagger UI: `GET /swagger/index.html` (dev only, 44 annotated endpoints).
+
+Project-level Codex subagents are defined in `.codex/agents/`: `researcher`, `implementer`, `reviewer`, and `qa`. The root Agent coordinates them; parallelize independent read-heavy work and keep overlapping code writes sequential.
 
 ## Skill routing
 

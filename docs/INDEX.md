@@ -1,13 +1,29 @@
 # 凌镜 LingMirror — 文档索引
 
-> **当前方向（2026-07-11）**：先读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。双产品、外部 SaaS、多租户和商业化文档均为冻结历史材料，不得作为当前开发指令。
+> **方向确认规则**：当前没有可自动继承的最高产品方向。制定目标、预算或经营路线前必须先确认 Owner 的当前意图。[Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 已降级为 `superseded / unconfirmed` 历史提案。
 
-> **当前事实入口**：再读 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。它区分政策、计划、代码实现、自动验证、真实外部观察、对账、mock、推断和已过期声明。
+> **带日期的事实快照**：可读 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) 核验证据边界；其中的产品方向和行动顺序不是当前授权。
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
 > 更新日期：2026-07-11
 
 ---
+
+## ⭐ 当前权威入口
+
+| 问题 | 唯一入口 |
+|---|---|
+| Owner 当前确认了什么产品方向？ | [产品方向](PRODUCT.md) |
+| 现在处于什么阶段、只做什么？ | [当前管理状态](CURRENT.md) |
+| NOW / NEXT / LATER / FROZEN 是什么？ | [任务池](BACKLOG.md) |
+| 当前代码与验证事实是什么？ | [项目状态](PROJECT_STATUS.md) |
+| 有哪些已知失败和风险？ | [已知问题](KNOWN_ISSUES.md) |
+| 非小型功能如何写任务卡？ | [功能任务模板](features/TEMPLATE.md) |
+| 开发如何循环？ | [开发闭环](DEVELOPMENT_LOOP.md) |
+
+项目级 Codex Agent 定义位于 `.codex/agents/`：`researcher`、`implementer`、`reviewer` 和 `qa`。全局并发与嵌套限制位于 `.codex/config.toml`。
+
+产品方向、当前任务、工程事实和历史研究必须分开记录。历史文档即使含有“当前”“P0”或“唯一主线”，也不能覆盖以上入口。
 
 ## 🚀 快速入门 (Quick Start)
 
@@ -43,12 +59,12 @@
 
 ## 📋 项目概览
 
-当前执行口径以 [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) 和 `docs/governance/` 为准。
-下表中的历史计划、蓝图和研究材料保留作参考，不覆盖当前优先级。
+当前产品方向以 [PRODUCT.md](PRODUCT.md) 为准，当前任务以 [CURRENT.md](CURRENT.md) 和 [BACKLOG.md](BACKLOG.md) 为准，长期安全规则以 `docs/governance/` 为准。
+下表中的历史计划、蓝图和研究材料保留作参考，不构成当前授权。
 
 | 文档 | 说明 |
 |------|------|
-| [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 🆕 当前执行口径：产品方向、AgentOS 安全优先级、文档清理规则 |
+| [2026-07-11 历史方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | `superseded / unconfirmed` 历史提案，不得作为当前开发指令 |
 | [设计系统](DESIGN.md) | 🆕 UI 设计规范：色彩、字体、间距、动画、组件风格、无障碍 |
 | [项目状态](PROJECT_STATUS.md) | 当前版本、验证状态、更新历史 |
 | [AI 无人公司长远战略愿景](LONG_TERM_VISION_AND_STRATEGY.md) | 🆕 系统终极形态：“全自动驾驶”无人公司操作系统的四道门槛与落地路线图 |
@@ -70,8 +86,8 @@
 
 | 文档 | 当前用途 |
 |------|----------|
-| [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律、开发路线与解冻门槛 |
-| [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
+| [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | `superseded / unconfirmed` 历史提案；不得自动继承其定位、预算或路线 |
+| [2026-07-11 方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 历史材料，当前有效性未确认，不得自动作为开发指令 |
 | [真实付费需求发现循环设计](superpowers/specs/2026-07-11-paid-demand-discovery-loop-design.md) | 候选市场、需求案件、独立反证和真实交易裁决边界 |
 | [真实付费需求发现循环实施计划](superpowers/plans/2026-07-11-paid-demand-discovery-loop.md) | Sprint 1 分阶段实施与验收计划 |
 | [付费需求信号地图](../deliverables/research/paid-demand-signal-map.md) | 代理信号与真实付款证据的边界 |

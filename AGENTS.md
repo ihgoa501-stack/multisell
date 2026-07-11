@@ -12,13 +12,15 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 ## Project
 
-### Current Owner Direction (2026-07-11)
+### Owner Direction Must Be Confirmed
 
-凌镜当前是 Owner 本人自用的跨境商品实验与经营内部系统，不面向外部客户。当前唯一主线是：候选市场比较 → Owner 批准已选市场 → 该市场的需求与反证 → 商品机会 → 最小真实实验 → 有效成交 → 退货/争议后最终净利润。不得预设国家、地区、平台、类目、商品或“20→3→1”等固定数量。完整边界见 `docs/SELF_USE_OPERATING_DIRECTION.md`，统一业务术语见 `CONTEXT.md`。
+仓库目前没有一份已经由 Owner 在当前对话中确认、可以自动继承的最高产品方向。制定系统大目标、商业方向、资金预算、目标用户或经营主线前，必须先询问并记录 Owner 的当前意图；不得仅因历史文档日期较新或写有“当前”“生效”字样，就把它当作 Owner 现行决定。
 
-开始任何非平凡研究、规划、开发、审查、QA 或发布前，还必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。它是当前代码与经营完成度的证据快照：严格区分 `policy / planned / implemented / automated_verified / manually_verified / external_observed / reconciled / mock / inferred / superseded`。不得把模块存在、测试通过、页面可见或多个 Agent 意见一致写成真实市场、真实成交、生产可用或最终利润已经成立。代码或真实经营状态变化后，应重新核验并生成新的带日期审计，不能静默覆盖证据限制。
+`docs/SELF_USE_OPERATING_DIRECTION.md` 是 2026-07-11 的历史提案，状态为 `superseded / unconfirmed`。其中的 Owner 自用定位、跨市场实验主线、3,000 CNY 总预算、1,200 CNY 损失线及其他范围约束均不得自动用于规划、开发或结果判断。它只能作为历史背景，除非 Owner 再次逐项确认。
 
-除非 Owner 再次明确解冻，不得主动建设双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、跨客户聚合、未经市场选择的平台扩张、更多 Agent/MoA/自治升级或大型视觉重构。自用不降低审批、审计和外部写安全要求。
+开始非平凡研究、规划、开发、审查、QA 或发布前，仍应阅读 `docs/research/project-truth-audit-2026-07-11.md`，但只能把它当作带日期的仓库证据快照，不能把其中的产品方向和行动顺序当成当前授权。审计中的证据等级规则仍适用：不得把模块存在、测试通过、页面可见或多个 Agent 意见一致写成真实市场、真实成交、生产可用或最终利润已经成立。代码或真实经营状态变化后，应重新核验并生成新的带日期审计，不能静默覆盖证据限制。
+
+在 Owner 确认新方向前，不主动扩大产品范围或执行高成本、不可逆的外部动作。下文关于候选市场、经营实验和平台连接器的内容用于描述现有代码、证据边界与安全规则，不构成当前产品方向或继续建设授权。
 
 生产服务器初始化、SSH、部署、恢复、测试和回滚只有一个可执行入口：`docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md`。
 
@@ -212,13 +214,26 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 ## Documentation
 
 - `CLAUDE.md` — Claude Code guidance (keep consistent).
+- `docs/PRODUCT.md` — Owner 已确认产品方向的唯一入口；未确认字段必须保持 `unknown`。
+- `docs/CURRENT.md` / `docs/BACKLOG.md` — 当前管理状态和任务顺序；`NOW` 最多一项。
 - `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.
-- `docs/CURRENT_DIRECTION_AND_PRIORITIES.md` — current execution direction, safety priorities, and documentation cleanup rules.
+- `docs/CURRENT_DIRECTION_AND_PRIORITIES.md` — `superseded / unconfirmed` 历史方向提案。
 - `docs/INDEX.md` — full doc index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
 - `docs/ACTIVE_STACK_POLICY.md` — active/legacy policy.
 - `docs/CODEBASE_ANALYSIS.md` — codebase analysis snapshot, knowledge graph usage, and regeneration guidance.
 - `docs/FRONTEND_PAGES_AND_ROUTING.md` — page map.
+
+## Project-Level Codex Agents
+
+Project-scoped Codex agent definitions live in `.codex/agents/`:
+
+- `researcher` — read-only discovery and evidence gathering.
+- `implementer` — scoped implementation after the task card is approved.
+- `reviewer` — read-only correctness, risk, and scope review.
+- `qa` — automated and user-path verification; does not fix product code.
+
+The root Agent coordinates them. Prefer parallel Agents for independent read-heavy work; do not let multiple implementation Agents edit the same surface concurrently.
 
 ## Project Medical Record
 
