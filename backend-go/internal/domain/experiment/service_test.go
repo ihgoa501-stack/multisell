@@ -336,3 +336,119 @@ func TestManualUnreconciledSettlementCannotCloseProfit(t *testing.T) {
 		t.Fatal("manual unreconciled settlement closed profit")
 	}
 }
+
+func TestContinueUsesPersistedPositiveProfitAndConsistentClosure(t *testing.T) {
+	tests := []struct {
+		name      string
+		profit    float64
+		profitCur string
+		cashCur   string
+		paid      bool
+		delivered bool
+		cancelled bool
+		wantErr   bool
+	}{
+		{name: "positive consistent closure", profit: 30, profitCur: "CNY", cashCur: "CNY", paid: true, delivered: true},
+		{name: "zero profit", profit: 0, profitCur: "CNY", cashCur: "CNY", paid: true, delivered: true, wantErr: true},
+		{name: "negative profit", profit: -1, profitCur: "CNY", cashCur: "CNY", paid: true, delivered: true, wantErr: true},
+		{name: "currency mismatch", profit: 30, profitCur: "CNY", cashCur: "USD", paid: true, delivered: true, wantErr: true},
+		{name: "unpaid order", profit: 30, profitCur: "CNY", cashCur: "CNY", delivered: true, wantErr: true},
+		{name: "undelivered order", profit: 30, profitCur: "CNY", cashCur: "CNY", paid: true, wantErr: true},
+		{name: "cancelled order", profit: 30, profitCur: "CNY", cashCur: "CNY", paid: true, delivered: true, cancelled: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := closureService(t)
+			ctx := context.Background()
+			c := &ExperimentCase{Name: "terminal", Stage: StageOpportunity, OwnerID: 1}
+			if err := s.Create(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now()
+			order := orderDomain.Order{OrderNo: "TERMINAL-" + tt.name}
+			if tt.paid {
+				order.PaidAt = &now
+			}
+			if tt.delivered {
+				order.DeliveredAt = &now
+			}
+			if tt.cancelled {
+				order.CancelledAt = &now
+			}
+			if err := s.db.Create(&order).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := s.AddObjectLink(ctx, 1, &ObjectLink{ExperimentID: c.ExperimentID, ObjectType: "order", ObjectID: strconv.FormatInt(order.ID, 10)}); err != nil {
+				t.Fatal(err)
+			}
+			for _, stage := range []string{StageProfit, StageCash} {
+				if err := s.db.Create(&GateDecision{ExperimentID: c.ExperimentID, Stage: stage, GateCode: canonicalGate[stage], Result: ResultPass, DecidedBy: 1}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.db.Model(c).Updates(map[string]any{
+				"stage": StageDecision, "final_profit_status": ProfitFinal,
+				"final_profit_amount": tt.profit, "profit_currency": tt.profitCur,
+				"cash_recovery_status": CashRecovered, "cash_recovered_amount": 100,
+				"cash_currency": tt.cashCur, "cash_recovered_at": &now,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			var request ExperimentCase
+			if err := s.db.Where("experiment_id = ?", c.ExperimentID).First(&request).Error; err != nil {
+				t.Fatal(err)
+			}
+			// A forged positive request value must not override the persisted truth.
+			request.FinalProfitAmount = 999
+			request.FinalDecision = "continue"
+			request.Status = StatusCompleted
+			err := s.Update(ctx, c.ExperimentID, 1, &request)
+			if tt.wantErr && err == nil {
+				t.Fatal("unsafe continue was accepted")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("valid continue was rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestCashGateRejectsCurrencyDifferentFromSettlement(t *testing.T) {
+	s := closureService(t)
+	ctx := context.Background()
+	c := &ExperimentCase{Name: "currency", Stage: StageOpportunity, OwnerID: 1}
+	if err := s.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	order := orderDomain.Order{OrderNo: "CURRENCY-1"}
+	if err := s.db.Create(&order).Error; err != nil {
+		t.Fatal(err)
+	}
+	settlement := settlementDomain.Settlement{PlatformID: 1, SettlementNo: "CURRENCY-ST", Currency: "CNY"}
+	if err := s.db.Create(&settlement).Error; err != nil {
+		t.Fatal(err)
+	}
+	account := financeDomain.FinanceAccount{Name: "usd-bank", AccountType: "bank", Currency: "USD"}
+	if err := s.db.Create(&account).Error; err != nil {
+		t.Fatal(err)
+	}
+	txn := financeDomain.FinanceTransaction{AccountID: account.ID, TransactionType: "revenue", Amount: 100, Currency: "USD", OrderID: &order.ID, SettlementID: &settlement.ID, TransactionDate: &now}
+	if err := s.db.Create(&txn).Error; err != nil {
+		t.Fatal(err)
+	}
+	for typ, id := range map[string]int64{"order": order.ID, "settlement": settlement.ID, "cash_transaction": txn.ID} {
+		if err := s.AddObjectLink(ctx, 1, &ObjectLink{ExperimentID: c.ExperimentID, ObjectType: typ, ObjectID: strconv.FormatInt(id, 10)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.db.Model(c).Update("stage", StageCash).Error; err != nil {
+		t.Fatal(err)
+	}
+	c.Stage = StageCash
+	evidence := addVerifiedEvidence(t, s, c, "support", "currency-proof")
+	if _, err := s.EvaluateGate(ctx, c.ExperimentID, 1, GateInput{Stage: StageCash, GateCode: "cash_recovered", Result: ResultPass, EvidenceIDs: []int64{evidence.ID}}); err == nil {
+		t.Fatal("cash with a different settlement currency passed")
+	}
+}

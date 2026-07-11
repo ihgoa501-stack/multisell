@@ -48,8 +48,8 @@ func validateCase(c *ExperimentCase) error {
 	if c.OwnerID <= 0 || strings.TrimSpace(c.Name) == "" || !stages[c.Stage] || !decisions[c.FinalDecision] || !statuses[c.Status] || !profitStatuses[c.FinalProfitStatus] || !cashStatuses[c.CashRecoveryStatus] {
 		return errors.New("invalid experiment case")
 	}
-	if c.FinalDecision == "continue" && (c.FinalProfitStatus != ProfitFinal || c.CashRecoveryStatus != CashRecovered) {
-		return errors.New("continue requires final profit and recovered cash")
+	if c.FinalDecision == "continue" && (c.FinalProfitStatus != ProfitFinal || c.CashRecoveryStatus != CashRecovered || c.FinalProfitAmount <= 0) {
+		return errors.New("continue requires positive final profit and recovered cash")
 	}
 	if c.Status == StatusCompleted && (c.FinalProfitStatus != ProfitFinal || c.CashRecoveryStatus != CashRecovered || c.FinalDecision == "") {
 		return errors.New("completed requires final profit, recovered cash, and a final decision")
@@ -85,33 +85,82 @@ func (s *Service) Create(ctx context.Context, c *ExperimentCase) error {
 	return s.db.WithContext(ctx).Create(c).Error
 }
 func (s *Service) Update(ctx context.Context, id string, ownerID int64, c *ExperimentCase) error {
-	if err := validateCase(c); err != nil {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current ExperimentCase
+		if err := tx.Where("experiment_id = ? AND owner_id = ?", id, ownerID).First(&current).Error; err != nil {
+			return err
+		}
+
+		// Terminal money facts are written only by passing gates. Validate the
+		// requested state against those persisted facts, never client-supplied copies.
+		candidate := current
+		candidate.Name = c.Name
+		candidate.Stage = c.Stage
+		candidate.Status = c.Status
+		candidate.FinalProfitStatus = c.FinalProfitStatus
+		candidate.CashRecoveryStatus = c.CashRecoveryStatus
+		candidate.FinalDecision = c.FinalDecision
+		if err := validateCase(&candidate); err != nil {
+			return err
+		}
+
+		passingGate := func(stage string) (bool, error) {
+			var gate GateDecision
+			err := tx.Where("experiment_id = ? AND stage = ?", id, stage).Order("id DESC").First(&gate).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return false, nil
+			}
+			return gate.Result == ResultPass, err
+		}
+		currentIndex, nextIndex := stageIndex(current.Stage), stageIndex(candidate.Stage)
+		if nextIndex > currentIndex {
+			if nextIndex != currentIndex+1 {
+				return errors.New("experiment stages cannot be skipped")
+			}
+			if ok, err := passingGate(current.Stage); err != nil || !ok {
+				return errors.New("advancing requires a passing gate for the current stage")
+			}
+		}
+		if candidate.FinalProfitStatus == ProfitFinal {
+			if ok, err := passingGate(StageProfit); err != nil || !ok {
+				return errors.New("final profit requires a passing profit gate")
+			}
+		}
+		if candidate.CashRecoveryStatus == CashRecovered {
+			if ok, err := passingGate(StageCash); err != nil || !ok {
+				return errors.New("cash recovery requires a passing cash gate")
+			}
+		}
+		if candidate.FinalDecision == "continue" {
+			if err := s.validateContinueClosure(tx, &candidate); err != nil {
+				return err
+			}
+		}
+		return tx.Model(&ExperimentCase{}).Where("experiment_id = ? AND owner_id = ?", id, ownerID).Updates(map[string]any{"name": candidate.Name, "stage": candidate.Stage, "status": candidate.Status, "final_profit_status": candidate.FinalProfitStatus, "cash_recovery_status": candidate.CashRecoveryStatus, "final_decision": candidate.FinalDecision}).Error
+	})
+}
+
+func (s *Service) validateContinueClosure(db *gorm.DB, c *ExperimentCase) error {
+	if strings.TrimSpace(c.ProfitCurrency) == "" || c.ProfitCurrency != c.CashCurrency {
+		return errors.New("continue requires matching profit and cash currencies")
+	}
+	if c.CashRecoveredAmount <= 0 || c.CashRecoveredAt == nil {
+		return errors.New("continue requires an actual positive cash receipt")
+	}
+	orderID, err := s.linkedNumericIDWithDB(db, c.ExperimentID, "order")
+	if err != nil {
 		return err
 	}
-	var current ExperimentCase
-	if err := s.db.WithContext(ctx).Where("experiment_id = ? AND owner_id = ?", id, ownerID).First(&current).Error; err != nil {
-		return err
+	var order struct {
+		PaidAt, DeliveredAt, CancelledAt *time.Time
 	}
-	currentIndex, nextIndex := stageIndex(current.Stage), stageIndex(c.Stage)
-	if nextIndex > currentIndex {
-		if nextIndex != currentIndex+1 {
-			return errors.New("experiment stages cannot be skipped")
-		}
-		if ok, err := s.hasPassingGate(ctx, id, ownerID, current.Stage); err != nil || !ok {
-			return errors.New("advancing requires a passing gate for the current stage")
-		}
+	if err := db.Table("sales_order").Where("id = ?", orderID).First(&order).Error; err != nil {
+		return errors.New("linked order not found")
 	}
-	if c.FinalProfitStatus == ProfitFinal {
-		if ok, err := s.hasPassingGate(ctx, id, ownerID, StageProfit); err != nil || !ok {
-			return errors.New("final profit requires a passing profit gate")
-		}
+	if order.PaidAt == nil || order.DeliveredAt == nil || order.CancelledAt != nil {
+		return errors.New("continue requires a paid, delivered, non-cancelled order")
 	}
-	if c.CashRecoveryStatus == CashRecovered {
-		if ok, err := s.hasPassingGate(ctx, id, ownerID, StageCash); err != nil || !ok {
-			return errors.New("cash recovery requires a passing cash gate")
-		}
-	}
-	return s.db.WithContext(ctx).Model(&ExperimentCase{}).Where("experiment_id = ? AND owner_id = ?", id, ownerID).Updates(map[string]any{"name": c.Name, "stage": c.Stage, "status": c.Status, "final_profit_status": c.FinalProfitStatus, "cash_recovery_status": c.CashRecoveryStatus, "final_decision": c.FinalDecision}).Error
+	return nil
 }
 func stageIndex(stage string) int {
 	for i, candidate := range stageOrder {
@@ -313,8 +362,12 @@ type cashClosure struct {
 }
 
 func (s *Service) linkedNumericID(ctx context.Context, experimentID, objectType string) (int64, error) {
+	return s.linkedNumericIDWithDB(s.db.WithContext(ctx), experimentID, objectType)
+}
+
+func (s *Service) linkedNumericIDWithDB(db *gorm.DB, experimentID, objectType string) (int64, error) {
 	var link ObjectLink
-	if err := s.db.WithContext(ctx).Where("experiment_id = ? AND object_type = ?", experimentID, objectType).Order("id DESC").First(&link).Error; err != nil {
+	if err := db.Where("experiment_id = ? AND object_type = ?", experimentID, objectType).Order("id DESC").First(&link).Error; err != nil {
 		return 0, fmt.Errorf("%s link required: %w", objectType, err)
 	}
 	id, err := strconv.ParseInt(link.ObjectID, 10, 64)
@@ -408,6 +461,13 @@ func (s *Service) validateCashClosure(ctx context.Context, experimentID string) 
 	}
 	if row.SettlementID == nil || *row.SettlementID != settlementID || row.OrderID == nil || *row.OrderID != orderID {
 		return nil, errors.New("cash transaction is not linked to the experiment order and settlement")
+	}
+	var settlementCurrency string
+	if err := s.db.WithContext(ctx).Table("settlement").Where("id = ?", settlementID).Pluck("currency", &settlementCurrency).Error; err != nil {
+		return nil, errors.New("linked settlement not found")
+	}
+	if strings.TrimSpace(row.Currency) == "" || row.Currency != settlementCurrency {
+		return nil, errors.New("cash transaction currency does not match the linked settlement")
 	}
 	return &cashClosure{Amount: row.Amount, Currency: row.Currency, RecoveredAt: row.TransactionDate}, nil
 }
