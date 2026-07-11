@@ -158,4 +158,4 @@ curl -X POST http://localhost:8080/api/v1/products \
 ## 相关文档
 
 - [参考 - 配置参考](reference-configuration.md) — 了解全部配置项
-- [How to 配置与部署](howto-deploy.md) — 将开发结果部署到生产
+- [Owner 与 AI 统一部署测试手册](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md) — 唯一服务器部署、恢复与验收入口

@@ -128,7 +128,7 @@ npm run lint
 | [配置平台集成](docs/howto-platform-integrations.md) | 接入 Ozon / Shopee API |
 | [创建自定义 Agent 规则](docs/howto-agent-rules.md) | 控制 Agent 决策边界和触发条件 |
 | [运行测试与验证](docs/howto-test-and-verify.md) | Go 测试、前端测试、E2E、冒烟测试 |
-| [配置与部署](docs/howto-deploy.md) | Docker 生产部署、Nginx/Caddy、备份恢复 |
+| [服务器部署与测试](docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md) | Owner 与 AI 共用的唯一服务器运行手册 |
 | [使用 WebSocket 流式更新](docs/howto-websocket.md) | 连接 /ws 端点，接收 AI 流式输出 |
 | [执行第一个业务闭环](docs/howto-first-business-loop.md) | 🆕 候选商品→完整度→利润→审批→上架的任务操作指南 |
 

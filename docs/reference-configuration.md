@@ -120,7 +120,7 @@ schemadrift:
 
 ### 3. 生产部署
 
-通过 `deploy/docker-compose.yml` 中的 `environment:` 或 `.env` 文件传入。**不要**将 `configs/config.yaml` 中的密钥直接提交到仓库。
+本参考只解释配置项，不提供生产操作步骤。生产配置、Secret 和部署流程只能按 [Owner 与 AI 统一部署测试手册](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md) 执行。**不要**将密钥直接提交到仓库。
 
 ---
 
@@ -128,4 +128,4 @@ schemadrift:
 
 - [模块目录](reference-module-catalog.md) — 完整模块列表
 - [API 快速参考](reference-api-quick.md) — 路由、权限、响应格式
-- [How to 配置与部署](howto-deploy.md)
+- [Owner 与 AI 统一部署测试手册](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md)

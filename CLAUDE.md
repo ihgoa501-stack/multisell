@@ -275,7 +275,7 @@ cd frontend-next/e2e && npx playwright test
 - `docs/FRONTEND_PAGES_AND_ROUTING.md` — Next App Router page map.
 - `docs/FUNCTION_INVENTORY.md` — complete feature inventory.
 - `docs/features/` — feature specs and template.
-- `docs/ops/RUNBOOK.md` — operations runbook.
+- `docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md` — the only server deployment, recovery, testing, and operations runbook.
 - `docs/api-inventory.md` — complete API route inventory (71+ modules).
 - `backend-go/scripts/smoke_test.sh` — 10-step end-to-end pipeline verification.
 - Swagger UI: `GET /swagger/index.html` (dev only, 44 annotated endpoints).

@@ -669,47 +669,15 @@ func TestX(t *testing.T) {
 
 ## 八、基础设施
 
-### 测试/生产服务器
+### 服务器操作入口
 
-| 项目 | 信息 |
-|------|------|
-| IP | `118.196.42.156` |
-| OS | Ubuntu 24.04 LTS |
-| 部署方式 | Docker + systemd |
-| 域名 | http://118.196.42.156 |
+本文件只记录 Agent 能力，不提供服务器部署指令。
 
-**访问地址**
+服务器初始化、SSH、部署、恢复、测试、回滚和验收只能使用：
 
-| 服务 | 地址 |
-|------|------|
-| 前端 | http://118.196.42.156 |
-| API | http://118.196.42.156/api |
-| 健康检查 | http://118.196.42.156/api/health |
+- [`docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md`](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md)
 
-**部署的服务**
-
-| 服务 | 方式 | 端口 |
-|------|------|------|
-| PostgreSQL 15 | Docker | 5432 |
-| Go Backend | systemd | 8080 |
-| Next.js | Docker | 3000 |
-| Nginx (反向代理) | Docker | 80 |
-
-**更新后端流程**
-
-```bash
-# 1. 本机交叉编译 AMD64
-cd backend-go
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/lingmirror-server ./cmd/server/main.go
-
-# 2. 上传到服务器（密钥登录，无需密码）
-scp /tmp/lingmirror-server lingmirror:/opt/lingmirror/backend/server
-
-# 3. 重启
-ssh lingmirror "systemctl restart lingmirror-backend"
-```
-
-> **SSH 配置**: `~/.ssh/config` 中已配置 `Host lingmirror`，指向 `root@118.196.42.156`，密钥登录。
+禁止从本文件或 Git 历史恢复旧的 systemd、Nginx、端口映射或二进制上传流程。
 
 ### Docker 本地开发
 
@@ -726,10 +694,10 @@ docker compose -f docker-compose.legacy.yml up -d
 
 ### PostgreSQL 15
 
-- Host: `localhost:5432`（本地）/ `118.196.42.156:5432`（服务器）
+- Host: `localhost:5432`（本地）；生产数据库禁止直接暴露公网
 - 数据库名: `multisell`
 - 迁移文件: `backend-go/migrations/`
-- 生产服务器 SSH 部署路径: `/opt/lingmirror/deploy/`
+- 生产服务器路径和操作流程以唯一部署手册为准
 
 ---
 

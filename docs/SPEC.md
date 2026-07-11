@@ -89,8 +89,8 @@ go build -o bin/server cmd/server/main.go  # 编译
 ./scripts/smoke_test_setup.sh
 ./scripts/smoke_test.sh
 
-# 生产部署（macOS 交叉编译）
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/server cmd/server/main.go
+# 生产部署不在本规格中执行；唯一入口：
+# docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md
 ```
 
 ### 前端

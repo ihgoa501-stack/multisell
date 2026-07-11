@@ -25,7 +25,7 @@
 | [配置平台集成](howto-platform-integrations.md) | 🆕 接入 Ozon / Shopee API |
 | [创建自定义 Agent 规则](howto-agent-rules.md) | 🆕 控制 Agent 决策边界和触发条件 |
 | [运行测试与验证](howto-test-and-verify.md) | 🆕 Go 测试、前端测试、E2E |
-| [配置与部署](howto-deploy.md) | 🆕 Docker 生产部署、Nginx/Caddy |
+| [Owner 与 AI 统一部署测试手册](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md) | ⭐ 服务器初始化、部署、恢复、测试、回滚与交付的唯一运行手册 |
 | [使用 WebSocket 流式更新](howto-websocket.md) | 🆕 连接 /ws 端点接收实时数据 |
 | [执行第一个业务闭环](howto-first-business-loop.md) | 🆕 候选商品→完整度→利润→审批→上架的操作指南 |
 
@@ -138,7 +138,6 @@
 | [已知问题台账](KNOWN_ISSUES.md) | 已知失败项 owner / deadline / impact 跟踪 |
 | [开发指南](DEVELOPMENT_GUIDE.md) | Go + Next 本地启动、结构、验证和开发流程 |
 | [E2E Docker 环境](docker-compose.e2e.yml) | 🆕 全栈 E2E 测试专用 Docker Compose（Postgres + 后端 + 前端）|
-| [运维手册](ops/RUNBOOK.md) | 运维命令速查、启动停止、日志、备份恢复、迁移 |
 | [全局验证脚本](scripts/verify_all.sh) | 🔄 全局验证脚本：build→vet→test→lint→build→E2E（E2E 默认必须运行）|
 | [文档漂移检查](scripts/check_doc_drift.sh) | 🆕 验证 INDEX.md/AGENTS.md/CLAUDE.md 所有 .md 引用是否存在 |
 | [已知问题过期检查](scripts/check_known_issues.sh) | 🆕 扫描 KNOWN_ISSUES.md 中超过 Target Fix 日期的项 |

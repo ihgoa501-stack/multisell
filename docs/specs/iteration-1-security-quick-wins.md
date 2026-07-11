@@ -61,7 +61,7 @@ crontab -l                                                # 确认定时任务
 | 文件 | 说明 | 涉及 Issue |
 |------|------|------------|
 | `docker-compose.yml` | JWT_SECRET 行加注释，说明必须在 .env 或环境变量中设置 | #280 |
-| `docs/ops/RUNBOOK.md` | 新增"部署检查清单：JWT_SECRET 验证" | #280 |
+| `docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md` | 部署检查清单包含 JWT_SECRET 验证 | #280 |
 | `scripts/backup_db.sh` | **新建** — 数据库备份脚本 | #281 |
 | `docs/ops/DISASTER_RECOVERY.md` | 补充"数据库恢复"步骤 | #281 |
 | `backend-go/configs/config.yaml` | 新增 `profit.default_cny_rate: 7.2` | #130 |

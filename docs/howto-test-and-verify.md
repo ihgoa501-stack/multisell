@@ -120,4 +120,4 @@ cd frontend-next && npm run build
 ## 相关文档
 
 - [参考 - API 快速参考](reference-api-quick.md)
-- [How to 配置与部署](howto-deploy.md)
+- [Owner 与 AI 统一部署测试手册](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md)
