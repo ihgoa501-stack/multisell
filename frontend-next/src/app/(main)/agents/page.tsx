@@ -330,9 +330,9 @@ export default function AgentsPage() {
           </Form.Item>
           <Form.Item
             name="context"
-            label="Context (JSON)"
-            rules={[{ required: true, message: '请输入 context' }]}
-            extra="请输入合法的 JSON 对象"
+            label="运行参数（JSON）"
+            rules={[{ required: true, message: '请输入运行参数' }]}
+            extra="默认空对象可直接运行；需要时再添加参数。"
           >
             <Input.TextArea rows={6} placeholder='{"key": "value"}' />
           </Form.Item>
