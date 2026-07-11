@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-> **当前最高优先级方向（2026-07-11）**：凌镜只做 Owner 自用跨境商品实验系统。唯一主线是市场闸门 → 细分类目 → 需求—规格线索 → 供应商匹配 → 合格商品机会 → 一个批准 SKU → 退货后最终净利润。Ozon 商品只提供需求和竞争证据，不是货源。不得继续双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、非 Ozon 平台扩张或展示性架构/视觉工程。详见 `docs/SELF_USE_OPERATING_DIRECTION.md`。
+> **当前最高优先级方向（2026-07-11）**：凌镜只做 Owner 自用跨境商品实验系统。先比较“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，由 Owner 批准已选市场后，才采集该市场的需求、竞争、获客、履约、合规、收款和利润证据。不得预设 Ozon、欧洲或任何平台，也不得把“已有连接器”解释成经营方向。详见 `docs/SELF_USE_OPERATING_DIRECTION.md` 和 `CONTEXT.md`。
 
-Ozon 自动采集证据读取接口：`GET /api/v1/candidates/collection-evidence/:id`。采集线索通过 `evidence_id` 引用不可变页面快照。
+Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有明确决策用途和市场闸门时，不得启动平台商品采集。已有采集线索通过 `evidence_id` 引用不可变页面快照。
 
 经营实验统一事实链：后端 `internal/domain/experiment/`，API `/api/v1/experiments`，前端 `/experiments`。使用 `experiment_id` 关联机会、商品规格、供应、订单、履约、售后、利润与现金对象；闸门结果限定为 `pass / conditional / return / reject / expired`，证据作用限定为 `support / counter / conflict`，真实性限定为 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`；最终利润封账必须校验可信已对账结算和最终订单利润记录，现金回收必须校验同一订单与结算的银行/现金交易。最终利润与现金回收不得合并为一个状态。
 

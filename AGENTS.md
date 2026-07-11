@@ -14,13 +14,13 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 ### Current Owner Direction (2026-07-11)
 
-凌镜当前是 Owner 本人自用的跨境商品实验与经营内部系统，不面向外部客户。当前唯一主线是首轮真实商品实验：市场闸门 → 细分类目 → 20 个需求—规格线索 → 供应商匹配 → 3 个合格商品机会 → 1 个批准 SKU → 有效成交 → 退货/争议后最终净利润。Ozon 商品只提供需求和竞争证据，不是货源或可直接采购的候选。完整边界见 `docs/SELF_USE_OPERATING_DIRECTION.md`。
+凌镜当前是 Owner 本人自用的跨境商品实验与经营内部系统，不面向外部客户。当前唯一主线是：候选市场比较 → Owner 批准已选市场 → 该市场的需求与反证 → 商品机会 → 最小真实实验 → 有效成交 → 退货/争议后最终净利润。不得预设国家、地区、平台、类目、商品或“20→3→1”等固定数量。完整边界见 `docs/SELF_USE_OPERATING_DIRECTION.md`，统一业务术语见 `CONTEXT.md`。
 
-除非 Owner 再次明确解冻，不得主动建设双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、跨客户聚合、非 Ozon 平台扩张、更多 Agent/MoA/自治升级或大型视觉重构。自用不降低审批、审计和外部写安全要求。
+除非 Owner 再次明确解冻，不得主动建设双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、跨客户聚合、未经市场选择的平台扩张、更多 Agent/MoA/自治升级或大型视觉重构。自用不降低审批、审计和外部写安全要求。
 
 生产服务器初始化、SSH、部署、恢复、测试和回滚只有一个可执行入口：`docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md`。
 
-Ozon 自动采集证据读取接口：`GET /api/v1/candidates/collection-evidence/:id`。采集线索通过 `evidence_id` 引用不可变页面快照。
+现有 Ozon 采集器只是平台连接器，不是当前市场方向。`GET /api/v1/candidates/collection-evidence/:id` 只读取已有采集证据；除非 Ozon 对应的国家、消费者和渠道已通过市场闸门，否则不得把该接口列为当前采集任务。所有平台采集线索都必须通过 `evidence_id` 引用不可变快照，并声明它服务的经营决策。
 
 经营实验统一事实链位于 `internal/domain/experiment/`，API 根路径为 `/api/v1/experiments`，前端入口为 `/experiments`。每个案件以 `experiment_id` 关联现有业务对象；证据作用区分 `support / counter / conflict`，真实性区分 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`，必须由 Owner 对来源和观察时间单独核验。最终利润必须关联可信且全部对账的结算、最终 `order_profit_record` 和同一订单；现金回收必须关联同一订单与结算的银行/现金账户交易。利润最终确认与现金回收是两个独立状态；模拟、未知或 AI 推断不得通过经营闸门。
 
