@@ -21,4 +21,13 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	write.POST("/:id/evaluate", h.Evaluate)
 	write.POST("/research/import", h.ImportResearch)
 	write.POST("/research/reviewed-market-permission-batch", h.ImportReviewedBatch)
+	pg := rg.Group("/problem-cases")
+	pg.GET("", h.ListProblems)
+	pg.GET("/:id", h.GetProblem)
+	pw := pg.Group("", middleware.RequirePermission(db, "ai.action"))
+	pw.POST("", h.CreateProblem)
+	pw.POST("/research/reviewed-problem-batch", h.ImportReviewedProblemBatch)
+	pw.POST("/:id/evidence", h.AddProblemEvidence)
+	pw.POST("/:id/evaluate", h.EvaluateProblem)
+	pw.POST("/:id/promote", h.PromoteProblem)
 }

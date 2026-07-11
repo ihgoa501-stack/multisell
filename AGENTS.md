@@ -32,6 +32,8 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，研究输出 payload 与 SHA-256 快照必须一致，重复 run 幂等。带日期研究批次只导入已完成并审阅的研究输出，不在按钮点击时联网。
 
+渠道比较之前统一使用同一 `demandcase` 模块的 `ProblemCase`：API `/api/v1/problem-cases`，Owner 页面 `/problem-cases`。案件不得预设商品或渠道；只有受信研究运行写入的支持证据与不同采集者独立反证才能参与裁决。证据保存原始内容与可复算 SHA-256，审阅批次以 `owner_id + problem_key` 幂等导入；只有 `survives_falsification` 才能晋升为 `DemandCase`。
+
 带日期跨市场研究与独立反证分别位于 `deliverables/research/2026-07-11-live-market-permission-batch.md` 和 `2026-07-11-live-market-independent-falsification.md`。独立反证后本轮没有值得申请账号权限的候选：英国、美国保持 hold/evidence_missing，日本当前表述 reject。
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
