@@ -432,6 +432,16 @@ func TestContinueUsesPersistedPositiveProfitAndConsistentClosure(t *testing.T) {
 			if !tt.wantErr && err != nil {
 				t.Fatalf("valid continue was rejected: %v", err)
 			}
+			if !tt.wantErr {
+				if err := s.AddObjectLink(ctx, 1, &ObjectLink{ExperimentID: c.ExperimentID, ObjectType: "order", ObjectID: "999999"}); err == nil {
+					t.Fatal("terminal experiment accepted a replacement object link")
+				}
+				request.FinalDecision = "stop"
+				request.Status = StatusStopped
+				if err := s.Update(ctx, c.ExperimentID, 1, &request); err == nil {
+					t.Fatal("terminal experiment decision was rewritten")
+				}
+			}
 		})
 	}
 }

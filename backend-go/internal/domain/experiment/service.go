@@ -91,6 +91,9 @@ func (s *Service) Update(ctx context.Context, id string, ownerID int64, c *Exper
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("experiment_id = ? AND owner_id = ?", id, ownerID).First(&current).Error; err != nil {
 			return err
 		}
+		if current.Status == StatusCompleted || current.Status == StatusStopped {
+			return errors.New("terminal experiment is immutable")
+		}
 
 		// Terminal money facts are written only by passing gates. Validate the
 		// requested state against those persisted facts, never client-supplied copies.
@@ -299,6 +302,9 @@ func (s *Service) AddObjectLink(ctx context.Context, ownerID int64, l *ObjectLin
 		var c ExperimentCase
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("experiment_id = ? AND owner_id = ?", l.ExperimentID, ownerID).First(&c).Error; err != nil {
 			return err
+		}
+		if c.Status == StatusCompleted || c.Status == StatusStopped {
+			return errors.New("terminal experiment links are immutable")
 		}
 		return tx.Create(l).Error
 	})
