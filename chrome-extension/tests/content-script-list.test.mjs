@@ -1,0 +1,159 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import test from 'node:test';
+import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
+import { parseHTML } from 'linkedom';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const compiled = await readFile(resolve(here, '../build/content-script-list.js'), 'utf8');
+
+function productCard(id, options = {}) {
+  const title = options.title || `商品${id}`;
+  const price = options.price === false ? '' : `<span class="price">¥${options.price || '8.80'}</span>`;
+  const moq = options.moq ? `<span>${options.moq}件起批</span>` : '';
+  const image = options.image === false ? '' : '<img src="https://cbu01.alicdn.com/img/card.jpg">';
+  const company = options.company ? `<div class="company-name">${options.company}</div>` : '';
+  const shopLink = options.shopId ? `<a href="https://${options.shopId}.1688.com">进入店铺</a>` : '';
+  return `<li class="offer-item" ${options.hidden ? 'style="display:none"' : ''}>
+    <a href="https://detail.1688.com/offer/${id}.html" title="${title}">${image}<span class="title">${title}</span></a>${price}${moq}${company}${shopLink}
+  </li>`;
+}
+
+function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer_search.htm?keywords=test') {
+  const { window } = parseHTML(`<html><body><ul id="results">${html}</ul></body></html>`);
+  window.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 200, height: 120, top: 20, left: 20, right: 220, bottom: 140 });
+  Object.defineProperty(window, 'location', { value: new URL(pageURL), configurable: true });
+  const messages = [];
+  const chrome = { runtime: { sendMessage: async (message) => {
+    messages.push(message);
+    return responder ? responder(message) : { type: 'private_collection_result', requestId: message.requestId,
+      payload: { status: 'saved', recordId: messages.length, snapshotId: messages.length, idempotentReplay: false, newObservation: true } };
+  } } };
+  const context = vm.createContext({
+    ...window, window, document: window.document, location: window.location, chrome,
+    crypto: globalThis.crypto, console, URL, MutationObserver: window.MutationObserver,
+    HTMLElement: window.HTMLElement, HTMLAnchorElement: window.HTMLAnchorElement,
+    HTMLButtonElement: window.HTMLButtonElement, HTMLImageElement: window.HTMLImageElement,
+    getComputedStyle: () => ({ position: 'static', display: 'block', visibility: 'visible', opacity: '1' }), setTimeout, clearTimeout,
+  });
+  vm.runInContext(compiled, context, { filename: 'content-script-list.js' });
+  return { context, window, document: window.document, messages };
+}
+
+test('visible list extraction keeps only exact offer links and explicit fields', () => {
+  const loaded = loadList([
+    productCard('1001', { title: '可靠商品', price: '3.50–4.20', moq: 10 }),
+    productCard('1002', { title: '缺失字段商品', price: false, image: false }),
+    productCard('1003', { hidden: true }),
+    '<li><a href="https://detail.1688.com/offer/not-a-number.html">错误链接</a></li>',
+    '<li><a href="https://evil.example/offer/1004.html">站外链接</a></li>',
+    '<li><a href="https://detail.1688.com/offer/1001.html">重复链接</a></li>',
+  ].join(''));
+  const offers = JSON.parse(vm.runInContext('JSON.stringify(extractVisibleOffers().map(({offerId,pageData}) => ({offerId,pageData})))', loaded.context));
+  assert.equal(offers.length, 2);
+  assert.equal(offers[0].offerId, '1001');
+  assert.equal(offers[0].pageData.price_model, 'range');
+  assert.equal(offers[0].pageData.price_min, 3.5);
+  assert.equal(offers[0].pageData.price_max, 4.2);
+  assert.equal(offers[0].pageData.min_order_qty, 10);
+  assert.equal(offers[0].pageData.field_statuses.supplier, 'unknown');
+  assert.equal(offers[0].pageData.field_statuses.sku, 'unknown');
+  assert.equal(offers[1].pageData.price_1688, 0);
+  assert.equal(offers[1].pageData.field_statuses.price, 'unknown');
+  assert.equal(offers[1].pageData.field_statuses.images, 'unknown');
+  assert.equal('raw_html' in offers[0].pageData, false);
+});
+
+test('1688 home cards are recognized while unrelated ERP-injected links remain untouched', () => {
+  const loaded = loadList(
+    `${productCard('1101')}<aside id="other-erp"><input class="erp-checkbox" checked><a href="https://erp.example/product/9">ERP商品</a></aside>`,
+    undefined,
+    'https://www.1688.com/',
+  );
+  assert.equal(vm.runInContext('extractVisibleOffers().length', loaded.context), 1);
+  const otherERP = loaded.document.getElementById('other-erp');
+  assert.equal(otherERP.querySelectorAll('[data-lingmirror-offer-selector]').length, 0);
+  assert.equal(otherERP.querySelector('.erp-checkbox').hasAttribute('checked'), true);
+});
+
+test('list collector has isolated selection UI and both Owner batch actions', () => {
+  const loaded = loadList(productCard('2001') + productCard('2002'));
+  const host = loaded.document.getElementById('lingmirror-list-collector-host');
+  assert.ok(host?.shadowRoot, 'panel must be isolated in a shadow root');
+  const labels = Array.from(host.shadowRoot.querySelectorAll('button')).map((button) => button.textContent);
+  assert.ok(labels.includes('采集选中'));
+  assert.ok(labels.includes('采集本页'));
+  assert.ok(labels.includes('停止批量'));
+  for (const card of loaded.document.querySelectorAll('.offer-item')) {
+    const selectorHost = card.querySelector('[data-lingmirror-offer-selector]');
+    assert.ok(selectorHost?.shadowRoot, 'card selector must be isolated from marketplace/ERP CSS');
+  }
+});
+
+test('collect current page submits every currently visible offer without a fixed quota and keeps per-item results', async () => {
+  const loaded = loadList(productCard('3001') + productCard('3002'));
+  await vm.runInContext('collectOffers(extractVisibleOffers())', loaded.context);
+  const collectionMessages = loaded.messages.filter((message) => message.type === 'collect_private_product');
+  assert.equal(collectionMessages.length, 2);
+  assert.deepEqual(collectionMessages.map((message) => message.pageData.offer_id_page), ['3001', '3002']);
+  assert.ok(collectionMessages.every((message) => message.pageData.driver === 'chrome_extension_list_visible'));
+  const panelText = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot.innerHTML;
+  assert.match(panelText, /商品3001：已保存/);
+  assert.match(panelText, /商品3002：已保存/);
+});
+
+test('selection action submits only checked items and batch results preserve each failure independently', async () => {
+  let call = 0;
+  const loaded = loadList(productCard('3101') + productCard('3102'), async (message) => {
+    call += 1;
+    if (call === 1) return { type: 'private_collection_result', requestId: message.requestId,
+      payload: { status: 'not_saved', saved: false, code: 'NOT_SAVED', message: '服务器确认未保存' } };
+    return { type: 'private_collection_result', requestId: message.requestId,
+      payload: { status: 'saved', recordId: 22, snapshotId: 22, idempotentReplay: false, newObservation: true } };
+  });
+  vm.runInContext('selectedOfferIDs.add("3101"); selectedOfferIDs.add("3102"); scanVisibleOffers()', loaded.context);
+  const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
+  const collectSelected = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '采集选中');
+  collectSelected.click();
+  while (vm.runInContext('collectingBatch', loaded.context)) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 2);
+  assert.match(panel.innerHTML, /商品3101：服务器确认未保存/);
+  assert.match(panel.innerHTML, /商品3102：已保存 #22/);
+});
+
+test('visible extraction has no hard-coded product count', () => {
+  const cards = Array.from({ length: 37 }, (_, index) => productCard(String(4000 + index))).join('');
+  const loaded = loadList(cards);
+  assert.equal(vm.runInContext('extractVisibleOffers().length', loaded.context), 37);
+});
+
+test('SPA and virtual-list mutations are rescanned, and an in-flight batch can stop before the next item', async () => {
+  const loaded = loadList(productCard('5001') + productCard('5002'), async (message) => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return { type: 'private_collection_result', requestId: message.requestId,
+      payload: { status: 'saved', recordId: 1, snapshotId: 1, idempotentReplay: false, newObservation: true } };
+  });
+  loaded.document.getElementById('results').insertAdjacentHTML('beforeend', productCard('5003'));
+  await new Promise((resolve) => setTimeout(resolve, 240));
+  assert.equal(vm.runInContext('currentOffers.has("5003")', loaded.context), true);
+
+  const promise = vm.runInContext('collectOffers(extractVisibleOffers())', loaded.context);
+  setTimeout(() => vm.runInContext('cancelBatch = true', loaded.context), 5);
+  await promise;
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 1);
+  const panelText = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot.innerHTML;
+  assert.match(panelText, /已停止/);
+  assert.match(panelText, /剩余 2 个未提交/);
+});
+
+test('visible list extraction parses supplier name and id if present in card', () => {
+  const loaded = loadList(productCard('7001', { company: '杭州智造有限公司', shopId: 'hzsourcing' }));
+  const offers = JSON.parse(vm.runInContext('JSON.stringify(extractVisibleOffers().map(({offerId,pageData}) => ({offerId,pageData})))', loaded.context));
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].pageData.supplier_name, '杭州智造有限公司');
+  assert.equal(offers[0].pageData.supplier_id_1688, 'hzsourcing');
+  assert.equal(offers[0].pageData.supplier_business_id, 'hzsourcing');
+  assert.equal(offers[0].pageData.field_statuses.supplier, 'observed');
+});
