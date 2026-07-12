@@ -95,7 +95,7 @@ func TestCollectionAgentMarketDiscoverDoesNotCountExistingLeadAsNew(t *testing.T
 }
 func (d *marketListDriver) Health() (bool, time.Duration, error) { return true, 0, nil }
 func (d *marketListDriver) Category() toolbridge.ToolCategory    { return toolbridge.ToolCategoryRead }
-func (d *marketListDriver) Execute(map[string]interface{}) (*toolbridge.ToolResult, error) {
+func (d *marketListDriver) Execute(context.Context, map[string]interface{}) (*toolbridge.ToolResult, error) {
 	return nil, fmt.Errorf("not used")
 }
 

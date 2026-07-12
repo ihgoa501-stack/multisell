@@ -537,7 +537,7 @@ func mustDispatch(t *testing.T, d *Dispatcher, actionType string, payload map[st
 func TestDispatchSafe_Production_PriceReviewRejectedByCatalog(t *testing.T) {
 	logger := dbtest.NewLogger(t)
 	cat := actioncatalog.Default()
-	d := NewDispatcher(logger, WithCatalog(cat))
+	d := newDurableTestDispatcher(t, logger, WithCatalog(cat))
 	d.Register("price_review", okHandler)
 
 	action := AgentAction{
@@ -554,7 +554,7 @@ func TestDispatchSafe_Production_PriceReviewRejectedByCatalog(t *testing.T) {
 func TestDispatchSafe_Production_PriceReviewWithApproval(t *testing.T) {
 	logger := dbtest.NewLogger(t)
 	cat := actioncatalog.Default()
-	d := NewDispatcher(logger, WithCatalog(cat))
+	d := newDurableTestDispatcher(t, logger, WithCatalog(cat))
 	d.Register("price_review", okHandler)
 
 	approvalID := int64(42)
@@ -566,6 +566,7 @@ func TestDispatchSafe_Production_PriceReviewWithApproval(t *testing.T) {
 		RiskLevel:        RiskHigh,
 		ApprovalRequired: true,
 		ApprovalID:       &approvalID,
+		IdempotencyKey:   "price-review:approved",
 	}
 	mockPolicy := &mockPolicyChecker{approved: true}
 	result, err := d.DispatchSafe(context.Background(), action, mockPolicy)
@@ -702,7 +703,7 @@ func TestDispatchSafe_AuditRecorder_CalledForHighRiskProduction(t *testing.T) {
 		recordedResult = result
 	}
 
-	d := NewDispatcher(logger, WithAuditRecorder(auditRecorder))
+	d := newDurableTestDispatcher(t, logger, WithAuditRecorder(auditRecorder))
 	approvalID := int64(42)
 	d.Register("price_update", okHandler)
 
@@ -715,6 +716,7 @@ func TestDispatchSafe_AuditRecorder_CalledForHighRiskProduction(t *testing.T) {
 		ApprovalID:       &approvalID,
 		Mode:             ModeProduction,
 		Input:            map[string]interface{}{"price": 29.99},
+		IdempotencyKey:   "price-update:audit-success",
 	}
 	result, err := d.DispatchSafe(context.Background(), action, &mockPolicyChecker{approved: true})
 	if err != nil {
@@ -738,7 +740,7 @@ func TestDispatchSafe_AuditRecorder_NotCalledForLowRiskProduction(t *testing.T) 
 		recorded = true
 	}
 
-	d := NewDispatcher(logger, WithAuditRecorder(auditRecorder))
+	d := newDurableTestDispatcher(t, logger, WithAuditRecorder(auditRecorder))
 	d.Register("stock_alert", okHandler)
 
 	action := AgentAction{
@@ -791,7 +793,7 @@ func TestDispatchSafe_AuditRecorder_NotCalledForFailedExecution(t *testing.T) {
 		recorded = true
 	}
 
-	d := NewDispatcher(logger, WithAuditRecorder(auditRecorder))
+	d := newDurableTestDispatcher(t, logger, WithAuditRecorder(auditRecorder))
 	approvalID := int64(42)
 	d.Register("price_update", func(_ context.Context, _ map[string]interface{}) (*Result, error) {
 		return &Result{Success: false, ErrorMessage: "handler failed"}, nil
@@ -805,6 +807,7 @@ func TestDispatchSafe_AuditRecorder_NotCalledForFailedExecution(t *testing.T) {
 		ApprovalRequired: true,
 		ApprovalID:       &approvalID,
 		Mode:             ModeProduction,
+		IdempotencyKey:   "price-update:audit-failure",
 	}
 	_, err := d.DispatchSafe(context.Background(), action, &mockPolicyChecker{approved: true})
 	if err != nil {
@@ -864,7 +867,7 @@ func TestRateLimiter_Reset(t *testing.T) {
 
 func TestDispatchSafe_Production_HighRisk_RequiresValidApproval(t *testing.T) {
 	logger := dbtest.NewLogger(t)
-	d := NewDispatcher(logger)
+	d := newDurableTestDispatcher(t, logger)
 	d.Register("price_update", okHandler)
 
 	// An approval exists but was rejected by policy — action must be blocked.
@@ -878,6 +881,7 @@ func TestDispatchSafe_Production_HighRisk_RequiresValidApproval(t *testing.T) {
 		ApprovalRequired: true,
 		ApprovalID:       &approvalID,
 		Mode:             ModeProduction,
+		IdempotencyKey:   "price-update:policy-rejected",
 	}
 	// Policy says rejected — should fail.
 	mockPolicy := &mockPolicyChecker{approved: false}

@@ -23,17 +23,29 @@ services:
     logging: *default-logging
 
   backend:
+    image: lingmirror-backend:${IMAGE_TAG:-local}
     build: ./backend-go
+    ports: !reset []
+    volumes: !reset []
+    command: !reset null
     logging: *default-logging
     environment:
       GIN_MODE: release
+      SERVER_MODE: release
       DB_HOST: db
       DB_PORT: "${DB_PORT:-5432}"
       DB_USER: "${DB_USER:?required}"
       DB_PASSWORD: "${DB_PASSWORD:?required}"
       DB_NAME: "${DB_NAME:?required}"
       JWT_SECRET: "${JWT_SECRET:?required}"
-      LLM_API_KEY: "${LLM_API_KEY}"
+      JWT_KEY_ID: "${JWT_KEY_ID:-current}"
+      JWT_PREVIOUS_KEYS_JSON: "${JWT_PREVIOUS_KEYS_JSON:-}"
+      AUTH_REGISTRATION_ENABLED: "false"
+      SWAGGER_ENABLED: "false"
+      CORS_ALLOWED_ORIGINS: "https://${DOMAIN:?required}"
+      METRICS_ENABLED: "${METRICS_ENABLED:-true}"
+      SENTRY_DSN: "${SENTRY_DSN:-}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_PROVIDER: "${LLM_PROVIDER:-openai}"
       SERVER_PORT: "8080"
     depends_on:
@@ -51,13 +63,18 @@ services:
           cpus: '0.5'
           memory: 256M
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health >/dev/null"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/ready >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
   db:
+    ports: !reset []
+    environment:
+      POSTGRES_DB: "${DB_NAME:?required}"
+      POSTGRES_USER: "${DB_USER:?required}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?required}"
     restart: unless-stopped
     logging: *default-logging
     deploy:
@@ -69,16 +86,20 @@ services:
           cpus: '0.5'
           memory: 512M
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:?required} -d ${DB_NAME:?required}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   frontend:
+    image: lingmirror-frontend:${IMAGE_TAG:-local}
     build:
       context: ./frontend-next
       args:
         NEXT_PUBLIC_API_URL: /api
+    ports: !reset []
+    volumes: !reset []
+    command: !reset null
     logging: *default-logging
     environment:
       NEXT_PUBLIC_API_URL: /api
@@ -94,9 +115,52 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  backup:
+    image: lingmirror-backup:${IMAGE_TAG:-local}
+    build: ./ops/backup
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: "${DB_USER:?required}"
+      DB_PASSWORD: "${DB_PASSWORD:?required}"
+      DB_NAME: "${DB_NAME:?required}"
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-7}"
+      BACKUP_S3_BUCKET: "${BACKUP_S3_BUCKET:-}"
+      BACKUP_REQUIRE_OFFSITE: "${BACKUP_REQUIRE_OFFSITE:-true}"
+      BACKUP_REQUIRE_IMMUTABLE_OFFSITE: "${BACKUP_REQUIRE_IMMUTABLE_OFFSITE:-true}"
+      BACKUP_S3_SSE: "${BACKUP_S3_SSE:-AES256}"
+    command: ["sh", "/usr/local/bin/backup.sh"]
+
+  audit-checkpoint:
+    image: lingmirror-backup:${IMAGE_TAG:-local}
+    build: ./ops/backup
+    profiles: ["manual"]
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: "${DB_USER:?required}"
+      DB_PASSWORD: "${DB_PASSWORD:?required}"
+      DB_NAME: "${DB_NAME:?required}"
+      AUDIT_CHECKPOINT_KEY: "${AUDIT_CHECKPOINT_KEY:?required}"
+      AUDIT_CHECKPOINT_DIR: /checkpoints
+      AUDIT_CHECKPOINT_S3_URI: "${AUDIT_CHECKPOINT_S3_URI:-}"
+      AUDIT_CHECKPOINT_REQUIRE_OFFSITE: "${AUDIT_CHECKPOINT_REQUIRE_OFFSITE:-true}"
+      AUDIT_CHECKPOINT_REQUIRE_IMMUTABLE_OFFSITE: "${AUDIT_CHECKPOINT_REQUIRE_IMMUTABLE_OFFSITE:-true}"
+    volumes:
+      - ./scripts/audit_checkpoint.sh:/usr/local/bin/audit_checkpoint.sh:ro
+      - db_backups:/checkpoints
+      - ${HOME}/.aws:/root/.aws:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "/usr/local/bin/audit_checkpoint.sh"]
+    restart: "no"
+    logging: *default-logging
+
   # ── BEGIN: Caddy reverse proxy (unified entry point with auto TLS) ──
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.11.4-alpine
     logging: *default-logging
     ports:
       - "80:80"

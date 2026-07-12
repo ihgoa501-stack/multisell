@@ -2,7 +2,10 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,34 +21,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// requestTypeToAction is the explicit mapping from ApprovalRequest.RequestType
-// (as used in the approval UI and agents) to routecatalog action type names
-// (as used by the approval middleware). This replaces prefix guessing.
-//
-// The approval system uses human-readable types like "publish", "price_change",
-// "listing_task". The actioncatalog uses names like "auto_publish",
-// "price_update", "listing_optimize". This map bridges the two naming systems.
-var requestTypeToAction = map[string][]string{
-	"publish":                 {"auto_publish", "listing_optimize"},
-	"price_change":            {"price_update"},
-	"listing_task":            {"listing_optimize"},
-	"list_generation":         {"listing_optimize", "auto_publish"},
-	"order_update":            {"order_cancel"},
-	"order_cancel":            {"order_cancel"},
-	"refund":                  {"refund_issue"},
-	"sync_inventory":          {"sync_inventory"},
-	"credential":              {"credential_change"},
-	"credential_change":       {"credential_change"},
-	"permission":              {"permission_change"},
-	"permission_change":       {"permission_change"},
-	"finance":                 {"destructive_data_change"},
-	"settlement":              {"destructive_data_change"},
-	"content_update":          {"listing_optimize"},
-	"delist":                  {"listing_optimize"},
-	"agent_action":            {"agent_approve"},
-	"destructive_data_change": {"destructive_data_change"},
-}
-
 // ApprovalRequired returns a middleware that blocks high-risk mutations
 // unless a valid X-Approval-ID header is present and the corresponding
 // approval request was approved.
@@ -58,25 +33,45 @@ var requestTypeToAction = map[string][]string{
 //   - Approval TargetID/EntityID/ProductID matches the request path ID (if set)
 //   - Approval RequesterUserID matches the JWT user (if set)
 //
-// Routes not in the routecatalog pass through unmodified.
-// Only mutating methods (POST/PUT/PATCH/DELETE) are checked.
+// Every mutation must have an explicit route policy. Standard authenticated
+// mutations pass through to the global synchronous audit middleware; high-risk
+// mutations additionally execute the approval protocol. Missing policy fails
+// closed so a newly added write route cannot silently bypass classification.
 func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
+	approvalSvc := approval.NewService(db, logger, nil)
 	return func(c *gin.Context) {
 		method := c.Request.Method
-		fullPath := c.FullPath()
-
 		if method != http.MethodPost && method != http.MethodPut &&
 			method != http.MethodPatch && method != http.MethodDelete {
 			c.Next()
 			return
 		}
 
-		if !routecatalog.IsHighRisk(method, fullPath) {
+		fullPath := c.FullPath()
+		policy, classified := routecatalog.GetMutationPolicy(method, fullPath)
+		if !classified {
+			policy, classified = routecatalog.ResolveMutationPolicy(method, c.Request.URL.Path)
+			if classified {
+				fullPath = policy.Path
+			}
+		}
+		if !classified {
+			logger.Error("mutation route has no explicit security policy",
+				zap.String("method", method), zap.String("path", c.Request.URL.Path))
+			abortApproval(c, http.StatusInternalServerError, "mutation route security policy is missing")
+			return
+		}
+		if policy.Class != routecatalog.MutationHigh {
 			c.Next()
 			return
 		}
+		actionType := policy.ActionType
 
-		actionType := routecatalog.GetActionType(method, fullPath)
+		idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+		if len(idempotencyKey) < 8 || len(idempotencyKey) > 255 || strings.ContainsAny(idempotencyKey, "\r\n\t ") {
+			abortApproval(c, http.StatusBadRequest, "high-risk writes require an Idempotency-Key header of 8-255 non-whitespace characters")
+			return
+		}
 
 		// Kill switch.
 		if killswitch.IsActive() {
@@ -85,7 +80,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.String("path", fullPath),
 				zap.String("action_type", actionType),
 			)
-			response.Error(c, http.StatusServiceUnavailable,
+			abortApproval(c, http.StatusServiceUnavailable,
 				"global kill switch is active: all production writes are blocked. Reason: "+killswitch.Reason())
 			return
 		}
@@ -97,14 +92,14 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.String("method", method),
 				zap.String("path", fullPath),
 			)
-			response.Error(c, http.StatusForbidden,
+			abortApproval(c, http.StatusForbidden,
 				"this endpoint requires an approval ID via the X-Approval-ID header. Create an approval request first, then pass its ID.")
 			return
 		}
 
 		approvalID, err := strconv.ParseInt(approvalIDStr, 10, 64)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, "X-Approval-ID must be a numeric approval request ID")
+			abortApproval(c, http.StatusBadRequest, "X-Approval-ID must be a numeric approval request ID")
 			return
 		}
 
@@ -115,7 +110,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.Int64("approval_id", approvalID),
 				zap.Error(err),
 			)
-			response.Error(c, http.StatusForbidden, "invalid or expired approval ID")
+			abortApproval(c, http.StatusForbidden, "invalid or expired approval ID")
 			return
 		}
 
@@ -125,7 +120,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.Int64("approval_id", approvalID),
 				zap.String("status", req.Status),
 			)
-			response.Error(c, http.StatusForbidden, "approval has not been granted (status: "+req.Status+")")
+			abortApproval(c, http.StatusForbidden, "approval has not been granted (status: "+req.Status+")")
 			return
 		}
 
@@ -135,7 +130,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.Int64("approval_id", approvalID),
 				zap.Time("expires_at", *req.ExpiresAt),
 			)
-			response.Error(c, http.StatusForbidden, "approval has expired")
+			abortApproval(c, http.StatusForbidden, "approval has expired")
 			return
 		}
 
@@ -147,7 +142,7 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 					zap.String("request_type", req.RequestType),
 					zap.String("action_type", actionType),
 				)
-				response.Error(c, http.StatusForbidden,
+				abortApproval(c, http.StatusForbidden,
 					"approval type '"+req.RequestType+"' does not cover action '"+actionType+"'")
 				return
 			}
@@ -155,19 +150,32 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 
 		// ── Binding check 4: TargetType matches route context ──
 		targetType := deriveTargetType(fullPath)
+		binding, _ := routecatalog.GetBinding(method, fullPath)
+		if binding.TargetType != "" {
+			targetType = binding.TargetType
+		}
 		if req.TargetType != "" && targetType != "" && req.TargetType != targetType {
 			logger.Warn("approval validation failed: TargetType mismatch",
 				zap.Int64("approval_id", approvalID),
 				zap.String("target_type", req.TargetType),
 				zap.String("route_target", targetType),
 			)
-			response.Error(c, http.StatusForbidden,
+			abortApproval(c, http.StatusForbidden,
 				"approval target type '"+req.TargetType+"' does not match route '"+targetType+"'")
 			return
 		}
 
 		// ── Binding check 5: TargetID / EntityID / ProductID match request identity ──
 		requestIDs := resolveRequestIDs(c, targetType)
+		if binding.TargetIDParam != "" {
+			targetID, parseErr := strconv.ParseInt(c.Param(binding.TargetIDParam), 10, 64)
+			if parseErr != nil || targetID <= 0 {
+				abortApproval(c, http.StatusBadRequest, "high-risk route target ID is missing or invalid")
+				return
+			}
+			requestIDs.TargetID = targetID
+			requestIDs.PrimaryID = targetID
+		}
 		if hasApprovalIDConstraint(&req) && !approvalMatchesRequestIDs(&req, requestIDs) {
 			logger.Warn("approval validation failed: entity ID mismatch",
 				zap.Int64("approval_id", approvalID),
@@ -176,10 +184,11 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 				zap.Int64("approval_target_id", req.TargetID),
 				zap.Int64("approval_entity_id", req.EntityID),
 			)
-			response.Error(c, http.StatusForbidden,
+			abortApproval(c, http.StatusForbidden,
 				"approval was created for a different entity, or this request does not expose a verifiable target ID")
 			return
 		}
+		executionTargetID := approvalExecutionTargetID(&req, requestIDs, fullPath)
 
 		// ── Binding check 6: RequesterUserID matches JWT user ──
 		if req.RequesterUserID != nil {
@@ -198,37 +207,81 @@ func ApprovalRequired(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 					zap.Int64("approval_requester", *req.RequesterUserID),
 					zap.Int64("jwt_user_id", userID),
 				)
-				response.Error(c, http.StatusForbidden, "approval was created by a different user")
+				abortApproval(c, http.StatusForbidden, "approval was created by a different user")
 				return
 			}
 		}
 
-		// Approval valid.
+		// Atomically bind this approval to exactly one logical HTTP write.
+		if err := approvalSvc.AuthorizeExecution(c.Request.Context(), approvalID, actionType, targetType, executionTargetID, idempotencyKey); err != nil {
+			logger.Warn("approval execution authorization failed", zap.Int64("approval_id", approvalID), zap.String("idempotency_key", idempotencyKey), zap.Error(err))
+			abortApproval(c, http.StatusConflict, "approval has already been consumed or is bound to another execution")
+			return
+		}
+		if err := approvalSvc.ConsumeExecution(c.Request.Context(), approvalID, actionType, targetType, executionTargetID, idempotencyKey); err != nil {
+			status := http.StatusConflict
+			if !errors.Is(err, approval.ErrExecutionInProgress) && !errors.Is(err, approval.ErrApprovalConsumed) {
+				status = http.StatusForbidden
+			}
+			abortApproval(c, status, "approval execution cannot be claimed")
+			return
+		}
+
+		// Approval valid and consumed for this logical request.
 		c.Set("approval_id", approvalID)
 		c.Set("approval_request", &req)
+		c.Set("idempotency_key", idempotencyKey)
 		logger.Info("approval validated",
 			zap.Int64("approval_id", approvalID),
 			zap.String("action_type", actionType),
 			zap.String("path", fullPath),
 		)
 		c.Next()
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 3*time.Second)
+		defer cancel()
+		if c.Writer.Status() >= http.StatusBadRequest {
+			cause := fmt.Errorf("HTTP execution failed with status %d", c.Writer.Status())
+			if err := approvalSvc.FailExecution(persistCtx, approvalID, idempotencyKey, cause); err != nil {
+				logger.Error("failed to persist HTTP approval execution failure", zap.Int64("approval_id", approvalID), zap.Error(err))
+			}
+		} else if err := approvalSvc.CompleteExecution(persistCtx, approvalID, idempotencyKey); err != nil {
+			logger.Error("failed to persist HTTP approval execution success", zap.Int64("approval_id", approvalID), zap.Error(err))
+		}
 	}
 }
 
-// requestTypeMatchesAction checks whether an approval RequestType explicitly
-// maps to a routecatalog action type. Uses the requestTypeToAction table.
-// Exact table lookup only — no prefix guessing.
-func requestTypeMatchesAction(requestType, actionType string) bool {
-	allowed, ok := requestTypeToAction[requestType]
-	if !ok {
-		return false
+func abortApproval(c *gin.Context, status int, message string) {
+	response.Error(c, status, message)
+	c.Abort()
+}
+
+func approvalExecutionTargetID(req *approval.ApprovalRequest, ids requestIdentity, fullPath string) string {
+	parts := make([]string, 0, 3)
+	if req.ProductID > 0 {
+		parts = append(parts, "product="+strconv.FormatInt(req.ProductID, 10))
 	}
-	for _, a := range allowed {
-		if a == actionType {
-			return true
+	if req.TargetID > 0 {
+		parts = append(parts, "target="+strconv.FormatInt(req.TargetID, 10))
+	}
+	if req.EntityID > 0 {
+		parts = append(parts, "entity="+strconv.FormatInt(req.EntityID, 10))
+	}
+	if len(parts) > 1 {
+		return strings.Join(parts, ";")
+	}
+	for _, id := range []int64{req.TargetID, req.EntityID, req.ProductID, ids.TargetID, ids.EntityID, ids.ProductID, ids.PrimaryID} {
+		if id > 0 {
+			return strconv.FormatInt(id, 10)
 		}
 	}
-	return false
+	return fullPath
+}
+
+// requestTypeMatchesAction checks whether an approval RequestType explicitly
+// maps to a routecatalog action type. Uses the approval domain's canonical table.
+// Exact table lookup only — no prefix guessing.
+func requestTypeMatchesAction(requestType, actionType string) bool {
+	return approval.RequestTypeCoversAction(requestType, actionType)
 }
 
 // hasApprovalIDConstraint returns true if the approval request has at least

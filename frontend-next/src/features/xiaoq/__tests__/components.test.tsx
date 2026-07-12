@@ -82,4 +82,26 @@ describe('XiaoQ components', () => {
     expect(screen.getByRole('link', { name: '1688受控货源' })).toHaveAttribute('href', '/sourcing1688?source_id=42');
     expect(screen.queryByRole('button', { name: /批准|执行|发布|采购/ })).not.toBeInTheDocument();
   });
+
+  it('shows business closure truth, evidence, unknowns and links without execution actions', () => {
+    render(<XiaoQAnswerCard response={{
+      trace_id: 'trace-close', agent_id: 'xiao_q', target_type: 'business_closure',
+      experiment_id: 'EXP-CLOSE-1', answer: '订单已记录，但最终利润仍未知。',
+      truth_status: 'unknown', mode: 'read_only_v1',
+      evidence: [
+        { title: '订单履约记录', summary: '系统记录为已签收，尚无外部核验', truth_status: 'unknown' },
+        { title: '结算对账', summary: '尚未全部匹配', truth_status: 'inferred' },
+      ],
+      unknowns: ['退货/争议观察期是否结束未知', '最终利润记录缺失'],
+      links: [{ label: '经营实验', href: '/experiments?experiment_id=EXP-CLOSE-1' }],
+    }} />);
+
+    expect(screen.getByText('订单、结算与最终利润证据')).toBeInTheDocument();
+    expect(screen.getAllByText('未知').length).toBeGreaterThan(0);
+    expect(screen.getByText('订单履约记录')).toBeInTheDocument();
+    expect(screen.getByText('经营闭环仍然未知')).toBeInTheDocument();
+    expect(screen.getByText('退货/争议观察期是否结束未知')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '经营实验' })).toHaveAttribute('href', '/experiments?experiment_id=EXP-CLOSE-1');
+    expect(screen.queryByRole('button', { name: /批准|执行|发货|退款|收款/ })).not.toBeInTheDocument();
+  });
 });

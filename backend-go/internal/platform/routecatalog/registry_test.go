@@ -36,6 +36,8 @@ func TestGetActionType(t *testing.T) {
 		{"POST", "/api/v1/rbac/roles", "permission_change"},
 		{"PUT", "/api/v1/rbac/roles/:id", "permission_change"},
 		{"POST", "/api/v1/rbac/permissions", "permission_change"},
+		{"POST", "/api/v1/rbac/users/:id/roles", "permission_change"},
+		{"DELETE", "/api/v1/rbac/users/:id/roles", ""},
 
 		// Listings
 		{"POST", "/api/v1/listings/:id/publish", "auto_publish"},
@@ -116,8 +118,21 @@ func TestBindingsCount(t *testing.T) {
 	if n < 90 {
 		t.Fatalf("expected at least 90 high-risk route bindings, got %d — new routes added?", n)
 	}
-	if n > 130 {
-		t.Fatalf("expected at most 130 high-risk route bindings, got %d — review if all need approval", n)
+	if n > 220 {
+		t.Fatalf("expected at most 220 high-risk route bindings, got %d — review if all need approval", n)
+	}
+}
+
+func TestResolveActualRequestPath(t *testing.T) {
+	pattern, action, ok := Resolve("POST", "/api/v1/listings/42/publish")
+	if !ok || pattern != "/api/v1/listings/:id/publish" || action != "auto_publish" {
+		t.Fatalf("Resolve() = %q %q %v", pattern, action, ok)
+	}
+	if _, _, ok := Resolve("GET", "/api/v1/listings/42/publish"); ok {
+		t.Fatal("wrong method matched high-risk route")
+	}
+	if _, _, ok := Resolve("POST", "/api/v1/not-registered/42"); ok {
+		t.Fatal("unknown path matched high-risk route")
 	}
 }
 

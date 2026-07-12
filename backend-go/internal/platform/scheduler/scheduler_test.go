@@ -194,6 +194,22 @@ func TestShutdownWithoutStart(t *testing.T) {
 	// Should not panic or hang.
 }
 
+func TestExternalShutdownCancelsRetryLoopImmediately(t *testing.T) {
+	s, _ := newTestScheduler(t)
+	s.Register(Task{ID: "shutdown-retry-loop", AgentID: "infra", DecisionPoint: "drain", Interval: time.Hour})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := startAndWaitDone(t, s, ctx)
+	shutdownDone := make(chan struct{})
+	go func() { s.Shutdown(); close(shutdownDone) }()
+	select {
+	case <-shutdownDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("external Shutdown waited for retry ticker")
+	}
+	cancel()
+	<-done
+}
+
 // ---------------------------------------------------------------------------
 // Register after Start (auto-start)
 // ---------------------------------------------------------------------------

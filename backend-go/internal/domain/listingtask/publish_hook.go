@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
@@ -42,6 +44,22 @@ func NewPublishHook(db *gorm.DB, auditSvc *operationlog.Service, logger *zap.Log
 		var task ListingTask
 		if err := db.First(&task, taskID).Error; err != nil {
 			return fmt.Errorf("publish hook: load task %d: %w", taskID, err)
+		}
+
+		var approvalID int64
+		if mode >= ExecutionModeApprovalRequired {
+			if task.ApprovalID == nil || *task.ApprovalID <= 0 {
+				return fmt.Errorf("publish hook: production write requires a bound approval")
+			}
+			var req approval.ApprovalRequest
+			if err := db.First(&req, *task.ApprovalID).Error; err != nil {
+				return fmt.Errorf("publish hook: load approval %d: %w", *task.ApprovalID, err)
+			}
+			if req.Status != approval.StatusApproved || req.EntityType != "listing_task" || req.EntityID != task.ID ||
+				(req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now())) {
+				return fmt.Errorf("publish hook: approval is expired or not bound to listing task %d", task.ID)
+			}
+			approvalID = req.ID
 		}
 
 		// 2. Resolve platform code.
@@ -109,23 +127,26 @@ func NewPublishHook(db *gorm.DB, auditSvc *operationlog.Service, logger *zap.Log
 
 		// 7. Set execution mode in context before calling the adapter.
 		ctx := integrations.WithExecutionMode(context.Background(), integrations.ExecutionMode(mode))
+		if approvalID > 0 {
+			ctx = integrations.WithApprovalID(ctx, approvalID)
+		}
 
 		result, err := adapter.Publish(ctx, &integrations.PublishInput{
-			ProductID:     task.ProductID,
-			PlatformID:    task.PlatformID,
-			AccountID:     acct.ID,
-			SKUs:          publishSKUs,
-			Prices:        prices,
-			Inventories:   inventories,
+			ProductID:      task.ProductID,
+			PlatformID:     task.PlatformID,
+			AccountID:      acct.ID,
+			SKUs:           publishSKUs,
+			Prices:         prices,
+			Inventories:    inventories,
 			IdempotencyKey: ikey,
-			ProductName:   prod.Name,
-			Description:   prod.Description,
-			CategoryID:    prod.CategoryID,
-			MainImage:     prod.MainImage,
-			PackageHeight: pkgH,
-			PackageWidth:  pkgW,
-			PackageLength: pkgL,
-			PackageWeight: pkgWt,
+			ProductName:    prod.Name,
+			Description:    prod.Description,
+			CategoryID:     prod.CategoryID,
+			MainImage:      prod.MainImage,
+			PackageHeight:  pkgH,
+			PackageWidth:   pkgW,
+			PackageLength:  pkgL,
+			PackageWeight:  pkgWt,
 		})
 
 		// 8. Write audit log entry.
@@ -141,11 +162,11 @@ func NewPublishHook(db *gorm.DB, auditSvc *operationlog.Service, logger *zap.Log
 		}
 		if auditSvc != nil {
 			auditSvc.LogStructured(&operationlog.StructuredLogInput{
-				Module:      "platform_publish",
-				Action:      auditAction,
-				ResourceID:  fmt.Sprintf("listing_task:%d", taskID),
-				Operator:    "system",
-				Content:     auditContent,
+				Module:     "platform_publish",
+				Action:     auditAction,
+				ResourceID: fmt.Sprintf("listing_task:%d", taskID),
+				Operator:   "system",
+				Content:    auditContent,
 				Result: func() string {
 					if err != nil {
 						return "failure"

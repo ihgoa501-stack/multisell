@@ -199,7 +199,7 @@ func (d *PluginDriver) Health() (available bool, latency time.Duration, err erro
 func (d *PluginDriver) Category() toolbridge.ToolCategory { return toolbridge.ToolCategoryRead }
 
 // Execute is not supported for page-fetching drivers.
-func (d *PluginDriver) Execute(_ map[string]interface{}) (*toolbridge.ToolResult, error) {
+func (d *PluginDriver) Execute(_ context.Context, _ map[string]interface{}) (*toolbridge.ToolResult, error) {
 	return nil, errors.New("plugin driver: Execute not supported, use FetchPage instead")
 }
 

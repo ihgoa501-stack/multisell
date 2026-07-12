@@ -13,6 +13,7 @@ import (
 
 func TestMutationGuard_WithEventBus(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	audit := &mockAuditLogger{}
@@ -49,6 +50,7 @@ func TestMutationGuard_WithEventBus(t *testing.T) {
 
 func TestMutationGuard_WithIdempotency(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	audit := &mockAuditLogger{}
@@ -90,6 +92,7 @@ func TestMutationGuard_WithIdempotency(t *testing.T) {
 
 func TestMutationGuard_FailureInEventBus(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	audit := &mockAuditLogger{}
@@ -126,25 +129,21 @@ func TestMutationGuard_NoDB(t *testing.T) {
 	bus.Start(ctx)
 	time.Sleep(10 * time.Millisecond)
 
-	var called bool
+	var called atomic.Bool
 	bus.Subscribe("guard.nodb",
 		guard.Guard(MutationInfo{SystemAction: "system.test.nodb", Domain: "test"},
-			func(ctx context.Context, evt Event) error { called = true; return nil }))
+			func(ctx context.Context, evt Event) error { called.Store(true); return nil }))
 	_, err := bus.Publish(context.Background(), "guard.nodb", "test", nil)
 	if err != nil {
 		t.Fatalf("Publish error: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
-	if !called {
-		t.Fatal("handler was not called")
-	}
-	if audit.count() < 2 {
-		t.Fatalf("expected >=2 audit entries, got %d", audit.count())
-	}
+	poll(t, 2*time.Second, "handler called", called.Load)
+	poll(t, 2*time.Second, "pending and completed audit entries", func() bool { return audit.count() >= 2 })
 }
 
 func TestMutationGuard_PreservesDLQSemantics(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	createDLQTable(t, db)
 	logger, _ := zap.NewDevelopment()

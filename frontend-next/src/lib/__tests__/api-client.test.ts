@@ -115,6 +115,48 @@ describe('ApiClient', () => {
     );
   });
 
+  it('sends explicit approval and idempotency headers for controlled writes', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ code: 0, data: { id: 42 } }),
+    });
+
+    await client.postApproved('/v1/listings/42/publish', {}, {
+      approvalId: 7,
+      idempotencyKey: 'publish-listing-42',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://test.api/v1/listings/42/publish',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Approval-ID': '7',
+          'Idempotency-Key': 'publish-listing-42',
+        }),
+      }),
+    );
+  });
+
+  it('rejects invalid approval execution context before network access', async () => {
+    await expect(client.postApproved('/v1/listings/42/publish', {}, {
+      approvalId: 0,
+      idempotencyKey: 'short',
+    })).rejects.toBeInstanceOf(ApiError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the backend business error message', async () => {
+    const body = { code: 502, message: 'TAB_NOT_FOUND: 请先打开完全相同的 1688 商品页面' };
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      clone: () => ({ json: () => Promise.resolve(body) }),
+    });
+
+    await expect(client.post('/v1/sourcing-1688/fetch', {})).rejects.toThrow(body.message);
+  });
+
   // --- GET request deduplication ---
 
   it('deduplicates concurrent identical GET requests', async () => {

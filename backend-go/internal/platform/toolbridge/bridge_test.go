@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lingmirror/backend-go/internal/dbtest"
 	"go.uber.org/zap"
 )
 
@@ -55,11 +56,15 @@ func (m *mockDriver) Category() ToolCategory {
 	return ToolCategoryRead
 }
 
-func (m *mockDriver) Execute(input map[string]interface{}) (*ToolResult, error) {
+func (m *mockDriver) Execute(_ context.Context, input map[string]interface{}) (*ToolResult, error) {
 	if m.execFn != nil {
 		return m.execFn(input)
 	}
 	return &ToolResult{Success: true, Data: input}, nil
+}
+
+func (m *mockDriver) ExecuteIdempotent(ctx context.Context, input map[string]interface{}, _ string) (*ToolResult, error) {
+	return m.Execute(ctx, input)
 }
 
 // TestBridgeRoutesToPreferredDriver verifies that a driver with lower weight
@@ -365,9 +370,8 @@ func TestExecuteTool_MutationRequiresApproval(t *testing.T) {
 	}
 }
 
-// TestExecuteTool_MutationWithApprovalSucceeds verifies that a mutation tool
-// succeeds when a non-empty approvalID is provided.
-func TestExecuteTool_MutationWithApprovalSucceeds(t *testing.T) {
+// Legacy opaque approval strings cannot authorize mutations.
+func TestExecuteTool_MutationWithOpaqueApprovalRejected(t *testing.T) {
 	logger := zap.NewNop()
 	bridge := NewToolBridge(nil, 10*time.Second, logger)
 
@@ -377,15 +381,58 @@ func TestExecuteTool_MutationWithApprovalSucceeds(t *testing.T) {
 		}}
 	bridge.RegisterTool("publish_listing", d)
 
-	result, err := bridge.ExecuteTool("publish_listing", map[string]interface{}{"id": "42"}, "approval-123")
-	if err != nil {
-		t.Fatalf("ExecuteTool with approval: %v", err)
+	if _, err := bridge.ExecuteTool("publish_listing", map[string]interface{}{"id": "42"}, "approval-123"); !errors.Is(err, ErrApprovalRequired) {
+		t.Fatalf("opaque legacy approval error = %v, want ErrApprovalRequired", err)
 	}
-	if !result.Success {
-		t.Error("expected success")
+}
+
+type toolApprovalVerifier struct{ approved bool }
+
+func (v toolApprovalVerifier) bindingError(actionType, targetType, targetID string) error {
+	if v.approved && actionType == "publish_listing" && targetType == "listing" && targetID == "42" {
+		return nil
 	}
-	if result.Data["status"] != "published" {
-		t.Errorf("expected published, got %v", result.Data["status"])
+	return ErrApprovalRequired
+}
+func (v toolApprovalVerifier) AuthorizeFor(_ context.Context, _ int64, actionType, targetType, targetID, _ string) error {
+	return v.bindingError(actionType, targetType, targetID)
+}
+func (v toolApprovalVerifier) ConsumeFor(_ context.Context, _ int64, actionType, targetType, targetID, _ string) error {
+	return v.bindingError(actionType, targetType, targetID)
+}
+func (v toolApprovalVerifier) CompleteFor(context.Context, int64, string) error    { return nil }
+func (v toolApprovalVerifier) FailFor(context.Context, int64, string, error) error { return nil }
+
+func TestExecuteCall_ProductionMutationRequiresBoundApproval(t *testing.T) {
+	approvalID := int64(7)
+	driver := &mockDriver{name: "mutator", category: ToolCategoryMutation}
+	db := dbtest.NewDB(t, &ToolExecution{})
+	bridge := NewToolBridge(nil, time.Second, zap.NewNop(), WithApprovalVerifier(toolApprovalVerifier{approved: true}), WithIdempotencyStore(NewGormToolIdempotencyStore(db, time.Minute)))
+	bridge.RegisterTool("publish_listing", driver)
+	call := ToolCall{ToolName: "publish_listing", Category: ToolCategoryMutation, Mode: ModeProduction, ApprovalID: &approvalID, IdempotencyKey: "publish:42", TargetType: "listing", TargetID: "42"}
+	result, err := bridge.ExecuteCall(context.Background(), call)
+	if err != nil || result == nil || !result.Success || result.Mode != ModeProduction {
+		t.Fatalf("typed mutation result=%+v err=%v", result, err)
+	}
+	call.TargetID = "99"
+	if _, err := bridge.ExecuteCall(context.Background(), call); !errors.Is(err, ErrApprovalRequired) {
+		t.Fatalf("mismatched target error = %v", err)
+	}
+}
+
+func TestExecuteCall_CategorySpoofAndMissingIdempotencyRejected(t *testing.T) {
+	approvalID := int64(7)
+	bridge := NewToolBridge(nil, time.Second, zap.NewNop(), WithApprovalVerifier(toolApprovalVerifier{approved: true}))
+	bridge.RegisterTool("publish_listing", &mockDriver{name: "mutator", category: ToolCategoryMutation})
+	call := ToolCall{ToolName: "publish_listing", Category: ToolCategoryRead, Mode: ModeProduction}
+	if _, err := bridge.ExecuteCall(context.Background(), call); err == nil {
+		t.Fatal("mutation category spoof was accepted")
+	}
+	call.Category = ToolCategoryMutation
+	call.ApprovalID = &approvalID
+	call.TargetType, call.TargetID = "listing", "42"
+	if _, err := bridge.ExecuteCall(context.Background(), call); err == nil {
+		t.Fatal("production mutation without idempotency key was accepted")
 	}
 }
 

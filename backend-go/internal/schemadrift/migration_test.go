@@ -86,7 +86,7 @@ func TestMigrationChecker_DuplicateVersions(t *testing.T) {
 	}
 }
 
-func TestMigrationChecker_MissingGaps(t *testing.T) {
+func TestMigrationChecker_AllowsIntentionalVersionGaps(t *testing.T) {
 	dir := t.TempDir()
 	createMigrationFile(t, dir, "000001_init.up.sql")
 	createMigrationFile(t, dir, "000003_add_orders.up.sql") // version 2 is missing
@@ -97,18 +97,20 @@ func TestMigrationChecker_MissingGaps(t *testing.T) {
 	checker := NewMigrationChecker(db, newTestLogger(t), dir)
 	health := checker.Check()
 
-	if len(health.MissingMigrations) == 0 {
-		t.Fatal("expected missing migration gap")
+	if len(health.MissingMigrations) != 0 {
+		t.Fatalf("intentional version gap was treated as missing history: %+v", health.MissingMigrations)
 	}
-	found := false
-	for _, m := range health.MissingMigrations {
-		if m.Version == 2 {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected gap at version 2, got: %+v", health.MissingMigrations)
+}
+
+func TestMigrationChecker_CurrentVersionMustHaveFile(t *testing.T) {
+	dir := t.TempDir()
+	createMigrationFile(t, dir, "000001_init.up.sql")
+	createMigrationFile(t, dir, "000003_add_orders.up.sql")
+	db := openTestDB(t)
+	createSchemaMigrations(t, db, 2)
+	health := NewMigrationChecker(db, newTestLogger(t), dir).Check()
+	if len(health.MissingMigrations) != 1 || health.MissingMigrations[0].Version != 2 {
+		t.Fatalf("missing current file = %+v", health.MissingMigrations)
 	}
 }
 
@@ -204,9 +206,10 @@ func createMigrationFile(t *testing.T, dir, name string) {
 
 func createSchemaMigrations(t *testing.T, db *gorm.DB, versions ...int) {
 	t.Helper()
-	db.Exec("CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT NOT NULL PRIMARY KEY)")
-	for _, v := range versions {
-		db.Exec("INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)", v)
+	db.Exec("CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT NOT NULL PRIMARY KEY, dirty BOOLEAN NOT NULL)")
+	if len(versions) > 0 {
+		version := versions[len(versions)-1]
+		db.Exec("INSERT OR REPLACE INTO schema_migrations (version, dirty) VALUES (?, ?)", version, false)
 	}
 }
 

@@ -35,7 +35,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&User{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &RefreshSession{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
@@ -292,13 +292,85 @@ func TestRefresh_Success(t *testing.T) {
 	if newAccess == refresh {
 		t.Fatal("new access should not equal old refresh")
 	}
+	if _, _, _, err := svc.Refresh(refresh); err == nil {
+		t.Fatal("rotated refresh token was accepted a second time")
+	}
+	if _, _, _, err := svc.Refresh(newRefresh); err == nil {
+		t.Fatal("refresh family remained valid after predecessor replay")
+	}
 	if userVO == nil || userVO.Username != "heidi" {
 		t.Fatalf("userVO = %+v", userVO)
 	}
 
-	// The new refresh token should also be usable.
-	if _, _, _, err := svc.Refresh(newRefresh); err != nil {
-		t.Fatalf("Refresh new: %v", err)
+}
+
+func TestRefresh_RotatesAndAllowsSuccessorWithoutReplay(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testConfig(), testLogger())
+	if _, err := svc.Register("rotate", "password123", "", "", "user"); err != nil {
+		t.Fatal(err)
+	}
+	_, first, _, err := svc.Login("rotate", "password123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, second, _, err := svc.Refresh(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.Refresh(second); err != nil {
+		t.Fatalf("unused successor refresh failed: %v", err)
+	}
+}
+
+func TestRevokeRefreshFamily_IsIdempotentAndOwnerBound(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testConfig(), testLogger())
+	owner, err := svc.Register("logout-owner", "password123", "", "", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := svc.Register("logout-other", "password123", "", "", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, refresh, _, err := svc.Login(owner.Username, "password123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeRefreshFamily(refresh, other.ID); err == nil {
+		t.Fatal("another user revoked the refresh family")
+	}
+	if err := svc.RevokeRefreshFamily(refresh, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeRefreshFamily(refresh, owner.ID); err != nil {
+		t.Fatalf("repeated revocation was not idempotent: %v", err)
+	}
+	if _, _, _, err := svc.Refresh(refresh); err == nil {
+		t.Fatal("revoked refresh token was accepted")
+	}
+}
+
+func TestRevokeAllRefreshSessions(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testConfig(), testLogger())
+	owner, err := svc.Register("logout-all", "password123", "", "", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, first, _, _ := svc.Login(owner.Username, "password123")
+	_, second, _, _ := svc.Login(owner.Username, "password123")
+	if err := svc.RevokeAllRefreshSessions(owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeAllRefreshSessions(owner.ID); err != nil {
+		t.Fatalf("repeated revoke-all failed: %v", err)
+	}
+	for _, token := range []string{first, second} {
+		if _, _, _, err := svc.Refresh(token); err == nil {
+			t.Fatal("revoke-all left an active refresh token")
+		}
 	}
 }
 
@@ -378,6 +450,39 @@ func TestParseToken_InvalidSignature(t *testing.T) {
 
 	if _, err := svc.ParseToken(tok); err == nil {
 		t.Fatal("expected invalid signature error")
+	}
+}
+
+func TestParseToken_KeyRotationAcceptsPreviousKidAndSignsWithCurrent(t *testing.T) {
+	db := newTestDB(t)
+	oldCfg := testConfig()
+	oldCfg.JWT.KeyID = "2026-06"
+	oldCfg.JWT.Secret = "old-signing-secret"
+	oldSvc := NewService(db, oldCfg, testLogger())
+	user := &User{ID: 99, Username: "rotate-key", Role: "owner"}
+	oldToken, err := oldSvc.GenerateAccessToken(user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newCfg := testConfig()
+	newCfg.JWT.KeyID = "2026-07"
+	newCfg.JWT.Secret = "new-signing-secret"
+	newCfg.JWT.PreviousKeysJSON = `{"2026-06":"old-signing-secret"}`
+	newSvc := NewService(db, newCfg, testLogger())
+	if _, err := newSvc.ParseToken(oldToken); err != nil {
+		t.Fatalf("previous key token rejected during rotation: %v", err)
+	}
+	newToken, err := newSvc.GenerateAccessToken(user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, _, err := new(jwt.Parser).ParseUnverified(newToken, &Claims{})
+	if err != nil || parsed.Header["kid"] != "2026-07" {
+		t.Fatalf("new token header=%v err=%v", parsed.Header, err)
+	}
+	if _, err := oldSvc.ParseToken(newToken); err == nil {
+		t.Fatal("old key configuration accepted token signed by the new key")
 	}
 }
 

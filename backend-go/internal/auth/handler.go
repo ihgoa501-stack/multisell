@@ -95,6 +95,15 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
+func authenticatedUserID(c *gin.Context) (int64, bool) {
+	uid, ok := c.Get("user_id")
+	if !ok {
+		return 0, false
+	}
+	userID, ok := uid.(int64)
+	return userID, ok && userID > 0
+}
+
 // Refresh handles token refresh.
 // @Summary      Refresh JWT token
 // @Description  Exchange a refresh token for a new access token
@@ -126,6 +135,39 @@ func (h *Handler) Refresh(c *gin.Context) {
 	})
 }
 
+// Logout revokes the refresh-token family for the current device/session.
+func (h *Handler) Logout(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	var req refreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "refresh_token 不能为空")
+		return
+	}
+	if err := h.service.RevokeRefreshFamily(req.RefreshToken, userID); err != nil {
+		response.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"revoked": true})
+}
+
+// LogoutAll revokes every refresh session owned by the authenticated user.
+func (h *Handler) LogoutAll(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	if err := h.service.RevokeAllRefreshSessions(userID); err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"revoked_all": true})
+}
+
 // CurrentUser returns the authenticated user info from the JWT context.
 // @Summary      Get current user
 // @Description  Return the authenticated user's profile info
@@ -135,22 +177,9 @@ func (h *Handler) Refresh(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /auth/me [get]
 func (h *Handler) CurrentUser(c *gin.Context) {
-	uid, exists := c.Get("user_id")
-	if !exists {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
 		response.Error(c, http.StatusUnauthorized, "not authenticated")
-		return
-	}
-
-	var userID int64
-	switch v := uid.(type) {
-	case float64:
-		userID = int64(v)
-	case int64:
-		userID = v
-	case int:
-		userID = int64(v)
-	default:
-		response.Error(c, http.StatusUnauthorized, "invalid user identity")
 		return
 	}
 

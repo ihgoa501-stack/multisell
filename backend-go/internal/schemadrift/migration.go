@@ -20,13 +20,14 @@ type MigrationFile struct {
 
 // MigrationHealth holds the results of a migration version health check.
 type MigrationHealth struct {
-	CurrentVersion      int              // highest version in schema_migrations
-	ExpectedVersion     int              // highest version among migration files
-	FileCount           int              // total unique migration files found
-	AppliedInDB         int              // versions found in both files and DB
-	UnappliedMigrations []MigrationFile  // files not in schema_migrations
-	MissingMigrations   []MigrationFile  // files that should exist but don't (gaps)
-	DuplicateVersions   []int            // versions appearing in more than one file
+	CurrentVersion      int             // highest version in schema_migrations
+	ExpectedVersion     int             // highest version among migration files
+	FileCount           int             // total unique migration files found
+	AppliedInDB         int             // versions found in both files and DB
+	UnappliedMigrations []MigrationFile // files not in schema_migrations
+	MissingMigrations   []MigrationFile // files that should exist but don't (gaps)
+	DuplicateVersions   []int           // versions appearing in more than one file
+	Dirty               bool            // golang-migrate interrupted/dirty state
 }
 
 // MigrationChecker queries migration status against the database and filesystem.
@@ -56,9 +57,9 @@ func (c *MigrationChecker) Check() MigrationHealth {
 		return MigrationHealth{}
 	}
 
-	appliedVersions := c.getAppliedVersions()
+	currentVersion, dirty := c.getMigrationState()
 
-	return c.analyze(files, appliedVersions)
+	return c.analyze(files, currentVersion, dirty)
 }
 
 // readMigrationFiles reads all migration files from disk and extracts version+name.
@@ -101,32 +102,24 @@ func (c *MigrationChecker) readMigrationFiles() ([]MigrationFile, error) {
 	return files, nil
 }
 
-// getAppliedVersions queries the schema_migrations table for applied version numbers.
-func (c *MigrationChecker) getAppliedVersions() []int {
-	rows, err := c.db.Raw("SELECT version FROM schema_migrations ORDER BY version").Rows()
-	if err != nil {
+// getMigrationState reads golang-migrate's single-row version ledger.
+func (c *MigrationChecker) getMigrationState() (int, bool) {
+	var state struct {
+		Version int
+		Dirty   bool
+	}
+	if err := c.db.Raw("SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&state).Error; err != nil {
 		c.logger.Warn("migration: cannot query schema_migrations — table may not exist",
 			zap.Error(err))
-		return nil
+		return 0, false
 	}
-	defer rows.Close()
-
-	var versions []int
-	for rows.Next() {
-		var v int
-		if err := rows.Scan(&v); err != nil {
-			c.logger.Warn("migration: failed to scan version row", zap.Error(err))
-			continue
-		}
-		versions = append(versions, v)
-	}
-	return versions
+	return state.Version, state.Dirty
 }
 
-// analyze compares migration files against applied versions and returns the health report.
+// analyze compares migration files against golang-migrate's current version.
 // files may contain duplicate entries for the same version (from different files).
-func (c *MigrationChecker) analyze(files []MigrationFile, appliedVersions []int) MigrationHealth {
-	var health MigrationHealth
+func (c *MigrationChecker) analyze(files []MigrationFile, currentVersion int, dirty bool) MigrationHealth {
+	health := MigrationHealth{CurrentVersion: currentVersion, Dirty: dirty}
 
 	// Count occurrences of each version across all files
 	versionCount := make(map[int]int)
@@ -147,12 +140,6 @@ func (c *MigrationChecker) analyze(files []MigrationFile, appliedVersions []int)
 		}
 	}
 
-	// Build set of applied versions
-	appliedSet := make(map[int]bool, len(appliedVersions))
-	for _, v := range appliedVersions {
-		appliedSet[v] = true
-	}
-
 	// Expected version = max file version
 	for v := range fileVersions {
 		if v > health.ExpectedVersion {
@@ -160,45 +147,29 @@ func (c *MigrationChecker) analyze(files []MigrationFile, appliedVersions []int)
 		}
 	}
 	health.FileCount = len(fileVersions)
-	health.AppliedInDB = len(appliedVersions)
 
-	// Current version = max applied version
-	for _, v := range appliedVersions {
-		if v > health.CurrentVersion {
-			health.CurrentVersion = v
+	for version := range fileVersions {
+		if version <= currentVersion {
+			health.AppliedInDB++
 		}
 	}
 
 	// Find unapplied migrations: unique file versions not in schema_migrations
 	for version, f := range fileVersions {
-		if !appliedSet[version] {
+		if version > currentVersion {
 			health.UnappliedMigrations = append(health.UnappliedMigrations, f)
 		}
 	}
 
-	// Find missing version gaps
-	if len(fileVersions) > 0 {
-		versions := make([]int, 0, len(fileVersions))
-		for v := range fileVersions {
-			versions = append(versions, v)
-		}
-		sort.Ints(versions)
-
-		for i, v := range versions {
-			if i > 0 {
-				prev := versions[i-1]
-				if v-prev > 1 {
-					for gap := prev + 1; gap < v; gap++ {
-						_, isDuplicate := versionCount[gap]
-						if !isDuplicate {
-							health.MissingMigrations = append(health.MissingMigrations, MigrationFile{
-								Version: gap,
-								Name:    fmt.Sprintf("(gap between %d and %d)", prev, v),
-							})
-						}
-					}
-				}
-			}
+	// Version numbers are identifiers, not a required contiguous sequence.
+	// The only missing-file condition provable from golang-migrate's ledger is
+	// that its current version has no corresponding migration file.
+	if currentVersion > 0 {
+		if _, exists := fileVersions[currentVersion]; !exists {
+			health.MissingMigrations = append(health.MissingMigrations, MigrationFile{
+				Version: currentVersion,
+				Name:    "(current database version has no migration file)",
+			})
 		}
 	}
 
@@ -219,6 +190,9 @@ func (h MigrationHealth) FormatSummary() string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("migration health: current=%d expected=%d files=%d applied=%d",
 		h.CurrentVersion, h.ExpectedVersion, h.FileCount, h.AppliedInDB))
+	if h.Dirty {
+		b.WriteString(" dirty=true")
+	}
 
 	if len(h.UnappliedMigrations) > 0 {
 		b.WriteString(fmt.Sprintf("\n  unapplied (%d):", len(h.UnappliedMigrations)))

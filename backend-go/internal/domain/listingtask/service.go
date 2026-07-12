@@ -96,20 +96,20 @@ func (s *Service) GetByID(id int64) (*ListingTask, []ListingTaskItem, error) {
 // Create inserts a new listing task.
 func (s *Service) Create(in *CreateTaskInput) (*ListingTask, error) {
 	t := ListingTask{
-		ProductID:            in.ProductID,
-		PlatformID:           in.PlatformID,
-		SkuID:                in.SkuID,
-		ProductListingID:     in.ProductListingID,
-		SourceType:           in.SourceType,
-		SourceItemKey:        in.SourceItemKey,
-		Status:               in.Status,
-		MissingRequirements:  in.MissingRequirements,
-		DecisionSnapshot:     in.DecisionSnapshot,
-		TargetSalePrice:      in.TargetSalePrice,
-		TargetProfitMargin:   in.TargetProfitMargin,
-		DestinationCountry:   in.DestinationCountry,
-		ApprovalID:           in.ApprovalID,
-		CreatedBy:            in.CreatedBy,
+		ProductID:           in.ProductID,
+		PlatformID:          in.PlatformID,
+		SkuID:               in.SkuID,
+		ProductListingID:    in.ProductListingID,
+		SourceType:          in.SourceType,
+		SourceItemKey:       in.SourceItemKey,
+		Status:              in.Status,
+		MissingRequirements: in.MissingRequirements,
+		DecisionSnapshot:    in.DecisionSnapshot,
+		TargetSalePrice:     in.TargetSalePrice,
+		TargetProfitMargin:  in.TargetProfitMargin,
+		DestinationCountry:  in.DestinationCountry,
+		ApprovalID:          in.ApprovalID,
+		CreatedBy:           in.CreatedBy,
 	}
 	if t.SourceType == "" {
 		t.SourceType = "decision"
@@ -515,6 +515,9 @@ func (s *Service) validateExecutePreconditions(task *ListingTask) error {
 	if approvalRec.EntityID != task.ID {
 		return fmt.Errorf("approval %d entity_id is %d, expected listing task %d", *task.ApprovalID, approvalRec.EntityID, task.ID)
 	}
+	if approvalRec.ExpiresAt != nil && !approvalRec.ExpiresAt.After(time.Now()) {
+		return fmt.Errorf("approval %d for listing task %d is expired", *task.ApprovalID, task.ID)
+	}
 	// 7. Execution mode — check DecisionSnapshot for mode flag
 	if len(task.DecisionSnapshot) > 0 {
 		var snapshot struct {
@@ -550,12 +553,12 @@ func (s *Service) writeAudit(action, result, resourceID, operator, content strin
 		return
 	}
 	input := &operationlog.StructuredLogInput{
-		Module:     "listing_task",
-		Action:     action,
-		ResourceID: resourceID,
-		Operator:   operator,
-		Content:    content,
-		Result:     result,
+		Module:      "listing_task",
+		Action:      action,
+		ResourceID:  resourceID,
+		Operator:    operator,
+		Content:     content,
+		Result:      result,
 		TriggerType: "system",
 	}
 	if task != nil {
@@ -720,7 +723,6 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 			&task)
 		return &task, nil
 	}
-
 
 	oldStatus := task.Status
 

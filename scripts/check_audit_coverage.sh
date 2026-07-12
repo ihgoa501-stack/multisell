@@ -23,7 +23,7 @@ echo "=== Audit Log Coverage Check ==="
 echo ""
 
 # ── Check 1: Audit middleware in router.go ──
-echo "[1/4] Checking audit middleware in router.go..."
+echo "[1/5] Checking audit middleware in router.go..."
 ROUTER_FILE="$REPO_ROOT/backend-go/internal/httpx/router.go"
 if [[ -f "$ROUTER_FILE" ]]; then
   if grep -q 'middleware.Audit' "$ROUTER_FILE"; then
@@ -43,7 +43,7 @@ echo "  Done."
 
 # ── Check 2: Route catalog contains high-risk routes ──
 echo ""
-echo "[2/4] Checking routecatalog for high-risk route coverage..."
+echo "[2/5] Checking routecatalog for high-risk route coverage..."
 REGISTRY_FILE="$REPO_ROOT/backend-go/internal/platform/routecatalog/registry.go"
 if [[ -f "$REGISTRY_FILE" ]]; then
   high_risk_methods=$(grep -cE '(price|inventory|order|rbac|settlement|finance|integrations)' "$REGISTRY_FILE" 2>/dev/null || true)
@@ -57,7 +57,7 @@ echo "  Done."
 
 # ── Check 3: Handler files — spot-check audit logger usage ──
 echo ""
-echo "[3/4] Spot-checking mutation handlers for audit logging..."
+echo "[3/5] Spot-checking mutation handlers for audit logging..."
 # Check that the operationlog service exists and is used
 OPLOG_FILE="$REPO_ROOT/backend-go/internal/domain/operationlog"
 if [[ -d "$OPLOG_FILE" ]]; then
@@ -76,7 +76,7 @@ echo "  Done."
 
 # ── Check 4: Actioncatalog risk/audit alignment ──
 echo ""
-echo "[4/4] Verifying action catalog audit references..."
+echo "[4/5] Verifying action catalog audit references..."
 CATALOG_FILE="$REPO_ROOT/backend-go/internal/platform/actioncatalog/catalog.go"
 if [[ -f "$CATALOG_FILE" ]]; then
   # Check that actioncatalog entries with RequireApproval have audit references
@@ -87,9 +87,9 @@ if [[ -f "$CATALOG_FILE" ]]; then
 fi
 echo "  Done."
 
-# ── Check 5: Per-route cross-reference — every mutation endpoint vs routecatalog ──
+# ── Check 5: every mutation must have an explicit security policy ──
 echo ""
-echo "[5/5] Per-route cross-reference: every mutation endpoint vs routecatalog..."
+echo "[5/5] Per-route cross-reference: every mutation endpoint vs policy inventory..."
 
 if ! python3 - "$REPO_ROOT" <<'PY'
 import pathlib
@@ -97,30 +97,21 @@ import re
 import sys
 
 repo = pathlib.Path(sys.argv[1])
-registry_file = repo / "backend-go/internal/platform/routecatalog/registry.go"
-registry_text = registry_file.read_text()
-
-registered = {
-    (m.group(1), m.group(2))
-    for m in re.finditer(
-        r'Method:\s*"([A-Z]+)"\s*,\s*PathPattern:\s*"([^"]+)"',
-        registry_text,
-    )
-}
-
-domains = [
-    "price",
-    "order",
-    "inventory",
-    "integrations",
-    "settlement",
-    "finance",
-    "listing",
-    "listingtask",
-    "sku",
-    "aftersales",
-    "platform",
-]
+policy_file = repo / "backend-go/internal/platform/routecatalog/mutation_policy.tsv"
+policies = {}
+for number, raw in enumerate(policy_file.read_text().splitlines(), 1):
+    if not raw or raw.startswith("#"):
+        continue
+    fields = raw.split("\t")
+    if len(fields) != 5:
+        print(f"  ❌ mutation policy line {number} does not have 5 fields")
+        sys.exit(1)
+    classification, method, path, action, source = fields
+    key = (method, path)
+    if key in policies:
+        print(f"  ❌ duplicate mutation policy: {method} {path}")
+        sys.exit(1)
+    policies[key] = (classification, action, source)
 
 def join_path(*parts: str) -> str:
     out = "/".join(p.strip("/") for p in parts if p is not None and p != "")
@@ -128,12 +119,12 @@ def join_path(*parts: str) -> str:
 
 def extract_routes(routes_file: pathlib.Path) -> list[tuple[str, str]]:
     text = routes_file.read_text()
-    bases: dict[str, str] = {"rg": "/api/v1"}
+    bases: dict[str, str] = {"rg": "/api/v1", "api": "/api/v1", "v1": "/api/v1"}
     routes: list[tuple[str, str]] = []
 
     for line in text.splitlines():
         group_match = re.search(
-            r'\b([A-Za-z_][A-Za-z0-9_]*)\s*:=\s*([A-Za-z_][A-Za-z0-9_]*)\.Group\("([^"]*)"\)',
+            r'\b([A-Za-z_][A-Za-z0-9_]*)\s*:=\s*([A-Za-z_][A-Za-z0-9_]*)\.Group\("([^"]*)"',
             line,
         )
         if group_match:
@@ -152,24 +143,44 @@ def extract_routes(routes_file: pathlib.Path) -> list[tuple[str, str]]:
 
     return routes
 
-missing: list[tuple[str, str, str]] = []
-total = 0
-for domain in domains:
-    routes_file = repo / f"backend-go/internal/domain/{domain}/routes.go"
-    if not routes_file.exists():
+actual = {}
+for routes_file in sorted(repo.glob("backend-go/internal/**/*.go")):
+    if routes_file.name.endswith("_test.go"):
         continue
+    source = str(routes_file.relative_to(repo))
     for method, path in extract_routes(routes_file):
-        total += 1
-        if (method, path) not in registered:
-            missing.append((domain, method, path))
+        actual[(method, path)] = source
+
+missing = sorted(set(actual) - set(policies))
+stale = sorted(set(policies) - set(actual))
+wrong_source = sorted(
+    (method, path, policies[(method, path)][2], source)
+    for (method, path), source in actual.items()
+    if (method, path) in policies and policies[(method, path)][2] != source
+)
 
 if missing:
-    for domain, method, path in missing:
-        print(f"  ❌ {method} {path} from {domain}/routes.go NOT registered in routecatalog")
-    print(f"  ❌ {len(missing)} of {total} mutation routes are missing from routecatalog")
+    for method, path in missing:
+        print(f"  ❌ {method} {path} from {actual[(method, path)]} has no explicit policy")
+if stale:
+    for method, path in stale:
+        print(f"  ❌ stale policy for removed route: {method} {path}")
+if wrong_source:
+    for method, path, expected, observed in wrong_source:
+        print(f"  ❌ policy source mismatch for {method} {path}: {expected} != {observed}")
+if missing or stale or wrong_source:
     sys.exit(1)
 
-print(f"  ✓ All {total} mutation endpoints are registered in routecatalog")
+counts = {kind: 0 for kind in ("public", "standard", "high")}
+for classification, _, _ in policies.values():
+    if classification not in counts:
+        print(f"  ❌ unknown mutation classification: {classification}")
+        sys.exit(1)
+    counts[classification] += 1
+print(
+    f"  ✓ All {len(actual)} mutation endpoints explicitly classified "
+    f"(public={counts['public']}, standard={counts['standard']}, high={counts['high']})"
+)
 PY
 then
   has_violation=1

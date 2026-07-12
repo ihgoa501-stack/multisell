@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,8 +18,8 @@ import (
 
 // Audit returns a middleware that records operation logs for mutating requests
 // (POST/PUT/PATCH/DELETE) and GET requests to sensitive paths. It runs after
-// the handler completes and does not block the response — logging happens on a
-// background goroutine so request latency is unaffected.
+// the handler completes. The audit write is awaited with a short deadline so a
+// completed request cannot leave an untracked background write behind.
 //
 // Reads: request method, path, :id param, operator from JWT context (user_id
 // or username), client IP, request body (truncated to 2KB, never secrets).
@@ -113,26 +113,26 @@ func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 		}
 
 		entry := &operationlog.OperationLog{
-			Module:     moduleFromPath(path),
-			Action:     actionFromMethod(method, c.FullPath()),
-			ResourceID: resourceIDFromCtx(c),
-			Content:    composeAuditContent(c, bodySnippet, status),
-			Operator:   operator,
-			UserID:     userID,
-			Result:     result,
-			IP:         c.ClientIP(),
-			Duration:   int(latency.Milliseconds()),
+			Module:        moduleFromPath(path),
+			Action:        actionFromMethod(method, c.FullPath()),
+			ResourceID:    resourceIDFromCtx(c),
+			Content:       composeAuditContent(c, bodySnippet, status),
+			Operator:      operator,
+			UserID:        userID,
+			Result:        result,
+			IP:            c.ClientIP(),
+			Duration:      int(latency.Milliseconds()),
+			CorrelationID: c.GetString("request_id"),
 		}
 
-		// Fire-and-forget. Use a separate goroutine with a context timeout so a
-		// slow DB never blocks the request goroutine.
-		go func(e *operationlog.OperationLog) {
-			_, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			if err := svc.Create(e); err != nil {
-				logger.Warn("audit log write failed", zap.Error(err), zap.String("path", path))
-			}
-		}(entry)
+		// Await the write so request completion has deterministic audit
+		// semantics. The detached timeout context survives cancellation of the
+		// incoming request while still bounding database latency.
+		auditCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := svc.CreateWithContext(auditCtx, entry); err != nil {
+			logger.Error("audit log write failed", zap.Error(err), zap.String("path", path))
+		}
 	}
 }
 

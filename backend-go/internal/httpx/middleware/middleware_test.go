@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
+	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
@@ -173,6 +174,52 @@ func TestAuth_WrongSecret(t *testing.T) {
 	}
 }
 
+func TestAuth_AcceptsExplicitPreviousKeyDuringRotation(t *testing.T) {
+	cfg := testConfig()
+	cfg.JWT.KeyID = "2026-07"
+	cfg.JWT.Secret = "new-secret"
+	cfg.JWT.PreviousKeysJSON = `{"2026-06":"old-secret"}`
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"type": "access", "user_id": float64(1), "exp": float64(time.Now().Add(time.Hour).Unix()),
+	})
+	token.Header["kid"] = "2026-06"
+	signed, err := token.SignedString([]byte("old-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := gin.New()
+	r.Use(Auth(cfg))
+	r.GET("/protected", func(c *gin.Context) { c.Status(http.StatusOK) })
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("previous key token status=%d body=%s", w.Code, w.Body.String())
+	}
+	legacy := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"type": "access", "user_id": float64(1), "exp": float64(time.Now().Add(time.Hour).Unix()),
+	})
+	legacySigned, _ := legacy.SignedString([]byte("old-secret"))
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+legacySigned)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("legacy no-kid token status=%d", w.Code)
+	}
+
+	token.Header["kid"] = "unknown"
+	signed, _ = token.SignedString([]byte("old-secret"))
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown kid status=%d", w.Code)
+	}
+}
+
 func TestAuth_SetsUserID_Float64Claim(t *testing.T) {
 	cfg := testConfig()
 	r := gin.New()
@@ -184,7 +231,7 @@ func TestAuth_SetsUserID_Float64Claim(t *testing.T) {
 	})
 
 	tok := signToken(t, cfg, jwt.MapClaims{
-		"type": "access",
+		"type":    "access",
 		"user_id": float64(42),
 		"exp":     float64(time.Now().Add(time.Hour).Unix()),
 	})
@@ -217,7 +264,7 @@ func TestAuth_SetsUserID_Int64Claim(t *testing.T) {
 	})
 
 	tok := signToken(t, cfg, jwt.MapClaims{
-		"type": "access",
+		"type":    "access",
 		"user_id": int64(100),
 		"exp":     float64(time.Now().Add(time.Hour).Unix()),
 	})
@@ -243,16 +290,13 @@ func TestAuth_MissingUserIDClaim(t *testing.T) {
 	cfg := testConfig()
 	r := gin.New()
 	r.Use(Auth(cfg))
-	var captured interface{}
-	r.GET("/protected", func(c *gin.Context) {
-		captured, _ = c.Get("user_id")
-		c.Status(http.StatusOK)
-	})
+	var handlerCalled bool
+	r.GET("/protected", func(c *gin.Context) { handlerCalled = true; c.Status(http.StatusOK) })
 
 	tok := signToken(t, cfg, jwt.MapClaims{
 		"type": "access",
-		"sub": "test-subject",
-		"exp": float64(time.Now().Add(time.Hour).Unix()),
+		"sub":  "test-subject",
+		"exp":  float64(time.Now().Add(time.Hour).Unix()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -260,11 +304,11 @@ func TestAuth_MissingUserIDClaim(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", w.Code)
 	}
-	if captured != nil {
-		t.Fatalf("expected no user_id set, got %+v", captured)
+	if handlerCalled {
+		t.Fatal("handler was called without a numeric user identity")
 	}
 }
 
@@ -272,14 +316,11 @@ func TestAuth_NonNumericUserID(t *testing.T) {
 	cfg := testConfig()
 	r := gin.New()
 	r.Use(Auth(cfg))
-	var captured interface{}
-	r.GET("/protected", func(c *gin.Context) {
-		captured, _ = c.Get("user_id")
-		c.Status(http.StatusOK)
-	})
+	var handlerCalled bool
+	r.GET("/protected", func(c *gin.Context) { handlerCalled = true; c.Status(http.StatusOK) })
 
 	tok := signToken(t, cfg, jwt.MapClaims{
-		"type": "access",
+		"type":    "access",
 		"user_id": "alice",
 		"exp":     float64(time.Now().Add(time.Hour).Unix()),
 	})
@@ -289,11 +330,32 @@ func TestAuth_NonNumericUserID(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", w.Code)
 	}
-	if captured != "alice" {
-		t.Fatalf("user_id = %v, want 'alice'", captured)
+	if handlerCalled {
+		t.Fatal("handler was called with a non-numeric user identity")
+	}
+}
+
+func TestAuth_RejectsNonHS256HMAC(t *testing.T) {
+	cfg := testConfig()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS384, jwt.MapClaims{
+		"type": "access", "user_id": float64(1), "exp": float64(time.Now().Add(time.Hour).Unix()),
+	})
+	signed, err := token.SignedString([]byte(cfg.JWT.Secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := gin.New()
+	r.Use(Auth(cfg))
+	r.GET("/protected", func(c *gin.Context) { c.Status(http.StatusOK) })
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", w.Code)
 	}
 }
 
@@ -397,9 +459,6 @@ func TestAudit_RecordsMutationPOST(t *testing.T) {
 		t.Fatalf("status = %d, want 201", w.Code)
 	}
 
-	// Allow the async goroutine to write the audit log
-	time.Sleep(150 * time.Millisecond)
-
 	var logs []operationlog.OperationLog
 	db.Find(&logs)
 	if len(logs) != 1 {
@@ -436,8 +495,6 @@ func TestAudit_RecordsMutationPUT(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	time.Sleep(150 * time.Millisecond)
-
 	var logs []operationlog.OperationLog
 	db.Find(&logs)
 	if len(logs) != 1 {
@@ -462,8 +519,6 @@ func TestAudit_RecordsMutationDELETE(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	time.Sleep(150 * time.Millisecond)
-
 	var logs []operationlog.OperationLog
 	db.Find(&logs)
 	if len(logs) != 1 {
@@ -487,8 +542,6 @@ func TestAudit_RecordsMutationPATCH(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/order/42", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-
-	time.Sleep(150 * time.Millisecond)
 
 	var logs []operationlog.OperationLog
 	db.Find(&logs)
@@ -517,8 +570,6 @@ func TestAudit_RecordsSensitiveGET_Finance(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 
-	time.Sleep(150 * time.Millisecond)
-
 	var logs []operationlog.OperationLog
 	db.Find(&logs)
 	if len(logs) != 1 {
@@ -545,8 +596,6 @@ func TestAudit_RecordsSensitiveGET_Orders(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	time.Sleep(150 * time.Millisecond)
-
 	var count int64
 	db.Model(&operationlog.OperationLog{}).Count(&count)
 	if count != 1 {
@@ -566,8 +615,6 @@ func TestAudit_RecordsSensitiveGET_RBAC(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/rbac/roles", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-
-	time.Sleep(150 * time.Millisecond)
 
 	var count int64
 	db.Model(&operationlog.OperationLog{}).Count(&count)
@@ -593,8 +640,6 @@ func TestAudit_RecordsFailure(t *testing.T) {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
 
-	time.Sleep(150 * time.Millisecond)
-
 	var logs []operationlog.OperationLog
 	db.Find(&logs)
 	if len(logs) != 1 {
@@ -618,8 +663,6 @@ func TestAudit_OperatorFallbackToUserID(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	time.Sleep(150 * time.Millisecond)
-
 	var logs []operationlog.OperationLog
 	db.Find(&logs)
 	if len(logs) != 1 {
@@ -641,8 +684,6 @@ func TestAudit_OperatorAnonymousWhenNoUserID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/order", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-
-	time.Sleep(150 * time.Millisecond)
 
 	var logs []operationlog.OperationLog
 	db.Find(&logs)
@@ -860,7 +901,6 @@ func TestComposeAuditContent_WithError(t *testing.T) {
 	r.ServeHTTP(w, req)
 	_ = w
 }
-
 
 // ===================== RBAC Middleware Tests =====================
 
@@ -1230,34 +1270,55 @@ func TestRateLimit_WindowExpires(t *testing.T) {
 }
 
 func TestRateLimit_CleanupExpiredEntries(t *testing.T) {
-	rl := NewRateLimiter(1, 50*time.Millisecond)
+	rl := NewRateLimiter(1, time.Minute)
 	r := gin.New()
 	r.Use(rl.Limit())
 	r.GET("/test", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	// Make a request to create an entry
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.RemoteAddr = "192.0.2.1:1234"
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("first: status = %d, want 200", w.Code)
 	}
 
-	// Wait for entry to expire
-	time.Sleep(70 * time.Millisecond)
-
-	// Manually cleanup (mimics CleanupPeriodic)
 	rl.mu.Lock()
-	now := time.Now()
-	for ip, entry := range rl.requests {
-		if now.After(entry.expireAt) {
-			delete(rl.requests, ip)
-		}
+	for _, entry := range rl.requests {
+		entry.expireAt = time.Now().Add(-time.Second)
 	}
+	rl.lastCleanup = time.Now().Add(-2 * rl.window)
 	rl.mu.Unlock()
 
-	if len(rl.requests) != 0 {
-		t.Fatalf("expected 0 entries after cleanup, got %d", len(rl.requests))
+	// A later request performs opportunistic cleanup before adding its own entry.
+	req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req2.RemoteAddr = "192.0.2.2:1234"
+	r.ServeHTTP(httptest.NewRecorder(), req2)
+	rl.mu.Lock()
+	_, oldExists := rl.requests["192.0.2.1"]
+	remaining := len(rl.requests)
+	rl.mu.Unlock()
+	if oldExists || remaining != 1 {
+		t.Fatalf("expired entry cleanup old=%v remaining=%d", oldExists, remaining)
+	}
+}
+
+func TestRateLimitBoundsDistinctIPMemory(t *testing.T) {
+	rl := NewRateLimiter(10, time.Minute)
+	rl.maxEntries = 1
+	r := gin.New()
+	r.Use(rl.Limit())
+	r.GET("/test", func(c *gin.Context) { c.Status(http.StatusOK) })
+	first := httptest.NewRequest(http.MethodGet, "/test", nil)
+	first.RemoteAddr = "192.0.2.1:1234"
+	r.ServeHTTP(httptest.NewRecorder(), first)
+	second := httptest.NewRequest(http.MethodGet, "/test", nil)
+	second.RemoteAddr = "192.0.2.2:1234"
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, second)
+	if w.Code != http.StatusTooManyRequests || len(rl.requests) != 1 {
+		t.Fatalf("status=%d entries=%d", w.Code, len(rl.requests))
 	}
 }
 
@@ -1310,6 +1371,30 @@ func TestRequestID_PreservesExisting(t *testing.T) {
 	}
 	if got := w.Header().Get("X-Request-ID"); got != "client-provided-id" {
 		t.Errorf("response header = %q, want 'client-provided-id'", got)
+	}
+}
+
+func TestRequestID_PropagatesCorrelationAndRejectsUnsafeInput(t *testing.T) {
+	r := gin.New()
+	r.Use(RequestID())
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, eventbus.CorrelationIDFromContext(c.Request.Context()))
+	})
+
+	safe := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set(requestIDHeader, "owner-flow:123")
+	r.ServeHTTP(safe, req)
+	if safe.Body.String() != "owner-flow:123" {
+		t.Fatalf("correlation=%q", safe.Body.String())
+	}
+
+	unsafe := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set(requestIDHeader, "bad\nlog-entry")
+	r.ServeHTTP(unsafe, req)
+	if unsafe.Body.String() == "bad\nlog-entry" || !safeRequestID.MatchString(unsafe.Body.String()) {
+		t.Fatalf("unsafe request ID was not replaced: %q", unsafe.Body.String())
 	}
 }
 
@@ -1384,6 +1469,10 @@ func TestCORS_OptionsReturnsNoContent(t *testing.T) {
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", w.Code)
+	}
+	allowed := w.Header().Get("Access-Control-Allow-Headers")
+	if !strings.Contains(allowed, "X-Approval-ID") || !strings.Contains(allowed, "Idempotency-Key") {
+		t.Fatalf("high-risk headers missing from CORS allowlist: %q", allowed)
 	}
 }
 

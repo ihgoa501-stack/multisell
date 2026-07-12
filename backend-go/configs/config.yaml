@@ -2,6 +2,14 @@ server:
   port: 8080
   mode: debug  # debug | release | test
   version: "0.2.1"
+  read_header_timeout: 5s
+  read_timeout: 60s
+  write_timeout: 0s       # SSE/streaming responses; operation contexts enforce execution deadlines
+  idle_timeout: 120s
+  shutdown_timeout: 10s
+  max_header_bytes: 1048576
+  max_request_body_bytes: 33554432
+  swagger_enabled: true
 
 database:
   host: localhost
@@ -12,6 +20,8 @@ database:
   sslmode: disable  # override to "require" for production via DB_SSLMODE env
   max_idle_conns: 10
   max_open_conns: 100
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 5m
   schemas:
     - order_module
     - finance_module
@@ -33,8 +43,11 @@ metrics:
 
 jwt:
   secret: dev-secret-change-in-production
+  key_id: current
+  previous_keys_json: ""
   expiry_hours: 24
   refresh_expiry_hours: 168
+  registration_enabled: true  # production compose forces false; Owner accounts use the approved bootstrap/reset process
 
 llm:
   daily_budget_usd: 0       # 0 = unlimited; set to cap daily LLM spend in USD

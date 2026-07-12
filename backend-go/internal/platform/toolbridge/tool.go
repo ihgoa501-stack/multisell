@@ -73,14 +73,16 @@ func (m ExecutionMode) String() string {
 
 // ToolCall is the typed envelope for invoking a tool through ToolBridge.
 type ToolCall struct {
-	ToolName         string                 `json:"tool_name"`
-	Version          string                 `json:"version"`
-	Category         ToolCategory           `json:"category"`
-	Mode             ExecutionMode          `json:"mode"`
-	Input            map[string]interface{} `json:"input"`
-	ApprovalID       *int64                 `json:"approval_id,omitempty"`
-	IdempotencyKey   string                 `json:"idempotency_key,omitempty"`
-	CorrelationID    string                 `json:"correlation_id,omitempty"`
+	ToolName       string                 `json:"tool_name"`
+	Version        string                 `json:"version"`
+	Category       ToolCategory           `json:"category"`
+	Mode           ExecutionMode          `json:"mode"`
+	Input          map[string]interface{} `json:"input"`
+	ApprovalID     *int64                 `json:"approval_id,omitempty"`
+	IdempotencyKey string                 `json:"idempotency_key,omitempty"`
+	CorrelationID  string                 `json:"correlation_id,omitempty"`
+	TargetType     string                 `json:"target_type,omitempty"`
+	TargetID       string                 `json:"target_id,omitempty"`
 }
 
 // ToolResult is the typed result of a tool call.
@@ -98,6 +100,15 @@ type ToolResult struct {
 // Validate checks whether a tool call can proceed based on category and mode.
 // Returns nil if the call is allowed, or an error describing why it is blocked.
 func (tc ToolCall) Validate() error {
+	if tc.ToolName == "" {
+		return errors.New("toolbridge: tool_name is required")
+	}
+	if tc.Category < ToolCategoryRead || tc.Category > ToolCategoryMutation {
+		return errors.New("toolbridge: invalid tool category")
+	}
+	if tc.Mode < ModeDryRun || tc.Mode > ModeProduction {
+		return errors.New("toolbridge: invalid execution mode")
+	}
 	// Dry-run is always allowed.
 	if tc.Mode == ModeDryRun {
 		return nil
@@ -107,6 +118,9 @@ func (tc ToolCall) Validate() error {
 	if tc.Mode == ModeProduction && tc.Category == ToolCategoryMutation {
 		if tc.ApprovalID == nil {
 			return ErrMutationRequiresApproval
+		}
+		if tc.IdempotencyKey == "" {
+			return errors.New("toolbridge: production mutation requires idempotency_key")
 		}
 	}
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=LingMirror verified PostgreSQL backup
+Requires=docker.service
+After=docker.service
+OnFailure=lingmirror-ops-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lingmirror
+EnvironmentFile=/etc/lingmirror/ops.env
+ExecStart=/usr/bin/docker compose --profile manual -f docker-compose.yml -f docker-compose.prod.yml run --rm backup
+TimeoutStartSec=4h

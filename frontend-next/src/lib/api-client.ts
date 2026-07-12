@@ -53,6 +53,11 @@ interface QueueItem {
   reject: (error: unknown) => void;
 }
 
+export interface ApprovalExecutionContext {
+  approvalId: number;
+  idempotencyKey: string;
+}
+
 export class ApiClient {
   private baseUrl: string;
   private refreshing = false;
@@ -206,6 +211,7 @@ export class ApiClient {
     path: string,
     body?: unknown,
     params?: Record<string, string>,
+    extraHeaders?: Record<string, string>,
   ): Promise<T> {
     const url = new URL(`${this.baseUrl}${path}`);
     if (params) {
@@ -216,7 +222,7 @@ export class ApiClient {
 
     const options: RequestInit = {
       method,
-      headers: this.getHeaders(),
+      headers: { ...this.getHeaders(), ...extraHeaders },
       body: body ? JSON.stringify(body) : undefined,
     };
 
@@ -287,7 +293,10 @@ export class ApiClient {
     // Retry the original request with the new token
     const retryOptions: RequestInit = {
       method: options.method || 'GET',
-      headers: this.getHeaders(newToken),
+      headers: {
+        ...(options.headers as Record<string, string> | undefined),
+        ...this.getHeaders(newToken),
+      },
       body: options.body,
     };
 
@@ -321,6 +330,32 @@ export class ApiClient {
 
   async delete<T>(path: string): Promise<Result<T>> {
     return this.request<Result<T>>('DELETE', path);
+  }
+
+  private approvalHeaders(execution: ApprovalExecutionContext): Record<string, string> {
+    if (!Number.isSafeInteger(execution.approvalId) || execution.approvalId <= 0) {
+      throw new ApiError(400, 'A positive approvalId is required', 'validation');
+    }
+    const key = execution.idempotencyKey.trim();
+    if (key.length < 8 || key.length > 255 || /\s/.test(key)) {
+      throw new ApiError(400, 'Idempotency key must contain 8-255 non-whitespace characters', 'validation');
+    }
+    return {
+      'X-Approval-ID': String(execution.approvalId),
+      'Idempotency-Key': key,
+    };
+  }
+
+  async postApproved<T>(path: string, body: unknown, execution: ApprovalExecutionContext): Promise<Result<T>> {
+    return this.request<Result<T>>('POST', path, body, undefined, this.approvalHeaders(execution));
+  }
+
+  async putApproved<T>(path: string, body: unknown, execution: ApprovalExecutionContext): Promise<Result<T>> {
+    return this.request<Result<T>>('PUT', path, body, undefined, this.approvalHeaders(execution));
+  }
+
+  async deleteApproved<T>(path: string, execution: ApprovalExecutionContext): Promise<Result<T>> {
+    return this.request<Result<T>>('DELETE', path, undefined, undefined, this.approvalHeaders(execution));
   }
 
   /**

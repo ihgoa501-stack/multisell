@@ -98,10 +98,11 @@ func TestToolCall_Validate_Mutation_Production_RequiresApproval(t *testing.T) {
 func TestToolCall_Validate_Mutation_Production_WithApproval_Allowed(t *testing.T) {
 	approvalID := int64(42)
 	call := ToolCall{
-		ToolName:   "publish_listing",
-		Category:   ToolCategoryMutation,
-		Mode:       ModeProduction,
-		ApprovalID: &approvalID,
+		ToolName:       "publish_listing",
+		Category:       ToolCategoryMutation,
+		Mode:           ModeProduction,
+		ApprovalID:     &approvalID,
+		IdempotencyKey: "publish:42",
 	}
 	if err := call.Validate(); err != nil {
 		t.Errorf("mutation with approval should be allowed, got: %v", err)

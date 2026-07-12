@@ -13,7 +13,8 @@ import (
 
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	provider := ai.NewLLMProvider(logger)
-	service := NewService(db, logger, demandcase.NewService(db, logger), experiment.NewService(db, logger), provider, ai.NewTraceWriter(db, logger)).WithSourcingReader(sourcing1688.NewService(db, logger))
+	experimentService := experiment.NewService(db, logger)
+	service := NewService(db, logger, demandcase.NewService(db, logger), experimentService, provider, ai.NewTraceWriter(db, logger)).WithSourcingReader(sourcing1688.NewService(db, logger)).WithBusinessClosureReader(experimentService)
 	h := NewHandler(service)
 	g := rg.Group("/xiao-q", middleware.RequirePermission(db, "agent.read"))
 	g.GET("/identity", h.Identity)

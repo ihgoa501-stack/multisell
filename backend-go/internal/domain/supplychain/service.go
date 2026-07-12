@@ -91,7 +91,7 @@ func (EventOutboxRow) TableName() string { return "event_outbox" }
 // Events are matched to the flow via the "flow_id" key in the payload JSON.
 // The orchestrator attaches flow_id when publishing supplychain.* events
 // (e.g. supplychain.quote_requested, supplychain.flywheel), so each event
-// tied to this flow appears in the timeline ordered by created_at.
+// tied to this flow appears in the timeline ordered by the monotonic outbox ID.
 //
 // The JSON-path filter is dialect-aware: PostgreSQL uses payload->>'flow_id'
 // while SQLite uses json_extract(payload, '$.flow_id') for in-memory tests.
@@ -102,7 +102,10 @@ func (s *Service) GetEvents(ctx context.Context, id string) (*FlowEventsResponse
 	}
 
 	var events []EventOutboxRow
-	q := s.db.WithContext(ctx).Model(&EventOutboxRow{}).Order("created_at ASC")
+	// The database-generated outbox ID is the durable insertion sequence.
+	// Timestamps can collide or move backwards after a clock adjustment, so
+	// they are display metadata rather than the causal ordering key.
+	q := s.db.WithContext(ctx).Model(&EventOutboxRow{}).Order("id ASC")
 	switch s.db.Dialector.Name() {
 	case "postgres":
 		q = q.Where("payload->>'flow_id' = ?", id)

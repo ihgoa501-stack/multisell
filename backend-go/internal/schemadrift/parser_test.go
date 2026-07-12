@@ -401,3 +401,25 @@ func TestParseSQL_ComplexCreateTableWithDefaultInParens(t *testing.T) {
 			len(tables), len(tables[0].Columns))
 	}
 }
+
+func TestParseSQL_QuotedTableName(t *testing.T) {
+	tables, err := parseSQL(`CREATE TABLE IF NOT EXISTS "user" (id BIGINT PRIMARY KEY);`)
+	if err != nil || len(tables) != 1 || tables[0].Name != "user" {
+		t.Fatalf("tables=%+v err=%v", tables, err)
+	}
+}
+
+func TestParseSQL_DoesNotTreatCreateInsideProcedureAsTopLevelMigration(t *testing.T) {
+	sql := `DO $$ BEGIN
+IF NOT EXISTS (SELECT 1) THEN
+  CREATE TABLE should_not_be_parsed (id BIGINT);
+END IF;
+END $$;`
+	tables, err := parseSQL(sql)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tables) != 0 {
+		t.Fatalf("procedure body produced fake tables: %+v", tables)
+	}
+}

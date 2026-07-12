@@ -95,7 +95,8 @@ Owner 不需要选择 Docker、数据库参数或迁移命令。Agent 负责技�
 必须同时满足：
 
 - `https://正式域名/` 可以打开；
-- `/api/health` 返回成功；
+- `/api/health` 返回成功，证明进程存活；
+- `/api/ready` 返回成功，证明数据库、EventBus 和 Scheduler 已可接收流量；
 - Owner 可以登录；
 - 数据库健康且无持续错误；
 - 3000、5432、8080 不对公网开放；
@@ -289,11 +290,14 @@ openssl rand -base64 32   # PLATFORM_TOKEN_ENCRYPTION_KEY
 cd /opt/multisell
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /tmp/lingmirror-compose-rendered.yml
+./scripts/verify_prod_compose.sh
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 ```
 
 **启动前强制停止检查：** 当前仓库的基础 `docker-compose.yml` 包含开发端口映射。Agent 必须检查合并后的 `/tmp/lingmirror-compose-rendered.yml`。如果 3000、5432 或 8080 绑定到 `0.0.0.0` 或未指定 Host IP，禁止启动生产栈；必须先把生产覆写修正为 Docker 内网或 `127.0.0.1`，并重新执行 `docker compose ... config`。不能只依赖 UFW，因为 Docker 端口转发可能绕过普通 UFW 入站规则。
+
+仓库的生产覆写使用 Compose `!reset` 清除开发端口、源码挂载和开发启动命令；`scripts/verify_prod_compose.sh` 会渲染最终 JSON 并在这些边界回归时失败。脚本通过只是配置证据，首次生产部署仍必须从外网实测 3000、5432、8080 不可连接。
 
 确认端口边界安全后，才允许启动数据库并确认健康，再运行迁移。不得直接执行全栈启动掩盖迁移错误。
 
@@ -301,8 +305,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 
 ```text
 db       仅 Docker 内网
-backend  仅 Docker 内网或 127.0.0.1:8080
-frontend 仅 Docker 内网或 127.0.0.1:3000
+backend  仅 Docker 内网
+frontend 仅 Docker 内网
 caddy    公网 80/443
 ```
 
@@ -324,6 +328,12 @@ SHA-256：8a1c8c2d95e477c5860236003a1c9f17fbfd348f8c41b8445b5827b6afb70fe7
 ```bash
 shasum -a 256 /Users/lc/Backups/lingmirror/multisell-pre-recovery-20260711-162815.dump
 pg_restore -l /Users/lc/Backups/lingmirror/multisell-pre-recovery-20260711-162815.dump >/dev/null
+```
+
+对当前脚本生成的 `.dump`，还必须运行隔离恢复验证：
+
+```bash
+./scripts/verify_backup_restore.sh /path/to/multisell_YYYY-MM-DD_HHMMSS.dump
 ```
 
 校验值不匹配或 `pg_restore -l` 失败时立即停止。
@@ -401,8 +411,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 ### 13.2 基础健康检查
 
 ```bash
-curl -fsS http://127.0.0.1:8080/api/health
-curl -fsSI http://127.0.0.1/
+: "${DOMAIN:?set the production domain}"
+curl -fsS "https://${DOMAIN}/api/health"
+curl -fsS "https://${DOMAIN}/api/ready"
+curl -fsSI "https://${DOMAIN}/"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --since 5m backend db
 ```
 
@@ -433,13 +445,24 @@ nc -vz 118.196.42.156 443
 - 登录成功与错误密码拒绝；
 - JWT 刷新；
 - RBAC 权限；
-- `/api/health`；
+- `/api/health`（进程存活）；
+- `/api/ready`（数据库、EventBus、Scheduler 就绪）；
 - WebSocket `/ws`；
 - 审计日志写入；
 - 数据库健康检查；
 - Owner 核心页面；
 - 关键备份可读取；
 - 外部平台写入保持关闭。
+
+监控栈使用同一个 Compose project 和 Docker 网络启动：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.monitoring.yml up -d prometheus alertmanager grafana
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.monitoring.yml ps
+curl -fsS http://127.0.0.1:9090/-/ready
+```
+
+必须人工触发一条无害测试告警，确认 Alertmanager 同时出现 `firing` 和 `resolved`，并记录 Owner 实际收到通知的时间；配置文件通过或容器 running 不能代替送达证据。
 
 ## 14. 日常更新部署
 
@@ -491,6 +514,8 @@ git pull --ff-only origin main
 - 每次迁移和高风险部署前手动备份；
 - 每月至少一次恢复演练；
 - 备份必须有 SHA-256；
+- 异地 bucket 必须启用 Versioning 和默认 Object Lock 保留策略；
+- archive 与 checksum 对象必须实际带有 Object Lock 模式和 retain-until 时间；
 - 只有实际恢复成功过的备份才能标记为“可恢复”。
 
 备份不得只保存在同一台服务器。

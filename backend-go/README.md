@@ -5,7 +5,8 @@ This is the active LingMirror backend.
 - Stack: Go / Gin / GORM / PostgreSQL
 - Entry: `cmd/server/main.go`
 - API prefix: `/api/v1`
-- Health check: `/api/health`
+- Liveness check: `/api/health`
+- Readiness check (database + EventBus + Scheduler): `/api/ready`
 - Migrations: `migrations/`
 
 ## Development

@@ -18,6 +18,7 @@ type platformStats struct {
 	ConsecutiveFailures int
 	Degraded            bool
 	DegradedAt          time.Time
+	HalfOpenProbe       bool
 }
 
 // ExternalCallTracker monitors external platform call health.
@@ -25,6 +26,7 @@ type ExternalCallTracker struct {
 	mu        sync.Mutex
 	platforms map[string]*platformStats
 	threshold int // consecutive failures to mark degraded (default 3)
+	cooldown  time.Duration
 }
 
 // NewExternalCallTracker creates a tracker with custom degradation threshold.
@@ -35,6 +37,7 @@ func NewExternalCallTracker(threshold int) *ExternalCallTracker {
 	return &ExternalCallTracker{
 		platforms: make(map[string]*platformStats),
 		threshold: threshold,
+		cooldown:  30 * time.Second,
 	}
 }
 
@@ -57,10 +60,33 @@ func (t *ExternalCallTracker) RecordCall(platform string, err error) {
 			ps.Degraded = true
 			ps.DegradedAt = time.Now()
 		}
+		ps.HalfOpenProbe = false
 	} else {
 		ps.ConsecutiveFailures = 0
 		ps.Degraded = false
+		ps.HalfOpenProbe = false
 	}
+	state := 0.0
+	if ps.Degraded {
+		state = 1
+	}
+	toolCircuitOpen.WithLabelValues(platform).Set(state)
+}
+
+// AllowCall implements open/half-open admission. After cooldown exactly one
+// caller is admitted as a probe; all others fail fast until it completes.
+func (t *ExternalCallTracker) AllowCall(platform string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ps, ok := t.platforms[platform]
+	if !ok || !ps.Degraded {
+		return true
+	}
+	if time.Since(ps.DegradedAt) < t.cooldown || ps.HalfOpenProbe {
+		return false
+	}
+	ps.HalfOpenProbe = true
+	return true
 }
 
 // IsDegraded returns true if the platform is currently degraded.

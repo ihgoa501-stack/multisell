@@ -14,12 +14,15 @@ type OperationLog struct {
 	Result            string    `gorm:"column:result;size:20" json:"result"` // success/failure
 	IP                string    `gorm:"column:ip;size:50" json:"ip"`
 	Duration          int       `gorm:"column:duration" json:"duration"`
-	TriggerType       string    `gorm:"column:trigger_type;size:50" json:"trigger_type"`                          // system, owner_approval, manual, agent
-	AgentSuggestionID *int64    `gorm:"column:agent_suggestion_id" json:"agent_suggestion_id,omitempty"`           // listing_recommendation.id
-	ApprovalID        *int64    `gorm:"column:approval_id" json:"approval_id,omitempty"`                           // approval_request.id
-	EntityType        string    `gorm:"column:entity_type;size:50" json:"entity_type"`                             // listing_task, product, platform_sync
-	EntityID          int64     `gorm:"column:entity_id" json:"entity_id"`                                         // entity's primary key
+	TriggerType       string    `gorm:"column:trigger_type;size:50" json:"trigger_type"`                 // system, owner_approval, manual, agent
+	AgentSuggestionID *int64    `gorm:"column:agent_suggestion_id" json:"agent_suggestion_id,omitempty"` // listing_recommendation.id
+	ApprovalID        *int64    `gorm:"column:approval_id" json:"approval_id,omitempty"`                 // approval_request.id
+	EntityType        string    `gorm:"column:entity_type;size:50" json:"entity_type"`                   // listing_task, product, platform_sync
+	EntityID          int64     `gorm:"column:entity_id" json:"entity_id"`                               // entity's primary key
 	CreatedAt         time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	PreviousHash      string    `gorm:"column:previous_hash;size:64;not null;default:''" json:"previous_hash"`
+	RecordHash        string    `gorm:"column:record_hash;size:64;not null;default:''" json:"record_hash"`
+	CorrelationID     string    `gorm:"column:correlation_id;size:128;not null;default:''" json:"correlation_id"`
 }
 
 // TableName overrides the default table name.

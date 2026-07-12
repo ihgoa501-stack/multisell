@@ -35,10 +35,10 @@ var (
 
 // Client represents a WebSocket client.
 type Client struct {
-	Hub     *Hub
-	Conn    *websocket.Conn
-	Send    chan []byte
-	UserID  *int64
+	Hub        *Hub
+	Conn       *websocket.Conn
+	Send       chan []byte
+	UserID     *int64
 	aiChatFunc AIChatFunc
 }
 

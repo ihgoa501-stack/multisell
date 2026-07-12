@@ -3,6 +3,7 @@ package eventbus
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -44,7 +45,7 @@ func NewDLQManager(db *gorm.DB, logger *zap.Logger) *DLQManager {
 }
 
 // MoveToDLQ persists a failed event to the event_dlq table.
-func (m *DLQManager) MoveToDLQ(evt Event, lastError string, attempts int) {
+func (m *DLQManager) MoveToDLQ(evt Event, lastError string, attempts int) error {
 	payloadBytes, err := json.Marshal(evt.Payload)
 	if err != nil {
 		m.logger.Warn("DLQ: failed to marshal payload", zap.Error(err))
@@ -65,8 +66,7 @@ func (m *DLQManager) MoveToDLQ(evt Event, lastError string, attempts int) {
 		CreatedAt:        time.Now(),
 	}
 
-	//nolint:errcheck
-	m.db.Create(&dlEvent)
+	return m.db.Create(&dlEvent).Error
 }
 
 // ReplayEvents re-publishes DLQ events back to the bus using the given publish function.
@@ -107,10 +107,16 @@ func (m *DLQManager) ReplayEvents(ids []uint, publishFn func(Event) error) (int,
 		}
 
 		now := time.Now()
-		m.db.Model(&DLEvent{}).Where("id = ?", dl.ID).Updates(map[string]interface{}{
+		updated := m.db.Model(&DLEvent{}).Where("id = ? AND replayed_at IS NULL", dl.ID).Updates(map[string]interface{}{
 			"replayed_at": now,
 			"replayed_by": "system",
 		})
+		if updated.Error != nil {
+			return replayed, updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return replayed, fmt.Errorf("DLQ event %d replay state changed concurrently", dl.ID)
+		}
 		replayed++
 	}
 

@@ -12,17 +12,20 @@
 // non-high-risk routes are unaffected). Only mutating methods
 // (POST/PUT/PATCH/DELETE) are gated by the middleware.
 //
-// CI check: check_audit_coverage.sh step [5/5] cross-references registered
-// Gin routes against this catalog and warns about any unregistered routes.
-// Currently warning-only; make it a hard error once all routes are audited.
+// CI check: check_audit_coverage.sh cross-references the explicitly reviewed
+// high-risk domain mutations against this catalog and fails on omissions.
 package routecatalog
+
+import "strings"
 
 // Binding links a Gin route template to an action type.
 type Binding struct {
-	Method      string // GET, POST, PUT, PATCH, DELETE
-	PathPattern string // Gin route template, e.g. "/api/v1/prices/:id"
-	ActionType  string // actioncatalog action type, e.g. "price_update"
-	Description string // human-readable description
+	Method        string // GET, POST, PUT, PATCH, DELETE
+	PathPattern   string // Gin route template, e.g. "/api/v1/prices/:id"
+	ActionType    string // actioncatalog action type, e.g. "price_update"
+	TargetType    string // optional approval target override
+	TargetIDParam string // optional Gin param containing approval target ID
+	Description   string // human-readable description
 }
 
 // matchTable is the pre-built lookup table: "METHOD:/api/v1/path" -> actionType.
@@ -106,7 +109,7 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/rbac/permissions", ActionType: "permission_change", Description: "创建权限"},
 		{Method: "PUT", PathPattern: "/api/v1/rbac/permissions/:id", ActionType: "permission_change", Description: "更新权限"},
 		{Method: "DELETE", PathPattern: "/api/v1/rbac/permissions/:id", ActionType: "permission_change", Description: "删除权限"},
-		{Method: "DELETE", PathPattern: "/api/v1/rbac/users/:id/roles", ActionType: "permission_change", Description: "分配用户角色"},
+		{Method: "POST", PathPattern: "/api/v1/rbac/users/:id/roles", ActionType: "permission_change", Description: "分配用户角色"},
 
 		// ── Listings / Listing task mutations ──
 		{Method: "POST", PathPattern: "/api/v1/listings", ActionType: "listing_optimize", Description: "创建 listing"},
@@ -174,6 +177,80 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/decision", ActionType: "agent_approve", Description: "创建决策"},
 		{Method: "POST", PathPattern: "/api/v1/decision/:id/approve", ActionType: "agent_approve", Description: "审批决策"},
 		{Method: "POST", PathPattern: "/api/v1/decision/:id/reject", ActionType: "agent_approve", Description: "驳回决策"},
+
+		// ── Security, autonomy, and destructive workflow mutations ──
+		{Method: "POST", PathPattern: "/api/v1/agents/:id/actions", ActionType: "agent_approve", Description: "执行 Agent 动作"},
+		{Method: "POST", PathPattern: "/api/v1/ai/actions", ActionType: "agent_approve", Description: "创建 AI 动作"},
+		{Method: "POST", PathPattern: "/api/v1/ai/actions/:id/review", ActionType: "agent_approve", Description: "审核 AI 动作"},
+		{Method: "POST", PathPattern: "/api/v1/allocation/auto-allocate/:skuId", ActionType: "sync_inventory", Description: "执行自动分仓"},
+		{Method: "POST", PathPattern: "/api/v1/agent-rules", ActionType: "permission_change", Description: "创建 Agent 行为规则"},
+		{Method: "PUT", PathPattern: "/api/v1/agent-rules/:id", ActionType: "permission_change", Description: "更新 Agent 行为规则"},
+		{Method: "DELETE", PathPattern: "/api/v1/agent-rules/:id", ActionType: "permission_change", Description: "删除 Agent 行为规则"},
+		{Method: "POST", PathPattern: "/api/v1/agent-rules/:id/toggle", ActionType: "permission_change", Description: "启停 Agent 行为规则"},
+		{Method: "POST", PathPattern: "/api/v1/metabolism/execute", ActionType: "destructive_data_change", Description: "执行数据代谢清理"},
+		{Method: "POST", PathPattern: "/api/v1/policy/rules", ActionType: "permission_change", Description: "创建动作策略"},
+		{Method: "PUT", PathPattern: "/api/v1/policy/rules/:id", ActionType: "permission_change", Description: "更新动作策略"},
+		{Method: "DELETE", PathPattern: "/api/v1/policy/rules/:id", ActionType: "permission_change", Description: "删除动作策略"},
+		{Method: "POST", PathPattern: "/api/v1/policy/rules/:id/toggle", ActionType: "permission_change", Description: "启停动作策略"},
+		{Method: "POST", PathPattern: "/api/v1/products/:id/versions/:versionId/rollback", ActionType: "destructive_data_change", Description: "回滚产品版本"},
+		{Method: "POST", PathPattern: "/api/v1/purchase/orders/:id/approve", ActionType: "destructive_data_change", Description: "批准采购单"},
+		{Method: "POST", PathPattern: "/api/v1/purchase/orders/:id/cancel", ActionType: "destructive_data_change", Description: "取消采购单"},
+		{Method: "POST", PathPattern: "/api/v1/purchase/orders/:id/receive", ActionType: "sync_inventory", Description: "确认采购入库"},
+		{Method: "PUT", PathPattern: "/api/v1/settings/llm", ActionType: "credential_change", Description: "修改 LLM 凭证配置"},
+		{Method: "POST", PathPattern: "/api/v1/shipping/bill-batches/:id/reconcile", ActionType: "destructive_data_change", Description: "物流账单对账"},
+		{Method: "POST", PathPattern: "/api/v1/supply-chain/tracking/:id/sync", ActionType: "sync_inventory", Description: "同步供应链状态"},
+		{Method: "PUT", PathPattern: "/api/v1/trust-scores/:agent_id/level", ActionType: "permission_change", Description: "修改 Agent 自治等级"},
+		{Method: "POST", PathPattern: "/api/v1/trust-scores/auto-upgrade", ActionType: "permission_change", Description: "执行 Agent 自治升级"},
+		{Method: "POST", PathPattern: "/api/v1/workflows/runs/:id/approve", ActionType: "agent_approve", Description: "批准工作流运行"},
+		{Method: "POST", PathPattern: "/api/v1/workflows/runs/:id/reject", ActionType: "agent_approve", Description: "驳回工作流运行"},
+		{Method: "PUT", PathPattern: "/api/v1/compliance/results/:id/suppress", ActionType: "permission_change", Description: "抑制合规结果"},
+		{Method: "PUT", PathPattern: "/api/v1/shipping/bill-items/:id/review", ActionType: "destructive_data_change", Description: "审核物流账单条目"},
+		{Method: "POST", PathPattern: "/api/v1/ai/actions/:id/approve", ActionType: "agent_approve", Description: "批准 AI 动作"},
+		{Method: "POST", PathPattern: "/api/v1/ai/actions/:id/reject", ActionType: "agent_approve", Description: "驳回 AI 动作"},
+		{Method: "POST", PathPattern: "/api/v1/ai/actions/:id/execute", ActionType: "agent_approve", Description: "执行 AI 动作"},
+		{Method: "POST", PathPattern: "/api/v1/feedback/migrate", ActionType: "destructive_data_change", Description: "迁移反馈数据"},
+		{Method: "DELETE", PathPattern: "/api/v1/feedback/categories/:id", ActionType: "destructive_data_change", Description: "删除反馈类别"},
+		{Method: "DELETE", PathPattern: "/api/v1/feedback/comments/:id", ActionType: "destructive_data_change", Description: "删除反馈评论"},
+		{Method: "DELETE", PathPattern: "/api/v1/feedback/projects/:id", ActionType: "destructive_data_change", Description: "删除反馈项目"},
+		{Method: "DELETE", PathPattern: "/api/v1/feedback/submissions/:id", ActionType: "destructive_data_change", Description: "删除反馈"},
+		{Method: "DELETE", PathPattern: "/api/v1/feedback/submissions/:id/tags/:tagId", ActionType: "destructive_data_change", Description: "删除反馈标签关系"},
+		{Method: "DELETE", PathPattern: "/api/v1/feedback/tags/:id", ActionType: "destructive_data_change", Description: "删除反馈标签"},
+		{Method: "POST", PathPattern: "/api/v1/sourcing-1688/:id/publish-requests/:attemptId/execute", ActionType: "auto_publish", TargetType: "sourcing_publish_attempt", TargetIDParam: "attemptId", Description: "执行 1688 草稿真实发布"},
+
+		// ── Destructive deletes (fail closed by default) ──
+		{Method: "DELETE", PathPattern: "/api/v1/agents/rules/:id", ActionType: "destructive_data_change", Description: "删除个人 Agent 规则"},
+		{Method: "DELETE", PathPattern: "/api/v1/allocation/rules/:id", ActionType: "destructive_data_change", Description: "删除分仓规则"},
+		{Method: "DELETE", PathPattern: "/api/v1/allocation/warehouses/:id", ActionType: "destructive_data_change", Description: "删除仓库"},
+		{Method: "DELETE", PathPattern: "/api/v1/brands/:id", ActionType: "destructive_data_change", Description: "删除品牌"},
+		{Method: "DELETE", PathPattern: "/api/v1/candidates/:id", ActionType: "destructive_data_change", Description: "删除候选"},
+		{Method: "DELETE", PathPattern: "/api/v1/categories/:id", ActionType: "destructive_data_change", Description: "删除类目"},
+		{Method: "DELETE", PathPattern: "/api/v1/competitors/:id", ActionType: "destructive_data_change", Description: "删除竞品"},
+		{Method: "DELETE", PathPattern: "/api/v1/consolidation/groups/:groupId/items/:itemId", ActionType: "destructive_data_change", Description: "删除集运条目"},
+		{Method: "DELETE", PathPattern: "/api/v1/decision/:id", ActionType: "destructive_data_change", Description: "删除决策"},
+		{Method: "DELETE", PathPattern: "/api/v1/exceptions/:id", ActionType: "destructive_data_change", Description: "删除异常记录"},
+		{Method: "DELETE", PathPattern: "/api/v1/exchange-rates/:id", ActionType: "destructive_data_change", Description: "删除汇率"},
+		{Method: "DELETE", PathPattern: "/api/v1/image-gen/:id", ActionType: "destructive_data_change", Description: "删除图片任务"},
+		{Method: "DELETE", PathPattern: "/api/v1/image-gen/canvas/:id", ActionType: "destructive_data_change", Description: "删除画布"},
+		{Method: "DELETE", PathPattern: "/api/v1/image-gen/templates/:id", ActionType: "destructive_data_change", Description: "删除图片模板"},
+		{Method: "DELETE", PathPattern: "/api/v1/import-batch/:id", ActionType: "destructive_data_change", Description: "删除导入批次"},
+		{Method: "DELETE", PathPattern: "/api/v1/notification/:id", ActionType: "destructive_data_change", Description: "删除通知"},
+		{Method: "DELETE", PathPattern: "/api/v1/notification/alert-rules/:id", ActionType: "destructive_data_change", Description: "删除通知规则"},
+		{Method: "DELETE", PathPattern: "/api/v1/order-import/:id", ActionType: "destructive_data_change", Description: "删除订单导入"},
+		{Method: "DELETE", PathPattern: "/api/v1/platform-fee/:id", ActionType: "destructive_data_change", Description: "删除平台费用"},
+		{Method: "DELETE", PathPattern: "/api/v1/product-hub/:id", ActionType: "destructive_data_change", Description: "删除产品主记录"},
+		{Method: "DELETE", PathPattern: "/api/v1/product-suppliers/:id", ActionType: "destructive_data_change", Description: "删除产品供应商关系"},
+		{Method: "DELETE", PathPattern: "/api/v1/products/relations/:id", ActionType: "destructive_data_change", Description: "删除产品关系"},
+		{Method: "DELETE", PathPattern: "/api/v1/shipping/bill-batches/:id", ActionType: "destructive_data_change", Description: "删除物流账单批次"},
+		{Method: "DELETE", PathPattern: "/api/v1/shipping/channels/:id", ActionType: "destructive_data_change", Description: "删除物流渠道"},
+		{Method: "DELETE", PathPattern: "/api/v1/shipping/providers/:id", ActionType: "destructive_data_change", Description: "删除物流服务商"},
+		{Method: "DELETE", PathPattern: "/api/v1/shipping/rules/:id", ActionType: "destructive_data_change", Description: "删除物流规则"},
+		{Method: "DELETE", PathPattern: "/api/v1/shipping/zones/:id", ActionType: "destructive_data_change", Description: "删除物流区域"},
+		{Method: "DELETE", PathPattern: "/api/v1/suppliers/:id", ActionType: "destructive_data_change", Description: "删除供应商"},
+		{Method: "DELETE", PathPattern: "/api/v1/support/blacklist/:id", ActionType: "destructive_data_change", Description: "删除客服黑名单"},
+		{Method: "DELETE", PathPattern: "/api/v1/support/conversations/:id", ActionType: "destructive_data_change", Description: "删除客服会话"},
+		{Method: "DELETE", PathPattern: "/api/v1/support/templates/:id", ActionType: "destructive_data_change", Description: "删除客服模板"},
+		{Method: "DELETE", PathPattern: "/api/v1/tariff/:id", ActionType: "destructive_data_change", Description: "删除关税规则"},
+		{Method: "DELETE", PathPattern: "/api/v1/workflow/defs/:id", ActionType: "destructive_data_change", Description: "删除工作流定义"},
 	}
 }
 
@@ -190,6 +267,44 @@ func IsHighRisk(method, fullPath string) bool {
 	return ok
 }
 
+// Resolve matches an actual request path against registered Gin templates.
+// It is the safe fallback for middleware that runs before Gin exposes
+// Context.FullPath(). Parameters match exactly one non-empty path segment.
+func Resolve(method, requestPath string) (pathPattern, actionType string, ok bool) {
+	requestParts := splitPath(requestPath)
+	for _, binding := range DefaultBindings() {
+		if binding.Method != method {
+			continue
+		}
+		patternParts := splitPath(binding.PathPattern)
+		if len(patternParts) != len(requestParts) {
+			continue
+		}
+		matched := true
+		for i, patternPart := range patternParts {
+			if strings.HasPrefix(patternPart, ":") {
+				if requestParts[i] == "" {
+					matched = false
+					break
+				}
+				continue
+			}
+			if patternPart != requestParts[i] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return binding.PathPattern, binding.ActionType, true
+		}
+	}
+	return "", "", false
+}
+
+func splitPath(path string) []string {
+	return strings.Split(strings.Trim(path, "/"), "/")
+}
+
 // ValidateRoute checks whether a given (method, fullPath) is registered in the
 // catalog. Returns true and the action type if registered. Used by CI to verify
 // coverage.
@@ -199,4 +314,14 @@ func ValidateRoute(method, fullPath string) (actionType string, registered bool)
 		return at, true
 	}
 	return "", false
+}
+
+// GetBinding returns the full approval binding metadata for an exact route.
+func GetBinding(method, fullPath string) (Binding, bool) {
+	for _, binding := range DefaultBindings() {
+		if binding.Method == method && binding.PathPattern == fullPath {
+			return binding, true
+		}
+	}
+	return Binding{}, false
 }

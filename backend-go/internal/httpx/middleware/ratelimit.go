@@ -10,10 +10,12 @@ import (
 
 // RateLimiter provides per-IP rate limiting for sensitive endpoints.
 type RateLimiter struct {
-	mu       sync.Mutex
-	requests map[string]*rateEntry
-	limit    int
-	window   time.Duration
+	mu          sync.Mutex
+	requests    map[string]*rateEntry
+	limit       int
+	window      time.Duration
+	lastCleanup time.Time
+	maxEntries  int
 }
 
 type rateEntry struct {
@@ -24,9 +26,10 @@ type rateEntry struct {
 // NewRateLimiter creates a rate limiter that allows `limit` requests per `window`.
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 	return &RateLimiter{
-		requests: make(map[string]*rateEntry),
-		limit:    limit,
-		window:   window,
+		requests:   make(map[string]*rateEntry),
+		limit:      limit,
+		window:     window,
+		maxEntries: 10000,
 	}
 }
 
@@ -37,9 +40,18 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		now := time.Now()
 
 		rl.mu.Lock()
+		if rl.lastCleanup.IsZero() || now.Sub(rl.lastCleanup) >= rl.window {
+			rl.cleanupExpiredLocked(now)
+			rl.lastCleanup = now
+		}
 
 		entry, exists := rl.requests[ip]
 		if !exists || now.After(entry.expireAt) {
+			if !exists && len(rl.requests) >= rl.maxEntries {
+				rl.mu.Unlock()
+				abortRateLimited(c)
+				return
+			}
 			// New window
 			rl.requests[ip] = &rateEntry{count: 1, expireAt: now.Add(rl.window)}
 			rl.mu.Unlock()
@@ -50,10 +62,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		entry.count++
 		if entry.count > rl.limit {
 			rl.mu.Unlock()
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"code":    429,
-				"message": "rate limit exceeded, please try again later",
-			})
+			abortRateLimited(c)
 			return
 		}
 
@@ -62,18 +71,16 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 	}
 }
 
-// CleanupPeriodic removes expired entries from the rate limiter.
-// Call this in a background goroutine.
-func (rl *RateLimiter) CleanupPeriodic(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	for range ticker.C {
-		rl.mu.Lock()
-		now := time.Now()
-		for ip, entry := range rl.requests {
-			if now.After(entry.expireAt) {
-				delete(rl.requests, ip)
-			}
+func abortRateLimited(c *gin.Context) {
+	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+		"code": 429, "message": "rate limit exceeded, please try again later",
+	})
+}
+
+func (rl *RateLimiter) cleanupExpiredLocked(now time.Time) {
+	for ip, entry := range rl.requests {
+		if now.After(entry.expireAt) {
+			delete(rl.requests, ip)
 		}
-		rl.mu.Unlock()
 	}
 }

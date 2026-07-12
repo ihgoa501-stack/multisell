@@ -48,9 +48,10 @@ type TestServer struct {
 func NewTestServer(t testing.TB, register func(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger), models ...interface{}) *TestServer {
 	t.Helper()
 
-	// Ensure auth.User is always migrated (needed for Login/Register).
-	allModels := make([]interface{}, 0, len(models)+1)
-	allModels = append(allModels, &auth.User{})
+	// Ensure auth tables are always migrated. Login now persists a refresh
+	// session before returning tokens, so route tests need both tables.
+	allModels := make([]interface{}, 0, len(models)+2)
+	allModels = append(allModels, &auth.User{}, &auth.RefreshSession{})
 	allModels = append(allModels, models...)
 	db := dbtest.NewDB(t, allModels...)
 	logger := dbtest.NewLogger(t)

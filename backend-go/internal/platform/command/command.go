@@ -11,6 +11,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -37,6 +38,13 @@ type Dispatcher struct {
 	catalog       *actioncatalog.Catalog // optional, nil means no catalog enforcement
 	auditRecorder AuditRecorder          // optional, nil means no audit logging
 	rateLimiter   *RateLimiter           // optional, nil means no rate limiting
+	idempotency   IdempotencyStore       // optional durable deduplication
+}
+
+// WithIdempotencyStore enables durable command deduplication for actions that
+// carry an idempotency key.
+func WithIdempotencyStore(store IdempotencyStore) DispatcherOption {
+	return func(d *Dispatcher) { d.idempotency = store }
 }
 
 // DispatcherOption configures a Dispatcher.
@@ -156,6 +164,7 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 		return &Result{Success: true, BusinessID: "dry_run"}, nil
 	}
 
+	approvalNeeded := false
 	// Production mode: enforce catalog + approval for high-risk actions.
 	if action.Mode == ModeProduction {
 		// Catalog validation: reject unknown, L4 blocked, and L3 actions without approval.
@@ -167,10 +176,14 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 		}
 		// Approval check for high-risk actions.
 		if action.RiskLevel >= RiskHigh || action.ApprovalRequired {
+			approvalNeeded = true
 			if action.ApprovalID == nil {
 				return nil, ErrApprovalRequired
 			}
-			if policy != nil && !policy.IsApproved(*action.ApprovalID) {
+			if action.IdempotencyKey == "" || d.idempotency == nil {
+				return nil, fmt.Errorf("command: approved production action requires durable idempotency: %w", ErrApprovalRequired)
+			}
+			if policy == nil || policy.AuthorizeFor(ctx, *action.ApprovalID, action.ActionType, action.TargetType, action.TargetID, action.IdempotencyKey) != nil {
 				return nil, ErrApprovalRequired
 			}
 		}
@@ -183,8 +196,58 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 		}
 	}
 
+	// Atomically claim keyed production actions before any side effect. Dry-run
+	// and sandbox calls intentionally do not consume production idempotency keys.
+	idempotencyClaimed := false
+	if action.Mode == ModeProduction && action.IdempotencyKey != "" && d.idempotency != nil {
+		claim, err := d.idempotency.Claim(ctx, action)
+		if err != nil {
+			return nil, err
+		}
+		if !claim.Execute {
+			return claim.Result, nil
+		}
+		idempotencyClaimed = true
+	}
+
+	if approvalNeeded {
+		if err := policy.ConsumeFor(ctx, *action.ApprovalID, action.ActionType, action.TargetType, action.TargetID, action.IdempotencyKey); err != nil {
+			if idempotencyClaimed {
+				_ = d.idempotency.Fail(context.WithoutCancel(ctx), action, err)
+			}
+			return nil, ErrApprovalRequired
+		}
+	}
+
 	// Sandbox and approved production actions delegate to Dispatch.
 	result, dispatchErr := d.Dispatch(ctx, action.ActionType, action.Input)
+	if approvalNeeded {
+		persistCtx := context.WithoutCancel(ctx)
+		if dispatchErr != nil || result == nil || !result.Success {
+			cause := dispatchErr
+			if cause == nil && result != nil {
+				cause = errors.New(result.ErrorMessage)
+			}
+			if err := policy.FailFor(persistCtx, *action.ApprovalID, action.IdempotencyKey, cause); err != nil {
+				return nil, fmt.Errorf("command: persist failed approval execution: %w", err)
+			}
+		} else if err := policy.CompleteFor(persistCtx, *action.ApprovalID, action.IdempotencyKey); err != nil {
+			return nil, fmt.Errorf("command executed but approval consumption persistence failed: %w", err)
+		}
+	}
+	if action.Mode == ModeProduction && action.IdempotencyKey != "" && d.idempotency != nil {
+		if dispatchErr != nil || result == nil || !result.Success {
+			cause := dispatchErr
+			if cause == nil && result != nil {
+				cause = errors.New(result.ErrorMessage)
+			}
+			if err := d.idempotency.Fail(ctx, action, cause); err != nil {
+				return nil, fmt.Errorf("command: persist idempotent failure: %w", err)
+			}
+		} else if err := d.idempotency.Complete(ctx, action, result); err != nil {
+			return nil, fmt.Errorf("command executed but idempotent result persistence failed: %w", err)
+		}
+	}
 
 	// Audit: record high-risk production mutations after successful execution.
 	if dispatchErr == nil && result != nil && result.Success &&
@@ -205,7 +268,10 @@ type AuditRecorder func(ctx context.Context, action AgentAction, result *Result)
 // The actual policy engine (actionpolicy.Service) lives in the domain layer;
 // this interface lets platform code stay dependency-free.
 type PolicyChecker interface {
-	IsApproved(approvalID int64) bool
+	AuthorizeFor(ctx context.Context, approvalID int64, actionType, targetType, targetID, idempotencyKey string) error
+	ConsumeFor(ctx context.Context, approvalID int64, actionType, targetType, targetID, idempotencyKey string) error
+	CompleteFor(ctx context.Context, approvalID int64, idempotencyKey string) error
+	FailFor(ctx context.Context, approvalID int64, idempotencyKey string, cause error) error
 }
 
 // ErrApprovalRequired is returned when a high-risk action is attempted without

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,12 +23,18 @@ type Service struct {
 	demand     DemandCaseReader
 	experiment ExperimentReader
 	sourcing   Sourcing1688Reader
+	closure    BusinessClosureReader
 	provider   ai.LLMProvider
 	traces     TraceRecorder
 }
 
 func (s *Service) WithSourcingReader(reader Sourcing1688Reader) *Service {
 	s.sourcing = reader
+	return s
+}
+
+func (s *Service) WithBusinessClosureReader(reader BusinessClosureReader) *Service {
+	s.closure = reader
 	return s
 }
 
@@ -63,6 +70,12 @@ func (s *Service) SendMessage(ctx context.Context, ownerID int64, in MessageInpu
 			return nil, ErrInvalidInput
 		}
 		return s.sendExperimentMessage(ctx, ownerID, message, in.ExperimentID)
+	}
+	if target == TargetBusinessClosure {
+		if strings.TrimSpace(in.ExperimentID) == "" || in.DemandCaseID != 0 || in.SourceID != 0 || s.closure == nil {
+			return nil, ErrInvalidInput
+		}
+		return s.sendBusinessClosureMessage(ctx, ownerID, message, in.ExperimentID)
 	}
 	if target == TargetSourcing1688 {
 		if in.SourceID <= 0 || in.DemandCaseID != 0 || strings.TrimSpace(in.ExperimentID) != "" || s.sourcing == nil {
@@ -155,6 +168,69 @@ func (s *Service) SendMessage(ctx context.Context, ownerID int64, in MessageInpu
 	if _, err := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "model_response", Content: "provider response received", Payload: mustJSON(map[string]interface{}{"provider": final.Provider, "model": final.Model, "tokens_in": final.TokensIn, "tokens_out": final.TokensOut, "truth_status": final.TruthStatus})}); err != nil {
 		return nil, s.failTrace(traceID, err)
 	}
+	if err := s.complete(traceID, final, "completed"); err != nil {
+		return nil, &RunError{TraceID: traceID, Err: err}
+	}
+	return final, nil
+}
+
+func (s *Service) sendBusinessClosureMessage(ctx context.Context, ownerID int64, message, experimentID string) (*MessageResponse, error) {
+	capabilities := []string{CapabilityOrderFulfillmentRead, CapabilitySettlementRead, CapabilityProfitFinalRead}
+	timeoutSeconds := 5
+	for _, id := range capabilities {
+		capability, ok := activeCapability(id)
+		if !ok {
+			return nil, ErrCapabilityUnavailable
+		}
+		if capability.TimeoutSeconds > 0 && capability.TimeoutSeconds < timeoutSeconds {
+			timeoutSeconds = capability.TimeoutSeconds
+		}
+	}
+	timedCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+	traceID, err := s.startReadTrace(ownerID, "business_closure_explain", "xiaoq-business-closure-v1", map[string]interface{}{"target_type": TargetBusinessClosure, "question": message, "experiment_id": experimentID})
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.closure.ReadOwnerBusinessClosure(timedCtx, ownerID, experimentID)
+	if err != nil {
+		return nil, s.capabilityFailure(traceID, CapabilityOrderFulfillmentRead, err, map[string]interface{}{"experiment_id": experimentID})
+	}
+	for _, id := range capabilities {
+		if _, err := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "capability_call", Content: id, Payload: mustJSON(map[string]interface{}{"experiment_id": experimentID, "risk": "read", "status": "succeeded"})}); err != nil {
+			return nil, s.failTrace(traceID, err)
+		}
+	}
+	for _, ref := range view.EvidenceRefs {
+		if _, err := s.traces.AddEvidence(traceID, &ai.AddEvidenceInput{SourceType: ref.SourceType, SourceID: ref.SourceID, Title: ref.SourceType, Summary: ref.TruthStatus, Payload: mustJSON(ref)}); err != nil {
+			return nil, s.failTrace(traceID, err)
+		}
+	}
+	inputJSON, err := json.Marshal(struct {
+		Question     string                               `json:"question"`
+		View         *experiment.OwnerBusinessClosureView `json:"view"`
+		Capabilities []string                             `json:"capabilities"`
+	}{message, view, capabilities})
+	if err != nil {
+		return nil, s.failTrace(traceID, err)
+	}
+	final := &MessageResponse{TraceID: traceID, AgentID: AgentID, Mode: "read_only_v1", TargetType: TargetBusinessClosure, ExperimentID: experimentID, Trusted: false}
+	if s.provider.Name() == "stub" {
+		final.Answer, final.TruthStatus, final.Provider, final.Model = "这是模拟回答，不能作为可信经营结论。订单记录仍需外部核验；请检查结算对账、最终利润和未知项。", TruthMock, "stub", "stub-v1"
+	} else {
+		resp, providerErr := s.provider.Chat(timedCtx, &ai.LLMRequest{System: "你是凌镜的小Q。只能根据Owner经营闭环只读视图回答。订单付款/签收的内部记录仍是unknown，不得称为actual；只在settlement trusted且fully_reconciled、profit final且无缺失成本且没有多结算混合时说明系统记录为最终利润。售后观察期和现金金额/币种一致性当前保持unknown，不得声称售后已关闭或现金已完全回收。不得输出或推测客户个人信息。", Messages: []ai.LLMMessage{{Role: "user", Content: string(inputJSON)}}, MaxTokens: 800, Metadata: map[string]interface{}{"agent_id": AgentID, "experiment_id": experimentID}})
+		if providerErr != nil {
+			return nil, s.capabilityFailure(traceID, CapabilityProfitFinalRead, providerErr, map[string]interface{}{"experiment_id": experimentID})
+		}
+		final.Answer, final.TruthStatus, final.Provider, final.Model, final.TokensIn, final.TokensOut, final.LatencyMs = resp.Answer, TruthInferred, s.provider.Name(), resp.Model, resp.TokensIn, resp.TokensOut, resp.LatencyMs
+	}
+	for _, ref := range view.EvidenceRefs {
+		id, _ := strconv.ParseInt(ref.SourceID, 10, 64)
+		final.Evidence = append(final.Evidence, EvidenceItem{ID: id, Title: ref.SourceType, TruthStatus: ref.TruthStatus, Summary: ref.Summary})
+	}
+	final.Unknowns = append(append([]string{}, view.Unknowns...), view.Blockers...)
+	final.Links = []ResponseLink{{Label: "经营实验", Href: "/experiments/" + experimentID}, {Label: "小Q 执行记录", Href: "/api/v1/xiao-q/traces/" + traceID}}
+	final.Provenance = Provenance{Provider: final.Provider, Model: final.Model, TokensIn: final.TokensIn, TokensOut: final.TokensOut, LatencyMs: final.LatencyMs}
 	if err := s.complete(traceID, final, "completed"); err != nil {
 		return nil, &RunError{TraceID: traceID, Err: err}
 	}

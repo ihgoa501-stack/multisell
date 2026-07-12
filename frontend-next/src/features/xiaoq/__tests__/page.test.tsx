@@ -70,4 +70,21 @@ describe('XiaoQ page target routing', () => {
     }, expect.anything()));
     expect(screen.queryByRole('button', { name: /批准|执行|发布|采购/ })).not.toBeInTheDocument();
   });
+
+  it('queries order and final profit closure by experiment without actions', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText('查询对象'));
+    await user.click(await screen.findByText('订单与最终利润'));
+    await user.type(screen.getByLabelText('经营实验 ID'), 'EXP-CLOSE-1');
+    await user.click(screen.getByRole('button', { name: '这笔订单的最终利润是否已经确认？' }));
+
+    await waitFor(() => expect(sendXiaoQMessage).toHaveBeenCalledWith({
+      message: '这笔订单的最终利润是否已经确认？',
+      target_type: 'business_closure',
+      experiment_id: 'EXP-CLOSE-1',
+    }, expect.anything()));
+    expect(screen.queryByRole('button', { name: /批准|执行|发货|退款|收款/ })).not.toBeInTheDocument();
+  });
 });

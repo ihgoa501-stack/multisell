@@ -110,6 +110,12 @@ Rules:
 - Commands that mutate critical data must enforce permission, approval, and audit requirements.
 - Command results must distinguish success, validation failure, policy block, external failure, and internal error.
 - Commands should be idempotent where possible.
+- Production Agent Actions that provide an `idempotency_key` are claimed in
+  `command_execution` before handler execution. A succeeded command replays its
+  stored result, an active claim rejects concurrent duplicates, a failed claim
+  may retry, and an expired processing lease may be reclaimed after a crash.
+- An idempotency key is globally bound to its first `action_type` and `agent_id`;
+  callers must never reuse it for a different logical action.
 - Consumers with their own comprehensive gate chain (e.g. ai.Service.ExecuteAction) may use raw Dispatch() after passing their gates. DispatchSafe() enforces mode, approval, and audit at the AgentAction envelope level for consumers without their own gate chain.
 
 Recommended command shape:
@@ -192,10 +198,16 @@ rollback_note:     string               // human guidance for reversing
 
 - `backend-go/internal/platform/command/action.go` — `AgentAction` struct, `RiskLevel` type, `ActionMode` type.
 - `backend-go/internal/platform/command/command.go` — `DispatchSafe` method enforces mode and approval rules.
+- `backend-go/internal/platform/command/idempotency.go` — durable command claim,
+  result replay, failure retry, and expired-lease recovery.
 
 ## 5. Scheduler Contract
 
 Scheduler triggers periodic or delayed work. It must not hide business decisions.
+
+Failed ticks are persisted in `scheduler_retry`. Startup must recover the retry queue before reporting running; an unreadable recovery store keeps readiness false. EventBus follows the same rule for pending outbox events. Bus and Scheduler start only after all subscriptions and tasks are registered.
+
+Only the backend instance holding the PostgreSQL advisory leader lease may report Scheduler running. Standby instances retry acquisition while remaining not-ready. EventBus shutdown rejects new publications, drains queued and in-flight handlers within a deadline, and only then closes workers.
 
 Rules:
 
@@ -222,6 +234,10 @@ failure behavior:
 
 ToolBridge lets Agents use external tools through drivers or plugins.
 
+Production mutation calls must have all three guarantees: target-bound approval, a durable `tool_execution` idempotency claim, and a driver that forwards the same idempotency key to the external provider. Missing any guarantee must fail closed. Persisting only a local result does not prove an external side effect is exactly-once.
+
+External calls use bounded, context-cancellable retries and a closed/open/half-open circuit breaker. Production mutation retries must reuse the original provider idempotency key. Circuit state, attempts, failures and duration are observable metrics.
+
 Rules:
 
 - Tools must declare capabilities, input schema, output schema, and side effects.
@@ -230,6 +246,11 @@ Rules:
 - Tool calls must be logged with correlation IDs.
 - External failures must degrade safely and return actionable errors.
 - Tools must not bypass approval for critical actions.
+- The registered driver's category is authoritative; callers cannot relabel a
+  mutation tool as read-only.
+- Production mutation tools use the typed `ToolCall` path, require a live
+  target-bound approval and an idempotency key, and cannot use opaque legacy
+  approval strings.
 
 Tool categories:
 
@@ -243,12 +264,43 @@ Mutation tools are high risk unless explicitly scoped to local test data.
 
 Approval controls whether a proposed action may execute.
 
+Execution consumption rules:
+
+- A production side effect consumes exactly one approved Owner decision through
+  `approval_execution`; approval ID and idempotency key are globally unique.
+- The execution binding (approval, idempotency key, action and target) is
+  immutable after insertion.
+- PostgreSQL permits only `processing -> succeeded|failed` and
+  `failed -> processing` for a retry with the same binding. `succeeded` is
+  terminal and execution rows cannot be deleted.
+- HTTP, Command and ToolBridge must authorize, claim durable idempotency, then
+  consume approval before invoking a side effect. Approval status alone never
+  authorizes execution.
+
+HTTP mutation classification rules:
+
+- Every POST/PUT/PATCH/DELETE route must appear exactly once in
+  `internal/platform/routecatalog/mutation_policy.tsv` as `public`, `standard`
+  or `high`; additions, removals, path changes and source moves are CI failures
+  until explicitly reviewed.
+- `public` is a closed allowlist for login/register/refresh and signature-
+  verified platform webhooks. `standard` requires authentication at the route
+  or protected group and is synchronously audited. `high` additionally maps to
+  an action type and uses one-time approval consumption plus idempotency.
+- Runtime middleware fails closed when an authenticated mutation has no policy.
+  All DELETE routes are high risk. Emergency kill-switch activation/deactivation
+  remains admin-RBAC + synchronous-audit protected so the switch cannot lock its
+  own recovery path behind the write gate it disables.
+
 Rules:
 
 - Approval must be required for critical mutations unless policy explicitly grants autonomy.
 - Approval records must contain action summary, actor, target, risk, proposed changes, and expiry when relevant.
 - Approval decision must be recorded as approved, rejected, expired, canceled, or superseded.
 - Execution must verify approval status at execution time.
+- Execution must bind approval to the exact action type and target; approval
+  for one mutation cannot authorize another mutation.
+- Expired approvals cannot be reviewed as approved or discovered as executable.
 - Approval bypasses must be explicit and auditable.
 
 Approval is required by default for:
@@ -263,6 +315,8 @@ Approval is required by default for:
 - Autonomous Agent execution of business mutations.
 
 ## 8. Audit Contract
+
+`operation_log` is append-only at the PostgreSQL trigger layer and forms a serialized SHA-256 predecessor chain. Integrity verification must recompute the complete chain. This detects ordinary row tampering and blocks the application database role from UPDATE/DELETE; it does not protect against a PostgreSQL superuser disabling the trigger, so external immutable checkpoints remain a separate production control.
 
 Audit records what changed and why.
 
@@ -294,17 +348,24 @@ created_at:
 
 ## 9. Auth and RBAC Contract
 
+JWTs carry a `kid`. Only the current key signs new tokens; explicitly configured previous keys may verify tokens during a bounded rotation window. Removing a previous key ends that compatibility window. Unknown key IDs fail closed.
+
 Auth verifies identity. RBAC determines allowed actions.
 
 Rules:
 
 - Non-public APIs require JWT.
+- Access JWTs use the configured HS256 contract and require a positive numeric
+  `user_id`; incomplete identities fail closed.
+- Refresh JWTs are backed by persisted sessions, rotate once, and revoke the
+  active token family when a rotated predecessor is replayed.
 - Mutation APIs require permission checks.
 - Agent actions must run under an explicit actor identity or service identity.
 - Permission checks must happen server-side.
 - UI hiding is not a substitute for backend authorization.
 
 Permission changes are high risk when they expand access.
+Disabled roles grant no permissions even when historical assignments remain.
 
 ## 10. Observability Contract
 

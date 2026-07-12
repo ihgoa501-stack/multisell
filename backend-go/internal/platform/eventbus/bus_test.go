@@ -505,6 +505,7 @@ func TestContextCorrelationPropagation(t *testing.T) {
 // fail and max retries are exceeded.
 func TestDLQWithDB(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createDLQTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	b := New(logger, WithDB(db), WithDLQ(db), WithMaxRetries(1))
@@ -552,6 +553,7 @@ func TestDLQWithDB(t *testing.T) {
 // TestDLQReplay verifies that events moved to DLQ can be replayed.
 func TestDLQReplay(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createDLQTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	b := New(logger, WithDB(db), WithDLQ(db), WithMaxRetries(1))
@@ -615,6 +617,7 @@ func TestDLQReplay(t *testing.T) {
 // events are published, delivered, and moved to DLQ.
 func TestMetricsIncrement(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createDLQTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	b := New(logger, WithDB(db), WithDLQ(db), WithMaxRetries(1))
@@ -651,6 +654,7 @@ func TestMetricsIncrement(t *testing.T) {
 // idempotency key) is NOT blocked — only truly duplicate events are skipped.
 func TestIdempotencyKey_SameEventRetried(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	// maxRetries=3 means initial delivery + 2 retries = 3 handler attempts.
@@ -710,6 +714,7 @@ func TestIdempotencyKey_SameEventRetried(t *testing.T) {
 // same idempotency key but different event ID is skipped entirely.
 func TestIdempotencyKey_DuplicateSkipped(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	b := New(logger, WithDB(db))
@@ -826,6 +831,7 @@ func TestIdempotencyKey_NoDB_EventsPassThrough(t *testing.T) {
 // are processed independently.
 func TestIdempotencyKey_DifferentKeysPass(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	b := New(logger, WithDB(db))
@@ -879,6 +885,7 @@ func TestIdempotencyKey_DifferentKeysPass(t *testing.T) {
 // replay is not blocked.
 func TestIdempotencyKey_DLQReplay(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	createDLQTable(t, db)
 	logger, _ := zap.NewDevelopment()
@@ -1002,6 +1009,7 @@ func TestIdempotencyKey_DLQReplay(t *testing.T) {
 // the other worker's INSERT conflicts and the event is atomically rejected.
 func TestIdempotencyKey_ConcurrentDuplicate(t *testing.T) {
 	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
 	createEventProcessedTable(t, db)
 	logger, _ := zap.NewDevelopment()
 	// Default pool has 4 workers — the race condition reproduces here.
@@ -1094,6 +1102,160 @@ func createDLQTable(t *testing.T, db *gorm.DB) {
 		)
 	`).Error; err != nil {
 		t.Fatalf("failed to create event_dlq table: %v", err)
+	}
+}
+
+func createOutboxTable(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	err := db.Exec(`CREATE TABLE IF NOT EXISTS event_outbox (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		topic TEXT NOT NULL,
+		source TEXT NOT NULL,
+		payload TEXT NOT NULL DEFAULT '{}',
+		priority INTEGER NOT NULL DEFAULT 0,
+		status TEXT NOT NULL DEFAULT 'pending',
+		created_at DATETIME NOT NULL,
+		delivered_at DATETIME,
+		event_id TEXT DEFAULT '',
+		delivery_attempts INTEGER NOT NULL DEFAULT 0,
+		last_error TEXT DEFAULT '',
+		version TEXT NOT NULL DEFAULT '',
+		actor TEXT NOT NULL DEFAULT '',
+		entity_id TEXT NOT NULL DEFAULT '',
+		entity_type TEXT NOT NULL DEFAULT '',
+		correlation_id TEXT NOT NULL DEFAULT '',
+		idempotency_key TEXT NOT NULL DEFAULT ''
+	)`).Error
+	if err != nil {
+		t.Fatalf("create event_outbox: %v", err)
+	}
+}
+
+func TestPublishWithDB_FailsClosedWithoutOutbox(t *testing.T) {
+	db := dbtest.NewDB(t)
+	b := New(zap.NewNop(), WithDB(db))
+	if _, err := b.Publish(context.Background(), "durable.test", "test", nil); err == nil {
+		t.Fatal("publish succeeded without durable outbox storage")
+	}
+}
+
+func TestStartRecoversPendingOutboxAfterSubscriptionsExist(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
+	payload := `{"value":"restored"}`
+	if err := db.Exec(`INSERT INTO event_outbox
+		(topic, source, payload, priority, status, created_at, event_id, version, actor, entity_id, entity_type, correlation_id, idempotency_key)
+		VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"recovery.test", "previous-process", payload, 1, time.Now(), "event-recovered", "v1", "owner", "42", "listing", "corr-1", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	b := New(zap.NewNop(), WithDB(db))
+	received := make(chan Event, 1)
+	b.Subscribe("recovery.test", func(_ context.Context, evt Event) error {
+		received <- evt
+		return nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	t.Cleanup(func() { cancel(); b.Stop() })
+	select {
+	case evt := <-received:
+		if evt.ID != "event-recovered" || evt.Priority != 1 || evt.CorrelationID != "corr-1" || evt.Payload["value"] != "restored" {
+			t.Fatalf("recovered event=%+v", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending outbox event was not recovered")
+	}
+	poll(t, time.Second, "recovered outbox delivered", func() bool {
+		var status string
+		return db.Table("event_outbox").Select("status").Where("event_id = ?", "event-recovered").Scan(&status).Error == nil && status == "delivered"
+	})
+}
+
+func TestStopWithContextDrainsQueuedEventsAndRejectsNewPublishes(t *testing.T) {
+	b := New(zap.NewNop(), WithWorkers(2))
+	gate := make(chan struct{})
+	var handled atomic.Int32
+	b.Subscribe("drain.test", func(context.Context, Event) error {
+		<-gate
+		handled.Add(1)
+		return nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	t.Cleanup(cancel)
+	for i := 0; i < 8; i++ {
+		if _, err := b.Publish(context.Background(), "drain.test", "test", map[string]interface{}{"i": i}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := make(chan error, 1)
+	go func() {
+		drainCtx, stop := context.WithTimeout(context.Background(), time.Second)
+		defer stop()
+		done <- b.StopWithContext(drainCtx)
+	}()
+	poll(t, time.Second, "bus enters drain", func() bool { return !b.IsRunning() })
+	if _, err := b.Publish(context.Background(), "drain.test", "test", nil); !errors.Is(err, ErrBusStopped) {
+		t.Fatalf("publish during drain error=%v", err)
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("drain returned before handlers were released: %v", err)
+	default:
+	}
+	close(gate)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if handled.Load() != 8 {
+		t.Fatalf("handled=%d, want 8", handled.Load())
+	}
+}
+
+func TestStopWithContextHonorsDeadline(t *testing.T) {
+	b := New(zap.NewNop(), WithWorkers(1))
+	gate := make(chan struct{})
+	started := make(chan struct{})
+	b.Subscribe("stuck.test", func(context.Context, Event) error {
+		close(started)
+		<-gate
+		return nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	if _, err := b.Publish(context.Background(), "stuck.test", "test", nil); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	drainCtx, stop := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	err := b.StopWithContext(drainCtx)
+	stop()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("drain deadline error=%v", err)
+	}
+	close(gate)
+	cancel()
+}
+
+func TestIdempotencyClaimError_BlocksHandlerAndFailsOutbox(t *testing.T) {
+	db := dbtest.NewDB(t)
+	createOutboxTable(t, db)
+	b := New(zap.NewNop(), WithDB(db)) // event_processed intentionally absent
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() { cancel(); b.Stop() })
+	b.Start(ctx)
+	var calls atomic.Int32
+	b.Subscribe("claim.error", func(context.Context, Event) error { calls.Add(1); return nil })
+	if _, err := b.Publish(WithIdempotencyKey(context.Background(), "claim-error-key"), "claim.error", "test", nil); err != nil {
+		t.Fatal(err)
+	}
+	poll(t, 2*time.Second, "outbox marked failed", func() bool {
+		var count int64
+		return db.Table("event_outbox").Where("status = ?", "failed").Count(&count).Error == nil && count == 1
+	})
+	if calls.Load() != 0 {
+		t.Fatalf("handler ran %d times after idempotency storage failure", calls.Load())
 	}
 }
 

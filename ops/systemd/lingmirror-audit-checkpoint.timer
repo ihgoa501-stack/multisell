@@ -1,0 +1,11 @@
+[Unit]
+Description=Checkpoint LingMirror audit chain hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+Unit=lingmirror-audit-checkpoint.service
+
+[Install]
+WantedBy=timers.target

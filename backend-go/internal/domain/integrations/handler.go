@@ -279,8 +279,13 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 		return
 	}
 	ctx := WithExecutionMode(c.Request.Context(), ExecutionMode(mode))
-	if in.ApprovalID != nil {
-		ctx = WithApprovalID(ctx, *in.ApprovalID)
+	approvalID, approvalErr := boundHTTPApprovalID(c, in.ApprovalID)
+	if approvalErr != nil {
+		response.Error(c, http.StatusForbidden, approvalErr.Error())
+		return
+	}
+	if approvalID > 0 {
+		ctx = WithApprovalID(ctx, approvalID)
 	}
 	result, err := h.service.PublishToOzon(ctx, &in)
 	if err != nil {
@@ -288,6 +293,24 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 		return
 	}
 	response.Success(c, result)
+}
+
+func boundHTTPApprovalID(c *gin.Context, requested *int64) (int64, error) {
+	value, ok := c.Get("approval_id")
+	if !ok {
+		if requested != nil && *requested > 0 {
+			return 0, errors.New("approval_id body field is not trusted without the HTTP approval gate")
+		}
+		return 0, nil
+	}
+	approvalID, ok := value.(int64)
+	if !ok || approvalID <= 0 {
+		return 0, errors.New("HTTP approval gate produced an invalid approval ID")
+	}
+	if requested != nil && *requested != approvalID {
+		return 0, errors.New("approval_id body field does not match X-Approval-ID")
+	}
+	return approvalID, nil
 }
 
 // WriteBack POST /platform-integrations/write-back
