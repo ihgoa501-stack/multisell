@@ -11,8 +11,11 @@ This constitution is the highest-level development rule for this repository. Whe
 - Owner-first: the Owner provides business goals and accepts business risk; Agents own technical judgment.
 - Platform-first: platform boundaries must be protected before feature speed.
 - Audit-first automation: important Agent actions must be explainable, approved when needed, and traceable.
-- Small reversible changes: prefer scoped changes with clear acceptance over broad rewrites.
+- Ocean through complete lakes: pursue the Owner-confirmed complete outcome one bounded end-to-end lake at a time; do not omit implementation, tests, error paths, safety, or recovery that are necessary to complete the selected lake.
+- Reversible progress: keep lake boundaries clear and changes recoverable; unrelated product, market, platform, or migration work requires separate scope.
 - Active stack only: Go backend and Next frontend are active. Legacy stacks are reference-only unless explicitly requested.
+
+The current ocean goal and lake completion rules are defined in `docs/OCEAN_GOAL.md`. Product-specific unknowns remain governed by `docs/PRODUCT.md`.
 
 ## 2. System Layers
 

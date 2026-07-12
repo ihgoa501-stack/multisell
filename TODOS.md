@@ -1,7 +1,8 @@
 # TODOs
 
-> Current direction: Owner 自用真实付费需求发现循环。
-> Source of truth: `docs/SELF_USE_OPERATING_DIRECTION.md`。
+> status: `superseded / unconfirmed`
+> authority: 历史任务记录，不是当前 backlog；当前唯一任务顺序见 `docs/BACKLOG.md`
+> 下文 Owner 自用付费需求循环、3,000 CNY 预算和 1,200 CNY 损失线均来自未确认历史提案，不得自动执行。
 
 ## P0 — 需求案件与证据裁决
 
@@ -14,7 +15,7 @@
 ## P0 — AI 侦察、反证和数据现实契约
 
 - ✅ 已建立三个独立 AI run 契约：侦察只创建 lead，反证只追加 counterevidence，数据现实只记录字段现实；原始 payload 使用 SHA-256 不可变快照。
-- ✅ 已提供仓库内置静态公开资料基线与 Owner 候选市场页面；无账号数据时保持 evidence_missing。实时自动研究批次仍待完成。
+- ✅ 已提供带日期的公开资料研究导入与 Owner 候选市场页面；独立反证后本轮没有权限候选，所有案件保持 evidence_missing 或 reject。
 - 每个事实保存来源、时间、地区、官方字段、原始 payload、解析版本和事实状态。
 - 无来源数字、客户画像、销量、费用或利润自动拒绝；关键缺失保持 unknown。
 - 每个字段保存来源 URL/API、采集时间、驱动、原始 payload、解析版本和置信状态。

@@ -1,0 +1,134 @@
+# Module: `demandcase`
+
+Package: `backend-go/internal/domain/demandcase/`
+
+**Base mount prefix:** `/api/v1`
+
+## API Routes
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `GET` | `/api/v1/demand-cases` | `h.List` |
+| `POST` | `/api/v1/demand-cases` | `h.Create` |
+| `GET` | `/api/v1/demand-cases/:id` | `h.Get` |
+| `GET` | `/api/v1/demand-cases/:id/decision-card` | `h.DecisionCard` |
+| `POST` | `/api/v1/demand-cases/:id/evaluate` | `h.Evaluate` |
+| `POST` | `/api/v1/demand-cases/:id/evidence` | `h.AddEvidence` |
+| `POST` | `/api/v1/demand-cases/:id/falsifications` | `h.AddFalsification` |
+| `GET` | `/api/v1/demand-cases/:id/permission-requests` | `h.PermissionRequests` |
+| `POST` | `/api/v1/demand-cases/research/import` | `h.ImportResearch` |
+| `POST` | `/api/v1/demand-cases/research/reviewed-market-permission-batch` | `h.ImportReviewedBatch` |
+| `GET` | `/api/v1/problem-cases` | `h.ListProblems` |
+| `POST` | `/api/v1/problem-cases` | `h.CreateProblem` |
+| `GET` | `/api/v1/problem-cases/:id` | `h.GetProblem` |
+| `POST` | `/api/v1/problem-cases/:id/evaluate` | `h.EvaluateProblem` |
+| `POST` | `/api/v1/problem-cases/:id/evidence` | `h.AddProblemEvidence` |
+| `POST` | `/api/v1/problem-cases/:id/promote` | `h.PromoteProblem` |
+| `POST` | `/api/v1/problem-cases/research/reviewed-problem-batch` | `h.ImportReviewedProblemBatch` |
+| `POST` | `/api/v1/problem-cases/research/reviewed-wildfire-event-batch` | `h.ImportReviewedWildfireEventBatch` |
+
+## Models
+
+### `DemandCase`
+**DB table:** `demand_case`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `—` | PK |
+| `OwnerID` | `int64` | `owner_id` | `—` | NOT NULL |
+| `Region` | `string` | `region` | `—` | NOT NULL |
+| `Consumer` | `string` | `consumer` | `—` | NOT NULL |
+| `NeedScenario` | `string` | `need_scenario` | `—` | NOT NULL |
+| `SalesChannel` | `string` | `sales_channel` | `—` | NOT NULL |
+| `StopCondition` | `string` | `stop_condition` | `—` |  |
+| `Status` | `string` | `status` | `—` | NOT NULL, default:lead |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+| `UpdatedAt` | `time.Time` | `updated_at` | `—` |  |
+
+### `DemandEvidence`
+**DB table:** `demand_evidence`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `—` | PK |
+| `DemandCaseID` | `int64` | `demand_case_id` | `—` | NOT NULL |
+| `Dimension` | `string` | `dimension` | `—` | NOT NULL |
+| `Kind` | `string` | `kind` | `—` | NOT NULL |
+| `TruthStatus` | `string` | `truth_status` | `—` | NOT NULL |
+| `Title` | `string` | `title` | `—` | NOT NULL |
+| `SourceURI` | `string` | `source_uri` | `—` |  |
+| `ObservedAt` | `*time.Time` | `observed_at` | `—` |  |
+| `RunID` | `string` | `run_id` | `—` | NOT NULL |
+| `SnapshotID` | `int64` | `snapshot_id` | `—` | NOT NULL, default:0 |
+| `Fatal` | `bool` | `fatal` | `—` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+
+### `ResearchBatch`
+**DB table:** `demand_research_batch`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `—` | PK |
+| `BatchKey` | `string` | `batch_key` | `—` | NOT NULL |
+| `OwnerID` | `int64` | `owner_id` | `—` | NOT NULL |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+
+### `ResearchSnapshot`
+**DB table:** `demand_research_snapshot`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `—` | PK |
+| `BatchID` | `int64` | `batch_id` | `—` | NOT NULL |
+| `OwnerID` | `int64` | `-` | `—` | NOT NULL |
+| `DemandCaseID` | `int64` | `demand_case_id` | `—` | NOT NULL |
+| `RunID` | `string` | `run_id` | `—` | NOT NULL |
+| `RunType` | `string` | `run_type` | `—` | NOT NULL |
+| `Collector` | `string` | `collector` | `—` | NOT NULL |
+| `SourceURI` | `string` | `source_uri` | `—` | NOT NULL |
+| `CollectedAt` | `time.Time` | `collected_at` | `—` |  |
+| `RawPayload` | `string` | `-` | `—` | NOT NULL |
+| `RawSHA256` | `string` | `raw_sha256` | `—` | NOT NULL |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+
+### `DemandVerdict`
+**DB table:** `demand_verdict`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `—` | PK |
+| `DemandCaseID` | `int64` | `demand_case_id` | `—` | NOT NULL |
+| `Status` | `string` | `status` | `—` | NOT NULL |
+| `BlockersJSON` | `string` | `-` | `—` |  |
+| `Reason` | `string` | `reason` | `—` |  |
+| `EvaluatedBy` | `int64` | `evaluated_by` | `—` | NOT NULL |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+| `Blockers` | `[]string` | `blockers` | `—` |  |
+
+### `Detail`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `Case` | `DemandCase` | `case` | `—` |  |
+| `Evidence` | `[]DemandEvidence` | `evidence` | `—` |  |
+| `Verdict` | `*DemandVerdict` | `verdict,omitempty` | `—` |  |
+| `Snapshots` | `[]ResearchSnapshot` | `snapshots` | `—` |  |
+| `DataAccess` | `[]DataAccessRecord` | `data_access` | `—` |  |
+
+### `OwnerDecisionCard`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `DemandCaseID` | `int64` | `demand_case_id` | `—` |  |
+| `Verdict` | `string` | `verdict` | `—` |  |
+| `Hypothesis` | `string` | `hypothesis` | `—` |  |
+| `Proven` | `string` | `proven` | `—` |  |
+| `NotProven` | `string` | `not_proven` | `—` |  |
+| `StrongestCounterevidence` | `string` | `strongest_counterevidence` | `—` |  |
+| `NextAuthorityOrCost` | `string` | `next_authority_or_cost` | `—` |  |
+| `StopCondition` | `string` | `stop_condition` | `—` |  |
+
+---
+_Auto-generated by `docgen`. Do not edit manually._

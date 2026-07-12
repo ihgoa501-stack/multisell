@@ -57,6 +57,7 @@ func (s *Service) List(p *common.Pagination, f *AccountListFilter) ([]PlatformIn
 	if err := q.Order("id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
+	s.enrichPlatformNames(items)
 	return items, total, nil
 }
 

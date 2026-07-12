@@ -1,6 +1,6 @@
 # 凌镜 LingMirror Project Status
 
-> **当前方向覆盖（2026-07-11）**：凌镜只做 Owner 自用经营实验内部系统。双产品、外部 SaaS、多租户和未经市场选择的平台扩张均冻结。Ozon 等已有适配器只是连接器，不是默认经营方向。当前已实现的是实验案卷与部分终局账务校验；候选市场比较、Owner 选定市场、独立 AI 反证、真实成交资格、售后观察期和正利润裁决尚未闭环。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md) 和 [项目真相审计](research/project-truth-audit-2026-07-11.md)。
+> **用途边界**：本文只保存带日期的工程与验证事实，不是产品方向、预算或开发优先级授权。当前海洋目标见 [OCEAN_GOAL.md](OCEAN_GOAL.md)，产品决定见 [PRODUCT.md](PRODUCT.md)，当前管理状态见 [CURRENT.md](CURRENT.md)。历史自用经营提案未获当前确认。
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
@@ -96,7 +96,8 @@
 | 项目 | 当前口径 |
 |------|----------|
 | 活跃代码栈 | `backend-go/` + `frontend-next/` |
-| 当前方向 | Owner 自用 Sprint 1：候选市场与独立反证闭环，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
+| 海洋目标 | Owner 已确认；当前第一片湖为系统可用性，见 [OCEAN_GOAL.md](OCEAN_GOAL.md) |
+| 具体经营方向 | 市场、用户、商品、预算和首条真实经营闭环仍为 `unknown`，见 [PRODUCT.md](PRODUCT.md) |
 | 模块 / API / 页面事实源 | [reference-module-catalog.md](reference-module-catalog.md) |
 | 最新审计验证 | 2026-07-11：后端全量测试通过；前端 test / build 通过；lint 失败；E2E 未运行 |
 | 历史验证记录 | 本文下方各日期段落、[TEST_SUMMARY.md](TEST_SUMMARY.md)、[FRONTEND_TEST_REPORT.md](FRONTEND_TEST_REPORT.md) |

@@ -268,7 +268,7 @@
 - `docs/PROJECT_STATUS.md`：准确区分真实、估算、mock、stub；记录 Ozon 尚待账号级验证。
 - `DESIGN.md`：从 B2B SaaS/merchants 改为单 Owner 决策工作台；优先呈现实验风险、证据和利润状态。
 - `docs/INDEX.md`：把当前事实源置顶，冻结文档移入历史区。
-- `docs/PRODUCT_VISION_AND_MVP.md`、`docs/explanation-business-loops.md`、`docs/howto-first-business-loop.md`：统一成一个真实 Ozon 实验闭环。
+- [Owner 自用经营方向](../../docs/SELF_USE_OPERATING_DIRECTION.md)、[当前方向与优先级](../../docs/CURRENT_DIRECTION_AND_PRIORITIES.md)、[部署与恢复手册](../../docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md)：统一成不预设国家、平台或固定数量的 Owner 自用经营闭环。
 
 ### 必须冻结并在文件顶部加醒目标记
 

@@ -36,6 +36,8 @@ The Owner does not decide:
 - Whether an architecture is technically optimal.
 - Whether a dependency, migration, or refactor is safe.
 
+The Owner may state a result such as “the system must work” without knowing the first technical path. Agents must diagnose the current reality, recommend the first complete lake, and give the Owner a business-readable acceptance path. Lack of technical knowledge is not a reason to return architecture choices to the Owner.
+
 Agents must not force the Owner to make technical choices. When choices are necessary, the Agent must recommend one option and explain the business tradeoff.
 
 ## 2. Required Agent Response Before Work

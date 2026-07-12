@@ -78,6 +78,8 @@ Package: `backend-go/internal/domain/profit/`
 | `TotalCost` | `float64` | `total_cost` | `total_cost` | default:0 |
 | `Profit` | `float64` | `profit` | `profit` | default:0 |
 | `Margin` | `float64` | `margin` | `margin` | default:0 |
+| `ProfitStatus` | `string` | `profit_status` | `profit_status` | NOT NULL, default:provisional |
+| `MissingCosts` | `string` | `missing_costs` | `missing_costs` | NOT NULL, default:'' |
 | `CalculatedAt` | `time.Time` | `calculated_at` | `calculated_at` |  |
 
 ### `OrderProfit`

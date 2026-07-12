@@ -61,7 +61,8 @@ export class ApiClient {
   private inflightRequests: Map<string, Promise<unknown>> = new Map();
 
   /** Optional callback invoked on 403 responses. */
-  private static forbiddenHandler: (() => void) | null = null;
+  private static forbiddenHandler: (() => void | Promise<void>) | null = null;
+  private static handlingForbidden = false;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
@@ -71,7 +72,7 @@ export class ApiClient {
    * Register a callback that fires whenever a 403 response is received.
    * The permission store uses this to re-fetch permissions automatically.
    */
-  static setForbiddenHandler(handler: (() => void) | null): void {
+  static setForbiddenHandler(handler: (() => void | Promise<void>) | null): void {
     ApiClient.forbiddenHandler = handler;
   }
 
@@ -246,7 +247,14 @@ export class ApiClient {
 
     // 403 — trigger the forbidden handler (typically re-fetches permissions)
     if (response.status === 403) {
-      ApiClient.forbiddenHandler?.();
+      if (ApiClient.forbiddenHandler && !ApiClient.handlingForbidden) {
+        ApiClient.handlingForbidden = true;
+        try {
+          await ApiClient.forbiddenHandler();
+        } finally {
+          ApiClient.handlingForbidden = false;
+        }
+      }
       throw ApiError.fromStatus(403);
     }
 

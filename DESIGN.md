@@ -1,6 +1,8 @@
 # Design System — 凌镜 LingMirror
 
-> **Current product boundary — 2026-07-11:** 本设计系统只服务 Owner 自用内部经营工作台。下文中 B2B SaaS、merchants、operations teams 和 SaaS dashboard 是历史设计语境，不得驱动当前开发。当前界面优先级依次为：实验现金风险、证据完整性、停止条件、订单/退货状态和最终净利润；与首轮 Ozon 实验无关的视觉重构冻结。
+> status: `historical design context / unconfirmed specifics`
+> authority: 视觉原则参考，不定义当前产品、市场或页面优先级；当前入口见 [海洋目标](docs/OCEAN_GOAL.md)、[产品事实](docs/PRODUCT.md) 和 [当前状态](docs/CURRENT.md)。
+> 下文 Owner 自用实验、Ozon 和固定界面优先级均为历史语境，只有进入对应已确认湖泊后才能重新采用。
 
 ## Product Context
 - **What this is:** Owner 本人用于运行真实跨境商品实验的内部经营工作台。

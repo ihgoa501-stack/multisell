@@ -10,6 +10,7 @@ Package: `backend-go/internal/domain/listingtask/`
 | Method | Path | Handler |
 |--------|------|--------|
 | `POST` | `/api/v1/listing-task/:task_id/execute` | `h.Execute` |
+| `POST` | `/api/v1/listing-task/:task_id/feedback` | `h.Feedback` |
 | `POST` | `/api/v1/listing-task/:task_id/items/:item_id/retry` | `h.RetryItem` |
 | `POST` | `/api/v1/listing-task/:task_id/retry-failed` | `h.RetryFailed` |
 | `POST` | `/api/v1/listing-task/retry-all` | `h.RetryAll` |

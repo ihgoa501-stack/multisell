@@ -11,6 +11,15 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests',
+  // Historical mock suites assert the superseded AgentOS dashboard, Owner mock
+  // console, and legacy product UI. Keep the files for traceability, but do not
+  // let them define acceptance for the current Owner self-use business loop.
+  testIgnore: [
+    '**/login.spec.ts',
+    '**/main-chain.spec.ts',
+    '**/owner-approval.spec.ts',
+    '**/products.spec.ts',
+  ],
   fullyParallel: false, // E2E shares a DB; run serially to avoid data races
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

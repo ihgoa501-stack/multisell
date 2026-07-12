@@ -1,7 +1,11 @@
-# LingMirror Current Direction and Priorities
+# LingMirror Historical Direction and Priorities
 
 > Updated: 2026-07-11
-> Status: current execution guidance
+> Status: `superseded / unconfirmed`
+> Authority: 历史提案，不是当前产品方向或开发授权
+> Current entry: [PRODUCT.md](PRODUCT.md) 与 [CURRENT.md](CURRENT.md)
+
+> 本文保留当时提案的方向、预算和行动顺序用于追溯。Owner 尚未重新确认这些内容，任何 Agent 不得把正文中的“当前”“P0”或固定金额自动用于规划、开发和结果判断。
 
 ## Current Direction
 

@@ -15,12 +15,32 @@ import (
 func testRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	db := dbtest.NewDB(t, &DemandCase{}, &DemandEvidence{}, &DemandVerdict{}, &ResearchBatch{}, &ResearchSnapshot{})
+	db := dbtest.NewDB(t, &DemandCase{}, &DemandEvidence{}, &DemandVerdict{}, &ResearchBatch{}, &ResearchSnapshot{}, &DataAccessRecord{}, &ProblemCase{}, &ProblemEvidence{})
 	r := gin.New()
 	g := r.Group("/api/v1")
-	g.Use(func(c *gin.Context) { c.Set("user_id", int64(9)); c.Next() })
+	g.Use(func(c *gin.Context) {
+		c.Set("user_id", int64(9))
+		c.Set("_rbac_perms", []string{"ai.action"})
+		c.Next()
+	})
 	RegisterRoutes(g, db, zap.NewNop())
 	return r
+}
+
+func TestReviewedWildfireEventAPIIsIdempotent(t *testing.T) {
+	r := testRouter(t)
+	for i := 0; i < 2; i++ {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/problem-cases/research/reviewed-wildfire-event-batch", nil))
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"rejected":1`) || !strings.Contains(w.Body.String(), `"selected_channels":0`) {
+			t.Fatalf("import %d status=%d body=%s", i, w.Code, w.Body.String())
+		}
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/problem-cases", nil))
+	if w.Code != http.StatusOK || strings.Count(w.Body.String(), "us-ca-hoopa-2021-monument-fire-household-clean-air") != 1 || !strings.Contains(w.Body.String(), `"residual_barrier_status":"not_confirmed"`) {
+		t.Fatalf("unexpected list: %s", w.Body.String())
+	}
 }
 
 func TestCandidateMarketAPIAndOwnerDecisionCard(t *testing.T) {

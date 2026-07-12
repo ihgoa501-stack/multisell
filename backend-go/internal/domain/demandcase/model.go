@@ -74,6 +74,7 @@ type ResearchSnapshot struct {
 	DemandCaseID int64     `gorm:"index;not null" json:"demand_case_id"`
 	RunID        string    `gorm:"uniqueIndex:ux_owner_research_run;size:80;not null" json:"run_id"`
 	RunType      string    `gorm:"uniqueIndex:ux_owner_research_run;size:24;not null" json:"run_type"`
+	Collector    string    `gorm:"size:120;not null" json:"collector"`
 	SourceURI    string    `gorm:"type:text;not null" json:"source_uri"`
 	CollectedAt  time.Time `json:"collected_at"`
 	RawPayload   string    `gorm:"type:text;not null" json:"-"`
@@ -99,10 +100,11 @@ type DemandVerdict struct {
 func (DemandVerdict) TableName() string { return "demand_verdict" }
 
 type Detail struct {
-	Case      DemandCase         `json:"case"`
-	Evidence  []DemandEvidence   `json:"evidence"`
-	Verdict   *DemandVerdict     `json:"verdict,omitempty"`
-	Snapshots []ResearchSnapshot `json:"snapshots"`
+	Case       DemandCase         `json:"case"`
+	Evidence   []DemandEvidence   `json:"evidence"`
+	Verdict    *DemandVerdict     `json:"verdict,omitempty"`
+	Snapshots  []ResearchSnapshot `json:"snapshots"`
+	DataAccess []DataAccessRecord `json:"data_access"`
 }
 
 type OwnerDecisionCard struct {

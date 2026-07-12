@@ -2,6 +2,12 @@
 
 更新时间：2026-06-29
 
+> status: `historical vision / unconfirmed specifics`
+> authority: 长期愿景参考，不是当前产品参数、湖泊顺序或开发授权
+> 当前海洋目标与执行入口：[OCEAN_GOAL.md](OCEAN_GOAL.md)、[CURRENT.md](CURRENT.md)
+
+> Owner 已确认“海洋目标 → 完整湖泊 → 持续推进”的建设方式，但本文中的双入口、岗位、阶段顺序和具体业务链仍需在对应湖泊开始前重新核验。
+
 ## 1. 一句话方向
 
 凌镜 LingMirror 的长期方向是：

@@ -58,8 +58,8 @@ interface ListingTaskItem {
 /* ─── Tool definitions ─── */
 
 const tools = [
-  { id: 'products', icon: <ShoppingOutlined />, label: '商品管理', badge: '2,847' },
-  { id: 'publish', icon: <SendOutlined />, label: '平台发布', badge: '8 待处理' },
+  { id: 'products', icon: <ShoppingOutlined />, label: '商品管理', badge: null },
+  { id: 'publish', icon: <SendOutlined />, label: '平台发布', badge: null },
   { id: 'analytics', icon: <BarChartOutlined />, label: '数据分析', badge: undefined },
   { id: 'pricing', icon: <DollarOutlined />, label: '价格监控', badge: undefined },
   { id: 'ai-copy', icon: <BulbOutlined />, label: 'AI 文案', badge: undefined },

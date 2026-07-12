@@ -418,6 +418,7 @@ func (n *noopDeliveryChecker) IsDelivered(_ context.Context, _, _ string) (bool,
 // CreateCase creates a new dispute case.
 func (ds *DisputeService) CreateCase(ctx context.Context, in *CreateDisputeInput) (*DisputeCase, error) {
 	dc := DisputeCase{
+		OrderID:       in.OrderID,
 		TransactionID: in.TransactionID,
 		Platform:      in.Platform,
 		ClaimType:     in.ClaimType,

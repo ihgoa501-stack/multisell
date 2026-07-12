@@ -81,7 +81,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     await page.goto('/sourcing');
 
     // Wait for page heading (confirms AuthGuard passed).
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     // Empty indicator should be visible.
     await expect(page.locator('.ant-empty').first()).toBeVisible();
@@ -98,7 +98,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     });
 
     await page.goto('/sourcing');
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     const urlInput = page.locator('input[placeholder*="1688"]');
     await expect(urlInput).toBeVisible();
@@ -122,7 +122,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     });
 
     await page.goto('/sourcing');
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     await page.locator('input[placeholder*="1688"]').fill('https://detail.1688.com/offer/test.html');
     await page.getByRole('button', { name: /采集分析/i }).click();
@@ -151,7 +151,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     });
 
     await page.goto('/sourcing');
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     // Fill URL and click fetch.
     await page.locator('input[placeholder*="1688"]').fill('https://detail.1688.com/offer/test.html');
@@ -179,7 +179,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     });
 
     await page.goto('/sourcing');
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     await page.locator('input[placeholder*="1688"]').fill('https://detail.1688.com/offer/fail.html');
     await page.getByRole('button', { name: /采集分析/i }).click();
@@ -206,7 +206,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     });
 
     await page.goto('/sourcing');
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     await page.locator('input[placeholder*="1688"]').fill('https://detail.1688.com/offer/jacket-test.html');
     await page.getByRole('button', { name: /采集分析/i }).click();
@@ -233,7 +233,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     });
 
     await page.goto('/sourcing');
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     const table = page.locator('.ant-table-tbody');
     await expect(table).toBeVisible();
@@ -259,7 +259,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     });
 
     await page.goto('/sourcing');
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     const tags = page.locator('.ant-tag');
     await expect(tags.nth(0)).toContainText('推荐');
@@ -280,7 +280,7 @@ test.describe('A8 Sourcing Agent — Full Pipeline', () => {
     });
 
     await page.goto('/sourcing');
-    await expect(page.locator('h1')).toContainText('1688 选品采集', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('AI 选品', { timeout: 10000 });
 
     const container = page.locator('div[style*="padding: 16px 20px"]').first();
     await expect(container).toBeVisible();

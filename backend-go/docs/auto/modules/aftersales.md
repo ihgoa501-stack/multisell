@@ -136,6 +136,7 @@ Package: `backend-go/internal/domain/aftersales/`
 | Field | Type | JSON | Column | Constraints |
 |-------|------|------|--------|-------------|
 | `ID` | `int64` | `id` | `id` | PK |
+| `OrderID` | `*int64` | `order_id,omitempty` | `order_id` |  |
 | `TransactionID` | `string` | `transaction_id` | `transaction_id` | NOT NULL |
 | `Platform` | `string` | `platform` | `platform` | NOT NULL |
 | `ClaimType` | `string` | `claim_type` | `claim_type` | NOT NULL |
@@ -153,6 +154,7 @@ Package: `backend-go/internal/domain/aftersales/`
 
 | Field | Type | JSON | Column | Constraints |
 |-------|------|------|--------|-------------|
+| `OrderID` | `*int64` | `order_id` | `—` |  |
 | `TransactionID` | `string` | `transaction_id` | `—` |  |
 | `Platform` | `string` | `platform` | `—` |  |
 | `ClaimType` | `string` | `claim_type` | `—` |  |

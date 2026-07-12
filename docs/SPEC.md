@@ -3,7 +3,9 @@
 > 技术名：MultiSell · 版本 v0.3.0.0
 > 日期：2026-07-05
 
-> **2026-07-11 方向覆盖说明**：当前产品只服务 Owner 本人，是自用跨境商品实验与经营内部系统。先选择“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，再决定启用什么数据源；Ozon、欧洲或任何已有连接器都不是默认方向。本文中的泛化“跨境电商从业者”、外部产品或平台化描述不得覆盖 `SELF_USE_OPERATING_DIRECTION.md`。
+> status: `historical technical spec / partially stale`
+> authority: 既有技术设计参考，不定义当前产品方向；当前入口见 [海洋目标](OCEAN_GOAL.md)、[产品方向](PRODUCT.md) 和 [当前状态](CURRENT.md)
+> 本文中的 Owner 自用商品实验、目标用户、Agent 岗位和平台化描述均需在对应湖泊重新确认；Ozon、欧洲或任何已有连接器都不是默认方向。
 
 ---
 

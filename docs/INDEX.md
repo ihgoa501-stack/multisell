@@ -1,13 +1,32 @@
 # 凌镜 LingMirror — 文档索引
 
-> **当前方向（2026-07-11）**：先读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。双产品、外部 SaaS、多租户和商业化文档均为冻结历史材料，不得作为当前开发指令。
+> **方向确认规则**：Owner 已确认“海洋目标 → 完整湖泊 → 持续推进直到达成”的建设方式和系统终点；具体市场、用户、商品、预算及经营参数仍须在对应湖泊确认。[Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 仍是 `superseded / unconfirmed` 历史提案。
 
-> **当前事实入口**：再读 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。它区分政策、计划、代码实现、自动验证、真实外部观察、对账、mock、推断和已过期声明。
+> **带日期的事实快照**：可读 [项目真相审计 2026-07-12](research/project-truth-audit-2026-07-12.md) 核验最新工程证据边界；历史快照仍保留，不静默覆盖。
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
 > 更新日期：2026-07-11
 
 ---
+
+## ⭐ 当前权威入口
+
+| 问题 | 唯一入口 |
+|---|---|
+| 凌镜最终要达到什么、怎样逐步达到？ | [海洋目标](OCEAN_GOAL.md) |
+| Owner 当前确认了什么产品方向？ | [产品方向](PRODUCT.md) |
+| 现在处于什么阶段、只做什么？ | [当前管理状态](CURRENT.md) |
+| NOW / NEXT / LATER / FROZEN 是什么？ | [任务池](BACKLOG.md) |
+| 当前代码与验证事实是什么？ | [项目状态](PROJECT_STATUS.md) |
+| 有哪些已知失败和风险？ | [已知问题](KNOWN_ISSUES.md) |
+| 非小型功能如何写任务卡？ | [功能任务模板](features/TEMPLATE.md) |
+| 当前第一片湖是什么？ | [系统可用性恢复](features/SYSTEM_USABILITY_LAKE.md)（`in_progress`） |
+| 三个月发布候选是什么？ | [跨境电商单品利润计算器发布提案](features/CROSS_BORDER_PROFIT_CALCULATOR_RELEASE_PROPOSAL.md)（`draft / unconfirmed`） |
+| 开发如何循环？ | [开发闭环](DEVELOPMENT_LOOP.md) |
+
+项目级 Codex Agent 定义位于 `.codex/agents/`：`researcher`、`implementer`、`reviewer` 和 `qa`。全局并发与嵌套限制位于 `.codex/config.toml`。
+
+海洋目标、产品决定、当前任务、工程事实和历史研究必须分开记录。历史文档即使含有“当前”“P0”或“唯一主线”，也不能覆盖以上入口。
 
 ## 🚀 快速入门 (Quick Start)
 
@@ -43,22 +62,22 @@
 
 ## 📋 项目概览
 
-当前执行口径以 [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) 和 `docs/governance/` 为准。
-下表中的历史计划、蓝图和研究材料保留作参考，不覆盖当前优先级。
+当前产品方向以 [PRODUCT.md](PRODUCT.md) 为准，当前任务以 [CURRENT.md](CURRENT.md) 和 [BACKLOG.md](BACKLOG.md) 为准，长期安全规则以 `docs/governance/` 为准。
+下表中的历史计划、蓝图和研究材料保留作参考，不构成当前授权。
 
 | 文档 | 说明 |
 |------|------|
-| [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 🆕 当前执行口径：产品方向、AgentOS 安全优先级、文档清理规则 |
+| [2026-07-11 历史方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | `superseded / unconfirmed` 历史提案，不得作为当前开发指令 |
 | [设计系统](DESIGN.md) | 🆕 UI 设计规范：色彩、字体、间距、动画、组件风格、无障碍 |
 | [项目状态](PROJECT_STATUS.md) | 当前版本、验证状态、更新历史 |
 | [AI 无人公司长远战略愿景](LONG_TERM_VISION_AND_STRATEGY.md) | 🆕 系统终极形态：“全自动驾驶”无人公司操作系统的四道门槛与落地路线图 |
 | [模块目录](reference-module-catalog.md) | 🆕 模块、API 路由和前端页面唯一事实源 |
-| [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | 长期方向、阶段路线、Owner 控制规则和 Agent 提案检查表 |
-| [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | Day 1-7 完整开发计划，5 条并行线 |
+| [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | `historical vision / unconfirmed specifics`，仅作长期愿景参考 |
+| [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | 历史 Day 1-7 开发计划，不是当前任务顺序 |
 | [每日战情板](7_DAY_BATTLE_BOARD.md) | 7 天每日进度追踪 |
 | [Agent Commerce OS 完整蓝图](LINGMIRROR_AGENT_COMMERCE_OS_BLUEPRINT.md) | 完整产品定位、系统分层、开发路径 |
-| [产品愿景与 MVP](PRODUCT_VISION_AND_MVP.md) | 产品定位、第一可用版本定义 |
-| [路线图](ROADMAP.md) | Phase 0–8 详细阶段规划 |
+| [历史产品愿景与 MVP](PRODUCT_VISION_AND_MVP.md) | `superseded / unconfirmed`，不是当前切入口 |
+| [历史 Owner 自用路线图](ROADMAP.md) | `superseded / unconfirmed`，不是当前路线；当前顺序见 `BACKLOG.md` |
 | [项目治理与 Agent 协作规范](PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | 协作规则、验收标准 |
 | [Active Stack Policy](ACTIVE_STACK_POLICY.md) | Go + Next 活跃技术栈和旧栈边界 |
 | [AIOS 基础设施架构](aios-architecture.md) | AIOS 内核层 11 个基础设施模块的接口契约与实现路径 |
@@ -70,13 +89,21 @@
 
 | 文档 | 当前用途 |
 |------|----------|
-| [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律、开发路线与解冻门槛 |
-| [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
+| [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | `superseded / unconfirmed` 历史提案；不得自动继承其定位、预算或路线 |
+| [2026-07-11 方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 历史材料，当前有效性未确认，不得自动作为开发指令 |
 | [真实付费需求发现循环设计](superpowers/specs/2026-07-11-paid-demand-discovery-loop-design.md) | 候选市场、需求案件、独立反证和真实交易裁决边界 |
 | [真实付费需求发现循环实施计划](superpowers/plans/2026-07-11-paid-demand-discovery-loop.md) | Sprint 1 分阶段实施与验收计划 |
 | [付费需求信号地图](../deliverables/research/paid-demand-signal-map.md) | 代理信号与真实付款证据的边界 |
 | [付费需求反证协议](../deliverables/research/paid-demand-falsification-protocol.md) | 独立反证、污染和停止规则 |
 | [需求数据可得性现实审计](../deliverables/research/demand-data-access-reality.md) | 平台字段、权限和 unknown 边界 |
+| [带日期跨市场公开资料侦察](../deliverables/research/2026-07-11-live-market-permission-batch.md) | 英国、美国、日本候选的公开证据、权限现实与停止线 |
+| [跨市场独立反证](../deliverables/research/2026-07-11-live-market-independent-falsification.md) | 独立攻击英美日候选并给出 hold/reject 裁决 |
+| [具体问题优先公开资料侦察](../deliverables/research/2026-07-11-problem-first-scout.md) | 不预设平台和商品的地区、人群、具体场景与责任边界侦察 |
+| [具体问题优先独立反证](../deliverables/research/2026-07-11-problem-first-independent-falsification.md) | 独立攻击责任、可控性、替代方案和伤害边界；本轮 0 个存活案件 |
+| [Hoopa 2021 野火家庭事件侦察](../deliverables/research/2026-07-11-us-wildfire-local-event-scout.md) | 单地区真实事件的家庭采用、PM2.5、设备、滤芯与停用证据审计 |
+| [Hoopa 2021 野火家庭事件独立反证](../deliverables/research/2026-07-11-us-wildfire-local-event-independent-falsification.md) | 事件—干预时间错位、商用替代和公共空间缺口的二选一裁决 |
+| [具体问题优先研究契约](features/PROBLEM_FIRST_RESEARCH_CONTRACT.md) | 问题状态、独立采集者、证据哈希、晋升和幂等导入边界 |
+| [真实付费需求只读权限预检](ops/PAID_DEMAND_READ_ONLY_PREFLIGHT.md) | 当前权限候选、禁止权限、通过与停止条件 |
 | [选市场、选类目、选产品统一方法](../deliverables/research/market-category-product-selection-synthesis.md) | 历史研究材料；固定漏斗数量已冻结，当前只保留其证据边界参考 |
 | [市场选择研究](../deliverables/research/market-selection-method.md) | 国家市场、平台市场与需求市场的选择方法和 Ozon 实证闸门 |
 | [类目选择研究](../deliverables/research/category-selection-method.md) | 类目硬淘汰、七维筛选、评分与反例 |
@@ -87,6 +114,7 @@
 | [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |
 | [AI-Native AgentOS 任务清单](../tasks/todo.md) | 🆕 可逐项执行的 Product Loop / Action Gate / E2E canonical 任务列表 |
 | [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) | 当前代码、测试、经营事实、mock、过期方向和未闭环部分的只读审计快照 |
+| [项目真相审计 2026-07-12](research/project-truth-audit-2026-07-12.md) | Issue #332–#338 修复后的闸门、展示和浏览器回归证据边界 |
 | [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | ⛔ 已被 2026-07-11 自用方向替代，仅供历史追溯 |
 | [验收门禁](ACCEPTANCE_GATE.md) | 🆕 Dev Done / Test Green / Business Verified / Beta Accepted 的完成定义和证据要求 |
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |

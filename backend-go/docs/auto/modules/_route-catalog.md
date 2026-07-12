@@ -1,6 +1,6 @@
 # Route Catalog (auto-generated)
 
-> Total modules: 63 | Total routes: 566
+> Total modules: 65 | Total routes: 598
 
 ## Overview
 
@@ -10,65 +10,67 @@
 | [`producthub`](producthub.md) | 30 | `product.read` | `domain/producthub/` |
 | [`price`](price.md) | 20 | `finance.read` | `domain/price/` |
 | [`workflow`](workflow.md) | 19 | `—` | `domain/workflow/` |
-| [`sku`](sku.md) | 18 | `product.read` | `domain/sku/` |
 | [`finance`](finance.md) | 18 | `finance.read` | `domain/finance/` |
-| [`inventory`](inventory.md) | 17 | `inventory.read` | `domain/inventory/` |
+| [`sku`](sku.md) | 18 | `product.read` | `domain/sku/` |
+| [`integrations`](integrations.md) | 18 | `—` | `domain/integrations/` |
+| [`demandcase`](demandcase.md) | 18 | `—` | `domain/demandcase/` |
 | [`aftersales`](aftersales.md) | 17 | `—` | `domain/aftersales/` |
+| [`inventory`](inventory.md) | 17 | `inventory.read` | `domain/inventory/` |
 | [`support`](support.md) | 17 | `—` | `domain/support/` |
-| [`integrations`](integrations.md) | 17 | `—` | `domain/integrations/` |
+| [`listingtask`](listingtask.md) | 17 | `listing.read` | `domain/listingtask/` |
 | [`listing`](listing.md) | 16 | `listing.read` | `domain/listing/` |
-| [`supplier`](supplier.md) | 16 | `—` | `domain/supplier/` |
-| [`listingtask`](listingtask.md) | 16 | `listing.read` | `domain/listingtask/` |
 | [`imagegen`](imagegen.md) | 16 | `—` | `domain/imagegen/` |
-| [`candidate`](candidate.md) | 13 | `—` | `domain/candidate/` |
+| [`supplier`](supplier.md) | 16 | `—` | `domain/supplier/` |
+| [`candidate`](candidate.md) | 14 | `—` | `domain/candidate/` |
 | [`allocation`](allocation.md) | 13 | `—` | `domain/allocation/` |
-| [`supplychain`](supplychain.md) | 11 | `—` | `domain/supplychain/` |
 | [`notification`](notification.md) | 11 | `—` | `domain/notification/` |
-| [`settlement`](settlement.md) | 10 | `settlement.read` | `domain/settlement/` |
+| [`supplychain`](supplychain.md) | 11 | `—` | `domain/supplychain/` |
+| [`settlement`](settlement.md) | 11 | `settlement.read` | `domain/settlement/` |
 | [`exceptions`](exceptions.md) | 10 | `—` | `domain/exceptions/` |
 | [`platform`](platform.md) | 10 | `—` | `domain/platform/` |
-| [`sourcing1688`](sourcing1688.md) | 8 | `—` | `domain/sourcing1688/` |
+| [`experiment`](experiment.md) | 9 | `—` | `domain/experiment/` |
 | [`decision`](decision.md) | 8 | `—` | `domain/decision/` |
-| [`competitor`](competitor.md) | 8 | `—` | `domain/competitor/` |
-| [`purchase`](purchase.md) | 8 | `—` | `domain/purchase/` |
 | [`orderimport`](orderimport.md) | 8 | `order.read` | `domain/orderimport/` |
-| [`actionpolicy`](actionpolicy.md) | 7 | `—` | `domain/actionpolicy/` |
-| [`importbatch`](importbatch.md) | 7 | `—` | `domain/importbatch/` |
-| [`consolidation`](consolidation.md) | 7 | `—` | `domain/consolidation/` |
-| [`order`](order.md) | 7 | `order.read` | `domain/order/` |
+| [`competitor`](competitor.md) | 8 | `—` | `domain/competitor/` |
+| [`sourcing1688`](sourcing1688.md) | 8 | `—` | `domain/sourcing1688/` |
+| [`purchase`](purchase.md) | 8 | `—` | `domain/purchase/` |
 | [`trustscore`](trustscore.md) | 7 | `—` | `domain/trustscore/` |
+| [`importbatch`](importbatch.md) | 7 | `—` | `domain/importbatch/` |
 | [`agentrule`](agentrule.md) | 7 | `—` | `domain/agentrule/` |
-| [`owner`](owner.md) | 7 | `—` | `domain/owner/` |
 | [`report`](report.md) | 7 | `report.read` | `domain/report/` |
+| [`actionpolicy`](actionpolicy.md) | 7 | `—` | `domain/actionpolicy/` |
+| [`owner`](owner.md) | 7 | `—` | `domain/owner/` |
+| [`order`](order.md) | 7 | `order.read` | `domain/order/` |
+| [`consolidation`](consolidation.md) | 7 | `—` | `domain/consolidation/` |
 | [`dashboard`](dashboard.md) | 6 | `—` | `domain/dashboard/` |
-| [`approval`](approval.md) | 6 | `—` | `domain/approval/` |
-| [`tariff`](tariff.md) | 6 | `—` | `domain/tariff/` |
-| [`category`](category.md) | 6 | `—` | `domain/category/` |
 | [`platformfee`](platformfee.md) | 6 | `—` | `domain/platformfee/` |
+| [`category`](category.md) | 6 | `—` | `domain/category/` |
+| [`tariff`](tariff.md) | 6 | `—` | `domain/tariff/` |
+| [`approval`](approval.md) | 6 | `—` | `domain/approval/` |
 | [`personalrule`](personalrule.md) | 6 | `—` | `domain/personalrule/` |
-| [`metabolism`](metabolism.md) | 5 | `—` | `domain/metabolism/` |
-| [`agentlearning`](agentlearning.md) | 5 | `—` | `domain/agentlearning/` |
+| [`entropy`](entropy.md) | 5 | `—` | `domain/entropy/` |
+| [`orchestration`](orchestration.md) | 5 | `—` | `domain/orchestration/` |
+| [`compliance`](compliance.md) | 5 | `—` | `domain/compliance/` |
 | [`productanalysis`](productanalysis.md) | 5 | `—` | `domain/productanalysis/` |
 | [`brand`](brand.md) | 5 | `—` | `domain/brand/` |
+| [`metabolism`](metabolism.md) | 5 | `—` | `domain/metabolism/` |
+| [`sourcing`](sourcing.md) | 5 | `—` | `domain/sourcing/` |
 | [`exchangerate`](exchangerate.md) | 5 | `—` | `domain/exchangerate/` |
-| [`compliance`](compliance.md) | 5 | `—` | `domain/compliance/` |
-| [`orchestration`](orchestration.md) | 5 | `—` | `domain/orchestration/` |
-| [`entropy`](entropy.md) | 5 | `—` | `domain/entropy/` |
-| [`sourcing`](sourcing.md) | 4 | `—` | `domain/sourcing/` |
+| [`agentlearning`](agentlearning.md) | 5 | `—` | `domain/agentlearning/` |
 | [`mock`](mock.md) | 4 | `—` | `domain/mock/` |
 | [`evolution`](evolution.md) | 4 | `—` | `domain/evolution/` |
-| [`profit`](profit.md) | 3 | `—` | `domain/profit/` |
-| [`sentiment`](sentiment.md) | 3 | `—` | `domain/sentiment/` |
-| [`completeness`](completeness.md) | 3 | `—` | `domain/completeness/` |
-| [`landedcost`](landedcost.md) | 3 | `—` | `domain/landedcost/` |
 | [`loop`](loop.md) | 3 | `—` | `domain/loop/` |
+| [`sentiment`](sentiment.md) | 3 | `—` | `domain/sentiment/` |
+| [`profit`](profit.md) | 3 | `—` | `domain/profit/` |
 | [`operationlog`](operationlog.md) | 3 | `—` | `domain/operationlog/` |
-| [`search`](search.md) | 2 | `—` | `domain/search/` |
-| [`content`](content.md) | 2 | `—` | `domain/content/` |
+| [`landedcost`](landedcost.md) | 3 | `—` | `domain/landedcost/` |
+| [`completeness`](completeness.md) | 3 | `—` | `domain/completeness/` |
 | [`settings`](settings.md) | 2 | `—` | `domain/settings/` |
+| [`search`](search.md) | 2 | `—` | `domain/search/` |
 | [`reliability`](reliability.md) | 2 | `—` | `domain/reliability/` |
-| [`cost`](cost.md) | 1 | `—` | `domain/cost/` |
+| [`content`](content.md) | 2 | `—` | `domain/content/` |
 | [`logistics`](logistics.md) | 1 | `—` | `domain/logistics/` |
+| [`cost`](cost.md) | 1 | `—` | `domain/cost/` |
 
 ## actionpolicy
 
@@ -195,6 +197,7 @@
 | `POST` | `/api/v1/candidates/:id/skip-field` | `h.SkipField` |
 | `GET` | `/api/v1/candidates/collect-leads` | `h.ListCollectLeads` |
 | `GET` | `/api/v1/candidates/collect-leads/:id` | `h.GetCollectLead` |
+| `GET` | `/api/v1/candidates/collection-evidence/:id` | `h.GetCollectionEvidence` |
 | `GET` | `/api/v1/candidates/count` | `h.Count` |
 | `GET` | `/api/v1/candidates/dedup` | `h.Dedup` |
 | `POST` | `/api/v1/candidates/seed` | `h.Seed` |
@@ -308,6 +311,31 @@
 | `POST` | `/api/v1/decision/:id/reject` | `h.Reject` |
 | `GET` | `/api/v1/decision/summary` | `h.Summary` |
 
+## demandcase
+
+**Prefix:** `/api/v1`
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `GET` | `/api/v1/demand-cases` | `h.List` |
+| `POST` | `/api/v1/demand-cases` | `h.Create` |
+| `GET` | `/api/v1/demand-cases/:id` | `h.Get` |
+| `GET` | `/api/v1/demand-cases/:id/decision-card` | `h.DecisionCard` |
+| `POST` | `/api/v1/demand-cases/:id/evaluate` | `h.Evaluate` |
+| `POST` | `/api/v1/demand-cases/:id/evidence` | `h.AddEvidence` |
+| `POST` | `/api/v1/demand-cases/:id/falsifications` | `h.AddFalsification` |
+| `GET` | `/api/v1/demand-cases/:id/permission-requests` | `h.PermissionRequests` |
+| `POST` | `/api/v1/demand-cases/research/import` | `h.ImportResearch` |
+| `POST` | `/api/v1/demand-cases/research/reviewed-market-permission-batch` | `h.ImportReviewedBatch` |
+| `GET` | `/api/v1/problem-cases` | `h.ListProblems` |
+| `POST` | `/api/v1/problem-cases` | `h.CreateProblem` |
+| `GET` | `/api/v1/problem-cases/:id` | `h.GetProblem` |
+| `POST` | `/api/v1/problem-cases/:id/evaluate` | `h.EvaluateProblem` |
+| `POST` | `/api/v1/problem-cases/:id/evidence` | `h.AddProblemEvidence` |
+| `POST` | `/api/v1/problem-cases/:id/promote` | `h.PromoteProblem` |
+| `POST` | `/api/v1/problem-cases/research/reviewed-problem-batch` | `h.ImportReviewedProblemBatch` |
+| `POST` | `/api/v1/problem-cases/research/reviewed-wildfire-event-batch` | `h.ImportReviewedWildfireEventBatch` |
+
 ## entropy
 
 **Prefix:** `/api/v1`
@@ -360,9 +388,26 @@
 | `GET` | `/api/v1/exchange-rates/:from_currency/:to_currency/latest` | `h.GetLatest` |
 | `DELETE` | `/api/v1/exchange-rates/:id` | `h.Delete` |
 
+## experiment
+
+**Prefix:** `/api/v1`
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `GET` | `/api/v1/experiments` | `h.List` |
+| `POST` | `/api/v1/experiments` | `h.Create` |
+| `GET` | `/api/v1/experiments/:experimentId` | `h.Get` |
+| `PUT` | `/api/v1/experiments/:experimentId` | `h.Update` |
+| `POST` | `/api/v1/experiments/:experimentId/evidence` | `h.AddEvidence` |
+| `POST` | `/api/v1/experiments/:experimentId/evidence/:evidenceId/verify` | `h.VerifyEvidence` |
+| `POST` | `/api/v1/experiments/:experimentId/gates/evaluate` | `h.EvaluateGate` |
+| `POST` | `/api/v1/experiments/:experimentId/links` | `h.AddObjectLink` |
+| `GET` | `/api/v1/experiments/:experimentId/owner-summary` | `h.OwnerSummary` |
+
 ## finance
 
 **Permission:** `finance.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -443,6 +488,7 @@
 | `GET` | `/api/v1/platform-integrations/:id/ozon-products` | `h.ListOzonProducts` |
 | `POST` | `/api/v1/platform-integrations/:id/sync` | `h.Sync` |
 | `POST` | `/api/v1/platform-integrations/:id/test` | `h.TestConnection` |
+| `POST` | `/api/v1/platform-integrations/mock/seed` | `` |
 | `POST` | `/api/v1/platform-integrations/publish-to-ozon` | `h.PublishToOzon` |
 | `POST` | `/api/v1/platform-integrations/write-back` | `h.WriteBack` |
 | `POST` | `/api/v1/platform-integrations/write-back/:ref-id/retry` | `h.RetryWriteBack` |
@@ -450,6 +496,7 @@
 ## inventory
 
 **Permission:** `inventory.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -485,6 +532,7 @@
 ## listing
 
 **Permission:** `listing.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -509,11 +557,13 @@
 ## listingtask
 
 **Permission:** `listing.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
 |--------|------|--------|
 | `POST` | `/api/v1/listing-task/:task_id/execute` | `h.Execute` |
+| `POST` | `/api/v1/listing-task/:task_id/feedback` | `h.Feedback` |
 | `POST` | `/api/v1/listing-task/:task_id/items/:item_id/retry` | `h.RetryItem` |
 | `POST` | `/api/v1/listing-task/:task_id/retry-failed` | `h.RetryFailed` |
 | `POST` | `/api/v1/listing-task/retry-all` | `h.RetryAll` |
@@ -614,6 +664,7 @@
 ## order
 
 **Permission:** `order.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -629,6 +680,7 @@
 ## orderimport
 
 **Permission:** `order.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -702,6 +754,7 @@
 ## price
 
 **Permission:** `finance.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -742,6 +795,7 @@
 ## producthub
 
 **Permission:** `product.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -814,6 +868,7 @@
 ## report
 
 **Permission:** `report.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -857,6 +912,7 @@
 ## settlement
 
 **Permission:** `settlement.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -870,11 +926,13 @@
 | `POST` | `/api/v1/settlement/:id/items` | `h.AddItem` |
 | `POST` | `/api/v1/settlement/:id/reconcile` | `h.Reconcile` |
 | `PUT` | `/api/v1/settlement/items/:item_id/reconciliation` | `h.UpdateItemReconciliation` |
+| `POST` | `/api/v1/settlement/recalculate` | `h.RecalculateAll` |
 | `GET` | `/api/v1/settlement/summary` | `h.Summary` |
 
 ## shipping
 
 **Permission:** `shipping.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -922,6 +980,7 @@
 ## sku
 
 **Permission:** `product.read`
+
 **Prefix:** `/api/v1`
 
 | Method | Path | Handler |
@@ -953,6 +1012,7 @@
 |--------|------|--------|
 | `POST` | `/api/v1/sourcing/fetch` | `h.Fetch` |
 | `GET` | `/api/v1/sourcing/keyword-trends` | `h.KeywordTrends` |
+| `GET` | `/api/v1/sourcing/market-overview` | `h.MarketOverview` |
 | `GET` | `/api/v1/sourcing/market-trends` | `h.MarketTrends` |
 | `GET` | `/api/v1/sourcing/recommendations` | `h.ListRecommendations` |
 

@@ -1,8 +1,14 @@
 # CLAUDE.md
 
-> **当前最高优先级方向（2026-07-11）**：凌镜只做 Owner 自用跨境商品实验系统。先比较“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，由 Owner 批准已选市场后，才采集该市场的需求、竞争、获客、履约、合规、收款和利润证据。不得预设 Ozon、欧洲或任何平台，也不得把“已有连接器”解释成经营方向。详见 `docs/SELF_USE_OPERATING_DIRECTION.md` 和 `CONTEXT.md`。
+> **海洋目标规则**：Owner 已于 2026-07-11 确认“海洋目标 → 完整湖泊 → 持续推进直到达成”的建设方式。唯一入口是 `docs/OCEAN_GOAL.md`。
+>
+> 当前状态见 `docs/CURRENT.md`。
+>
+> 当前顺序见 `docs/BACKLOG.md`。
+>
+> 具体市场、用户、商品、预算或经营路线仍须在对应湖泊确认。`docs/SELF_USE_OPERATING_DIRECTION.md` 是 `superseded / unconfirmed` 的历史提案，不得自动采用其中的自用定位、3,000 CNY 预算、1,200 CNY 损失线或跨市场实验路线。
 
-开始非平凡工作前必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。该审计是当前完成度和证据限制的入口；模块存在、测试通过、页面可见、mock 或 Agent 共识均不得升级为真实经营事实。代码或现实状态变化时必须重新核验，而不是沿用旧完成声明。
+开始非平凡工作前必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。该审计只是带日期的仓库证据快照，不是当前产品方向或行动授权；模块存在、测试通过、页面可见、mock 或 Agent 共识均不得升级为真实经营事实。代码或现实状态变化时必须重新核验，而不是沿用旧完成声明。
 
 Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有明确决策用途和市场闸门时，不得启动平台商品采集。已有采集线索通过 `evidence_id` 引用不可变页面快照。
 
@@ -10,7 +16,13 @@ Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有
 
 候选市场比较统一使用 `internal/domain/demandcase/` 和 `/api/v1/demand-cases`。候选市场必须包含地区、消费者、需求场景和销售渠道；八个决策维度及独立反证未齐全时保持 `evidence_missing`。平台连接器、AI 推断、mock 或无来源数字不能通过确定性裁决。
 
-Owner 从 `/demand-cases` 查看候选市场。AI 研究 run 必须使用三类固定契约并保存可重算 SHA-256 原始快照；内置公开研究批次只产生权限待验证基线，不得解释为俄罗斯/Ozon 已入选。
+Owner 从 `/demand-cases` 查看候选市场。AI 研究 run 必须使用三类固定契约并保存可重算 SHA-256 研究输出快照；页面按钮只导入已审阅的带日期研究，不在点击时联网。
+
+渠道比较前的具体问题使用 `ProblemCase`、API `/api/v1/problem-cases` 和 Owner 页面 `/problem-cases`。问题案件不预设商品或渠道；只有受信研究运行的支持与独立反证可参与裁决，证据原始内容必须与 SHA-256 一致，审阅批次必须幂等，且只有 `survives_falsification` 可晋升为 `DemandCase`。
+
+问题存活还要求 `residual_barrier_status=confirmed`；`not_confirmed` 在独立证据齐全时确定性淘汰。Hoopa Valley × 2021 Monument Fire 审阅批次使用 `/api/v1/problem-cases/research/reviewed-wildfire-event-batch`，不得据此选择商品、平台或渠道。
+
+2026-07-11 独立反证后，英国和美国候选保持 hold/evidence_missing，日本当前表述 reject，本轮不申请任何账号权限。未来权限卡只能请求最小只读范围，需要 listing、交易或写入的字段不得出现在当前授权入口。
 
 This file gives Claude Code-specific guidance for working in this repository.
 Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.
@@ -280,6 +292,9 @@ cd frontend-next/e2e && npx playwright test
 ## Documentation
 
 - `AGENTS.md` — canonical cross-agent project instructions. **Read the "Project Medical Record" section first — it lists known issues, what was fixed, and project rules.**
+- `docs/OCEAN_GOAL.md` — Owner-confirmed ocean goal, lake rules, completion evidence, and current first lake.
+- `docs/PRODUCT.md` — only source for Owner-confirmed product direction; keep unknowns explicit.
+- `docs/CURRENT.md` / `docs/BACKLOG.md` — current management state and work order; `NOW` may contain at most one task.
 - `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.
 - `docs/INDEX.md` — full documentation index.
 - `docs/PROJECT_STATUS.md` — current new-stack status.
@@ -291,6 +306,8 @@ cd frontend-next/e2e && npx playwright test
 - `docs/api-inventory.md` — complete API route inventory (71+ modules).
 - `backend-go/scripts/smoke_test.sh` — 10-step end-to-end pipeline verification.
 - Swagger UI: `GET /swagger/index.html` (dev only, 44 annotated endpoints).
+
+Project-level Codex subagents are defined in `.codex/agents/`: `researcher`, `implementer`, `reviewer`, and `qa`. The root Agent coordinates them; parallelize independent read-heavy work and keep overlapping code writes sequential.
 
 ## Skill routing
 

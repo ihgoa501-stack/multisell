@@ -3,6 +3,8 @@
 > 调研日期：2026-07-11
 > 范围：gstack `ETHOS.md`、凌镜当前治理文档、活跃 Go/Next 源码
 > 结论标签：**事实**＝来源直接支持；**推断**＝基于事实的解释；**建议**＝下一步取舍，不代表已实现
+> status: `historical research snapshot`
+> authority: 本文不能覆盖 Owner 后续确认的 [海洋目标](../OCEAN_GOAL.md)；其中引用旧“当前方向”的段落只保留为当时研究背景
 
 ## 一页结论
 

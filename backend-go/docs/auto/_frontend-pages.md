@@ -20,8 +20,10 @@
 | `/competitors` | ✅ |  |
 | `/dashboard` | ✅ |  |
 | `/decision` | ✅ |  |
+| `/demand-cases` | ✅ |  |
 | `/design-system` | ✅ |  |
 | `/exceptions` | ✅ |  |
+| `/experiments` | ✅ |  |
 | `/feedback` | ✅ |  |
 | `/finance` | ✅ |  |
 | `/fulfillment` | ✅ |  |
@@ -30,6 +32,7 @@
 | `/inventory` | ✅ |  |
 | `/listing-tasks` | ✅ |  |
 | `/listings` | ✅ |  |
+| `/market-intelligence` | ✅ |  |
 | `/metabolism` | ✅ |  |
 | `/notifications` | ✅ |  |
 | `/operation-logs` | ✅ |  |
@@ -40,11 +43,13 @@
 | `/platform-fees` | ✅ |  |
 | `/platform-integrations` | ✅ |  |
 | `/platforms` | ✅ |  |
+| `/problem-cases` | ✅ |  |
 | `/product-hub` | ✅ |  |
 | `/products` | ✅ |  |
 | `/profit` | ✅ |  |
 | `/purchase` | ✅ |  |
 | `/reports` | ✅ |  |
+| `/sandbox-listing` | ✅ |  |
 | `/search` | ✅ |  |
 | `/settings` | ✅ |  |
 | `/settlement` | ✅ |  |

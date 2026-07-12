@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
+import { Alert, Button, Form, Input, InputNumber, Modal, Select, Space, Table, message } from 'antd';
 import {
   PlusOutlined,
   ReloadOutlined,
@@ -413,7 +413,7 @@ export default function CrudListPage({
               {f.type === 'textarea' ? (
                 <Input.TextArea rows={3} />
               ) : f.type === 'number' ? (
-                <Input type="number" />
+                <InputNumber style={{ width: '100%' }} />
               ) : f.type === 'select' ? (
                 <Select options={f.options} allowClear={!f.required} />
               ) : (

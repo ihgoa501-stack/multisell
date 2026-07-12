@@ -1,7 +1,7 @@
 # LingMirror Agent Commerce OS 完整蓝图与开发路径
 
 > [!CAUTION]
-> **已冻结的长期历史蓝图。** Owner 于 2026-07-11 决定只冲刺自用商品实验系统。本文的外部客户、SaaS、多租户、开放平台、生态和规模化路线不得进入当前 backlog。当前事实源见 `SELF_USE_OPERATING_DIRECTION.md`。
+> **已冻结的长期历史蓝图。** 本文的 Owner 自用商品实验、外部客户、SaaS、多租户、开放平台、生态和规模化路线均不是当前授权。当前入口见 `OCEAN_GOAL.md`、`PRODUCT.md`、`CURRENT.md` 和 `BACKLOG.md`。
 
 产品品牌：凌镜 LingMirror
 技术项目名：MultiSell
@@ -840,13 +840,7 @@ flowchart LR
 9. 做 Agent 建议到审批闭环。
 10. 开始低风险自动执行。
 
-下一份应产出的工程文档：
-
-```text
-docs/superpowers/plans/YYYY-MM-DD-agent-commerce-action-center.md
-```
-
-它应该专门定义 Phase 2：动作中枢的数据库模型、API、前端页面、测试和迁移。
+历史提案曾要求另建 Phase 2 动作中枢计划；该占位计划从未创建，且当前方向已冻结这项扩张。
 
 ---
 

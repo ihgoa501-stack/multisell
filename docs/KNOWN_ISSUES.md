@@ -1,6 +1,6 @@
 # LingMirror Known Issues
 
-Updated: 2026-07-06
+Updated: 2026-07-12
 
 This file tracks accepted failures and unresolved risks. It is not a place to
 hide red checks. Any known issue that blocks a required acceptance gate keeps
@@ -77,6 +77,7 @@ explicitly surfaced and owned.
 | KI-2026-07-06-001 | OPEN | Unassigned | 2026-07-06 | TBD | Test Green blocked | Supplier detail/update/delete/comparison API behavior is not proven by backend regression tests. | `cd backend-go && go test ./...` fails in `internal/domain/supplier`. |
 | KI-2026-07-06-002 | OPEN | Unassigned | 2026-07-06 | TBD | Test Green blocked | Frontend code quality gate is not clean; build passes but lint still reports correctness risks. | `cd frontend-next && npm run lint` fails. |
 | KI-2026-07-06-003 | OPEN | Unassigned | 2026-07-06 | TBD | Business Verified blocked | Main browser flows are not proven end-to-end against a running backend and database. | `cd frontend-next/e2e && npm run e2e` failed locally; main-chain was previously skipped when backend was unavailable. |
+| KI-2026-07-12-004 | OPEN | Lead Agent + Owner approval | 2026-07-12 | 2026-07-19 | Test Green / system usability blocked | The local database writes incomplete audit records and some dashboard queries fail because its schema is selectively assembled and the migration ledger is dirty. Direct migration could damage existing data. | `docs/features/SYSTEM_USABILITY_LAKE.md`; `schema_migrations` reports `version=1, dirty=true`; migration versions 67–70 are duplicated. |
 
 ## Template
 

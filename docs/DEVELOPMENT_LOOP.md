@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-28
 
-This document defines the repeatable development loop for LingMirror / MultiSell. It turns Owner goals into small, verified, auditable development slices. Use it for non-trivial product work, platform work, bug fixes, refactors, reviews, QA, and release work.
+This document defines the repeatable development loop for LingMirror / MultiSell. It turns the Owner-confirmed [ocean goal](OCEAN_GOAL.md) into complete, verified, auditable lakes. Use it for non-trivial product work, platform work, bug fixes, refactors, reviews, QA, and release work.
 
 The loop complements the governance documents in `docs/governance/`. If there is a conflict, follow the governance documents unless the Owner explicitly overrides them.
 
@@ -91,9 +91,9 @@ Known conflicts:
 Recommended slice:
 ```
 
-## 4. Slice
+## 4. Define the Lake
 
-Split work into the smallest useful unit that can be implemented and verified.
+Split the ocean into the smallest useful end-to-end lake that can be completed and verified. Small describes the boundary, not an excuse to omit required implementation, tests, error paths, safety, or recovery.
 
 A good slice has:
 
@@ -103,6 +103,9 @@ A good slice has:
 - Clear acceptance criteria.
 - A bounded test plan.
 - A stop point.
+- A clear relationship to the ocean goal.
+
+When the remaining work is necessary to make the selected lake complete, finish it. Work that serves a different product, market, platform, or multi-quarter migration remains separate scope until confirmed.
 
 Avoid slices like:
 
