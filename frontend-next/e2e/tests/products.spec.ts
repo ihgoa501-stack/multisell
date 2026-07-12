@@ -10,8 +10,6 @@ import { test, expect } from '@playwright/test';
  * All tests use Playwright route interception for API mocking
  * and inject a fake JWT token to bypass AuthGuard.
  *
- * NOTE: Product detail test is skipped due to a pre-existing
- * compilation error in products/[id]/page.tsx (line 673).
  */
 
 const FAKE_TOKEN = 'e2e-products-test-token';
@@ -48,14 +46,14 @@ test.describe('Products — List and Create', () => {
         });
       }
 
-      if (url.includes('/v1/products') && method === 'POST') {
+      if (url.includes('/v1/product-master') && method === 'POST') {
         return route.fulfill({
           status: 200, contentType: 'application/json',
           body: JSON.stringify({ code: 0, message: 'ok', data: { id: 99 } }),
         });
       }
 
-      if (url.match(/\/v1\/products(\?|$)/) && method === 'GET') {
+      if (url.match(/\/v1\/product-master(\?|$)/) && method === 'GET') {
         const items = [makeProduct(1, { status: '1' }), makeProduct(2), makeProduct(3)];
         return route.fulfill({
           status: 200, contentType: 'application/json',
@@ -68,7 +66,16 @@ test.describe('Products — List and Create', () => {
   });
 
   test('product list page renders table with data', async ({ page }) => {
+    const listRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === 'GET' && url.pathname.endsWith('/v1/product-master');
+    });
+
     await page.goto('/products');
+    const request = await listRequest;
+    const requestUrl = new URL(request.url());
+    expect(requestUrl.searchParams.get('page')).toBe('1');
+    expect(requestUrl.searchParams.get('size')).toBe('10');
     await expect(page.locator('h1')).toContainText('商品', { timeout: 10000 });
 
     const table = page.locator('.ant-table-tbody');
