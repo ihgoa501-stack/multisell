@@ -143,7 +143,7 @@ async function handleFetch(): Promise<void> {
 async function handleLogin(): Promise<void> {
   const token = await getJWT();
 
-  if (token && currentStatus !== "no_token") {
+  if (token && currentStatus === "connected") {
     // Already logged in and connected — open dashboard
     const serverUrl = await getServerUrl();
     const httpUrl = getLoginUrl(serverUrl).replace("/login", "");

@@ -11,7 +11,9 @@
     "https://*.1688.com/*",
     "https://*.taobao.com/*",
     "https://*.ozon.ru/*",
+    "http://localhost:3000/*",
     "http://localhost:8080/*",
+    "https://*.lingmirror.com/*",
     "wss://*.lingmirror.com/*"
   ],
   "action": {
@@ -21,18 +23,23 @@
   "content_scripts": [
     {
       "matches": ["https://detail.1688.com/*", "https://item.taobao.com/*"],
-      "js": ["utils.js", "content.js"],
+      "js": ["utils.js", "build/content-script.js"],
       "run_at": "document_idle"
     },
     {
       "matches": ["*://*.1688.com/*", "*://s.1688.com/*", "https://*.ozon.ru/*"],
-      "js": ["content-script-list.js"],
+      "js": ["build/content-script-list.js"],
       "exclude_matches": ["*://detail.1688.com/offer/*"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://localhost:3000/login*", "https://*.lingmirror.com/login*"],
+      "js": ["build/auth-bridge.js"],
+      "run_at": "document_start"
     }
   ],
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "build/background.js",
     "type": "module"
   }
 }

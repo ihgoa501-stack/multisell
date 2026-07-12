@@ -17,7 +17,7 @@ import type {
   PopupMessage,
   StatusResponse,
 } from "./shared/protocol.js";
-import { getJWT, getServerUrl, getWsUrl } from "./shared/auth.js";
+import { getJWT, getServerUrl, getWsUrl, setJWT } from "./shared/auth.js";
 
 // ─── State ─────────────────────────────────────────────────────────────────
 
@@ -364,6 +364,27 @@ chrome.runtime.onMessage.addListener(
     if (message.type === "get_status") {
       sendResponse({ type: "connection_status", status: connectionStatus });
       return;
+    }
+
+    if (message.type === "set_token") {
+      const token = typeof message.token === "string" ? message.token.trim() : "";
+      if (token.length < 32 || token.split(".").length !== 3) {
+        sendResponse({ ok: false, error: "invalid access token" });
+        return;
+      }
+      void setJWT(token)
+        .then(async () => {
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+          ws?.close();
+          ws = null;
+          await connect();
+          sendResponse({ ok: true });
+        })
+        .catch((err) => sendResponse({ ok: false, error: String(err) }));
+      return true;
     }
 
     // Auto-extraction result from content script

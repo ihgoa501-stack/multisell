@@ -3,9 +3,10 @@
 import { Form, Input, Button, message, Typography } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { setToken, setRefreshToken, setStoredUser } from '@/lib/auth';
+import { getToken, setToken, setRefreshToken, setStoredUser } from '@/lib/auth';
 import type { User } from '@/types/api';
 
 const { Text } = Typography;
@@ -20,6 +21,20 @@ export default function LoginPage() {
   const router = useRouter();
   const [form] = Form.useForm();
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('extension_auth') !== '1') return;
+    const token = getToken();
+    if (!token) return;
+    window.postMessage(
+      {
+        source: 'lingmirror-web',
+        type: 'LINGMIRROR_EXTENSION_AUTH',
+        accessToken: token,
+      },
+      window.location.origin,
+    );
+  }, []);
+
   const loginMutation = useMutation({
     mutationFn: async (values: { username: string; password: string }) => {
       const res = await apiClient.post<LoginResponse>('/v1/auth/login', {
@@ -33,6 +48,16 @@ export default function LoginPage() {
         setToken(res.data.access_token);
         setRefreshToken(res.data.refresh_token);
         setStoredUser(res.data.user);
+        if (new URLSearchParams(window.location.search).get('extension_auth') === '1') {
+          window.postMessage(
+            {
+              source: 'lingmirror-web',
+              type: 'LINGMIRROR_EXTENSION_AUTH',
+              accessToken: res.data.access_token,
+            },
+            window.location.origin,
+          );
+        }
         message.success('登录成功');
         router.push('/dashboard');
       } else {

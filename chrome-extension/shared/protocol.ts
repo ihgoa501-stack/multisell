@@ -164,4 +164,14 @@ export interface StatusResponse {
   status: "connected" | "disconnected" | "no_token" | "error";
 }
 
-export type PopupMessage = StatusRequest | StatusResponse;
+export interface SetTokenRequest {
+  type: "set_token";
+  token: string;
+}
+
+export interface SetTokenResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export type PopupMessage = StatusRequest | StatusResponse | SetTokenRequest;

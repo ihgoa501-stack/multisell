@@ -35,7 +35,13 @@ export function getLoginUrl(serverUrl: string): string {
   const baseUrl = serverUrl
     .replace(/^ws:\/\//, "http://")
     .replace(/^wss:\/\//, "https://");
-  return `${baseUrl}/login`;
+  const url = new URL(baseUrl);
+  if ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && url.port === "8080") {
+    url.port = "3000";
+  }
+  url.pathname = "/login";
+  url.searchParams.set("extension_auth", "1");
+  return url.toString();
 }
 
 /** Build the WebSocket endpoint URL (token sent as first message, not in URL). */
