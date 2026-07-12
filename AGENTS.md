@@ -30,6 +30,8 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 经营实验统一事实链位于 `internal/domain/experiment/`，API 根路径为 `/api/v1/experiments`，前端入口为 `/experiments`。每个案件以 `experiment_id` 关联现有业务对象；证据作用区分 `support / counter / conflict`，真实性区分 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`，必须由 Owner 对来源和观察时间单独核验。最终利润必须关联可信且全部对账的结算、最终 `order_profit_record` 和同一订单；现金回收必须关联同一订单与结算的银行/现金账户交易。利润最终确认与现金回收是两个独立状态；模拟、未知或 AI 推断不得通过经营闸门。
 
+1688 货源到待上架草稿的受控入口位于 `internal/domain/sourcing1688/`，API 根路径为 `/api/v1/sourcing-1688`，前端入口为 `/sourcing1688`。它只接受已通过 opportunity gate 的 active 实验及 `experiment_ready` 候选市场，按 `capture → Owner review → convert-to-draft` 生成不可变来源快照、产品/SKU、图片与成本证据和内部 `draft`；不得从该流程调用平台适配器或进入 submitted/publishing。真实发布仍需独立 Owner 批准与审计。工程实现不代表真实 1688 来源、图片权利、费用或渠道契约已获外部验证。
+
 候选市场比较的统一入口位于 `internal/domain/demandcase/`，API 根路径为 `/api/v1/demand-cases`。每个候选必须明确“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，覆盖需求、竞争、获客、履约、合规、收款、售后和利润可验证性八个维度，并包含来自不同 run 的独立反证。关键维度为 unknown、mock、inferred 或缺少来源/观察时间时，只能保持 `evidence_missing`，不得生成可实验结论。
 
 候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，原始 payload 与 SHA-256 快照必须一致，重复 run 幂等。内置静态公开资料基线只建立俄罗斯/Ozon 的权限待验证基线，不是实时研究，也不代表该市场已选中。

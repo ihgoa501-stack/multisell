@@ -1,11 +1,95 @@
 package sourcing1688
 
 import (
+	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 )
+
+func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
+	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &platformRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "Ozon", Status: "experiment_ready"})
+	db.Create(&experimentRow{ExperimentID: "EXP-1", OwnerID: 42, Status: "active", Stage: "product"})
+	db.Create(&gateRow{ExperimentID: "EXP-1", Stage: "opportunity", Result: "pass"})
+	db.Create(&objectLinkRow{ExperimentID: "EXP-1", ObjectType: "demand_case", ObjectID: "7"})
+	db.Create(&platformRow{ID: 3, Name: "Ozon", Code: "ozon", Status: 1})
+	now := time.Now().UTC().Truncate(time.Second)
+	capture := &CaptureInput{DemandCaseID: 7, ExperimentID: "EXP-1", SourceURL: "https://detail.1688.com/offer/123.html#ignored", CollectedAt: now, CollectedBy: 42, Driver: "owner-browser", ParserVersion: "1.0.0", RawPayload: json.RawMessage(`{"offerId":123}`)}
+	p, err := svc.Capture(capture)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	if p.Status != StatusPendingReview || p.SnapshotID == nil {
+		t.Fatalf("capture = %#v", p)
+	}
+	firstSnapshot := *p.SnapshotID
+	p2, err := svc.Capture(capture)
+	if err != nil || p2.ID != p.ID || *p2.SnapshotID != firstSnapshot {
+		t.Fatalf("idempotent Capture = %#v, %v", p2, err)
+	}
+	var snapshotCount int64
+	db.Model(&Sourcing1688Snapshot{}).Count(&snapshotCount)
+	if snapshotCount != 1 {
+		t.Fatalf("snapshot count = %d", snapshotCount)
+	}
+	var snapshot Sourcing1688Snapshot
+	db.First(&snapshot, firstSnapshot)
+	if snapshot.ParserVersion != "1.0.0" || len(snapshot.RawSHA256) != 64 {
+		t.Fatalf("snapshot evidence = %#v", snapshot)
+	}
+	if _, err := svc.Convert(p.ID, completeConvertInput(now)); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("convert before review err = %v", err)
+	}
+	if _, err := svc.Review(p.ID, &ReviewInput{ReviewedBy: 42, Notes: "来源、权限与字段已人工核验"}); err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	result, err := svc.Convert(p.ID, completeConvertInput(now))
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Status != "draft" || result.ProductID == 0 || result.ListingID == 0 || len(result.SKUIDs) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	var listing listingRow
+	db.First(&listing, result.ListingID)
+	if listing.Status != "draft" {
+		t.Fatalf("listing status = %s", listing.Status)
+	}
+	result2, err := svc.Convert(p.ID, completeConvertInput(now))
+	if err != nil || result2.DraftID != result.DraftID {
+		t.Fatalf("idempotent Convert = %#v, %v", result2, err)
+	}
+	if snapshot, err := svc.GetSnapshot(p.ID); err != nil || snapshot.ID != firstSnapshot {
+		t.Fatalf("GetSnapshot = %#v, %v", snapshot, err)
+	}
+	if draft, err := svc.GetDraft(p.ID); err != nil || draft.Listing.Status != "draft" || len(draft.SKUs) != 1 || len(draft.Costs) != 11 {
+		t.Fatalf("GetDraft = %#v, %v", draft, err)
+	}
+}
+
+func completeConvertInput(now time.Time) *ConvertInput {
+	costTypes := []string{"purchase", "domestic_shipping", "packaging", "cross_border_shipping", "platform_fee", "payment_fee", "advertising", "tax", "duty", "return_loss", "exchange_rate"}
+	costs := make([]CostInput, 0, len(costTypes))
+	for _, typ := range costTypes {
+		costs = append(costs, CostInput{CostType: typ, Amount: 1, Currency: "CNY", TruthStatus: "quoted", SourceURI: "evidence://" + typ, ObservedAt: now})
+	}
+	supplierChecks := checks(now, []string{"identity", "operating_history", "transaction_history", "mixed_batch", "lead_time", "sample", "returns"})
+	complianceChecks := checks(now, []string{"brand_ip", "patent", "certification", "dangerous_goods", "material", "labeling_instructions"})
+	return &ConvertInput{CreatedBy: 42, PlatformID: 3, Title: "真实商品", Description: "已复核", CategoryID: 1, Unit: "件", LocalizedTitle: "Test product", LocalizedDescription: "Reviewed", TargetLocale: "ru-RU", ShippingTemplateID: "ozon-fbo-1", CategorySchemaURI: "evidence://ozon/category/1", CategoryObservedAt: now, SupplierAssessment: supplierChecks, ComplianceChecks: complianceChecks, PlatformSKU: "OZ-1", SKUVariants: []DraftSKUInput{{SupplierSKU: "1688-red", ChannelSKU: "OZ-1-red", SpecDesc: "red", SpecValues: json.RawMessage(`{"color":"red"}`), CostPrice: 10, Price: 20}}, Media: []MediaInput{{SourceURL: "https://cbu01.alicdn.com/a.jpg", ProcessedURL: "https://assets.local/a-clean.jpg", MediaRole: "main", RightsStatus: "verified", RightsEvidenceURI: "evidence://rights/1", Operations: json.RawMessage(`["crop","background_remove"]`), Width: 1200, Height: 1200, ChannelRuleURI: "evidence://ozon/images/1"}}, Costs: costs, ListingPayload: json.RawMessage(`{"category":"approved"}`)}
+}
+
+func checks(now time.Time, types []string) []EvidenceCheck {
+	result := make([]EvidenceCheck, 0, len(types))
+	for _, typ := range types {
+		result = append(result, EvidenceCheck{CheckType: typ, Result: "pass", TruthStatus: "quoted", SourceURI: "evidence://" + typ, ObservedAt: now})
+	}
+	return result
+}
 
 func TestService_CreateAndGet(t *testing.T) {
 	t.Parallel()

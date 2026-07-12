@@ -248,6 +248,8 @@
 - [商品出海决策与执行层](features/product-export-decision-execution-layer.md) — ⛔ 已被当前 Owner 自用方向替代，仅供历史追溯
 - [功能需求模板](features/TEMPLATE.md)
 - [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
+- [1688 货源到待上架草稿受控闭环](features/1688-controlled-draft-workflow.md) — Owner 自用、仅生成内部草稿；真实商品验收待完成
+- [1688 受控草稿链工程事实审计（2026-07-12）](research/project-truth-audit-2026-07-12-1688-draft-workflow.md) — 工程实现与外部事实边界
 
 ---
 

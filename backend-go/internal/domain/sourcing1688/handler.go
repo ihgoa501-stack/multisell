@@ -186,3 +186,104 @@ func (h *Handler) Summary(c *gin.Context) {
 	}
 	response.Success(c, sum)
 }
+
+func workflowError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		response.Error(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrInvalidWorkflow):
+		response.Error(c, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrWorkflowGate):
+		response.Error(c, http.StatusConflict, err.Error())
+	default:
+		response.InternalError(c, err)
+	}
+}
+
+func (h *Handler) Snapshot(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	snapshot, err := h.service.GetSnapshot(id)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, snapshot)
+}
+
+func (h *Handler) Draft(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	draft, err := h.service.GetDraft(id)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, draft)
+}
+
+// Capture POST /sourcing-1688/capture stores immutable 1688 evidence.
+func (h *Handler) Capture(c *gin.Context) {
+	var in CaptureInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if actor := common.UserIDFromCtx(c); actor != nil {
+		in.CollectedBy = *actor
+	}
+	p, err := h.service.Capture(&in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, p)
+}
+
+// Review POST /sourcing-1688/:id/review is the explicit Owner gate.
+func (h *Handler) Review(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var in ReviewInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if actor := common.UserIDFromCtx(c); actor != nil {
+		in.ReviewedBy = *actor
+	}
+	p, err := h.service.Review(id, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, p)
+}
+
+// ConvertToDraft POST /sourcing-1688/:id/convert-to-draft creates no external side effect.
+func (h *Handler) ConvertToDraft(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var in ConvertInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if actor := common.UserIDFromCtx(c); actor != nil {
+		in.CreatedBy = *actor
+	}
+	r, err := h.service.Convert(id, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, r)
+}
