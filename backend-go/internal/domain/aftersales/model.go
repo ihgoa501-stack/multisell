@@ -6,41 +6,41 @@ import (
 
 // AfterSalesOrder maps to "after_sales_order".
 type AfterSalesOrder struct {
-	ID                int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	OrderID           int64      `gorm:"column:order_id;not null;index" json:"order_id"`
-	ItemID            *int64     `gorm:"column:item_id" json:"item_id,omitempty"`
-	SkuID             *int64     `gorm:"column:sku_id" json:"sku_id,omitempty"`
-	ReturnQuantity    int        `gorm:"column:return_quantity;default:0" json:"return_quantity"`
-	Reason            string     `gorm:"column:reason" json:"reason"`
-	Status            string     `gorm:"column:status;default:pending" json:"status"`
-	RefundAmount      float64    `gorm:"column:refund_amount;default:0" json:"refund_amount"`
-	InspectionResult  string     `gorm:"column:inspection_result" json:"inspection_result"`
-	RejectionReason   string     `gorm:"column:rejection_reason" json:"rejection_reason"`
-	CreatedBy         string     `gorm:"column:created_by" json:"created_by"`
-	ApprovedBy        string     `gorm:"column:approved_by" json:"approved_by"`
-	ApprovedAt        *time.Time `gorm:"column:approved_at" json:"approved_at,omitempty"`
-	RejectedBy        string     `gorm:"column:rejected_by" json:"rejected_by"`
-	RejectedAt        *time.Time `gorm:"column:rejected_at" json:"rejected_at,omitempty"`
-	ReceivedBy        string     `gorm:"column:received_by" json:"received_by"`
-	ReceivedAt        *time.Time `gorm:"column:received_at" json:"received_at,omitempty"`
-	RefundedBy        string     `gorm:"column:refunded_by" json:"refunded_by"`
-	RefundedAt        *time.Time `gorm:"column:refunded_at" json:"refunded_at,omitempty"`
-	CreatedAt         time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt         time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	ID               int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OrderID          int64      `gorm:"column:order_id;not null;index" json:"order_id"`
+	ItemID           *int64     `gorm:"column:item_id" json:"item_id,omitempty"`
+	SkuID            *int64     `gorm:"column:sku_id" json:"sku_id,omitempty"`
+	ReturnQuantity   int        `gorm:"column:return_quantity;default:0" json:"return_quantity"`
+	Reason           string     `gorm:"column:reason" json:"reason"`
+	Status           string     `gorm:"column:status;default:pending" json:"status"`
+	RefundAmount     float64    `gorm:"column:refund_amount;default:0" json:"refund_amount"`
+	InspectionResult string     `gorm:"column:inspection_result" json:"inspection_result"`
+	RejectionReason  string     `gorm:"column:rejection_reason" json:"rejection_reason"`
+	CreatedBy        string     `gorm:"column:created_by" json:"created_by"`
+	ApprovedBy       string     `gorm:"column:approved_by" json:"approved_by"`
+	ApprovedAt       *time.Time `gorm:"column:approved_at" json:"approved_at,omitempty"`
+	RejectedBy       string     `gorm:"column:rejected_by" json:"rejected_by"`
+	RejectedAt       *time.Time `gorm:"column:rejected_at" json:"rejected_at,omitempty"`
+	ReceivedBy       string     `gorm:"column:received_by" json:"received_by"`
+	ReceivedAt       *time.Time `gorm:"column:received_at" json:"received_at,omitempty"`
+	RefundedBy       string     `gorm:"column:refunded_by" json:"refunded_by"`
+	RefundedAt       *time.Time `gorm:"column:refunded_at" json:"refunded_at,omitempty"`
+	CreatedAt        time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (AfterSalesOrder) TableName() string { return "after_sales_order" }
 
 // CreateInput is the payload for POST /aftersales.
 type CreateInput struct {
-	OrderID        int64   `json:"order_id" binding:"required"`
-	ItemID         *int64  `json:"item_id"`
-	SkuID          *int64  `json:"sku_id"`
-	ReturnQuantity *int    `json:"return_quantity"`
-	Reason         string  `json:"reason"`
-	Status         string  `json:"status"`
+	OrderID        int64    `json:"order_id" binding:"required"`
+	ItemID         *int64   `json:"item_id"`
+	SkuID          *int64   `json:"sku_id"`
+	ReturnQuantity *int     `json:"return_quantity"`
+	Reason         string   `json:"reason"`
+	Status         string   `json:"status"`
 	RefundAmount   *float64 `json:"refund_amount"`
-	CreatedBy      string  `json:"created_by"`
+	CreatedBy      string   `json:"created_by"`
 }
 
 // UpdateInput allows partial updates.
@@ -93,6 +93,7 @@ type Summary struct {
 // DisputeCase maps to "dispute_case".
 type DisputeCase struct {
 	ID             int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OrderID        *int64    `gorm:"column:order_id;index" json:"order_id,omitempty"`
 	TransactionID  string    `gorm:"column:transaction_id;not null;index" json:"transaction_id"`
 	Platform       string    `gorm:"column:platform;not null" json:"platform"`
 	ClaimType      string    `gorm:"column:claim_type;not null" json:"claim_type"`
@@ -110,6 +111,7 @@ func (DisputeCase) TableName() string { return "dispute_case" }
 
 // CreateDisputeInput is the payload for POST /aftersales/disputes.
 type CreateDisputeInput struct {
+	OrderID       *int64  `json:"order_id"`
 	TransactionID string  `json:"transaction_id" binding:"required"`
 	Platform      string  `json:"platform" binding:"required"`
 	ClaimType     string  `json:"claim_type" binding:"required"`

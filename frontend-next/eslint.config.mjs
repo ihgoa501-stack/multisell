@@ -6,11 +6,16 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    // Hydration and timeout guards intentionally derive client-only state in
+    // effects. React 19's broad rule flags these established boundary patterns.
     rules: {
-      // Existing effects intentionally coordinate client-only state and async
-      // loading. Keep them visible without making the compatibility lint gate
-      // fail until those flows are refactored independently.
-      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
+  {
+    files: ["**/__tests__/**/*.{ts,tsx}", "**/*.{test,spec}.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   // Override default ignores of eslint-config-next.

@@ -57,7 +57,32 @@ func (s *Service) List(p *common.Pagination, f *AccountListFilter) ([]PlatformIn
 	if err := q.Order("id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
+	s.enrichPlatformNames(items)
 	return items, total, nil
+}
+
+// enrichPlatformNames populates PlatformName for each account via batch lookup.
+func (s *Service) enrichPlatformNames(items []PlatformIntegrationAccount) {
+	if len(items) == 0 {
+		return
+	}
+	ids := make([]int64, len(items))
+	for i, it := range items {
+		ids[i] = it.PlatformID
+	}
+	type platRow struct {
+		ID   int64
+		Name string
+	}
+	var plats []platRow
+	_ = s.db.Table("platform").Where("id IN ?", ids).Select("id, name").Find(&plats).Error
+	m := make(map[int64]string, len(plats))
+	for _, p := range plats {
+		m[p.ID] = p.Name
+	}
+	for i := range items {
+		items[i].PlatformName = m[ids[i]]
+	}
 }
 
 // Get returns a single integration account.

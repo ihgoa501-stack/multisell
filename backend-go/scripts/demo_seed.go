@@ -149,35 +149,29 @@ func seed(db *gorm.DB) error {
 	}
 	fmt.Printf("  inventory: sku_id=%d quantity=%d safety_stock=%d\n", inv.SkuID, inv.Quantity, inv.SafetyStock)
 
-	// --- Supplier required by candidate_product foreign keys ---
-	// Use only columns present in the migration schema. The richer domain model
-	// currently contains fields that older databases do not have.
-	const demoSupplierName = "Demo Supplier"
+	// Candidate products with supplier references must use a real seeded row;
+	// hard-coded IDs break on clean CI databases.
+	const demoSupplierName = "Demo Product Loop Supplier"
 	var demoSupplierID int64
-	if err := db.Table("supplier").Select("id").Where("name = ?", demoSupplierName).Scan(&demoSupplierID).Error; err != nil {
-		return fmt.Errorf("find supplier: %w", err)
+	if err := db.Raw("SELECT id FROM supplier WHERE name = ? ORDER BY id LIMIT 1", demoSupplierName).Scan(&demoSupplierID).Error; err != nil {
+		return fmt.Errorf("product loop supplier: %w", err)
 	}
 	if demoSupplierID == 0 {
-		if err := db.Table("supplier").Create(map[string]any{"name": demoSupplierName, "status": 1}).Error; err != nil {
-			return fmt.Errorf("create supplier: %w", err)
-		}
-		if err := db.Table("supplier").Select("id").Where("name = ?", demoSupplierName).Scan(&demoSupplierID).Error; err != nil {
-			return fmt.Errorf("reload supplier: %w", err)
+		if err := db.Raw("INSERT INTO supplier (name, status) VALUES (?, 1) RETURNING id", demoSupplierName).Scan(&demoSupplierID).Error; err != nil {
+			return fmt.Errorf("product loop supplier: %w", err)
 		}
 	}
-	fmt.Printf("  supplier: id=%d name=%s\n", demoSupplierID, demoSupplierName)
 
 	// --- Product Loop E2E seed data ---
 	if err := seedProductLoopData(db, demoSupplierID, product.ID); err != nil {
 		return fmt.Errorf("product loop seed: %w", err)
 	}
-
 	return nil
 }
 
 // seedProductLoopData inserts 5 deterministic scenarios for the Product Loop E2E.
 // Idempotent: uses title-based FirstOrCreate for candidate products.
-func seedProductLoopData(db *gorm.DB, supplierID, listingProductID int64) error {
+func seedProductLoopData(db *gorm.DB, supplierID, masterProductID int64) error {
 
 	// ========================================================================
 	// Scenario 1: Profitable Listing ("Premium Wireless Earbuds")
@@ -586,12 +580,13 @@ func seedProductLoopData(db *gorm.DB, supplierID, listingProductID int64) error 
 		// Create listing_task in blocked state (pre-approval)
 		_ = db.Where("source_item_key = ?", fmt.Sprintf("candidate:%d", prod.ID)).Delete(&listingtask.ListingTask{})
 		lTask := listingtask.ListingTask{
-			ProductID:           listingProductID,
+			ProductID:           masterProductID,
 			PlatformID:          1,
 			SourceType:          "decision",
 			SourceItemKey:       fmt.Sprintf("candidate:%d", prod.ID),
 			Status:              "blocked",
 			MissingRequirements: json.RawMessage("[]"),
+			DecisionSnapshot:    json.RawMessage("{}"),
 			DestinationCountry:  "US",
 			TargetSalePrice:     float64Ptr(19.99),
 			TargetProfitMargin:  float64Ptr(47.62),
@@ -605,7 +600,7 @@ func seedProductLoopData(db *gorm.DB, supplierID, listingProductID int64) error 
 		// Create approval_request linked to listing_task
 		_ = db.Where("entity_type = 'listing_task' AND entity_id = ?", lTask.ID).Delete(&approval.ApprovalRequest{})
 		appReq := approval.ApprovalRequest{
-			ProductID:   listingProductID,
+			ProductID:   masterProductID,
 			RequestType: "listing_task",
 			Requester:   "seed",
 			Status:      "pending",

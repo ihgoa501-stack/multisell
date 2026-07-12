@@ -77,16 +77,16 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/platform-integrations/:id/sync", ActionType: "sync_inventory", Description: "同步平台数据"},
 		{Method: "POST", PathPattern: "/api/v1/platform-integrations/:id/categories", ActionType: "credential_change", Description: "创建平台类目"},
 		{Method: "POST", PathPattern: "/api/v1/platform-integrations/:id/attributes", ActionType: "credential_change", Description: "创建平台属性"},
-		{Method: "POST", PathPattern: "/api/v1/platform-integrations/mock/seed", ActionType: "destructive_data_change", Description: "写入平台集成模拟数据"},
+		{Method: "POST", PathPattern: "/api/v1/platform-integrations/mock/seed", ActionType: "destructive_data_change", Description: "写入平台模拟数据"},
 
 		// ── Settlement mutations ──
 		{Method: "POST", PathPattern: "/api/v1/settlement", ActionType: "destructive_data_change", Description: "创建结算"},
 		{Method: "PUT", PathPattern: "/api/v1/settlement/:id", ActionType: "destructive_data_change", Description: "更新结算"},
 		{Method: "DELETE", PathPattern: "/api/v1/settlement/:id", ActionType: "destructive_data_change", Description: "删除结算"},
 		{Method: "POST", PathPattern: "/api/v1/settlement/:id/reconcile", ActionType: "destructive_data_change", Description: "对账"},
-		{Method: "POST", PathPattern: "/api/v1/settlement/recalculate", ActionType: "destructive_data_change", Description: "重新计算结算"},
 		{Method: "POST", PathPattern: "/api/v1/settlement/:id/items", ActionType: "destructive_data_change", Description: "添加结算项"},
 		{Method: "PUT", PathPattern: "/api/v1/settlement/items/:item_id/reconciliation", ActionType: "destructive_data_change", Description: "更新对账状态"},
+		{Method: "POST", PathPattern: "/api/v1/settlement/recalculate", ActionType: "destructive_data_change", Description: "重算结算利润"},
 
 		// ── Finance account/transaction mutations ──
 		{Method: "POST", PathPattern: "/api/v1/finance/accounts", ActionType: "destructive_data_change", Description: "创建财务账户"},
@@ -131,8 +131,8 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/listing-task/:task_id/execute", ActionType: "listing_optimize", Description: "执行 listing 任务"},
 		{Method: "POST", PathPattern: "/api/v1/listing-task/retry-all", ActionType: "listing_optimize", Description: "重试所有失败"},
 		{Method: "POST", PathPattern: "/api/v1/listing-task/:task_id/retry-failed", ActionType: "listing_optimize", Description: "重试失败项"},
+		{Method: "POST", PathPattern: "/api/v1/listing-task/:task_id/feedback", ActionType: "listing_optimize", Description: "记录 listing 任务反馈"},
 		{Method: "POST", PathPattern: "/api/v1/listing-task/:task_id/items/:item_id/retry", ActionType: "listing_optimize", Description: "重试单个条目"},
-		{Method: "POST", PathPattern: "/api/v1/listing-task/:task_id/feedback", ActionType: "listing_optimize", Description: "提交 listing 任务反馈"},
 
 		// ── Platform / Store CRUD ──
 		{Method: "POST", PathPattern: "/api/v1/platforms", ActionType: "destructive_data_change", Description: "创建平台"},
