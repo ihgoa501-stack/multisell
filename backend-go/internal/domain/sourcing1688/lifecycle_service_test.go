@@ -17,7 +17,7 @@ func newLifecycleTestService(t *testing.T, status string, withDraft bool) (*Serv
 	t.Helper()
 	db := dbtest.NewDB(t,
 		&Sourcing1688Product{},
-		&demandCaseRow{}, &listingRow{}, &draftRow{},
+		&demandCaseRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{},
 		&approval.ApprovalRequest{}, &operationlog.OperationLog{},
 	)
 	for _, column := range []struct {
@@ -76,6 +76,9 @@ func newLifecycleTestService(t *testing.T, status string, withDraft bool) (*Serv
 	}
 	if withDraft {
 		productID := int64(101)
+		if err := db.Create(&productRow{ID: productID, Name: "approval test product", Unit: "piece", CategoryID: 1}).Error; err != nil {
+			t.Fatal(err)
+		}
 		if err := db.Model(&Sourcing1688Product{}).Where("id = ?", p.ID).Update("product_id", productID).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -134,6 +137,9 @@ func TestLifecycle_FullOwnerApprovalProducesDraftOnly(t *testing.T) {
 	// Conversion is implemented by Convert; this test creates its minimum
 	// traceable result and verifies lifecycle behavior after that seam.
 	productID := int64(101)
+	if err := db.Create(&productRow{ID: productID, Name: "approval test product", Unit: "piece", CategoryID: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Model(&Sourcing1688Product{}).Where("id = ?", id).Update("product_id", productID).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -207,6 +213,24 @@ func TestLifecycle_DraftRejectionReturnsToEditingAndPersistsReason(t *testing.T)
 	}
 	if draft.ApprovalRejectionReason != "replace main image" || draft.ApprovalStatus != approval.StatusRejected {
 		t.Fatalf("draft = %+v", draft)
+	}
+}
+
+func TestLifecycleApprovalRejectsContentChangedAfterSubmission(t *testing.T) {
+	svc, db, id := newLifecycleTestService(t, LifecycleEditing, true)
+	submitted, err := svc.SubmitDraftApproval(id, &DraftApprovalSubmissionInput{RequesterID: lifecycleTestOwnerID, Reason: "review exact content"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var draft draftRow
+	if err := db.Where("sourcing_product_id = ?", id).First(&draft).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&productRow{}).Where("id = ?", draft.ProductID).Update("name", "changed after submit").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DecideDraftApproval(id, submitted.ApprovalID, &DraftApprovalDecisionInput{OwnerID: lifecycleTestOwnerID, Action: "approve", Note: "must reject stale review"}); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("tampered draft approval error = %v", err)
 	}
 }
 

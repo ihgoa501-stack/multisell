@@ -30,13 +30,13 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 经营实验统一事实链位于 `internal/domain/experiment/`，API 根路径为 `/api/v1/experiments`，前端入口为 `/experiments`。每个案件以 `experiment_id` 关联现有业务对象；证据作用区分 `support / counter / conflict`，真实性区分 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`，必须由 Owner 对来源和观察时间单独核验。最终利润必须关联可信且全部对账的结算、最终 `order_profit_record` 和同一订单；现金回收必须关联同一订单与结算的银行/现金账户交易。利润最终确认与现金回收是两个独立状态；模拟、未知或 AI 推断不得通过经营闸门。
 
-1688 货源到待上架草稿的受控入口位于 `internal/domain/sourcing1688/`，API 根路径为 `/api/v1/sourcing-1688`，前端入口为 `/sourcing1688`。它只接受已通过 opportunity gate 的 active 实验及 `experiment_ready` 候选市场，生成不可变快照、同款/变化记录、供应商与合规证据、SKU 三段映射、实际图片处理、完整成本与确定性渠道规则验证，再进入 `editing → pending_approval → approved_draft`；草稿批准仍必须保持 `product_listing.status=draft`，不得调用平台适配器。真实发布是另一条高风险流程：必须创建独立 Owner 审批、冻结并哈希请求，再由 Owner 显式执行；无错误平台响应只记 `submitted`，超时进入 `reconcile_required`，两者都不代表真实上线。工程实现不代表真实 1688 来源、图片权利、费用或渠道契约已获外部验证。
+1688 货源到待上架草稿的受控入口位于 `internal/domain/sourcing1688/`，API 根路径为 `/api/v1/sourcing-1688`，前端入口为 `/sourcing1688`。它只接受已通过 opportunity gate 的 active 实验及 `experiment_ready` 候选市场，生成不可变快照、同款/变化记录、供应商与合规证据、SKU 三段映射、实际图片处理、完整成本与确定性渠道规则验证，再进入 `editing → pending_approval → approved_draft`；草稿批准仍必须保持 `product_listing.status=draft`，不得调用平台适配器。`GET /:id/acceptance-report` 只按 Owner 读取持久化证据并逐项返回 15 项 `passed / blocked / unknown`；只有服务器受控采集入口留下的 `controlled_fetch` 来源可证明真实采集，手工/历史快照不能冒充。真实发布是另一条高风险流程：必须创建独立 Owner 审批、冻结并哈希请求，再由 Owner 显式执行；无错误平台响应只记 `submitted`，超时进入 `reconcile_required`，两者都不代表真实上线。工程实现不代表真实 1688 来源、图片权利、费用或渠道契约已获外部验证。
 
 候选市场比较的统一入口位于 `internal/domain/demandcase/`，API 根路径为 `/api/v1/demand-cases`。每个候选必须明确“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，覆盖需求、竞争、获客、履约、合规、收款、售后和利润可验证性八个维度，并包含来自不同 run 的独立反证。关键维度为 unknown、mock、inferred 或缺少来源/观察时间时，只能保持 `evidence_missing`，不得生成可实验结论。
 
 候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，原始 payload 与 SHA-256 快照必须一致，重复 run 幂等。内置静态公开资料基线只建立俄罗斯/Ozon 的权限待验证基线，不是实时研究，也不代表该市场已选中。
 
-小Q是凌镜唯一面向 Owner 的经营 Agent，稳定 ID 为 `xiao_q`。后端入口位于 `internal/domain/xiaoq/`，API 根路径为 `/api/v1/xiao-q`，前端入口为 `/xiaoq`。小Q只能通过登记的 Capability 调用现有领域 Service/Command，不得直接访问任意数据库表或绕过 RBAC、审批、审计和经营状态机。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；只有 Capability、权限、失败处理、证据追踪和回归测试齐全时才能标记 active。完整契约见 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md`。当前 active 能力为需求案件、决策卡、经营实验详情、实验闸门状态以及1688受控内部草稿只读；其他系统能力仍为 deferred。
+小Q是凌镜唯一面向 Owner 的经营 Agent，稳定 ID 为 `xiao_q`。后端入口位于 `internal/domain/xiaoq/`，API 根路径为 `/api/v1/xiao-q`，前端入口为 `/xiaoq`。小Q只能通过登记的 Capability 调用现有领域 Service/Command，不得直接访问任意数据库表或绕过 RBAC、审批、审计和经营状态机。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；只有 Capability、权限、失败处理、证据追踪和回归测试齐全时才能标记 active。完整契约见 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md`。当前 active 能力为需求案件、决策卡、经营实验详情、实验闸门状态、1688受控内部草稿，以及从 Owner 经营实验派生的脱敏订单履约、结算对账和最终利润只读；售后闭合、现金一致性及其他系统能力仍为 deferred 或 unknown。
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.3.0.0`.

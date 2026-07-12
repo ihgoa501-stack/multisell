@@ -12,13 +12,13 @@ Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有
 
 经营实验统一事实链：后端 `internal/domain/experiment/`，API `/api/v1/experiments`，前端 `/experiments`。使用 `experiment_id` 关联机会、商品规格、供应、订单、履约、售后、利润与现金对象；闸门结果限定为 `pass / conditional / return / reject / expired`，证据作用限定为 `support / counter / conflict`，真实性限定为 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`；最终利润封账必须校验可信已对账结算和最终订单利润记录，现金回收必须校验同一订单与结算的银行/现金交易。最终利润与现金回收不得合并为一个状态。
 
-1688 受控草稿链：后端 `internal/domain/sourcing1688/`，API `/api/v1/sourcing-1688`，前端 `/sourcing1688`。仅允许已批准候选市场和已通过 opportunity gate 的 active 实验进入；保存不可变快照、同款与变化、供应商/合规、SKU 三段映射、实际图片处理、成本与渠道规则验证，再走 Owner 草稿审批。`approved_draft` 仍必须保持 listing=`draft`，不得自动发布。真实发布必须另建高风险 Owner 审批并再次显式执行；平台响应只记 `submitted` 或 `reconcile_required`，不能当作真实上线。真实商品人工验收完成前只能声明工程实现。
+1688 受控草稿链：后端 `internal/domain/sourcing1688/`，API `/api/v1/sourcing-1688`，前端 `/sourcing1688`。仅允许已批准候选市场和已通过 opportunity gate 的 active 实验进入；保存不可变快照、同款与变化、供应商/合规、SKU 三段映射、实际图片处理、成本与渠道规则验证，再走 Owner 草稿审批。`approved_draft` 仍必须保持 listing=`draft`，不得自动发布。`GET /:id/acceptance-report` 仅根据同一 Owner 的持久化证据逐项裁决 15 项验收；真实采集必须有服务器写入的 `controlled_fetch` 来源，手工声明 driver/raw_html 不得通过。真实发布必须另建高风险 Owner 审批并再次显式执行；平台响应只记 `submitted` 或 `reconcile_required`，不能当作真实上线。真实商品人工验收完成前只能声明工程实现。
 
 候选市场比较统一使用 `internal/domain/demandcase/` 和 `/api/v1/demand-cases`。候选市场必须包含地区、消费者、需求场景和销售渠道；八个决策维度及独立反证未齐全时保持 `evidence_missing`。平台连接器、AI 推断、mock 或无来源数字不能通过确定性裁决。
 
 Owner 从 `/demand-cases` 查看候选市场。AI 研究 run 必须使用三类固定契约并保存可重算 SHA-256 原始快照；内置公开研究批次只产生权限待验证基线，不得解释为俄罗斯/Ozon 已入选。
 
-小Q是唯一面向 Owner 的经营 Agent，固定 ID `xiao_q`。后端 `internal/domain/xiaoq/`，API `/api/v1/xiao-q`，前端 `/xiaoq`。它只能调用按 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md` 登记的 Capability，并继续使用现有领域 Service/Command、RBAC、审批、审计和事实闸门。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；没有完成 Capability、权限和回归测试时不得声称已接入小Q。当前 active 能力为需求案件、决策卡、经营实验详情、实验闸门状态以及1688受控内部草稿只读。
+小Q是唯一面向 Owner 的经营 Agent，固定 ID `xiao_q`。后端 `internal/domain/xiaoq/`，API `/api/v1/xiao-q`，前端 `/xiaoq`。它只能调用按 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md` 登记的 Capability，并继续使用现有领域 Service/Command、RBAC、审批、审计和事实闸门。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；没有完成 Capability、权限和回归测试时不得声称已接入小Q。当前 active 能力为需求案件、决策卡、经营实验详情、实验闸门状态、1688受控内部草稿，以及从 Owner 经营实验派生的脱敏订单履约、结算对账和最终利润只读；售后闭合和现金一致性仍为 unknown/deferred。
 
 This file gives Claude Code-specific guidance for working in this repository.
 Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.

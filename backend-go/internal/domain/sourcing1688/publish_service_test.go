@@ -40,7 +40,7 @@ func newPublishTestService(t *testing.T) (*Service, *gorm.DB, *fakePublishAdapte
 	t.Helper()
 	db := dbtest.NewDB(t,
 		&Sourcing1688Product{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &platformRow{},
-		&productRow{}, &skuRow{}, &listingRow{}, &draftRow{}, &platformAccountRow{},
+		&productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{}, &platformAccountRow{},
 		&approval.ApprovalRequest{}, &operationlog.OperationLog{}, &PublishAttempt{},
 	)
 	ownerID := int64(42)
@@ -59,11 +59,19 @@ func newPublishTestService(t *testing.T) (*Service, *gorm.DB, *fakePublishAdapte
 	listingPayload := json.RawMessage(`{"localized_title":"Localized title","localized_description":"Localized description"}`)
 	listing := listingRow{ProductID: product.ID, PlatformID: 3, PlatformSKU: "CHANNEL-1", Status: "draft", PublishedData: listingPayload}
 	db.Create(&listing)
-	draftApproval := approval.ApprovalRequest{ProductID: product.ID, RequestType: DraftApprovalRequestType, Requester: "42", Status: approval.StatusApproved, TargetType: DraftApprovalTargetType, RiskLevel: "medium"}
-	db.Create(&draftApproval)
-	draft := draftRow{SourcingProductID: 1, SnapshotID: 11, ProductID: product.ID, ListingID: listing.ID, DemandCaseID: demandCaseID, ExperimentID: experimentID, CreatedBy: ownerID, ApprovalID: &draftApproval.ID, ApprovalStatus: approval.StatusApproved}
+	draft := draftRow{SourcingProductID: 1, SnapshotID: 11, ProductID: product.ID, ListingID: listing.ID, DemandCaseID: demandCaseID, ExperimentID: experimentID, CreatedBy: ownerID}
 	db.Create(&draft)
-	db.Model(&draftApproval).Updates(map[string]any{"target_id": draft.ID, "entity_type": DraftApprovalTargetType, "entity_id": draft.ID})
+	contentHash, err := calculateDraftContentSHA256(db, &draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newValue, err := marshalDraftApprovalNewValue(contentHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draftApproval := approval.ApprovalRequest{ProductID: product.ID, RequestType: DraftApprovalRequestType, Requester: "42", RequesterUserID: &ownerID, Reviewer: "42", ReviewerUserID: &ownerID, Status: approval.StatusApproved, TargetType: DraftApprovalTargetType, TargetID: draft.ID, RiskLevel: "medium", EntityType: DraftApprovalTargetType, EntityID: draft.ID, NewValue: newValue}
+	db.Create(&draftApproval)
+	db.Model(&draft).Updates(map[string]any{"approval_id": draftApproval.ID, "approval_status": approval.StatusApproved, "approval_content_sha256": contentHash})
 	source := Sourcing1688Product{SourceURL: "https://detail.1688.com/offer/123.html", Status: StatusDraftCreated, DemandCaseID: &demandCaseID, ExperimentID: &experimentID, ProductID: &product.ID, LifecycleStatus: LifecycleApprovedDraft}
 	// Force the ID to match the already-created draft link.
 	source.ID = 1
@@ -122,9 +130,18 @@ func TestPublishWorkflowRequiresIndependentApprovalAndIsIdempotent(t *testing.T)
 		t.Fatal("adapter called with mismatched account")
 	}
 	db.Model(&platformAccountRow{}).Where("id = ?", accountID).Update("platform_id", 3)
-	// The approved request is immutable: a later catalog mutation must not alter
-	// the exact price sent under this approval.
+	// A mutation after draft approval invalidates the approval and cannot reuse
+	// either the draft approval or the later publish approval.
 	db.Model(&skuRow{}).Where("product_id = ?", attempt.ProductID).Update("price", 99.99)
+	if _, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("tampered approved draft execute = %v", err)
+	}
+	if fake.publishCalls != 0 {
+		t.Fatal("adapter called for tampered approved draft")
+	}
+	// Restore the exact approved content; the already frozen publish request is
+	// still byte-identical and may now be explicitly executed.
+	db.Model(&skuRow{}).Where("product_id = ?", attempt.ProductID).Update("price", 19.99)
 	completed, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
 	if err != nil {
 		t.Fatalf("ExecutePublish: %v", err)
@@ -166,6 +183,27 @@ func TestPublishWorkflowRequiresIndependentApprovalAndIsIdempotent(t *testing.T)
 	sameKey.Inventories = map[string]int{"INT-1": 4}
 	if _, err := svc.RequestPublish(sourceID, &sameKey); !errors.Is(err, ErrWorkflowGate) {
 		t.Fatalf("rebound idempotency key = %v", err)
+	}
+}
+
+func TestPublishRequestRejectsChangedApprovedDraftContent(t *testing.T) {
+	svc, db, fake, sourceID, accountID := newPublishTestService(t)
+	var source Sourcing1688Product
+	if err := db.First(&source, sourceID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if source.ProductID == nil {
+		t.Fatal("missing product")
+	}
+	if err := db.Model(&productRow{}).Where("id = ?", *source.ProductID).Update("name", "changed after Owner approval").Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.RequestPublish(sourceID, &PublishRequestInput{RequesterID: 42, PlatformAccountID: accountID, IdempotencyKey: "tampered-draft-request", Reason: "must not reuse stale approval", Inventories: map[string]int{"INT-1": 1}})
+	if !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("request with stale draft approval = %v", err)
+	}
+	if fake.publishCalls != 0 {
+		t.Fatal("request validation called external adapter")
 	}
 }
 

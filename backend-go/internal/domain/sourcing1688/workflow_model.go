@@ -166,14 +166,16 @@ type draftRow struct {
 	CreatedAt                                                             time.Time
 	ApprovalID                                                            *int64
 	ApprovalStatus                                                        string
+	ApprovalContentSHA256                                                 string
 	ApprovalRejectionReason                                               string
 }
 
 func (draftRow) TableName() string { return "sourcing_listing_draft" }
 
 type demandCaseRow struct {
-	ID, OwnerID          int64
-	SalesChannel, Status string
+	ID, OwnerID                                          int64
+	Region, Consumer, NeedScenario, SalesChannel, Status string
+	CreatedAt, UpdatedAt                                 time.Time
 }
 
 func (demandCaseRow) TableName() string { return "demand_case" }

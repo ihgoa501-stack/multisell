@@ -130,6 +130,17 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 	if listing.Status != "draft" {
 		t.Fatalf("listing status = %s", listing.Status)
 	}
+	var frozenEvidence struct {
+		SupplierAssessment []EvidenceCheck      `json:"supplier_assessment"`
+		ComplianceChecks   []EvidenceCheck      `json:"compliance_checks"`
+		ValidationInput    DraftValidationInput `json:"validation_input"`
+	}
+	if err := json.Unmarshal(listing.PublishedData, &frozenEvidence); err != nil {
+		t.Fatalf("decode frozen listing evidence: %v", err)
+	}
+	if len(frozenEvidence.SupplierAssessment) != 8 || len(frozenEvidence.ComplianceChecks) != 6 || len(frozenEvidence.ValidationInput.Costs.ExchangeRates) == 0 || frozenEvidence.ValidationInput.ChannelRules.Evidence.SourceURI == "" || frozenEvidence.ValidationInput.LocalizationRules.Evidence.SourceURI == "" {
+		t.Fatalf("incomplete frozen listing evidence: %#v", frozenEvidence)
+	}
 	result2, err := svc.Convert(p.ID, convertInput)
 	if err != nil || result2.DraftID != result.DraftID {
 		t.Fatalf("idempotent Convert = %#v, %v", result2, err)
@@ -141,6 +152,12 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 	updated, err := svc.UpdateDraft(p.ID, updatedInput)
 	if err != nil || updated.Product.Name != "真实商品（已编辑）" || updated.Listing.Status != "draft" {
 		t.Fatalf("UpdateDraft = %#v, %v", updated, err)
+	}
+	var updatedFrozenEvidence struct {
+		ValidationInput DraftValidationInput `json:"validation_input"`
+	}
+	if err := json.Unmarshal(updated.Listing.PublishedData, &updatedFrozenEvidence); err != nil || len(updatedFrozenEvidence.ValidationInput.Costs.ExchangeRates) == 0 {
+		t.Fatalf("updated draft lost validation evidence: %#v, %v", updatedFrozenEvidence, err)
 	}
 	if snapshot, err := svc.GetSnapshot(p.ID); err != nil || snapshot.ID != currentSnapshot {
 		t.Fatalf("GetSnapshot = %#v, %v", snapshot, err)
@@ -184,11 +201,16 @@ func completeConvertInput(now time.Time) *ConvertInput {
 		LocalizationRules: LocalizationRuleSnapshot{Evidence: evidence, Locale: "ru-RU", AllowedScripts: []string{"cyrillic"}, MinTitleLength: 3, MaxTitleLength: 100, MinBulletPoints: 1, MaxBulletLength: 200, MinKeywords: 1, AllowedUnits: []string{"件"}, ProhibitedWords: []string{"запрещено"}},
 		Channel:           ChannelListingInput{PlatformID: 3, CategoryID: "1", CategorySchemaURI: "evidence://ozon/category/1", CategoryObservedAt: now, Attributes: map[string]string{"material": "steel"}, VariantDimensions: []string{"color"}, ImageCount: 1, ImageWidths: []int{1200}, ImageHeights: []int{1200}, ShippingTemplateID: "ozon-fbo-1"},
 		ChannelRules:      ChannelRuleSnapshot{Evidence: channelEvidence, PlatformID: 3, CategoryID: "1", RequiredAttributes: []string{"material"}, RequiredVariantDimensions: []string{"color"}, AllowedVariantDimensions: []string{"color"}, MinImages: 1, MaxImages: 10, MinImageWidth: 1000, MinImageHeight: 1000, AllowedShippingTemplateIDs: []string{"ozon-fbo-1"}},
-		Costs:             CostValidationInput{TargetCurrency: "CNY", Costs: validatedCosts, Revenue: RevenueInput{Amount: 30, Currency: "CNY", TruthStatus: "estimated", SourceURI: "evidence://revenue", ObservedAt: now}},
-		Images:            []ImageValidationInput{{Role: "main", Width: 1200, Height: 1200, Background: "white", Cropped: true, ClarityScore: 0.95, TruthStatus: "actual", SourceURI: "sha256:", ObservedAt: now}},
-		ImageRules:        ImageRuleSnapshot{Evidence: evidence, MinMainWidth: 1000, MinMainHeight: 1000, AllowedBackgrounds: []string{"white"}, RequireCrop: true, MinClarityScore: 0.8, MinImages: 1, MaxImages: 10},
-		SKUs:              []SKUValidationInput{{SupplierSKU: "1688-red", InternalSKU: "INT-1-red", ChannelSKU: "OZ-1-red", Color: "red", Size: "standard", Material: "steel", Packaging: "box", TruthStatus: "quoted", SourceURI: "evidence://sku", ObservedAt: now}},
-		SKURules:          SKUValidationRules{Evidence: evidence, RequireColor: true, RequireSize: true, RequireMaterial: true, RequirePackaging: true},
+		Costs: CostValidationInput{
+			TargetCurrency: "RUB",
+			Costs:          validatedCosts,
+			ExchangeRates:  []ExchangeRate{{FromCurrency: "CNY", ToCurrency: "RUB", Rate: 12.5, TruthStatus: "quoted", SourceURI: "evidence://fx/cny-rub", ObservedAt: now}},
+			Revenue:        RevenueInput{Amount: 200, Currency: "RUB", TruthStatus: "estimated", SourceURI: "evidence://revenue", ObservedAt: now},
+		},
+		Images:     []ImageValidationInput{{Role: "main", Width: 1200, Height: 1200, Background: "white", Cropped: true, ClarityScore: 0.95, TruthStatus: "actual", SourceURI: "sha256:", ObservedAt: now}},
+		ImageRules: ImageRuleSnapshot{Evidence: evidence, MinMainWidth: 1000, MinMainHeight: 1000, AllowedBackgrounds: []string{"white"}, RequireCrop: true, MinClarityScore: 0.8, MinImages: 1, MaxImages: 10},
+		SKUs:       []SKUValidationInput{{SupplierSKU: "1688-red", InternalSKU: "INT-1-red", ChannelSKU: "OZ-1-red", Color: "red", Size: "standard", Material: "steel", Packaging: "box", TruthStatus: "quoted", SourceURI: "evidence://sku", ObservedAt: now}},
+		SKURules:   SKUValidationRules{Evidence: evidence, RequireColor: true, RequireSize: true, RequireMaterial: true, RequirePackaging: true},
 	}
 	return &ConvertInput{CreatedBy: 42, PlatformID: 3, Title: "真实商品", Description: "已复核", CategoryID: 1, Unit: "件", LocalizedTitle: "Тестовый товар", LocalizedDescription: "Проверенное описание", TargetLocale: "ru-RU", ShippingTemplateID: "ozon-fbo-1", CategorySchemaURI: "evidence://ozon/category/1", CategoryObservedAt: now, SupplierAssessment: supplierChecks, ComplianceChecks: complianceChecks, PlatformSKU: "OZ-1", SKUVariants: []DraftSKUInput{{SupplierSKU: "1688-red", InternalSKU: "INT-1-red", ChannelSKU: "OZ-1-red", Color: "red", Size: "standard", Material: "steel", Packaging: "box", SpecDesc: "red", SpecValues: json.RawMessage(`{"color":"red","size":"standard","material":"steel","packaging":"box"}`), CostPrice: 10, Price: 20}}, Media: []MediaInput{{SourceURL: "https://cbu01.alicdn.com/a.png", ProcessedURL: "https://assets.local/a-clean.jpg", MediaRole: "main", RightsStatus: "verified", RightsEvidenceURI: "evidence://rights/1", RightsObservedAt: now, Operations: json.RawMessage(`["crop","background_remove"]`), Width: 1200, Height: 1200, ChannelRuleURI: "evidence://ozon/images/1"}}, Costs: costs, ListingPayload: json.RawMessage(`{"category":"approved"}`), Validation: validation}
 }

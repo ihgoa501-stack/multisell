@@ -273,6 +273,16 @@ func (s *Service) RequestPublish(sourceID int64, in *PublishRequestInput) (*Publ
 		if draft.ApprovalID == nil || draft.ApprovalStatus != approval.StatusApproved {
 			return fmt.Errorf("%w: draft approval is not valid", ErrWorkflowGate)
 		}
+		var draftApproval approval.ApprovalRequest
+		if err := tx.First(&draftApproval, *draft.ApprovalID).Error; err != nil {
+			return err
+		}
+		if draftApproval.Status != approval.StatusApproved || draftApproval.ReviewerUserID == nil || *draftApproval.ReviewerUserID != in.RequesterID {
+			return fmt.Errorf("%w: draft approval Owner is invalid", ErrWorkflowGate)
+		}
+		if err := validateDraftApprovalContentLocked(tx, &draft, &draftApproval); err != nil {
+			return err
+		}
 		var listing listingRow
 		if err := tx.First(&listing, draft.ListingID).Error; err != nil {
 			return err
@@ -440,6 +450,19 @@ func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, owner
 		}
 		if draft.SourcingProductID != sourceID || draft.ProductID != attempt.ProductID || draft.ListingID != attempt.ListingID {
 			return fmt.Errorf("%w: draft linkage changed after approval", ErrWorkflowGate)
+		}
+		if draft.ApprovalID == nil {
+			return fmt.Errorf("%w: approved draft fingerprint is missing", ErrWorkflowGate)
+		}
+		var draftApproval approval.ApprovalRequest
+		if err := tx.First(&draftApproval, *draft.ApprovalID).Error; err != nil {
+			return err
+		}
+		if draftApproval.Status != approval.StatusApproved || draftApproval.ReviewerUserID == nil || *draftApproval.ReviewerUserID != ownerID {
+			return fmt.Errorf("%w: approved draft Owner is invalid", ErrWorkflowGate)
+		}
+		if err := validateDraftApprovalContentLocked(tx, &draft, &draftApproval); err != nil {
+			return err
 		}
 		if source.DemandCaseID == nil || source.ExperimentID == nil || draft.ExperimentID != attempt.ExperimentID || *source.ExperimentID != attempt.ExperimentID {
 			return fmt.Errorf("%w: source, market and draft experiment do not match", ErrWorkflowGate)

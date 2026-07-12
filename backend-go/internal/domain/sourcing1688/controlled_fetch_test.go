@@ -107,7 +107,7 @@ func TestControlledFetchBindsOwnerAndReusesCapture(t *testing.T) {
 	if err := svc.db.First(&snapshot, *product.SnapshotID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Driver != "owner-browser" || snapshot.ParserVersion != "extension-1.2.3" {
+	if snapshot.Driver != "owner-browser" || snapshot.ParserVersion != "extension-1.2.3" || snapshot.CaptureMode != CaptureModeControlledFetch {
 		t.Fatalf("snapshot=%#v", snapshot)
 	}
 	var captured toolbridge.PageData

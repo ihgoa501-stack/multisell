@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Button, Card, Checkbox, Col, Collapse, Descriptions, Divider, Drawer, Form, Input, InputNumber,
-  Modal, Row, Select, Space, Table, Tag, Typography, Upload, message,
+  Alert, App as AntdApp, Button, Card, Checkbox, Col, Collapse, Descriptions, Divider, Drawer, Form, Input, InputNumber,
+  Modal, Row, Select, Space, Table, Tag, Typography, Upload,
 } from 'antd';
 import { DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, UploadOutlined } from '@ant-design/icons';
 import PageContainer from '@/components/ui/PageContainer';
@@ -41,6 +41,8 @@ type DraftResult = {
 
 type Snapshot = { id: number; source_url: string; collected_at: string; driver: string; parser_version: string; raw_sha256: string; raw_payload: unknown; observed_title?: string; observed_price?: number; observed_moq?: number; observed_supplier?: string };
 type IdentityHistory = { snapshots?: unknown[]; changes?: unknown[]; duplicates?: Array<{ id: number; source_product_id: number; matched_product_id: number; status: string; match_type: string }> };
+type AcceptanceItem = { number: number; code: string; title: string; status: 'passed' | 'blocked' | 'unknown'; summary: string; blockers: string[]; evidence: unknown[] };
+type AcceptanceReport = { sourcing_product_id: number; generated_at: string; ready: boolean; status: 'passed' | 'blocked' | 'unknown'; items: AcceptanceItem[]; disclaimer: string };
 type PublishAttempt = {
   id: number;
   sourcing_product_id: number;
@@ -300,7 +302,7 @@ export function buildDraftPayload(values: DraftFormValues) {
 }
 
 function EvidenceChecklist({ name, types, actualOnly = false }: { name: string; types: ReadonlyArray<readonly [string, string]>; actualOnly?: boolean }) {
-  return <Form.List name={name}>{(fields) => <Space direction="vertical" style={{ width: '100%' }}>
+  return <Form.List name={name}>{(fields) => <Space orientation="vertical" style={{ width: '100%' }}>
     {fields.map((field, index) => <Card key={field.key} size="small" title={types[index]?.[1] ?? `核验 ${index + 1}`}>
       <Form.Item name={[field.name, 'check_type']} hidden><Input /></Form.Item>
       <Row gutter={12}>
@@ -315,7 +317,7 @@ function EvidenceChecklist({ name, types, actualOnly = false }: { name: string; 
 }
 
 function KeyValueList({ name, addText }: { name: string; addText: string }) {
-  return <Form.List name={name}>{(fields, { add, remove }) => <Space direction="vertical" style={{ width: '100%' }}>
+  return <Form.List name={name}>{(fields, { add, remove }) => <Space orientation="vertical" style={{ width: '100%' }}>
     {fields.map((field) => <Space key={field.key} align="start" style={{ display: 'flex' }}>
       <Form.Item name={[field.name, 'name']} rules={required}><Input placeholder="属性名" /></Form.Item>
       <Form.Item name={[field.name, 'value']} rules={required}><Input placeholder="属性值" /></Form.Item>
@@ -326,6 +328,7 @@ function KeyValueList({ name, addText }: { name: string; addText: string }) {
 }
 
 export default function Sourcing1688Page() {
+  const { message } = AntdApp.useApp();
   const qc = useQueryClient();
   const [fetchOpen, setFetchOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -338,6 +341,7 @@ export default function Sourcing1688Page() {
   const [imageTarget, setImageTarget] = useState<SourceRecord | null>(null);
   const [processedImage, setProcessedImage] = useState<Record<string, unknown> | null>(null);
   const [identityHistory, setIdentityHistory] = useState<{ sourceId: number; data: IdentityHistory } | null>(null);
+  const [acceptanceReport, setAcceptanceReport] = useState<AcceptanceReport | null>(null);
   const [publishTarget, setPublishTarget] = useState<SourceRecord | null>(null);
   const [publishDecisionTarget, setPublishDecisionTarget] = useState<PublishAttempt | null>(null);
   const [publishExecuteTarget, setPublishExecuteTarget] = useState<PublishAttempt | null>(null);
@@ -544,6 +548,7 @@ export default function Sourcing1688Page() {
             { title: '操作', fixed: 'right', width: 240, render: (_, r) => <Space wrap>
               <Button size="small" disabled={!r.snapshot_id} onClick={async () => { const res = await apiClient.get<Snapshot>(`/v1/sourcing-1688/${r.id}/snapshot`); setEvidence(res.data ?? null); }}>查看证据</Button>
               <Button size="small" disabled={!r.snapshot_id} onClick={async () => { const res = await apiClient.get<IdentityHistory>(`/v1/sourcing-1688/${r.id}/identity-history`); setIdentityHistory({ sourceId: r.id, data: res.data ?? {} }); }}>变化/同款</Button>
+              <Button size="small" onClick={async () => { const res = await apiClient.get<AcceptanceReport>(`/v1/sourcing-1688/${r.id}/acceptance-report`); setAcceptanceReport(res.data ?? null); }}>15项验收</Button>
               <Button size="small" disabled={!r.snapshot_id || !['collected', 'pending_review'].includes(r.status)} onClick={() => { setReviewing(r); reviewForm.setFieldsValue({ notes: '' }); }}>Owner 复核</Button>
               <Button size="small" type="primary" disabled={!r.reviewed_at || !['ready_for_product', 'editing'].includes(r.lifecycle_status || '')} onClick={() => openDraftEditor(r)}>{r.product_id ? '编辑草稿' : '转待上架草稿'}</Button>
               <Button size="small" disabled={!r.reviewed_at} onClick={() => { setImageTarget(r); setProcessedImage(null); }}>处理图片</Button>
@@ -646,7 +651,7 @@ export default function Sourcing1688Page() {
             </> },
             { key: 'sku', label: '2. SKU 三段映射与变体', children: <>
               <Alert type="info" showIcon title="一行代表一个可销售变体" description="供应商 SKU、内部 SKU、渠道 SKU 必须唯一；颜色、尺寸、材质、包装会自动写入 SKU 属性和校验快照。" style={{ marginBottom: 12 }} />
-              <Form.List name="sku_variants">{(fields, { add, remove }) => <Space direction="vertical" style={{ width: '100%' }}>
+              <Form.List name="sku_variants">{(fields, { add, remove }) => <Space orientation="vertical" style={{ width: '100%' }}>
                 {fields.map((field, index) => <Card key={field.key} size="small" title={`SKU ${index + 1}`} extra={fields.length > 1 && <Button danger type="text" aria-label={`删除 SKU ${index + 1}`} icon={<DeleteOutlined />} onClick={() => remove(field.name)} />}>
                   <Row gutter={12}>
                     <Col xs={24} md={8}><Form.Item name={[field.name, 'supplier_sku']} label="供应商 SKU" rules={required}><Input /></Form.Item></Col>
@@ -676,7 +681,7 @@ export default function Sourcing1688Page() {
             </> },
             { key: 'media', label: '3. 图片权利、处理版本与质量', children: <>
               <Alert type="warning" showIcon title="必须先在“处理图片”中生成真实版本" description="这里记录处理结果和 Owner 目检。勾选“确认无水印/中文/品牌”表示你已实际看过处理后图片。" style={{ marginBottom: 12 }} />
-              <Form.List name="media">{(fields, { add, remove }) => <Space direction="vertical" style={{ width: '100%' }}>
+              <Form.List name="media">{(fields, { add, remove }) => <Space orientation="vertical" style={{ width: '100%' }}>
                 {fields.map((field, index) => <Card key={field.key} size="small" title={`图片 ${index + 1}`} extra={<Button danger type="text" aria-label={`删除图片 ${index + 1}`} icon={<DeleteOutlined />} onClick={() => remove(field.name)} />}>
                   <Row gutter={12}>
                     <Col xs={24} md={6}><Form.Item name={[field.name, 'processing_record_id']} label="处理记录 ID" rules={required}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item></Col>
@@ -720,7 +725,7 @@ export default function Sourcing1688Page() {
             { key: 'cost', label: '4. 完整成本、汇率与预计收入', children: <>
               <Alert type="info" showIcon title="10 项费用必须逐项留证" description="金额可以为 0，但来源和观察时间不能省略；汇率单独记录，不作为费用。" style={{ marginBottom: 12 }} />
               <Form.Item name="currency" label="统一核算币种" rules={required}><Select style={{ width: 160 }} options={[{ value: 'CNY' }, { value: 'RUB' }, { value: 'USD' }]} /></Form.Item>
-              <Form.List name="costs">{(fields) => <Space direction="vertical" style={{ width: '100%' }}>
+              <Form.List name="costs">{(fields) => <Space orientation="vertical" style={{ width: '100%' }}>
                 {fields.map((field, index) => <Card key={field.key} size="small" title={costTypes[index]?.[1] ?? `费用 ${index + 1}`}>
                   <Form.Item name={[field.name, 'cost_type']} hidden><Input /></Form.Item>
                   <Row gutter={12}>
@@ -733,7 +738,7 @@ export default function Sourcing1688Page() {
                 </Card>)}
               </Space>}</Form.List>
               <Divider>汇率（跨币种时必填）</Divider>
-              <Form.List name="exchange_rates">{(fields, { add, remove }) => <Space direction="vertical" style={{ width: '100%' }}>
+              <Form.List name="exchange_rates">{(fields, { add, remove }) => <Space orientation="vertical" style={{ width: '100%' }}>
                 {fields.map((field) => <Row key={field.key} gutter={12}>
                   <Col xs={12} md={3}><Form.Item name={[field.name, 'from_currency']} label="源币种" rules={required}><Input /></Form.Item></Col>
                   <Col xs={12} md={3}><Form.Item name={[field.name, 'to_currency']} label="目标币种" rules={required}><Input /></Form.Item></Col>
@@ -786,7 +791,7 @@ export default function Sourcing1688Page() {
       <Drawer
         title={`发布安全 · 采集 #${publishTarget?.id ?? ''}`}
         open={!!publishTarget}
-        width={960}
+        size={960}
         onClose={() => setPublishTarget(null)}
         extra={<Tag color="red">真实平台写入 · 高风险</Tag>}
       >
@@ -828,7 +833,7 @@ export default function Sourcing1688Page() {
         </Card> : <Alert type="info" showIcon title="当前已有不可并行的新请求" description="只有既有请求明确 rejected 或 failed 后，才显示新的发布请求表单。" />}
 
         <Divider>冻结请求与结果</Divider>
-        {publishAttempts.isLoading ? <Card loading /> : publishAttempts.isError ? <Alert type="error" showIcon title="发布记录加载失败" description={(publishAttempts.error as Error).message} /> : attempts.length === 0 ? <Alert type="info" showIcon title="还没有发布请求" description="先完成上方步骤 1。" /> : <Space direction="vertical" style={{ width: '100%' }}>
+        {publishAttempts.isLoading ? <Card loading /> : publishAttempts.isError ? <Alert type="error" showIcon title="发布记录加载失败" description={(publishAttempts.error as Error).message} /> : attempts.length === 0 ? <Alert type="info" showIcon title="还没有发布请求" description="先完成上方步骤 1。" /> : <Space orientation="vertical" style={{ width: '100%' }}>
           {attempts.map((attempt) => {
             const meta = publishStatusMeta[attempt.status] ?? { color: 'default', label: attempt.status, description: '未知状态，请停止操作并核对后端记录。' };
             return <Card
@@ -853,7 +858,7 @@ export default function Sourcing1688Page() {
                 <Descriptions.Item label="冻结请求" span={2}><Paragraph copyable style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 260, overflow: 'auto' }}>{formatPayload(attempt.request_payload)}</Paragraph></Descriptions.Item>
                 <Descriptions.Item label="适配器请求快照" span={2}><Paragraph copyable style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 260, overflow: 'auto' }}>{formatPayload(attempt.adapter_request_payload)}</Paragraph></Descriptions.Item>
                 {(attempt.response_payload != null || attempt.response_sha256) && <Descriptions.Item label="平台返回 / 对账结果" span={2}>
-                  <Space direction="vertical" style={{ width: '100%' }}>
+                  <Space orientation="vertical" style={{ width: '100%' }}>
                     <Text>响应 SHA-256：<Text copyable>{attempt.response_sha256 || '—'}</Text></Text>
                     <Paragraph copyable style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 260, overflow: 'auto' }}>{formatPayload(attempt.response_payload)}</Paragraph>
                   </Space>
@@ -922,7 +927,7 @@ export default function Sourcing1688Page() {
         </Form>
       </Modal>
 
-      <Drawer title="待上架草稿预览（未发布）" open={!!preview} width={720} onClose={() => setPreview(null)} extra={<Tag color="orange">不会自动发布</Tag>}>
+      <Drawer title="待上架草稿预览（未发布）" open={!!preview} size={720} onClose={() => setPreview(null)} extra={<Tag color="orange">不会自动发布</Tag>}>
         <Alert type="success" showIcon title="草稿已保存" description="下方内容用于 Owner 人工验收；它不证明平台已接受，也没有触发外部发布。" />
         <Divider />
         <Descriptions bordered column={1} size="small">
@@ -933,7 +938,7 @@ export default function Sourcing1688Page() {
         <Button icon={<EyeOutlined />} disabled>仅预览；发布必须从列表“发布安全”进入</Button>
       </Drawer>
 
-      <Drawer title="不可变采集证据" open={!!evidence} width={720} onClose={() => setEvidence(null)}>
+      <Drawer title="不可变采集证据" open={!!evidence} size={720} onClose={() => setEvidence(null)}>
         {evidence && <Descriptions bordered column={1} size="small">
           <Descriptions.Item label="原链接"><a href={evidence.source_url} target="_blank" rel="noreferrer">{evidence.source_url}</a></Descriptions.Item>
           <Descriptions.Item label="采集时间">{evidence.collected_at}</Descriptions.Item>
@@ -944,11 +949,35 @@ export default function Sourcing1688Page() {
         </Descriptions>}
       </Drawer>
 
-      <Drawer title="版本变化与疑似同款" open={!!identityHistory} width={760} onClose={() => setIdentityHistory(null)}>
+      <Drawer title="版本变化与疑似同款" open={!!identityHistory} size={760} onClose={() => setIdentityHistory(null)}>
         <Alert type="info" showIcon title="疑似同款必须由 Owner 裁决" description="系统按 1688 offer ID 和内容指纹发现重复、换链接或跨供应商同款；不会自动合并商品。" style={{ marginBottom: 16 }} />
         <Table rowKey="id" pagination={false} dataSource={identityHistory?.data.duplicates ?? []} columns={[{ title: '来源', render: (_, r) => `#${r.source_product_id} ↔ #${r.matched_product_id}` }, { title: '匹配方式', dataIndex: 'match_type' }, { title: '状态', dataIndex: 'status' }, { title: 'Owner 裁决', render: (_, r) => r.status === 'pending_review' ? <Space><Button size="small" loading={resolveDuplicate.isPending} onClick={() => resolveDuplicate.mutate({ id: r.id, decision: 'same_product' })}>确认同款</Button><Button size="small" onClick={() => resolveDuplicate.mutate({ id: r.id, decision: 'different_product' })}>不是同款</Button></Space> : '已裁决' }]} />
         <Divider />
         <Paragraph copyable style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify({ snapshots: identityHistory?.data.snapshots, changes: identityHistory?.data.changes }, null, 2)}</Paragraph>
+      </Drawer>
+
+      <Drawer
+        title={`真实商品 15 项验收 · 采集 #${acceptanceReport?.sourcing_product_id ?? ''}`}
+        open={!!acceptanceReport}
+        size={920}
+        onClose={() => setAcceptanceReport(null)}
+        extra={<Tag color={acceptanceReport?.ready ? 'green' : acceptanceReport?.status === 'blocked' ? 'red' : 'gold'}>{acceptanceReport?.ready ? '全部通过' : acceptanceReport?.status === 'blocked' ? '存在阻断' : '证据未知'}</Tag>}
+      >
+        {acceptanceReport && <>
+          <Alert type={acceptanceReport.ready ? 'success' : 'warning'} showIcon title={acceptanceReport.ready ? '该商品的持久化真实证据链已逐项通过' : '不能宣布真实商品闭环完成'} description={acceptanceReport.disclaimer} style={{ marginBottom: 16 }} />
+          <Table<AcceptanceItem>
+            rowKey="code"
+            pagination={false}
+            dataSource={acceptanceReport.items}
+            columns={[
+              { title: '#', dataIndex: 'number', width: 48 },
+              { title: '验收项', dataIndex: 'title', width: 180 },
+              { title: '状态', dataIndex: 'status', width: 100, render: (status: AcceptanceItem['status']) => <Tag color={status === 'passed' ? 'green' : status === 'blocked' ? 'red' : 'gold'}>{status}</Tag> },
+              { title: '事实与阻断', render: (_, item) => <><Text>{item.summary}</Text>{item.blockers?.length > 0 && <ul style={{ marginBottom: 0 }}>{item.blockers.map((blocker) => <li key={blocker}><Text type="danger">{blocker}</Text></li>)}</ul>}</> },
+            ]}
+          />
+          <Paragraph type="secondary" style={{ marginTop: 16 }}>报告生成时间：{acceptanceReport.generated_at}</Paragraph>
+        </>}
       </Drawer>
     </PageContainer>
   );

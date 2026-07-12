@@ -250,6 +250,25 @@ func (h *Handler) Lifecycle(c *gin.Context) {
 	response.Success(c, state)
 }
 
+// AcceptanceReport is a read-only, Owner-scoped factual audit of one real
+// sourcing chain. It never changes workflow state or invokes an integration.
+func (h *Handler) AcceptanceReport(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	report, err := h.service.BuildAcceptanceReport(c.Request.Context(), id, ownerID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, report)
+}
+
 func (h *Handler) CaptureFailed(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -635,6 +654,7 @@ func (h *Handler) Capture(c *gin.Context) {
 		return
 	}
 	in.CollectedBy = actor
+	in.CaptureMode = CaptureModeManualImport
 	p, err := h.service.Capture(&in)
 	if err != nil {
 		workflowError(c, err)

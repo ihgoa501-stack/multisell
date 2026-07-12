@@ -64,6 +64,13 @@ func (s *Service) Capture(in *CaptureInput) (*Sourcing1688Product, error) {
 	if offerID == "" {
 		return nil, fmt.Errorf("%w: a 1688 product offer URL is required", ErrInvalidWorkflow)
 	}
+	captureMode := in.CaptureMode
+	if captureMode == "" {
+		captureMode = CaptureModeLegacyUnknown
+	}
+	if captureMode != CaptureModeControlledFetch && captureMode != CaptureModeManualImport && captureMode != CaptureModeLegacyUnknown {
+		return nil, fmt.Errorf("%w: invalid capture provenance", ErrInvalidWorkflow)
+	}
 	var result Sourcing1688Product
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var previousSnapshot *Sourcing1688Snapshot
@@ -158,7 +165,7 @@ func (s *Service) Capture(in *CaptureInput) (*Sourcing1688Product, error) {
 				return err
 			}
 		}
-		snap := Sourcing1688Snapshot{SourcingProductID: p.ID, SourceURL: canonicalURL, CollectedAt: in.CollectedAt, CollectedBy: in.CollectedBy, Driver: strings.TrimSpace(in.Driver), ParserVersion: strings.TrimSpace(in.ParserVersion), RawPayload: append(json.RawMessage(nil), in.RawPayload...), RawSHA256: hash, ObservedTitle: in.Title, ObservedPrice: in.Price, ObservedMOQ: p.MOQ, ObservedSupplier: in.SupplierName, ObservedSupplierBusinessID: strings.TrimSpace(in.SupplierBusinessID)}
+		snap := Sourcing1688Snapshot{SourcingProductID: p.ID, SourceURL: canonicalURL, CollectedAt: in.CollectedAt, CollectedBy: in.CollectedBy, Driver: strings.TrimSpace(in.Driver), ParserVersion: strings.TrimSpace(in.ParserVersion), CaptureMode: captureMode, RawPayload: append(json.RawMessage(nil), in.RawPayload...), RawSHA256: hash, ObservedTitle: in.Title, ObservedPrice: in.Price, ObservedMOQ: p.MOQ, ObservedSupplier: in.SupplierName, ObservedSupplierBusinessID: strings.TrimSpace(in.SupplierBusinessID)}
 		if err := tx.Create(&snap).Error; err != nil {
 			return err
 		}
@@ -356,6 +363,34 @@ func validateChecks(checks []EvidenceCheck, required []string, actualOnly bool) 
 	return nil
 }
 
+// buildListingDraftPayload freezes every evidence/rule input used by the
+// deterministic gate. Validation results alone are insufficient for a later
+// audit because they do not reveal the exchange rate or rule snapshot that
+// produced the decision.
+func buildListingDraftPayload(in *ConvertInput, snapshotID int64) (json.RawMessage, error) {
+	validationResult := ValidateDraft(in.Validation)
+	payload, err := json.Marshal(map[string]any{
+		"localized_title":       in.LocalizedTitle,
+		"localized_description": in.LocalizedDescription,
+		"target_locale":         in.TargetLocale,
+		"shipping_template_id":  in.ShippingTemplateID,
+		"category_schema_uri":   in.CategorySchemaURI,
+		"category_observed_at":  in.CategoryObservedAt,
+		"supplier_assessment":   in.SupplierAssessment,
+		"compliance_checks":     in.ComplianceChecks,
+		"media_requirements":    in.Media,
+		"validation_input":      in.Validation,
+		"validation_result":     validationResult,
+		"source_snapshot_id":    snapshotID,
+		"supplier_sku_mapping":  in.SKUVariants,
+		"channel_fields":        json.RawMessage(in.ListingPayload),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("freeze listing evidence: %w", err)
+	}
+	return payload, nil
+}
+
 // Convert creates only internal product/SKU/media/cost records and a listing
 // whose status is unconditionally draft. It never calls a platform adapter.
 func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
@@ -461,8 +496,10 @@ func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
 				return err
 			}
 		}
-		validationResult := ValidateDraft(in.Validation)
-		published, _ := json.Marshal(map[string]any{"localized_title": in.LocalizedTitle, "localized_description": in.LocalizedDescription, "target_locale": in.TargetLocale, "shipping_template_id": in.ShippingTemplateID, "category_schema_uri": in.CategorySchemaURI, "category_observed_at": in.CategoryObservedAt, "supplier_assessment": in.SupplierAssessment, "compliance_checks": in.ComplianceChecks, "media_requirements": in.Media, "validation_result": validationResult, "source_snapshot_id": *p.SnapshotID, "supplier_sku_mapping": in.SKUVariants, "channel_fields": json.RawMessage(in.ListingPayload)})
+		published, err := buildListingDraftPayload(in, *p.SnapshotID)
+		if err != nil {
+			return err
+		}
 		listing := listingRow{ProductID: prod.ID, PlatformID: in.PlatformID, PlatformSKU: in.PlatformSKU, Status: "draft", PublishedData: published}
 		if err := tx.Create(&listing).Error; err != nil {
 			return err

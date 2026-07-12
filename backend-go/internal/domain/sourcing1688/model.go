@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+const (
+	CaptureModeControlledFetch = "controlled_fetch"
+	CaptureModeManualImport    = "manual_import"
+	CaptureModeLegacyUnknown   = "legacy_unknown"
+)
+
 // Sourcing1688Product maps to "sourcing_1688_product".
 // Column definitions match migration 000001_init_schema.up.sql.
 type Sourcing1688Product struct {
@@ -58,6 +64,7 @@ type Sourcing1688Snapshot struct {
 	CollectedBy                int64           `gorm:"column:collected_by;not null" json:"collected_by"`
 	Driver                     string          `gorm:"column:driver;not null" json:"driver"`
 	ParserVersion              string          `gorm:"column:parser_version;not null" json:"parser_version"`
+	CaptureMode                string          `gorm:"column:capture_mode;not null;default:legacy_unknown" json:"capture_mode"`
 	RawPayload                 json.RawMessage `gorm:"column:raw_payload;type:jsonb;not null" json:"raw_payload"`
 	RawSHA256                  string          `gorm:"column:raw_sha256;size:64;not null;uniqueIndex:ux_sourcing_snapshot_hash" json:"raw_sha256"`
 	ObservedTitle              *string         `gorm:"column:observed_title" json:"observed_title,omitempty"`
@@ -87,6 +94,9 @@ type CaptureInput struct {
 	SupplierBusinessID string          `json:"supplier_business_id" binding:"required"`
 	Images             json.RawMessage `json:"images"`
 	SkuVariants        json.RawMessage `json:"sku_variants"`
+	// CaptureMode is assigned only by trusted server-side entry points. It is
+	// never accepted from request JSON.
+	CaptureMode string `json:"-"`
 }
 
 type ReviewInput struct {

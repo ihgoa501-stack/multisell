@@ -172,17 +172,26 @@ func (s *Service) SubmitDraftApproval(id int64, in *DraftApprovalSubmissionInput
 		if listing.Status != "draft" {
 			return fmt.Errorf("%w: only an internal draft may be submitted", ErrWorkflowGate)
 		}
+		contentHash, err := calculateDraftContentSHA256Locked(tx, &draft)
+		if err != nil {
+			return err
+		}
+		frozenValue, err := marshalDraftApprovalNewValue(contentHash)
+		if err != nil {
+			return err
+		}
 		req = approval.ApprovalRequest{
 			ProductID: draft.ProductID, RequestType: DraftApprovalRequestType,
 			Requester: strconv.FormatInt(in.RequesterID, 10), RequesterUserID: &in.RequesterID,
 			Status: approval.StatusPending, Reason: strings.TrimSpace(in.Reason),
 			TargetType: DraftApprovalTargetType, TargetID: draft.ID, RiskLevel: "medium",
 			EntityType: DraftApprovalTargetType, EntityID: draft.ID,
+			NewValue: frozenValue,
 		}
 		if err := tx.Create(&req).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&draft).Updates(map[string]any{"approval_id": req.ID, "approval_status": approval.StatusPending, "approval_rejection_reason": ""}).Error; err != nil {
+		if err := tx.Model(&draft).Updates(map[string]any{"approval_id": req.ID, "approval_status": approval.StatusPending, "approval_content_sha256": contentHash, "approval_rejection_reason": ""}).Error; err != nil {
 			return err
 		}
 		return updateLifecycle(tx, &row, LifecyclePendingApproval, in.RequesterID, in.Reason)
@@ -229,6 +238,9 @@ func (s *Service) DecideDraftApproval(id, approvalID int64, in *DraftApprovalDec
 	}
 	if preflightReq.Status != approval.StatusPending || preflightReq.RequestType != DraftApprovalRequestType || preflightReq.TargetType != DraftApprovalTargetType || preflightReq.TargetID != preflightDraft.ID || preflightReq.ProductID != preflightDraft.ProductID {
 		return nil, fmt.Errorf("%w: pending approval does not match the draft", ErrWorkflowGate)
+	}
+	if err := validateDraftApprovalContent(s.db, &preflightDraft, &preflightReq); err != nil {
+		return nil, err
 	}
 	var preflightListing listingRow
 	if err := s.db.First(&preflightListing, preflightDraft.ListingID).Error; err != nil {

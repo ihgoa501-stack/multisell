@@ -170,7 +170,7 @@ func (h *ControlledFetchHandler) Fetch(c *gin.Context) {
 	images, _ := json.Marshal(page.Images)
 	variants, _ := json.Marshal(page.SpecVariants)
 	title, price, moq := page.Title, page.PriceCNY, page.MOQ
-	product, err := h.service.Capture(&CaptureInput{DemandCaseID: in.DemandCaseID, ExperimentID: in.ExperimentID, SourceURL: canonicalURL, CollectedAt: collectedAt, CollectedBy: ownerID, Driver: page.Driver, ParserVersion: page.ParserVersion, RawPayload: raw, Title: &title, Price: &price, MOQ: &moq, SupplierName: page.SupplierName, SupplierBusinessID: page.SupplierBusinessID, Images: images, SkuVariants: variants})
+	product, err := h.service.Capture(&CaptureInput{DemandCaseID: in.DemandCaseID, ExperimentID: in.ExperimentID, SourceURL: canonicalURL, CollectedAt: collectedAt, CollectedBy: ownerID, Driver: page.Driver, ParserVersion: page.ParserVersion, RawPayload: raw, Title: &title, Price: &price, MOQ: &moq, SupplierName: page.SupplierName, SupplierBusinessID: page.SupplierBusinessID, Images: images, SkuVariants: variants, CaptureMode: CaptureModeControlledFetch})
 	if err != nil {
 		workflowError(c, err)
 		return

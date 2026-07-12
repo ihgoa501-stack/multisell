@@ -22,6 +22,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bridge
 		group.GET("/:id/draft", h.Draft)
 		group.GET("/:id/identity-history", h.IdentityHistory)
 		group.GET("/:id/lifecycle", h.Lifecycle)
+		group.GET("/:id/acceptance-report", h.AcceptanceReport)
 		group.POST("/capture", h.Capture)
 		group.POST("/fetch", fetchHandler.Fetch)
 		group.POST("/:id/review", h.Review)

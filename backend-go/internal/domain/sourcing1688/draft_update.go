@@ -94,12 +94,14 @@ func (s *Service) UpdateDraft(id int64, in *ConvertInput) (*DraftDetail, error) 
 				return err
 			}
 		}
-		validation := ValidateDraft(in.Validation)
-		published, _ := json.Marshal(map[string]any{"localized_title": in.LocalizedTitle, "localized_description": in.LocalizedDescription, "target_locale": in.TargetLocale, "shipping_template_id": in.ShippingTemplateID, "category_schema_uri": in.CategorySchemaURI, "category_observed_at": in.CategoryObservedAt, "supplier_assessment": in.SupplierAssessment, "compliance_checks": in.ComplianceChecks, "media_requirements": in.Media, "validation_result": validation, "source_snapshot_id": *source.SnapshotID, "supplier_sku_mapping": in.SKUVariants, "channel_fields": json.RawMessage(in.ListingPayload)})
+		published, err := buildListingDraftPayload(in, *source.SnapshotID)
+		if err != nil {
+			return err
+		}
 		if err := tx.Model(&listing).Updates(map[string]any{"platform_id": in.PlatformID, "platform_sku": in.PlatformSKU, "published_data": published}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&draft).Updates(map[string]any{"approval_id": nil, "approval_status": "", "approval_rejection_reason": ""}).Error
+		return tx.Model(&draft).Updates(map[string]any{"approval_id": nil, "approval_status": "", "approval_content_sha256": "", "approval_rejection_reason": ""}).Error
 	})
 	if err != nil {
 		return nil, err
