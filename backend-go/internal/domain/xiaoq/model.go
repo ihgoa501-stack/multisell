@@ -6,12 +6,13 @@ import (
 )
 
 const (
-	AgentID          = "xiao_q"
-	TargetDemandCase = "demand_case"
-	TargetExperiment = "experiment"
-	TruthMock        = "mock"
-	TruthInferred    = "inferred"
-	MaxMessageRunes  = 2000
+	AgentID            = "xiao_q"
+	TargetDemandCase   = "demand_case"
+	TargetExperiment   = "experiment"
+	TargetSourcing1688 = "sourcing_1688"
+	TruthMock          = "mock"
+	TruthInferred      = "inferred"
+	MaxMessageRunes    = 2000
 )
 
 var (
@@ -25,6 +26,7 @@ type MessageInput struct {
 	TargetType   string `json:"target_type,omitempty"`
 	DemandCaseID int64  `json:"demand_case_id,omitempty"`
 	ExperimentID string `json:"experiment_id,omitempty"`
+	SourceID     int64  `json:"source_id,omitempty"`
 }
 
 type MessageResponse struct {
@@ -34,6 +36,7 @@ type MessageResponse struct {
 	TargetType   string         `json:"target_type"`
 	DemandCaseID int64          `json:"demand_case_id"`
 	ExperimentID string         `json:"experiment_id,omitempty"`
+	SourceID     int64          `json:"source_id,omitempty"`
 	Answer       string         `json:"answer"`
 	TruthStatus  string         `json:"truth_status"`
 	Trusted      bool           `json:"trusted"`

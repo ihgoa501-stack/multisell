@@ -61,4 +61,25 @@ describe('XiaoQ components', () => {
     expect(screen.getByRole('link', { name: '经营实验' })).toHaveAttribute('href', '/experiments?experiment_id=EXP-1');
     expect(screen.queryByRole('button', { name: /批准|执行/ })).not.toBeInTheDocument();
   });
+
+  it('shows controlled sourcing limitations, snapshot hash and cost truth status without actions', () => {
+    render(<XiaoQAnswerCard response={{
+      trace_id: 'trace-source', agent_id: 'xiao_q', target_type: 'sourcing_1688', source_id: 42,
+      answer: '当前只能核对受控来源与内部草稿。', truth_status: 'inferred', mode: 'read_only_v1',
+      evidence: [
+        { id: 7, title: '1688不可变来源快照', summary: 'snapshot', truth_status: 'quoted', snapshot_id: 7, snapshot_sha256: 'abc123hash' },
+        { id: 8, title: '采购成本', summary: '12.80 CNY', truth_status: 'estimated', snapshot_id: 7, snapshot_sha256: 'abc123hash' },
+      ],
+      unknowns: ['供应商资质尚未外部核验', '采购成本（estimated）'],
+      links: [{ label: '1688受控货源', href: '/sourcing1688?source_id=42' }],
+    }} />);
+
+    expect(screen.getByText('受控来源、快照与成本证据')).toBeInTheDocument();
+    expect(screen.getByText('限制与仍然未知')).toBeInTheDocument();
+    expect(screen.getByText('供应商资质尚未外部核验')).toBeInTheDocument();
+    expect(screen.getAllByText(/abc123hash/)).toHaveLength(2);
+    expect(screen.getByText('估算')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '1688受控货源' })).toHaveAttribute('href', '/sourcing1688?source_id=42');
+    expect(screen.queryByRole('button', { name: /批准|执行|发布|采购/ })).not.toBeInTheDocument();
+  });
 });

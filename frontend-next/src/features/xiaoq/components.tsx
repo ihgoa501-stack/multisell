@@ -75,12 +75,13 @@ export function XiaoQCapabilities({ capabilities }: { capabilities: XiaoQCapabil
 export function XiaoQAnswerCard({ response }: { response: XiaoQMessageResponse }) {
   const provenance = Array.isArray(response.provenance) ? response.provenance : response.provenance ? [response.provenance] : [];
   const isExperiment = response.target_type === 'experiment';
+  const isSourcing = response.target_type === 'sourcing_1688';
   return (
     <Card title={<Space wrap><span>小Q回答</span><ModeTag mode={response.mode} /><TruthStatusTag status={response.truth_status} /></Space>}>
       <Paragraph style={{ whiteSpace: 'pre-wrap', fontSize: 15 }}>{response.answer}</Paragraph>
       {response.case_summary && <Alert type="info" message="案件摘要" description={response.case_summary} style={{ marginBottom: 16 }} />}
 
-      <Text strong>{isExperiment ? '经营实验证据' : '证据与反证'}</Text>
+      <Text strong>{isExperiment ? '经营实验证据' : isSourcing ? '受控来源、快照与成本证据' : '证据与反证'}</Text>
       {response.evidence.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本次回答没有可核验证据" />
       ) : (
@@ -93,6 +94,7 @@ export function XiaoQAnswerCard({ response }: { response: XiaoQMessageResponse }
                 {item.observed_at && <Text type="secondary">观察时间：{item.observed_at}</Text>}
                 {item.run_id !== undefined && <Text type="secondary">Run：<Text code>{item.run_id}</Text></Text>}
                 {item.snapshot_id !== undefined && <Text type="secondary">快照：<Text code>{item.snapshot_id}</Text></Text>}
+                {item.snapshot_sha256 && <Text type="secondary">SHA-256：<Text code>{item.snapshot_sha256}</Text></Text>}
                 {item.source_url && <a href={item.source_url} target="_blank" rel="noreferrer">查看来源</a>}
               </Space>
             </Card>
@@ -104,7 +106,7 @@ export function XiaoQAnswerCard({ response }: { response: XiaoQMessageResponse }
         <Alert
           type="warning"
           showIcon
-          message={isExperiment ? '闸门阻断与仍然未知' : '仍然未知'}
+          message={isExperiment ? '闸门阻断与仍然未知' : isSourcing ? '限制与仍然未知' : '仍然未知'}
           description={<ul style={{ margin: 0, paddingLeft: 20 }}>{response.unknowns.map((item) => <li key={item}>{item}</li>)}</ul>}
           style={{ marginTop: 16 }}
         />

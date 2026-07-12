@@ -77,6 +77,25 @@ describe('xiao-q api', () => {
     });
   });
 
+  it('posts the controlled sourcing target using source_id', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      code: 0,
+      message: 'ok',
+      data: {
+        trace_id: 'trace-source', agent_id: 'xiao_q', target_type: 'sourcing_1688', source_id: 42,
+        answer: '只读来源说明', truth_status: 'inferred', mode: 'read_only_v1',
+        evidence: [], unknowns: ['费用仍未知'], links: [],
+      },
+    });
+
+    await expect(sendXiaoQMessage({
+      message: '成本还缺什么？', target_type: 'sourcing_1688', source_id: 42,
+    })).resolves.toMatchObject({ target_type: 'sourcing_1688', source_id: 42 });
+    expect(apiClient.post).toHaveBeenCalledWith('/v1/xiao-q/messages', {
+      message: '成本还缺什么？', target_type: 'sourcing_1688', source_id: 42,
+    });
+  });
+
   it('normalizes missing collections and experiment backend links', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({
       code: 0,

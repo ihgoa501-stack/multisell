@@ -5,6 +5,7 @@ import (
 
 	"github.com/lingmirror/backend-go/internal/domain/demandcase"
 	"github.com/lingmirror/backend-go/internal/domain/experiment"
+	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 )
 
 const (
@@ -12,6 +13,7 @@ const (
 	CapabilityDemandCaseDecisionRead = "demand_case.decision_card.read"
 	CapabilityExperimentRead         = "experiment.read"
 	CapabilityExperimentGateRead     = "experiment.gate_status.read"
+	CapabilitySourcing1688Read       = "sourcing_1688.controlled_draft.read"
 )
 
 type Capability struct {
@@ -40,6 +42,7 @@ var readCapabilities = []Capability{
 	{ID: CapabilityDemandCaseDecisionRead, Version: "v1", Domain: "demandcase", Description: "读取当前 Owner 的候选市场决策卡", InputSchema: map[string]interface{}{"demand_case_id": "positive_int64"}, OutputSchema: map[string]interface{}{"type": "owner_decision_card"}, Risk: "read", RequiredPermission: "agent.write", ApprovalRequired: false, ExecutionModes: []string{"read_only"}, ExternalSideEffects: false, IdempotencyRequired: false, EvidencePolicy: "domain verdict is authoritative; AI cannot upgrade it", TimeoutSeconds: 5, RetryLimit: 0, AuditActionType: "xiao_q.capability.demand_case.decision_card.read", OwnerExplanation: "小Q只解释系统已有裁决、反证和未知，不替你批准市场；模型费用预算仍未在此能力中确定", Status: "active"},
 	{ID: CapabilityExperimentRead, Version: "v1", Domain: "experiment", Description: "读取当前 Owner 的经营实验案件、证据、闸门与对象关联", InputSchema: map[string]interface{}{"experiment_id": "non_empty_string"}, OutputSchema: map[string]interface{}{"type": "experiment_detail"}, Risk: "read", RequiredPermission: "agent.write", ApprovalRequired: false, ExecutionModes: []string{"read_only"}, ExternalSideEffects: false, IdempotencyRequired: false, EvidencePolicy: "preserve truth_status, source_uri, observed_at, verification and gate decision without upgrading facts", TimeoutSeconds: 5, RetryLimit: 0, AuditActionType: "xiao_q.capability.experiment.read", OwnerExplanation: "小Q只读取你的经营实验事实，不新增证据、不评估闸门、不改变实验状态", Status: "active"},
 	{ID: CapabilityExperimentGateRead, Version: "v1", Domain: "experiment", Description: "读取当前 Owner 的经营实验闸门状态、阻断项与终局状态", InputSchema: map[string]interface{}{"experiment_id": "non_empty_string"}, OutputSchema: map[string]interface{}{"type": "experiment_owner_summary"}, Risk: "read", RequiredPermission: "agent.write", ApprovalRequired: false, ExecutionModes: []string{"read_only"}, ExternalSideEffects: false, IdempotencyRequired: false, EvidencePolicy: "experiment domain gates and owner summary are authoritative; AI cannot pass a gate", TimeoutSeconds: 5, RetryLimit: 0, AuditActionType: "xiao_q.capability.experiment.gate_status.read", OwnerExplanation: "小Q只解释已有闸门与缺口，不能替 Owner 核验证据或通过闸门", Status: "active"},
+	{ID: CapabilitySourcing1688Read, Version: "v1", Domain: "sourcing1688", Description: "读取当前 Owner 的1688受控来源、不可变快照和内部草稿", InputSchema: map[string]interface{}{"source_id": "positive_int64"}, OutputSchema: map[string]interface{}{"type": "sourcing_1688_owner_view"}, Risk: "read", RequiredPermission: "agent.write", ApprovalRequired: false, ExecutionModes: []string{"read_only"}, ExternalSideEffects: false, IdempotencyRequired: false, EvidencePolicy: "preserve snapshot hash and cost truth_status; raw source and published payloads are forbidden", TimeoutSeconds: 5, RetryLimit: 0, AuditActionType: "xiao_q.capability.sourcing_1688.controlled_draft.read", OwnerExplanation: "小Q只读取受控货源与内部草稿，不发布、不采购、不批准，也不把估算或模拟信息升级为事实", Status: "active"},
 }
 
 func Capabilities() []Capability {
@@ -69,4 +72,8 @@ type DemandCaseReader interface {
 type ExperimentReader interface {
 	GetDetail(ctx context.Context, id string, ownerID int64) (*experiment.Detail, error)
 	OwnerSummary(ctx context.Context, id string, ownerID int64) (*experiment.OwnerSummary, error)
+}
+
+type Sourcing1688Reader interface {
+	ReadOwnerView(ctx context.Context, sourceID, ownerID int64) (*sourcing1688.OwnerView, error)
 }

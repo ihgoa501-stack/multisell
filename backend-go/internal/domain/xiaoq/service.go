@@ -11,6 +11,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/domain/demandcase"
 	"github.com/lingmirror/backend-go/internal/domain/experiment"
+	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -20,8 +21,14 @@ type Service struct {
 	logger     *zap.Logger
 	demand     DemandCaseReader
 	experiment ExperimentReader
+	sourcing   Sourcing1688Reader
 	provider   ai.LLMProvider
 	traces     TraceRecorder
+}
+
+func (s *Service) WithSourcingReader(reader Sourcing1688Reader) *Service {
+	s.sourcing = reader
+	return s
 }
 
 type TraceRecorder interface {
@@ -52,12 +59,18 @@ func (s *Service) SendMessage(ctx context.Context, ownerID int64, in MessageInpu
 		target = TargetDemandCase
 	}
 	if target == TargetExperiment {
-		if strings.TrimSpace(in.ExperimentID) == "" || in.DemandCaseID != 0 || s.experiment == nil {
+		if strings.TrimSpace(in.ExperimentID) == "" || in.DemandCaseID != 0 || in.SourceID != 0 || s.experiment == nil {
 			return nil, ErrInvalidInput
 		}
 		return s.sendExperimentMessage(ctx, ownerID, message, in.ExperimentID)
 	}
-	if target != TargetDemandCase || in.DemandCaseID <= 0 || strings.TrimSpace(in.ExperimentID) != "" || s.demand == nil {
+	if target == TargetSourcing1688 {
+		if in.SourceID <= 0 || in.DemandCaseID != 0 || strings.TrimSpace(in.ExperimentID) != "" || s.sourcing == nil {
+			return nil, ErrInvalidInput
+		}
+		return s.sendSourcingMessage(ctx, ownerID, message, in.SourceID)
+	}
+	if target != TargetDemandCase || in.DemandCaseID <= 0 || in.SourceID != 0 || strings.TrimSpace(in.ExperimentID) != "" || s.demand == nil {
 		return nil, ErrInvalidInput
 	}
 	if _, ok := activeCapability(CapabilityDemandCaseRead); !ok {
@@ -146,6 +159,97 @@ func (s *Service) SendMessage(ctx context.Context, ownerID int64, in MessageInpu
 		return nil, &RunError{TraceID: traceID, Err: err}
 	}
 	return final, nil
+}
+
+func (s *Service) sendSourcingMessage(ctx context.Context, ownerID int64, message string, sourceID int64) (*MessageResponse, error) {
+	capability, ok := activeCapability(CapabilitySourcing1688Read)
+	if !ok {
+		return nil, ErrCapabilityUnavailable
+	}
+	timedCtx, cancel := context.WithTimeout(ctx, time.Duration(capability.TimeoutSeconds)*time.Second)
+	defer cancel()
+	traceID, err := s.startReadTrace(ownerID, "sourcing_1688_explain", "xiaoq-sourcing-1688-v1", map[string]interface{}{"target_type": TargetSourcing1688, "question": message, "source_id": sourceID})
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.sourcing.ReadOwnerView(timedCtx, sourceID, ownerID)
+	if err != nil {
+		return nil, s.capabilityFailure(traceID, CapabilitySourcing1688Read, err, map[string]interface{}{"source_id": sourceID})
+	}
+	if _, err := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "capability_call", Content: CapabilitySourcing1688Read, Payload: mustJSON(map[string]interface{}{"source_id": sourceID, "risk": "read", "status": "succeeded"})}); err != nil {
+		return nil, s.failTrace(traceID, err)
+	}
+	if _, err := s.traces.AddEvidence(traceID, &ai.AddEvidenceInput{SourceType: "sourcing_1688_snapshot", SourceID: fmt.Sprint(view.Snapshot.ID), Title: "1688不可变来源快照", Summary: "quoted", Payload: mustJSON(map[string]interface{}{"source_id": sourceID, "snapshot_id": view.Snapshot.ID, "snapshot_sha256": view.Snapshot.RawSHA256, "source_reference": view.Snapshot.SourceReference, "collected_at": view.Snapshot.CollectedAt})}); err != nil {
+		return nil, s.failTrace(traceID, err)
+	}
+	for _, cost := range view.Costs {
+		if _, err := s.traces.AddEvidence(traceID, &ai.AddEvidenceInput{SourceType: "sourcing_1688_cost", SourceID: fmt.Sprint(cost.ID), Title: cost.CostType, Summary: cost.TruthStatus, Payload: mustJSON(cost)}); err != nil {
+			return nil, s.failTrace(traceID, err)
+		}
+	}
+	for _, media := range view.Media {
+		if _, err := s.traces.AddEvidence(traceID, &ai.AddEvidenceInput{SourceType: "sourcing_1688_media", SourceID: fmt.Sprint(media.ID), Title: media.MediaRole, Summary: media.RightsStatus, Payload: mustJSON(media)}); err != nil {
+			return nil, s.failTrace(traceID, err)
+		}
+	}
+	inputJSON, err := json.Marshal(struct {
+		Question   string                  `json:"question"`
+		SourceID   int64                   `json:"source_id"`
+		View       *sourcing1688.OwnerView `json:"view"`
+		Capability string                  `json:"capability"`
+	}{message, sourceID, view, CapabilitySourcing1688Read})
+	if err != nil {
+		return nil, s.failTrace(traceID, err)
+	}
+	final := &MessageResponse{TraceID: traceID, AgentID: AgentID, Mode: "read_only_v1", TargetType: TargetSourcing1688, SourceID: sourceID, Trusted: false}
+	if s.provider.Name() == "stub" {
+		final.Answer, final.TruthStatus, final.Provider, final.Model = "这是模拟回答，不能作为可信经营建议。请核对来源快照、草稿绑定、成本真实性和限制项。", TruthMock, "stub", "stub-v1"
+	} else {
+		resp, providerErr := s.provider.Chat(timedCtx, &ai.LLMRequest{System: "你是凌镜的小Q。只能根据提供的1688受控来源与内部草稿只读视图回答。严格保留成本 truth_status；图片权利没有独立真实性字段时必须保持 unknown；不得声称来源、图片权利、费用、渠道契约已经外部核验；不得发布、采购、批准或改变状态。用简明中文说明当前草稿、证据、限制和下一步。", Messages: []ai.LLMMessage{{Role: "user", Content: string(inputJSON)}}, MaxTokens: 800, Metadata: map[string]interface{}{"agent_id": AgentID, "source_id": sourceID}})
+		if providerErr != nil {
+			failure := mustJSON(map[string]interface{}{"error": providerErr.Error()})
+			if _, appendErr := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "provider_error", Content: "LLM provider call failed", Payload: failure}); appendErr != nil {
+				return nil, s.failTrace(traceID, errors.Join(providerErr, appendErr))
+			}
+			_, _ = s.traces.Complete(traceID, &ai.CompleteTraceInput{FinalOutput: failure, RiskLevel: "low", Status: "failed"})
+			return nil, &RunError{TraceID: traceID, Err: providerErr}
+		}
+		final.Answer, final.TruthStatus, final.Provider, final.Model, final.TokensIn, final.TokensOut, final.LatencyMs = resp.Answer, TruthInferred, s.provider.Name(), resp.Model, resp.TokensIn, resp.TokensOut, resp.LatencyMs
+		if _, err := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "model_response", Content: "provider response received", Payload: mustJSON(map[string]interface{}{"provider": final.Provider, "model": final.Model, "truth_status": final.TruthStatus})}); err != nil {
+			return nil, s.failTrace(traceID, err)
+		}
+	}
+	s.addSourcingGrounding(final, view)
+	if err := s.complete(traceID, final, "completed"); err != nil {
+		return nil, &RunError{TraceID: traceID, Err: err}
+	}
+	return final, nil
+}
+
+func (s *Service) addSourcingGrounding(response *MessageResponse, view *sourcing1688.OwnerView) {
+	response.Evidence = []EvidenceItem{{ID: view.Snapshot.ID, Title: "1688不可变来源快照", TruthStatus: "quoted", SourceURL: view.Snapshot.SourceReference, ObservedAt: view.Snapshot.CollectedAt.UTC().Format(time.RFC3339), Summary: "snapshot", SnapshotID: view.Snapshot.ID, SnapshotSHA256: view.Snapshot.RawSHA256}}
+	response.Unknowns = append([]string(nil), view.Limitations...)
+	for _, cost := range view.Costs {
+		response.Evidence = append(response.Evidence, EvidenceItem{ID: cost.ID, Title: cost.CostType, TruthStatus: cost.TruthStatus, SourceURL: cost.SourceReference, ObservedAt: cost.ObservedAt.UTC().Format(time.RFC3339), Summary: fmt.Sprintf("%.2f %s", cost.Amount, cost.Currency), SnapshotID: view.Snapshot.ID, SnapshotSHA256: view.Snapshot.RawSHA256})
+		if cost.TruthStatus == "unknown" || cost.TruthStatus == "mock" || cost.TruthStatus == "inferred" || cost.TruthStatus == "estimated" {
+			response.Unknowns = append(response.Unknowns, cost.CostType+"（"+cost.TruthStatus+"）")
+		}
+	}
+	for _, media := range view.Media {
+		observedAt := ""
+		if media.ObservedAt != nil {
+			observedAt = media.ObservedAt.UTC().Format(time.RFC3339)
+		}
+		response.Evidence = append(response.Evidence, EvidenceItem{ID: media.ID, Title: media.MediaRole, TruthStatus: media.TruthStatus, SourceURL: media.SourceReference, ObservedAt: observedAt, Summary: "rights_status=" + media.RightsStatus, SnapshotID: view.Snapshot.ID, SnapshotSHA256: view.Snapshot.RawSHA256})
+		response.Unknowns = append(response.Unknowns, media.MediaRole+"图片权利真实性未知（status="+media.RightsStatus+"）")
+	}
+	response.Links = []ResponseLink{
+		{Label: "1688受控货源", Href: "/sourcing1688?source_id=" + fmt.Sprint(response.SourceID)},
+		{Label: "关联候选市场", Href: "/demand-cases/" + fmt.Sprint(view.Source.DemandCaseID)},
+		{Label: "关联经营实验", Href: "/experiments/" + view.Source.ExperimentID},
+		{Label: "小Q 执行记录", Href: "/api/v1/xiao-q/traces/" + response.TraceID},
+	}
+	response.Provenance = Provenance{Provider: response.Provider, Model: response.Model, TokensIn: response.TokensIn, TokensOut: response.TokensOut, LatencyMs: response.LatencyMs}
 }
 
 func (s *Service) sendExperimentMessage(ctx context.Context, ownerID int64, message, experimentID string) (*MessageResponse, error) {

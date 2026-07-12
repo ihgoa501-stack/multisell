@@ -118,5 +118,6 @@ owner_explanation:
 - `demand_case.decision_card.read`
 - `experiment.read`
 - `experiment.gate_status.read`
+- `sourcing_1688.controlled_draft.read`
 
-经营实验能力只读取当前 Owner 的案件详情、原始事实等级、已有闸门决定、阻断项与终局状态；不新增或核验证据，不执行闸门评估，不改变实验状态。其他模块均为 `deferred`，不能解释为小Q已经能够调用整个系统。
+经营实验能力只读取当前 Owner 的案件详情、原始事实等级、已有闸门决定、阻断项与终局状态；不新增或核验证据，不执行闸门评估，不改变实验状态。1688能力只读取与当前 Owner、候选市场、实验和不可变快照一致的受控内部草稿；原始采集载荷、平台发布载荷、内部 URI 和未经独立真实性字段支持的图片权利事实不进入模型上下文，且不能发布、采购或批准。其他模块均为 `deferred`，不能解释为小Q已经能够调用整个系统。

@@ -12,6 +12,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/demandcase"
 	"github.com/lingmirror/backend-go/internal/domain/experiment"
+	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"gorm.io/gorm"
 )
 
@@ -62,6 +63,18 @@ type fakeExperimentReader struct {
 	summaryErr  error
 }
 
+type fakeSourcingReader struct {
+	view         *sourcing1688.OwnerView
+	err          error
+	ownerIDSeen  int64
+	sourceIDSeen int64
+}
+
+func (f *fakeSourcingReader) ReadOwnerView(_ context.Context, sourceID, ownerID int64) (*sourcing1688.OwnerView, error) {
+	f.sourceIDSeen, f.ownerIDSeen = sourceID, ownerID
+	return f.view, f.err
+}
+
 func (f *fakeExperimentReader) GetDetail(_ context.Context, _ string, ownerID int64) (*experiment.Detail, error) {
 	f.ownerIDSeen = ownerID
 	return f.detail, f.detailErr
@@ -81,13 +94,17 @@ func (f *fakeDemandReader) DecisionCard(context.Context, int64, int64) (*demandc
 }
 
 type fakeProvider struct {
-	name string
-	resp *ai.LLMResponse
-	err  error
+	name         string
+	resp         *ai.LLMResponse
+	err          error
+	req          *ai.LLMRequest
+	deadlineSeen bool
 }
 
 func (f *fakeProvider) Name() string { return f.name }
-func (f *fakeProvider) Chat(context.Context, *ai.LLMRequest) (*ai.LLMResponse, error) {
+func (f *fakeProvider) Chat(ctx context.Context, req *ai.LLMRequest) (*ai.LLMResponse, error) {
+	f.req = req
+	_, f.deadlineSeen = ctx.Deadline()
 	return f.resp, f.err
 }
 func (f *fakeProvider) ChatStream(context.Context, *ai.LLMRequest) (<-chan ai.LLMChunk, error) {
@@ -161,6 +178,70 @@ func TestSendMessageReadsOwnerScopedExperimentWithoutMutation(t *testing.T) {
 	trace, traceErr := svc.GetTrace(context.Background(), 42, got.TraceID)
 	if traceErr != nil || len(trace.Evidence) != 2 {
 		t.Fatalf("experiment trace evidence = %#v, err=%v", trace, traceErr)
+	}
+}
+
+func TestSendMessageReadsControlledSourcingDraftWithTraceAndBoundaries(t *testing.T) {
+	view := &sourcing1688.OwnerView{
+		Source:      sourcing1688.OwnerSourceView{ID: 8, DemandCaseID: 7, ExperimentID: "exp-owner", SnapshotID: 9, LifecycleStatus: "editing"},
+		Snapshot:    sourcing1688.OwnerSnapshotView{ID: 9, RawSHA256: strings.Repeat("a", 64), SourceReference: "detail.1688.com/offer/8.html"},
+		Draft:       &sourcing1688.OwnerDraftView{ID: 12, ProductID: 10, ListingID: 11, DemandCaseID: 7, ExperimentID: "exp-owner", SnapshotID: 9, ApprovalStatus: "editing"},
+		Costs:       []sourcing1688.OwnerCostView{{ID: 15, CostType: "purchase", Amount: 12.5, Currency: "CNY", TruthStatus: "quoted", SourceReference: ""}},
+		Limitations: []string{"只读视图", "成本尚未外部核验"},
+	}
+	reader := &fakeSourcingReader{view: view}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, dbtest.NewLogger(t))).WithSourcingReader(reader)
+
+	got, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "这个1688草稿是否可用？", TargetType: TargetSourcing1688, SourceID: 8})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if reader.ownerIDSeen != 42 || reader.sourceIDSeen != 8 || got.TargetType != TargetSourcing1688 || got.SourceID != 8 {
+		t.Fatalf("owner/target not preserved: reader=%#v response=%#v", reader, got)
+	}
+	if got.TruthStatus != TruthMock || got.Trusted || len(got.Evidence) < 2 || !strings.Contains(strings.Join(got.Unknowns, "|"), "成本尚未外部核验") {
+		t.Fatalf("grounding boundary missing: %#v", got)
+	}
+	trace, traceErr := svc.GetTrace(context.Background(), 42, got.TraceID)
+	if traceErr != nil || len(trace.Evidence) < 2 || len(trace.Events) == 0 || trace.Events[0].Content != CapabilitySourcing1688Read {
+		t.Fatalf("sourcing trace=%#v err=%v", trace, traceErr)
+	}
+}
+
+func TestSourcingProviderGetsRedactedPayloadAndFiveSecondDeadline(t *testing.T) {
+	view := &sourcing1688.OwnerView{
+		Source:      sourcing1688.OwnerSourceView{ID: 8, SourceReference: "detail.1688.com/offer/8.html", DemandCaseID: 7, ExperimentID: "exp-owner", SnapshotID: 9, LifecycleStatus: "editing"},
+		Snapshot:    sourcing1688.OwnerSnapshotView{ID: 9, SourceReference: "detail.1688.com/offer/8.html", RawSHA256: strings.Repeat("a", 64)},
+		Draft:       &sourcing1688.OwnerDraftView{ID: 12, DemandCaseID: 7, ExperimentID: "exp-owner", SnapshotID: 9, ProductID: 10, ListingID: 11, CreatedBy: 42},
+		Media:       []sourcing1688.OwnerMediaView{{ID: 13, MediaRole: "main", RightsStatus: "verified", TruthStatus: "unknown"}},
+		Limitations: []string{"只读"},
+	}
+	provider := &fakeProvider{name: "openai", resp: &ai.LLMResponse{Answer: "分析", Model: "test"}}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, provider, ai.NewTraceWriter(db, dbtest.NewLogger(t))).WithSourcingReader(&fakeSourcingReader{view: view})
+	if _, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "读取", TargetType: TargetSourcing1688, SourceID: 8}); err != nil {
+		t.Fatal(err)
+	}
+	if provider.req == nil || !provider.deadlineSeen {
+		t.Fatalf("provider request/deadline missing: %#v", provider)
+	}
+	payload := provider.req.Messages[0].Content
+	for _, forbidden := range []string{"secret", "?", "description", "supplier", "platform_sku", "internal://", "processed_url", "rights_evidence_uri"} {
+		if strings.Contains(strings.ToLower(payload), forbidden) {
+			t.Fatalf("provider payload leaked %q: %s", forbidden, payload)
+		}
+	}
+}
+
+func TestSourcingReadDoesNotCrossOwnerBoundary(t *testing.T) {
+	reader := &fakeSourcingReader{err: sourcing1688.ErrWorkflowGate}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, dbtest.NewLogger(t))).WithSourcingReader(reader)
+	_, err := svc.SendMessage(context.Background(), 99, MessageInput{Message: "读取", TargetType: TargetSourcing1688, SourceID: 8})
+	var runErr *RunError
+	if !errors.As(err, &runErr) || !errors.Is(err, sourcing1688.ErrWorkflowGate) || reader.ownerIDSeen != 99 {
+		t.Fatalf("cross-owner sourcing error=%T %v owner=%d", err, err, reader.ownerIDSeen)
 	}
 }
 

@@ -67,7 +67,16 @@ export interface XiaoQExperimentMessageRequest {
   experiment_id: string;
 }
 
-export type XiaoQMessageRequest = XiaoQDemandCaseMessageRequest | XiaoQExperimentMessageRequest;
+export interface XiaoQSourcing1688MessageRequest {
+  message: string;
+  target_type: 'sourcing_1688';
+  source_id: number;
+}
+
+export type XiaoQMessageRequest =
+  | XiaoQDemandCaseMessageRequest
+  | XiaoQExperimentMessageRequest
+  | XiaoQSourcing1688MessageRequest;
 
 export interface XiaoQMessageResponse {
   trace_id: string;
@@ -75,9 +84,10 @@ export interface XiaoQMessageResponse {
   answer: string;
   truth_status: XiaoQTruthStatus;
   mode: XiaoQMode;
-  target_type?: 'demand_case' | 'experiment';
+  target_type?: 'demand_case' | 'experiment' | 'sourcing_1688';
   demand_case_id?: number;
   experiment_id?: string;
+  source_id?: number;
   trusted?: boolean;
   case_summary?: string;
   evidence: XiaoQEvidence[];

@@ -53,4 +53,21 @@ describe('XiaoQ page target routing', () => {
     }, expect.anything()));
     expect(screen.queryByRole('button', { name: /批准|执行/ })).not.toBeInTheDocument();
   });
+
+  it('switches to the controlled 1688 draft and submits source_id without actions', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText('查询对象'));
+    await user.click(await screen.findByText('1688受控草稿'));
+    await user.type(screen.getByLabelText('1688 来源 ID'), '42');
+    await user.click(screen.getByRole('button', { name: '这条来源的快照是否完整？' }));
+
+    await waitFor(() => expect(sendXiaoQMessage).toHaveBeenCalledWith({
+      message: '这条来源的快照是否完整？',
+      target_type: 'sourcing_1688',
+      source_id: 42,
+    }, expect.anything()));
+    expect(screen.queryByRole('button', { name: /批准|执行|发布|采购/ })).not.toBeInTheDocument();
+  });
 });
