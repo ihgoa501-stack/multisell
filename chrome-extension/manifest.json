@@ -5,18 +5,28 @@
   "description": "Owner 在 1688 商品页一键保存到凌镜私人采集箱",
   "permissions": [
     "storage",
-	"activeTab",
-	"alarms"
+    "activeTab",
+    "alarms"
   ],
   "host_permissions": [
     "https://detail.1688.com/*",
     "http://localhost:3000/*",
     "http://localhost:8080/*",
     "https://lingmirror.com/*",
-	"https://owner.lingmirror.com/*"
+    "https://owner.lingmirror.com/*"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {
@@ -25,7 +35,7 @@
       "run_at": "document_idle"
     },
     {
-	  "matches": ["http://localhost:3000/settings/plugin*", "https://lingmirror.com/settings/plugin*", "https://owner.lingmirror.com/settings/plugin*"],
+      "matches": ["http://localhost:3000/settings/plugin*", "https://lingmirror.com/settings/plugin*", "https://owner.lingmirror.com/settings/plugin*"],
       "js": ["build/auth-bridge.js"],
       "run_at": "document_start"
     }

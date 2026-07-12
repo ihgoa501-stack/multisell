@@ -24,3 +24,17 @@ test('compiled content script has no page-load auto upload path', async () => {
   assert.equal(source.includes('submitPrivateCollection('), false);
   assert.equal(source.includes('采集到凌镜'), true);
 });
+
+test('manifest contains correct icon paths and action default_icon configurations', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
+  assert.deepEqual(manifest.icons, {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  });
+  assert.deepEqual(manifest.action?.default_icon, {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  });
+});
