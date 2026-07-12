@@ -843,7 +843,7 @@ flowchart LR
 下一份应产出的工程文档：
 
 ```text
-docs/superpowers/plans/YYYY-MM-DD-agent-commerce-action-center.md
+历史计划文件名示例：YYYY-MM-DD-agent-commerce-action-center
 ```
 
 它应该专门定义 Phase 2：动作中枢的数据库模型、API、前端页面、测试和迁移。
