@@ -1,0 +1,12 @@
+[Unit]
+Description=LingMirror public IP HTTPS and certificate check
+After=network-online.target docker.service
+Wants=network-online.target
+OnFailure=lingmirror-ops-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/multisell
+EnvironmentFile=/opt/multisell/.env
+ExecStart=/opt/multisell/scripts/check_ip_https.sh
+TimeoutStartSec=60s
