@@ -31,15 +31,23 @@ function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer
     return responder ? responder(message) : { type: 'private_collection_result', requestId: message.requestId,
       payload: { status: 'saved', recordId: messages.length, snapshotId: messages.length, idempotentReplay: false, newObservation: true } };
   } } };
+  const timeoutsCalled = [];
   const context = vm.createContext({
     ...window, window, document: window.document, location: window.location, chrome,
     crypto: globalThis.crypto, console, URL, MutationObserver: window.MutationObserver,
     HTMLElement: window.HTMLElement, HTMLAnchorElement: window.HTMLAnchorElement,
     HTMLButtonElement: window.HTMLButtonElement, HTMLImageElement: window.HTMLImageElement,
-    getComputedStyle: () => ({ position: 'static', display: 'block', visibility: 'visible', opacity: '1' }), setTimeout, clearTimeout,
+    getComputedStyle: () => ({ position: 'static', display: 'block', visibility: 'visible', opacity: '1' }),
+    setTimeout: (fn, delay, ...args) => {
+      timeoutsCalled.push(delay);
+      const testDelay = delay >= 300 ? 1 : delay;
+      return setTimeout(fn, testDelay, ...args);
+    },
+    clearTimeout,
+    timeoutsCalled,
   });
   vm.runInContext(compiled, context, { filename: 'content-script-list.js' });
-  return { context, window, document: window.document, messages };
+  return { context, window, document: window.document, messages, timeoutsCalled };
 }
 
 test('visible list extraction keeps only exact offer links and explicit fields', () => {
@@ -156,4 +164,33 @@ test('visible list extraction parses supplier name and id if present in card', (
   assert.equal(offers[0].pageData.supplier_id_1688, 'hzsourcing');
   assert.equal(offers[0].pageData.supplier_business_id, 'hzsourcing');
   assert.equal(offers[0].pageData.field_statuses.supplier, 'observed');
+});
+
+test('custom batch delay and jitter is read from the UI input and respects the minimum boundary', async () => {
+  // Test default delay logic (value = 2.0s -> targetDelayMs = 2000 -> jitter in [1400, 2600])
+  const loadedDefault = loadList(productCard('8001') + productCard('8002'));
+  await vm.runInContext('collectOffers(extractVisibleOffers())', loadedDefault.context);
+  const defaultDelays = loadedDefault.timeoutsCalled.filter(t => t >= 300); // filter out short layout timeouts if any
+  assert.equal(defaultDelays.length, 1);
+  assert.ok(defaultDelays[0] >= 1400 && defaultDelays[0] <= 2600, `Default delay ${defaultDelays[0]} should be between 1400 and 2600 ms`);
+
+  // Test custom delay logic (value = 1.0s -> targetDelayMs = 1000 -> jitter in [700, 1300])
+  const loadedCustom = loadList(productCard('8101') + productCard('8102'));
+  const inputEl = loadedCustom.document.getElementById('lingmirror-list-collector-host').shadowRoot.getElementById('lingmirror-batch-delay-input');
+  assert.ok(inputEl, 'delay input element must exist in shadow root');
+  assert.equal(inputEl.value, '2.0', 'default delay input value must be 2.0');
+  inputEl.value = '1.0';
+  await vm.runInContext('collectOffers(extractVisibleOffers())', loadedCustom.context);
+  const customDelays = loadedCustom.timeoutsCalled.filter(t => t >= 300);
+  assert.equal(customDelays.length, 1);
+  assert.ok(customDelays[0] >= 700 && customDelays[0] <= 1300, `Custom 1.0s delay ${customDelays[0]} should be between 700 and 1300 ms`);
+
+  // Test minimum boundary logic (value = 0.2s -> enforced to 0.5s -> targetDelayMs = 500 -> jitter in [350, 650])
+  const loadedMin = loadList(productCard('8201') + productCard('8202'));
+  const inputMin = loadedMin.document.getElementById('lingmirror-list-collector-host').shadowRoot.getElementById('lingmirror-batch-delay-input');
+  inputMin.value = '0.2';
+  await vm.runInContext('collectOffers(extractVisibleOffers())', loadedMin.context);
+  const minDelays = loadedMin.timeoutsCalled.filter(t => t >= 300);
+  assert.equal(minDelays.length, 1);
+  assert.ok(minDelays[0] >= 350 && minDelays[0] <= 650, `Enforced minimum 0.5s delay ${minDelays[0]} should be between 350 and 650 ms`);
 });

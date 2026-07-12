@@ -320,6 +320,12 @@ async function collectOffers(offers: VisibleOffer[]): Promise<void> {
   if (panelResults) panelResults.replaceChildren();
   updatePanelSummary(`准备采集 ${offers.length} 个当前可见商品，可随时停止`);
   try {
+    const host = document.getElementById(LIST_UI_HOST_ID);
+    const delayInput = host?.shadowRoot?.getElementById("lingmirror-batch-delay-input") as HTMLInputElement | null;
+    const parsed = parseFloat(delayInput?.value || "");
+    const inputSeconds = isNaN(parsed) ? 2.0 : parsed;
+    const targetDelayMs = Math.max(0.5, inputSeconds) * 1000;
+
     for (let index = 0; index < offers.length; index += 1) {
       if (cancelBatch) {
         appendBatchResult(`已停止；剩余 ${offers.length - index} 个未提交`, "warn");
@@ -327,7 +333,10 @@ async function collectOffers(offers: VisibleOffer[]): Promise<void> {
       }
       updatePanelSummary(`正在采集 ${index + 1}/${offers.length}：${offers[index].pageData.title}`);
       await submitVisibleOffer(offers[index]);
-      if (index + 1 < offers.length) await new Promise((resolve) => setTimeout(resolve, 250));
+      if (index + 1 < offers.length) {
+        const jitter = (targetDelayMs * 0.7) + Math.random() * (targetDelayMs * 0.6);
+        await new Promise((resolve) => setTimeout(resolve, jitter));
+      }
     }
   } finally {
     collectingBatch = false;
@@ -355,6 +364,20 @@ function installListCollectorUI(): void {
   title.textContent = "凌镜 · 当前可见商品";
   panelStatus = document.createElement("div");
   panelStatus.style.marginTop = "6px";
+
+  const delayContainer = document.createElement("div");
+  Object.assign(delayContainer.style, { marginTop: "8px", marginBottom: "8px", display: "flex", gap: "6px", alignItems: "center" });
+  const delayLabel = document.createElement("label");
+  delayLabel.textContent = "采集间隔 (秒):";
+  const delayInput = document.createElement("input");
+  delayInput.type = "number";
+  delayInput.id = "lingmirror-batch-delay-input";
+  delayInput.min = "0.5";
+  delayInput.step = "0.5";
+  delayInput.value = "2.0";
+  Object.assign(delayInput.style, { width: "55px", border: "1px solid #c7d2fe", borderRadius: "5px", padding: "3px 5px", font: "12px system-ui" });
+  delayContainer.append(delayLabel, delayInput);
+
   const selectAll = makePanelButton("勾选当前可见");
   selectAll.addEventListener("click", () => {
     for (const [id, offer] of currentOffers) {
@@ -372,7 +395,7 @@ function installListCollectorUI(): void {
   const cancel = makePanelButton("停止批量");
   cancel.addEventListener("click", () => { cancelBatch = true; });
   panelResults = document.createElement("div");
-  panel.append(title, panelStatus, selectAll, collectSelectedButton, collectPage, cancel, panelResults);
+  panel.append(title, panelStatus, delayContainer, selectAll, collectSelectedButton, collectPage, cancel, panelResults);
   shadow.append(panel);
   host.setAttribute("aria-label", "凌镜1688列表采集");
   document.documentElement.append(host);
