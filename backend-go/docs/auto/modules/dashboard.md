@@ -116,6 +116,7 @@ Package: `backend-go/internal/domain/dashboard/`
 | `MonthProfit` | `float64` | `month_profit` | `—` |  |
 | `MonthRevenue` | `float64` | `month_revenue` | `—` |  |
 | `MonthCost` | `float64` | `month_cost` | `—` |  |
+| `ProfitSource` | `string` | `profit_source` | `—` |  |
 | `OpenExceptionCount` | `int64` | `open_exception_count` | `—` |  |
 | `LowStockCount` | `int64` | `low_stock_count` | `—` |  |
 | `OutOfStockCount` | `int64` | `out_of_stock_count` | `—` |  |

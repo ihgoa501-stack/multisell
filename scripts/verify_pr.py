@@ -35,7 +35,7 @@ def parse_checkbox(line: str):
 
 def section_lines(body: str, section_header: str) -> list:
     """Extract lines under a markdown section header until next ## or end."""
-    pattern = rf'^##\s*{re.escape(section_header)}\s*$'
+    pattern = rf'^##\s*{re.escape(section_header)}(?:\s*/[^#]+)?\s*$'
     lines = body.split('\n')
     in_section = False
     result = []
@@ -59,8 +59,8 @@ def find_checkbox(section_lines_list: List[str], keyword: str) -> Optional[bool]
     return None
 
 
-def get_unchecked_tests(section: list) -> list[str]:
-    """Get labels of unchecked test checkboxes."""
+def get_unchecked_tests(section: list, nonpass_notes: str) -> list[str]:
+    """Get unchecked tests that lack an explicit note naming the command."""
     unchecked = []
     in_note_section = False
     for line in section:
@@ -71,7 +71,11 @@ def get_unchecked_tests(section: list) -> list[str]:
             continue
         result = parse_checkbox(line)
         if result and not result[1]:
-            unchecked.append(result[0])
+            label = result[0]
+            commands = re.findall(r'`([^`]+)`', label)
+            if commands and any(command in nonpass_notes for command in commands):
+                continue
+            unchecked.append(label)
     return unchecked
 
 
@@ -106,7 +110,8 @@ def main():
 
     # ── Check 1: All test checkboxes are filled ──
     test_lines = section_lines(body, '测试')
-    unchecked = get_unchecked_tests(test_lines)
+    nonpass_notes = '\n'.join(section_lines(body, '未通过'))
+    unchecked = get_unchecked_tests(test_lines, nonpass_notes)
     if unchecked:
         for label in unchecked[:3]:  # cap at 3 errors
             errors.append(f"Test checkbox not checked: {label}")

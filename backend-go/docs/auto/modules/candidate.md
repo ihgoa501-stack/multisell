@@ -18,6 +18,7 @@ Package: `backend-go/internal/domain/candidate/`
 | `POST` | `/api/v1/candidates/:id/skip-field` | `h.SkipField` |
 | `GET` | `/api/v1/candidates/collect-leads` | `h.ListCollectLeads` |
 | `GET` | `/api/v1/candidates/collect-leads/:id` | `h.GetCollectLead` |
+| `GET` | `/api/v1/candidates/collection-evidence/:id` | `h.GetCollectionEvidence` |
 | `GET` | `/api/v1/candidates/count` | `h.Count` |
 | `GET` | `/api/v1/candidates/dedup` | `h.Dedup` |
 | `POST` | `/api/v1/candidates/seed` | `h.Seed` |
@@ -72,11 +73,30 @@ Package: `backend-go/internal/domain/candidate/`
 | `Title` | `string` | `title` | `title` | NOT NULL, default:'' |
 | `PriceRange` | `string` | `price_range` | `price_range` | default:'' |
 | `DetailURL` | `string` | `detail_url` | `detail_url` | default:'' |
+| `CanonicalKey` | `*string` | `canonical_key,omitempty` | `canonical_key` |  |
 | `ImageURL` | `string` | `image_url` | `image_url` | default:'' |
 | `ShopHint` | `string` | `shop_hint` | `shop_hint` | default:'' |
 | `SourcePageURL` | `string` | `source_page_url` | `source_page_url` | default:'' |
+| `CollectionDriver` | `string` | `collection_driver` | `collection_driver` | default:'' |
+| `EvidenceID` | `*int64` | `evidence_id,omitempty` | `evidence_id` |  |
+| `ConfidenceState` | `string` | `confidence_state` | `confidence_state` | default:unverified |
 | `Status` | `string` | `status` | `status` | default:pending_detail_collect |
 | `CollectedAt` | `*time.Time` | `collected_at,omitempty` | `collected_at` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `created_at` |  |
+
+### `CollectionEvidence`
+**DB table:** `collection_evidence`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `id` | PK |
+| `SourceURL` | `string` | `source_url` | `source_url` | NOT NULL |
+| `Driver` | `string` | `driver` | `driver` | NOT NULL |
+| `RawPayload` | `json.RawMessage` | `raw_payload` | `raw_payload` | NOT NULL |
+| `ParserVersion` | `string` | `parser_version` | `parser_version` | NOT NULL |
+| `EvidenceSHA256` | `string` | `evidence_sha256` | `evidence_sha256` | NOT NULL |
+| `CorrelationID` | `string` | `correlation_id` | `correlation_id` | NOT NULL |
+| `CollectedAt` | `time.Time` | `collected_at` | `collected_at` | NOT NULL |
 | `CreatedAt` | `time.Time` | `created_at` | `created_at` |  |
 
 ### `CreateCandidateInput`
