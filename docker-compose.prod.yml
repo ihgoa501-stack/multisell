@@ -37,6 +37,8 @@ services:
       DB_USER: "${DB_USER:?required}"
       DB_PASSWORD: "${DB_PASSWORD:?required}"
       DB_NAME: "${DB_NAME:?required}"
+      DB_CONN_MAX_LIFETIME: "${DB_CONN_MAX_LIFETIME:-30m}"
+      DB_CONN_MAX_IDLE_TIME: "${DB_CONN_MAX_IDLE_TIME:-5m}"
       JWT_SECRET: "${JWT_SECRET:?required}"
       JWT_KEY_ID: "${JWT_KEY_ID:-current}"
       JWT_PREVIOUS_KEYS_JSON: "${JWT_PREVIOUS_KEYS_JSON:-}"
@@ -48,6 +50,11 @@ services:
       LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_PROVIDER: "${LLM_PROVIDER:-openai}"
       SERVER_PORT: "8080"
+      SERVER_READ_HEADER_TIMEOUT: "${SERVER_READ_HEADER_TIMEOUT:-5s}"
+      SERVER_READ_TIMEOUT: "${SERVER_READ_TIMEOUT:-60s}"
+      SERVER_WRITE_TIMEOUT: "${SERVER_WRITE_TIMEOUT:-0s}"
+      SERVER_IDLE_TIMEOUT: "${SERVER_IDLE_TIMEOUT:-120s}"
+      SERVER_SHUTDOWN_TIMEOUT: "${SERVER_SHUTDOWN_TIMEOUT:-10s}"
     depends_on:
       db:
         condition: service_healthy
