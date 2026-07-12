@@ -40,6 +40,8 @@ func Connect(cfg *config.Config, log *zap.Logger) (*gorm.DB, error) {
 
 	sqlDB.SetMaxIdleConns(cfg.Database.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(cfg.Database.MaxOpenConns)
+	sqlDB.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(cfg.Database.ConnMaxIdleTime)
 
 	log.Info("database connected successfully")
 	return db, nil

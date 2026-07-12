@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/config"
@@ -13,10 +14,13 @@ import (
 	"gorm.io/gorm"
 )
 
+var publicSubmissionLimiter = middleware.NewRateLimiter(20, time.Minute)
+
 // RegisterRoutes registers feedback routes on the given router group.
-//   classifyFn: optional LLM chat function for AI classification
-//   hub: optional WebSocket hub for real-time notifications
-//   actionCreator: optional function to create AgentOS UnifiedActions
+//
+//	classifyFn: optional LLM chat function for AI classification
+//	hub: optional WebSocket hub for real-time notifications
+//	actionCreator: optional function to create AgentOS UnifiedActions
 func RegisterRoutes(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, logger *zap.Logger,
 	classifyFn func(ctx context.Context, systemPrompt, userMessage string) (string, error),
 	hub *realtime.Hub,
@@ -68,14 +72,14 @@ func RegisterRoutes(rg *gin.RouterGroup, cfg *config.Config, db *gorm.DB, logger
 	// Public routes (no auth required — for widget/portal submissions)
 	fbPub := rg.Group("/feedback")
 	{
-		fbPub.POST("/submissions", h.CreateSubmission)
+		fbPub.POST("/submissions", publicSubmissionLimiter.Limit(), h.CreateSubmission)
 		fbPub.GET("/projects", h.ListProjects)
 		fbPub.GET("/projects/:id", h.GetProject)
 		fbPub.GET("/submissions/:id", h.GetSubmission)
 	}
 
 	// Authenticated routes (require valid JWT)
-	fb := rg.Group("/feedback", middleware.Auth(cfg))
+	fb := rg.Group("/feedback", middleware.Auth(cfg), middleware.ApprovalRequired(db, logger))
 	{
 		fb.GET("/projects/:id/categories", h.ListCategories)
 		fb.POST("/categories", h.CreateCategory)

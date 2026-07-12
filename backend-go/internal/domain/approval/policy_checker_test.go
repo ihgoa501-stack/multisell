@@ -1,6 +1,7 @@
 package approval
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestApprovalPolicyChecker_Pending_ReturnsFalse(t *testing.T) {
-	db := dbtest.NewDB(t, &ApprovalRequest{})
+	db := dbtest.NewDB(t, &ApprovalRequest{}, &ApprovalExecution{})
 	logger := dbtest.NewLogger(t)
 	svc := NewService(db, logger, nil)
 
@@ -127,17 +128,44 @@ func TestApprovalPolicyChecker_Expired_ReturnsFalse(t *testing.T) {
 		t.Fatalf("Create approval: %v", err)
 	}
 
-	// Approve — but expiry is already in the past.
+	// Expired requests cannot be approved.
 	_, err = svc.Review(req.ID, &ReviewApprovalInput{
 		Action:   "approve",
 		Reviewer: "owner",
 	})
-	if err != nil {
-		t.Fatalf("Review approval: %v", err)
+	if err == nil {
+		t.Fatal("expired approval was approved")
 	}
 
 	checker := NewApprovalPolicyChecker(svc)
 	if checker.IsApproved(req.ID) {
 		t.Error("expired approval should not pass IsApproved")
+	}
+}
+
+func TestApprovalPolicyChecker_IsApprovedForBindsActionAndTarget(t *testing.T) {
+	db := dbtest.NewDB(t, &ApprovalRequest{}, &ApprovalExecution{})
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+	future := time.Now().Add(time.Hour)
+	req, err := svc.Create(&CreateApprovalInput{ProductID: 100, RequestType: "price_change", Requester: "A5", TargetType: "sku", TargetID: 100, ExpiresAt: &future})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Review(req.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	checker := NewApprovalPolicyChecker(svc)
+	if checker.AuthorizeFor(context.Background(), req.ID, "price_update", "sku", "100", "price:100") != nil {
+		t.Fatal("matching action and target were rejected")
+	}
+	for _, tc := range []struct{ action, targetType, targetID string }{
+		{"order_cancel", "sku", "100"},
+		{"price_update", "order", "100"},
+		{"price_update", "sku", "101"},
+		{"price_update", "sku", "not-numeric"},
+	} {
+		if checker.AuthorizeFor(context.Background(), req.ID, tc.action, tc.targetType, tc.targetID, "price:100") == nil {
+			t.Fatalf("unrelated approval accepted for action=%s target=%s/%s", tc.action, tc.targetType, tc.targetID)
+		}
 	}
 }

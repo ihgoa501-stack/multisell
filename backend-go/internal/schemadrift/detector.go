@@ -67,9 +67,11 @@ func (d *DriftDetector) Check() {
 		zap.Int("tables", len(modelTables)))
 
 	// 3. Compare migration SQL vs GORM models (static analysis)
-	if len(migrationTables) > 0 {
+	if len(migrationTables) > 0 && len(modelTables) > 0 {
 		driftDiff := d.detectStatic(migrationTables, modelTables)
 		d.reportDriftDiff(driftDiff)
+	} else if len(migrationTables) > 0 {
+		d.logger.Warn("schemadrift: static model comparison skipped because no models were registered; live database comparison remains active")
 	}
 
 	// 4. Migration version health check (requires DB)
@@ -291,7 +293,12 @@ func (d *DriftDetector) reportMigrationHealth(h MigrationHealth) {
 		zap.Int("applied_in_db", h.AppliedInDB),
 		zap.Int("unapplied", len(h.UnappliedMigrations)),
 		zap.Int("missing_files", len(h.MissingMigrations)),
+		zap.Bool("dirty", h.Dirty),
 	)
+	if h.Dirty {
+		d.logger.Error("schemadrift: migration database is dirty; startup must not be considered production-ready",
+			zap.Int("version", h.CurrentVersion))
+	}
 
 	if len(h.UnappliedMigrations) > 0 {
 		names := make([]string, len(h.UnappliedMigrations))
@@ -373,6 +380,9 @@ func (d *DriftDetector) detect(actual map[string][]columnInfo, migrations []Tabl
 	}
 
 	for name := range actual {
+		if knownMigrationLedgerTables[name] {
+			continue
+		}
 		if !expectedSet[name] {
 			r.ExtraTables = append(r.ExtraTables, name)
 		}

@@ -139,53 +139,10 @@ func (s *Service) Delete(id int64) error {
 	return nil
 }
 
-// Publish triggers the publish flow for a listing: validates the draft -> submitted
-// transition and records published_data. In a full implementation this would enqueue
-// a platform API call; here it transitions state transactionally.
+// Publish is a frozen legacy entrypoint. Publishing now requires a controlled
+// attempt bound to an exact image release attestation.
 func (s *Service) Publish(id int64, payload json.RawMessage) (*ProductListing, error) {
-	var l ProductListing
-	if err := s.db.First(&l, id).Error; err != nil {
-		return nil, err
-	}
-	sm := NewListingStateMachine()
-	if err := sm.MustTransition(context.Background(), l.Status, "submitted", nil); err != nil {
-		return nil, err
-	}
-	now := time.Now()
-	updates := map[string]interface{}{
-		"status":         "submitted",
-		"published_data": payload,
-		"last_sync_at":   &now,
-	}
-	if err := s.db.Model(&l).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	if err := s.db.First(&l, id).Error; err != nil {
-		return nil, err
-	}
-
-	// Fire listing.published event for the listing -> order -> shipping -> finance chain.
-	eventPayload := map[string]interface{}{
-		"listing_id":   l.ID,
-		"product_id":   l.ProductID,
-		"platform_id":  l.PlatformID,
-		"platform_sku": l.PlatformSKU,
-		"status":       l.Status,
-	}
-	// Attempt to extract price from published_data payload.
-	if len(payload) > 0 {
-		var pd map[string]interface{}
-		if err := json.Unmarshal(payload, &pd); err == nil {
-			if price, ok := pd["price"]; ok {
-				eventPayload["price"] = price
-			}
-		}
-	}
-	if _, err := s.eventBus.Publish(context.Background(), "listing.published", "listing", eventPayload); err != nil {
-		s.logger.Warn("failed to publish listing.published event", zap.Int64("listing_id", id), zap.Error(err))
-	}
-
-	return &l, nil
+	return nil, listingtask.ErrImageReleaseAttestationRequired
 }
 
 // SyncStatus pulls the latest status from the platform. In a full implementation
@@ -224,55 +181,10 @@ func (s *Service) SyncStatus(id int64, newStatus, syncMessage string) (*ProductL
 
 // ---------- Listing publish chain ----------
 
-// PublishProduct creates a product_listing record for the given product+platform
-// and triggers a listing_task in a single transaction. It stores Prism configuration
-// in published_data for use by ExecuteTask downstream.
+// PublishProduct is a frozen legacy entrypoint. It deliberately does not create
+// a listing, task, Prism request, or platform request.
 func (s *Service) PublishProduct(productID, platformID int64, in *PublishProductInput) (*ProductListing, error) {
-	status := in.Status
-	if status == "" {
-		status = "publishing"
-	}
-
-	// Build published_data with optional Prism configuration.
-	pd := map[string]interface{}{
-		"prism": map[string]interface{}{
-			"enabled": in.PrismEnabled,
-			"options": in.PrismOptions,
-		},
-	}
-	pdBytes, _ := json.Marshal(pd)
-
-	l := ProductListing{
-		ProductID:         productID,
-		PlatformID:        platformID,
-		PlatformProductID: in.ExternalID,
-		PlatformURL:       in.ListingURL,
-		Status:            status,
-		PublishedData:     pdBytes,
-	}
-	now := time.Now()
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&l).Error; err != nil {
-			return err
-		}
-		task := listingtask.ListingTask{
-			ProductID:         productID,
-			PlatformID:        platformID,
-			ProductListingID:  &l.ID,
-			SourceType:        "manual",
-			Status:            "pending",
-		}
-		if err := tx.Create(&task).Error; err != nil {
-			return err
-		}
-		return tx.Model(&l).Updates(map[string]interface{}{
-			"last_sync_at": &now,
-		}).Error
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &l, nil
+	return nil, listingtask.ErrImageReleaseAttestationRequired
 }
 
 // ListByProduct returns all product_listing records for a given product.
@@ -386,22 +298,9 @@ func (s *Service) CancelTask(taskID int64, reason string) (*listingtask.ListingT
 	return &task, nil
 }
 
-// PublishTask pushes a pending listing_task into executing state.
+// PublishTask is a frozen legacy entrypoint and performs no state transition.
 func (s *Service) PublishTask(taskID int64) (*listingtask.ListingTask, error) {
-	var task listingtask.ListingTask
-	if err := s.db.First(&task, taskID).Error; err != nil {
-		return nil, err
-	}
-	if task.Status != "pending" {
-		return nil, fmt.Errorf("task %d is not pending (current=%s)", taskID, task.Status)
-	}
-	if err := s.db.Model(&task).Update("status", "executing").Error; err != nil {
-		return nil, err
-	}
-	if err := s.db.First(&task, taskID).Error; err != nil {
-		return nil, err
-	}
-	return &task, nil
+	return nil, listingtask.ErrImageReleaseAttestationRequired
 }
 
 // GenerateSuggestion produces a structured ListingSuggestion for a candidate product.

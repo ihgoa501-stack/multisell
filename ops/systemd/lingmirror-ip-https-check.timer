@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly LingMirror public IP HTTPS check
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5min
+Unit=lingmirror-ip-https-check.service
+
+[Install]
+WantedBy=timers.target

@@ -72,6 +72,19 @@ func (s *Service) Evaluate(ctx context.Context, id, ownerID int64) (*DemandVerdi
 	if err := s.db.WithContext(ctx).Where("demand_case_id = ?", id).Order("id").Find(&evidence).Error; err != nil {
 		return nil, err
 	}
+	var snapshots []ResearchSnapshot
+	if err := s.db.WithContext(ctx).Where("demand_case_id = ? AND owner_id = ?", id, ownerID).Find(&snapshots).Error; err != nil {
+		return nil, err
+	}
+	snapshotByID := make(map[int64]ResearchSnapshot, len(snapshots))
+	runTypes := make(map[string]bool, 3)
+	for _, snapshot := range snapshots {
+		if snapshot.ID <= 0 || payloadHash([]byte(snapshot.RawPayload)) != snapshot.RawSHA256 {
+			continue
+		}
+		snapshotByID[snapshot.ID] = snapshot
+		runTypes[snapshot.RunType] = true
+	}
 	status := VerdictExperimentReady
 	blockers := make([]string, 0)
 	support := map[string]bool{}
@@ -79,24 +92,30 @@ func (s *Service) Evaluate(ctx context.Context, id, ownerID int64) (*DemandVerdi
 	scoutRuns := map[string]bool{}
 	counterRuns := map[string]bool{}
 	for _, e := range evidence {
-		usable := usableEvidence(e)
+		snapshot, bound := snapshotByID[e.SnapshotID]
+		bound = bound && snapshot.RunID == e.RunID && snapshot.SourceURI == e.SourceURI && e.ObservedAt != nil && snapshot.CollectedAt.Equal(e.ObservedAt.UTC())
+		usable := bound && usableEvidence(e)
 		if e.Kind == EvidenceSupport {
-			scoutRuns[e.RunID] = true
-			if usable {
+			if bound && snapshot.RunType == RunScout {
+				scoutRuns[e.RunID] = true
+			}
+			if usable && snapshot.RunType == RunScout && e.TruthStatus == TruthQuoted {
 				support[e.Dimension] = true
 			}
 		}
 		if e.Kind == EvidenceCounter {
-			counterRuns[e.RunID] = true
-			if usable {
+			if bound && snapshot.RunType == RunFalsifier {
+				counterRuns[e.RunID] = true
+			}
+			if usable && snapshot.RunType == RunFalsifier && e.TruthStatus == TruthQuoted {
 				hasCounter = true
 			}
-			if usable && e.Fatal {
+			if usable && snapshot.RunType == RunFalsifier && e.Fatal {
 				status = VerdictRejected
 				blockers = append(blockers, "fatal_counterevidence")
 			}
 		}
-		if e.Kind == EvidenceConflict && usable {
+		if bound && snapshot.RunType == RunDataReality && e.Kind == EvidenceConflict {
 			blockers = append(blockers, "unresolved_conflict:"+e.Dimension)
 		}
 	}
@@ -115,11 +134,20 @@ func (s *Service) Evaluate(ctx context.Context, id, ownerID int64) (*DemandVerdi
 	if !hasCounter || !independentCounter {
 		blockers = append(blockers, "independent_counterevidence_required")
 	}
+	if !runTypes[RunDataReality] {
+		blockers = append(blockers, "data_reality_run_required")
+	}
 	if status != VerdictRejected && len(blockers) > 0 {
 		status = VerdictEvidenceMissing
 	}
 	b, _ := json.Marshal(blockers)
-	v := &DemandVerdict{DemandCaseID: id, Status: status, BlockersJSON: string(b), Blockers: blockers, Reason: verdictReason(status), EvaluatedBy: ownerID}
+	var evidenceMaxID int64
+	for _, row := range evidence {
+		if row.ID > evidenceMaxID {
+			evidenceMaxID = row.ID
+		}
+	}
+	v := &DemandVerdict{DemandCaseID: id, EvidenceMaxID: evidenceMaxID, Status: status, BlockersJSON: string(b), Blockers: blockers, Reason: verdictReason(status), EvaluatedBy: ownerID}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(v).Error; err != nil {
 			return err

@@ -3,7 +3,9 @@ package listing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
+	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"gorm.io/gorm"
@@ -167,15 +170,37 @@ func TestListing_Publish(t *testing.T) {
 	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1})
 	payload := json.RawMessage(`{"external_id":"ext-123"}`)
 
-	published, err := svc.Publish(created.ID, payload)
-	if err != nil {
-		t.Fatalf("Publish failed: %v", err)
+	_, err := svc.Publish(created.ID, payload)
+	if !errors.Is(err, listingtask.ErrImageReleaseAttestationRequired) {
+		t.Fatalf("Publish error=%v, want attestation gate", err)
 	}
-	if published.Status != "submitted" {
-		t.Fatalf("after Publish Status=%q, want submitted", published.Status)
+	unchanged, getErr := svc.GetByID(created.ID)
+	if getErr != nil || unchanged.Status != "draft" || unchanged.LastSyncAt != nil {
+		t.Fatalf("legacy publish mutated listing: listing=%+v err=%v", unchanged, getErr)
 	}
-	if published.LastSyncAt == nil {
-		t.Fatal("expected LastSyncAt to be set after Publish")
+}
+
+func TestLegacyPublishHandlersFailClosedWithStructuredMessage(t *testing.T) {
+	svc := newService(t)
+	h := NewHandler(svc, nil)
+	r := gin.New()
+	r.POST("/listings/:id/publish", h.Publish)
+	r.POST("/listing/products/:product_id/publish/:platform_id", h.PublishProduct)
+	r.POST("/listing/listing-tasks/:task_id/publish", h.PublishTask)
+
+	paths := []string{
+		"/listings/1/publish",
+		"/listing/products/1/publish/2",
+		"/listing/listing-tasks/3/publish",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(`{"main_image":"https://attacker.invalid/image.png"}`)))
+			if w.Code != http.StatusPreconditionRequired || !strings.Contains(w.Body.String(), listingtask.ImageReleaseAttestationRequiredMessage) {
+				t.Fatalf("response = %d %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 
@@ -183,8 +208,12 @@ func TestListing_SyncStatus(t *testing.T) {
 	svc := newService(t)
 
 	created, _ := svc.Create(&CreateListingInput{ProductID: 1, PlatformID: 1, Status: "draft"})
-	// Submit listing first, then sync status to approved
-	submitted, _ := svc.Publish(created.ID, json.RawMessage(`{}`))
+	// Set up an already-submitted record; SyncStatus is not a publish entrypoint.
+	status := "submitted"
+	submitted, err := svc.Update(created.ID, &UpdateListingInput{Status: &status})
+	if err != nil {
+		t.Fatalf("setup submitted listing: %v", err)
+	}
 
 	synced, err := svc.SyncStatus(submitted.ID, "approved", "Platform approved")
 	if err != nil {

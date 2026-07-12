@@ -320,7 +320,7 @@ func (s *Service) addSourcingGrounding(response *MessageResponse, view *sourcing
 		response.Unknowns = append(response.Unknowns, media.MediaRole+"图片权利真实性未知（status="+media.RightsStatus+"）")
 	}
 	response.Links = []ResponseLink{
-		{Label: "1688受控货源", Href: "/sourcing1688?source_id=" + fmt.Sprint(response.SourceID)},
+		{Label: "1688受控货源", Href: "/sourcing1688?record_id=" + fmt.Sprint(response.SourceID)},
 		{Label: "关联候选市场", Href: "/demand-cases/" + fmt.Sprint(view.Source.DemandCaseID)},
 		{Label: "关联经营实验", Href: "/experiments/" + view.Source.ExperimentID},
 		{Label: "小Q 执行记录", Href: "/api/v1/xiao-q/traces/" + response.TraceID},

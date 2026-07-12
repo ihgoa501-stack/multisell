@@ -6,12 +6,17 @@ import (
 )
 
 const (
-	StatusPendingReview = "pending_review"
-	StatusReviewed      = "reviewed"
-	StatusDraftCreated  = "draft_created"
+	StatusUnverifiedLead = "unverified_lead"
+	StatusPendingReview  = "pending_review"
+	StatusReviewed       = "reviewed"
+	StatusDraftCreated   = "draft_created"
 )
 
 type ConvertInput struct {
+	ConversionRequestID  string               `json:"conversion_request_id" binding:"required"`
+	TaskLinkID           int64                `json:"task_link_id,omitempty"`
+	EditableVersion      int64                `json:"editable_version,omitempty"`
+	EditableSHA256       string               `json:"editable_sha256,omitempty"`
 	CreatedBy            int64                `json:"created_by"`
 	PlatformID           int64                `json:"platform_id" binding:"required"`
 	Title                string               `json:"title" binding:"required"`
@@ -89,21 +94,27 @@ type CostInput struct {
 
 type ConvertResult struct {
 	SourcingProductID int64   `json:"sourcing_product_id"`
+	TaskLinkID        int64   `json:"task_link_id"`
 	SnapshotID        int64   `json:"snapshot_id"`
 	ProductID         int64   `json:"product_id"`
 	SKUIDs            []int64 `json:"sku_ids"`
 	ListingID         int64   `json:"listing_id"`
 	DraftID           int64   `json:"draft_id"`
 	Status            string  `json:"status"`
+	IdempotentReplay  bool    `json:"idempotent_replay"`
+	AlreadyConverted  bool    `json:"already_converted"`
 }
 
 type DraftDetail struct {
-	Draft   draftRow   `json:"draft"`
-	Listing listingRow `json:"listing"`
-	Product productRow `json:"product"`
-	SKUs    []skuRow   `json:"skus"`
-	Media   []mediaRow `json:"media"`
-	Costs   []costRow  `json:"costs"`
+	Draft           draftRow      `json:"draft"`
+	Listing         listingRow    `json:"listing"`
+	Product         productRow    `json:"product"`
+	SKUs            []skuRow      `json:"skus"`
+	Media           []mediaRow    `json:"media"`
+	Costs           []costRow     `json:"costs"`
+	EditablePayload *ConvertInput `json:"editable_payload,omitempty"`
+	EditableVersion int64         `json:"editable_version"`
+	EditableSHA256  string        `json:"editable_sha256,omitempty"`
 }
 
 type productRow struct {
@@ -162,7 +173,11 @@ func (listingRow) TableName() string { return "product_listing" }
 
 type draftRow struct {
 	ID, SourcingProductID, SnapshotID, ProductID, ListingID, DemandCaseID int64
+	TaskLinkID                                                            *int64
 	ExperimentID                                                          string
+	ConversionRequestID                                                   string
+	ConversionRequestSHA256                                               string
+	EditableVersion                                                       int64
 	CreatedBy                                                             int64
 	CreatedAt                                                             time.Time
 	ApprovalID                                                            *int64

@@ -35,10 +35,121 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&User{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &RefreshSession{}, &ExtensionPairing{}, &ExtensionDevice{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 	return db
+}
+
+func TestExtensionPairingRequiresOwnerConfirmationAndSupportsRevocation(t *testing.T) {
+	db := newTestDB(t)
+	user := User{Username: "owner-pairing", PasswordHash: "unused", Role: "owner", Status: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(db, testConfig(), testLogger())
+	created, err := svc.CreateExtensionPairing(user.ID, "development")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ClaimExtensionPairing(created.Nonce, "claim-secret", "device-1", "extension-1", "development", "Chrome on test Mac"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ExchangeExtensionPairing(created.Nonce, "claim-secret"); err == nil {
+		t.Fatal("unconfirmed browser received credentials")
+	}
+	pending, err := svc.GetExtensionPairing(user.ID, created.PairingID)
+	if err != nil || pending.Status != "waiting_for_owner" || pending.DeviceID != "device-1" {
+		t.Fatalf("pending = %#v err=%v", pending, err)
+	}
+	if err := svc.ConfirmExtensionPairing(user.ID, created.PairingID); err != nil {
+		t.Fatal(err)
+	}
+	credential, err := svc.ExchangeExtensionPairing(created.Nonce, "claim-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.AccessToken == "" || credential.DeviceSecret == "" || credential.Scope != extensionCollectScope {
+		t.Fatalf("credential = %#v", credential)
+	}
+	claims := &ExtensionTokenClaims{}
+	token, err := jwt.ParseWithClaims(credential.AccessToken, claims, func(*jwt.Token) (interface{}, error) { return []byte(testConfig().JWT.Secret), nil })
+	if err != nil || !token.Valid || claims.Type != "extension_access" || claims.UserID != user.ID || claims.DeviceID != credential.DeviceID || credential.DeviceID == "device-1" {
+		t.Fatalf("claims=%#v err=%v", claims, err)
+	}
+	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&User{}).Where("id = ?", user.ID).Update("role", "operator").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development"); err == nil {
+		t.Fatal("demoted Owner refreshed extension token")
+	}
+	if err := db.Model(&User{}).Where("id = ?", user.ID).Update("role", "owner").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeExtensionDevice(user.ID, credential.DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development"); err == nil {
+		t.Fatal("revoked device refreshed")
+	}
+}
+
+func TestExtensionPairingRejectsNonOwner(t *testing.T) {
+	db := newTestDB(t)
+	user := User{Username: "operator-pairing", PasswordHash: "unused", Role: "operator", Status: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewService(db, testConfig(), testLogger()).CreateExtensionPairing(user.ID, "development"); err == nil {
+		t.Fatal("non-Owner created extension pairing")
+	}
+}
+
+func TestWebLogoutRevokesAllExtensionDevicesImmediately(t *testing.T) {
+	db := newTestDB(t)
+	user := User{Username: "owner-logout-devices", PasswordHash: "unused", Role: "owner", Status: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for _, id := range []string{"device-a", "device-b"} {
+		if err := db.Create(&ExtensionDevice{DeviceID: id, InstallationID: id, UserID: user.ID, ExtensionID: "ext", Environment: "development", BrowserLabel: "Chrome", SecretHash: "hash", Scope: extensionCollectScope, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewService(db, testConfig(), testLogger())
+	if err := svc.RevokeAllExtensionDevices(user.ID); err != nil {
+		t.Fatal(err)
+	}
+	var active int64
+	if err := db.Model(&ExtensionDevice{}).Where("user_id = ? AND revoked_at IS NULL", user.ID).Count(&active).Error; err != nil || active != 0 {
+		t.Fatalf("active devices after logout=%d err=%v", active, err)
+	}
+}
+
+func TestExtensionPairingRejectsEnvironmentAndClaimMismatch(t *testing.T) {
+	db := newTestDB(t)
+	user := User{Username: "owner-pairing-2", PasswordHash: "unused", Role: "owner", Status: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(db, testConfig(), testLogger())
+	if _, err := svc.CreateExtensionPairing(user.ID, "mystery"); err == nil {
+		t.Fatal("unknown environment accepted")
+	}
+	productionConfig := testConfig()
+	productionConfig.Server.DeploymentEnvironment = "production"
+	svc = NewService(db, productionConfig, testLogger())
+	created, err := svc.CreateExtensionPairing(user.ID, "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ClaimExtensionPairing(created.Nonce, "claim", "device", "extension", "development", "Chrome"); err == nil {
+		t.Fatal("cross-environment claim accepted")
+	}
 }
 
 func testConfig() *config.Config {
@@ -292,13 +403,85 @@ func TestRefresh_Success(t *testing.T) {
 	if newAccess == refresh {
 		t.Fatal("new access should not equal old refresh")
 	}
+	if _, _, _, err := svc.Refresh(refresh); err == nil {
+		t.Fatal("rotated refresh token was accepted a second time")
+	}
+	if _, _, _, err := svc.Refresh(newRefresh); err == nil {
+		t.Fatal("refresh family remained valid after predecessor replay")
+	}
 	if userVO == nil || userVO.Username != "heidi" {
 		t.Fatalf("userVO = %+v", userVO)
 	}
 
-	// The new refresh token should also be usable.
-	if _, _, _, err := svc.Refresh(newRefresh); err != nil {
-		t.Fatalf("Refresh new: %v", err)
+}
+
+func TestRefresh_RotatesAndAllowsSuccessorWithoutReplay(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testConfig(), testLogger())
+	if _, err := svc.Register("rotate", "password123", "", "", "user"); err != nil {
+		t.Fatal(err)
+	}
+	_, first, _, err := svc.Login("rotate", "password123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, second, _, err := svc.Refresh(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.Refresh(second); err != nil {
+		t.Fatalf("unused successor refresh failed: %v", err)
+	}
+}
+
+func TestRevokeRefreshFamily_IsIdempotentAndOwnerBound(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testConfig(), testLogger())
+	owner, err := svc.Register("logout-owner", "password123", "", "", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := svc.Register("logout-other", "password123", "", "", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, refresh, _, err := svc.Login(owner.Username, "password123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeRefreshFamily(refresh, other.ID); err == nil {
+		t.Fatal("another user revoked the refresh family")
+	}
+	if err := svc.RevokeRefreshFamily(refresh, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeRefreshFamily(refresh, owner.ID); err != nil {
+		t.Fatalf("repeated revocation was not idempotent: %v", err)
+	}
+	if _, _, _, err := svc.Refresh(refresh); err == nil {
+		t.Fatal("revoked refresh token was accepted")
+	}
+}
+
+func TestRevokeAllRefreshSessions(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testConfig(), testLogger())
+	owner, err := svc.Register("logout-all", "password123", "", "", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, first, _, _ := svc.Login(owner.Username, "password123")
+	_, second, _, _ := svc.Login(owner.Username, "password123")
+	if err := svc.RevokeAllRefreshSessions(owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeAllRefreshSessions(owner.ID); err != nil {
+		t.Fatalf("repeated revoke-all failed: %v", err)
+	}
+	for _, token := range []string{first, second} {
+		if _, _, _, err := svc.Refresh(token); err == nil {
+			t.Fatal("revoke-all left an active refresh token")
+		}
 	}
 }
 
@@ -378,6 +561,39 @@ func TestParseToken_InvalidSignature(t *testing.T) {
 
 	if _, err := svc.ParseToken(tok); err == nil {
 		t.Fatal("expected invalid signature error")
+	}
+}
+
+func TestParseToken_KeyRotationAcceptsPreviousKidAndSignsWithCurrent(t *testing.T) {
+	db := newTestDB(t)
+	oldCfg := testConfig()
+	oldCfg.JWT.KeyID = "2026-06"
+	oldCfg.JWT.Secret = "old-signing-secret"
+	oldSvc := NewService(db, oldCfg, testLogger())
+	user := &User{ID: 99, Username: "rotate-key", Role: "owner"}
+	oldToken, err := oldSvc.GenerateAccessToken(user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newCfg := testConfig()
+	newCfg.JWT.KeyID = "2026-07"
+	newCfg.JWT.Secret = "new-signing-secret"
+	newCfg.JWT.PreviousKeysJSON = `{"2026-06":"old-signing-secret"}`
+	newSvc := NewService(db, newCfg, testLogger())
+	if _, err := newSvc.ParseToken(oldToken); err != nil {
+		t.Fatalf("previous key token rejected during rotation: %v", err)
+	}
+	newToken, err := newSvc.GenerateAccessToken(user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, _, err := new(jwt.Parser).ParseUnverified(newToken, &Claims{})
+	if err != nil || parsed.Header["kid"] != "2026-07" {
+		t.Fatalf("new token header=%v err=%v", parsed.Header, err)
+	}
+	if _, err := oldSvc.ParseToken(newToken); err == nil {
+		t.Fatal("old key configuration accepted token signed by the new key")
 	}
 }
 

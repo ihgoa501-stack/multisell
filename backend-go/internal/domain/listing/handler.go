@@ -1,15 +1,14 @@
 package listing
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/listingtask"
 	"github.com/lingmirror/backend-go/internal/response"
 	"gorm.io/gorm"
 )
@@ -138,50 +137,11 @@ func (h *Handler) Delete(c *gin.Context) {
 
 // Publish POST /listings/:id/publish
 func (h *Handler) Publish(c *gin.Context) {
-	id, ok := parseID(c)
+	_, ok := parseID(c)
 	if !ok {
 		return
 	}
-	var body struct {
-		Payload json.RawMessage `json:"payload"`
-	}
-	_ = c.ShouldBindJSON(&body) // payload is optional
-
-	operator := c.GetString("username")
-	if operator == "" {
-		operator = "system"
-	}
-
-	if h.approvalSvc != nil {
-		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
-			RequestType: "listing_publish",
-			Requester:   operator,
-			NewValue:    fmt.Sprintf("publish listing id=%d", id),
-			Reason:      "listing publish requires approval",
-			TargetType:  "listing",
-			TargetID:    id,
-			RiskLevel:   "high",
-			EntityType:  "listing",
-			EntityID:    id,
-		})
-		if err != nil {
-			response.Error(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-		response.Error(c, http.StatusForbidden, fmt.Sprintf("listing publish requires approval (approval_id=%d)", apprReq.ID))
-		return
-	}
-
-	l, err := h.service.Publish(id, body.Payload)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "listing not found")
-			return
-		}
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, l)
+	response.Error(c, http.StatusPreconditionRequired, listingtask.ImageReleaseAttestationRequiredMessage)
 }
 
 // Sync POST /listings/:id/sync
@@ -211,48 +171,15 @@ func (h *Handler) Sync(c *gin.Context) {
 
 // PublishProduct POST /listing/products/:product_id/publish/:platform_id
 func (h *Handler) PublishProduct(c *gin.Context) {
-	productID, ok := parseParamInt64(c, "product_id")
+	_, ok := parseParamInt64(c, "product_id")
 	if !ok {
 		return
 	}
-	platformID, ok := parseParamInt64(c, "platform_id")
+	_, ok = parseParamInt64(c, "platform_id")
 	if !ok {
 		return
 	}
-	var in PublishProductInput
-	_ = c.ShouldBindJSON(&in) // body is optional
-
-	operator := c.GetString("username")
-	if operator == "" {
-		operator = "system"
-	}
-
-	if h.approvalSvc != nil {
-		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
-			RequestType: "listing_publish_product",
-			Requester:   operator,
-			NewValue:    fmt.Sprintf("publish product id=%d to platform id=%d", productID, platformID),
-			Reason:      "product publish requires approval",
-			TargetType:  "product",
-			TargetID:    productID,
-			RiskLevel:   "high",
-			EntityType:  "product",
-			EntityID:    productID,
-		})
-		if err != nil {
-			response.Error(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-		response.Error(c, http.StatusForbidden, fmt.Sprintf("product publish requires approval (approval_id=%d)", apprReq.ID))
-		return
-	}
-
-	l, err := h.service.PublishProduct(productID, platformID, &in)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, l)
+	response.Error(c, http.StatusPreconditionRequired, listingtask.ImageReleaseAttestationRequiredMessage)
 }
 
 // ListByProduct GET /listing/products/:product_id/listings
@@ -342,46 +269,12 @@ func (h *Handler) CancelTask(c *gin.Context) {
 
 // PublishTask POST /listing/listing-tasks/:task_id/publish
 func (h *Handler) PublishTask(c *gin.Context) {
-	taskID, ok := parseParamInt64(c, "task_id")
+	_, ok := parseParamInt64(c, "task_id")
 	if !ok {
 		return
 	}
 
-	operator := c.GetString("username")
-	if operator == "" {
-		operator = "system"
-	}
-
-	if h.approvalSvc != nil {
-		apprReq, err := h.approvalSvc.RequireApproval(&approval.CreateApprovalInput{
-			RequestType: "listing_task_publish",
-			Requester:   operator,
-			NewValue:    fmt.Sprintf("publish listing task id=%d", taskID),
-			Reason:      "listing task publish requires approval",
-			TargetType:  "listing_task",
-			TargetID:    taskID,
-			RiskLevel:   "high",
-			EntityType:  "listing_task",
-			EntityID:    taskID,
-		})
-		if err != nil {
-			response.Error(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-		response.Error(c, http.StatusForbidden, fmt.Sprintf("listing task publish requires approval (approval_id=%d)", apprReq.ID))
-		return
-	}
-
-	task, err := h.service.PublishTask(taskID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, http.StatusNotFound, "listing task not found")
-			return
-		}
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	response.Success(c, task)
+	response.Error(c, http.StatusPreconditionRequired, listingtask.ImageReleaseAttestationRequiredMessage)
 }
 
 // Suggest POST /listings/suggest

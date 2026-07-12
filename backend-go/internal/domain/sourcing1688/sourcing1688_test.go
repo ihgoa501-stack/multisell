@@ -145,7 +145,7 @@ func TestProductIdentityCanonicalizesVariantOrderAndFlagsSmallTitleChanges(t *te
 }
 
 func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
-	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &ImageProcessingRecord{}, &CaptureAttempt{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &platformRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{})
+	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &ImageProcessingRecord{}, &CaptureAttempt{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &platformRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{}, &Sourcing1688TaskLink{}, &sourcingOpportunityRow{}, &sourcingOpportunityDecisionRow{}, &sourcingMarketDecisionRow{}, &authoritativeSupplierRow{}, &authoritativeProductSupplierRow{}, &SourcingSKUMapping{})
 	svc := NewService(db, dbtest.NewLogger(t))
 	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "Ozon", TargetLocale: "ru-RU", Status: "experiment_ready"})
 	db.Create(&experimentRow{ExperimentID: "EXP-1", OwnerID: 42, Status: "active", Stage: "product"})
@@ -188,6 +188,7 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 		t.Fatalf("changed Capture = %#v, %v", p, err)
 	}
 	currentSnapshot := *p.SnapshotID
+	seedApprovedSourcingAuthority(t, db, p.ID, 42, 7, "EXP-1", "Ozon")
 	var changes []SourcingChangeEvent
 	db.Where("sourcing_product_id = ?", p.ID).Find(&changes)
 	if len(changes) != 2 {
@@ -210,6 +211,13 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 	convertInput.Media[0].Operations = processed.Operations
 	convertInput.Validation.Images[0].TruthStatus = "actual"
 	convertInput.Validation.Images[0].SourceURI = "sha256:" + processed.ProcessedSHA256
+	var supplierSource Sourcing1688Product
+	var supplierSnapshot Sourcing1688Snapshot
+	db.First(&supplierSource, p.ID)
+	db.First(&supplierSnapshot, currentSnapshot)
+	if supplierSource.SupplierBusinessID == "" || supplierSource.SupplierBusinessID != supplierSnapshot.ObservedSupplierBusinessID {
+		t.Fatalf("supplier fixture identity mismatch: source=%q snapshot=%q", supplierSource.SupplierBusinessID, supplierSnapshot.ObservedSupplierBusinessID)
+	}
 	result, err := svc.Convert(p.ID, convertInput)
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
@@ -234,8 +242,84 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 		t.Fatalf("incomplete frozen listing evidence: %#v", frozenEvidence)
 	}
 	result2, err := svc.Convert(p.ID, convertInput)
-	if err != nil || result2.DraftID != result.DraftID {
+	if err != nil || result2.DraftID != result.DraftID || !result2.IdempotentReplay {
 		t.Fatalf("idempotent Convert = %#v, %v", result2, err)
+	}
+
+	// The same immutable 1688 observation may serve another approved task, but
+	// that task owns a distinct conversion and draft rather than overwriting the
+	// primary workflow.
+	db.Create(&demandCaseRow{ID: 8, OwnerID: 42, SalesChannel: "Ozon", TargetLocale: "ru-RU", Status: "experiment_ready"})
+	db.Create(&experimentRow{ExperimentID: "EXP-2", OwnerID: 42, Status: "active", Stage: "supply"})
+	db.Create(&gateRow{ExperimentID: "EXP-2", Stage: "opportunity", Result: "pass"})
+	db.Create(&objectLinkRow{ExperimentID: "EXP-2", ObjectType: "demand_case", ObjectID: "8"})
+	market2 := sourcingMarketDecisionRow{DemandCaseID: 8, OwnerID: 42, Decision: "selected"}
+	db.Create(&market2)
+	opportunity2 := sourcingOpportunityRow{OwnerID: 42, DemandCaseID: 8, MarketDecisionID: market2.ID, Version: 1, Title: "second approved task", TargetChannel: "Ozon", Status: "approved", ContentHash: "second-task-content"}
+	db.Create(&opportunity2)
+	decision2 := sourcingOpportunityDecisionRow{OpportunityID: opportunity2.ID, OwnerID: 42, Version: 1, Decision: "approved", ContentHash: opportunity2.ContentHash}
+	db.Create(&decision2)
+	link2 := Sourcing1688TaskLink{SourcingProductID: p.ID, DemandCaseID: 8, ExperimentID: "EXP-2", OwnerID: 42, ProductOpportunityID: &opportunity2.ID, OpportunityDecisionID: &decision2.ID, AuthorityKind: "product_opportunity", Status: "linked", WorkflowStatus: "ready_for_draft"}
+	if err := db.Create(&link2).Error; err != nil {
+		t.Fatal(err)
+	}
+	secondInput := completeConvertInput(now)
+	secondInput.TaskLinkID = link2.ID
+	secondInput.ConversionRequestID = "convert_test_second_task"
+	secondInput.PlatformSKU = "OZ-SECOND"
+	secondInput.SKUVariants[0].InternalSKU = "INT-SECOND-red"
+	secondInput.SKUVariants[0].ChannelSKU = "OZ-SECOND-red"
+	secondInput.Validation.SKUs[0].InternalSKU = "INT-SECOND-red"
+	secondInput.Validation.SKUs[0].ChannelSKU = "OZ-SECOND-red"
+	secondInput.Media[0] = convertInput.Media[0]
+	secondInput.Validation.Images[0] = convertInput.Validation.Images[0]
+	secondResult, err := svc.Convert(p.ID, secondInput)
+	if err != nil {
+		t.Fatalf("second task Convert: %v", err)
+	}
+	if secondResult.TaskLinkID != link2.ID || secondResult.DraftID == result.DraftID || secondResult.ProductID == result.ProductID || secondResult.ListingID == result.ListingID {
+		t.Fatalf("second task reused primary draft chain: primary=%#v second=%#v", result, secondResult)
+	}
+	var persistedLink2 Sourcing1688TaskLink
+	db.First(&persistedLink2, link2.ID)
+	if persistedLink2.DraftID == nil || *persistedLink2.DraftID != secondResult.DraftID || persistedLink2.WorkflowStatus != "converted_to_draft" {
+		t.Fatalf("second task workflow not persisted independently: %#v", persistedLink2)
+	}
+	secondReplay, err := svc.Convert(p.ID, secondInput)
+	if err != nil || !secondReplay.IdempotentReplay || secondReplay.DraftID != secondResult.DraftID {
+		t.Fatalf("second task idempotent replay=%#v err=%v", secondReplay, err)
+	}
+	crossTaskKey := *secondInput
+	crossTaskKey.ConversionRequestID = convertInput.ConversionRequestID
+	if _, err := svc.Convert(p.ID, &crossTaskKey); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("conversion key reused across task links err=%v", err)
+	}
+	var draftCount int64
+	db.Model(&draftRow{}).Where("sourcing_product_id = ?", p.ID).Count(&draftCount)
+	if draftCount != 2 {
+		t.Fatalf("draft count for shared source = %d", draftCount)
+	}
+	otherOwnerInput := *secondInput
+	otherOwnerInput.CreatedBy = 99
+	otherOwnerInput.ConversionRequestID = "convert_other_owner_denied"
+	if _, err := svc.Convert(p.ID, &otherOwnerInput); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("other Owner conversion err=%v", err)
+	}
+	// Revoking the market decision blocks new conversion attempts without
+	// deleting the already-created task draft.
+	db.Create(&sourcingMarketDecisionRow{DemandCaseID: 8, OwnerID: 42, Decision: "paused"})
+	revokedInput := *secondInput
+	revokedInput.ConversionRequestID = "convert_revoked_task_denied"
+	if _, err := svc.Convert(p.ID, &revokedInput); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("revoked task conversion err=%v", err)
+	}
+	if _, err := svc.GetTaskDraft(p.ID, link2.ID); err != nil {
+		t.Fatalf("revocation removed existing task draft: %v", err)
+	}
+	conflictingConversion := *convertInput
+	conflictingConversion.Title = "同一转换请求的篡改标题"
+	if _, err := svc.Convert(p.ID, &conflictingConversion); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("conversion request conflict err=%v", err)
 	}
 	updatedInput := completeConvertInput(now)
 	updatedInput.Title = "真实商品（已编辑）"
@@ -256,6 +340,15 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 	}
 	if draft, err := svc.GetDraft(p.ID); err != nil || draft.Listing.Status != "draft" || len(draft.SKUs) != 1 || len(draft.Costs) != 10 {
 		t.Fatalf("GetDraft = %#v, %v", draft, err)
+	}
+	if err := db.Create(&sourcingMarketDecisionRow{DemandCaseID: 7, OwnerID: 42, Decision: "paused"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Convert(p.ID, convertInput); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("revoked market selection must block conversion replay, got %v", err)
+	}
+	if _, err := svc.UpdateDraft(p.ID, updatedInput); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("revoked market selection must block draft update, got %v", err)
 	}
 }
 
@@ -304,7 +397,7 @@ func completeConvertInput(now time.Time) *ConvertInput {
 		SKUs:       []SKUValidationInput{{SupplierSKU: "1688-red", InternalSKU: "INT-1-red", ChannelSKU: "OZ-1-red", Color: "red", Size: "standard", Material: "steel", Packaging: "box", TruthStatus: "quoted", SourceURI: "evidence://sku", ObservedAt: now}},
 		SKURules:   SKUValidationRules{Evidence: evidence, RequireColor: true, RequireSize: true, RequireMaterial: true, RequirePackaging: true},
 	}
-	return &ConvertInput{CreatedBy: 42, PlatformID: 3, Title: "真实商品", Description: "已复核", CategoryID: 1, Unit: "件", LocalizedTitle: "Тестовый товар", LocalizedDescription: "Проверенное описание", TargetLocale: "ru-RU", ShippingTemplateID: "ozon-fbo-1", CategorySchemaURI: "evidence://ozon/category/1", CategoryObservedAt: now, SupplierAssessment: supplierChecks, ComplianceChecks: complianceChecks, PlatformSKU: "OZ-1", SKUVariants: []DraftSKUInput{{SupplierSKU: "1688-red", InternalSKU: "INT-1-red", ChannelSKU: "OZ-1-red", Color: "red", Size: "standard", Material: "steel", Packaging: "box", SpecDesc: "red", SpecValues: json.RawMessage(`{"color":"red","size":"standard","material":"steel","packaging":"box"}`), CostPrice: 10, Price: 20}}, Media: []MediaInput{{SourceURL: "https://cbu01.alicdn.com/a.png", ProcessedURL: "https://assets.local/a-clean.jpg", MediaRole: "main", RightsStatus: "verified", RightsEvidenceURI: "evidence://rights/1", RightsObservedAt: now, Operations: json.RawMessage(`["crop","background_remove"]`), Width: 1200, Height: 1200, ChannelRuleURI: "evidence://ozon/images/1"}}, Costs: costs, ListingPayload: json.RawMessage(`{"category":"approved"}`), Validation: validation}
+	return &ConvertInput{ConversionRequestID: "convert_test_001", CreatedBy: 42, PlatformID: 3, Title: "真实商品", Description: "已复核", CategoryID: 1, Unit: "件", LocalizedTitle: "Тестовый товар", LocalizedDescription: "Проверенное описание", TargetLocale: "ru-RU", ShippingTemplateID: "ozon-fbo-1", CategorySchemaURI: "evidence://ozon/category/1", CategoryObservedAt: now, SupplierAssessment: supplierChecks, ComplianceChecks: complianceChecks, PlatformSKU: "OZ-1", SKUVariants: []DraftSKUInput{{SupplierSKU: "1688-red", InternalSKU: "INT-1-red", ChannelSKU: "OZ-1-red", Color: "red", Size: "standard", Material: "steel", Packaging: "box", SpecDesc: "red", SpecValues: json.RawMessage(`{"color":"red","size":"standard","material":"steel","packaging":"box"}`), CostPrice: 10, Price: 20}}, Media: []MediaInput{{SourceURL: "https://cbu01.alicdn.com/a.png", ProcessedURL: "https://assets.local/a-clean.jpg", MediaRole: "main", RightsStatus: "verified", RightsEvidenceURI: "evidence://rights/1", RightsObservedAt: now, Operations: json.RawMessage(`["crop","background_remove"]`), Width: 1200, Height: 1200, ChannelRuleURI: "evidence://ozon/images/1"}}, Costs: costs, ListingPayload: json.RawMessage(`{"category":"approved"}`), Validation: validation}
 }
 
 func checks(now time.Time, types []string) []EvidenceCheck {

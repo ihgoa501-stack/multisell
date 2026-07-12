@@ -1,6 +1,7 @@
 package sourcing1688
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/lingmirror/backend-go/internal/common"
@@ -28,7 +29,10 @@ func (s *Service) RequireSourceOwner(id, ownerID int64) error {
 		return ErrWorkflowGate
 	}
 	var count int64
-	err := s.db.Table("sourcing_1688_product AS sp").Joins("JOIN demand_case dc ON dc.id = sp.demand_case_id").Where("sp.id = ? AND dc.owner_id = ?", id, ownerID).Count(&count).Error
+	err := s.db.Table("sourcing_1688_product AS sp").
+		Joins("LEFT JOIN demand_case dc ON dc.id = sp.demand_case_id").
+		Where("sp.id = ? AND (sp.owner_id = ? OR (sp.owner_id = 0 AND dc.owner_id = ?))", id, ownerID, ownerID).
+		Count(&count).Error
 	if err != nil {
 		return err
 	}
@@ -83,15 +87,18 @@ func (s *Service) ListOwned(ownerID int64, p *common.Pagination, f *ListFilter) 
 		return nil, 0, ErrWorkflowGate
 	}
 	q := s.db.Model(&Sourcing1688Product{}).
-		Joins("JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
-		Where("dc.owner_id = ?", ownerID)
+		Joins("LEFT JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
+		Where("sourcing_1688_product.owner_id = ? OR (sourcing_1688_product.owner_id = 0 AND dc.owner_id = ?)", ownerID, ownerID)
 	if f != nil {
 		if f.Search != "" {
 			like := "%" + f.Search + "%"
-			q = q.Where("LOWER(sourcing_1688_product.supplier_name) LIKE LOWER(?) OR LOWER(sourcing_1688_product.source_url) LIKE LOWER(?)", like, like)
+			q = q.Where("LOWER(COALESCE(sourcing_1688_product.title, '')) LIKE LOWER(?) OR LOWER(sourcing_1688_product.supplier_name) LIKE LOWER(?) OR LOWER(sourcing_1688_product.source_url) LIKE LOWER(?)", like, like, like)
 		}
 		if f.Status != "" {
 			q = q.Where("sourcing_1688_product.status = ?", f.Status)
+		}
+		if f.LifecycleStatus != "" {
+			q = q.Where("sourcing_1688_product.lifecycle_status = ?", f.LifecycleStatus)
 		}
 		if f.ProductID != nil {
 			q = q.Where("sourcing_1688_product.product_id = ?", *f.ProductID)
@@ -104,6 +111,72 @@ func (s *Service) ListOwned(ownerID int64, p *common.Pagination, f *ListFilter) 
 	var items []Sourcing1688Product
 	if err := q.Order("sourcing_1688_product.id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
 		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// ListPrivateCollectionBox enriches the ordinary Owner-scoped product list
+// with read-only collection metadata. Field statuses come from the immutable
+// snapshot referenced by the product; they are never inferred from zero values.
+func (s *Service) ListPrivateCollectionBox(ownerID int64, p *common.Pagination, f *ListFilter) ([]PrivateCollectionListItem, int64, error) {
+	products, total, err := s.ListOwned(ownerID, p, f)
+	if err != nil || len(products) == 0 {
+		return nil, total, err
+	}
+	ids := make([]int64, 0, len(products))
+	for _, product := range products {
+		ids = append(ids, product.ID)
+	}
+	type countRow struct {
+		SourcingProductID int64
+		Count             int64
+	}
+	var observationCounts, taskCounts []countRow
+	if err := s.db.Model(&Sourcing1688Snapshot{}).Select("sourcing_product_id, COUNT(*) AS count").Where("sourcing_product_id IN ?", ids).Group("sourcing_product_id").Scan(&observationCounts).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := s.db.Model(&Sourcing1688TaskLink{}).Select("sourcing_product_id, COUNT(*) AS count").Where("owner_id = ? AND sourcing_product_id IN ?", ownerID, ids).Group("sourcing_product_id").Scan(&taskCounts).Error; err != nil {
+		return nil, 0, err
+	}
+	observationByProduct, taskByProduct := map[int64]int64{}, map[int64]int64{}
+	for _, row := range observationCounts {
+		observationByProduct[row.SourcingProductID] = row.Count
+	}
+	for _, row := range taskCounts {
+		taskByProduct[row.SourcingProductID] = row.Count
+	}
+
+	snapshotIDs := make([]int64, 0, len(products))
+	for _, product := range products {
+		if product.SnapshotID != nil {
+			snapshotIDs = append(snapshotIDs, *product.SnapshotID)
+		}
+	}
+	var snapshots []Sourcing1688Snapshot
+	if len(snapshotIDs) > 0 {
+		if err := s.db.Where("id IN ?", snapshotIDs).Find(&snapshots).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+	snapshotByID := make(map[int64]Sourcing1688Snapshot, len(snapshots))
+	for _, snapshot := range snapshots {
+		snapshotByID[snapshot.ID] = snapshot
+	}
+
+	items := make([]PrivateCollectionListItem, 0, len(products))
+	for _, product := range products {
+		statuses := map[string]string{}
+		if product.SnapshotID != nil {
+			if snapshot, ok := snapshotByID[*product.SnapshotID]; ok {
+				var payload struct {
+					FieldStatuses map[string]string `json:"field_statuses"`
+				}
+				if json.Unmarshal(snapshot.RawPayload, &payload) == nil && payload.FieldStatuses != nil {
+					statuses = payload.FieldStatuses
+				}
+			}
+		}
+		items = append(items, PrivateCollectionListItem{Sourcing1688Product: product, FieldStatuses: statuses, ObservationCount: observationByProduct[product.ID], TaskLinkCount: taskByProduct[product.ID]})
 	}
 	return items, total, nil
 }
@@ -285,8 +358,8 @@ func (s *Service) SummaryOwned(ownerID int64) (*Summary, error) {
 		return nil, ErrWorkflowGate
 	}
 	base := s.db.Model(&Sourcing1688Product{}).
-		Joins("JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
-		Where("dc.owner_id = ?", ownerID)
+		Joins("LEFT JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
+		Where("sourcing_1688_product.owner_id = ? OR (sourcing_1688_product.owner_id = 0 AND dc.owner_id = ?)", ownerID, ownerID)
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
 		return nil, err

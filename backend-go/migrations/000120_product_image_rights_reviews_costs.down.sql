@@ -1,0 +1,18 @@
+DROP TABLE IF EXISTS product_image_cost_entries;
+DROP INDEX IF EXISTS idx_product_image_reviews_gate;
+DROP INDEX IF EXISTS uidx_product_image_review_owner_idem;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS verified_at;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS expected_task_version;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS request_hash;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS idempotency_key;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS evidence_truth;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS evidence_sha;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS technical_visual;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS claims_scene;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS channel_rules;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS rights_status;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS product_authenticity;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS channel;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS purpose;
+ALTER TABLE product_image_reviews DROP COLUMN IF EXISTS asset_sha;
+DROP TABLE IF EXISTS product_image_rights_grants;

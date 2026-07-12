@@ -3,6 +3,8 @@ package sourcing1688
 import "time"
 
 const (
+	LifecycleUnverifiedLead  = "unverified_lead"
+	LifecycleNeedsReview     = "needs_review"
 	LifecycleCaptureFailed   = "capture_failed"
 	LifecyclePendingReview   = "pending_review"
 	LifecycleRejected        = "rejected"
@@ -10,6 +12,7 @@ const (
 	LifecycleEditing         = "editing"
 	LifecyclePendingApproval = "pending_approval"
 	LifecycleApprovedDraft   = "approved_draft"
+	LifecycleArchived        = "archived"
 )
 
 const (
@@ -21,6 +24,7 @@ const (
 // Approval never means published: approved_draft remains an internal draft.
 type LifecycleState struct {
 	SourcingProductID int64      `json:"sourcing_product_id"`
+	TaskLinkID        int64      `json:"task_link_id,omitempty"`
 	Status            string     `json:"status"`
 	ActorID           *int64     `json:"actor_id,omitempty"`
 	Reason            string     `json:"reason,omitempty"`

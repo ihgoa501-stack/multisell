@@ -4,7 +4,7 @@
 > 此文档合并了以下已废弃文档的内容：FUNCTION_INVENTORY.md、FRONTEND_PAGES_AND_ROUTING.md、api-inventory.md、PROJECT_STATUS.md（模块清单部分）。
 > 添加新模块或路由时，只更新此文件即可。
 >
-> 更新日期: 2026-07-05
+> 更新日期: 2026-07-12
 > 技术名: MultiSell
 
 ---
@@ -84,6 +84,8 @@ backend-go/internal/
 | **Command** | `command/command.go` | 类型化处理器注册。命令: `stock_alert`, `replenish`, `price_review`, `listing_optimize`, `compliance_check` |
 | **Scheduler** | `scheduler/scheduler.go` | 周期性任务（5min-6h），发布 `scheduler.tick.{agent_id}` 事件。 |
 | **ToolBridge** | `toolbridge/bridge.go` | 插件驱动工具执行桥接，Agent 通过它调用外部工具。 |
+
+领域分类的机器可校验唯一合同位于 `backend-go/internal/domain/platformtruth/`，受保护只读 API 为 `GET /api/v1/platform-truth`，Owner 页面为 `/platform-truth`。合同覆盖当前 `internal/domain/` 全部目录；新增领域而未分类会导致测试失败。
 
 **EventBus 核心 API**:
 ```go
@@ -210,8 +212,10 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | `supplyevent` | — | 供应链事件模型 |
 | `tariff` | `/api/v1/tariffs` | 关税规则 |
 | `candidate` | `/api/v1/candidates` | 候选商品管理 |
-| `experiment` | `/api/v1/experiments` | Owner 自用经营实验统一事实链、证据/反证、阶段闸门与对象关联 |
+| `experiment` | `/api/v1/experiments` | 待迁移的经营事实核验案卷；对象关联只支持追踪，不证明因果或反馈闭环 |
+| `platformtruth` | `/api/v1/platform-truth` | 唯一方向、事实/声明等级、系统边界、对象身份、来源规则与全领域处置合同（只读） |
 | `demandcase` | `/api/v1/demand-cases` | 候选市场八维证据、独立反证、确定性裁决与 Owner 六行决策卡 |
+| `demandcase`（商品机会） | `/api/v1/product-opportunities` | 由最新 Owner selected 市场决定派生的商品机会、完整性检查与 Owner 批准 |
 | `completeness` | `/api/v1/completeness` | 商品完整度检查 |
 | `profit` | `/api/v1/profit` | 利润计算 |
 | `cost` | `/api/v1/costs` | 成本分摊 |
@@ -224,7 +228,7 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 
 | Method | Path | Status | 前端引用 |
 |--------|------|--------|----------|
-| **经营实验** | | | |
+| **经营事实核验案卷（技术路径暂保留 experiments）** | | | |
 | GET/POST | `/api/v1/experiments` | ✅ | `experiments/page.tsx` |
 | GET/PUT | `/api/v1/experiments/:experimentId` | ✅ | `experiments/[experimentId]/page.tsx` |
 | POST | `/api/v1/experiments/:experimentId/evidence` | ✅ | `experiments/[experimentId]/page.tsx` |
@@ -241,6 +245,10 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | GET | `/api/v1/demand-cases/:id/decision-card` | ✅ | `demand-cases/[id]/page.tsx` |
 | POST | `/api/v1/demand-cases/research/import` | ✅ | 受保护 AI 研究契约入口 |
 | POST | `/api/v1/demand-cases/research/first-public-batch` | ✅ | `demand-cases/page.tsx` |
+| GET/POST | `/api/v1/demand-cases/:id/owner-decision[s]` | ✅ | `demand-cases/[id]/page.tsx` |
+| GET/POST | `/api/v1/product-opportunities[/:id]` | ✅ | `product-opportunities/page.tsx` |
+| POST | `/api/v1/product-opportunities/:id/evaluate` | ✅ | `product-opportunities/page.tsx` |
+| POST | `/api/v1/product-opportunities/:id/owner-decisions` | ✅ | `product-opportunities/page.tsx` |
 | **Products & SKU** | | | |
 | GET/POST/PUT/DELETE | `/api/v1/products[/:id]` | ✅ | `products/page.tsx`, `products/[id]/page.tsx`, `products/create/page.tsx` |
 | GET/POST/PUT/DELETE | `/api/v1/products/:id/specs[/:spec_id]` | ✅ | — |

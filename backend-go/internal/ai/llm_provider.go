@@ -97,33 +97,50 @@ func NewLLMProvider(logger *zap.Logger) LLMProvider {
 	switch name {
 	case "openai", "qwen", "deepseek", "azure":
 		if isProd && strings.TrimSpace(os.Getenv("LLM_API_KEY")) == "" {
-			logger.Fatal("LLM_API_KEY is required in production",
+			logger.Warn("LLM capability disabled: API key is not configured",
 				zap.String("provider", name))
+			return &DisabledProvider{reason: "LLM_API_KEY is not configured"}
 		}
 		return newOpenAICompatible(name, logger)
 	case "anthropic":
 		if isProd && strings.TrimSpace(os.Getenv("LLM_API_KEY")) == "" {
-			logger.Fatal("LLM_API_KEY is required in production",
+			logger.Warn("LLM capability disabled: API key is not configured",
 				zap.String("provider", name))
+			return &DisabledProvider{reason: "LLM_API_KEY is not configured"}
 		}
 		return newAnthropic(logger)
 	case "", "stub":
 		if isProd {
-			logger.Fatal("LLM_PROVIDER must be set to a real provider in production (not empty/stub). " +
-				"Supported: openai, anthropic, qwen, deepseek, azure")
+			logger.Warn("LLM capability disabled in production; no real provider configured")
+			return &DisabledProvider{reason: "real LLM provider is not configured"}
 		}
 		logger.Warn("LLM_PROVIDER not set, using stub provider for development. " +
 			"Set LLM_PROVIDER=openai, anthropic, or qwen for real AI calls.")
 		return &StubProvider{logger: logger}
 	default:
 		if isProd {
-			logger.Fatal("unsupported LLM_PROVIDER in production; use: openai, anthropic, qwen, deepseek, azure",
+			logger.Warn("LLM capability disabled: unsupported provider",
 				zap.String("provider", name))
+			return &DisabledProvider{reason: "unsupported LLM provider: " + name}
 		}
 		logger.Warn("unsupported LLM_PROVIDER, falling back to stub provider for development",
 			zap.String("provider", name))
 		return &StubProvider{logger: logger}
 	}
+}
+
+// DisabledProvider makes missing production LLM configuration explicit. It
+// never synthesizes data and every attempted call fails closed.
+type DisabledProvider struct{ reason string }
+
+func (p *DisabledProvider) Name() string { return "disabled" }
+
+func (p *DisabledProvider) Chat(context.Context, *LLMRequest) (*LLMResponse, error) {
+	return nil, fmt.Errorf("LLM capability disabled: %s", p.reason)
+}
+
+func (p *DisabledProvider) ChatStream(context.Context, *LLMRequest) (<-chan LLMChunk, error) {
+	return nil, fmt.Errorf("LLM capability disabled: %s", p.reason)
 }
 
 // ---------- OpenAI-compatible provider ----------

@@ -2,6 +2,7 @@ package approval
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -108,12 +109,18 @@ func (s *Service) Create(input *CreateApprovalInput) (*ApprovalRequest, error) {
 
 // Review approves or rejects a pending approval request.
 func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest, error) {
+	if input == nil || (input.Action != "approve" && input.Action != "reject") {
+		return nil, errors.New("review action must be approve or reject")
+	}
 	var req ApprovalRequest
 	if err := s.db.First(&req, id).Error; err != nil {
 		return nil, err
 	}
 	if req.Status != StatusPending {
 		return nil, fmt.Errorf("approval %d is not pending, current status: %s", id, req.Status)
+	}
+	if req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now()) {
+		return nil, fmt.Errorf("approval %d has expired", id)
 	}
 
 	status := StatusApproved
@@ -147,8 +154,12 @@ func (s *Service) Review(id int64, input *ReviewApprovalInput) (*ApprovalRequest
 
 	// Wrap approval update + UA sync in a single transaction.
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&req).Updates(updates).Error; err != nil {
-			return err
+		updated := tx.Model(&ApprovalRequest{}).Where("id = ? AND status = ?", id, StatusPending).Updates(updates)
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return fmt.Errorf("approval %d was already reviewed", id)
 		}
 		if len(uaUpdates) > 0 {
 			if err := tx.Table("unified_action").Where("id = ?", req.EntityID).Updates(uaUpdates).Error; err != nil {
@@ -293,7 +304,7 @@ func (s *Service) HasPendingForEntity(entityType string, entityID int64) (bool, 
 func (s *Service) FindApprovedByTarget(targetType string, targetID int64, requestType string) (*ApprovalRequest, error) {
 	var req ApprovalRequest
 	err := s.db.
-		Where("target_type = ? AND target_id = ? AND request_type = ? AND status = ?", targetType, targetID, requestType, StatusApproved).
+		Where("target_type = ? AND target_id = ? AND request_type = ? AND status = ? AND (expires_at IS NULL OR expires_at > ?)", targetType, targetID, requestType, StatusApproved, time.Now()).
 		Order("updated_at DESC, id DESC").
 		First(&req).Error
 	if err != nil {
@@ -336,16 +347,16 @@ func (s *Service) publishApprovalEvent(req *ApprovalRequest, status string) {
 	topic := fmt.Sprintf("approval.%s.%s", status, req.RequestType)
 	ctx := context.Background()
 	if _, err := s.bus.Publish(ctx, topic, "approval", map[string]interface{}{
-		"approval_id":    req.ID,
-		"status":          status,
-		"request_type":    req.RequestType,
-		"entity_type":     req.EntityType,
-		"entity_id":       req.EntityID,
-		"product_id":      req.ProductID,
-		"reviewer":        req.Reviewer,
+		"approval_id":      req.ID,
+		"status":           status,
+		"request_type":     req.RequestType,
+		"entity_type":      req.EntityType,
+		"entity_id":        req.EntityID,
+		"product_id":       req.ProductID,
+		"reviewer":         req.Reviewer,
 		"reviewer_user_id": req.ReviewerUserID,
-		"target_type":     req.TargetType,
-		"target_id":       req.TargetID,
+		"target_type":      req.TargetType,
+		"target_id":        req.TargetID,
 	}); err != nil {
 		s.logger.Warn("failed to publish approval event",
 			zap.String("topic", topic),

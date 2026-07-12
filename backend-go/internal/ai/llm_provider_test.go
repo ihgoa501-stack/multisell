@@ -170,3 +170,18 @@ func TestNewLLMProvider_Default(t *testing.T) {
 		t.Errorf("Name() = %q, want %q", p.Name(), "stub")
 	}
 }
+
+func TestNewLLMProvider_ProductionWithoutKeyIsDisabled(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+	t.Setenv("ENV", "production")
+	t.Setenv("LLM_PROVIDER", "openai")
+	t.Setenv("LLM_API_KEY", "")
+
+	p := NewLLMProvider(testLogger())
+	if p.Name() != "disabled" {
+		t.Fatalf("expected disabled provider, got %q", p.Name())
+	}
+	if _, err := p.Chat(context.Background(), &LLMRequest{}); err == nil {
+		t.Fatal("disabled provider must fail closed")
+	}
+}

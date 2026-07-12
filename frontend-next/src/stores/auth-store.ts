@@ -8,7 +8,7 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   hydrate: () => void;
 }
 
@@ -30,10 +30,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  logout: () => {
-    removeToken();
-    removeStoredUser();
-    set({ user: null, token: null, isAuthenticated: false });
+  logout: async () => {
+    try {
+      await apiClient.post('/auth/logout-all', {});
+    } finally {
+      removeToken();
+      removeStoredUser();
+      set({ user: null, token: null, isAuthenticated: false });
+    }
   },
 
   hydrate: () => {

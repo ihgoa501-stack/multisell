@@ -50,14 +50,54 @@ services:
       DB_NAME: multisell
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       SERVER_PORT: "8080"
+      IMAGE_SERVICE_BASE_URL: http://image-service:8092
+      IMAGE_SERVICE_SHARED_SECRET: ${IMAGE_SERVICE_SHARED_SECRET:?set IMAGE_SERVICE_SHARED_SECRET}
+      IMAGE_SERVICE_EXECUTION_TOKEN_SECRET: ${IMAGE_SERVICE_EXECUTION_TOKEN_SECRET:?set IMAGE_SERVICE_EXECUTION_TOKEN_SECRET}
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      image-service:
+        condition: service_healthy
     command: >
       sh -c "go mod download &&
              go run cmd/server/main.go"
+
+  image-service:
+    build:
+      context: ./services/image-service
+    ports:
+      - "127.0.0.1:8092:8092"
+    environment:
+      IMAGE_SERVICE_ADDR: 0.0.0.0:8092
+      IMAGE_SERVICE_DATA_DIR: /data
+      IMAGE_SERVICE_ENVIRONMENT: ${IMAGE_SERVICE_ENVIRONMENT:-development}
+      IMAGE_SERVICE_JOB_STORE: postgres
+      DATABASE_URL: ${IMAGE_SERVICE_DATABASE_URL:-postgresql://postgres:postgres@db:5432/multisell?sslmode=disable}
+      IMAGE_SERVICE_SHARED_SECRET: ${IMAGE_SERVICE_SHARED_SECRET:?set IMAGE_SERVICE_SHARED_SECRET}
+      IMAGE_SERVICE_EXECUTION_TOKEN_SECRET: ${IMAGE_SERVICE_EXECUTION_TOKEN_SECRET:?set IMAGE_SERVICE_EXECUTION_TOKEN_SECRET}
+    volumes:
+      - image_service_data:/data
+    depends_on:
+      image-service-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8092/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  image-service-migrate:
+    build:
+      context: ./services/image-service
+    environment:
+      DATABASE_URL: ${IMAGE_SERVICE_DATABASE_URL:-postgresql://postgres:postgres@db:5432/multisell?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["image-service-migrate"]
+    restart: "no"
 
   frontend:
     image: node:22-alpine
@@ -109,3 +149,4 @@ volumes:
   go_build_cache:
   frontend_next_node_modules:
   db_backups:
+  image_service_data:

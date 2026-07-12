@@ -369,12 +369,12 @@
       - ACoS > 目标：降价或暂停
       - 高花费零转化词：自动加入Negative Keywords
       - 新品/低数据量词：采用保守出价策略（Exploration Mode）
-   
+
    b) 预算分配：
       - 高ROAS Campaign→增加预算
       - 低ROAS Campaign→缩减或暂停
       - 大促期间自动提升预算上限
-   
+
    c) 关键词管理：
       - Search Term Report分析→自动提取高转化搜索词→加入精确匹配
       - 自动标记低效搜索词→加入否定关键词

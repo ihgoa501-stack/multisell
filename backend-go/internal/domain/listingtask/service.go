@@ -96,20 +96,20 @@ func (s *Service) GetByID(id int64) (*ListingTask, []ListingTaskItem, error) {
 // Create inserts a new listing task.
 func (s *Service) Create(in *CreateTaskInput) (*ListingTask, error) {
 	t := ListingTask{
-		ProductID:            in.ProductID,
-		PlatformID:           in.PlatformID,
-		SkuID:                in.SkuID,
-		ProductListingID:     in.ProductListingID,
-		SourceType:           in.SourceType,
-		SourceItemKey:        in.SourceItemKey,
-		Status:               in.Status,
-		MissingRequirements:  in.MissingRequirements,
-		DecisionSnapshot:     in.DecisionSnapshot,
-		TargetSalePrice:      in.TargetSalePrice,
-		TargetProfitMargin:   in.TargetProfitMargin,
-		DestinationCountry:   in.DestinationCountry,
-		ApprovalID:           in.ApprovalID,
-		CreatedBy:            in.CreatedBy,
+		ProductID:           in.ProductID,
+		PlatformID:          in.PlatformID,
+		SkuID:               in.SkuID,
+		ProductListingID:    in.ProductListingID,
+		SourceType:          in.SourceType,
+		SourceItemKey:       in.SourceItemKey,
+		Status:              in.Status,
+		MissingRequirements: in.MissingRequirements,
+		DecisionSnapshot:    in.DecisionSnapshot,
+		TargetSalePrice:     in.TargetSalePrice,
+		TargetProfitMargin:  in.TargetProfitMargin,
+		DestinationCountry:  in.DestinationCountry,
+		ApprovalID:          in.ApprovalID,
+		CreatedBy:           in.CreatedBy,
 	}
 	if t.SourceType == "" {
 		t.SourceType = "decision"
@@ -515,6 +515,9 @@ func (s *Service) validateExecutePreconditions(task *ListingTask) error {
 	if approvalRec.EntityID != task.ID {
 		return fmt.Errorf("approval %d entity_id is %d, expected listing task %d", *task.ApprovalID, approvalRec.EntityID, task.ID)
 	}
+	if approvalRec.ExpiresAt != nil && !approvalRec.ExpiresAt.After(time.Now()) {
+		return fmt.Errorf("approval %d for listing task %d is expired", *task.ApprovalID, task.ID)
+	}
 	// 7. Execution mode — check DecisionSnapshot for mode flag
 	if len(task.DecisionSnapshot) > 0 {
 		var snapshot struct {
@@ -550,12 +553,12 @@ func (s *Service) writeAudit(action, result, resourceID, operator, content strin
 		return
 	}
 	input := &operationlog.StructuredLogInput{
-		Module:     "listing_task",
-		Action:     action,
-		ResourceID: resourceID,
-		Operator:   operator,
-		Content:    content,
-		Result:     result,
+		Module:      "listing_task",
+		Action:      action,
+		ResourceID:  resourceID,
+		Operator:    operator,
+		Content:     content,
+		Result:      result,
 		TriggerType: "system",
 	}
 	if task != nil {
@@ -663,7 +666,8 @@ func (s *Service) ReviewTask(taskID int64) (*TaskReview, error) {
 //  4. ApprovalID must be set
 //  5. Approval record exists, approved, EntityType=listing_task, EntityID=task.ID
 //
-// After passing the gate, it runs Prism (if enabled) followed by platform publishing.
+// Legacy production execution is frozen until a controlled publish attempt can
+// prove an exact image release attestation. Mock modes never perform external writes.
 func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, error) {
 	var task ListingTask
 	if err := s.db.First(&task, taskID).Error; err != nil {
@@ -679,15 +683,22 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 	if err := s.validateExecutePreconditions(&task); err != nil {
 		return nil, err
 	}
+	if task.ExecutionMode >= ExecutionModeApprovalRequired {
+		s.writeAudit("listing_task.execute", "blocked", fmt.Sprintf("%d", taskID), operator,
+			ImageReleaseAttestationRequiredMessage, &task)
+		return nil, ErrImageReleaseAttestationRequired
+	}
 
-	// Dry-run mode: validate and audit only, skip Prism and platform publish.
-	if task.DryRun {
-		s.logger.Info("listing task dry-run: skipping Prism and platform publish",
+	// Dry-run and sandbox are explicit mock executions. They do not call Prism,
+	// a platform adapter, or any other external writer.
+	if task.DryRun || task.ExecutionMode <= ExecutionModeSandbox {
+		modeName := ExecutionModeNames[task.ExecutionMode]
+		s.logger.Info("listing task mock execution: skipping Prism and platform publish",
 			zap.Int64("task_id", task.ID),
+			zap.String("mode", modeName),
 		)
-		// Audit: dry-run execution
-		s.writeAudit("listing_task.execute", "dry_run", fmt.Sprintf("%d", taskID), operator,
-			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d dry_run=true", task.ID, task.ProductID, task.PlatformID),
+		s.writeAudit("listing_task.execute", "mock", fmt.Sprintf("%d", taskID), operator,
+			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d mock=true external_write=false mode=%s", task.ID, task.ProductID, task.PlatformID, modeName),
 			&task)
 
 		err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -697,7 +708,10 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 			}
 			now := time.Now()
 			for i := range items {
-				result := map[string]interface{}{"dry_run": true, "executed_at": now}
+				result := map[string]interface{}{
+					"mock": true, "external_write": false, "execution_mode": modeName,
+					"dry_run": task.ExecutionMode == ExecutionModeDryRun, "executed_at": now,
+				}
 				resultBytes, _ := json.Marshal(result)
 				if err := tx.Model(&items[i]).Updates(map[string]interface{}{
 					"status":      "completed",
@@ -715,12 +729,11 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		if err := s.db.First(&task, taskID).Error; err != nil {
 			return nil, err
 		}
-		s.writeAudit("listing_task.execute", "success", fmt.Sprintf("%d", taskID), operator,
-			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d dry_run=true", task.ID, task.ProductID, task.PlatformID),
+		s.writeAudit("listing_task.execute", "mock", fmt.Sprintf("%d", taskID), operator,
+			fmt.Sprintf("listing_task_id=%d product_id=%d platform_id=%d mock=true external_write=false mode=%s", task.ID, task.ProductID, task.PlatformID, modeName),
 			&task)
 		return &task, nil
 	}
-
 
 	oldStatus := task.Status
 

@@ -1,4 +1,47 @@
-# LingMirror 数据迁移 Runbook
+# LingMirror 数据库迁移 Runbook
+
+> 当前活跃栈：Go/Gin + PostgreSQL。历史 Python 数据迁移说明仅适用于明确存在 `legacy_*` 表的专项迁移，不是当前生产升级的默认路径。
+
+## 当前强制门
+
+提交前必须在专用空库执行：
+
+```bash
+DATABASE_URL='postgresql://.../lingmirror_migration_verify?...' \
+  ./scripts/verify_migrations_full.sh
+```
+
+脚本只允许数据库名以 `lingmirror_migration_verify` 开头，并验证：
+
+1. 每个 up 都有 down；
+2. 没有重复版本；
+3. 空库全量 up；
+4. 最新 down/up；
+5. 全量 down，仅允许迁移工具自己的 `schema_migrations` 留存；
+6. 再次全量 up 并达到最新版本。
+
+生产迁移前必须完成备份及隔离恢复验证。migrate 返回 dirty、版本异常或 SQL 失败时，应用不得接收流量。
+
+## Dirty 数据库处理
+
+禁止直接执行：
+
+```text
+migrate force <猜测版本>
+```
+
+`force` 只改迁移账本，不创建缺失表、列、索引或约束。处理步骤必须是：
+
+1. 对当前库做 custom archive 和隔离恢复；
+2. 在隔离副本读取 `schema_migrations`；
+3. 与同提交全新迁移库比较表、列、索引和约束；
+4. 在隔离副本验证 forward repair，或建立最新空库并进行显式数据映射迁移；
+5. 核对关键表行数、外键、Owner 登录和关键读取；
+6. 形成独立方案、回滚点和 Owner 批准后，才允许处理正式库。
+
+2026-07-12 本地只读审计发现：`multisell` 为 `version=1, dirty=true`，当前 107 张 public 表，而全新 version 91 参考库有 176 张；隔离副本 `force 1 → up` 在 migration 2 因既有索引冲突而安全失败。因此当前本地库不得 force 或直接补跑，正式修复状态为 `unknown / requires_owner_approval`。
+
+## 历史 legacy 数据迁移
 
 > 适用于：从旧 Python/FastAPI + PostgreSQL 栈迁移到新 Go/Gin + PostgreSQL 栈
 

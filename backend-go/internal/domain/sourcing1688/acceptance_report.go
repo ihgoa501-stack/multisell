@@ -164,29 +164,32 @@ func (s *Service) BuildAcceptanceReport(ctx context.Context, sourceID, ownerID i
 		var dc demandCaseRow
 		var exp experimentRow
 		market := &report.Items[0]
-		if source.DemandCaseID == nil || source.ExperimentID == nil {
-			market.unknown("尚未关联已批准市场与实验", "缺少 demand_case_id 或 experiment_id")
+		if source.DemandCaseID == nil {
+			market.unknown("尚未关联已批准市场", "缺少 demand_case_id")
 		} else if err := tx.First(&dc, *source.DemandCaseID).Error; err != nil {
 			return err
-		} else if err := tx.Where("experiment_id = ?", *source.ExperimentID).First(&exp).Error; err != nil {
-			return err
 		} else {
-			var gateCount, demandLinkCount, sourceLinkCount int64
-			if err := tx.Model(&gateRow{}).Where("experiment_id = ? AND stage = 'opportunity' AND result = 'pass'", *source.ExperimentID).Count(&gateCount).Error; err != nil {
-				return err
+			market.Evidence = append(market.Evidence, evidence("demand_case", dc.ID, "actual", dc.UpdatedAt))
+			// Experiment is a trace-only legacy dossier. A missing dossier must not
+			// override a frozen Owner product-opportunity decision.
+			if source.ExperimentID != nil {
+				if err := tx.Where("experiment_id = ?", *source.ExperimentID).First(&exp).Error; err == nil {
+					market.Evidence = append(market.Evidence, evidence("experiment_trace", exp.ExperimentID, "actual", time.Time{}))
+				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
 			}
-			if err := tx.Model(&objectLinkRow{}).Where("experiment_id = ? AND object_type = 'demand_case' AND object_id = ?", *source.ExperimentID, strconv.FormatInt(*source.DemandCaseID, 10)).Count(&demandLinkCount).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(&objectLinkRow{}).Where("experiment_id = ? AND object_type = 'sourcing_1688' AND object_id = ?", *source.ExperimentID, strconv.FormatInt(source.ID, 10)).Count(&sourceLinkCount).Error; err != nil {
-				return err
-			}
-			market.Evidence = append(market.Evidence, evidence("demand_case", dc.ID, "actual", dc.UpdatedAt), evidence("experiment", exp.ExperimentID, "actual", time.Time{}), evidence("opportunity_gate", exp.ExperimentID, "actual", time.Time{}))
-			validStage := exp.Stage == "product" || exp.Stage == "supply" || exp.Stage == "channel"
-			if strings.TrimSpace(dc.Region) == "" || strings.TrimSpace(dc.Consumer) == "" || strings.TrimSpace(dc.SalesChannel) == "" || strings.TrimSpace(dc.TargetLocale) == "" || dc.Status != "experiment_ready" || dc.OwnerID != ownerID || exp.OwnerID != ownerID || exp.Status != "active" || !validStage || gateCount != 1 || demandLinkCount != 1 || sourceLinkCount != 1 {
-				market.block("市场 tuple、Owner、实验或机会闸门不完整", "必须同时满足国家/地区、目标消费者、销售渠道、experiment_ready、active experiment 和 opportunity pass")
+			if strings.TrimSpace(dc.Region) == "" || strings.TrimSpace(dc.Consumer) == "" || strings.TrimSpace(dc.SalesChannel) == "" || strings.TrimSpace(dc.TargetLocale) == "" || dc.OwnerID != ownerID {
+				market.block("市场 tuple 或 Owner 不完整", "必须同时满足国家/地区、目标消费者、销售渠道、语言和 Owner 归属")
+			} else if authorityErr := requireFrozenProductOpportunityAuthority(tx, &sourcingLifecycleRow{ID: source.ID, DemandCaseID: source.DemandCaseID, ExperimentID: source.ExperimentID}, ownerID); authorityErr != nil {
+				market.block("商品机会授权未通过", authorityErr.Error())
 			} else {
-				market.pass("已持久化国家/地区 × 目标消费者 × 销售渠道，并通过同一 Owner 的机会闸门")
+				var link Sourcing1688TaskLink
+				if err := tx.Where("sourcing_product_id = ? AND owner_id = ? AND is_primary = ? AND authority_kind = ?", source.ID, ownerID, true, "product_opportunity").First(&link).Error; err != nil {
+					return err
+				}
+				market.Evidence = append(market.Evidence, evidence("product_opportunity", *link.ProductOpportunityID, "actual", time.Time{}), evidence("frozen_opportunity_approval", *link.OpportunityDecisionID, "actual", link.CreatedAt))
+				market.pass("已绑定 Owner 选定市场及冻结的商品机会批准；实验仅保留为追溯")
 			}
 		}
 
@@ -323,6 +326,23 @@ func (s *Service) BuildAcceptanceReport(ctx context.Context, sourceID, ownerID i
 				ok = false
 				problems = append(problems, "缺少供应商业务身份")
 			}
+			if source.SupplierID == nil {
+				ok = false
+				problems = append(problems, "缺少权威 supplier_id")
+			} else {
+				var supplierIdentity authoritativeSupplierRow
+				if err := tx.Where("id = ? AND owner_id = ? AND source_system = ? AND external_business_id = ?", *source.SupplierID, ownerID, sourcingSupplierSystem, source.SupplierBusinessID).First(&supplierIdentity).Error; err != nil {
+					ok = false
+					problems = append(problems, "权威供应商身份与来源不一致")
+				} else {
+					supplier.Evidence = append(supplier.Evidence, evidence("supplier", supplierIdentity.ID, supplierIdentity.TruthStatus, time.Time{}))
+				}
+				var relationCount int64
+				if err := tx.Model(&authoritativeProductSupplierRow{}).Where("owner_id = ? AND sourcing_product_id = ? AND source_snapshot_id = ? AND product_id = ? AND supplier_id = ?", ownerID, source.ID, draft.SnapshotID, product.ID, *source.SupplierID).Count(&relationCount).Error; err != nil || relationCount != 1 {
+					ok = false
+					problems = append(problems, "商品—供应商权威关系缺失或不一致")
+				}
+			}
 			if ok {
 				supplier.pass("供应商身份、经营年限、成交、MOQ、混批、交期、样品和退换货 8 项均有来源证据")
 			} else {
@@ -349,46 +369,66 @@ func (s *Service) BuildAcceptanceReport(ctx context.Context, sourceID, ownerID i
 					skuProblems = append(skuProblems, "供应商/内部/渠道 SKU 或颜色、尺寸、材质、包装映射不完整")
 				}
 			}
+			var canonicalMappings []SourcingSKUMapping
+			if err := tx.Where("owner_id = ? AND sourcing_product_id = ? AND product_id = ? AND listing_id = ?", ownerID, source.ID, product.ID, listing.ID).Find(&canonicalMappings).Error; err != nil {
+				return err
+			}
+			if len(canonicalMappings) != len(skus) {
+				skuProblems = append(skuProblems, "规范化三段 SKU 权威映射数量不一致")
+			}
+			for _, mapping := range canonicalMappings {
+				skuItem.Evidence = append(skuItem.Evidence, evidence("canonical_sku_mapping", mapping.ID, "actual", mapping.CreatedAt))
+			}
 			if len(skuProblems) == 0 {
 				skuItem.pass("供应商 SKU、内部 SKU、渠道 SKU 及四项变体属性形成完整持久化映射")
 			} else {
 				skuItem.block("SKU/变体映射未通过", skuProblems...)
 			}
 
-			var costs []costRow
-			if err := tx.Where("product_id = ? AND experiment_id = ?", product.ID, draft.ExperimentID).Find(&costs).Error; err != nil {
-				return err
-			}
 			costItem := &report.Items[5]
-			costResult := ValidateCosts(payload.ValidationInput.Costs)
-			costProblems := validationProblems(costResult.ValidationResult)
-			if len(costs) != len(requiredCostTypes) {
-				costProblems = append(costProblems, "持久化费用不是完整 10 项")
-			}
-			if len(payload.ValidationInput.Costs.ExchangeRates) == 0 {
-				costProblems = append(costProblems, "缺少独立汇率证据")
-			}
-			persistedCost := map[string]costRow{}
-			for _, cost := range costs {
-				persistedCost[cost.CostType] = cost
-				costItem.Evidence = append(costItem.Evidence, evidence("cost:"+cost.CostType, cost.ID, cost.TruthStatus, cost.ObservedAt))
-			}
-			for _, line := range payload.ValidationInput.Costs.Costs {
-				row, ok := persistedCost[line.Type]
-				if !ok || row.Amount != line.Amount || !strings.EqualFold(row.Currency, line.Currency) || row.TruthStatus != line.TruthStatus || row.SourceURI != line.SourceURI || !row.ObservedAt.Equal(line.ObservedAt) {
-					costProblems = append(costProblems, "冻结成本与持久化成本不一致: "+line.Type)
+			costProblems := []string{}
+			if draft.TaskLinkID == nil || source.SnapshotID == nil {
+				costProblems = append(costProblems, "草稿缺少任务或来源快照权威")
+			} else {
+				var versions []SourcingCostVersion
+				if err := tx.Where("owner_id = ? AND sourcing_product_id = ? AND task_link_id = ? AND source_snapshot_id = ?", ownerID, source.ID, *draft.TaskLinkID, *source.SnapshotID).Order("sku_mapping_id, version DESC").Find(&versions).Error; err != nil {
+					return err
 				}
-			}
-			for idx, rate := range payload.ValidationInput.Costs.ExchangeRates {
-				costItem.Evidence = append(costItem.Evidence, evidence("exchange_rate", idx+1, rate.TruthStatus, rate.ObservedAt))
-				if rate.Rate <= 0 || !usableTruthStatus(rate.TruthStatus) || rate.SourceURI == "" || rate.ObservedAt.IsZero() {
-					costProblems = append(costProblems, "汇率证据无效")
+				latest := map[int64]SourcingCostVersion{}
+				for _, version := range versions {
+					if _, exists := latest[version.SKUMappingID]; !exists {
+						latest[version.SKUMappingID] = version
+					}
+				}
+				if len(latest) != len(canonicalMappings) {
+					costProblems = append(costProblems, "每个规范 SKU 必须有一个当前精确成本版本")
+				}
+				for _, mapping := range canonicalMappings {
+					version, exists := latest[mapping.ID]
+					if !exists || version.ProductOpportunityID != mapping.ProductOpportunityID || version.SourceSnapshotID != mapping.SnapshotID || version.TargetCurrency == "" || version.ContentHash == "" {
+						costProblems = append(costProblems, "成本版本与冻结 SKU/机会/快照权威不一致")
+						continue
+					}
+					var lines []SourcingCostLine
+					if err := tx.Where("cost_version_id = ?", version.ID).Find(&lines).Error; err != nil {
+						return err
+					}
+					seen, total := map[string]bool{}, int64(0)
+					for _, line := range lines {
+						seen[line.CostType] = true
+						total += line.NormalizedAmountMinor
+						costItem.Evidence = append(costItem.Evidence, evidence("precise_cost:"+line.CostType, line.ID, line.TruthStatus, line.ObservedAt))
+					}
+					if len(lines) != len(requiredCostTypes) || len(seen) != len(requiredCostTypes) || total != version.TotalMinor {
+						costProblems = append(costProblems, "精确成本版本必须包含唯一 10 项且汇总可复算")
+					}
+					costItem.Evidence = append(costItem.Evidence, evidence("precise_cost_version", version.ID, "actual", version.CreatedAt))
 				}
 			}
 			if len(costProblems) == 0 {
-				costItem.pass("采购至退货损失 10 项成本、独立汇率和收入证据均可复算")
+				costItem.pass("每个规范 SKU 均绑定不可变的 10 项最小货币单位成本版本，跨币种汇率可复算")
 			} else {
-				costItem.block("完整成本证据未通过", costProblems...)
+				costItem.block("精确成本权威未通过；旧浮点成本仅作历史兼容", costProblems...)
 			}
 
 			var media []mediaRow
@@ -441,12 +481,26 @@ func (s *Service) BuildAcceptanceReport(ctx context.Context, sourceID, ownerID i
 			}
 
 			compliance := &report.Items[8]
-			ok, refs, problems = validChecks(payload.ComplianceChecks, []string{"brand_ip", "patent", "certification", "dangerous_goods", "material", "labeling_instructions"}, true)
-			compliance.Evidence = append(compliance.Evidence, refs...)
-			if ok {
-				compliance.pass("品牌、专利、认证、危险品、材质、标签/说明书 6 项均为 actual 通过")
+			requiredCompliance := []string{"brand_ip", "patent", "certification", "dangerous_goods", "material", "labeling_instructions"}
+			complianceProblems := []string{}
+			if draft.TaskLinkID == nil {
+				complianceProblems = append(complianceProblems, "草稿缺少任务权威")
 			} else {
-				compliance.block("合规 6 项 actual 证据未通过", problems...)
+				var complianceRows []SourcingComplianceEvidence
+				if err := tx.Where("owner_id = ? AND sourcing_product_id = ? AND task_link_id = ?", ownerID, source.ID, *draft.TaskLinkID).Find(&complianceRows).Error; err != nil {
+					return err
+				}
+				for _, row := range complianceRows {
+					compliance.Evidence = append(compliance.Evidence, evidence("compliance:"+row.RequirementCode, row.ID, row.TruthStatus, row.ObservedAt))
+				}
+				if err := requireCurrentCompliance(tx, source.ID, *draft.TaskLinkID, ownerID, requiredCompliance, report.GeneratedAt); err != nil {
+					complianceProblems = append(complianceProblems, err.Error())
+				}
+			}
+			if len(complianceProblems) == 0 {
+				compliance.pass("品牌、专利、认证、危险品、材质、标签/说明书 6 项均有当前、未撤销、Owner 批准的 actual 证据")
+			} else {
+				compliance.block("独立合规证据未通过", complianceProblems...)
 			}
 
 			localization := &report.Items[9]
@@ -501,10 +555,17 @@ func (s *Service) BuildAcceptanceReport(ctx context.Context, sourceID, ownerID i
 			}
 			lifecycle.Evidence = append(lifecycle.Evidence, evidence("draft_approval", req.ID, "actual", req.UpdatedAt))
 			contentErr := validateDraftApprovalContent(tx, &draft, &req)
+			var task Sourcing1688TaskLink
+			sampleGateErr := fmt.Errorf("%w: draft task identity is missing", ErrWorkflowGate)
+			if draft.TaskLinkID != nil && tx.First(&task, *draft.TaskLinkID).Error == nil {
+				sampleGateErr = requireSampleApprovalGate(tx, &task)
+			}
 			if req.RequestType != DraftApprovalRequestType || req.TargetType != DraftApprovalTargetType || req.TargetID != draft.ID || req.Status != approval.StatusApproved || req.ReviewerUserID == nil || *req.ReviewerUserID != ownerID || listing.Status != "draft" || contentErr != nil || auditCount == 0 {
 				lifecycle.block("草稿审批对象、Owner 或内部草稿状态不一致", "批准不得越级且不得把 listing 变为已发布")
+			} else if sampleGateErr != nil {
+				lifecycle.block("样品门禁未满足", sampleGateErr.Error())
 			} else {
-				lifecycle.pass("已按状态机完成 Owner 草稿审批，批准后仍保持内部 draft")
+				lifecycle.pass("已满足样品/豁免门禁并完成 Owner 草稿审批，批准后仍保持内部 draft")
 			}
 		}
 

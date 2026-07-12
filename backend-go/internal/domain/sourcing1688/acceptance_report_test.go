@@ -26,8 +26,10 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 	db := dbtest.NewDB(t,
 		&Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{},
 		&ImageProcessingRecord{}, &CaptureAttempt{}, &demandCaseRow{}, &experimentRow{}, &gateRow{},
-		&objectLinkRow{}, &platformRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{},
+		&objectLinkRow{}, &platformRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &authoritativeSupplierRow{}, &authoritativeProductSupplierRow{}, &SourcingSKUMapping{},
 		&listingRow{}, &draftRow{}, &approval.ApprovalRequest{}, &operationlog.OperationLog{}, &PublishAttempt{},
+		&Sourcing1688TaskLink{}, &sourcingOpportunityRow{}, &sourcingOpportunityDecisionRow{}, &sourcingMarketDecisionRow{},
+		&SourcingSample{}, &SourcingSampleEvent{}, &SourcingCostVersion{}, &SourcingCostLine{}, &SourcingComplianceEvidence{},
 	)
 	if err := db.Exec(`CREATE TRIGGER test_acceptance_apply_sourcing_approval
 		AFTER UPDATE OF status ON approval_request
@@ -70,6 +72,7 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
 	}
+	seedFrozenOpportunityAuthority(t, db, source.ID, 7, 42, "EXP-REAL-1", "Ozon")
 	if _, err := svc.Review(source.ID, &ReviewInput{ReviewedBy: 42, Notes: "Owner 对照真实页面复核"}); err != nil {
 		t.Fatalf("Review: %v", err)
 	}
@@ -90,6 +93,36 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
+	var task Sourcing1688TaskLink
+	if err := db.Where("sourcing_product_id = ? AND owner_id = ? AND is_primary = ?", source.ID, int64(42), true).First(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	var mappings []SourcingSKUMapping
+	if err := db.Where("sourcing_product_id = ? AND task_link_id = ?", source.ID, task.ID).Find(&mappings).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, mapping := range mappings {
+		lines := make([]CreateSourcingCostLineInput, 0, len(requiredCostTypes))
+		for _, costType := range requiredCostTypes {
+			lines = append(lines, CreateSourcingCostLineInput{CostType: costType, AmountMinor: 100, Currency: "RUB", NormalizedAmountMinor: 100, TruthStatus: "actual", SourceURI: "evidence://cost/" + costType, ObservedAt: now})
+		}
+		if _, err := svc.CreateSourcingCostVersion(42, source.ID, &CreateSourcingCostVersionInput{TaskLinkID: task.ID, SourceSnapshotID: *source.SnapshotID, SKUMappingID: mapping.ID, TargetCurrency: "RUB", Lines: lines}); err != nil {
+			t.Fatalf("CreateSourcingCostVersion: %v", err)
+		}
+	}
+	var converted Sourcing1688Product
+	if err := db.First(&converted, source.ID).Error; err != nil || converted.ProductID == nil {
+		t.Fatalf("converted source: %v", err)
+	}
+	for _, code := range []string{"brand_ip", "patent", "certification", "dangerous_goods", "material", "labeling_instructions"} {
+		row, err := svc.CreateComplianceEvidence(source.ID, task.ID, &CreateComplianceEvidenceInput{OwnerID: 42, ProductID: *converted.ProductID, CountryCode: "RU", ChannelCode: "Ozon", RequirementCode: code, RequirementText: "已核验 " + code, EvidenceSource: "evidence://compliance/" + code, TruthStatus: "actual", Scope: "product", ObservedAt: now})
+		if err != nil {
+			t.Fatalf("CreateComplianceEvidence: %v", err)
+		}
+		if _, err := svc.ReviewComplianceEvidence(source.ID, task.ID, row.ID, &ReviewComplianceEvidenceInput{OwnerID: 42, Decision: ComplianceReviewApproved, Notes: "Owner 复核"}); err != nil {
+			t.Fatalf("ReviewComplianceEvidence: %v", err)
+		}
+	}
 	submitted, err := svc.SubmitDraftApproval(source.ID, &DraftApprovalSubmissionInput{RequesterID: 42, Reason: "批准内部草稿"})
 	if err != nil {
 		t.Fatalf("SubmitDraftApproval: %v", err)
@@ -98,6 +131,22 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 		t.Fatalf("DecideDraftApproval: %v", err)
 	}
 	return svc, db, source.ID
+}
+
+func TestAcceptanceReportBlocksLegacyExperimentOnlyAuthority(t *testing.T) {
+	svc, db, sourceID := newAcceptanceTestService(t)
+	if err := db.Model(&Sourcing1688TaskLink{}).Where("sourcing_product_id = ?", sourceID).Updates(map[string]any{
+		"authority_kind": "legacy_experiment", "product_opportunity_id": nil, "opportunity_decision_id": nil,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	report, err := svc.BuildAcceptanceReport(context.Background(), sourceID, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Ready || report.Items[0].Status != AcceptanceBlocked || !strings.Contains(strings.Join(report.Items[0].Blockers, " "), "legacy experiment trace cannot authorize") {
+		t.Fatalf("legacy authority must block report: ready=%v market=%#v", report.Ready, report.Items[0])
+	}
 }
 
 // This synthetic fixture verifies deterministic report logic only. It is not

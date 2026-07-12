@@ -165,6 +165,10 @@ func (s *Service) ReadOwnerView(ctx context.Context, sourceID, ownerID int64) (*
 		if experimentCount != 1 {
 			return fmt.Errorf("%w: source experiment does not belong to authenticated Owner", ErrWorkflowGate)
 		}
+		demandCaseID, experimentID := source.DemandCaseID, source.ExperimentID
+		if err := requireFrozenProductOpportunityAuthority(tx, &sourcingLifecycleRow{ID: source.ID, DemandCaseID: &demandCaseID, ExperimentID: &experimentID}, ownerID); err != nil {
+			return err
+		}
 
 		var snapshotRow ownerSnapshotRow
 		if err := tx.Table("sourcing_1688_snapshot").
@@ -179,6 +183,7 @@ func (s *Service) ReadOwnerView(ctx context.Context, sourceID, ownerID int64) (*
 		snapshot.SourceReference = safeSourceReference(snapshotRow.SourceURL)
 		view := &OwnerView{Source: source, Snapshot: snapshot, SKUs: []OwnerSKUView{}, Media: []OwnerMediaView{}, Costs: []OwnerCostView{}, Limitations: []string{
 			"只读视图：不能发布、采购、批准草稿或改变经营状态",
+			"商品机会批准是冻结授权；实验编号只用于追溯，不能单独授权货源流程",
 			"原始采集载荷与平台发布载荷不对小Q开放",
 			"价格、成本、权利与合规状态保持其来源真实性，不能视为外部已核验事实",
 		}}

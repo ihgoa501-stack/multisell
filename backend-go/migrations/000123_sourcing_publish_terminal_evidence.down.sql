@@ -1,0 +1,4 @@
+DROP TRIGGER IF EXISTS trg_sourcing_publish_terminal_evidence_no_delete ON sourcing_publish_terminal_evidence;
+DROP TRIGGER IF EXISTS trg_sourcing_publish_terminal_evidence_no_update ON sourcing_publish_terminal_evidence;
+DROP FUNCTION IF EXISTS reject_sourcing_publish_terminal_evidence_mutation();
+DROP TABLE IF EXISTS sourcing_publish_terminal_evidence;

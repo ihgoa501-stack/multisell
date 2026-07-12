@@ -57,16 +57,15 @@ func (p *MigrationParser) ParseAll() ([]TableDef, error) {
 	return result, nil
 }
 
-// known UUID tables that exist in the database but may not appear directly
-// in migration files — skip from "missing" lists.
-// var knownSystemTables = map[string]bool{
-// 	"schema_migrations": true,
-// 	"gorm_migrations":   true,
-// }
+// knownMigrationLedgerTables are owned by migration tools rather than an
+// application migration and must not be reported as extra application schema.
+var knownMigrationLedgerTables = map[string]bool{
+	"schema_migrations": true,
+}
 
 // createTableRE matches CREATE TABLE [IF NOT EXISTS] tablename (
 var createTableRE = regexp.MustCompile(
-	`(?i)\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z_][a-zA-Z0-9_]*)`,
+	`(?i)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?`,
 )
 
 // parseSQL extracts CREATE TABLE definitions from a SQL string.

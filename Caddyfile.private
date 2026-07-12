@@ -1,0 +1,36 @@
+# Owner-only HTTP entry point. This port binds only to server loopback and is
+# reached through an encrypted SSH tunnel; it must never be published publicly.
+http://:8088 {
+    request_body {
+        max_size 32MB
+    }
+
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws:; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+    }
+
+    handle /metrics {
+        respond "Not Found" 404
+    }
+
+    handle /ws {
+        reverse_proxy backend:8080
+    }
+
+    handle /api/* {
+        reverse_proxy backend:8080
+    }
+
+    handle {
+        reverse_proxy frontend:3000
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

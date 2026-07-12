@@ -15,14 +15,25 @@ type testUser struct {
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
+func TestDetectLiveIgnoresMigrationLedgerTable(t *testing.T) {
+	d := &DriftDetector{}
+	report := d.detect(map[string][]columnInfo{
+		"application_table": {{ColumnName: "id", DataType: "bigint"}},
+		"schema_migrations": {{ColumnName: "version", DataType: "bigint"}},
+	}, []TableDef{{Name: "application_table", Columns: []ColumnDef{{Name: "id", Type: "bigint"}}}})
+	if len(report.ExtraTables) != 0 {
+		t.Fatalf("migration ledger reported as extra: %+v", report.ExtraTables)
+	}
+}
+
 func (testUser) TableName() string { return "test_users" }
 
 type testProduct struct {
-	ID       int64   `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	Name     string  `gorm:"column:name;type:varchar(200);not null" json:"name"`
-	Price    float64 `gorm:"column:price;type:numeric(10,2);not null;default:0" json:"price"`
-	SkuID    int64   `gorm:"column:sku_id;type:bigint;not null" json:"sku_id"`
-	Status   string  `gorm:"column:status;type:varchar(20);default:active" json:"status"`
+	ID       int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	Name     string    `gorm:"column:name;type:varchar(200);not null" json:"name"`
+	Price    float64   `gorm:"column:price;type:numeric(10,2);not null;default:0" json:"price"`
+	SkuID    int64     `gorm:"column:sku_id;type:bigint;not null" json:"sku_id"`
+	Status   string    `gorm:"column:status;type:varchar(20);default:active" json:"status"`
 	CreateAt time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 

@@ -15,7 +15,7 @@ func newTestService(t *testing.T) *Service {
 	return NewService(db, zap.NewNop())
 }
 
-func TestEvaluateRequiresEveryMarketDimensionAndIndependentCounterevidence(t *testing.T) {
+func TestEvaluateRejectsUnboundHandwrittenEvidence(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
 	c := &DemandCase{OwnerID: 7, Region: "DE", Consumer: "城市养猫家庭", NeedScenario: "短途出行饮水", SalesChannel: "独立站", TargetLocale: "de-DE"}
@@ -46,8 +46,8 @@ func TestEvaluateRequiresEveryMarketDimensionAndIndependentCounterevidence(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.Status != VerdictExperimentReady {
-		t.Fatalf("complete evidence got %q blockers=%v", v.Status, v.Blockers)
+	if v.Status != VerdictEvidenceMissing {
+		t.Fatalf("unbound evidence must not pass, got %q blockers=%v", v.Status, v.Blockers)
 	}
 }
 

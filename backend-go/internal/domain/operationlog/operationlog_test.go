@@ -1,13 +1,36 @@
 package operationlog
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 )
+
+func TestService_CreateWithContextHonorsCancellation(t *testing.T) {
+	t.Parallel()
+	db := dbtest.NewDB(t, &OperationLog{})
+	svc := NewService(db, dbtest.NewLogger(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := svc.CreateWithContext(ctx, &OperationLog{Module: "audit", Action: "cancelled"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("CreateWithContext error = %v, want context.Canceled", err)
+	}
+
+	var count int64
+	if err := db.Model(&OperationLog{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("cancelled audit write persisted %d rows", count)
+	}
+}
 
 func int64Ptr(v int64) *int64 { return &v }
 

@@ -29,7 +29,7 @@ func CORS(cfg *config.Config) gin.HandlerFunc {
 
 		c.Header("Access-Control-Allow-Origin", allowOrigin)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, X-Approval-ID, Idempotency-Key")
 		c.Header("Access-Control-Expose-Headers", "Content-Length, X-Request-ID")
 		c.Header("Access-Control-Max-Age", "86400")
 

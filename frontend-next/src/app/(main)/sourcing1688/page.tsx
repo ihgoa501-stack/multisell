@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, App as AntdApp, Button, Card, Checkbox, Col, Collapse, Descriptions, Divider, Drawer, Form, Image, Input, InputNumber,
-  Modal, Row, Select, Space, Table, Tag, Typography, Upload,
+  Modal, Popconfirm, Row, Select, Space, Table, Tag, Timeline, Typography, Upload,
 } from 'antd';
 import { DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, UploadOutlined } from '@ant-design/icons';
 import PageContainer from '@/components/ui/PageContainer';
@@ -21,11 +21,13 @@ function protectedContentURL(path: string) {
 
 type SourceRecord = {
   id: number;
+  owner_id: number;
   source_url: string;
   title?: string;
   price?: number;
   moq: number;
   supplier_name?: string;
+  supplier_id?: number;
   status: string;
   demand_case_id?: number;
   experiment_id?: string;
@@ -34,15 +36,124 @@ type SourceRecord = {
   reviewed_at?: string;
   review_notes?: string;
   product_id?: number;
-  lifecycle_status?: string;
+	lifecycle_status?: string;
+	field_statuses?: Record<string, string>;
+	observation_count?: number;
+	task_link_count?: number;
+	created_at: string;
+	updated_at: string;
+};
+
+type EligibleTask = {
+  experiment_id: string;
+  demand_case_id: number;
+  label: string;
+  region: string;
+  consumer: string;
+  need_scenario: string;
+  sales_channel: string;
+	product_opportunity_id: number;
+	opportunity_title: string;
+};
+
+type TaskLink = {
+  id: number;
+  experiment_id: string;
+  demand_case_id: number;
+  product_opportunity_id?: number;
+  opportunity_decision_id?: number;
+  status: string;
+  is_primary: boolean;
+  current_status: string;
+  current_blocker?: string;
+  workflow_status: string;
+  draft_id?: number;
+  workflow_updated_at?: string;
+  sample_policy?: 'required' | 'waived';
+  sample_waiver_reason?: string;
+  sample_waived_by?: number;
+  sample_waived_at?: string;
+  label: string;
   created_at: string;
 };
+
+export type SampleStatus = 'request' | 'approved_to_order' | 'ordered' | 'received' | 'evaluated' | 'accepted' | 'rejected';
+type SampleEvent = {
+  id: number;
+  from_status: string;
+  to_status: SampleStatus;
+  order_amount?: number;
+  currency?: string;
+  external_credential_uri?: string;
+  observed_at?: string;
+  truth_status: string;
+  note?: string;
+  created_at: string;
+};
+type Sample = {
+  id: number;
+  task_link_id: number;
+  product_opportunity_id: number;
+  opportunity_decision_id: number;
+  supplier_id: number;
+  snapshot_id: number;
+  supplier_sku?: string;
+  quantity: number;
+  status: SampleStatus;
+  order_amount?: number;
+  currency?: string;
+  external_credential_uri?: string;
+  observed_at?: string;
+  truth_status: string;
+  evaluation?: string;
+  created_at: string;
+};
+type SampleDetail = { sample: Sample; events: SampleEvent[] };
+
+const sampleStatusMeta: Record<SampleStatus, { label: string; color: string }> = {
+  request: { label: '样品申请', color: 'default' },
+  approved_to_order: { label: 'Owner已批准下单（尚未下单）', color: 'blue' },
+  ordered: { label: '已下单（actual凭证）', color: 'cyan' },
+  received: { label: '已收货（actual凭证）', color: 'geekblue' },
+  evaluated: { label: '已评估（actual凭证）', color: 'purple' },
+  accepted: { label: '样品通过', color: 'green' },
+  rejected: { label: '样品淘汰', color: 'red' },
+};
+
+export function sampleNextStatuses(status: SampleStatus): SampleStatus[] {
+  return ({
+    request: ['approved_to_order'],
+    approved_to_order: ['ordered'],
+    ordered: ['received'],
+    received: ['evaluated'],
+    evaluated: ['accepted', 'rejected'],
+    accepted: [],
+    rejected: [],
+  } satisfies Record<SampleStatus, SampleStatus[]>)[status];
+}
+
+export function buildSampleTransitionPayload(status: SampleStatus, values: Record<string, unknown>) {
+  const payload: Record<string, unknown> = { to_status: status, note: String(values.note ?? '').trim() };
+  if (status !== 'approved_to_order') {
+    payload.truth_status = 'actual';
+    payload.external_credential_uri = String(values.external_credential_uri ?? '').trim();
+    payload.observed_at = iso(values.observed_at);
+  }
+  if (status === 'ordered') {
+    payload.order_amount = values.order_amount;
+    payload.currency = String(values.currency ?? '').trim().toUpperCase();
+  }
+  return payload;
+}
 
 type DraftResult = {
   draft?: Record<string, unknown>;
   listing_draft?: Record<string, unknown>;
   product?: Record<string, unknown>;
   trace?: Record<string, unknown>;
+  editable_payload?: Record<string, unknown>;
+  editable_version?: number;
+  editable_sha256?: string;
   [key: string]: unknown;
 };
 
@@ -54,6 +165,7 @@ type PublishAttempt = {
   id: number;
   sourcing_product_id: number;
   draft_id: number;
+  task_link_id?: number;
   product_id: number;
   listing_id: number;
   platform_id: number;
@@ -90,12 +202,73 @@ export const publishStatusMeta: Record<string, { color: string; label: string; d
 };
 
 const statusLabel: Record<string, string> = {
-  collected: '待复核', pending_review: '待复核', reviewed: '已复核', rejected: '已淘汰',
-  converted: '已转产品', draft_created: '草稿已生成',
+	unverified_lead: '未验证线索', needs_review: '工作副本待复核', collected: '待复核', pending_review: '待复核', reviewed: '已复核', rejected: '已淘汰',
+	ready_for_draft: '可转草稿', converting: '正在转草稿', converted_to_draft: '已转草稿',
+	blocked: '已阻塞', conversion_failed: '转换失败', reconcile_required: '需要对账', archived: '已归档',
+	converted: '已转产品', draft_created: '草稿已生成',
 };
 const statusColor: Record<string, string> = {
-  collected: 'orange', pending_review: 'orange', reviewed: 'blue', rejected: 'red', converted: 'cyan', draft_created: 'green',
+	unverified_lead: 'default', needs_review: 'gold', collected: 'orange', pending_review: 'orange', reviewed: 'blue', ready_for_draft: 'cyan', converting: 'processing', converted_to_draft: 'green', blocked: 'red', conversion_failed: 'red', reconcile_required: 'gold', archived: 'default', rejected: 'red', converted: 'cyan', draft_created: 'green',
 };
+
+const collectionFieldLabels: Record<string, string> = {
+	title: '标题', price: '价格', moq: '起订量', supplier: '供应商身份', images: '主图', sku: 'SKU',
+};
+
+export function collectionCompleteness(fieldStatuses?: Record<string, string>) {
+	const statuses = fieldStatuses ?? {};
+	const fields = Object.keys(collectionFieldLabels);
+	const complete = fields.filter((field) => statuses[field] === 'observed' || (field === 'sku' && statuses[field] === 'no_sku'));
+	const missing = fields.filter((field) => !complete.includes(field)).map((field) => ({
+		field,
+		label: collectionFieldLabels[field],
+		status: statuses[field] || 'unknown',
+	}));
+	return { complete: complete.length, total: fields.length, missing, isComplete: missing.length === 0 };
+}
+
+const taskLinkStatusMeta: Record<string, { color: string; label: string }> = {
+  needs_review: { color: 'gold', label: '任务待复核' },
+  ready_for_draft: { color: 'cyan', label: '可转草稿' },
+  converting: { color: 'processing', label: '正在转草稿' },
+  converted_to_draft: { color: 'blue', label: '草稿已生成' },
+  editing: { color: 'blue', label: '草稿编辑中' },
+  pending_approval: { color: 'orange', label: '草稿待审批' },
+  approved_draft: { color: 'green', label: '草稿已批准' },
+  publish_pending: { color: 'orange', label: '发布待审批' },
+  publish_approved: { color: 'blue', label: '发布已批准' },
+  publishing: { color: 'processing', label: '发布执行中' },
+  submitted: { color: 'cyan', label: '平台已接收' },
+  succeeded: { color: 'green', label: '平台状态已确认' },
+  publish_failed: { color: 'red', label: '发布失败' },
+  conversion_failed: { color: 'red', label: '转换失败' },
+  reconcile_required: { color: 'gold', label: '需要对账' },
+  linked: { color: 'blue', label: '已关联' },
+  active: { color: 'processing', label: '进行中' },
+  blocked: { color: 'red', label: '已阻塞' },
+  completed: { color: 'green', label: '已完成' },
+  archived: { color: 'default', label: '已归档' },
+};
+
+export function taskLinkStatus(link: Pick<TaskLink, 'status' | 'current_status' | 'current_blocker'> & { workflow_status?: string }) {
+  const status = link.workflow_status || link.current_status || link.status || 'linked';
+  const blocked = status === 'blocked' || Boolean(link.current_blocker?.trim());
+  if (blocked) return { color: 'red', label: '已阻塞', status };
+  const meta = taskLinkStatusMeta[status] ?? { color: 'default', label: status };
+  return { ...meta, status };
+}
+
+export function taskLinkAvailableActions(link: Pick<TaskLink, 'workflow_status' | 'draft_id' | 'current_blocker'>) {
+  const status = link.workflow_status || 'needs_review';
+  const blocked = status === 'blocked' || Boolean(link.current_blocker?.trim());
+  return {
+    convert: !blocked && status === 'ready_for_draft' && !link.draft_id,
+    edit: !blocked && Boolean(link.draft_id) && ['converted_to_draft', 'editing'].includes(status),
+    submitApproval: !blocked && Boolean(link.draft_id) && ['converted_to_draft', 'editing'].includes(status),
+    decideApproval: !blocked && Boolean(link.draft_id) && status === 'pending_approval',
+    publish: !blocked && Boolean(link.draft_id) && ['approved_draft', 'publish_pending', 'publish_approved', 'publishing', 'submitted', 'publish_failed', 'reconcile_required', 'succeeded'].includes(status),
+  };
+}
 
 function requiredJSON(label: string) {
   return {
@@ -155,6 +328,98 @@ function rowsToObject(rows: Array<{ name?: string; value?: string }> = []) {
   return Object.fromEntries(rows.filter((row) => row.name?.trim()).map((row) => [row.name!.trim(), row.value ?? '']));
 }
 
+function objectToRows(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.entries(value as Record<string, unknown>).map(([name, item]) => ({ name, value: String(item ?? '') }));
+}
+
+/** Restores the exact Owner form from the server's canonical editable payload. */
+export function editableDraftToForm(input: Record<string, unknown>): DraftFormValues {
+  const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const rows = (value: unknown): Array<Record<string, unknown>> => Array.isArray(value) ? value.map(record) : [];
+  const validation = record(input.validation);
+  const localization = record(validation.localization);
+  const localizationRules = record(validation.localization_rules);
+  const channel = record(validation.channel);
+  const channelRules = record(validation.channel_rules);
+  const costValidation = record(validation.costs);
+  const imageRules = record(validation.image_rules);
+  const skuRules = record(validation.sku_rules);
+  const listingPayload = record(input.listing_payload);
+  const validationSKUs = rows(validation.skus);
+  const validationImages = rows(validation.images);
+  const evidenceFields = (prefix: string, value: Record<string, unknown>) => ({
+    [`${prefix}_truth_status`]: value?.truth_status,
+    [`${prefix}_source_uri`]: value?.source_uri,
+    [`${prefix}_observed_at`]: localDateTime(value?.observed_at),
+  });
+  const skuVariants = rows(input.sku_variants).map((row, index) => ({
+    ...row,
+    ...(validationSKUs[index] ?? {}),
+    observed_at: localDateTime(validationSKUs[index]?.observed_at),
+  }));
+  const media = rows(input.media).map((row, index) => {
+    const checked = validationImages[index] ?? {};
+    return {
+      ...row,
+      rights_observed_at: localDateTime(row.rights_observed_at),
+      rights_observed_at_exact: row.rights_observed_at,
+      background: checked.background,
+      cropped: checked.cropped,
+      clarity_score: checked.clarity_score,
+      no_watermark: !row.has_watermark,
+      no_chinese_text: !row.has_chinese_text,
+      no_brand_mark: !row.has_brand_mark,
+      verification_observed_at: localDateTime(checked.observed_at),
+    };
+  });
+  return {
+    ...input,
+    currency: costValidation.target_currency,
+    category_observed_at: localDateTime(input.category_observed_at),
+    sku_variants: skuVariants,
+    media,
+    costs: rows(input.costs).map((row) => ({ ...row, observed_at: localDateTime(row.observed_at) })),
+    supplier_assessment: rows(input.supplier_assessment).map((row) => ({ ...row, observed_at: localDateTime(row.observed_at) })),
+    compliance_checks: rows(input.compliance_checks).map((row) => ({ ...row, observed_at: localDateTime(row.observed_at) })),
+    localized_bullet_points: localization.bullet_points ?? [],
+    localized_keywords: localization.keywords ?? [],
+    localized_attributes: objectToRows(localization.attributes),
+    allowed_scripts: localizationRules.allowed_scripts ?? [],
+    prohibited_words: localizationRules.prohibited_words ?? [],
+    min_title_length: localizationRules.min_title_length,
+    max_title_length: localizationRules.max_title_length,
+    min_bullet_points: localizationRules.min_bullet_points,
+    max_bullet_length: localizationRules.max_bullet_length,
+    min_keywords: localizationRules.min_keywords,
+    ...evidenceFields('localization_rule', record(localizationRules.evidence)),
+    category_attributes: objectToRows(listingPayload.attributes ?? channel.attributes),
+    variant_dimensions: listingPayload.variant_dimensions ?? channel.variant_dimensions ?? [],
+    required_category_attributes: channelRules.required_attributes ?? [],
+    required_variant_dimensions: channelRules.required_variant_dimensions ?? [],
+    allowed_variant_dimensions: channelRules.allowed_variant_dimensions ?? [],
+    min_images: channelRules.min_images,
+    max_images: channelRules.max_images,
+    min_image_width: channelRules.min_image_width,
+    min_image_height: channelRules.min_image_height,
+    channel_rule_truth_status: record(channelRules.evidence).truth_status,
+    exchange_rates: rows(costValidation.exchange_rates).map((row) => ({ ...row, observed_at: localDateTime(row.observed_at) })),
+    revenue_amount: record(costValidation.revenue).amount,
+    revenue_currency: record(costValidation.revenue).currency,
+    revenue_truth_status: record(costValidation.revenue).truth_status,
+    revenue_source_uri: record(costValidation.revenue).source_uri,
+    revenue_observed_at: localDateTime(record(costValidation.revenue).observed_at),
+    allowed_backgrounds: imageRules.allowed_backgrounds ?? [],
+    require_crop: imageRules.require_crop,
+    min_clarity_score: imageRules.min_clarity_score,
+    image_rule_min_images: imageRules.min_images,
+    image_rule_max_images: imageRules.max_images,
+    ...evidenceFields('image_rule', record(imageRules.evidence)),
+    ...evidenceFields('sku_rule', record(skuRules.evidence)),
+    shipping_template_id: input.shipping_template_id ?? listingPayload.shipping_template_id,
+  };
+}
+
 export function buildPublishRequestPayload(values: Record<string, unknown>) {
   const inventoryRows = (values.inventory_rows ?? []) as Array<{ sku_code?: string; quantity?: number }>;
   return {
@@ -184,6 +449,19 @@ export function buildReconcilePayload(values: Record<string, unknown>) {
 function newPublishIdempotencyKey(sourceID: number) {
   const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
   return `sourcing-${sourceID}-${Date.now()}-${random}`;
+}
+
+function newConversionRequestID(sourceID: number) {
+	const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+	return `convert_${sourceID}_${Date.now()}_${random}`;
+}
+
+export function taskWorkflowPath(sourceID: number, taskLinkID: number, suffix: string) {
+  if (!Number.isInteger(sourceID) || sourceID <= 0 || !Number.isInteger(taskLinkID) || taskLinkID <= 0) {
+    throw new Error('invalid sourcing task identity');
+  }
+  const normalized = suffix.replace(/^\/+/, '');
+  return `/v1/sourcing-1688/${sourceID}/task-links/${taskLinkID}${normalized ? `/${normalized}` : ''}`;
 }
 
 function formatPayload(value: unknown) {
@@ -285,6 +563,9 @@ export function buildDraftPayload(values: DraftFormValues) {
     observed_at: iso(values[`${prefix}_observed_at`]),
   });
   const payload = {
+	conversion_request_id: values.conversion_request_id,
+    editable_version: values.editable_version,
+    editable_sha256: values.editable_sha256,
     platform_id: values.platform_id, category_id: values.category_id, currency: values.currency,
     title: values.title, description: values.description, platform_sku: values.platform_sku, unit: values.unit,
     localized_title: values.localized_title, localized_description: values.localized_description, target_locale: values.target_locale,
@@ -335,17 +616,79 @@ function KeyValueList({ name, addText }: { name: string; addText: string }) {
   </Space>}</Form.List>;
 }
 
+type TaskLinkCardProps = {
+  link: TaskLink;
+  onDraft?: (link: TaskLink) => void;
+  onSubmitApproval?: (link: TaskLink) => void;
+  onDecideApproval?: (link: TaskLink) => void;
+  onPublish?: (link: TaskLink) => void;
+  onSamples?: (link: TaskLink) => void;
+};
+
+function TaskLinkCard({ link, onDraft, onSubmitApproval, onDecideApproval, onPublish, onSamples }: TaskLinkCardProps) {
+  const meta = taskLinkStatus(link);
+  const actions = taskLinkAvailableActions(link);
+  return (
+    <Card
+      size="small"
+      style={{ marginBottom: 8 }}
+      title={<Text>{link.label || `任务 ${link.experiment_id}`}</Text>}
+      extra={<Space wrap>{link.is_primary && <Tag color="blue">主任务</Tag>}<Tag color={meta.color}>{meta.label}</Tag></Space>}
+    >
+      <Descriptions size="small" column={{ xs: 1, sm: 2 }}>
+        <Descriptions.Item label="任务 ID">{link.experiment_id}</Descriptions.Item>
+        <Descriptions.Item label="候选市场">#{link.demand_case_id}</Descriptions.Item>
+        <Descriptions.Item label="商品机会">{link.product_opportunity_id ? `#${link.product_opportunity_id}` : '历史关联（无授权）'}</Descriptions.Item>
+        <Descriptions.Item label="冻结批准">{link.opportunity_decision_id ? `#${link.opportunity_decision_id}` : '无'}</Descriptions.Item>
+        <Descriptions.Item label="关联状态">{link.status || 'linked'}</Descriptions.Item>
+        <Descriptions.Item label="独立工作流">{meta.label}</Descriptions.Item>
+        <Descriptions.Item label="任务草稿">{link.draft_id ? `#${link.draft_id}` : '尚未生成'}</Descriptions.Item>
+        <Descriptions.Item label="工作流更新时间">{link.workflow_updated_at ? new Date(link.workflow_updated_at).toLocaleString('zh-CN') : '未知'}</Descriptions.Item>
+        <Descriptions.Item label="关联时间" span={2}>{link.created_at ? new Date(link.created_at).toLocaleString('zh-CN') : '未知'}</Descriptions.Item>
+      </Descriptions>
+      {link.current_blocker && (
+        <Alert
+          type="error"
+          showIcon
+          title="当前阻塞原因"
+          description={link.current_blocker}
+          style={{ marginTop: 12 }}
+        />
+      )}
+      <Divider style={{ margin: '12px 0' }} />
+      <Space wrap>
+        {onSamples && <Button size="small" onClick={() => onSamples(link)}>样品事实链</Button>}
+        {actions.convert && onDraft && <Button size="small" type="primary" onClick={() => onDraft(link)}>为此任务转草稿</Button>}
+        {actions.edit && onDraft && <Button size="small" onClick={() => onDraft(link)}>编辑此任务草稿</Button>}
+        {actions.submitApproval && onSubmitApproval && <Button size="small" onClick={() => onSubmitApproval(link)}>提交此任务审批</Button>}
+        {actions.decideApproval && onDecideApproval && <Button size="small" onClick={() => onDecideApproval(link)}>审批此任务草稿</Button>}
+        {actions.publish && onPublish && <Button size="small" danger icon={<SafetyCertificateOutlined />} onClick={() => onPublish(link)}>此任务发布安全</Button>}
+        {!onSamples && !Object.values(actions).some(Boolean) && <Text type="secondary">当前状态没有可执行动作；请先处理阻塞或完成前一步。</Text>}
+      </Space>
+    </Card>
+  );
+}
+
 export default function Sourcing1688Page() {
   const { message } = AntdApp.useApp();
   const qc = useQueryClient();
-  const [fetchOpen, setFetchOpen] = useState(false);
+	  const [fetchOpen, setFetchOpen] = useState(false);
+	  const [collectionStatus, setCollectionStatus] = useState<string>();
   const [captureOpen, setCaptureOpen] = useState(false);
   const [reviewing, setReviewing] = useState<SourceRecord | null>(null);
+  const [linkingTask, setLinkingTask] = useState<SourceRecord | null>(null);
+	const [editingPrivate, setEditingPrivate] = useState<SourceRecord | null>(null);
+  const [taskLinksTarget, setTaskLinksTarget] = useState<SourceRecord | null>(null);
+  const [samplesTarget, setSamplesTarget] = useState<{ source: SourceRecord; link: TaskLink } | null>(null);
+  const [sampleTransitionTarget, setSampleTransitionTarget] = useState<{ detail: SampleDetail; toStatus: SampleStatus } | null>(null);
   const [converting, setConverting] = useState<SourceRecord | null>(null);
+  const [convertingTaskLink, setConvertingTaskLink] = useState<TaskLink | null>(null);
   const [preview, setPreview] = useState<DraftResult | null>(null);
   const [evidence, setEvidence] = useState<Snapshot | null>(null);
   const [approvalTarget, setApprovalTarget] = useState<SourceRecord | null>(null);
+  const [approvalTaskLink, setApprovalTaskLink] = useState<TaskLink | null>(null);
   const [decisionTarget, setDecisionTarget] = useState<{ record: SourceRecord; approvalId: number } | null>(null);
+  const [decisionTaskLink, setDecisionTaskLink] = useState<TaskLink | null>(null);
   const [imageTarget, setImageTarget] = useState<SourceRecord | null>(null);
   const [processedImage, setProcessedImage] = useState<Record<string, unknown> | null>(null);
   const [processedImagePreviewURL, setProcessedImagePreviewURL] = useState<string | null>(null);
@@ -353,12 +696,18 @@ export default function Sourcing1688Page() {
   const [identityHistory, setIdentityHistory] = useState<{ sourceId: number; data: IdentityHistory } | null>(null);
   const [acceptanceReport, setAcceptanceReport] = useState<AcceptanceReport | null>(null);
   const [publishTarget, setPublishTarget] = useState<SourceRecord | null>(null);
+  const [publishTaskLink, setPublishTaskLink] = useState<TaskLink | null>(null);
   const [publishDecisionTarget, setPublishDecisionTarget] = useState<PublishAttempt | null>(null);
   const [publishExecuteTarget, setPublishExecuteTarget] = useState<PublishAttempt | null>(null);
   const [publishReconcileTarget, setPublishReconcileTarget] = useState<PublishAttempt | null>(null);
   const [captureForm] = Form.useForm();
   const [fetchForm] = Form.useForm();
   const [reviewForm] = Form.useForm();
+  const [taskLinkForm] = Form.useForm();
+  const [sampleRequestForm] = Form.useForm();
+  const [sampleTransitionForm] = Form.useForm();
+  const [sampleWaiverForm] = Form.useForm();
+	const [privateWorkcopyForm] = Form.useForm();
   const [convertForm] = Form.useForm();
   const [decisionForm] = Form.useForm();
   const [imageForm] = Form.useForm();
@@ -373,15 +722,34 @@ export default function Sourcing1688Page() {
     if (processedImagePreviewURL) URL.revokeObjectURL(processedImagePreviewURL);
   }, [processedImagePreviewURL]);
 
-  const list = useQuery({
-    queryKey: ['sourcing-1688-controlled'],
-    queryFn: () => apiClient.getPage<SourceRecord>('/v1/sourcing-1688', { page: '1', size: '100' }),
+	  const list = useQuery({
+	    queryKey: ['sourcing-1688-controlled', collectionStatus],
+	    queryFn: () => apiClient.getPage<SourceRecord>('/v1/sourcing-1688', { page: '1', size: '100', ...(collectionStatus ? { lifecycle_status: collectionStatus } : {}) }),
+	  });
+
+  const eligibleTasks = useQuery({
+    queryKey: ['sourcing-1688-eligible-tasks'],
+    queryFn: () => apiClient.get<EligibleTask[]>('/v1/sourcing-1688/eligible-tasks'),
+  });
+
+  const taskLinks = useQuery({
+    queryKey: ['sourcing-1688-task-links', taskLinksTarget?.id],
+    enabled: !!taskLinksTarget,
+    queryFn: () => apiClient.get<TaskLink[]>(`/v1/sourcing-1688/${taskLinksTarget!.id}/task-links`),
+  });
+
+  const samples = useQuery({
+    queryKey: ['sourcing-1688-samples', samplesTarget?.source.id],
+    enabled: !!samplesTarget,
+    queryFn: () => apiClient.get<SampleDetail[]>(`/v1/sourcing-1688/${samplesTarget!.source.id}/samples`),
   });
 
   const publishAttempts = useQuery({
-    queryKey: ['sourcing-1688-publish-requests', publishTarget?.id],
+    queryKey: ['sourcing-1688-publish-requests', publishTarget?.id, publishTaskLink?.id],
     enabled: !!publishTarget,
-    queryFn: () => apiClient.get<PublishAttempt[]>(`/v1/sourcing-1688/${publishTarget!.id}/publish-requests`),
+    queryFn: () => apiClient.get<PublishAttempt[]>(publishTaskLink
+      ? taskWorkflowPath(publishTarget!.id, publishTaskLink.id, 'publish-requests')
+      : `/v1/sourcing-1688/${publishTarget!.id}/publish-requests`),
   });
 
   const capture = useMutation({
@@ -410,6 +778,98 @@ export default function Sourcing1688Page() {
     onError: (e: Error) => message.error(`URL 采集失败：${e.message}`),
   });
 
+  const linkTask = useMutation({
+    mutationFn: (opportunityID: number) => {
+      const task = eligibleTasks.data?.data?.find((item) => item.product_opportunity_id === opportunityID);
+      if (!task) throw new Error('选品任务已不可用，请刷新后重试');
+	  return apiClient.post(`/v1/sourcing-1688/${linkingTask?.id}/task-links`, { demand_case_id: task.demand_case_id, experiment_id: task.experiment_id, product_opportunity_id: task.product_opportunity_id });
+    },
+    onSuccess: () => {
+      message.success('已关联选品任务，现在可以进入Owner复核');
+      const sourceID = linkingTask?.id;
+      setLinkingTask(null);
+      taskLinkForm.resetFields();
+      void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] });
+      if (sourceID) void qc.invalidateQueries({ queryKey: ['sourcing-1688-task-links', sourceID] });
+    },
+    onError: (e: Error) => message.error(`关联选品任务失败：${e.message}`),
+  });
+
+  const createSample = useMutation({
+    mutationFn: (values: { supplier_sku?: string; quantity: number }) => {
+      if (!samplesTarget?.source.supplier_id || !samplesTarget.source.snapshot_id) {
+        throw new Error('来源缺少权威供应商或不可变快照，不能创建样品申请');
+      }
+      return apiClient.post<SampleDetail>(`/v1/sourcing-1688/${samplesTarget.source.id}/samples`, {
+        task_link_id: samplesTarget.link.id,
+        supplier_id: samplesTarget.source.supplier_id,
+        snapshot_id: samplesTarget.source.snapshot_id,
+        supplier_sku: String(values.supplier_sku ?? '').trim() || undefined,
+        quantity: values.quantity,
+      });
+    },
+    onSuccess: () => {
+      message.success('样品申请已建立；系统没有向供应商下单');
+      sampleRequestForm.resetFields();
+      void samples.refetch();
+    },
+    onError: (error: Error) => message.error(`样品申请失败：${error.message}`),
+  });
+
+  const transitionSample = useMutation({
+    mutationFn: (values: Record<string, unknown>) => {
+      if (!samplesTarget || !sampleTransitionTarget) throw new Error('样品状态已变化，请刷新后重试');
+      return apiClient.post<SampleDetail>(
+        `/v1/sourcing-1688/${samplesTarget.source.id}/samples/${sampleTransitionTarget.detail.sample.id}/transitions`,
+        buildSampleTransitionPayload(sampleTransitionTarget.toStatus, values),
+      );
+    },
+    onSuccess: () => {
+      message.success(sampleTransitionTarget?.toStatus === 'approved_to_order'
+        ? 'Owner批准已保存；系统仍未向供应商下单'
+        : 'actual样品凭证和状态已保存');
+      setSampleTransitionTarget(null);
+      sampleTransitionForm.resetFields();
+      void samples.refetch();
+    },
+    onError: (error: Error) => message.error(`样品状态保存失败：${error.message}`),
+  });
+
+  const waiveSample = useMutation({
+    mutationFn: (values: { reason: string }) => {
+      if (!samplesTarget) throw new Error('样品任务已变化，请刷新后重试');
+      return apiClient.post<TaskLink>(`/v1/sourcing-1688/${samplesTarget.source.id}/task-links/${samplesTarget.link.id}/sample-waiver`, values);
+    },
+    onSuccess: (result) => {
+      message.success('样品要求已由Owner明确豁免；风险理由已冻结');
+      if (result.data) setSamplesTarget((current) => current ? { ...current, link: result.data! } : current);
+      sampleWaiverForm.resetFields();
+      void taskLinks.refetch();
+    },
+    onError: (error: Error) => message.error(`样品豁免失败：${error.message}`),
+  });
+
+	const updatePrivateWorkcopy = useMutation({
+		mutationFn: (values: { title: string; price?: number; moq?: number; supplier_name?: string; notes?: string }) =>
+			apiClient.patch(`/v1/sourcing-1688/${editingPrivate?.id}/private-workcopy`, { ...values, expected_updated_at: editingPrivate?.updated_at }),
+		onSuccess: () => {
+			message.success('私人工作副本已保存；原始页面快照没有改变');
+			setEditingPrivate(null); privateWorkcopyForm.resetFields();
+			void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] });
+		},
+		onError: (error: Error) => message.error(`保存失败：${error.message}`),
+	});
+
+  const setPrivateArchive = useMutation({
+    mutationFn: ({ id, archived }: { id: number; archived: boolean }) =>
+      apiClient.post(`/v1/sourcing-1688/${id}/${archived ? 'private-archive' : 'private-restore'}`, {}),
+    onSuccess: (_result, variables) => {
+      message.success(variables.archived ? '私人收藏已归档；原始观察仍然保留' : '私人收藏已恢复为待复核');
+      void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] });
+    },
+    onError: (error: Error) => message.error(`操作失败：${error.message}`),
+  });
+
   const review = useMutation({
     mutationFn: (v: Record<string, unknown>) => apiClient.post(`/v1/sourcing-1688/${reviewing?.id}/review`, v),
     onSuccess: () => {
@@ -425,14 +885,30 @@ export default function Sourcing1688Page() {
   });
 
   const submitApproval = useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason: string }) => apiClient.post(`/v1/sourcing-1688/${id}/submit-draft-approval`, { reason }),
-    onSuccess: () => { message.success('草稿已提交 Owner 审批，仍未发布'); setApprovalTarget(null); void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] }); },
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => apiClient.post(approvalTaskLink
+      ? taskWorkflowPath(id, approvalTaskLink.id, 'submit-draft-approval')
+      : `/v1/sourcing-1688/${id}/submit-draft-approval`, { reason }),
+    onSuccess: () => {
+      message.success('草稿已提交 Owner 审批，仍未发布');
+      const sourceID = approvalTarget?.id;
+      setApprovalTarget(null); setApprovalTaskLink(null);
+      void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] });
+      if (sourceID) void qc.invalidateQueries({ queryKey: ['sourcing-1688-task-links', sourceID] });
+    },
     onError: (e: Error) => message.error(`提交审批失败：${e.message}`),
   });
 
   const decideApproval = useMutation({
-    mutationFn: ({ action, note }: { action: string; note: string }) => apiClient.post(`/v1/sourcing-1688/${decisionTarget?.record.id}/approvals/${decisionTarget?.approvalId}/decision`, { action, note }),
-    onSuccess: () => { message.success('审批决定已保存；没有触发外部发布'); setDecisionTarget(null); void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] }); },
+    mutationFn: ({ action, note }: { action: string; note: string }) => apiClient.post(decisionTaskLink
+      ? taskWorkflowPath(decisionTarget!.record.id, decisionTaskLink.id, `approvals/${decisionTarget!.approvalId}/decision`)
+      : `/v1/sourcing-1688/${decisionTarget?.record.id}/approvals/${decisionTarget?.approvalId}/decision`, { action, note }),
+    onSuccess: () => {
+      message.success('审批决定已保存；没有触发外部发布');
+      const sourceID = decisionTarget?.record.id;
+      setDecisionTarget(null); setDecisionTaskLink(null);
+      void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] });
+      if (sourceID) void qc.invalidateQueries({ queryKey: ['sourcing-1688-task-links', sourceID] });
+    },
     onError: (e: Error) => message.error(`审批失败：${e.message}`),
   });
 
@@ -469,6 +945,12 @@ export default function Sourcing1688Page() {
   const convert = useMutation({
     mutationFn: async (v: Record<string, unknown>) => {
       const payload = buildDraftPayload(v as DraftFormValues);
+      if (convertingTaskLink) {
+        const taskPath = taskWorkflowPath(converting!.id, convertingTaskLink.id, '');
+        return convertingTaskLink.draft_id
+          ? apiClient.put<DraftResult>(`${taskPath}/draft`, payload)
+          : apiClient.post<DraftResult>(`${taskPath}/convert-to-draft`, payload);
+      }
       if (converting?.product_id) return apiClient.put<DraftResult>(`/v1/sourcing-1688/${converting.id}/draft`, payload);
       return apiClient.post<DraftResult>(`/v1/sourcing-1688/${converting?.id}/convert-to-draft`, payload);
     },
@@ -476,16 +958,22 @@ export default function Sourcing1688Page() {
       message.success('产品和待上架草稿已保存，未向平台发布');
       const sourceID = converting?.id;
       if (sourceID) {
-        const detail = await apiClient.get<DraftResult>(`/v1/sourcing-1688/${sourceID}/draft`);
+        const detail = await apiClient.get<DraftResult>(convertingTaskLink
+          ? taskWorkflowPath(sourceID, convertingTaskLink.id, 'draft')
+          : `/v1/sourcing-1688/${sourceID}/draft`);
         setPreview(detail.data ?? result.data ?? {});
       } else setPreview(result.data ?? {});
-      setConverting(null); convertForm.resetFields(); void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] });
+      setConverting(null); setConvertingTaskLink(null); convertForm.resetFields();
+      void qc.invalidateQueries({ queryKey: ['sourcing-1688-controlled'] });
+      if (sourceID) void qc.invalidateQueries({ queryKey: ['sourcing-1688-task-links', sourceID] });
     },
     onError: (e: Error) => message.error(`生成草稿失败：${e.message}`),
   });
 
   const requestPublish = useMutation({
-    mutationFn: (values: Record<string, unknown>) => apiClient.post<PublishAttempt>(`/v1/sourcing-1688/${publishTarget?.id}/publish-requests`, buildPublishRequestPayload(values)),
+    mutationFn: (values: Record<string, unknown>) => apiClient.post<PublishAttempt>(publishTaskLink
+      ? taskWorkflowPath(publishTarget!.id, publishTaskLink.id, 'publish-requests')
+      : `/v1/sourcing-1688/${publishTarget?.id}/publish-requests`, buildPublishRequestPayload(values)),
     onSuccess: () => {
       message.success('发布请求已冻结并进入独立审批；没有调用外部平台');
       void publishAttempts.refetch();
@@ -494,7 +982,9 @@ export default function Sourcing1688Page() {
   });
 
   const decidePublish = useMutation({
-    mutationFn: ({ action, note }: { action: 'approve' | 'reject'; note: string }) => apiClient.post<PublishAttempt>(`/v1/sourcing-1688/${publishTarget?.id}/publish-requests/${publishDecisionTarget?.id}/decision`, { action, note }),
+    mutationFn: ({ action, note }: { action: 'approve' | 'reject'; note: string }) => apiClient.post<PublishAttempt>(publishTaskLink
+      ? taskWorkflowPath(publishTarget!.id, publishTaskLink.id, `publish-requests/${publishDecisionTarget!.id}/decision`)
+      : `/v1/sourcing-1688/${publishTarget?.id}/publish-requests/${publishDecisionTarget?.id}/decision`, { action, note }),
     onSuccess: (_, variables) => {
       message.success(variables.action === 'approve' ? '独立发布审批已批准；仍未调用平台' : '发布请求已拒绝；没有调用平台');
       setPublishDecisionTarget(null);
@@ -505,7 +995,9 @@ export default function Sourcing1688Page() {
   });
 
   const executePublish = useMutation({
-    mutationFn: () => apiClient.post<PublishAttempt>(`/v1/sourcing-1688/${publishTarget?.id}/publish-requests/${publishExecuteTarget?.id}/execute`, {}),
+    mutationFn: () => apiClient.post<PublishAttempt>(publishTaskLink
+      ? taskWorkflowPath(publishTarget!.id, publishTaskLink.id, `publish-requests/${publishExecuteTarget!.id}/execute`)
+      : `/v1/sourcing-1688/${publishTarget?.id}/publish-requests/${publishExecuteTarget?.id}/execute`, {}),
     onSuccess: () => {
       message.warning('平台调用已结束；请根据最新状态判断，submitted 仍不代表真实上线');
       setPublishExecuteTarget(null);
@@ -519,7 +1011,9 @@ export default function Sourcing1688Page() {
   });
 
   const reconcilePublish = useMutation({
-    mutationFn: (values: Record<string, unknown>) => apiClient.post<PublishAttempt>(`/v1/sourcing-1688/${publishTarget?.id}/publish-requests/${publishReconcileTarget?.id}/reconcile`, buildReconcilePayload(values)),
+    mutationFn: (values: Record<string, unknown>) => apiClient.post<PublishAttempt>(publishTaskLink
+      ? taskWorkflowPath(publishTarget!.id, publishTaskLink.id, `publish-requests/${publishReconcileTarget!.id}/reconcile`)
+      : `/v1/sourcing-1688/${publishTarget?.id}/publish-requests/${publishReconcileTarget?.id}/reconcile`, buildReconcilePayload(values)),
     onSuccess: () => {
       message.success('actual 平台证据已用于后置对账；submitted 仍需后续状态同步确认上线');
       setPublishReconcileTarget(null);
@@ -529,11 +1023,46 @@ export default function Sourcing1688Page() {
     onError: (e: Error) => message.error(`发布结果对账失败：${e.message}`),
   });
 
-  const openDraftEditor = (record: SourceRecord) => {
+  const openDraftEditor = async (record: SourceRecord, taskLink: TaskLink | null = null) => {
     convertForm.resetFields();
     const matchingImage = processedImage?.source_id === record.id ? processedImage : null;
-    convertForm.setFieldsValue(defaultDraftValues(matchingImage));
+    if (taskLink?.draft_id || (!taskLink && record.product_id)) {
+      try {
+        const detail = await apiClient.get<DraftResult>(taskLink
+          ? taskWorkflowPath(record.id, taskLink.id, 'draft')
+          : `/v1/sourcing-1688/${record.id}/draft`);
+        if (!detail.data?.editable_payload || !detail.data.editable_sha256 || !detail.data.editable_version) {
+          throw new Error('服务端未返回可核验的完整可编辑载荷');
+        }
+        convertForm.setFieldsValue(editableDraftToForm({
+          ...detail.data.editable_payload,
+          editable_version: detail.data.editable_version,
+          editable_sha256: detail.data.editable_sha256,
+        }));
+      } catch (error) {
+        message.error(`为防止覆盖既有草稿，已停止编辑：${(error as Error).message}`);
+        return;
+      }
+    } else {
+      convertForm.setFieldsValue({ ...defaultDraftValues(matchingImage), conversion_request_id: newConversionRequestID(record.id) });
+    }
+    setConvertingTaskLink(taskLink);
     setConverting(record);
+  };
+
+  const openTaskApprovalDecision = async (record: SourceRecord, taskLink: TaskLink) => {
+    try {
+      const res = await apiClient.get<{ draft?: { approval_id?: number } }>(taskWorkflowPath(record.id, taskLink.id, 'draft'));
+      const approvalId = res.data?.draft?.approval_id;
+      if (!approvalId) {
+        message.error('此任务没有待处理的草稿审批记录');
+        return;
+      }
+      setDecisionTaskLink(taskLink);
+      setDecisionTarget({ record, approvalId });
+    } catch (error) {
+      message.error(`无法读取此任务的审批记录：${(error as Error).message}`);
+    }
   };
 
   const loadEvidence = async (record: SourceRecord) => {
@@ -563,7 +1092,8 @@ export default function Sourcing1688Page() {
     }
   };
 
-  const openPublishSafety = async (record: SourceRecord) => {
+  const openPublishSafety = async (record: SourceRecord, taskLink: TaskLink | null = null) => {
+    setPublishTaskLink(taskLink);
     setPublishTarget(record);
     publishRequestForm.resetFields();
     publishRequestForm.setFieldsValue({
@@ -573,7 +1103,9 @@ export default function Sourcing1688Page() {
       inventory_rows: [],
     });
     try {
-      const draft = await apiClient.get<{ skus?: DraftSKU[] }>(`/v1/sourcing-1688/${record.id}/draft`);
+      const draft = await apiClient.get<{ skus?: DraftSKU[] }>(taskLink
+        ? taskWorkflowPath(record.id, taskLink.id, 'draft')
+        : `/v1/sourcing-1688/${record.id}/draft`);
       publishRequestForm.setFieldValue('inventory_rows', (draft.data?.skus ?? []).map((sku) => ({ sku_code: sku.code, quantity: 0 })));
     } catch (error) {
       message.error(`无法读取冻结库存所需的 SKU：${(error as Error).message}`);
@@ -581,40 +1113,292 @@ export default function Sourcing1688Page() {
   };
 
   const records = list.data?.data ?? [];
+	const openedRecordFromURL = useRef<number | null>(null);
+	useEffect(() => {
+		const recordID = Number(new URLSearchParams(window.location.search).get('record_id'));
+		if (!Number.isInteger(recordID) || recordID <= 0 || openedRecordFromURL.current === recordID || records.length === 0) return;
+		const record = records.find((item) => item.id === recordID);
+		if (!record) {
+			openedRecordFromURL.current = recordID;
+			message.warning(`没有找到私人采集记录 #${recordID}`);
+			return;
+		}
+		openedRecordFromURL.current = recordID;
+		void loadEvidence(record);
+	}, [records]);
   const attempts = publishAttempts.data?.data ?? [];
+  const allTaskLinks = taskLinks.data?.data ?? [];
+  const primaryTaskLinks = allTaskLinks.filter((link) => link.is_primary);
+  const additionalTaskLinks = allTaskLinks.filter((link) => !link.is_primary);
+  const selectedTaskSamples = (samples.data?.data ?? []).filter((detail) => detail.sample.task_link_id === samplesTarget?.link.id);
+  const taskCard = (link: TaskLink) => <TaskLinkCard
+    key={link.id}
+    link={link}
+    onDraft={(selected) => { if (taskLinksTarget) void openDraftEditor(taskLinksTarget, selected); }}
+    onSubmitApproval={(selected) => {
+      if (!taskLinksTarget) return;
+      setApprovalTaskLink(selected);
+      setApprovalTarget(taskLinksTarget);
+    }}
+    onDecideApproval={(selected) => { if (taskLinksTarget) void openTaskApprovalDecision(taskLinksTarget, selected); }}
+    onPublish={(selected) => { if (taskLinksTarget) void openPublishSafety(taskLinksTarget, selected); }}
+    onSamples={(selected) => {
+      if (!taskLinksTarget) return;
+      sampleRequestForm.setFieldsValue({ quantity: 1 });
+      setSamplesTarget({ source: taskLinksTarget, link: selected });
+    }}
+  />;
   const canCreatePublishRequest = publishAttempts.isSuccess && !attempts.some((attempt) => !['rejected', 'failed'].includes(attempt.status));
   return (
     <PageContainer
-      title="1688 采集库 → 待上架草稿"
-      subtitle="仅处理已批准的市场、渠道与商品机会。草稿与真实发布分别审批，任何步骤都不会自动串联。"
-      extra={<Space wrap><Button icon={<ReloadOutlined />} onClick={() => void list.refetch()}>刷新</Button><Button onClick={() => setCaptureOpen(true)}>高级证据导入</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => setFetchOpen(true)}>从 1688 URL 采集</Button></Space>}
+      title="1688 私人采集箱 → 受控草稿"
+      subtitle="先保存Owner私人未验证线索；决定继续研究后，再关联选品任务并进入受控草稿。"
+      extra={<Space wrap><Button icon={<ReloadOutlined />} onClick={() => void list.refetch()}>刷新</Button><Button onClick={() => setCaptureOpen(true)}>高级证据导入</Button><Button icon={<PlusOutlined />} onClick={() => setFetchOpen(true)}>旧版受控URL采集</Button></Space>}
     >
-      <Alert type="warning" showIcon icon={<SafetyCertificateOutlined />} title="外部发布受独立审批保护" description="草稿批准不会发布。只有 approved_draft 才显示发布安全区；请求发布、Owner 独立批准、再次执行和异常对账必须分别手动完成。" style={{ marginBottom: 16 }} />
-      {list.isError ? <Alert type="error" showIcon title="采集库加载失败" description={(list.error as Error).message} /> : (
+	      <Alert type="info" showIcon title="在1688商品页点击“采集到凌镜”" description="商品会直接进入Owner私人采集箱，不要求提前建立选品任务；未关联前只表示页面线索，不代表商品机会或可信货源。" style={{ marginBottom: 16 }} />
+	      <Alert type="warning" showIcon icon={<SafetyCertificateOutlined />} title="外部发布受独立审批保护" description="草稿批准不会发布。只有 approved_draft 才显示发布安全区；请求发布、Owner 独立批准、再次执行和异常对账必须分别手动完成。" style={{ marginBottom: 16 }} />
+	      <Space wrap style={{ marginBottom: 16 }}>
+	        <Text strong>按状态筛选</Text>
+	        <Select
+	          aria-label="按采集箱状态筛选"
+	          allowClear
+	          placeholder="全部状态"
+	          value={collectionStatus}
+	          onChange={setCollectionStatus}
+	          style={{ width: 190 }}
+	          options={Object.entries(statusLabel).map(([value, label]) => ({ value, label }))}
+	        />
+	        {collectionStatus && <Button size="small" onClick={() => setCollectionStatus(undefined)}>清除筛选</Button>}
+	      </Space>
+	      {list.isError ? <Alert type="error" showIcon title="采集库加载失败" description={(list.error as Error).message} /> : (
         <Table<SourceRecord>
           rowKey="id" loading={list.isLoading} dataSource={records} scroll={{ x: 1300 }}
           pagination={{ pageSize: 20, showTotal: (n) => `共 ${n} 条` }}
           columns={[
             { title: '商品 / 供应商', width: 220, render: (_, r) => <><Text strong>{r.title || '未解析标题'}</Text><br /><Text type="secondary">{r.supplier_name || '供应商待核验'}</Text></> },
             { title: '来源证据', width: 230, render: (_, r) => <><a href={r.source_url} target="_blank" rel="noreferrer">1688 原链接</a><br /><Text type="secondary">快照 #{r.snapshot_id ?? '缺失'}</Text></> },
-            { title: '市场 / 实验', width: 190, render: (_, r) => <><Text>候选市场 #{r.demand_case_id ?? '缺失'}</Text><br /><Text type="secondary">实验 {r.experiment_id || '缺失'}</Text></> },
-            { title: '采购信息', width: 130, render: (_, r) => <><Text>¥{r.price ?? '未知'}</Text><br /><Text type="secondary">MOQ {r.moq}</Text></> },
-            { title: '生命周期', width: 170, render: (_, r) => <><Tag color={statusColor[r.status]}>{r.lifecycle_status || statusLabel[r.status] || r.status}</Tag><br /><Text type="secondary">{r.reviewed_at ? `Owner #${r.reviewed_by}` : '尚未复核'}</Text></> },
+	            { title: '任务关联', width: 220, render: (_, r) => (r.task_link_count ?? (r.experiment_id ? 1 : 0)) > 0 ? <><Tag color="blue">已关联 {r.task_link_count ?? 1} 个任务</Tag>{r.experiment_id && <><br /><Text type="secondary">主工作流：{r.experiment_id}</Text></>}<br /><Text type="secondary">点击查看每个任务的状态</Text></> : <><Tag>尚未关联任务</Tag><br /><Text type="secondary">私人收藏，不代表商品机会</Text></> },
+	            { title: '采购信息', width: 130, render: (_, r) => <><Text>{r.field_statuses?.price === 'observed' && r.price != null ? `¥${r.price}` : '价格未取得'}</Text><br /><Text type="secondary">{r.field_statuses?.moq === 'observed' ? `MOQ ${r.moq}` : '起订量未取得'}</Text></> },
+	            { title: '采集完整度', width: 250, render: (_, r) => { const completeness = collectionCompleteness(r.field_statuses); return <Space orientation="vertical" size={2}><Tag color={completeness.isComplete ? 'green' : 'gold'}>{completeness.isComplete ? '关键字段已取得' : `已取得 ${completeness.complete}/${completeness.total}`}</Tag>{completeness.missing.length > 0 && <Space wrap size={[4, 4]}>{completeness.missing.map((item) => <Tag key={item.field} color={item.status === 'parse_failed' ? 'red' : 'default'}>{item.label}：{item.status === 'parse_failed' ? '解析失败' : '未取得'}</Tag>)}</Space>}</Space>; } },
+	            { title: '状态 / 重复', width: 180, render: (_, r) => { const state = r.lifecycle_status || r.status; const observations = r.observation_count ?? (r.snapshot_id ? 1 : 0); return <><Tag color={statusColor[state] || statusColor[r.status]}>{statusLabel[state] || state}</Tag><br />{observations > 1 ? <Tag color="orange">{observations} 次观察</Tag> : <Text type="secondary">暂无重复观察</Text>}<br /><Text type="secondary">采集于 {r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '未知'}</Text></>; } },
             { title: '追溯', width: 130, render: (_, r) => <><Text>采集 #{r.id}</Text><br /><Text type="secondary">产品 #{r.product_id ?? '未创建'}</Text></> },
             { title: '操作', fixed: 'right', width: 240, render: (_, r) => <Space wrap>
+              <Button size="small" icon={<EyeOutlined />} onClick={() => setTaskLinksTarget(r)}>全部任务关联</Button>
+			  {!r.experiment_id && (r.task_link_count ?? 0) === 0 && ['unverified_lead', 'needs_review'].includes(r.lifecycle_status || r.status) && <Button size="small" onClick={() => {
+				setEditingPrivate(r); privateWorkcopyForm.setFieldsValue({ title: r.title, price: r.price, moq: r.moq, supplier_name: r.supplier_name, notes: r.review_notes });
+			  }}>整理/备注</Button>}
+	              {!r.experiment_id && (r.task_link_count ?? 0) === 0 && ['unverified_lead', 'needs_review'].includes(r.lifecycle_status || r.status) &&
+                <Popconfirm title="归档这条私人收藏？" description="原始采集快照会保留；已关联任务或草稿的记录不能在这里归档。" okText="归档" cancelText="取消" onConfirm={() => setPrivateArchive.mutate({ id: r.id, archived: true })}>
+	                  <Button size="small" loading={setPrivateArchive.isPending} icon={<DeleteOutlined />}>归档</Button>
+	                </Popconfirm>}
+	              {!r.experiment_id && (r.task_link_count ?? 0) === 0 && (r.lifecycle_status || r.status) === 'archived' &&
+	                <Button size="small" loading={setPrivateArchive.isPending} onClick={() => setPrivateArchive.mutate({ id: r.id, archived: false })}>恢复</Button>}
+	              {(r.lifecycle_status || r.status) !== 'archived' && <Button size="small" type={r.experiment_id ? "default" : "primary"} onClick={() => { setLinkingTask(r); taskLinkForm.resetFields(); }}>
+	                {r.experiment_id ? '再关联一个任务' : '关联选品任务'}
+	              </Button>}
               <Button size="small" disabled={!r.snapshot_id} onClick={() => void loadEvidence(r)}>查看证据</Button>
               <Button size="small" disabled={!r.snapshot_id} onClick={() => void loadIdentityHistory(r)}>变化/同款</Button>
               <Button size="small" onClick={() => void loadAcceptanceReport(r)}>15项验收</Button>
               <Button size="small" disabled={!r.snapshot_id || !['collected', 'pending_review'].includes(r.status)} onClick={() => { setReviewing(r); reviewForm.setFieldsValue({ notes: '' }); }}>Owner 复核</Button>
-              <Button size="small" type="primary" disabled={!r.reviewed_at || !['ready_for_product', 'editing'].includes(r.lifecycle_status || '')} onClick={() => openDraftEditor(r)}>{r.product_id ? '编辑草稿' : '转待上架草稿'}</Button>
+              <Button size="small" type="primary" disabled={!r.reviewed_at || !['ready_for_product', 'editing'].includes(r.lifecycle_status || '')} onClick={() => void openDraftEditor(r)}>{r.product_id ? '编辑主任务草稿（兼容）' : '主任务转草稿（兼容）'}</Button>
               <Button size="small" disabled={!r.reviewed_at} onClick={() => { setImageTarget(r); setProcessedImage(null); setProcessedImagePreviewURL(null); setProcessedImagePreviewError(null); }}>处理图片</Button>
-              <Button size="small" disabled={r.lifecycle_status !== 'editing'} onClick={() => setApprovalTarget(r)}>提交审批</Button>
-              <Button size="small" disabled={r.lifecycle_status !== 'pending_approval'} onClick={async () => { const res = await apiClient.get<{ approval_id?: number }>(`/v1/sourcing-1688/${r.id}/lifecycle`); const approvalId = res.data?.approval_id; if (approvalId) setDecisionTarget({ record: r, approvalId }); else message.error('未找到草稿审批记录'); }}>审批草稿</Button>
-              {r.lifecycle_status === 'approved_draft' && <Button size="small" danger icon={<SafetyCertificateOutlined />} onClick={() => void openPublishSafety(r)}>发布安全</Button>}
+              <Button size="small" disabled={r.lifecycle_status !== 'editing'} onClick={() => { setApprovalTaskLink(null); setApprovalTarget(r); }}>提交主任务审批（兼容）</Button>
+              <Button size="small" disabled={r.lifecycle_status !== 'pending_approval'} onClick={async () => { const res = await apiClient.get<{ approval_id?: number }>(`/v1/sourcing-1688/${r.id}/lifecycle`); const approvalId = res.data?.approval_id; if (approvalId) { setDecisionTaskLink(null); setDecisionTarget({ record: r, approvalId }); } else message.error('未找到草稿审批记录'); }}>审批主任务草稿（兼容）</Button>
+              {r.lifecycle_status === 'approved_draft' && <Button size="small" danger icon={<SafetyCertificateOutlined />} onClick={() => void openPublishSafety(r, null)}>主任务发布安全（兼容）</Button>}
             </Space> },
           ]}
         />
       )}
+
+      <Drawer
+        title={`全部任务关联 · 收藏 #${taskLinksTarget?.id ?? ''}`}
+        open={!!taskLinksTarget}
+        width={680}
+        onClose={() => setTaskLinksTarget(null)}
+        extra={<Button onClick={() => void taskLinks.refetch()} loading={taskLinks.isFetching} icon={<ReloadOutlined />}>刷新</Button>}
+      >
+        <Alert
+          type="info"
+          showIcon
+          title="同一条货源可以服务多个选品任务"
+          description="每个任务都有自己的工作流、草稿、审批和发布安全链。主任务标签只用于兼容旧入口，不会授权系统替你操作其他任务。"
+          style={{ marginBottom: 16 }}
+        />
+        {taskLinks.isError ? (
+          <Alert type="error" showIcon title="任务关联加载失败" description={(taskLinks.error as Error).message} />
+        ) : taskLinks.isLoading ? (
+          <Card loading title="正在读取任务关联" />
+        ) : allTaskLinks.length === 0 ? (
+          <Alert type="warning" showIcon title="尚未关联任何选品任务" description="这条记录仍是Owner私人收藏，不代表商品机会。" />
+        ) : (
+          <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text strong>主工作流</Text>
+              <Paragraph type="secondary" style={{ marginBottom: 8 }}>旧商品级按钮只兼容这个任务；推荐始终在对应任务卡内操作。</Paragraph>
+              {primaryTaskLinks.length ? primaryTaskLinks.map(taskCard) : <Alert type="warning" showIcon title="主任务缺失" description="仍可查看独立任务，但不要使用旧商品级操作入口。" />}
+            </div>
+            <Divider style={{ margin: 0 }} />
+            <div>
+              <Text strong>其他关联（{additionalTaskLinks.length}）</Text>
+              <Paragraph type="secondary" style={{ marginBottom: 8 }}>这些任务共享原始货源观察，但各自拥有独立草稿与审批状态。</Paragraph>
+              {additionalTaskLinks.length ? additionalTaskLinks.map(taskCard) : <Text type="secondary">暂无其他任务关联</Text>}
+            </div>
+          </Space>
+        )}
+        <Divider />
+	        {(taskLinksTarget?.lifecycle_status || taskLinksTarget?.status) !== 'archived' && <Button type="primary" onClick={() => { if (taskLinksTarget) { setLinkingTask(taskLinksTarget); taskLinkForm.resetFields(); } }}>
+	          再关联一个任务
+	        </Button>}
+      </Drawer>
+
+      <Drawer
+        title={`样品事实链 · 货源 #${samplesTarget?.source.id ?? ''}`}
+        open={!!samplesTarget}
+        width={760}
+        onClose={() => { setSamplesTarget(null); sampleRequestForm.resetFields(); sampleWaiverForm.resetFields(); }}
+        extra={<Button icon={<ReloadOutlined />} loading={samples.isFetching} onClick={() => void samples.refetch()}>刷新</Button>}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          title="批准下单不等于已经下单"
+          description="系统只保存Owner决定和现实凭证，不会自动向1688或供应商下单。只有录入订单凭证、金额和观察时间后，状态才是已下单 actual。"
+          style={{ marginBottom: 16 }}
+        />
+        {samplesTarget && (
+          <Descriptions size="small" column={{ xs: 1, sm: 2 }} bordered style={{ marginBottom: 16 }}>
+            <Descriptions.Item label="选定任务关联">#{samplesTarget.link.id}</Descriptions.Item>
+            <Descriptions.Item label="冻结商品机会">#{samplesTarget.link.product_opportunity_id ?? '缺失'}</Descriptions.Item>
+            <Descriptions.Item label="权威供应商">#{samplesTarget.source.supplier_id ?? '缺失'}</Descriptions.Item>
+            <Descriptions.Item label="不可变快照">#{samplesTarget.source.snapshot_id ?? '缺失'}</Descriptions.Item>
+          </Descriptions>
+        )}
+        {samplesTarget?.link.sample_policy === 'waived' ? (
+          <Alert type="warning" showIcon title="Owner已豁免样品门禁" description={samplesTarget.link.sample_waiver_reason || '已记录豁免'} style={{ marginBottom: 16 }} />
+        ) : selectedTaskSamples.some((detail) => detail.sample.status === 'accepted') ? (
+          <Alert type="success" showIcon title="已有通过样品" description="该任务满足草稿送审的样品门禁。" style={{ marginBottom: 16 }} />
+        ) : (
+          <Card size="small" title="样品门禁例外（可选）" style={{ marginBottom: 16 }}>
+            <Alert type="warning" showIcon title="仅在明确承担风险时豁免" description="豁免理由一旦保存不可修改；不等于供应商或商品已验证。" style={{ marginBottom: 12 }} />
+            <Form form={sampleWaiverForm} layout="vertical" onFinish={(values) => waiveSample.mutate(values)}>
+              <Form.Item name="reason" label="Owner豁免理由" rules={[{ required: true, message: '必须说明为什么不做样品' }, { min: 8, message: '请写清具体风险判断' }]}>
+                <Input.TextArea rows={3} placeholder="例如：标准低风险商品，本轮仅验证页面草稿；若进入采购前必须重新取样。" />
+              </Form.Item>
+              <Button htmlType="submit" danger loading={waiveSample.isPending}>确认豁免并冻结理由</Button>
+            </Form>
+          </Card>
+        )}
+        {(!samplesTarget?.source.supplier_id || !samplesTarget.source.snapshot_id || !samplesTarget.link.product_opportunity_id) ? (
+          <Alert type="error" showIcon title="不能建立样品申请" description="必须先取得权威供应商、不可变来源快照和已批准商品机会任务关联。" />
+        ) : (
+          <Card size="small" title="建立样品申请（不会外部下单）" style={{ marginBottom: 16 }}>
+            <Form form={sampleRequestForm} layout="vertical" initialValues={{ quantity: 1 }} onFinish={(values) => createSample.mutate(values)}>
+              <Row gutter={12}>
+                <Col xs={24} sm={14}><Form.Item name="supplier_sku" label="供应商SKU（可选）"><Input maxLength={200} /></Form.Item></Col>
+                <Col xs={24} sm={10}><Form.Item name="quantity" label="样品数量" rules={[{ required: true }]}><InputNumber min={1} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
+              </Row>
+              <Text type="secondary">供应商、快照和任务关联由当前货源自动带入，不能手工改写；Owner ID 由登录身份确定。</Text>
+              <div style={{ marginTop: 12 }}><Button htmlType="submit" type="primary" loading={createSample.isPending}>建立申请</Button></div>
+            </Form>
+          </Card>
+        )}
+        {samples.isError ? <Alert type="error" showIcon title="样品事实链加载失败" description={(samples.error as Error).message} /> : samples.isLoading ? (
+          <Card loading />
+        ) : selectedTaskSamples.length === 0 ? (
+          <Alert type="info" showIcon title="这个任务还没有样品记录" description="建立申请只记录研究意图，不会触发外部采购。" />
+        ) : selectedTaskSamples.map((detail) => {
+          const meta = sampleStatusMeta[detail.sample.status];
+          const next = sampleNextStatuses(detail.sample.status);
+          return <Card key={detail.sample.id} size="small" title={`样品 #${detail.sample.id}`} extra={<Tag color={meta.color}>{meta.label}</Tag>} style={{ marginBottom: 12 }}>
+            <Descriptions size="small" column={{ xs: 1, sm: 2 }}>
+              <Descriptions.Item label="数量">{detail.sample.quantity}</Descriptions.Item>
+              <Descriptions.Item label="供应商SKU">{detail.sample.supplier_sku || '未填写'}</Descriptions.Item>
+              <Descriptions.Item label="事实等级"><Tag color={detail.sample.truth_status === 'actual' ? 'green' : 'default'}>{detail.sample.truth_status}</Tag></Descriptions.Item>
+              <Descriptions.Item label="金额">{detail.sample.order_amount != null ? `${detail.sample.order_amount} ${detail.sample.currency ?? ''}` : '尚无已下单金额'}</Descriptions.Item>
+              <Descriptions.Item label="当前凭证" span={2}>{detail.sample.external_credential_uri ? <a href={detail.sample.external_credential_uri} target="_blank" rel="noreferrer">查看外部凭证</a> : '尚无actual外部凭证'}</Descriptions.Item>
+            </Descriptions>
+            <Divider style={{ margin: '12px 0' }} />
+            <Timeline items={detail.events.map((event) => ({
+              color: event.truth_status === 'actual' ? 'green' : 'gray',
+              children: <div><Space wrap><Text strong>{sampleStatusMeta[event.to_status]?.label ?? event.to_status}</Text><Tag>{event.truth_status}</Tag></Space><br /><Text type="secondary">{event.observed_at ? `观察于 ${new Date(event.observed_at).toLocaleString('zh-CN')}` : `记录于 ${new Date(event.created_at).toLocaleString('zh-CN')}`}</Text>{event.external_credential_uri && <><br /><a href={event.external_credential_uri} target="_blank" rel="noreferrer">外部凭证</a></>}{event.order_amount != null && <><br /><Text>{event.order_amount} {event.currency}</Text></>}{event.note && <Paragraph style={{ marginBottom: 0 }}>{event.note}</Paragraph>}</div>,
+            }))} />
+            <Space wrap>{next.map((toStatus) => <Button key={toStatus} type={toStatus === 'rejected' ? 'default' : 'primary'} danger={toStatus === 'rejected'} onClick={() => {
+              sampleTransitionForm.resetFields();
+              sampleTransitionForm.setFieldsValue({ observed_at: localDateTime(), currency: 'CNY' });
+              setSampleTransitionTarget({ detail, toStatus });
+            }}>{sampleStatusMeta[toStatus].label}</Button>)}</Space>
+          </Card>;
+        })}
+      </Drawer>
+
+      <Modal
+        title={sampleTransitionTarget ? `${sampleStatusMeta[sampleTransitionTarget.toStatus].label} · 样品 #${sampleTransitionTarget.detail.sample.id}` : '更新样品事实'}
+        open={!!sampleTransitionTarget}
+        onCancel={() => { setSampleTransitionTarget(null); sampleTransitionForm.resetFields(); }}
+        onOk={() => sampleTransitionForm.validateFields().then((values) => transitionSample.mutate(values))}
+        confirmLoading={transitionSample.isPending}
+        okText="保存本次状态"
+      >
+        {sampleTransitionTarget?.toStatus === 'approved_to_order' ? (
+          <Alert type="info" showIcon title="这只是Owner批准" description="保存后仍不会调用供应商或创建外部订单。实际下单完成后必须再录入actual订单凭证。" style={{ marginBottom: 16 }} />
+        ) : (
+          <Alert type="warning" showIcon title="必须来自现实事件" description="以下信息将按actual保存，请只录入可核验的外部凭证和真实观察时间。" style={{ marginBottom: 16 }} />
+        )}
+        <Form form={sampleTransitionForm} layout="vertical">
+          {sampleTransitionTarget?.toStatus !== 'approved_to_order' && <>
+            <Form.Item name="external_credential_uri" label="外部凭证 URI" rules={[{ required: true, message: '必须提供外部凭证' }]}><Input placeholder="订单、物流、签收照片或评估记录的位置" /></Form.Item>
+            <Form.Item name="observed_at" label="实际观察时间" rules={[{ required: true }]}><Input type="datetime-local" /></Form.Item>
+          </>}
+          {sampleTransitionTarget?.toStatus === 'ordered' && <Row gutter={12}>
+            <Col span={14}><Form.Item name="order_amount" label="实际订单金额" rules={[{ required: true }]}><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col>
+            <Col span={10}><Form.Item name="currency" label="币种" rules={[{ required: true }, { pattern: /^[A-Za-z]{3,8}$/ }]}><Input maxLength={8} /></Form.Item></Col>
+          </Row>}
+          <Form.Item
+            name="note"
+            label={sampleTransitionTarget?.toStatus === 'evaluated' ? '样品评估' : 'Owner说明'}
+            rules={['approved_to_order', 'evaluated', 'accepted', 'rejected'].includes(sampleTransitionTarget?.toStatus ?? '') ? [{ required: true, message: '此状态必须填写说明' }] : undefined}
+          ><Input.TextArea rows={4} placeholder="记录批准理由、样品质量、偏差或最终决定" /></Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+		title={`整理私人收藏 · #${editingPrivate?.id ?? ''}`}
+		open={!!editingPrivate}
+		onCancel={() => { setEditingPrivate(null); privateWorkcopyForm.resetFields(); }}
+		onOk={() => privateWorkcopyForm.validateFields().then((values) => updatePrivateWorkcopy.mutate(values))}
+		confirmLoading={updatePrivateWorkcopy.isPending}
+		okText="保存工作副本"
+	  >
+		<Alert type="info" showIcon title="这里只整理你的工作副本" description="原始1688页面快照保持不变；关联选品任务后应进入受控复核和草稿流程。" style={{ marginBottom: 16 }} />
+		<Form form={privateWorkcopyForm} layout="vertical">
+		  <Form.Item name="title" label="工作标题" rules={[{ required: true, message: '标题不能为空' }, { max: 500 }]}><Input /></Form.Item>
+		  <Row gutter={12}><Col span={12}><Form.Item name="price" label="参考价格（未知可留空）"><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col>
+		  <Col span={12}><Form.Item name="moq" label="起订量（未知填0）"><InputNumber min={0} precision={0} style={{ width: '100%' }} /></Form.Item></Col></Row>
+		  <Form.Item name="supplier_name" label="供应商显示名称"><Input /></Form.Item>
+		  <Form.Item name="notes" label="Owner备注" rules={[{ max: 4000 }]}><Input.TextArea rows={4} placeholder="记录待确认材质、报价条件、风险等" /></Form.Item>
+		</Form>
+	  </Modal>
+
+	  <Modal
+        title={`关联选品任务 · 收藏 #${linkingTask?.id ?? ''}`}
+        open={!!linkingTask}
+        onCancel={() => setLinkingTask(null)}
+        onOk={() => taskLinkForm.validateFields().then((values) => linkTask.mutate(values.product_opportunity_id))}
+        confirmLoading={linkTask.isPending}
+        okText="关联并进入待复核"
+      >
+        <Alert type="info" showIcon title="关联后才进入受控经营流程" description="私人收藏本身不代表商品机会。后端会再次检查候选市场、Owner和商品机会闸门。" style={{ marginBottom: 16 }} />
+        <Form form={taskLinkForm} layout="vertical">
+          <Form.Item name="product_opportunity_id" label="已批准商品机会" rules={[{ required: true, message: '请选择商品机会' }]}>
+            <Select
+              loading={eligibleTasks.isLoading}
+              placeholder={eligibleTasks.data?.data?.length ? '选择一个已满足条件的选品任务' : '目前没有可关联的选品任务'}
+              options={(eligibleTasks.data?.data ?? []).map((task) => ({ value: task.product_opportunity_id, label: `${task.label} · 机会 #${task.product_opportunity_id}` }))}
+              notFoundContent="目前没有已通过商品机会闸门的选品任务"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal title="从 URL 采集 1 个真实 1688 商品" open={fetchOpen} width={680} onCancel={() => setFetchOpen(false)} onOk={() => fetchForm.validateFields().then((v) => controlledFetch.mutate(v))} confirmLoading={controlledFetch.isPending} okText="采集并保存证据">
         <Alert type="info" showIcon title="先打开同一个 1688 商品页面并确认扩展已连接" description="浏览器中必须已登录 1688，并打开与下方完全相同的商品 URL；凌镜扩展状态必须为 connected。随后系统才会检查已批准市场、active 实验和商品机会，并保存真实页面快照。" style={{ marginBottom: 16 }} />
@@ -663,15 +1447,18 @@ export default function Sourcing1688Page() {
         <Form form={reviewForm} layout="vertical"><Form.Item name="notes" label="复核说明" rules={[{ required: true }]}><Input.TextArea rows={4} placeholder="写明核对项、疑点和结论" /></Form.Item></Form>
       </Modal>
 
-      <Modal title="提交草稿审批" open={!!approvalTarget} onCancel={() => setApprovalTarget(null)} footer={null}>
+      <Modal title={approvalTaskLink ? `提交任务草稿审批 · ${approvalTaskLink.label || approvalTaskLink.experiment_id}` : '提交主任务草稿审批（兼容入口）'} open={!!approvalTarget} onCancel={() => { setApprovalTarget(null); setApprovalTaskLink(null); }} footer={null}>
+        {approvalTaskLink && <Alert type="info" showIcon title={`仅操作任务关联 #${approvalTaskLink.id}`} description={`草稿 #${approvalTaskLink.draft_id ?? '未知'}；不会提交其他任务的草稿。`} style={{ marginBottom: 12 }} />}
         <Form layout="vertical" onFinish={(v) => approvalTarget && submitApproval.mutate({ id: approvalTarget.id, reason: v.reason })}><Form.Item name="reason" label="提交理由" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item><Button htmlType="submit" type="primary" loading={submitApproval.isPending}>提交 Owner 审批（不发布）</Button></Form>
       </Modal>
 
-      <Modal title="Owner 草稿审批" open={!!decisionTarget} onCancel={() => setDecisionTarget(null)} footer={null}>
+      <Modal title={decisionTaskLink ? `Owner 审批任务草稿 · ${decisionTaskLink.label || decisionTaskLink.experiment_id}` : 'Owner 审批主任务草稿（兼容入口）'} open={!!decisionTarget} onCancel={() => { setDecisionTarget(null); setDecisionTaskLink(null); }} footer={null}>
+        {decisionTaskLink && <Alert type="warning" showIcon title={`仅审批任务关联 #${decisionTaskLink.id}`} description={`草稿 #${decisionTaskLink.draft_id ?? '未知'}；批准不会发布，也不会影响其他任务。`} style={{ marginBottom: 12 }} />}
         <Form form={decisionForm} layout="vertical"><Form.Item name="note" label="审批说明" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item><Space><Button type="primary" loading={decideApproval.isPending} onClick={() => decisionForm.validateFields().then(({ note }) => decideApproval.mutate({ action: 'approve', note }))}>批准内部草稿</Button><Button danger loading={decideApproval.isPending} onClick={() => decisionForm.validateFields().then(({ note }) => decideApproval.mutate({ action: 'reject', note }))}>退回编辑</Button></Space></Form>
       </Modal>
 
-      <Modal forceRender title={`生成待上架草稿 · 采集 #${converting?.id ?? ''}`} open={!!converting} width={1120} onCancel={() => setConverting(null)} onOk={() => convertForm.validateFields().then((v) => convert.mutate(v))} confirmLoading={convert.isPending} okText="保存并预览草稿">
+      <Modal forceRender title={convertingTaskLink ? `${convertingTaskLink.draft_id ? '编辑' : '生成'}任务草稿 · ${convertingTaskLink.label || convertingTaskLink.experiment_id}` : `主任务草稿（兼容入口） · 采集 #${converting?.id ?? ''}`} open={!!converting} width={1120} onCancel={() => { setConverting(null); setConvertingTaskLink(null); }} onOk={() => convertForm.validateFields().then((v) => convert.mutate(v))} confirmLoading={convert.isPending} okText="保存并预览草稿">
+        {convertingTaskLink && <Alert type="info" showIcon title={`当前只操作任务关联 #${convertingTaskLink.id}`} description={`独立状态：${taskLinkStatus(convertingTaskLink).label}；${convertingTaskLink.draft_id ? `草稿 #${convertingTaskLink.draft_id}` : '将为此任务生成独立草稿'}。`} style={{ marginBottom: 12 }} />}
         <Alert type="warning" showIcon title="不会自动发布" description="此动作只创建产品记录和渠道草稿。任何平台发布必须走单独的 Owner 批准。" style={{ marginBottom: 16 }} />
         <Form form={convertForm} layout="vertical">
           <Collapse defaultActiveKey={['basic', 'sku']} items={[
@@ -848,10 +1635,10 @@ export default function Sourcing1688Page() {
       </Modal>
 
       <Drawer
-        title={`发布安全 · 采集 #${publishTarget?.id ?? ''}`}
+        title={publishTaskLink ? `任务发布安全 · ${publishTaskLink.label || publishTaskLink.experiment_id}` : `主任务发布安全（兼容入口） · 采集 #${publishTarget?.id ?? ''}`}
         open={!!publishTarget}
         size={960}
-        onClose={() => setPublishTarget(null)}
+        onClose={() => { setPublishTarget(null); setPublishTaskLink(null); }}
         extra={<Tag color="red">真实平台写入 · 高风险</Tag>}
       >
         <Alert
@@ -862,6 +1649,7 @@ export default function Sourcing1688Page() {
           description="①冻结请求与全部 SKU 库存 → ②独立批准或拒绝 → ③批准后再次点击执行外部写 → ④仅在结果不明确时用 actual 证据对账。任何成功提示都不会自动进入下一步。"
           style={{ marginBottom: 16 }}
         />
+        {publishTaskLink && <Alert type="info" showIcon title={`本页只绑定任务关联 #${publishTaskLink.id}`} description={`草稿 #${publishTaskLink.draft_id ?? '未知'}；所有审批、执行和对账请求均携带该任务身份，不会回退到主任务。`} style={{ marginBottom: 16 }} />}
 
         {publishAttempts.isLoading ? <Card loading /> : publishAttempts.isError
           ? <Alert type="error" showIcon title="无法确认既有发布请求，已停止新建" description={(publishAttempts.error as Error).message} />

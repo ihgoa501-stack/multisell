@@ -208,6 +208,35 @@ func TestRBAC_AssignUserRoles_Replace(t *testing.T) {
 	}
 }
 
+func TestRBAC_DisabledRoleGrantsNoPermissions(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db, testLogger())
+	role := &Role{Name: "disabled", Code: "disabled", Status: 1}
+	perm := &Permission{Name: "Sensitive", Code: "sensitive.write"}
+	if err := svc.CreateRole(role); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CreatePermission(perm); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AssignRolePermissions(role.ID, []int64{perm.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AssignUserRoles(42, []int64{role.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(role).Update("status", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+	codes, err := svc.GetUserPermissions(42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(codes) != 0 {
+		t.Fatalf("disabled role granted permissions: %v", codes)
+	}
+}
+
 func TestRBAC_GetUserPermissions_Aggregation(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewService(db, testLogger())

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
@@ -22,6 +23,33 @@ func demandOwnerID(c *gin.Context) (int64, bool) {
 		return 0, false
 	}
 	return *id, true
+}
+
+func (h *Handler) Compare(c *gin.Context) {
+	owner, ok := demandOwnerID(c)
+	if !ok {
+		return
+	}
+	parts := strings.Split(c.Query("ids"), ",")
+	ids := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err != nil || id <= 0 {
+			response.Error(c, http.StatusBadRequest, "invalid comparison candidate ids")
+			return
+		}
+		ids = append(ids, id)
+	}
+	comparison, err := h.service.Compare(c.Request.Context(), owner, ids)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		response.Error(c, http.StatusNotFound, "candidate market not found")
+		return
+	}
+	if err != nil {
+		response.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	response.Success(c, comparison)
 }
 
 func demandCaseID(c *gin.Context) (int64, bool) {

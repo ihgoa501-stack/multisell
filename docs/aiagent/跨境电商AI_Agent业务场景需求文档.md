@@ -460,7 +460,7 @@ Week 1: 设置Coupon + Deal价格，最终确认库存，监控竞品动作
 2. **竞争程度评估**
    ```
    竞争指数 = (TOP3品牌市场集中度 + Review门槛 + 价格战激烈度) / 3
-   
+
    Review门槛评估：
    - 低门槛：TOP10平均Review < 100条 → 新品有机会
    - 中门槛：TOP10平均Review 100-500条 → 需要运营能力
@@ -897,13 +897,13 @@ PayPal裁决：通常在30天内做出决定
 ```
 场景1：德国买家投诉产品有"Kratzer"（划痕）
 - Google翻译：scratch ✓
-- DeepL翻译：scratch ✓ 
+- DeepL翻译：scratch ✓
 - ChatGPT："The product arrived with scratches on the surface" ✓（更自然）
 
 场景2：法国买家说"C'est de la camelote"
 - Google翻译："It's junk" ❌（太生硬，直接这么回复买家会炸）
 - DeepL翻译："It's rubbish" ❌
-- ChatGPT：理解为"产品让我很不满意，质量差"，建议回复："We're sorry the 
+- ChatGPT：理解为"产品让我很不满意，质量差"，建议回复："We're sorry the
   product didn't meet your expectations. We'd like to help resolve this..."
   ✓（AI理解意图而非字面翻译）
 
@@ -1024,7 +1024,7 @@ PayPal裁决：通常在30天内做出决定
 
 **入仓后的状态流转：**
 ```
-已发货(Shipped) → 在途(In Transit) → 已送达(Delivered) 
+已发货(Shipped) → 在途(In Transit) → 已送达(Delivered)
 → 已登记(Checked In) → 正在接收(Receiving) → 已入库/可售(Available)
 
 异常状态：
@@ -1045,14 +1045,14 @@ PayPal裁决：通常在30天内做出决定
 详细拆解：
 1. 日平均销量 = 近30天总销量 / 30
    注意：排除异常日（Deal日、断货日）
-   
+
 2. 补货提前期 = 采购周期 + 国内物流 + 头程物流 + 亚马逊入仓
    例：采购10天 + 国内3天 + 海运30天 + 入仓5天 = 48天
 
 3. 安全库存 = Z × σ × √提前期
    Z = 服务水平系数（通常1.65，对应95%不缺货概率）
    σ = 日销量的标准差（衡量波动性）
-   
+
    简化公式（行业常用）：
    安全库存 = 日平均销量 × 缓冲天数
    缓冲天数 = 7-15天（根据产品稳定性调整）
@@ -1062,7 +1062,7 @@ PayPal裁决：通常在30天内做出决定
    平季（Q2-Q3）：补货量 × 1.0
    淡季（Q1）：补货量 × 0.7-0.8
 
-实际补货量 = (日平均销量 × (补货提前期 + 安全库存天数) × 季节系数) 
+实际补货量 = (日平均销量 × (补货提前期 + 安全库存天数) × 季节系数)
               - 当前FBA库存 - 在途库存 - 国内库存
               + 预留增长量（如预期增长20%）
 
@@ -1319,7 +1319,7 @@ PayPal裁决：通常在30天内做出决定
 每个月的账务管理挑战：
 1. 多币种汇总：USD + EUR + GBP + JPY + TWD + SGD
    → 统一换算为人民币（使用当月平均汇率）
-   
+
 2. 多平台费用结构：
    Amazon：佣金(15%) + FBA + 广告 + 仓储
    TikTok Shop：佣金(2-5%) + 运费补贴

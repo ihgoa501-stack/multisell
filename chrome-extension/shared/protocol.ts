@@ -2,6 +2,9 @@
 
 /** Structured product data extracted from a 1688 product page. */
 export interface PageData {
+	schema_version: "sourcing1688.private.v1";
+	offer_id_url: string;
+	offer_id_page: string;
   source_url: string;
   collected_at: string;
   driver: string;
@@ -9,6 +12,7 @@ export interface PageData {
 
   title: string;
   price_1688: number;
+	price_model: "fixed" | "range" | "tiered" | "sku" | "unknown";
   price_min?: number | null;
   price_max?: number | null;
   currency: string;
@@ -31,14 +35,14 @@ export interface PageData {
   package_width_cm?: number | null;
   package_height_cm?: number | null;
   freight_cny?: number | null;
-  raw_html?: string;
+	field_statuses: Record<string, "observed" | "unknown" | "parse_failed" | "no_sku">;
 }
 
 /** A single spec variant (e.g. "color:red; size:L"). */
 export interface SpecVariant {
   spec: string;
-  price: number;
-  stock: number;
+	price?: number;
+	stock?: number;
   image_url?: string;
 }
 
@@ -141,6 +145,45 @@ export interface ContentScriptFetchResult {
     | { code: string; message: string };
 }
 
+/** Content script asks the background worker to save the current page. */
+export interface CollectPrivateProductRequest {
+  type: "collect_private_product";
+  requestId: string;
+  pageData: PageData;
+	observationIntent?: "save_new_observation";
+}
+
+export interface ExistingPrivateCollectionSummary {
+	title: string | null;
+	price: number | null;
+	moq: number | null;
+	supplier_name: string;
+	sku_count: number;
+	image_count: number;
+	observed_at: string;
+}
+
+export interface CollectPrivateProductResponse {
+  type: "private_collection_result";
+  requestId: string;
+  payload:
+	| { status: "saved"; recordId: number; snapshotId: number; idempotentReplay: boolean; newObservation: boolean }
+	| { status: "duplicate_requires_choice"; recordId: number; snapshotId: number; message: string; saved: false; existing: ExistingPrivateCollectionSummary }
+    | { status: "not_saved"; code: string; message: string; saved: false }
+    | { status: "reconcile_required"; code: string; message: string; saved: false }
+    | { status: "failed"; code: string; message: string; saved: false };
+}
+
+/** Popup backup entry asks the active page to run the same one-click flow. */
+export interface TriggerPrivateCollectionRequest {
+  type: "collect_private_product_from_page";
+}
+
+export interface OpenPrivateCollectionRequest {
+	type: "open_private_collection";
+	recordId: number;
+}
+
 /** Content script sends list page extraction result to background. */
 export interface ListPageContentScriptResult {
   type: "list_page_result";
@@ -151,7 +194,11 @@ export interface ListPageContentScriptResult {
 export type ExtensionMessage =
   | ContentScriptFetchRequest
   | ContentScriptFetchResult
-  | ListPageContentScriptResult;
+  | ListPageContentScriptResult
+  | CollectPrivateProductRequest
+  | CollectPrivateProductResponse
+	| OpenPrivateCollectionRequest
+  | TriggerPrivateCollectionRequest;
 
 // ─── Popup <-> Background messaging ────────────────────────────────────────
 
@@ -159,9 +206,21 @@ export interface StatusRequest {
   type: "get_status";
 }
 
+export interface ReconcilePendingCollectionsRequest {
+  type: "reconcile_pending_collections";
+}
+
 export interface StatusResponse {
   type: "connection_status";
   status: "connected" | "disconnected" | "no_token" | "error";
+}
+
+export interface CollectionRecoveryUpdate {
+  type: "collection_recovery_update";
+  payload: Record<string, unknown> & {
+    status: "saved" | "not_saved" | "reconcile_required";
+    requestId: string;
+  };
 }
 
 export interface SetTokenRequest {
@@ -174,4 +233,4 @@ export interface SetTokenResponse {
   error?: string;
 }
 
-export type PopupMessage = StatusRequest | StatusResponse | SetTokenRequest;
+export type PopupMessage = StatusRequest | ReconcilePendingCollectionsRequest | StatusResponse | SetTokenRequest | CollectionRecoveryUpdate;

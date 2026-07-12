@@ -16,7 +16,7 @@ if [ $# -lt 1 ]; then
     echo "Usage: $0 <backup_file>"
     echo ""
     echo "Arguments:"
-    echo "  backup_file  路径到 .sql.gz 备份文件"
+    echo "  backup_file  路径到 .dump 或历史 .sql.gz 备份文件"
     echo ""
     echo "Environment variables (defaults in parentheses):"
     echo "  DB_HOST      (localhost)"
@@ -36,9 +36,12 @@ DB_USER="${DB_USER:-postgres}"
 DB_PASSWORD="${DB_PASSWORD:-postgres}"
 DB_NAME="${DB_NAME:-multisell}"
 
+case "$DB_NAME" in
+    ""|*[!A-Za-z0-9_]*) echo "[ERROR] DB_NAME must contain only letters, digits, and underscore."; exit 1 ;;
+esac
+
 # ---- 前置检查 ----------------------------------------------------------------
 command -v pg_restore >/dev/null 2>&1 || { echo "[ERROR] pg_restore not found. Install postgresql client tools."; exit 1; }
-command -v gunzip     >/dev/null 2>&1 || { echo "[ERROR] gunzip not found."; exit 1; }
 command -v psql       >/dev/null 2>&1 || { echo "[ERROR] psql not found. Install postgresql client tools."; exit 1; }
 
 if [ ! -f "$BACKUP_FILE" ]; then
@@ -46,24 +49,44 @@ if [ ! -f "$BACKUP_FILE" ]; then
     exit 1
 fi
 
+CHECKSUM_FILE="${BACKUP_FILE}.sha256"
+if [ -f "$CHECKSUM_FILE" ]; then
+    echo "[INFO] Verifying SHA-256 checksum..."
+    if command -v sha256sum >/dev/null 2>&1; then
+        (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$CHECKSUM_FILE")")
+    elif command -v shasum >/dev/null 2>&1; then
+        (cd "$(dirname "$BACKUP_FILE")" && shasum -a 256 -c "$(basename "$CHECKSUM_FILE")")
+    else
+        echo "[ERROR] sha256sum or shasum is required to verify the checksum."
+        exit 1
+    fi
+fi
+
 # ---- 验证备份文件完整性 --------------------------------------------------------
 echo "[INFO] Verifying backup file integrity..."
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-if ! gunzip -c "$BACKUP_FILE" > "${TMP_DIR}/backup.dump" 2>/dev/null; then
-    echo "[ERROR] Failed to decompress backup file. File may be corrupt."
-    exit 1
-fi
+case "$BACKUP_FILE" in
+    *.gz)
+        command -v gunzip >/dev/null 2>&1 || { echo "[ERROR] gunzip not found."; exit 1; }
+        if ! gunzip -c "$BACKUP_FILE" > "${TMP_DIR}/backup.dump" 2>/dev/null; then
+            echo "[ERROR] Failed to decompress backup file. File may be corrupt."
+            exit 1
+        fi
+        RESTORE_FILE="${TMP_DIR}/backup.dump"
+        ;;
+    *) RESTORE_FILE="$BACKUP_FILE" ;;
+esac
 
-if ! pg_restore --list "${TMP_DIR}/backup.dump" >/dev/null 2>&1; then
+if ! pg_restore --list "$RESTORE_FILE" >/dev/null 2>&1; then
     echo "[ERROR] Backup file validation failed: pg_restore --list returned an error."
     echo "        The file may be corrupt or not a valid pg_dump custom format."
     exit 1
 fi
 
 BACKUP_SIZE=$(stat -f%z "$BACKUP_FILE" 2>/dev/null || stat -c%s "$BACKUP_FILE" 2>/dev/null)
-echo "[OK] Backup file is valid (${BACKUP_SIZE} bytes compressed)."
+echo "[OK] Backup archive is valid (${BACKUP_SIZE} bytes)."
 
 # ---- 危险确认 ----------------------------------------------------------------
 echo ""
@@ -109,7 +132,7 @@ if pg_restore \
     --verbose \
     --clean \
     --if-exists \
-    "${TMP_DIR}/backup.dump" 2>/dev/null; then
+    "$RESTORE_FILE" 2>/dev/null; then
     echo ""
     echo -e "${YELLOW}[OK] Database '${DB_NAME}' restored successfully from:${NC}"
     echo "     ${BACKUP_FILE}"

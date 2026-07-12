@@ -15,7 +15,6 @@
   "include": [
     "background.ts",
     "content-script.ts",
-    "content-script-list.ts",
     "auth-bridge.ts",
     "popup.ts",
     "shared/**/*.ts"

@@ -31,16 +31,24 @@ func (s *controlledFetchStub) FetchPage(ctx context.Context, _ string) (*toolbri
 
 func controlledFetchDB(t *testing.T) (*Service, *ControlledFetchHandler) {
 	t.Helper()
-	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &CaptureAttempt{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{})
+	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &Sourcing1688TaskLink{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &CaptureAttempt{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &sourcingMarketDecisionRow{}, &sourcingOpportunityRow{}, &sourcingOpportunityDecisionRow{})
 	svc := NewService(db, dbtest.NewLogger(t))
 	return svc, nil
 }
 
 func seedControlledFetchGate(svc *Service) {
 	svc.db.Create(&demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "approved-channel", TargetLocale: "en-US", Status: "experiment_ready"})
+	title := "private lead"
+	demandCaseID, experimentID := int64(7), "EXP-1"
+	svc.db.Create(&Sourcing1688Product{ID: 60, OwnerID: 42, SourceURL: "https://detail.1688.com/offer/123.html", SourceOfferID: "123", Title: &title, DemandCaseID: &demandCaseID, ExperimentID: &experimentID, Status: StatusPendingReview, LifecycleStatus: LifecyclePendingReview})
+	svc.db.Create(&sourcingMarketDecisionRow{ID: 61, DemandCaseID: 7, OwnerID: 42, Decision: "selected"})
+	svc.db.Create(&sourcingOpportunityRow{ID: 62, OwnerID: 42, DemandCaseID: 7, MarketDecisionID: 61, Version: 1, Title: "approved opportunity", TargetChannel: "approved-channel", Status: "approved", ContentHash: strings.Repeat("a", 64)})
+	svc.db.Create(&sourcingOpportunityDecisionRow{ID: 63, OpportunityID: 62, OwnerID: 42, Version: 1, Decision: "approved", ContentHash: strings.Repeat("a", 64)})
 	svc.db.Create(&experimentRow{ExperimentID: "EXP-1", OwnerID: 42, Status: "active", Stage: "product"})
 	svc.db.Create(&gateRow{ExperimentID: "EXP-1", Stage: "opportunity", Result: "pass"})
 	svc.db.Create(&objectLinkRow{ExperimentID: "EXP-1", ObjectType: "demand_case", ObjectID: "7"})
+	opportunityID, decisionID := int64(62), int64(63)
+	svc.db.Create(&Sourcing1688TaskLink{SourcingProductID: 60, DemandCaseID: 7, ExperimentID: "EXP-1", OwnerID: 42, ProductOpportunityID: &opportunityID, OpportunityDecisionID: &decisionID, AuthorityKind: "product_opportunity", Status: "active_workflow", IsPrimary: true})
 }
 
 func performControlledFetch(t *testing.T, h *ControlledFetchHandler, ownerID int64) *httptest.ResponseRecorder {
@@ -153,8 +161,8 @@ func TestControlledFetchRejectsMismatchedCollectorResponse(t *testing.T) {
 	}
 	var products int64
 	svc.db.Model(&Sourcing1688Product{}).Count(&products)
-	if products != 0 {
-		t.Fatalf("mismatched response created %d products", products)
+	if products != 1 {
+		t.Fatalf("mismatched response changed product count to %d", products)
 	}
 }
 

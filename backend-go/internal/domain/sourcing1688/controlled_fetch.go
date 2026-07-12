@@ -71,9 +71,9 @@ func (s *Service) validateControlledFetchGate(demandCaseID int64, experimentID s
 			return err
 		}
 		if linkCount != 1 || gateCount == 0 {
-			return fmt.Errorf("%w: approved opportunity linkage required", ErrWorkflowGate)
+			return fmt.Errorf("%w: experiment trace linkage is incomplete", ErrWorkflowGate)
 		}
-		return nil
+		return requirePrimarySourcingAuthority(tx, ownerID, demandCaseID, experimentID)
 	})
 }
 

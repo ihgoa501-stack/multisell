@@ -38,10 +38,10 @@ flowchart LR
     A["熵增<br/>不可避免"] --> B["熵增是可观测的<br/>(measurable)"]
     B --> C["熵增是可预测的<br/>(predictable)"]
     C --> D["熵增是可提前干预的<br/>(preventable)"]
-    
+
     B1["反应式机制"] -.->|"检测→响应"| E["熵失控后救火"]
     C1["预测式机制"] -.->|"预测→预防"| F["熵加速前干预"]
-    
+
     style E fill:#ffcccc
     style F fill:#ccffcc
 ```
@@ -77,13 +77,13 @@ graph TD
     SE --> E3["③ 语义漂移<br/>Semantic Drift"]
     SE --> E4["④ 记忆污染<br/>Memory Pollution"]
     SE --> E5["⑤ 认知过载<br/>Cognitive Overload"]
-    
+
     E1 --> S1["规则数 ↑ 不受控<br/>长尾规则堆积<br/>每决策匹配20+规则"]
     E2 --> S2["同类规则互斥<br/>新规则覆盖旧规则<br/>用户频繁手动纠正"]
     E3 --> S3["规则前提失效<br/>业务环境已变<br/>但规则照常触发"]
     E4 --> S4["低质决策进入<br/>情景记忆作为正例<br/>错误自我强化"]
     E5 --> S5["Nudge过频<br/>决策延迟超标<br/>用户决策疲劳"]
-    
+
     style S1 fill:#ffe0b2
     style S2 fill:#ffe0b2
     style S3 fill:#ffccbc
@@ -141,7 +141,7 @@ graph TD
 ```
 定义: 规则的语义前提已经变化，但规则本身未更新
 
-指标: 
+指标:
   上下文分布的 KL 散度 vs 规则创建时的基准分布
 
 实例:
@@ -202,18 +202,18 @@ graph TD
 ```mermaid
 stateDiagram-v2
     [*] --> active: 规则创建
-    
+
     active --> shadow: 置信度<0.5 或<br/>创建后5周期无触发
     active --> stale: 30天未触发 或<br/>被覆盖>50次 或<br/>上下文漂移
-    
+
     stale --> tombstone: 14天宽限期满
     stale --> active: 用户在Nudge中<br/>明确保留
-    
+
     shadow --> active: 5-10周期验证<br/>效果≥基线
     shadow --> tombstone: 验证失败 或<br/>14天无人关注
-    
+
     tombstone --> [*]: 硬删除 (7天后)
-    
+
     note right of stale: 宽限期内<br/>触发Nudge询问用户
     note right of shadow: 静默运行<br/>收集对比数据
 ```
@@ -244,7 +244,7 @@ def check_rule_staleness(rule: PersonalRule) -> Optional[StaleReason]:
     三条并发判定条件，任一命中即进入 stale
     """
     reasons = []
-    
+
     # 条件1: 触发冷寂
     if rule.last_triggered_at is None:
         days_since_creation = (now() - rule.created_at).days
@@ -252,13 +252,13 @@ def check_rule_staleness(rule: PersonalRule) -> Optional[StaleReason]:
             reasons.append(StaleReason.NEVER_TRIGGERED)
     elif (now() - rule.last_triggered_at).days > 30:
         reasons.append(StaleReason.TRIGGER_COLD)
-    
+
     # 条件2: 高频覆盖
     if rule.trigger_count_30d > 0:
         override_ratio = rule.override_count_30d / rule.trigger_count_30d
         if override_ratio > 0.5 and rule.trigger_count_30d > 50:
             reasons.append(StaleReason.HIGH_OVERRIDE)
-    
+
     # 条件3: 上下文漂移
     if rule.context_embedding_snapshot is not None:
         current_centroid = get_current_context_centroid(
@@ -267,7 +267,7 @@ def check_rule_staleness(rule: PersonalRule) -> Optional[StaleReason]:
         drift = cosine_distance(rule.context_embedding_snapshot, current_centroid)
         if drift > 0.3:
             reasons.append(StaleReason.CONTEXT_DRIFT)
-    
+
     if reasons:
         mark_stale(rule, reasons)
         return reasons
@@ -281,27 +281,27 @@ def check_rule_staleness(rule: PersonalRule) -> Optional[StaleReason]:
 ```python
 DEFAULT_TTL_MAP = {
     # (rule_type, source) → TTL in days
-    
+
     # 手动规则 — 用户显式意图，长TTL
     ('threshold', 'manual'):     180,
     ('strategy',  'manual'):     180,
     ('style',     'manual'):     365,
     ('veto',      'manual'):     365,
-    
+
     # Nudge确认 — 对话确认过，中长TTL
     ('threshold', 'nudge'):      120,
     ('strategy',  'nudge'):      120,
     ('style',     'nudge'):      180,
-    
+
     # 自动提取 — 高置信度 >90%
     ('threshold', 'auto_extracted'): 60,
     ('strategy',  'auto_extracted'): 60,
     ('style',     'auto_extracted'): 90,
-    
+
     # 自动提取 — 低置信度 <90%
     ('threshold', 'auto_extracted'): 30,
     ('strategy',  'auto_extracted'): 30,
-    
+
     # 模板 — 初始值，可变
     ('threshold', 'template'):   90,
     ('strategy',  'template'):   90,
@@ -334,17 +334,17 @@ flowchart TD
     A[新规则创建] --> B{同决策点已有<br/>N条规则?}
     B -->|N<3| Z[正常入库]
     B -->|N≥3| C[计算新规则与已有<br/>规则的向量相似度]
-    
+
     C --> D{最高相似度<br/>>0.85?}
     D -->|否| Z
     D -->|是| E[标记为合并候选]
-    
+
     E --> F[Shadow模式对比]
     F --> G{两条规则的效果<br/>差异<5%?}
-    
+
     G -->|是| H[自动合并<br/>以置信度较高者为准]
     G -->|否| I[推送Nudge<br/>"发现相似规则可合并"]
-    
+
     I --> J{用户响应?}
     J -->|同意| K[合并 + 记录]
     J -->|拒绝| L[两条共存<br/>标记互斥关系]
@@ -362,14 +362,14 @@ def compute_rule_similarity(rule_a: PersonalRule, rule_b: PersonalRule) -> float
     cond_emb_a = embed_condition(rule_a.rule_condition)
     cond_emb_b = embed_condition(rule_b.rule_condition)
     condition_sim = cosine_similarity(cond_emb_a, cond_emb_b)
-    
+
     # 维度2: 动作相似度 (weight=0.3)
     action_emb_a = embed_action(rule_a.rule_action)
     action_emb_b = embed_action(rule_b.rule_action)
     action_sim = cosine_similarity(action_emb_a, action_emb_b)
-    
+
     # 维度3: 触发上下文相似度 (weight=0.2)
-    if (rule_a.context_embedding_snapshot is not None 
+    if (rule_a.context_embedding_snapshot is not None
         and rule_b.context_embedding_snapshot is not None):
         context_sim = cosine_similarity(
             rule_a.context_embedding_snapshot,
@@ -377,16 +377,16 @@ def compute_rule_similarity(rule_a: PersonalRule, rule_b: PersonalRule) -> float
         )
     else:
         context_sim = 0.5  # 信息不足，中性
-    
+
     # 维度4: 历史表现相似度 (weight=0.1)
     perf_a = rule_a.acceptance_rate()
     perf_b = rule_b.acceptance_rate()
     performance_sim = 1.0 - abs(perf_a - perf_b)
-    
+
     return (
-        0.4 * condition_sim + 
-        0.3 * action_sim + 
-        0.2 * context_sim + 
+        0.4 * condition_sim +
+        0.3 * action_sim +
+        0.2 * context_sim +
         0.1 * performance_sim
     )
 ```
@@ -399,21 +399,21 @@ CREATE TABLE rule_merge_candidates (
     user_id         UUID NOT NULL,
     agent_id        VARCHAR(20) NOT NULL,
     decision_point  VARCHAR(50) NOT NULL,
-    
+
     rule_a_id       UUID NOT NULL REFERENCES personal_rules(id),
     rule_b_id       UUID NOT NULL REFERENCES personal_rules(id),
     similarity      DECIMAL(4,3) NOT NULL,
-    
+
     shadow_started_at TIMESTAMPTZ,
     shadow_result     JSONB,  -- {rule_a_effect, rule_b_effect, diff_pct}
-    
+
     status          VARCHAR(20) DEFAULT 'pending',  -- pending, auto_merged, nudge_sent, merged, rejected, auto_merged_after_ignore
-    
+
     merged_rule_id  UUID,
-    
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_at     TIMESTAMPTZ,
-    
+
     -- 确保不重复标记
     UNIQUE(rule_a_id, rule_b_id, status)
 );
@@ -430,27 +430,27 @@ class RegretDetector:
     不是"用户覆盖了规则"就算后悔，
     而是"执行结果与用户期望偏差显著"才算后悔。
     """
-    
+
     REGRET_THRESHOLD = 0.20  # 偏差超过20%触发后悔
-    
+
     def detect(self, decision: AgentDecision) -> Optional[RegretSignal]:
         # 仅检查被覆盖的决策
         if decision.user_action != 'modified':
             return None
-        
+
         # Step 1: 计算原始输出与实际执行的差异
         original = decision.agent_output
         executed = decision.final_decision
-        
+
         deviation = self._compute_deviation(original, executed)
         if deviation < self.REGRET_THRESHOLD:
             return None  # 用户只是微调，不算后悔
-        
+
         # Step 2: 归责 — 找出导致原始输出的规则
         responsible_rules = decision.rules_applied or []
         if not responsible_rules:
             return None
-        
+
         # Step 3: 对每一条负责的规则生成后悔信号
         signals = []
         for rule_id in responsible_rules:
@@ -461,10 +461,10 @@ class RegretDetector:
                 context=decision.context_json,
                 user_action_taken=decision.user_overrides
             ))
-        
+
         self._apply_regret(signals)
         return signals
-    
+
     def _compute_deviation(self, original: dict, executed: dict) -> float:
         """
         多维度偏差计算，以广告调价为例：
@@ -473,18 +473,18 @@ class RegretDetector:
         - 预算偏差: orig=$50, exec=$30 → 40% 偏差
         """
         deviations = []
-        
+
         for key in original:
             if key in executed:
                 orig_val = original[key]
                 exec_val = executed[key]
-                
+
                 if isinstance(orig_val, (int, float)):
                     if orig_val != 0:
                         deviations.append(abs(orig_val - exec_val) / abs(orig_val))
                 elif isinstance(orig_val, str):
                     deviations.append(0.0 if orig_val == exec_val else 1.0)
-        
+
         return max(deviations) if deviations else 0.0
 ```
 
@@ -497,19 +497,19 @@ def apply_regret_to_rule(rule: PersonalRule, regret_signal: RegretSignal):
     """
     # 策略1: 置信度衰减
     rule.confidence *= 0.7
-    
+
     # 策略2: 置信度跌破阈值 → 降为shadow
     if rule.confidence < 0.5:
         old_status = rule.status
         rule.status = 'shadow'
         rule.entropy_score = min(1.0, rule.entropy_score + 0.15)
-        
+
         # Shadow 期间继续收集对比数据
         # 其他决策继续同时运行 shadow 和正式规则
-        log_transition(rule, old_status, 'shadow', 
+        log_transition(rule, old_status, 'shadow',
                       reason='REGRET_DOWNGRADE',
                       detail=f'confidence={rule.confidence:.3f}, deviation={regret_signal.deviation:.2f}')
-    
+
     # 策略3: 触发 Nudge（如果同一规则连续3次后悔）
     recent_regrets = count_recent_regrets(rule.id, days=30)
     if recent_regrets >= 3:
@@ -523,18 +523,18 @@ CREATE TABLE rule_shadow_trials (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rule_id         UUID NOT NULL REFERENCES personal_rules(id),
     decision_id     UUID NOT NULL REFERENCES agent_decisions(id),
-    
+
     -- Shadow规则输出 vs 正式规则输出
     shadow_output   JSONB NOT NULL,
     formal_output   JSONB NOT NULL,
-    
+
     -- 实际采用的决策
     actual_decision JSONB NOT NULL,
-    
+
     -- 效果对比
     shadow_effect   DECIMAL(5,3),   -- 如果采用shadow的预期效果
     formal_effect   DECIMAL(5,3),   -- 采用正式规则的预期效果
-    
+
     started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at    TIMESTAMPTZ
 );
@@ -556,18 +556,18 @@ CREATE TABLE rule_shadow_trials (
     suggestion       = 0.5  ← 建议期样本，部分被采纳
     semi_autonomous  = 0.8  ← 半自治期样本，较可靠
     full_autonomous  = 1.0  ← 全自治期样本，完全可靠
-    
+
   w_time:
     = exp(-λ × days_since_creation)  with λ = 0.01/day
     · 1天前:    1.00 → 0.99
     · 30天前:   1.00 → 0.74
     · 90天前:   1.00 → 0.41  (不到一半权重)
     · 365天前:  1.00 → 0.03  (几乎完全遗忘)
-    
+
   w_regret:
     regret_marked  = 0.0   ← 被后悔标记 → 从正例中移除
     not_marked      = 1.0
-    
+
   w_acceptance:
     accepted        = 1.0
     modified        = 0.3  ← 用户改了 → 不完全可信
@@ -584,17 +584,17 @@ def maintain_sample_budget(user_id, agent_id, decision_point):
     当样本数超过上限时，按权重降序保留前500条
     """
     samples = get_all_episodic_samples(user_id, agent_id, decision_point)
-    
+
     if len(samples) <= EPISODIC_SAMPLE_LIMIT_PER_DECISION_POINT:
         return
-    
+
     # 按权重排序，保留Top-N
     samples_with_weight = [(s, compute_weight(s)) for s in samples]
     samples_with_weight.sort(key=lambda x: x[1], reverse=True)
-    
+
     keep = samples_with_weight[:EPISODIC_SAMPLE_LIMIT_PER_DECISION_POINT]
     discard = samples_with_weight[EPISODIC_SAMPLE_LIMIT_PER_DECISION_POINT:]
-    
+
     # 软删除（可恢复），不硬删除
     for sample, weight in discard:
         soft_delete_sample(sample, reason='BUDGET_EXCEEDED', weight_at_deletion=weight)
@@ -623,39 +623,39 @@ def monthly_entropy_audit(user_id: UUID) -> AuditReport:
     每月自动运行的熵审计，输出结构化报告
     """
     report = AuditReport(user_id=user_id)
-    
+
     # 1. 规则统计
     rules = get_all_rules(user_id)
     report.total_rules = len(rules)
     report.rules_by_status = Counter(r.status for r in rules)
     report.rules_by_type = Counter(r.rule_type for r in rules)
-    
+
     # 2. 熵增速度
     telemetry = get_telemetry_last_90d(user_id)
     report.rule_growth_rate = compute_velocity(telemetry.rule_count, window=30)
     report.rule_growth_acceleration = compute_acceleration(telemetry.rule_count, window=30)
-    
+
     # 3. 冲突检测
     conflicts = detect_all_conflicts_30d(user_id)
     report.conflict_rate = len(conflicts) / max(1, get_decision_count_30d(user_id))
-    
+
     # 4. 生成建议
     suggestions = []
-    
+
     if report.rule_growth_acceleration > 0:
         suggestions.append({
             'severity': 'yellow',
             'message': f'规则增长加速度为+{report.rule_growth_acceleration:.2f}/day²，系统未收敛',
             'action': '检查自动提取阈值，考虑提高 extraction_confidence_threshold'
         })
-    
+
     if report.conflict_rate > 0.05:
         suggestions.append({
             'severity': 'red',
             'message': f'冲突率 {report.conflict_rate:.1%} 超过5%警戒线',
             'action': '触发规则合并审计，建议人工审视高冲突决策点'
         })
-    
+
     stale_count = report.rules_by_status.get('stale', 0)
     if stale_count > 20:
         suggestions.append({
@@ -663,7 +663,7 @@ def monthly_entropy_audit(user_id: UUID) -> AuditReport:
             'message': f'stale规则数 {stale_count}，建议批量清理',
             'action': '推送Nudge: "你有多条规则超过30天未使用，是否批量清理？"'
         })
-    
+
     report.suggestions = suggestions
     return report
 ```
@@ -684,15 +684,15 @@ flowchart TD
     C --> D["层三: 分布漂移检测<br/>KL散度 + Wasserstein距离"]
     D --> E["层四: 因果归因<br/>DiD + 合成控制法"]
     E --> F["层五: 跨用户模式发现<br/>熵增路径聚类<br/>(v1.0红线内)"]
-    
+
     B --> G["反应式机制<br/>(TLL/合并/后悔/衰减/预算)"]
     C --> G
     D --> G
     E --> G
     F --> G
-    
+
     G --> A
-    
+
     style B fill:#e3f2fd
     style C fill:#e8f5e9
     style D fill:#fff3e0
@@ -712,7 +712,7 @@ flowchart TD
 每条遥测记录的维度:
 
   (user_id, agent_id, decision_point, timestamp)
-  
+
 每条遥测记录的核心指标:
 
   ┌─────────────────────────────────────────────────┐
@@ -772,42 +772,42 @@ CREATE TABLE agent_telemetry (
     user_id             UUID NOT NULL,
     agent_id            VARCHAR(20) NOT NULL,
     decision_point      VARCHAR(50) NOT NULL,
-    
+
     -- 核心熵指标
     rules_active        INT NOT NULL DEFAULT 0,
     rules_stale         INT NOT NULL DEFAULT 0,
     rules_shadow        INT NOT NULL DEFAULT 0,
     rules_tombstone     INT NOT NULL DEFAULT 0,
-    
+
     -- 冲突信号
     conflict_rate_1h    DECIMAL(5,4) DEFAULT 0,
     conflict_rate_24h   DECIMAL(5,4) DEFAULT 0,
     override_rate_1h    DECIMAL(5,4) DEFAULT 0,
     override_rate_24h   DECIMAL(5,4) DEFAULT 0,
-    
+
     -- 性能信号
     decision_latency_p50_ms INT DEFAULT 0,
     decision_latency_p95_ms INT DEFAULT 0,
     decision_latency_p99_ms INT DEFAULT 0,
     token_per_decision  INT DEFAULT 0,
     cache_hit_rate      DECIMAL(4,3) DEFAULT 0,
-    
+
     -- 分布信号
     rule_trigger_gini        DECIMAL(3,2) DEFAULT 0,
     rule_trigger_entropy     DECIMAL(5,2) DEFAULT 0,
     context_centroid         VECTOR(1536),
     context_variance         DECIMAL(8,4) DEFAULT 0,
-    
+
     -- 质量信号
     regret_rate_24h     DECIMAL(5,4) DEFAULT 0,
     acceptance_rate_24h DECIMAL(4,3) DEFAULT 0,
     avg_confidence      DECIMAL(4,3) DEFAULT 0,
     nudge_skip_rate     DECIMAL(4,3) DEFAULT 0,
-    
+
     -- 决策统计
     decision_count_1h   INT DEFAULT 0,
     decision_count_24h  INT DEFAULT 0,
-    
+
     PRIMARY KEY (time, user_id, agent_id, decision_point)
 );
 
@@ -820,7 +820,7 @@ SELECT create_hypertable('agent_telemetry', 'time',
 SELECT add_retention_policy('agent_telemetry', INTERVAL '90 days');
 
 -- 常用查询索引
-CREATE INDEX idx_telemetry_user_agent_time 
+CREATE INDEX idx_telemetry_user_agent_time
     ON agent_telemetry(user_id, agent_id, time DESC);
 ```
 
@@ -850,24 +850,24 @@ def classify_growth_pattern(telemetry_window: List[TelemetryPoint]) -> GrowthCla
     """
     rule_counts = [t.rules_active for t in telemetry_window]
     times = [t.time for t in telemetry_window]
-    
+
     # 线性回归拟合
     slope, r_squared = linear_regression(times, rule_counts)
-    
+
     # 二次拟合求加速度
     quad_coef, _ = quadratic_regression(times, rule_counts)
-    
+
     # 模式判别
     if slope <= 0:
         return GrowthClass.CONVERGED  # 规则数趋于或已开始下降
-    
+
     if quad_coef <= 0:
         # 仍在增长，但加速度为负 → 趋向收敛
         if r_squared > 0.7:
             return GrowthClass.CONVERGING
         else:
             return GrowthClass.LINEAR_GROWTH
-    
+
     # quad_coef > 0: 加速度为正 → 指数增长
     # 这是预警信号！
 
@@ -916,7 +916,7 @@ graph LR
         C["③ 延迟控制图<br/>decision_latency_p95_ms"]
         D["④ Gini控制图<br/>rule_trigger_gini"]
     end
-    
+
     A --> ALERT["Western Electric<br/>告警规则引擎"]
     B --> ALERT
     C --> ALERT
@@ -930,10 +930,10 @@ class SPCMonitor:
     """
     Shewhart 控制图实现
     """
-    
+
     def __init__(self, baseline_window_days=30):
         self.baseline_window = baseline_window_days  # 基线窗口
-    
+
     def compute_control_limits(self, metric_series: np.ndarray):
         """
         计算上下控制限
@@ -943,7 +943,7 @@ class SPCMonitor:
         """
         μ = np.mean(metric_series)
         σ = np.std(metric_series)
-        
+
         return {
             'UCL': μ + 3 * σ,
             'CL':  μ,
@@ -951,13 +951,13 @@ class SPCMonitor:
             'UWL': μ + 2 * σ,  # 上警戒限 (2σ)
             'LWL': max(0, μ - 2 * σ),  # 下警戒限 (2σ)
         }
-    
-    def check_western_electric_rules(self, 
+
+    def check_western_electric_rules(self,
                                       recent_points: List[float],
                                       control_limits: dict) -> List[Alert]:
         """
         Western Electric Rules — 工业标准异常检测规则
-        
+
         这些规则最初由Western Electric Company在1956年制定，
         用于检测制造过程的失控状态。直接适用于Agent系统的熵监测。
         """
@@ -965,17 +965,17 @@ class SPCMonitor:
         n = len(recent_points)
         UCL, CL, LCL = control_limits['UCL'], control_limits['CL'], control_limits['LCL']
         UWL, LWL = control_limits['UWL'], control_limits['LWL']
-        
+
         # Rule 1: 单点超出3σ → 立即告警
         if recent_points[-1] > UCL or recent_points[-1] < LCL:
             alerts.append(Alert('RED', '单点超出3σ控制限', 'Rule-1-OutOfControl'))
-        
+
         # Rule 2: 连续7点在中心线同侧 → 系统性偏移
         if n >= 7:
             last_7 = recent_points[-7:]
             if all(p > CL for p in last_7) or all(p < CL for p in last_7):
                 alerts.append(Alert('YELLOW', '连续7点在中心线同侧', 'Rule-2-SystematicShift'))
-        
+
         # Rule 3: 连续7点单调上升或下降 → 趋势失控
         if n >= 7:
             last_7 = recent_points[-7:]
@@ -983,14 +983,14 @@ class SPCMonitor:
                 alerts.append(Alert('YELLOW', '连续7点单调上升', 'Rule-3-UpwardTrend'))
             elif all(last_7[i] > last_7[i+1] for i in range(6)):
                 alerts.append(Alert('GREEN', '连续7点单调下降', 'Rule-3-DownwardTrend'))
-        
+
         # Rule 4: 连续3点中有2点超出2σ → 接近失控
         if n >= 3:
             last_3 = recent_points[-3:]
             beyond_2sigma = sum(1 for p in last_3 if p > UWL or p < LWL)
             if beyond_2sigma >= 2:
                 alerts.append(Alert('YELLOW', '连续3点中2点超出2σ', 'Rule-4-ApproachingLimits'))
-        
+
         # Rule 5: 连续15点在±1σ内 →过度稳定（可能是数据采集问题）
         if n >= 15:
             sigma = (UCL - CL) / 3
@@ -998,7 +998,7 @@ class SPCMonitor:
             within_1sigma = sum(1 for p in last_15 if abs(p - CL) < sigma)
             if within_1sigma == 15:
                 alerts.append(Alert('BLUE', '连续15点在±1σ内', 'Rule-5-OverStability'))
-        
+
         return alerts
 ```
 
@@ -1020,7 +1020,7 @@ A3 广告调价 Agent 的冲突率:
   Day 2: 0.041 ← 超 2σ (UWL=0.035)
   Day 3: 0.018 ← 正常
   Day 4: 0.052 ← 超 2σ
-  
+
   → Rule-4 触发 (Day 1-3 中 Day 2 超2σ, Day 2-4 中 Day 2和4超2σ)
   → 自动分析: 高冲突日是否与特定事件相关？
   → 发现: Day 2 和 Day 4 都是竞品大促日 → 竞品大促时冲突率飙升
@@ -1040,13 +1040,13 @@ flowchart LR
     subgraph 创建时
         A[规则R-103创建<br/>上下文分布 P₀]
     end
-    
+
     subgraph 当前
         B[当前上下文<br/>分布 Pₜ]
     end
-    
+
     A -->|"KL(P₀||Pₜ)"| C{漂移程度}
-    
+
     C -->|"< 0.1"| D["正常<br/>规则前提有效 ✓"]
     C -->|"0.1-0.3"| E["隐性漂移<br/>标记规则: '需复审'"]
     C -->|"0.3-0.5"| F["显著漂移<br/>降为 shadow 模式"]
@@ -1060,35 +1060,35 @@ class DistributionDriftDetector:
     """
     使用 KL 散度和 Wasserstein 距离双指标检测上下文分布漂移
     """
-    
+
     def __init__(self, window_size=30):
         self.window_size = window_size  # 滑动窗口大小（天）
-    
-    def compute_drift(self, 
+
+    def compute_drift(self,
                       rule: PersonalRule,
                       current_windows: List[np.ndarray]) -> DriftReport:
         """
-        输入: 
+        输入:
           rule.context_embedding_snapshot — 规则创建时的上下文嵌入快照
           current_windows — 过去N天的上下文嵌入（每天一个质心向量）
-        
+
         输出: 漂移报告
         """
-        
+
         # 基线: 规则创建时的上下文分布
         baseline_emb = rule.context_embedding_snapshot
         if baseline_emb is None:
             return DriftReport(status='UNKNOWN', reason='no baseline')
-        
+
         # Step 1: KL 散度 — 检测分布形状变化
         # 将 embedding 投影到主成分后使用核密度估计近似分布
         kl_values = []
         for day_centroid in current_windows[-7:]:  # 最近7天
             kl = self._approx_kl_divergence(baseline_emb, day_centroid)
             kl_values.append(kl)
-        
+
         avg_kl = np.mean(kl_values)
-        
+
         # Step 2: Wasserstein 距离 — 检测分布位置移动
         wasserstein_values = []
         for day_centroid in current_windows[-7:]:
@@ -1096,9 +1096,9 @@ class DistributionDriftDetector:
                 baseline_emb, day_centroid
             )
             wasserstein_values.append(w_dist)
-        
+
         avg_wasserstein = np.mean(wasserstein_values)
-        
+
         # Step 3: 漂移级别判定
         if avg_kl < 0.1:
             status = 'STABLE'
@@ -1112,7 +1112,7 @@ class DistributionDriftDetector:
         else:
             status = 'SEVERE_DRIFT'
             action = 'EMERGENCY_NUDGE'
-        
+
         return DriftReport(
             status=status,
             action=action,
@@ -1124,8 +1124,8 @@ class DistributionDriftDetector:
                 f"建议: {action}"
             )
         )
-    
-    def bulk_detect(self, 
+
+    def bulk_detect(self,
                     rules: List[PersonalRule],
                     current_windows: List[np.ndarray]) -> Dict[UUID, DriftReport]:
         """
@@ -1205,48 +1205,48 @@ KL散度: 0.47 → SIGNIFICANT_DRIFT
 class DiDCausalEstimator:
     """
     使用差分法估计规则的因果效应
-    
+
     基本逻辑:
-    ATT (Average Treatment Effect on the Treated) 
+    ATT (Average Treatment Effect on the Treated)
       = (Y_treat_post - Y_treat_pre) - (Y_control_post - Y_control_pre)
-    
+
     其中:
     · treat: 触发规则R的广告活动
     · control: 同类决策点但未触发规则R的广告活动
     · pre: 触发前7天
     · post: 触发后7天
     """
-    
-    def estimate(self, 
+
+    def estimate(self,
                  rule_id: UUID,
                  decision_point: str,
                  lookback_days=7,
                  lookforward_days=7) -> CausalEstimate:
-        
+
         # 获取触发该规则的所有决策
         treated_decisions = self._get_decisions_triggered_rule(
             rule_id, lookback_days, lookforward_days
         )
-        
+
         # 平行宇宙：同类决策点但该规则未被触发
         control_decisions = self._get_similar_decisions_without_rule(
             decision_point, rule_id, lookback_days, lookforward_days
         )
-        
+
         # 计算治疗效果
         results = []
-        
+
         for treated in treated_decisions:
             # 找到最相似的控制组实例
             control = self._find_best_control(treated, control_decisions)
             if control is None:
                 continue
-            
+
             # 计算 DiD
             pre_diff = treated.metric_pre - control.metric_pre
             post_diff = treated.metric_post - control.metric_post
             att = post_diff - pre_diff
-            
+
             results.append({
                 'treated_id': treated.id,
                 'control_id': control.id,
@@ -1255,11 +1255,11 @@ class DiDCausalEstimator:
                 'causal_effect': att,  # 负值=规则改善了指标
                 'interpretation': self._interpret(att)
             })
-        
+
         # 汇总
         avg_effect = np.mean([r['causal_effect'] for r in results])
         significance = self._compute_p_value(results)
-        
+
         return CausalEstimate(
             rule_id=rule_id,
             avg_causal_effect=avg_effect,
@@ -1276,20 +1276,20 @@ class DiDCausalEstimator:
 class SyntheticControlEstimator:
     """
     为每个触发规则的决策构造一个"未触发规则的平行宇宙"（合成控制）
-    
+
     合成控制 = 加权平均"未触发规则的相似决策"
     权重通过最小化触发前7天的指标差距来确定
     """
-    
-    def create_synthetic_control(self, 
+
+    def create_synthetic_control(self,
                                   treated_decision: dict,
                                   candidate_controls: List[dict]) -> SyntheticControl:
-        
+
         # Step 1: 特征匹配 — 找到相似的未触发决策
         features = ['acos', 'price', 'category', 'competitor_count', 'age_days']
-        
+
         treated_vector = np.array([treated_decision[f] for f in features])
-        
+
         # Step 2: 通过凸优化找到最佳权重组合
         # 最小化: ||treated_pre - Σw_i × control_i_pre||²
         # 约束: Σw_i = 1, w_i ≥ 0
@@ -1297,7 +1297,7 @@ class SyntheticControlEstimator:
             treated_vector,
             [np.array([c[f] for f in features]) for c in candidate_controls]
         )
-        
+
         # Step 3: 构造合成控制
         synthetic = SyntheticControl(
             treated_id=treated_decision['id'],
@@ -1305,11 +1305,11 @@ class SyntheticControlEstimator:
             weights=weights,
             pre_fit_error=self._compute_pre_fit_error(treated_vector, weights, candidate_controls)
         )
-        
+
         # Step 4: 外推：在触发后期间，实际 vs 合成控制的差距
         # 差距 = treated_post - Σw_i × control_i_post
         # 如果实际表现显著差于合成控制 → 规则造成了负面影响
-        
+
         return synthetic
 ```
 
@@ -1321,14 +1321,14 @@ class SyntheticControlEstimator:
   "rule_name": "竞品降价时调价幅度减半",
   "analysis_date": "2026-06-17",
   "sample_size": 47,
-  
+
   "did_results": {
     "avg_causal_effect": -0.023,
     "interpretation": "规则平均降低ACoS 2.3个百分点",
     "p_value": 0.003,
     "verdict": "EFFECTIVE"
   },
-  
+
   "heterogeneity_analysis": {
     "effective_triggers": 40,
     "harmful_triggers": 7,
@@ -1338,12 +1338,12 @@ class SyntheticControlEstimator:
     ],
     "suggestion": "添加条件门控: ad_age_days >= 30 AND competitor_drop_pct < 20"
   },
-  
+
   "synthetic_control_summary": {
     "avg_gap_vs_synthetic": -0.018,
     "interpretation": "实际ACoS比合成控制低1.8pp，规则有效"
   },
-  
+
   "action": "KEEP_WITH_REFINEMENT",
   "refinement": {
     "add_condition": {
@@ -1385,14 +1385,14 @@ graph TD
         A4["④ TTL默认值自动调优<br/>基于同类型规则全局寿命"]
         A5["⑤ 异常行为模式标记<br/>某个用户偏离自身基线"]
     end
-    
+
     subgraph 红线外_不可做
         B1["❌ 协同过滤<br/>'类似用户也有这条规则，推荐你也创建'"]
         B2["❌ 跨用户规则共享/推荐"]
         B3["❌ 基于用户相似度的任何自动操作"]
         B4["❌ 个人数据跨用户泄露"]
     end
-    
+
     style B1 fill:#ffcdd2
     style B2 fill:#ffcdd2
     style B3 fill:#ffcdd2
@@ -1406,18 +1406,18 @@ class EntropyVelocityClustering:
     """
     不碰个体规则内容，只分析 rule_velocity 时间序列的模式
     """
-    
-    def cluster_users_by_entropy_trajectory(self, 
+
+    def cluster_users_by_entropy_trajectory(self,
                                              user_velocities: Dict[UUID, np.ndarray]):
         """
         对用户/Agent的规则增长曲线进行聚类
-        
+
         发现三类模式:
           A型（快速收敛）: 3周内规则数稳定 → 系统健康
           B型（缓慢增长）: 持续线性增长 → 需关注
           C型（指数膨胀）: 加速度为正 → 需主动干预
         """
-        
+
         # 提取特征：前4周的 rule_velocity 序列
         features = []
         for uid, velocities in user_velocities.items():
@@ -1430,13 +1430,13 @@ class EntropyVelocityClustering:
                 'acceleration': velocities[3] - velocities[0],
                 'total_rules': sum(velocities),
             })
-        
+
         # K-Means 聚类 (K=3)
         from sklearn.cluster import KMeans
         X = np.array([[f['total_rules'], f['acceleration']] for f in features])
         kmeans = KMeans(n_clusters=3, random_state=42)
         labels = kmeans.fit_predict(X)
-        
+
         # 标记聚类
         cluster_profiles = {}
         for i in range(3):
@@ -1449,19 +1449,19 @@ class EntropyVelocityClustering:
             else:
                 profile = 'TYPE_C_EXPONENTIAL'
             cluster_profiles[i] = profile
-        
+
         return {
             'labels': labels,
             'profiles': cluster_profiles,
             'type_transitions': self._detect_type_transitions(user_velocities, labels)
         }
-    
-    def _detect_type_transitions(self, 
+
+    def _detect_type_transitions(self,
                                   velocities: Dict[UUID, np.ndarray],
                                   labels: np.ndarray) -> List[TransitionAlert]:
         """
         检测用户是否从一种类型滑向另一种类型
-        
+
         例如: 某个Agent从 A型(收敛) 滑向 B型(线性增长)
         → 预判性告警
         """
@@ -1470,7 +1470,7 @@ class EntropyVelocityClustering:
             # 将4周分成两段
             first_half = vels[:2].mean()
             second_half = vels[2:].mean()
-            
+
             if second_half > first_half * 1.5:
                 alerts.append(TransitionAlert(
                     user_id=uid,
@@ -1479,7 +1479,7 @@ class EntropyVelocityClustering:
                     delta=second_half - first_half,
                     recommendation='建议提前审核该用户的规则库，预判性熵减'
                 ))
-        
+
         return alerts
 ```
 
@@ -1489,39 +1489,39 @@ class EntropyVelocityClustering:
 def analyze_rule_retirement_patterns(all_rules_across_users: List[PersonalRule]):
     """
     分析全局范围内哪种类型的规则最容易变成 stale
-    
+
     这是"不用个体数据做推荐"的范例：
     不做 "User A的规则推荐给User B"
     只做 "全局来看threshold类型规则的TTL中位值是90天，strategy是150天"
     → 用于系统级默认参数调优
-    
+
     隐私保护: 只输出聚合统计，不输出个体数据
     """
-    
-    retired_rules = [r for r in all_rules_across_users 
+
+    retired_rules = [r for r in all_rules_across_users
                      if r.status in ('stale', 'tombstone')]
-    
+
     # 按规则类型和来源分组的寿命统计
     import pandas as pd
     df = pd.DataFrame([{
         'rule_type': r.rule_type,
         'source': r.source,
-        'lifetime_days': (r.stale_at - r.created_at).days if r.stale_at 
+        'lifetime_days': (r.stale_at - r.created_at).days if r.stale_at
                           else (now() - r.created_at).days,
         'was_overridden': r.override_count_30d > 0,
     } for r in retired_rules])
-    
+
     summary = df.groupby(['rule_type', 'source']).agg({
         'lifetime_days': ['median', 'mean', 'std', 'count'],
         'was_overridden': 'mean'
     })
-    
+
     # 输出建议
     suggestions = []
     for (rule_type, source), row in summary.iterrows():
         median_life = row[('lifetime_days', 'median')]
         current_ttl = DEFAULT_TTL_MAP.get((rule_type, source), 90)
-        
+
         if median_life < current_ttl * 0.7:
             suggestions.append({
                 'rule_type': rule_type,
@@ -1530,7 +1530,7 @@ def analyze_rule_retirement_patterns(all_rules_across_users: List[PersonalRule])
                 'suggested_ttl': int(median_life * 1.2),  # 留20% buffer
                 'reason': f'实际中位寿命{median_life}天，远低于当前TTL{current_ttl}天'
             })
-    
+
     return {
         'lifetime_summary': summary,
         'ttl_adjustment_suggestions': suggestions
@@ -1550,13 +1550,13 @@ flowchart TD
         B["Dify AI 服务"]
         C["Agent 决策执行"]
     end
-    
+
     subgraph Telemetry["大数据采集层"]
         D["决策日志<br/>(agent_decisions)"]
         E["规则变更日志<br/>(rule_transitions)"]
         F["遥测时序流<br/>(agent_telemetry<br/>每分钟)"]
     end
-    
+
     subgraph Reactive["反应式熵对抗 — 免疫系统"]
         G1["规则TTL管理<br/>stale→tombstone→prune"]
         G2["规则合并<br/>similarity>0.85触发"]
@@ -1564,7 +1564,7 @@ flowchart TD
         G4["记忆衰减<br/>w=w_stage×w_time×w_regret"]
         G5["复杂度预算<br/>硬限制+审计"]
     end
-    
+
     subgraph Predictive["预测式熵对抗 — 预警系统"]
         H1["层一: 实时遥测<br/>entropy_velocity"]
         H2["层二: SPC<br/>Western Electric Rules"]
@@ -1572,14 +1572,14 @@ flowchart TD
         H4["层四: 因果归因<br/>DiD+合成控制"]
         H5["层五: 跨用户模式<br/>分群+废弃物分析"]
     end
-    
+
     subgraph Dashboard["运营层"]
         I1["熵值仪表盘"]
         I2["SPC告警面板"]
         I3["Nudge调度中心"]
         I4["月度熵审计报告"]
     end
-    
+
     Production --> Telemetry
     Telemetry --> Reactive
     Telemetry --> Predictive
@@ -1614,7 +1614,7 @@ ENTROPY_CRON_SCHEDULE = {
         'collect_telemetry',           # 采集遥测数据
         'check_spc_rules',             # SPC异常检测
     ],
-    
+
     # 每日 (UTC 02:00)
     'daily': [
         'compute_entropy_velocity',    # 计算熵增速度
@@ -1622,7 +1622,7 @@ ENTROPY_CRON_SCHEDULE = {
         'detect_distribution_drift',   # 分布漂移检测
         'update_entropy_scores',       # 更新规则熵值评分
     ],
-    
+
     # 每周 (周一 UTC 02:00)
     'weekly': [
         'run_rule_consolidation_scan', # 规则合并候选扫描
@@ -1630,7 +1630,7 @@ ENTROPY_CRON_SCHEDULE = {
         'prune_episodic_memory',       # 情景记忆预算维护
         'run_spc_baseline_recalc',     # SPC控制限重新计算
     ],
-    
+
     # 每月 (1日 UTC 02:00)
     'monthly': [
         'run_causal_attribution',      # 完整因果归因分析
@@ -1691,25 +1691,25 @@ SELECT
     user_id,
     agent_id,
     decision_point,
-    
+
     -- 熵指标日汇总
     AVG(rules_active)          AS avg_rules_active,
     MAX(rules_active)          AS max_rules_active,
     AVG(rules_stale)           AS avg_rules_stale,
-    
+
     -- 冲突率日汇总
     AVG(conflict_rate_24h)     AS avg_conflict_rate,
     MAX(conflict_rate_24h)     AS max_conflict_rate,
     AVG(override_rate_24h)     AS avg_override_rate,
-    
+
     -- 延迟日汇总
     AVG(decision_latency_p95_ms) AS avg_p95_latency,
     MAX(decision_latency_p99_ms) AS max_p99_latency,
-    
+
     -- 采纳率日汇总
     AVG(acceptance_rate_24h)   AS avg_acceptance_rate,
     AVG(nudge_skip_rate)       AS avg_nudge_skip_rate,
-    
+
     -- 决策量
     SUM(decision_count_24h)    AS total_decisions
 FROM agent_telemetry
@@ -1730,22 +1730,22 @@ SELECT add_continuous_aggregate_policy('agent_telemetry_daily',
 ```sql
 CREATE TABLE system_self_monitoring (
     time        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     -- 数据库健康
     db_size_bytes           BIGINT,
     telemetry_rows_total    BIGINT,
     telemetry_chunk_count   INT,
-    
+
     -- 熵管理性能
     staleness_check_duration_ms     INT,
     drift_detection_duration_ms     INT,
     causal_attribution_duration_ms  INT,
     monthly_audit_duration_ms       INT,
-    
+
     -- Cron健康
     cron_last_success_at    TIMESTAMPTZ,
     cron_failures_24h       INT DEFAULT 0,
-    
+
     -- 告警统计
     spc_alerts_24h          INT DEFAULT 0,
     drift_alerts_24h        INT DEFAULT 0,
@@ -1764,27 +1764,27 @@ gantt
     title 熵管理系统实施路线图
     dateFormat  YYYY-MM
     axisFormat  %b
-    
+
     section 阶段一_反应式基础
     规则TTL字段扩展          :done, p1a, 2026-06, 2w
     Stale判定逻辑            :p1b, after p1a, 2w
     复杂度预算硬限制          :p1c, after p1a, 2w
-    
+
     section 阶段二_反应式进阶
     规则合并候选扫描          :p2a, after p1b, 3w
     后悔检测引擎              :p2b, after p1b, 3w
     情景记忆权重衰减          :p2c, after p1b, 2w
-    
+
     section 阶段三_预测式基础
     TimescaleDB遥测部署       :p3a, 2026-09, 3w
     entropy_velocity计算      :p3b, after p3a, 2w
     SPC控制图部署             :p3c, after p3a, 3w
     熵值仪表盘MVP             :p3d, after p3c, 2w
-    
+
     section 阶段四_预测式进阶
     分布漂移检测引擎          :p4a, 2026-11, 3w
     因果归因(DiD)             :p4b, 2026-12, 4w
-    
+
     section 阶段五_全域优化
     跨用户模式聚类            :p5a, 2027-02, 4w
     TTL全局自动调优           :p5b, after p5a, 2w
@@ -1839,7 +1839,7 @@ gantt
   w_acceptance ∈ {0.0, 0.3, 1.0}
 
 规则相似度:
-  sim(A,B) = 0.4 × cosine(cond_A, cond_B) 
+  sim(A,B) = 0.4 × cosine(cond_A, cond_B)
            + 0.3 × cosine(action_A, action_B)
            + 0.2 × cosine(ctx_A, ctx_B)
            + 0.1 × (1 - |perf_A - perf_B|)

@@ -75,6 +75,33 @@ func TestFirstPublicBatchProducesOneHonestPermissionCandidate(t *testing.T) {
 	}
 }
 
+func TestControlledThreeRunResearchCanReachReviewReady(t *testing.T) {
+	s := researchService(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	base := ResearchResult{BatchKey: "controlled-1", Region: "DE", Consumer: "城市养猫家庭", NeedScenario: "短途出行饮水", SalesChannel: "独立站", TargetLocale: "de-DE", StopCondition: "无法核验收款或完整费用时停止", CollectedAt: now}
+	importRun := func(runID, runType, source string, findings []ResearchFinding) *DemandCase {
+		raw := []byte(`{"run":"` + runID + `"}`)
+		in := base
+		in.RunID, in.RunType, in.SourceURI, in.RawPayload, in.RawSHA256, in.Findings = runID, runType, source, raw, hashPayload(raw), findings
+		item, err := s.ImportResearchResult(ctx, 1, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+	c := importRun("scout-controlled", RunScout, "https://source.example/scout", completeFindings(EvidenceSupport))
+	importRun("falsifier-controlled", RunFalsifier, "https://source.example/falsifier", []ResearchFinding{{Dimension: DimensionDemand, TruthStatus: TruthQuoted, Title: "替代方案可能更便宜"}})
+	importRun("reality-controlled", RunDataReality, "https://source.example/reality", nil)
+	v, err := s.Evaluate(ctx, c.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Status != VerdictExperimentReady {
+		t.Fatalf("controlled research got %q blockers=%v", v.Status, v.Blockers)
+	}
+}
+
 func completeFindings(kind string) []ResearchFinding {
 	out := make([]ResearchFinding, 0, len(RequiredDimensions))
 	for _, d := range RequiredDimensions {

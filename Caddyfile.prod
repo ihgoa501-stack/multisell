@@ -23,6 +23,10 @@
 }
 
 {$DOMAIN:localhost} {
+    request_body {
+        max_size 32MB
+    }
+
     # ── Security headers ───────────────────────────────────────────
     # Caddy v2 applies these to every response unless overridden.
     header {
@@ -37,7 +41,8 @@
         # Content Security Policy
         # Next.js needs 'unsafe-inline' for client-side styles and scripts.
         # Tune this for your specific deployment — e.g. use nonce/hash for tighter CSP.
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: wss:; frame-ancestors 'none'; form-action 'self'"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: wss:; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
     }
 
     # ── Metrics endpoint (internal only) ───────────────────────────
@@ -83,12 +88,10 @@
         }
     }
 
-    # ── Access logs (optional, uncomment to enable) ────────────────
-    # log {
-    #     output file /var/log/caddy/access.log {
-    #         roll_size 100mb
-    #         roll_keep 5
-    #     }
-    #     format json
-    # }
+    # Structured access logs go to the container logger, whose size/rotation is
+    # bounded by docker-compose.prod.yml. Caddy redacts known credential headers.
+    log {
+        output stdout
+        format json
+    }
 }

@@ -1,0 +1,27 @@
+# Owner deployment reachable directly by the server's public IP over HTTPS.
+services:
+  backend:
+    environment:
+      CORS_ALLOWED_ORIGINS: "https://${PUBLIC_IP:?required}"
+
+  backup:
+    profiles: ["manual"]
+    environment:
+      BACKUP_REQUIRE_OFFSITE: "false"
+      BACKUP_REQUIRE_IMMUTABLE_OFFSITE: "false"
+
+  audit-checkpoint:
+    environment:
+      AUDIT_CHECKPOINT_REQUIRE_OFFSITE: "false"
+      AUDIT_CHECKPOINT_REQUIRE_IMMUTABLE_OFFSITE: "false"
+
+  caddy:
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes: !override
+      - ./Caddyfile.ip:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      PUBLIC_IP: "${PUBLIC_IP:?required}"

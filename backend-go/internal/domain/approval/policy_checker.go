@@ -1,6 +1,7 @@
 package approval
 
 import (
+	"context"
 	"time"
 )
 
@@ -12,6 +13,24 @@ import (
 // without importing command to avoid an import cycle (command → approval → command).
 type ApprovalPolicyChecker struct {
 	svc *Service
+}
+
+// IsApprovedFor binds an approval to the exact executable action and target.
+// Unknown mappings and unparseable constrained targets fail closed.
+func (c *ApprovalPolicyChecker) AuthorizeFor(ctx context.Context, approvalID int64, actionType, targetType, targetID, key string) error {
+	return c.svc.AuthorizeExecution(ctx, approvalID, actionType, targetType, targetID, key)
+}
+
+func (c *ApprovalPolicyChecker) ConsumeFor(ctx context.Context, approvalID int64, actionType, targetType, targetID, key string) error {
+	return c.svc.ConsumeExecution(ctx, approvalID, actionType, targetType, targetID, key)
+}
+
+func (c *ApprovalPolicyChecker) CompleteFor(ctx context.Context, approvalID int64, key string) error {
+	return c.svc.CompleteExecution(ctx, approvalID, key)
+}
+
+func (c *ApprovalPolicyChecker) FailFor(ctx context.Context, approvalID int64, key string, cause error) error {
+	return c.svc.FailExecution(ctx, approvalID, key, cause)
 }
 
 // NewApprovalPolicyChecker creates a PolicyChecker backed by the approval

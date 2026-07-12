@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -64,9 +66,11 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/personalrule"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
+	"github.com/lingmirror/backend-go/internal/domain/platformtruth"
 	"github.com/lingmirror/backend-go/internal/domain/price"
 	"github.com/lingmirror/backend-go/internal/domain/productanalysis"
 	"github.com/lingmirror/backend-go/internal/domain/producthub"
+	"github.com/lingmirror/backend-go/internal/domain/productimage"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/purchase"
 	"github.com/lingmirror/backend-go/internal/domain/reliability"
@@ -88,10 +92,12 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/xiaoq"
 	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
+	"github.com/lingmirror/backend-go/internal/imageservice"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
 	"github.com/lingmirror/backend-go/internal/platform/command"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/platform/killswitch"
+	"github.com/lingmirror/backend-go/internal/platform/routecatalog"
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge/drivers"
@@ -108,11 +114,15 @@ import (
 
 // App holds the Gin engine and background services for graceful shutdown.
 type App struct {
-	Engine    *gin.Engine
-	Bus       *eventbus.Bus
-	Scheduler *scheduler.Scheduler
-	Cancel    context.CancelFunc
+	Engine           *gin.Engine
+	Bus              *eventbus.Bus
+	Scheduler        *scheduler.Scheduler
+	Cancel           context.CancelFunc
+	acceptingTraffic atomic.Bool
 }
+
+// BeginDrain removes the process from readiness before HTTP shutdown starts.
+func (a *App) BeginDrain() { a.acceptingTraffic.Store(false) }
 
 // NewRouter creates and configures the Gin engine with all routes.
 func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
@@ -123,6 +133,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// Global middleware
 	r.Use(middleware.CORS(cfg))
 	r.Use(middleware.RequestID())
+	r.Use(middleware.MaxRequestBody(cfg.Server.MaxRequestBodyBytes))
 
 	// Prometheus metrics (before recovery to capture all requests)
 	if cfg.Metrics.Enabled {
@@ -132,21 +143,15 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	r.Use(middleware.RecoveryWithSentry(cfg, logger))
 	r.Use(middleware.Audit(db, logger))
 
-	// Health check
-	r.GET("/api/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"version": "0.1.0",
-		})
-	})
-
 	// Prometheus metrics endpoint
 	if cfg.Metrics.Enabled {
 		r.GET("/metrics", middleware.MetricsHandler())
 	}
 
-	// Swagger API documentation
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// Swagger is development-only; release config rejects public exposure.
+	if cfg.Server.SwaggerEnabled {
+		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	}
 
 	// ==========================================================
 	// Phase 1 Infrastructure: Event Bus + Command + Scheduler
@@ -164,7 +169,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	sr.Register("compliance.*", eventbus.ComplianceCheckPayload{})
 	bus := eventbus.New(logger, eventbus.WithDB(db), eventbus.WithWorkers(4), eventbus.WithSchema(sr))
 	busCtx, busCancel := context.WithCancel(context.Background())
-	bus.Start(busCtx)
 
 	// Initialize platform adapters (Ozon, Shopee, etc.).
 	integrations.InitAdapters(db, logger)
@@ -174,6 +178,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	cmd := command.NewDispatcher(logger,
 		command.WithCatalog(cat),
 		command.WithRateLimiter(command.NewRateLimiter(20, time.Hour)),
+		command.WithIdempotencyStore(command.NewGormIdempotencyStore(db, 5*time.Minute)),
 	)
 	cmd.Register("stock_alert", command.StockAlertHandler(db, logger))
 	cmd.Register("replenish", command.InventoryReplenishHandler(db, logger))
@@ -183,7 +188,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	cmd.Register("compliance_check", command.FlagNonCompliantHandler(db, logger))
 
 	// Create scheduler with all registered tasks.
-	sched := scheduler.New(bus, logger)
+	sched := scheduler.New(bus, logger).WithRetryStore(scheduler.NewGormRetryStore(db))
+	if db.Dialector.Name() == "postgres" {
+		sched.WithLeaderLease(scheduler.NewPostgresLeaderLease(db))
+	}
 
 	// AI orchestrator (shared by /ai and /agents routes).
 	aiosCfg := setup.Initialize(db, bus, logger)
@@ -204,7 +212,11 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	// ToolBridge for sourcing data collection
 	extTracker := toolbridge.NewExternalCallTracker(3)
-	toolBridge := toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge"), toolbridge.WithTracker(extTracker)) // drivers registered later
+	toolBridge := toolbridge.NewToolBridge(nil, 0, logger.Named("toolbridge"),
+		toolbridge.WithTracker(extTracker),
+		toolbridge.WithApprovalVerifier(approval.NewApprovalPolicyChecker(approvalSvc)),
+		toolbridge.WithIdempotencyStore(toolbridge.NewGormToolIdempotencyStore(db, 5*time.Minute)),
+	) // drivers registered later
 
 	// Reverse logistics return rate tracker (DB-backed).
 	returnRateTracker := aftersales.NewReturnRateTracker(db, logger)
@@ -466,6 +478,13 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// ==========================================================
 	// Schedule all agent periodic tasks
 	// ==========================================================
+	bus.Subscribe("scheduler.tick.audit_integrity", func(ctx context.Context, _ eventbus.Event) error {
+		return operationlog.NewService(db, logger).VerifyIntegrity(ctx)
+	})
+	sched.Register(scheduler.Task{
+		ID: "tick-audit-integrity", AgentID: "audit_integrity", DecisionPoint: "verify_hash_chain",
+		Interval: time.Hour, Description: "审计日志哈希链完整性检查",
+	})
 
 	sched.Register(scheduler.Task{
 		ID: "tick-g0", AgentID: "G0", DecisionPoint: "system_health",
@@ -548,8 +567,9 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			return svc.SyncOzonOrdersRaw(ctx, pipeline)
 		}))
 
-	// Start scheduler in background goroutine.
-	go sched.Start(busCtx)
+	app := &App{Engine: r, Bus: bus, Scheduler: sched, Cancel: busCancel}
+	app.acceptingTraffic.Store(true)
+	registerHealthRoutes(r, db, bus, sched, app.acceptingTraffic.Load, cfg.Server.Version)
 
 	// ==========================================================
 	// HTTP routes
@@ -571,14 +591,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	// Auth routes (public — login, register, refresh)
 	auth.RegisterRoutes(api, db, cfg, logger)
+	// Device-bound browser extension seam. This is intentionally outside the
+	// normal web JWT group and accepts only sourcing1688.collect credentials.
+	sourcing1688.RegisterExtensionRoutes(api, db, cfg, logger)
 
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")
 	protected.Use(middleware.Auth(cfg))
 
-	// High-risk route gating: approval middleware for production writes.
-	// The middleware checks against the routecatalog; routes not in the
-	// catalog pass through unmodified.
+	// Mutation policy and high-risk approval gate. Every write route must be
+	// explicitly classified; unclassified routes fail closed. High routes
+	// require a bound one-time approval and idempotency key.
 	protected.Use(middleware.ApprovalRequired(db, logger))
 
 	// RBAC routes — require rbac.manage permission
@@ -734,19 +757,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	listingRoutes := protected.Group("", middleware.RequirePermission(db, "listing.read"))
 	listing.RegisterRoutes(listingRoutes, db, logger, bus, approvalSvc)
 
-	// Initialize Prism client (config-driven; nil if disabled).
+	// Legacy Prism execution is frozen while callers migrate to Product Images.
+	// Keep a typed nil for compatibility with historical services, but never
+	// construct the URL-fetching client or allow fail-open behavior.
 	var prismSvc prismadapter.PrismService
-	prismStrict := cfg.Prism.Strict
-	if cfg.Prism.Enabled && cfg.Prism.BaseURL != "" {
-		timeout := time.Duration(cfg.Prism.Timeout) * time.Second
-		if timeout <= 0 {
-			timeout = 30 * time.Second
-		}
-		prismSvc = prismadapter.NewClient(cfg.Prism.BaseURL, cfg.Prism.APIKey, timeout)
-		logger.Info("Prism client initialized", zap.String("base_url", cfg.Prism.BaseURL), zap.Bool("strict", prismStrict))
-	} else {
-		logger.Info("Prism client disabled")
-	}
+	prismStrict := true
+	logger.Info("legacy Prism execution frozen; use Product Images")
 	approvalSvc = approval.NewService(db, logger, auditSvc).WithBus(bus)
 	approval.RegisterRoutes(protected, approvalSvc)
 	rbacSvc := rbac.NewService(db, logger)
@@ -837,13 +853,14 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			return nil
 		}))
 
-	xiaoq.RegisterRoutes(protected, db, logger)
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
 	compliance.RegisterRoutes(protected, db, logger)
 	profit.RegisterRoutes(protected, db, logger)
 	experiment.RegisterRoutes(protected, db, logger)
 	demandcase.RegisterRoutes(protected, db, logger)
+	platformtruth.RegisterRoutes(protected)
+	xiaoq.RegisterRoutes(protected, db, logger)
 	evidenceHandler := profit.NewEvidenceHandler(db)
 	protected.GET("/profit/evidence-card/:productId", evidenceHandler.GetEvidenceCard)
 	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
@@ -886,6 +903,27 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	search.RegisterRoutes(protected, db, logger)
 	settings.RegisterRoutes(protected, db, logger)
 	imagegen.RegisterRoutes(protected, db, logger)
+	var imageClient *imageservice.Client
+	if baseURL, secret := os.Getenv("IMAGE_SERVICE_BASE_URL"), os.Getenv("IMAGE_SERVICE_SHARED_SECRET"); baseURL != "" && secret != "" {
+		client, err := imageservice.New(imageservice.Config{BaseURL: baseURL, SharedSecret: secret, Timeout: 20 * time.Second})
+		if err != nil {
+			logger.Error("Image Service client configuration rejected", zap.Error(err))
+		} else {
+			imageClient = client
+			logger.Info("Image Service client initialized", zap.String("base_url", baseURL))
+		}
+	} else {
+		logger.Info("Image Service client disabled")
+	}
+	executionTokenSecret := os.Getenv("IMAGE_SERVICE_EXECUTION_TOKEN_SECRET")
+	if executionTokenSecret == os.Getenv("IMAGE_SERVICE_SHARED_SECRET") {
+		logger.Error("Image Service execution token signing disabled: secret must be independent")
+		executionTokenSecret = ""
+	} else if executionTokenSecret != "" && len(executionTokenSecret) < 32 {
+		logger.Error("Image Service execution token signing disabled: secret must be at least 32 bytes")
+		executionTokenSecret = ""
+	}
+	productimage.RegisterRoutes(protected, db, logger, imageClient, executionTokenSecret)
 	importbatch.RegisterRoutes(protected, db, logger)
 	content.RegisterRoutes(protected, db, logger, aiOrch)
 	operationlog.RegisterRoutes(protected, db, logger)
@@ -976,78 +1014,25 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		Weight: 10,
 	})
 	candSvc := candidate.NewService(db, logger)
-	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret, cfg.CORS.AllowedOrigins).
-		WithPluginDriver(&extPluginBridge{driver: pluginDrv}).
-		OnAutoCollect(func(userID int64, payload json.RawMessage) error {
-			var result struct {
-				ID      string `json:"id"`
-				Payload struct {
-					Status string               `json:"status"`
-					Data   *toolbridge.PageData `json:"data"`
-				} `json:"payload"`
-			}
-			if err := json.Unmarshal(payload, &result); err != nil {
-				return fmt.Errorf("parse auto-collect payload: %w", err)
-			}
-			if result.Payload.Status != "ok" || result.Payload.Data == nil {
-				return nil
-			}
-
-			input := impl.PageDataToCandidate(result.Payload.Data, map[string]interface{}{
-				"collected_by": fmt.Sprintf("extension:%d", userID),
-				"url":          result.Payload.Data.SourceURL,
-			})
-
-			created, err := candSvc.Create(input)
-			if err != nil {
-				return fmt.Errorf("save auto-collected candidate: %w", err)
-			}
-			logger.Info("auto-collect saved candidate",
-				zap.Int64("candidate_id", created.ID),
-				zap.String("source_url", result.Payload.Data.SourceURL))
-			return nil
-		}).
-		OnListCollect(func(userID int64, payload json.RawMessage) error {
-			var result struct {
-				Status string `json:"status"`
-				Data   struct {
-					PageURL     string `json:"page_url"`
-					CollectedAt string `json:"collected_at"`
-					Items       []struct {
-						Title      string `json:"title"`
-						PriceRange string `json:"price_range"`
-						DetailURL  string `json:"detail_url"`
-						ImageURL   string `json:"image_url"`
-					} `json:"items"`
-				} `json:"data"`
-			}
-			if err := json.Unmarshal(payload, &result); err != nil {
-				return fmt.Errorf("parse list result: %w", err)
-			}
-			if result.Status != "ok" {
-				return nil
-			}
-			for _, item := range result.Data.Items {
-				lead := candidate.CollectLead{
-					Title:         item.Title,
-					PriceRange:    item.PriceRange,
-					DetailURL:     item.DetailURL,
-					ImageURL:      item.ImageURL,
-					SourcePageURL: result.Data.PageURL,
-					Status:        "pending_detail_collect",
-				}
-				if err := candSvc.CreateCollectLead(&lead); err != nil {
-					logger.Warn("create collect lead failed", zap.String("detail_url", item.DetailURL), zap.Error(err))
-				}
-			}
-			logger.Info("list collect saved leads", zap.Int("count", len(result.Data.Items)))
-			return nil
-		})
+	extHandler := realtime.NewExtensionHandler(hub, logger, cfg.JWT.Secret, cfg.CORS.AllowedOrigins, db, cfg.Server.EffectiveDeploymentEnvironment()).
+		WithPluginDriver(&extPluginBridge{driver: pluginDrv})
 	r.GET("/ws/extension", extHandler.ServeWS)
 	a12 := impl.NewCollectionAgent(toolBridge, candSvc, logger)
 	aiOrch.RegisterAgent("A12", a12)
 
-	return &App{Engine: r, Bus: bus, Scheduler: sched, Cancel: busCancel}
+	runtimeRoutes := make([]routecatalog.RuntimeRoute, 0, len(r.Routes()))
+	for _, route := range r.Routes() {
+		runtimeRoutes = append(runtimeRoutes, routecatalog.RuntimeRoute{Method: route.Method, Path: route.Path})
+	}
+	if err := routecatalog.ValidateRuntimeRoutes(runtimeRoutes); err != nil {
+		panic("HTTP mutation security policy invalid: " + err.Error())
+	}
+
+	// Start background infrastructure only after every subscription and task is
+	// registered, so recovered events can never run against a partial topology.
+	bus.Start(busCtx)
+	go sched.Start(busCtx)
+	return app
 }
 
 // runAgentWithTimeout runs an agent with a 30-second timeout for pipeline chains.

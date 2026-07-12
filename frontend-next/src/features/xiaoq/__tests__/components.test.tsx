@@ -71,7 +71,7 @@ describe('XiaoQ components', () => {
         { id: 8, title: '采购成本', summary: '12.80 CNY', truth_status: 'estimated', snapshot_id: 7, snapshot_sha256: 'abc123hash' },
       ],
       unknowns: ['供应商资质尚未外部核验', '采购成本（estimated）'],
-      links: [{ label: '1688受控货源', href: '/sourcing1688?source_id=42' }],
+      links: [{ label: '1688受控货源', href: '/sourcing1688?record_id=42' }],
     }} />);
 
     expect(screen.getByText('受控来源、快照与成本证据')).toBeInTheDocument();
@@ -79,7 +79,7 @@ describe('XiaoQ components', () => {
     expect(screen.getByText('供应商资质尚未外部核验')).toBeInTheDocument();
     expect(screen.getAllByText(/abc123hash/)).toHaveLength(2);
     expect(screen.getByText('估算')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '1688受控货源' })).toHaveAttribute('href', '/sourcing1688?source_id=42');
+    expect(screen.getByRole('link', { name: '1688受控货源' })).toHaveAttribute('href', '/sourcing1688?record_id=42');
     expect(screen.queryByRole('button', { name: /批准|执行|发布|采购/ })).not.toBeInTheDocument();
   });
 

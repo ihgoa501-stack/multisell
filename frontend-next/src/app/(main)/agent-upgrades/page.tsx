@@ -11,24 +11,14 @@ export default function AgentUpgradesPage() {
       <Collapse defaultActiveKey={['prism', 'adpilot', 'listing', 'support']} items={[
         {
           key: 'prism',
-          label: <span>Prism 商品图生成 <Tag color="blue">#193</Tag></span>,
+          label: <span>Prism 商品图生成 <Tag>历史能力</Tag></span>,
           children: (
             <Card size="small">
               <Descriptions column={1} size="small" bordered>
-                <Descriptions.Item label="状态"><Tag color="green">已集成</Tag></Descriptions.Item>
-                <Descriptions.Item label="触发端点">POST /api/v1/product-analysis/trigger-prism</Descriptions.Item>
-                <Descriptions.Item label="Prism 服务">已配置，通过 prismadapter 客户端调用</Descriptions.Item>
-                <Descriptions.Item label="生成参数">
-                  <div>image_url: 商品原图URL</div>
-                  <div>platform: 目标平台 (ozon/shopee/lazada/amazon)</div>
-                  <div>product_id: 商品ID</div>
-                </Descriptions.Item>
-                <Descriptions.Item label="输出">
-                  <div>job_id: 生成任务ID</div>
-                  <div>output_url: 生成后图片URL</div>
-                  <div>compliance_report: 合规检测报告</div>
-                  <div>risk_score: 风险评估</div>
-                </Descriptions.Item>
+                <Descriptions.Item label="状态"><Tag color="orange">已停止入口，迁移中</Tag></Descriptions.Item>
+                <Descriptions.Item label="原因">旧入口接受任意图片 URL，已停止注册，避免服务器代抓取造成安全风险。</Descriptions.Item>
+                <Descriptions.Item label="替代入口">商品图片工作室 /product-images</Descriptions.Item>
+                <Descriptions.Item label="边界">历史记录保留只读；新任务统一由 Image Service 处理，图片处理结果不会自动批准或发布。</Descriptions.Item>
               </Descriptions>
             </Card>
           ),

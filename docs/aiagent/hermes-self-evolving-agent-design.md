@@ -196,8 +196,8 @@ Honcho 支持为同一个用户维护**多个Agent配置档案**，每个独立�
 ### 4.1 技能生命周期
 
 ```
-          
-用户需求 ──→ Agent 执行 ──→ 成功完成 ──→ 模式提取 
+
+用户需求 ──→ Agent 执行 ──→ 成功完成 ──→ 模式提取
                                               │
                     ┌──────────────────────────┘
                     ▼
@@ -311,9 +311,9 @@ Nudge 是 Hermes Agent 最独特的设计 —— Agent 不是被动工具，而�
          你希望我把默认调价幅度改小一点吗？"
 
   用户: "那次是因为竞品也在降价，不敢降太多。"
-  
+
   Agent: "明白。新增规则：竞品同时降价>5%时，调价幅度自动减半。"
-  
+
   用户: "可以。"
 ```
 
@@ -586,50 +586,50 @@ CREATE TABLE agent_decisions (
     user_id         UUID NOT NULL,
     agent_id        VARCHAR(20) NOT NULL,   -- 'A3','A4','A5','A6','A7','G1','G2','G3'
     decision_point  VARCHAR(50) NOT NULL,    -- 'acos_adjustment','faq_reply','stock_alert'等
-    
+
     -- 决策内容
     context_json    JSONB NOT NULL,           -- 决策上下文
     agent_output    JSONB NOT NULL,           -- Agent 原始输出
     final_decision  JSONB NOT NULL,           -- 最终执行的决策 (经规则覆盖后)
-    
+
     -- 用户交互
     user_action     VARCHAR(20) NOT NULL,     -- 'accepted','modified','rejected','ignored'
     user_overrides  JSONB,                    -- 用户修改内容 (若 modified)
     user_feedback   TEXT,                     -- 用户显式反馈
-    
+
     -- 规则追踪
     rules_applied   JSONB,                    -- 本次应用的规则ID列表
     rule_overrides  INT DEFAULT 0,
-    
+
     -- 进化追踪
     evolution_stage VARCHAR(20) NOT NULL,     -- 'observation','suggestion','semi_autonomous','full_autonomous'
     confidence      DECIMAL(4,3),             -- 置信度 (0.000-1.000)
-    
+
     -- 性能指标
     response_time_ms INT,
     token_count     INT,
-    
+
     -- 时间戳
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     session_id      UUID NOT NULL,
     episode_id      UUID,                     -- 每15个任务一批
-    
+
     CONSTRAINT valid_user_action CHECK (
         user_action IN ('accepted','modified','rejected','ignored')
     )
 );
 
 -- 复合索引：按用户+Agent+决策点查询历史
-CREATE INDEX idx_decisions_user_agent_point 
+CREATE INDEX idx_decisions_user_agent_point
     ON agent_decisions(user_id, agent_id, decision_point, created_at DESC);
 
 -- 部分索引：仅记录被修改/拒绝的决策（用于信号提取）
-CREATE INDEX idx_decisions_modified_rejected 
+CREATE INDEX idx_decisions_modified_rejected
     ON agent_decisions(user_id, agent_id, decision_point, created_at DESC)
     WHERE user_action IN ('modified', 'rejected');
 
 -- JSONB 索引：按进化阶段过滤
-CREATE INDEX idx_decisions_stage 
+CREATE INDEX idx_decisions_stage
     ON agent_decisions(evolution_stage, created_at DESC);
 ```
 
@@ -641,30 +641,30 @@ CREATE TABLE personal_rules (
     user_id         UUID NOT NULL,
     agent_id        VARCHAR(20) NOT NULL,
     decision_point  VARCHAR(50) NOT NULL,
-    
+
     -- 规则定义
     rule_type       VARCHAR(20) NOT NULL,     -- 'threshold','strategy','style','veto'
     rule_name       VARCHAR(100) NOT NULL,
     rule_condition  JSONB NOT NULL,
     rule_action     JSONB NOT NULL,
     priority        INT DEFAULT 100,
-    
+
     -- 规则来源
     source          VARCHAR(20) NOT NULL,     -- 'manual','nudge','auto_extracted','template'
     source_decisions UUID[],
-    
+
     -- 规则状态
     status          VARCHAR(20) DEFAULT 'active',  -- 'active','shadow','paused','retired'
     confidence      DECIMAL(4,3) DEFAULT 0.000,
-    
+
     -- 使用统计
     times_applied   INT DEFAULT 0,
     times_overridden INT DEFAULT 0,
     last_applied_at TIMESTAMPTZ,
-    
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     CONSTRAINT valid_rule_type CHECK (
         rule_type IN ('threshold','strategy','style','veto')
     ),
@@ -676,7 +676,7 @@ CREATE TABLE personal_rules (
     )
 );
 
-CREATE INDEX idx_rules_user_agent_point 
+CREATE INDEX idx_rules_user_agent_point
     ON personal_rules(user_id, agent_id, decision_point)
     WHERE status = 'active';
 ```
@@ -688,26 +688,26 @@ CREATE TABLE agent_episodes (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL,
     agent_id        VARCHAR(20) NOT NULL,
-    
+
     episode_number  INT NOT NULL,
     decision_count  INT NOT NULL,
-    
+
     -- LLM 生成摘要
     episode_summary TEXT,
     key_insights    JSONB,
     improvement_suggestions JSONB,
-    
+
     -- 统计
     acceptance_rate DECIMAL(4,3),
     avg_confidence  DECIMAL(4,3),
     avg_response_ms INT,
     total_tokens    INT,
-    
+
     -- Nudge
     nudge_triggered BOOLEAN DEFAULT FALSE,
     nudge_topics    JSONB,
     nudge_response  TEXT,
-    
+
     started_at      TIMESTAMPTZ NOT NULL,
     ended_at        TIMESTAMPTZ NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -720,17 +720,17 @@ CREATE TABLE agent_episodes (
 CREATE TABLE honcho_user_profiles (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL UNIQUE,
-    
+
     risk_tolerance  VARCHAR(30) DEFAULT 'moderate',
     communication_style VARCHAR(20) DEFAULT 'balanced',
     notification_prefs JSONB,
-    
+
     agent_profiles  JSONB NOT NULL DEFAULT '{}',
-    
+
     hypothesis_count INT DEFAULT 0,
     confirmed_count  INT DEFAULT 0,
     last_dialectic_at TIMESTAMPTZ,
-    
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -744,8 +744,8 @@ ALTER TABLE agent_decisions ADD COLUMN search_vector tsvector;
 CREATE OR REPLACE FUNCTION update_decision_search_vector()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.search_vector := 
-        to_tsvector('simple', 
+    NEW.search_vector :=
+        to_tsvector('simple',
             COALESCE(NEW.context_json::text, '') || ' ' ||
             COALESCE(NEW.agent_output::text, '') || ' ' ||
             COALESCE(NEW.user_feedback, '')
@@ -789,18 +789,18 @@ def resolve_conflicts(matched_rules, decision_context):
     # 策略 1: 按规则类型排序
     type_order = {'veto': 0, 'threshold': 1, 'strategy': 2, 'style': 3}
     matched_rules.sort(key=lambda r: type_order[r.rule_type])
-    
+
     # 策略 2: 同类型规则 - 取"最新创建"的（用户最近意图优先）
     if len(matched_rules) > 1:
         matched_rules.sort(key=lambda r: r.created_at, reverse=True)
-    
+
     # 策略 3: "最新规则胜出" + 冲突记录
     winner = matched_rules[0]
     if len(matched_rules) > 1:
         log_conflict(decision_context, matched_rules, winner)
         # 通过 Nudge 询问用户
         schedule_nudge_conflict_resolution(matched_rules)
-    
+
     return winner
 ```
 
@@ -810,15 +810,15 @@ def resolve_conflicts(matched_rules, decision_context):
 CREATE TABLE rule_conflicts (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     decision_id     UUID NOT NULL REFERENCES agent_decisions(id),
-    
+
     conflicting_rules UUID[] NOT NULL,
     winner_rule_id  UUID NOT NULL,
     resolution      VARCHAR(20) NOT NULL,     -- 'auto_priority','user_choice','latest_wins'
-    
+
     nudge_sent      BOOLEAN DEFAULT FALSE,
     nudge_resolved  BOOLEAN DEFAULT FALSE,
     user_choice     UUID,
-    
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
@@ -1015,7 +1015,7 @@ Layer 1: 规则健康评分     ← 每条规则的实时健康度
 聚合指标为单一 0-100 分数，提供给驾驶舱 Agent（G1）用于日报。
 
 ```
-EntropyIndex = w1 × RuleHealth(avg) 
+EntropyIndex = w1 × RuleHealth(avg)
              + w2 × (1 - ContradictionRate)
              + w3 × EvolutionStability
              + w4 × AdoptionTrend
@@ -1077,39 +1077,39 @@ EntropyIndex = w1 × RuleHealth(avg)
 -- 标记变更表 (基于 Mark Change Pattern)
 CREATE TABLE rule_mark_changes (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
+
     -- 变更目标
     target_type     VARCHAR(30) NOT NULL,  -- 'personal_rule','skill','threshold','honcho_profile'
     target_id       UUID NOT NULL,
-    
+
     -- 变更内容
     field_path      VARCHAR(200) NOT NULL, -- JSON路径，如 '$.rule_action.adjustment_percentage'
     old_value       JSONB,
     new_value       JSONB NOT NULL,
-    
+
     -- 变更来源（关键字段）
     source_type     VARCHAR(30) NOT NULL,  -- 'gds' | 'gds_proxy' | 'human' | 'nudge' | 'auto_extract'
     source_id       VARCHAR(100),           -- 具体来源标识
-    
+
     -- 人类可读摘要
     change_summary  TEXT NOT NULL,           -- LLM 生成的变更说明
-    
+
     -- 因果关联
     parent_change_id UUID,                   -- 关联的触发变更
     related_decision_ids UUID[],             -- 关联的决策ID
-    
+
     -- 变更上下文
     context_json    JSONB,                   -- 触发此变更的上下文快照
-    
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 按来源类型+时间查询（日常报告）
-CREATE INDEX idx_mark_changes_source_time 
+CREATE INDEX idx_mark_changes_source_time
     ON rule_mark_changes(source_type, created_at DESC);
 
 -- 按目标查询变更历史
-CREATE INDEX idx_mark_changes_target 
+CREATE INDEX idx_mark_changes_target
     ON rule_mark_changes(target_type, target_id, created_at DESC);
 ```
 
@@ -1132,29 +1132,29 @@ CREATE TABLE spc_control_limits (
     agent_id        VARCHAR(20) NOT NULL,
     decision_point  VARCHAR(50) NOT NULL,
     metric_name     VARCHAR(50) NOT NULL,     -- 'acceptance_rate','confidence','override_rate'
-    
+
     -- 统计基线（基于前30天数据计算）
     baseline_mean   DECIMAL(10,4) NOT NULL,
     baseline_stddev DECIMAL(10,4) NOT NULL,
     baseline_samples INT NOT NULL,
-    
+
     -- 控制线
     ucl             DECIMAL(10,4) NOT NULL,   -- μ + 3σ
     lcl             DECIMAL(10,4) NOT NULL,   -- μ - 3σ
     uwl             DECIMAL(10,4) NOT NULL,   -- μ + 2σ
     lwl             DECIMAL(10,4) NOT NULL,   -- μ - 2σ
-    
+
     -- 连续规则检测
     consecutive_same_side INT DEFAULT 0,       -- 连续同侧点数
     last_breach_at  TIMESTAMPTZ,
-    
+
     -- 基线更新
     baseline_recalc_at TIMESTAMPTZ NOT NULL,
     next_recalc_at  TIMESTAMPTZ NOT NULL,      -- 每周重新计算
-    
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     UNIQUE(user_id, agent_id, decision_point, metric_name)
 );
 ```

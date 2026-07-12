@@ -10,11 +10,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/domain/integrations/aimapper"
+	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/eventbus"
 	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+var publicWebhookLimiter = middleware.NewRateLimiter(120, time.Minute)
 
 // eventTopicMap maps platform event types to event bus topics.
 var eventTopicMap = map[string]string{
@@ -26,13 +29,13 @@ var eventTopicMap = map[string]string{
 
 // WebhookLog records a received webhook event for audit and debugging.
 type WebhookLog struct {
-	ID           int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	Platform     string          `gorm:"column:platform" json:"platform"`
-	EventType    string          `gorm:"column:event_type" json:"event_type"`
-	RawPayload   json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload,omitempty"`
-	Status       string          `gorm:"column:status;default:received" json:"status"`
-	MappedEvent  string          `gorm:"column:mapped_event" json:"mapped_event"`
-	CreatedAt    time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	ID          int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	Platform    string          `gorm:"column:platform" json:"platform"`
+	EventType   string          `gorm:"column:event_type" json:"event_type"`
+	RawPayload  json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"raw_payload,omitempty"`
+	Status      string          `gorm:"column:status;default:received" json:"status"`
+	MappedEvent string          `gorm:"column:mapped_event" json:"mapped_event"`
+	CreatedAt   time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 
 func (WebhookLog) TableName() string { return "webhook_event_log" }
@@ -41,14 +44,14 @@ func (WebhookLog) TableName() string { return "webhook_event_log" }
 // These routes are public (no auth) because external platforms need to call them.
 func RegisterWebhookRoutes(rg *gin.RouterGroup, bus *eventbus.Bus, logger *zap.Logger) {
 	h := &webhookHandler{bus: bus, logger: logger}
-	rg.POST("/webhooks/:platform", h.ReceiveWebhook)
+	rg.POST("/webhooks/:platform", publicWebhookLimiter.Limit(), h.ReceiveWebhook)
 }
 
 // RegisterWebhookRoutesWithPipeline registers webhook endpoints with an AI pipeline
 // that runs after raw event storage.
 func RegisterWebhookRoutesWithPipeline(rg *gin.RouterGroup, bus *eventbus.Bus, logger *zap.Logger, pipeline *aimapper.Pipeline, db *gorm.DB) {
 	h := &webhookHandler{bus: bus, logger: logger, pipeline: pipeline, db: db}
-	rg.POST("/webhooks/:platform", h.ReceiveWebhook)
+	rg.POST("/webhooks/:platform", publicWebhookLimiter.Limit(), h.ReceiveWebhook)
 }
 
 // RegisterWebhookAdminRoutes registers webhook administration endpoints (JWT-protected).
@@ -126,8 +129,8 @@ func (h *webhookHandler) ReceiveWebhook(c *gin.Context) {
 
 	// Build a PlatformEvent from the raw payload.
 	platformEvent := PlatformEvent{
-		EventType: eventType,
-		Data:      raw,
+		EventType:  eventType,
+		Data:       raw,
 		OccurredAt: time.Now(),
 	}
 
@@ -154,13 +157,13 @@ func (h *webhookHandler) ReceiveWebhook(c *gin.Context) {
 
 	// Build the payload to publish to the bus.
 	payload := map[string]interface{}{
-		"platform":     platform,
-		"platform_id":  platformEvent.PlatformID,
-		"event_type":   eventType,
-		"product_id":   platformEvent.ProductID,
-		"sku_code":     platformEvent.SKUCode,
-		"raw":          raw,
-		"occurred_at":  platformEvent.OccurredAt.Format(time.RFC3339),
+		"platform":    platform,
+		"platform_id": platformEvent.PlatformID,
+		"event_type":  eventType,
+		"product_id":  platformEvent.ProductID,
+		"sku_code":    platformEvent.SKUCode,
+		"raw":         raw,
+		"occurred_at": platformEvent.OccurredAt.Format(time.RFC3339),
 	}
 
 	// Publish to the event bus.
@@ -252,7 +255,7 @@ func (h *webhookHandler) GetConfig(c *gin.Context) {
 	}
 	var summaries []logSummary
 	h.db.Model(&WebhookLog{}).
-		Select("platform, MAX(created_at) as last_event_at, "+
+		Select("platform, MAX(created_at) as last_event_at, " +
 			"(SELECT event_type FROM webhook_event_log w2 WHERE w2.platform = webhook_event_log.platform ORDER BY created_at DESC LIMIT 1) as last_event_type").
 		Group("platform").
 		Find(&summaries)
@@ -281,9 +284,9 @@ func (h *webhookHandler) GetConfig(c *gin.Context) {
 
 // TestEventRequest is the payload for testing a webhook event.
 type TestEventRequest struct {
-	Platform string                 `json:"platform" binding:"required"`
-	EventType string                `json:"event_type" binding:"required"`
-	Payload  map[string]interface{} `json:"payload"`
+	Platform  string                 `json:"platform" binding:"required"`
+	EventType string                 `json:"event_type" binding:"required"`
+	Payload   map[string]interface{} `json:"payload"`
 }
 
 // TestEvent POST /api/v1/platform-webhooks/test-event
@@ -322,10 +325,10 @@ func (h *webhookHandler) TestEvent(c *gin.Context) {
 	)
 
 	response.Success(c, gin.H{
-		"status":      "published",
-		"event_type":  req.EventType,
-		"mapped_to":   mappedTopic,
-		"event_id":    eventID,
+		"status":     "published",
+		"event_type": req.EventType,
+		"mapped_to":  mappedTopic,
+		"event_id":   eventID,
 	})
 }
 
@@ -355,10 +358,10 @@ func detectEventType(raw map[string]interface{}) string {
 	// Shopee-style: type field
 	if t, ok := raw["type"].(string); ok && t != "" {
 		m := map[string]string{
-			"ITEM_STATUS_CHANGE":   "listing_state_changed",
-			"ITEM_PRICE_UPDATE":    "price_changed",
-			"ITEM_STOCK_UPDATE":    "inventory_changed",
-			"ORDER_CREATED":        "order_placed",
+			"ITEM_STATUS_CHANGE": "listing_state_changed",
+			"ITEM_PRICE_UPDATE":  "price_changed",
+			"ITEM_STOCK_UPDATE":  "inventory_changed",
+			"ORDER_CREATED":      "order_placed",
 		}
 		if et, ok := m[t]; ok {
 			return et

@@ -8,6 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type extensionIncomingMessage struct {
@@ -58,22 +59,26 @@ type PluginDriver interface {
 // Unlike the main WebSocket handler, auth is performed via the first message
 // rather than a URL query parameter.
 type ExtensionHandler struct {
-	hub                *Hub
-	logger             *zap.Logger
-	jwtSecret          string
-	pluginDriver       PluginDriver
-	autoCollectHandler func(userID int64, payload json.RawMessage) error
-	listCollectHandler func(userID int64, payload json.RawMessage) error
-	upgrader           websocket.Upgrader
+	hub                   *Hub
+	logger                *zap.Logger
+	jwtSecret             string
+	db                    *gorm.DB
+	deploymentEnvironment string
+	pluginDriver          PluginDriver
+	autoCollectHandler    func(userID int64, payload json.RawMessage) error
+	listCollectHandler    func(userID int64, payload json.RawMessage) error
+	upgrader              websocket.Upgrader
 }
 
 // NewExtensionHandler creates a new ExtensionHandler.
 // allowedOrigins is the CORS allowed-origins config; "*" or empty allows all.
-func NewExtensionHandler(hub *Hub, logger *zap.Logger, jwtSecret string, allowedOrigins string) *ExtensionHandler {
+func NewExtensionHandler(hub *Hub, logger *zap.Logger, jwtSecret string, allowedOrigins string, db *gorm.DB, deploymentEnvironment string) *ExtensionHandler {
 	return &ExtensionHandler{
-		hub:       hub,
-		logger:    logger,
-		jwtSecret: jwtSecret,
+		hub:                   hub,
+		logger:                logger,
+		jwtSecret:             jwtSecret,
+		db:                    db,
+		deploymentEnvironment: deploymentEnvironment,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -151,13 +156,14 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 		return
 	}
 
-	userID, valid := h.validateExtensionToken(authMsg.Token)
+	userID, deviceID, valid := h.validateExtensionToken(authMsg.Token)
 	if !valid {
 		h.logger.Warn("extension ws auth rejected: invalid token")
 		client.writeJSON(map[string]string{"type": "error", "data": "invalid token"})
 		return
 	}
 	client.UserID = userID
+	client.ExtensionDeviceID = deviceID
 	client.writeJSON(map[string]string{"type": "auth", "data": "ok"})
 	h.logger.Info("extension ws client authenticated", zap.Int64("user_id", *userID))
 
@@ -171,6 +177,10 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 		if err != nil {
 			client.writeJSON(map[string]string{"type": "error", "data": "invalid JSON"})
 			continue
+		}
+		if !h.extensionDeviceActive(*client.UserID, client.ExtensionDeviceID) {
+			client.writeJSON(map[string]string{"type": "error", "data": "extension device revoked"})
+			return
 		}
 		switch incoming.Type {
 		case "fetch_product_result", "fetch_product_error":
@@ -215,29 +225,69 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 }
 
 // validateExtensionToken parses and validates a JWT token, returning the user ID.
-func (h *ExtensionHandler) validateExtensionToken(tokenStr string) (*int64, bool) {
+func (h *ExtensionHandler) validateExtensionToken(tokenStr string) (*int64, string, bool) {
 	if h.jwtSecret == "" {
-		return nil, false
+		return nil, "", false
 	}
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		if t.Method != jwt.SigningMethodHS256 {
 			return nil, jwt.ErrSignatureInvalid
 		}
 		return []byte(h.jwtSecret), nil
 	})
 	if err != nil || !token.Valid {
-		return nil, false
+		return nil, "", false
 	}
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		if claims["type"] != "extension_access" {
+			return nil, "", false
+		}
+		deviceID, _ := claims["device_id"].(string)
+		environment, _ := claims["environment"].(string)
+		issuer, issuerErr := claims.GetIssuer()
+		audience, audienceErr := claims.GetAudience()
+		audienceOK := false
+		for _, value := range audience {
+			if value == "lingmirror-sourcing1688" {
+				audienceOK = true
+				break
+			}
+		}
+		if issuerErr != nil || audienceErr != nil || environment != h.deploymentEnvironment || issuer != "lingmirror-extension:"+environment || !audienceOK {
+			return nil, "", false
+		}
+		scopes, _ := claims["scopes"].([]interface{})
+		scoped := false
+		for _, value := range scopes {
+			if value == "sourcing1688.collect" {
+				scoped = true
+				break
+			}
+		}
+		if deviceID == "" || !scoped {
+			return nil, "", false
+		}
 		if uid, exists := claims["user_id"]; exists {
 			switch v := uid.(type) {
 			case float64:
 				n := int64(v)
-				return &n, true
+				if h.extensionDeviceActive(n, deviceID) {
+					return &n, deviceID, true
+				}
 			}
 		}
 	}
-	return nil, false
+	return nil, "", false
+}
+
+func (h *ExtensionHandler) extensionDeviceActive(userID int64, deviceID string) bool {
+	if h.db == nil || userID <= 0 || deviceID == "" {
+		return false
+	}
+	var count int64
+	err := h.db.Raw(`SELECT COUNT(*) FROM extension_device ed JOIN "user" u ON u.id = ed.user_id
+		WHERE ed.device_id = ? AND ed.user_id = ? AND ed.scope = 'sourcing1688.collect' AND ed.revoked_at IS NULL AND u.status = 1 AND u.role IN ('owner','admin')`, deviceID, userID).Scan(&count).Error
+	return err == nil && count == 1
 }
 
 // handleFetchProductResult routes a fetch_product_result to the plugin driver.

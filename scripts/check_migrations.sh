@@ -5,6 +5,31 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGRATIONS_DIR="${MIGRATIONS_DIR:-$ROOT_DIR/backend-go/migrations}"
 DATABASE_URL="${DATABASE_URL:-}"
 
+python3 - "$MIGRATIONS_DIR" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+ups = {p.name[:-7] for p in root.glob("*.up.sql")}
+downs = {p.name[:-9] for p in root.glob("*.down.sql")}
+errors = []
+if ups - downs:
+    errors.append("up migrations missing down: " + ", ".join(sorted(ups - downs)))
+if downs - ups:
+    errors.append("down migrations missing up: " + ", ".join(sorted(downs - ups)))
+versions = {}
+for name in ups:
+    version = name.split("_", 1)[0]
+    versions.setdefault(version, []).append(name)
+for version, names in versions.items():
+    if len(names) > 1:
+        errors.append(f"duplicate migration version {version}: {', '.join(sorted(names))}")
+if errors:
+    print("\n".join("ERROR: " + e for e in errors), file=sys.stderr)
+    raise SystemExit(1)
+print(f"migration file contract passed: {len(ups)} up/down pairs")
+PY
+
 if [[ -z "$DATABASE_URL" ]]; then
   cat >&2 <<'EOF'
 DATABASE_URL is required.

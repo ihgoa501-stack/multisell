@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
+	"go.uber.org/zap"
 )
 
 // ---------------------------------------------------------------------------
@@ -117,7 +119,7 @@ func TestDispatchSafe_Production_HighRisk_RequiresApproval(t *testing.T) {
 
 func TestDispatchSafe_Production_HighRisk_Approved(t *testing.T) {
 	logger := dbtest.NewLogger(t)
-	d := NewDispatcher(logger)
+	d := newDurableTestDispatcher(t, logger)
 
 	d.Register("price_update", okHandler)
 
@@ -130,6 +132,7 @@ func TestDispatchSafe_Production_HighRisk_Approved(t *testing.T) {
 		RiskLevel:        RiskHigh,
 		ApprovalRequired: true,
 		ApprovalID:       &approvalID,
+		IdempotencyKey:   "price-update:approved",
 	}
 	mockPolicy := &mockPolicyChecker{approved: true}
 	result, err := d.DispatchSafe(context.Background(), action, mockPolicy)
@@ -143,7 +146,7 @@ func TestDispatchSafe_Production_HighRisk_Approved(t *testing.T) {
 
 func TestDispatchSafe_Production_ApprovalNotInPolicy(t *testing.T) {
 	logger := dbtest.NewLogger(t)
-	d := NewDispatcher(logger)
+	d := newDurableTestDispatcher(t, logger)
 
 	d.Register("price_update", okHandler)
 
@@ -156,6 +159,7 @@ func TestDispatchSafe_Production_ApprovalNotInPolicy(t *testing.T) {
 		RiskLevel:        RiskHigh,
 		ApprovalRequired: true,
 		ApprovalID:       &approvalID,
+		IdempotencyKey:   "price-update:rejected",
 	}
 	mockPolicy := &mockPolicyChecker{approved: false}
 	_, err := d.DispatchSafe(context.Background(), action, mockPolicy)
@@ -296,10 +300,10 @@ func TestParseRiskLevel(t *testing.T) {
 
 func TestAgentActionValidate_MissingActionType(t *testing.T) {
 	action := AgentAction{
-		AgentID:    "A5",
-		Actor:      "system",
-		RiskLevel:  RiskLow,
-		Mode:       ModeDryRun,
+		AgentID:   "A5",
+		Actor:     "system",
+		RiskLevel: RiskLow,
+		Mode:      ModeDryRun,
 	}
 	err := action.Validate()
 	if err == nil {
@@ -571,15 +575,6 @@ func TestHighRiskActions(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Idempotency key — known gap.
-// ---------------------------------------------------------------------------
-
-func TestIdempotencyKey_NotYetImplemented(t *testing.T) {
-	// ponytail: idempotency storage is not implemented yet.
-	t.Skip("ponytail: idempotency dedup not yet implemented — requires persisted store")
-}
-
-// ---------------------------------------------------------------------------
 // DispatchSafe — structural validation integrated with dispatch.
 // ---------------------------------------------------------------------------
 
@@ -651,6 +646,24 @@ type mockPolicyChecker struct {
 	approved bool
 }
 
-func (m *mockPolicyChecker) IsApproved(_ int64) bool {
-	return m.approved
+func newDurableTestDispatcher(t *testing.T, logger *zap.Logger, opts ...DispatcherOption) *Dispatcher {
+	t.Helper()
+	db := dbtest.NewDB(t, &ActionExecution{})
+	opts = append(opts, WithIdempotencyStore(NewGormIdempotencyStore(db, time.Minute)))
+	return NewDispatcher(logger, opts...)
 }
+
+func (m *mockPolicyChecker) approvalError() error {
+	if m.approved {
+		return nil
+	}
+	return ErrApprovalRequired
+}
+func (m *mockPolicyChecker) AuthorizeFor(context.Context, int64, string, string, string, string) error {
+	return m.approvalError()
+}
+func (m *mockPolicyChecker) ConsumeFor(context.Context, int64, string, string, string, string) error {
+	return m.approvalError()
+}
+func (m *mockPolicyChecker) CompleteFor(context.Context, int64, string) error    { return nil }
+func (m *mockPolicyChecker) FailFor(context.Context, int64, string, error) error { return nil }

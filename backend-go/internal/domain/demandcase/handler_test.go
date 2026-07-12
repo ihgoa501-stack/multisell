@@ -9,13 +9,30 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	"github.com/lingmirror/backend-go/internal/rbac"
 	"go.uber.org/zap"
 )
 
 func testRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	db := dbtest.NewDB(t, &DemandCase{}, &DemandEvidence{}, &DemandVerdict{}, &ResearchBatch{}, &ResearchSnapshot{})
+	db := dbtest.NewDB(t, &DemandCase{}, &DemandEvidence{}, &DemandVerdict{}, &ResearchBatch{}, &ResearchSnapshot{}, &MarketOwnerDecision{}, &ProductOpportunity{}, &ProductOpportunityDecision{}, &rbac.Role{}, &rbac.Permission{}, &rbac.UserRole{}, &rbac.RolePermission{})
+	role := rbac.Role{Name: "Owner", Code: "owner-test", Status: 1}
+	if err := db.Create(&role).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&rbac.UserRole{UserID: 9, RoleID: role.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"market.read", "market.write", "market.decide"} {
+		permission := rbac.Permission{Name: code, Code: code, Module: "market"}
+		if err := db.Create(&permission).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&rbac.RolePermission{RoleID: role.ID, PermissionID: permission.ID}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	r := gin.New()
 	g := r.Group("/api/v1")
 	g.Use(func(c *gin.Context) { c.Set("user_id", int64(9)); c.Next() })

@@ -37,6 +37,7 @@ services:
       - "--storage.path=/alertmanager"
     volumes:
       - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ${ALERTMANAGER_SLACK_WEBHOOK_FILE:?required}:/run/secrets/slack_webhook_url:ro
       - alertmanager_data:/alertmanager
     restart: unless-stopped
 

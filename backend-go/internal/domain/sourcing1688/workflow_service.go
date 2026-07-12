@@ -107,9 +107,11 @@ func (s *Service) Capture(in *CaptureInput) (*Sourcing1688Product, error) {
 		}
 
 		var p Sourcing1688Product
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("source_offer_id = ? OR source_url = ?", offerID, canonicalURL).First(&p).Error
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("owner_id = ? AND (source_offer_id = ? OR source_url = ?)", in.CollectedBy, offerID, canonicalURL).
+			First(&p).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			p = Sourcing1688Product{SourceURL: canonicalURL, SourceOfferID: offerID, Title: in.Title, Price: in.Price, SupplierName: in.SupplierName, SupplierBusinessID: strings.TrimSpace(in.SupplierBusinessID), Status: StatusPendingReview, LifecycleStatus: LifecyclePendingReview, DemandCaseID: &in.DemandCaseID, ExperimentID: &in.ExperimentID}
+			p = Sourcing1688Product{OwnerID: in.CollectedBy, SourceURL: canonicalURL, SourceOfferID: offerID, Title: in.Title, Price: in.Price, SupplierName: in.SupplierName, SupplierBusinessID: strings.TrimSpace(in.SupplierBusinessID), Status: StatusPendingReview, LifecycleStatus: LifecyclePendingReview, DemandCaseID: &in.DemandCaseID, ExperimentID: &in.ExperimentID}
 			if in.MOQ != nil {
 				p.MOQ = *in.MOQ
 			} else {
@@ -213,12 +215,19 @@ func (s *Service) Review(id int64, in *ReviewInput) (*Sourcing1688Product, error
 		if p.Status != StatusPendingReview || p.SnapshotID == nil {
 			return fmt.Errorf("%w: only a snapshotted pending item can be reviewed", ErrWorkflowGate)
 		}
-		var dc demandCaseRow
-		if p.DemandCaseID == nil || tx.First(&dc, *p.DemandCaseID).Error != nil || dc.OwnerID != in.ReviewedBy || dc.Status != "experiment_ready" {
-			return fmt.Errorf("%w: review must be performed by the approved market Owner", ErrWorkflowGate)
+		if p.DemandCaseID == nil || p.ExperimentID == nil || p.OwnerID != in.ReviewedBy {
+			return fmt.Errorf("%w: review must be performed by the sourcing Owner", ErrWorkflowGate)
+		}
+		if err := requirePrimarySourcingAuthority(tx, in.ReviewedBy, *p.DemandCaseID, *p.ExperimentID); err != nil {
+			return err
 		}
 		now := time.Now().UTC()
 		if err := tx.Model(&p).Updates(map[string]any{"status": StatusReviewed, "reviewed_by": in.ReviewedBy, "reviewed_at": now, "review_notes": strings.TrimSpace(in.Notes), "lifecycle_status": LifecycleReadyForProduct, "lifecycle_actor_id": in.ReviewedBy, "lifecycle_reason": strings.TrimSpace(in.Notes), "lifecycle_updated_at": now}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&Sourcing1688TaskLink{}).
+			Where("sourcing_product_id = ? AND owner_id = ? AND workflow_status = ?", p.ID, in.ReviewedBy, "needs_review").
+			Updates(map[string]any{"workflow_status": "ready_for_draft", "workflow_updated_at": now}).Error; err != nil {
 			return err
 		}
 		p.Status, p.ReviewedBy, p.ReviewedAt, p.ReviewNotes = StatusReviewed, &in.ReviewedBy, &now, strings.TrimSpace(in.Notes)
@@ -243,8 +252,33 @@ func (s *Service) GetSnapshot(id int64) (*Sourcing1688Snapshot, error) {
 }
 
 func (s *Service) GetDraft(id int64) (*DraftDetail, error) {
+	var primary Sourcing1688TaskLink
+	if err := s.db.Where("sourcing_product_id = ? AND is_primary = ?", id, true).First(&primary).Error; err == nil && primary.DraftID != nil {
+		return s.GetTaskDraft(id, primary.ID)
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return s.getDraftWhere("sourcing_product_id = ? AND task_link_id IS NULL", id)
+}
+
+// GetTaskDraft reads the exact independent draft owned by one task link.
+func (s *Service) GetTaskDraft(id, taskLinkID int64) (*DraftDetail, error) {
+	if id <= 0 || taskLinkID <= 0 {
+		return nil, ErrInvalidWorkflow
+	}
+	return s.getDraftWhere("sourcing_product_id = ? AND task_link_id = ?", id, taskLinkID)
+}
+
+func (s *Service) GetOwnedTaskDraft(id, taskLinkID, ownerID int64) (*DraftDetail, error) {
+	if _, err := findOwnedTaskLink(s.db, id, ownerID, taskLinkID); err != nil {
+		return nil, err
+	}
+	return s.GetTaskDraft(id, taskLinkID)
+}
+
+func (s *Service) getDraftWhere(query string, args ...any) (*DraftDetail, error) {
 	var detail DraftDetail
-	if err := s.db.Where("sourcing_product_id = ?", id).First(&detail.Draft).Error; err != nil {
+	if err := s.db.Where(query, args...).First(&detail.Draft).Error; err != nil {
 		return nil, err
 	}
 	if err := s.db.First(&detail.Listing, detail.Draft.ListingID).Error; err != nil {
@@ -265,11 +299,53 @@ func (s *Service) GetDraft(id int64) (*DraftDetail, error) {
 	if err := s.db.Where("product_id = ?", detail.Draft.ProductID).Order("cost_type").Find(&detail.Costs).Error; err != nil {
 		return nil, err
 	}
+	if err := rebuildEditableDraft(&detail); err != nil {
+		return nil, err
+	}
 	return &detail, nil
 }
 
+func rebuildEditableDraft(detail *DraftDetail) error {
+	var frozen struct {
+		LocalizedTitle       string               `json:"localized_title"`
+		LocalizedDescription string               `json:"localized_description"`
+		TargetLocale         string               `json:"target_locale"`
+		ShippingTemplateID   string               `json:"shipping_template_id"`
+		CategorySchemaURI    string               `json:"category_schema_uri"`
+		CategoryObservedAt   time.Time            `json:"category_observed_at"`
+		SupplierAssessment   []EvidenceCheck      `json:"supplier_assessment"`
+		ComplianceChecks     []EvidenceCheck      `json:"compliance_checks"`
+		Media                []MediaInput         `json:"media_requirements"`
+		Validation           DraftValidationInput `json:"validation_input"`
+		SKUs                 []DraftSKUInput      `json:"supplier_sku_mapping"`
+		ChannelFields        json.RawMessage      `json:"channel_fields"`
+	}
+	if json.Unmarshal(detail.Listing.PublishedData, &frozen) != nil || len(frozen.SupplierAssessment) == 0 || len(frozen.ComplianceChecks) == 0 || len(frozen.Media) == 0 || len(frozen.SKUs) == 0 || !json.Valid(frozen.ChannelFields) {
+		return fmt.Errorf("%w: persisted draft cannot be safely reconstructed for editing", ErrWorkflowGate)
+	}
+	costs := make([]CostInput, 0, len(detail.Costs))
+	for _, row := range detail.Costs {
+		costs = append(costs, CostInput{CostType: row.CostType, Amount: row.Amount, Currency: row.Currency, TruthStatus: row.TruthStatus, SourceURI: row.SourceURI, ObservedAt: row.ObservedAt})
+	}
+	payload := &ConvertInput{ConversionRequestID: detail.Draft.ConversionRequestID, CreatedBy: detail.Draft.CreatedBy, PlatformID: detail.Listing.PlatformID, Title: detail.Product.Name, Description: detail.Product.Description, CategoryID: detail.Product.CategoryID, Unit: detail.Product.Unit, LocalizedTitle: frozen.LocalizedTitle, LocalizedDescription: frozen.LocalizedDescription, PlatformSKU: detail.Listing.PlatformSKU, SKUVariants: frozen.SKUs, Media: frozen.Media, Costs: costs, ListingPayload: frozen.ChannelFields, TargetLocale: frozen.TargetLocale, ShippingTemplateID: frozen.ShippingTemplateID, CategorySchemaURI: frozen.CategorySchemaURI, CategoryObservedAt: frozen.CategoryObservedAt, SupplierAssessment: frozen.SupplierAssessment, ComplianceChecks: frozen.ComplianceChecks, Validation: frozen.Validation}
+	if detail.Draft.TaskLinkID != nil {
+		payload.TaskLinkID = *detail.Draft.TaskLinkID
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(encoded)
+	version := detail.Draft.EditableVersion
+	if version <= 0 {
+		version = 1
+	}
+	detail.EditablePayload, detail.EditableVersion, detail.EditableSHA256 = payload, version, hex.EncodeToString(digest[:])
+	return nil
+}
+
 func validateConvert(in *ConvertInput) error {
-	if in.CreatedBy == 0 || in.PlatformID == 0 || in.CategoryID == 0 || strings.TrimSpace(in.Title) == "" || strings.TrimSpace(in.Description) == "" || strings.TrimSpace(in.Unit) == "" || strings.TrimSpace(in.LocalizedTitle) == "" || strings.TrimSpace(in.LocalizedDescription) == "" || strings.TrimSpace(in.TargetLocale) == "" || strings.TrimSpace(in.ShippingTemplateID) == "" || strings.TrimSpace(in.CategorySchemaURI) == "" || in.CategoryObservedAt.IsZero() || len(in.SKUVariants) == 0 || len(in.Media) == 0 || len(in.Costs) == 0 || !json.Valid(in.ListingPayload) || string(in.ListingPayload) == "{}" {
+	if in.CreatedBy == 0 || !strings.HasPrefix(strings.TrimSpace(in.ConversionRequestID), "convert_") || len(in.ConversionRequestID) > 100 || in.PlatformID == 0 || in.CategoryID == 0 || strings.TrimSpace(in.Title) == "" || strings.TrimSpace(in.Description) == "" || strings.TrimSpace(in.Unit) == "" || strings.TrimSpace(in.LocalizedTitle) == "" || strings.TrimSpace(in.LocalizedDescription) == "" || strings.TrimSpace(in.TargetLocale) == "" || strings.TrimSpace(in.ShippingTemplateID) == "" || strings.TrimSpace(in.CategorySchemaURI) == "" || in.CategoryObservedAt.IsZero() || len(in.SKUVariants) == 0 || len(in.Media) == 0 || len(in.Costs) == 0 || !json.Valid(in.ListingPayload) || string(in.ListingPayload) == "{}" {
 		return fmt.Errorf("%w: complete product, SKU, media, costs and listing payload required", ErrInvalidWorkflow)
 	}
 	if err := validateChecks(in.SupplierAssessment, []string{"identity", "operating_history", "transaction_history", "moq", "mixed_batch", "lead_time", "sample", "returns"}, false); err != nil {
@@ -417,17 +493,62 @@ func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
 		return nil, err
 	}
 	result := &ConvertResult{SourcingProductID: id, Status: "draft"}
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	envelope, err := json.Marshal(struct {
+		SourcingProductID int64         `json:"sourcing_product_id"`
+		Input             *ConvertInput `json:"input"`
+	}{id, in})
+	if err != nil {
+		return nil, fmt.Errorf("conversion envelope: %w", err)
+	}
+	digest := sha256.Sum256(envelope)
+	requestHash := hex.EncodeToString(digest[:])
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var p Sourcing1688Product
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&p, id).Error; err != nil {
 			return err
 		}
-		if p.Status == StatusDraftCreated && p.ProductID != nil {
+		if p.OwnerID != in.CreatedBy {
+			return fmt.Errorf("%w: sourcing product does not belong to authenticated Owner", ErrWorkflowGate)
+		}
+		// Idempotency is not an authorization cache. Replays must revalidate the
+		// frozen product-opportunity authority before returning prior output.
+		task, err := requireTaskSourcingAuthority(tx, p.ID, in.CreatedBy, in.TaskLinkID)
+		if err != nil {
+			return err
+		}
+		authoritativeSupplier, supplierSnapshot, err := ensureSourceSupplierAuthority(tx, &p, in.CreatedBy)
+		if err != nil {
+			return err
+		}
+		result.TaskLinkID = task.ID
+		var replay draftRow
+		if err := tx.Where("conversion_request_id = ?", strings.TrimSpace(in.ConversionRequestID)).First(&replay).Error; err == nil {
+			if replay.SourcingProductID != id || replay.ConversionRequestSHA256 != requestHash || (replay.TaskLinkID != nil && *replay.TaskLinkID != task.ID) {
+				return fmt.Errorf("%w: conversion_request_id is bound to different content", ErrWorkflowGate)
+			}
+			result.SnapshotID, result.ProductID, result.ListingID, result.DraftID, result.IdempotentReplay = replay.SnapshotID, replay.ProductID, replay.ListingID, replay.ID, true
+			var skus []skuRow
+			if err := tx.Where("product_id = ?", replay.ProductID).Find(&skus).Error; err != nil {
+				return err
+			}
+			for _, sku := range skus {
+				result.SKUIDs = append(result.SKUIDs, sku.ID)
+			}
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		task, err = requireTaskSourcingAuthority(tx, p.ID, in.CreatedBy, task.ID)
+		if err != nil {
+			return err
+		}
+		if task.DraftID != nil || task.WorkflowStatus == "converted_to_draft" {
 			var d draftRow
-			if err := tx.Where("sourcing_product_id = ?", id).First(&d).Error; err != nil {
+			if err := tx.Where("sourcing_product_id = ? AND task_link_id = ?", id, task.ID).First(&d).Error; err != nil {
 				return err
 			}
 			result.SnapshotID, result.ProductID, result.ListingID, result.DraftID = d.SnapshotID, d.ProductID, d.ListingID, d.ID
+			result.AlreadyConverted = true
 			var skus []skuRow
 			if err := tx.Where("product_id = ?", d.ProductID).Find(&skus).Error; err != nil {
 				return err
@@ -437,7 +558,7 @@ func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
 			}
 			return nil
 		}
-		if p.Status != StatusReviewed || p.LifecycleStatus != LifecycleReadyForProduct || p.SnapshotID == nil || p.DemandCaseID == nil || p.ExperimentID == nil || p.ReviewedBy == nil || *p.ReviewedBy != in.CreatedBy {
+		if (p.Status != StatusReviewed && p.Status != StatusDraftCreated) || p.SnapshotID == nil || p.ReviewedBy == nil || *p.ReviewedBy != in.CreatedBy {
 			return fmt.Errorf("%w: Owner-reviewed source required", ErrWorkflowGate)
 		}
 		var unresolvedDuplicates int64
@@ -455,21 +576,14 @@ func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
 			return fmt.Errorf("%w: confirmed duplicate must reuse the matched product", ErrWorkflowGate)
 		}
 		var dc demandCaseRow
-		if err := tx.First(&dc, *p.DemandCaseID).Error; err != nil {
+		if err := tx.First(&dc, task.DemandCaseID).Error; err != nil {
 			return err
 		}
-		var exp experimentRow
-		if err := tx.Where("experiment_id = ?", *p.ExperimentID).First(&exp).Error; err != nil {
-			return err
-		}
-		if dc.Status != "experiment_ready" || exp.Status != "active" || dc.OwnerID != in.CreatedBy || exp.OwnerID != in.CreatedBy {
-			return fmt.Errorf("%w: approved market or active experiment changed", ErrWorkflowGate)
+		if dc.OwnerID != in.CreatedBy {
+			return fmt.Errorf("%w: selected market Owner changed", ErrWorkflowGate)
 		}
 		if strings.TrimSpace(dc.TargetLocale) == "" || !strings.EqualFold(dc.TargetLocale, in.TargetLocale) {
 			return fmt.Errorf("%w: draft locale does not match the approved market locale", ErrWorkflowGate)
-		}
-		if exp.Stage != "product" && exp.Stage != "supply" && exp.Stage != "channel" {
-			return fmt.Errorf("%w: experiment stage no longer permits draft preparation", ErrWorkflowGate)
 		}
 		var platform platformRow
 		if err := tx.First(&platform, in.PlatformID).Error; err != nil {
@@ -490,6 +604,10 @@ func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
 		if err := tx.Create(&prod).Error; err != nil {
 			return err
 		}
+		if err := bindProductSupplier(tx, &p, supplierSnapshot, task, authoritativeSupplier, prod.ID); err != nil {
+			return err
+		}
+		p.SupplierID = &authoritativeSupplier.ID
 		result.ProductID = prod.ID
 		for _, v := range in.SKUVariants {
 			row := skuRow{ProductID: prod.ID, Code: v.InternalSKU, SpecDesc: v.SpecDesc, SpecValues: v.SpecValues, Price: v.Price, CostPrice: v.CostPrice, Weight: v.Weight, Image: v.Image, Status: 1}
@@ -513,7 +631,7 @@ func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
 			}
 		}
 		for _, v := range in.Costs {
-			row := costRow{ProductID: prod.ID, ExperimentID: *p.ExperimentID, CostType: v.CostType, Amount: v.Amount, Currency: v.Currency, TruthStatus: v.TruthStatus, SourceURI: v.SourceURI, ObservedAt: v.ObservedAt}
+			row := costRow{ProductID: prod.ID, ExperimentID: task.ExperimentID, CostType: v.CostType, Amount: v.Amount, Currency: v.Currency, TruthStatus: v.TruthStatus, SourceURI: v.SourceURI, ObservedAt: v.ObservedAt}
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
@@ -527,17 +645,33 @@ func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
 			return err
 		}
 		result.ListingID = listing.ID
-		draft := draftRow{SourcingProductID: p.ID, SnapshotID: *p.SnapshotID, ProductID: prod.ID, ListingID: listing.ID, DemandCaseID: *p.DemandCaseID, ExperimentID: *p.ExperimentID, CreatedBy: in.CreatedBy}
+		mappingItems := make([]CanonicalSKUMappingItem, 0, len(in.SKUVariants))
+		for i, variant := range in.SKUVariants {
+			mappingItems = append(mappingItems, CanonicalSKUMappingItem{SupplierSKU: variant.SupplierSKU, InternalSKUID: result.SKUIDs[i], InternalSKU: variant.InternalSKU, ChannelSKU: variant.ChannelSKU})
+		}
+		if _, err := PersistCanonicalSKUMappings(tx, CanonicalSKUMappingInput{OwnerID: in.CreatedBy, SourcingProductID: p.ID, TaskLinkID: task.ID, SnapshotID: *p.SnapshotID, ProductOpportunityID: *task.ProductOpportunityID, ProductID: prod.ID, PlatformID: in.PlatformID, ListingID: listing.ID, Version: 1, CreatedBy: in.CreatedBy, Items: mappingItems}); err != nil {
+			return err
+		}
+		taskID := task.ID
+		draft := draftRow{SourcingProductID: p.ID, TaskLinkID: &taskID, SnapshotID: *p.SnapshotID, ProductID: prod.ID, ListingID: listing.ID, DemandCaseID: task.DemandCaseID, ExperimentID: task.ExperimentID, CreatedBy: in.CreatedBy,
+			ConversionRequestID: strings.TrimSpace(in.ConversionRequestID), ConversionRequestSHA256: requestHash}
 		if err := tx.Create(&draft).Error; err != nil {
 			return err
 		}
 		result.DraftID, result.SnapshotID = draft.ID, *p.SnapshotID
 		now := time.Now().UTC()
-		if err := tx.Model(&p).Updates(map[string]any{"status": StatusDraftCreated, "product_id": prod.ID, "imported_by": strconv.FormatInt(in.CreatedBy, 10), "imported_at": now, "lifecycle_status": LifecycleEditing, "lifecycle_actor_id": in.CreatedBy, "lifecycle_reason": "", "lifecycle_updated_at": now}).Error; err != nil {
+		productUpdates := map[string]any{"status": StatusDraftCreated, "imported_by": strconv.FormatInt(in.CreatedBy, 10), "imported_at": now, "lifecycle_status": LifecycleEditing, "lifecycle_actor_id": in.CreatedBy, "lifecycle_reason": "", "lifecycle_updated_at": now}
+		if p.ProductID == nil {
+			productUpdates["product_id"] = prod.ID
+		}
+		if err := tx.Model(&p).Updates(productUpdates).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(task).Updates(map[string]any{"workflow_status": "converted_to_draft", "draft_id": draft.ID, "workflow_updated_at": now}).Error; err != nil {
 			return err
 		}
 		for typ, obj := range map[string]string{"sourcing_1688": strconv.FormatInt(p.ID, 10), "product": strconv.FormatInt(prod.ID, 10), "listing_draft": strconv.FormatInt(listing.ID, 10)} {
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&objectLinkRow{ExperimentID: *p.ExperimentID, ObjectType: typ, ObjectID: obj}).Error; err != nil {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&objectLinkRow{ExperimentID: task.ExperimentID, ObjectType: typ, ObjectID: obj}).Error; err != nil {
 				return err
 			}
 		}

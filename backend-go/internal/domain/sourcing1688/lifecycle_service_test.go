@@ -3,7 +3,9 @@ package sourcing1688
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
@@ -16,9 +18,11 @@ const lifecycleTestOwnerID int64 = 7
 func newLifecycleTestService(t *testing.T, status string, withDraft bool) (*Service, *gorm.DB, int64) {
 	t.Helper()
 	db := dbtest.NewDB(t,
-		&Sourcing1688Product{},
-		&demandCaseRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{},
+		&Sourcing1688Product{}, &Sourcing1688Snapshot{}, &authoritativeSupplierRow{}, &authoritativeProductSupplierRow{},
+		&demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{},
 		&approval.ApprovalRequest{}, &operationlog.OperationLog{},
+		&Sourcing1688TaskLink{}, &sourcingOpportunityRow{}, &sourcingOpportunityDecisionRow{}, &sourcingMarketDecisionRow{},
+		&SourcingSample{}, &SourcingSampleEvent{},
 	)
 	for _, column := range []struct {
 		model     any
@@ -63,7 +67,17 @@ func newLifecycleTestService(t *testing.T, status string, withDraft bool) (*Serv
 		t.Fatalf("create demand case: %v", err)
 	}
 	demandCaseID := int64(10)
-	p := Sourcing1688Product{SourceURL: fmt.Sprintf("https://detail.1688.com/offer/%d.html", len(status)+1), Status: StatusPendingReview, DemandCaseID: &demandCaseID}
+	experimentID := "exp-1"
+	if err := db.Create(&experimentRow{ExperimentID: experimentID, OwnerID: lifecycleTestOwnerID, Status: "active", Stage: "product"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&gateRow{ExperimentID: experimentID, Stage: "opportunity", Result: "pass"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&objectLinkRow{ExperimentID: experimentID, ObjectType: "demand_case", ObjectID: "10"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	p := Sourcing1688Product{OwnerID: lifecycleTestOwnerID, SourceURL: fmt.Sprintf("https://detail.1688.com/offer/%d.html", len(status)+1), SupplierName: "test supplier", SupplierBusinessID: "supplier-lifecycle-1", Status: StatusPendingReview, DemandCaseID: &demandCaseID, ExperimentID: &experimentID}
 	if err := db.Create(&p).Error; err != nil {
 		t.Fatalf("create sourcing product: %v", err)
 	}
@@ -71,9 +85,13 @@ func newLifecycleTestService(t *testing.T, status string, withDraft bool) (*Serv
 		t.Fatalf("set lifecycle: %v", err)
 	}
 	snapshotID := int64(99)
+	if err := db.Create(&Sourcing1688Snapshot{ID: snapshotID, SourcingProductID: p.ID, SourceURL: p.SourceURL, CollectedAt: time.Now().UTC(), CollectedBy: lifecycleTestOwnerID, Driver: "test", ParserVersion: "1", RawPayload: []byte(`{}`), RawSHA256: strings.Repeat("a", 64), ObservedSupplier: p.SupplierName, ObservedSupplierBusinessID: p.SupplierBusinessID}).Error; err != nil {
+		t.Fatalf("create supplier snapshot: %v", err)
+	}
 	if err := db.Model(&Sourcing1688Product{}).Where("id = ?", p.ID).Update("snapshot_id", snapshotID).Error; err != nil {
 		t.Fatalf("set snapshot reference: %v", err)
 	}
+	seedFrozenOpportunityAuthority(t, db, p.ID, demandCaseID, lifecycleTestOwnerID, experimentID, "test")
 	if withDraft {
 		productID := int64(101)
 		if err := db.Create(&productRow{ID: productID, Name: "approval test product", Unit: "piece", CategoryID: 1}).Error; err != nil {
@@ -92,6 +110,39 @@ func newLifecycleTestService(t *testing.T, status string, withDraft bool) (*Serv
 		}
 	}
 	return NewService(db, dbtest.NewLogger(t)), db, p.ID
+}
+
+// seedFrozenOpportunityAuthority accepts the Owner and demand-case IDs in
+// either order because older sourcing tests used both conventions. The demand
+// case row is authoritative, so the helper resolves the pair from persisted
+// test data instead of silently creating a mismatched approval chain.
+func seedFrozenOpportunityAuthority(t *testing.T, db *gorm.DB, sourceID, firstID, secondID int64, experimentID, channel string) {
+	t.Helper()
+	demandCaseID, ownerID := firstID, secondID
+	var count int64
+	if err := db.Model(&demandCaseRow{}).Where("id = ?", demandCaseID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		demandCaseID, ownerID = secondID, firstID
+	}
+	market := sourcingMarketDecisionRow{DemandCaseID: demandCaseID, OwnerID: ownerID, Decision: "selected"}
+	if err := db.Create(&market).Error; err != nil {
+		t.Fatalf("create selected market authority: %v", err)
+	}
+	opportunity := sourcingOpportunityRow{OwnerID: ownerID, DemandCaseID: demandCaseID, MarketDecisionID: market.ID, Version: 1, Title: "approved test opportunity", TargetChannel: channel, Status: "approved", ContentHash: "frozen-content-hash"}
+	if err := db.Create(&opportunity).Error; err != nil {
+		t.Fatalf("create approved product opportunity: %v", err)
+	}
+	decision := sourcingOpportunityDecisionRow{OpportunityID: opportunity.ID, OwnerID: ownerID, Version: opportunity.Version, Decision: "approved", ContentHash: opportunity.ContentHash}
+	if err := db.Create(&decision).Error; err != nil {
+		t.Fatalf("create frozen opportunity approval: %v", err)
+	}
+	now := time.Now().UTC()
+	link := Sourcing1688TaskLink{SourcingProductID: sourceID, DemandCaseID: demandCaseID, ExperimentID: experimentID, OwnerID: ownerID, ProductOpportunityID: &opportunity.ID, OpportunityDecisionID: &decision.ID, AuthorityKind: "product_opportunity", Status: "linked", IsPrimary: true, SamplePolicy: "waived", SampleWaiverReason: "test fixture waiver", SampleWaivedBy: &ownerID, SampleWaivedAt: &now}
+	if err := db.Create(&link).Error; err != nil {
+		t.Fatalf("create frozen sourcing authority: %v", err)
+	}
 }
 
 func TestLifecycle_CaptureFailureAndSourceRejectionPersistReasons(t *testing.T) {
@@ -191,6 +242,19 @@ func TestLifecycle_FullOwnerApprovalProducesDraftOnly(t *testing.T) {
 	}
 	if auditCount != 1 {
 		t.Fatalf("approval audit count = %d", auditCount)
+	}
+}
+
+func TestLifecycle_LegacyExperimentLinkCannotAuthorizeEscalation(t *testing.T) {
+	svc, db, id := newLifecycleTestService(t, LifecyclePendingReview, false)
+	if err := db.Model(&Sourcing1688TaskLink{}).Where("sourcing_product_id = ?", id).Updates(map[string]any{
+		"authority_kind": "legacy_experiment", "product_opportunity_id": nil, "opportunity_decision_id": nil,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.DecideSourceReview(id, &SourceReviewDecisionInput{OwnerID: lifecycleTestOwnerID, Action: "approve", Notes: "experiment passed"})
+	if !errors.Is(err, ErrWorkflowGate) || !strings.Contains(err.Error(), "legacy experiment trace cannot authorize") {
+		t.Fatalf("legacy experiment escalation error = %v", err)
 	}
 }
 

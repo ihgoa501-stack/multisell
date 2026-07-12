@@ -39,7 +39,7 @@ gantt
     title 凌镜 LingMirror 开发时间线
     dateFormat  YYYY-MM-DD
     axisFormat  %m-%d
-    
+
     section Phase 0-1: 基础
     运行基线 / Docker / 数据库     :done, 2026-06-10, 2d
     商品核心 / 品牌 / 类目 / SKU  :done, 2026-06-10, 3d

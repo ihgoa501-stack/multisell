@@ -225,4 +225,3 @@ func computeFreshnessLabel(f DataFreshness, now time.Time) string {
 		return "unknown"
 	}
 }
-

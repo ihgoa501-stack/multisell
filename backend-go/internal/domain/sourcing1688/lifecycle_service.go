@@ -59,6 +59,31 @@ func requireOwner(tx *gorm.DB, row *sourcingLifecycleRow, actorID int64) error {
 	return nil
 }
 
+// requireFrozenProductOpportunityAuthority binds an escalation to the exact
+// source task link and the immutable Owner approval that authorized sourcing.
+// An experiment remains useful trace context, but can never authorize a source
+// to enter the product/draft lifecycle by itself.
+func requireFrozenProductOpportunityAuthority(tx *gorm.DB, row *sourcingLifecycleRow, ownerID int64) error {
+	if row == nil || row.ID <= 0 || ownerID <= 0 || row.DemandCaseID == nil || row.ExperimentID == nil || strings.TrimSpace(*row.ExperimentID) == "" {
+		return fmt.Errorf("%w: frozen product opportunity authority is required", ErrWorkflowGate)
+	}
+	var link Sourcing1688TaskLink
+	if err := tx.Where(
+		"sourcing_product_id = ? AND owner_id = ? AND demand_case_id = ? AND experiment_id = ? AND is_primary = ? AND authority_kind = ?",
+		row.ID, ownerID, *row.DemandCaseID, *row.ExperimentID, true, "product_opportunity",
+	).First(&link).Error; err != nil || link.ProductOpportunityID == nil || link.OpportunityDecisionID == nil {
+		return fmt.Errorf("%w: legacy experiment trace cannot authorize sourcing; frozen product opportunity approval is required", ErrWorkflowGate)
+	}
+	decision, err := requireSourcingAuthority(tx, ownerID, *row.DemandCaseID, *link.ProductOpportunityID)
+	if err != nil {
+		return err
+	}
+	if decision.ID != *link.OpportunityDecisionID {
+		return fmt.Errorf("%w: frozen product opportunity approval no longer matches", ErrWorkflowGate)
+	}
+	return nil
+}
+
 func updateLifecycle(tx *gorm.DB, row *sourcingLifecycleRow, next string, actorID int64, reason string) error {
 	now := time.Now().UTC()
 	reason = strings.TrimSpace(reason)
@@ -125,6 +150,18 @@ func (s *Service) DecideSourceReview(id int64, in *SourceReviewDecisionInput) (*
 		if err := requireOwner(tx, &row, in.OwnerID); err != nil {
 			return err
 		}
+		if in.Action == "approve" {
+			if err := requireFrozenProductOpportunityAuthority(tx, &row, in.OwnerID); err != nil {
+				return err
+			}
+			var source Sourcing1688Product
+			if err := tx.Where("id = ? AND owner_id = ?", id, in.OwnerID).First(&source).Error; err != nil {
+				return err
+			}
+			if _, _, err := ensureSourceSupplierAuthority(tx, &source, in.OwnerID); err != nil {
+				return err
+			}
+		}
 		if row.SnapshotID == nil {
 			return fmt.Errorf("%w: immutable source snapshot is required before Owner review", ErrWorkflowGate)
 		}
@@ -132,6 +169,15 @@ func (s *Service) DecideSourceReview(id int64, in *SourceReviewDecisionInput) (*
 		if err := tx.Model(&Sourcing1688Product{}).Where("id = ?", id).Updates(map[string]any{
 			"status": legacy, "reviewed_by": in.OwnerID, "reviewed_at": now, "review_notes": strings.TrimSpace(in.Notes),
 		}).Error; err != nil {
+			return err
+		}
+		taskStatus, blocker := "ready_for_draft", ""
+		if in.Action == "reject" {
+			taskStatus, blocker = "blocked", strings.TrimSpace(in.Notes)
+		}
+		if err := tx.Model(&Sourcing1688TaskLink{}).
+			Where("sourcing_product_id = ? AND owner_id = ? AND draft_id IS NULL AND workflow_status <> ?", id, in.OwnerID, "archived").
+			Updates(map[string]any{"workflow_status": taskStatus, "blocked_reason": blocker, "workflow_updated_at": now}).Error; err != nil {
 			return err
 		}
 		return updateLifecycle(tx, &row, next, in.OwnerID, in.Notes)
@@ -145,7 +191,7 @@ func (s *Service) DecideSourceReview(id int64, in *SourceReviewDecisionInput) (*
 
 // SubmitDraftApproval creates an approval_request and freezes the lifecycle at
 // pending_approval. It never invokes a platform adapter.
-func (s *Service) SubmitDraftApproval(id int64, in *DraftApprovalSubmissionInput) (*DraftApprovalResult, error) {
+func (s *Service) submitDraftApprovalProductLegacy(id int64, in *DraftApprovalSubmissionInput) (*DraftApprovalResult, error) {
 	if in == nil || in.RequesterID == 0 || strings.TrimSpace(in.Reason) == "" {
 		return nil, fmt.Errorf("%w: requester and reason are required", ErrInvalidWorkflow)
 	}
@@ -160,6 +206,9 @@ func (s *Service) SubmitDraftApproval(id int64, in *DraftApprovalSubmissionInput
 			return err
 		}
 		if err := requireOwner(tx, &row, in.RequesterID); err != nil {
+			return err
+		}
+		if err := requireFrozenProductOpportunityAuthority(tx, &row, in.RequesterID); err != nil {
 			return err
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("sourcing_product_id = ?", id).First(&draft).Error; err != nil {
@@ -205,7 +254,7 @@ func (s *Service) SubmitDraftApproval(id int64, in *DraftApprovalSubmissionInput
 // DecideDraftApproval closes the exact approval attached to the draft. An
 // approval produces approved_draft only; the listing status must remain draft.
 // Rejection returns the item to editing and persists the rejection reason.
-func (s *Service) DecideDraftApproval(id, approvalID int64, in *DraftApprovalDecisionInput) (*DraftApprovalResult, error) {
+func (s *Service) decideDraftApprovalProductLegacy(id, approvalID int64, in *DraftApprovalDecisionInput) (*DraftApprovalResult, error) {
 	if in == nil || in.OwnerID == 0 || approvalID == 0 || strings.TrimSpace(in.Note) == "" || (in.Action != "approve" && in.Action != "reject") {
 		return nil, fmt.Errorf("%w: Owner, approval, approve/reject action and note are required", ErrInvalidWorkflow)
 	}
@@ -223,6 +272,9 @@ func (s *Service) DecideDraftApproval(id, approvalID int64, in *DraftApprovalDec
 		return nil, err
 	}
 	if err := requireOwner(s.db, &preflight, in.OwnerID); err != nil {
+		return nil, err
+	}
+	if err := requireFrozenProductOpportunityAuthority(s.db, &preflight, in.OwnerID); err != nil {
 		return nil, err
 	}
 	var preflightDraft draftRow

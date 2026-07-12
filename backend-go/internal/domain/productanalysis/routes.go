@@ -28,9 +28,9 @@ func RegisterRoutesWithPrism(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logge
 		group.GET("/analyses/:id", h.GetAnalysis)
 		group.POST("/analyses/:id/feedback", h.RecordFeedback)
 
-		// P3: Prism image generation trigger (#193)
-		if prismSvc != nil {
-			group.POST("/trigger-prism", h.TriggerPrism)
-		}
+		// The legacy trigger-prism endpoint is intentionally not registered.
+		// It accepted an arbitrary image URL and delegated network fetching to
+		// Prism, which created an SSRF boundary that the replacement Image
+		// Service deliberately does not expose.
 	}
 }

@@ -87,14 +87,15 @@ func (ResearchSnapshot) TableName() string { return "demand_research_snapshot" }
 func (DemandEvidence) TableName() string { return "demand_evidence" }
 
 type DemandVerdict struct {
-	ID           int64     `gorm:"primaryKey" json:"id"`
-	DemandCaseID int64     `gorm:"index;not null" json:"demand_case_id"`
-	Status       string    `gorm:"size:32;not null" json:"status"`
-	BlockersJSON string    `gorm:"type:text" json:"-"`
-	Reason       string    `gorm:"type:text" json:"reason"`
-	EvaluatedBy  int64     `gorm:"not null" json:"evaluated_by"`
-	CreatedAt    time.Time `json:"created_at"`
-	Blockers     []string  `gorm:"-" json:"blockers"`
+	ID            int64     `gorm:"primaryKey" json:"id"`
+	DemandCaseID  int64     `gorm:"index;not null" json:"demand_case_id"`
+	EvidenceMaxID int64     `gorm:"not null;default:0" json:"evidence_max_id"`
+	Status        string    `gorm:"size:32;not null" json:"status"`
+	BlockersJSON  string    `gorm:"type:text" json:"-"`
+	Reason        string    `gorm:"type:text" json:"reason"`
+	EvaluatedBy   int64     `gorm:"not null" json:"evaluated_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	Blockers      []string  `gorm:"-" json:"blockers"`
 }
 
 func (DemandVerdict) TableName() string { return "demand_verdict" }

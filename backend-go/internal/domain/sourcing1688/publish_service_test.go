@@ -41,12 +41,19 @@ func newPublishTestService(t *testing.T) (*Service, *gorm.DB, *fakePublishAdapte
 	db := dbtest.NewDB(t,
 		&Sourcing1688Product{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &platformRow{},
 		&productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{}, &platformAccountRow{},
-		&approval.ApprovalRequest{}, &operationlog.OperationLog{}, &PublishAttempt{},
+		&approval.ApprovalRequest{}, &operationlog.OperationLog{}, &PublishAttempt{}, &PublishTerminalEvidence{}, &Sourcing1688TaskLink{}, &SourcingComplianceEvidence{},
+		&sourcingOpportunityRow{}, &sourcingOpportunityDecisionRow{}, &sourcingMarketDecisionRow{},
 	)
 	ownerID := int64(42)
 	demandCaseID := int64(7)
 	experimentID := "EXP-PUBLISH-1"
 	db.Create(&demandCaseRow{ID: demandCaseID, OwnerID: ownerID, SalesChannel: "Ozon", TargetLocale: "ru-RU", Status: "experiment_ready"})
+	marketDecision := sourcingMarketDecisionRow{DemandCaseID: demandCaseID, OwnerID: ownerID, Decision: "selected"}
+	db.Create(&marketDecision)
+	opportunity := sourcingOpportunityRow{OwnerID: ownerID, DemandCaseID: demandCaseID, MarketDecisionID: marketDecision.ID, Version: 1, Title: "approved opportunity", TargetChannel: "Ozon", Status: "approved", ContentHash: "opportunity-hash"}
+	db.Create(&opportunity)
+	opportunityDecision := sourcingOpportunityDecisionRow{OpportunityID: opportunity.ID, OwnerID: ownerID, Version: 1, Decision: "approved", ContentHash: opportunity.ContentHash}
+	db.Create(&opportunityDecision)
 	db.Create(&experimentRow{ExperimentID: experimentID, OwnerID: ownerID, Status: "active", Stage: "channel"})
 	db.Create(&gateRow{ExperimentID: experimentID, Stage: "opportunity", Result: "pass"})
 	db.Create(&objectLinkRow{ExperimentID: experimentID, ObjectType: "demand_case", ObjectID: "7"})
@@ -76,6 +83,12 @@ func newPublishTestService(t *testing.T) (*Service, *gorm.DB, *fakePublishAdapte
 	// Force the ID to match the already-created draft link.
 	source.ID = 1
 	db.Create(&source)
+	link := Sourcing1688TaskLink{SourcingProductID: source.ID, DemandCaseID: demandCaseID, ExperimentID: experimentID, OwnerID: ownerID, ProductOpportunityID: &opportunity.ID, OpportunityDecisionID: &opportunityDecision.ID, AuthorityKind: "product_opportunity", Status: "linked", IsPrimary: true}
+	db.Create(&link)
+	observed := time.Now().UTC().Add(-time.Hour)
+	for _, code := range StandardPublishComplianceRequirementCodes {
+		db.Create(&SourcingComplianceEvidence{OwnerID: ownerID, SourcingProductID: source.ID, TaskLinkID: link.ID, ProductOpportunityID: opportunity.ID, SourceSnapshotID: 11, ProductID: product.ID, CountryCode: "RU", ChannelCode: "ozon", RequirementCode: code, RequirementText: code, EvidenceSource: "test://compliance/" + code, TruthStatus: "actual", Scope: "product", ObservedAt: observed, ReviewStatus: ComplianceReviewApproved, ReviewedBy: &ownerID, ReviewedAt: &observed, CreatedBy: ownerID})
+	}
 	account := platformAccountRow{PlatformID: 3, Status: "active", ExecutionMode: int8(integrations.ExecutionModeApprovalRequired)}
 	db.Create(&account)
 	fake := &fakePublishAdapter{valid: true}
@@ -288,7 +301,7 @@ func TestPublishApprovalExpiryBlocksExecution(t *testing.T) {
 	}
 }
 
-func TestPublishBlocksMultipleActiveAccountsAndRevokedOpportunityGate(t *testing.T) {
+func TestPublishBlocksMultipleActiveAccountsAndExperimentGateIsTraceOnly(t *testing.T) {
 	t.Run("multiple active accounts", func(t *testing.T) {
 		svc, db, fake, sourceID, accountID := newPublishTestService(t)
 		db.Create(&platformAccountRow{PlatformID: 3, Status: "active", ExecutionMode: int8(integrations.ExecutionModeProduction)})
@@ -297,7 +310,7 @@ func TestPublishBlocksMultipleActiveAccountsAndRevokedOpportunityGate(t *testing
 			t.Fatalf("multiple account request err=%v calls=%d", err, fake.publishCalls)
 		}
 	})
-	t.Run("opportunity gate revoked after approval", func(t *testing.T) {
+	t.Run("historical experiment gate does not revoke current authority", func(t *testing.T) {
 		svc, db, fake, sourceID, accountID := newPublishTestService(t)
 		attempt, err := svc.RequestPublish(sourceID, &PublishRequestInput{RequesterID: 42, PlatformAccountID: accountID, IdempotencyKey: "publish-gate-revoked", Reason: "Owner确认", Inventories: map[string]int{"INT-1": 0}})
 		if err != nil {
@@ -307,11 +320,84 @@ func TestPublishBlocksMultipleActiveAccountsAndRevokedOpportunityGate(t *testing
 			t.Fatal(err)
 		}
 		db.Model(&gateRow{}).Where("experiment_id = ? AND stage = ?", "EXP-PUBLISH-1", "opportunity").Update("result", "return")
-		if _, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); !errors.Is(err, ErrWorkflowGate) {
-			t.Fatalf("revoked gate execute = %v", err)
+		got, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
+		if err != nil || got.Status != PublishStatusSubmitted {
+			t.Fatalf("experiment trace changed current authority: got=%+v err=%v", got, err)
 		}
-		if fake.publishCalls != 0 {
-			t.Fatal("adapter called after gate revocation")
+		if fake.publishCalls != 1 {
+			t.Fatalf("adapter calls = %d, want 1", fake.publishCalls)
+		}
+	})
+}
+
+func TestPublishFailsClosedWhenProductOpportunityAuthorityIsNoLongerCurrent(t *testing.T) {
+	request := func(accountID int64, key string) *PublishRequestInput {
+		return &PublishRequestInput{RequesterID: 42, PlatformAccountID: accountID, IdempotencyKey: key, Reason: "Owner confirms", Inventories: map[string]int{"INT-1": 0}}
+	}
+
+	t.Run("request rejects paused market", func(t *testing.T) {
+		svc, db, fake, sourceID, accountID := newPublishTestService(t)
+		db.Create(&sourcingMarketDecisionRow{DemandCaseID: 7, OwnerID: 42, Decision: "paused"})
+		if _, err := svc.RequestPublish(sourceID, request(accountID, "paused-before-request")); !errors.Is(err, ErrWorkflowGate) {
+			t.Fatalf("RequestPublish with paused market = %v", err)
+		}
+		if fake.validateCalls != 0 || fake.publishCalls != 0 {
+			t.Fatalf("adapter called during rejected request: validate=%d publish=%d", fake.validateCalls, fake.publishCalls)
+		}
+	})
+
+	t.Run("decision rejects rejected market", func(t *testing.T) {
+		svc, db, fake, sourceID, accountID := newPublishTestService(t)
+		attempt, err := svc.RequestPublish(sourceID, request(accountID, "rejected-before-decision"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.Create(&sourcingMarketDecisionRow{DemandCaseID: 7, OwnerID: 42, Decision: "rejected"})
+		if _, err := svc.DecidePublish(sourceID, attempt.ID, &PublishDecisionInput{OwnerID: 42, Action: "approve", Note: "approve"}); !errors.Is(err, ErrWorkflowGate) {
+			t.Fatalf("DecidePublish with rejected market = %v", err)
+		}
+		if fake.validateCalls != 0 || fake.publishCalls != 0 {
+			t.Fatalf("adapter called during rejected decision: validate=%d publish=%d", fake.validateCalls, fake.publishCalls)
+		}
+	})
+
+	t.Run("execute rejects changed opportunity", func(t *testing.T) {
+		svc, db, fake, sourceID, accountID := newPublishTestService(t)
+		attempt, err := svc.RequestPublish(sourceID, request(accountID, "opportunity-revoked-before-execute"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.DecidePublish(sourceID, attempt.ID, &PublishDecisionInput{OwnerID: 42, Action: "approve", Note: "approve"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&sourcingOpportunityRow{}).Where("status = ?", "approved").Update("status", "rejected").Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); !errors.Is(err, ErrWorkflowGate) {
+			t.Fatalf("ExecutePublish with changed opportunity = %v", err)
+		}
+		if fake.validateCalls != 0 || fake.publishCalls != 0 {
+			t.Fatalf("adapter called after authority revocation: validate=%d publish=%d", fake.validateCalls, fake.publishCalls)
+		}
+	})
+
+	t.Run("execute rejects authority link for another source", func(t *testing.T) {
+		svc, db, fake, sourceID, accountID := newPublishTestService(t)
+		attempt, err := svc.RequestPublish(sourceID, request(accountID, "source-link-mismatch"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.DecidePublish(sourceID, attempt.ID, &PublishDecisionInput{OwnerID: 42, Action: "approve", Note: "approve"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&Sourcing1688TaskLink{}).Where("sourcing_product_id = ?", sourceID).Update("sourcing_product_id", sourceID+100).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); !errors.Is(err, ErrWorkflowGate) {
+			t.Fatalf("ExecutePublish with mismatched source authority = %v", err)
+		}
+		if fake.validateCalls != 0 || fake.publishCalls != 0 {
+			t.Fatalf("adapter called for another source authority: validate=%d publish=%d", fake.validateCalls, fake.publishCalls)
 		}
 	})
 }
@@ -341,5 +427,35 @@ func TestPublishTimeoutRequiresReconciliation(t *testing.T) {
 	svc.db.Model(&operationlog.OperationLog{}).Where("action = ? AND entity_id = ?", "publish.reconcile", attempt.ID).Count(&auditCount)
 	if auditCount != 1 {
 		t.Fatalf("reconcile audit count = %d", auditCount)
+	}
+}
+
+func TestPublishReconciliationFailsClosedAfterOpportunityAuthorityRevocation(t *testing.T) {
+	svc, db, fake, sourceID, accountID := newPublishTestService(t)
+	fake.publishErr = context.DeadlineExceeded
+	attempt, err := svc.RequestPublish(sourceID, &PublishRequestInput{RequesterID: 42, PlatformAccountID: accountID, IdempotencyKey: "publish-timeout-revoked", Reason: "Owner确认", Inventories: map[string]int{"INT-1": 0}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DecidePublish(sourceID, attempt.ID, &PublishDecisionInput{OwnerID: 42, Action: "approve", Note: "批准"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); err == nil || got.Status != PublishStatusReconcile {
+		t.Fatalf("timeout attempt=%+v err=%v", got, err)
+	}
+	if err := db.Create(&sourcingMarketDecisionRow{DemandCaseID: 7, OwnerID: 42, Decision: "paused"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.ReconcilePublish(context.Background(), sourceID, attempt.ID, &PublishReconcileInput{OwnerID: 42, Outcome: PublishStatusSubmitted, EvidenceURI: "evidence://platform/query/revoked", ObservedAt: time.Now().UTC(), TruthStatus: "actual", PlatformResult: integrations.PublishResult{PlatformProductID: "observed-revoked"}})
+	if !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("reconciliation after market pause err=%v", err)
+	}
+	var stored PublishAttempt
+	if err := db.First(&stored, attempt.ID).Error; err != nil || stored.Status != PublishStatusReconcile {
+		t.Fatalf("revoked reconciliation mutated attempt=%+v err=%v", stored, err)
+	}
+	var listing listingRow
+	if err := db.First(&listing, attempt.ListingID).Error; err != nil || listing.Status != "draft" {
+		t.Fatalf("revoked reconciliation mutated listing=%+v err=%v", listing, err)
 	}
 }

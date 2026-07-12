@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"math"
 	"net/http"
 	"strings"
 
@@ -32,10 +33,31 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 
 		tokenString := parts[1]
 		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			if t.Method != jwt.SigningMethodHS256 {
 				return nil, jwt.ErrSignatureInvalid
 			}
-			return []byte(cfg.JWT.Secret), nil
+			keyID, _ := t.Header["kid"].(string)
+			if keyID == "" {
+				keys := []jwt.VerificationKey{[]byte(cfg.JWT.Secret)}
+				if previous, parseErr := cfg.JWT.PreviousKeys(); parseErr == nil {
+					for _, secret := range previous {
+						keys = append(keys, []byte(secret))
+					}
+				}
+				return jwt.VerificationKeySet{Keys: keys}, nil
+			}
+			if keyID == cfg.JWT.EffectiveKeyID() {
+				return []byte(cfg.JWT.Secret), nil
+			}
+			previous, parseErr := cfg.JWT.PreviousKeys()
+			if parseErr != nil {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			secret, ok := previous[keyID]
+			if !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return []byte(secret), nil
 		})
 
 		if err != nil || !token.Valid {
@@ -64,16 +86,30 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		if userID, exists := claims["user_id"]; exists {
-			switch v := userID.(type) {
-			case float64:
-				c.Set("user_id", int64(v))
-			case int64:
-				c.Set("user_id", v)
-			default:
-				c.Set("user_id", userID)
-			}
+		userID, exists := claims["user_id"]
+		if !exists {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "invalid token claims"})
+			return
 		}
+		var normalizedUserID int64
+		switch v := userID.(type) {
+		case float64:
+			if v <= 0 || v != math.Trunc(v) || v > math.MaxInt64 {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "invalid token claims"})
+				return
+			}
+			normalizedUserID = int64(v)
+		case int64:
+			normalizedUserID = v
+		default:
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "invalid token claims"})
+			return
+		}
+		if normalizedUserID <= 0 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "invalid token claims"})
+			return
+		}
+		c.Set("user_id", normalizedUserID)
 
 		if username, exists := claims["username"]; exists {
 			if s, ok := username.(string); ok {

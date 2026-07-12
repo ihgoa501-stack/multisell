@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -169,6 +170,7 @@ type subscription struct {
 // ErrQueueFull is returned when the event queue is at capacity and a
 // backpressure timeout elapses before the event can be enqueued.
 var ErrQueueFull = errors.New("eventbus: queue is full")
+var ErrBusStopped = errors.New("eventbus: bus is draining or stopped")
 
 // priorityQueueItem is an item in the priority queue.
 type priorityQueueItem struct {
@@ -244,6 +246,9 @@ func NewInProcessBackend() *InProcessBackend {
 func (b *InProcessBackend) Enqueue(event Event) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return ErrBusStopped
+	}
 	item := &priorityQueueItem{event: event}
 	heap.Push(&b.queue, item)
 	b.cond.Signal()
@@ -304,8 +309,12 @@ type Bus struct {
 	maxRetries     int
 
 	// Per-priority worker pools.
-	pools  map[int]*workerPool
-	poolWg sync.WaitGroup
+	pools       map[int]*workerPool
+	poolWg      sync.WaitGroup
+	lifecycleMu sync.RWMutex
+	started     bool
+	stopped     bool
+	inFlight    atomic.Int64
 }
 
 // BusOption configures the event bus.
@@ -395,6 +404,20 @@ func New(logger *zap.Logger, opts ...BusOption) *Bus {
 
 // Start launches the worker goroutines that dispatch events to handlers.
 func (b *Bus) Start(ctx context.Context) {
+	b.lifecycleMu.Lock()
+	if b.started || b.stopped {
+		b.lifecycleMu.Unlock()
+		return
+	}
+	if b.db != nil {
+		if err := b.recoverPendingOutbox(ctx); err != nil {
+			b.logger.Error("event bus outbox recovery failed", zap.Error(err))
+			b.lifecycleMu.Unlock()
+			return
+		}
+	}
+	b.started = true
+	b.lifecycleMu.Unlock()
 	for priority, pool := range b.pools {
 		pool := pool
 		for i := 0; i < pool.nWorkers; i++ {
@@ -413,12 +436,60 @@ func (b *Bus) Start(ctx context.Context) {
 
 // Stop shuts down the event bus gracefully.
 func (b *Bus) Stop() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := b.StopWithContext(ctx); err != nil {
+		b.logger.Error("event bus drain failed", zap.Error(err))
+	}
+}
+
+// StopWithContext rejects new publications, drains queued and in-flight
+// events, then closes worker backends. A deadline prevents shutdown from
+// hanging forever on a stuck handler.
+func (b *Bus) StopWithContext(ctx context.Context) error {
+	b.lifecycleMu.Lock()
+	if b.stopped {
+		b.lifecycleMu.Unlock()
+		return nil
+	}
+	b.stopped = true
+	b.started = false
+	b.lifecycleMu.Unlock()
+
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		queued := 0
+		for _, pool := range b.pools {
+			queued += pool.backend.Len()
+		}
+		if queued == 0 && b.inFlight.Load() == 0 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			for _, pool := range b.pools {
+				pool.backend.Close()
+			}
+			close(b.done)
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 	close(b.done)
 	for _, pool := range b.pools {
 		pool.backend.Close()
 	}
 	b.poolWg.Wait()
 	b.logger.Info("event bus stopped")
+	return nil
+}
+
+// IsRunning reports whether Start has completed and Stop has not begun.
+func (b *Bus) IsRunning() bool {
+	b.lifecycleMu.RLock()
+	defer b.lifecycleMu.RUnlock()
+	return b.started && !b.stopped
 }
 
 // Publish delivers an event to all matching subscribers.
@@ -431,6 +502,12 @@ func (b *Bus) Publish(ctx context.Context, topic string, source string, payload 
 // The priority determines which worker pool handles the event:
 // 0=normal, 1=high, 2=critical.
 func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, payload map[string]interface{}, priority int) (string, error) {
+	b.lifecycleMu.RLock()
+	if b.stopped {
+		b.lifecycleMu.RUnlock()
+		return "", ErrBusStopped
+	}
+	defer b.lifecycleMu.RUnlock()
 	evt := Event{
 		ID:             uuid.New().String(),
 		Topic:          topic,
@@ -455,15 +532,6 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 		}
 	}
 
-	// Persist to outbox if DB is configured.
-	if b.db != nil {
-		if err := b.persistOutbox(ctx, &evt); err != nil {
-			b.logger.Warn("failed to persist event to outbox",
-				zap.String("topic", topic),
-				zap.Error(err))
-		}
-	}
-
 	// Route to the appropriate pool based on priority.
 	pool, ok := b.pools[priority]
 	if !ok {
@@ -475,7 +543,18 @@ func (b *Bus) PublishWithPriority(ctx context.Context, topic, source string, pay
 		return "", ErrQueueFull
 	}
 
+	// WithDB means durable publication is part of the contract. Fail closed if
+	// the outbox cannot claim the event; otherwise callers could observe success
+	// while a process crash loses the event permanently.
+	if b.db != nil {
+		if err := b.persistOutbox(ctx, &evt); err != nil {
+			b.logger.Error("failed to persist event to outbox", zap.String("topic", topic), zap.Error(err))
+			return "", fmt.Errorf("eventbus: persist outbox: %w", err)
+		}
+	}
+
 	if err := pool.backend.Enqueue(evt); err != nil {
+		b.markOutboxFailed(ctx, evt.ID, err.Error())
 		return "", err
 	}
 
@@ -630,20 +709,12 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 	defer b.poolWg.Done()
 
 	for {
-		// Check for shutdown before blocking.
-		select {
-		case <-ctx.Done():
-			return
-		case <-b.done:
-			return
-		default:
-		}
-
 		// Dequeue blocks until an event is available or the backend is closed.
 		evt, ok := pool.backend.Dequeue()
 		if !ok {
 			return
 		}
+		b.inFlight.Add(1)
 
 		// Propagate correlation ID to handler context.
 		handlerCtx := WithCorrelationID(ctx, evt.CorrelationID)
@@ -653,17 +724,21 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 		if evt.IdempotencyKey != "" && b.db != nil {
 			proceed, claimErr := b.claimIdempotency(ctx, evt)
 			if claimErr != nil {
-				b.logger.Warn("idempotency claim failed, letting event through",
+				b.logger.Error("idempotency claim failed, blocking event",
 					zap.String("event_id", evt.ID),
 					zap.String("idempotency_key", evt.IdempotencyKey),
 					zap.Error(claimErr))
-				// fail open: let the event through on DB error
+				b.markOutboxFailed(ctx, evt.ID, "idempotency claim failed: "+claimErr.Error())
+				eventsSkipped.WithLabelValues(evt.Topic, "idempotency_error").Inc()
+				b.inFlight.Add(-1)
+				continue
 			} else if !proceed {
 				b.logger.Info("skipping duplicate event",
 					zap.String("event_id", evt.ID),
 					zap.String("topic", evt.Topic),
 					zap.String("idempotency_key", evt.IdempotencyKey))
 				eventsSkipped.WithLabelValues(evt.Topic, "duplicate").Inc()
+				b.inFlight.Add(-1)
 				continue
 			}
 		}
@@ -704,16 +779,20 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 		// Update outbox status after all handlers have run.
 		if b.db != nil {
 			if panicked || lastErr != "" {
-				b.db.WithContext(ctx).Exec(
+				if err := b.db.WithContext(ctx).Exec(
 					`UPDATE event_outbox SET status='failed', last_error=?, delivery_attempts=COALESCE(delivery_attempts,0)+1 WHERE event_id=? AND status='pending'`,
 					lastErr, evt.ID,
-				)
+				).Error; err != nil {
+					b.logger.Error("failed to mark outbox event failed", zap.String("event_id", evt.ID), zap.Error(err))
+				}
 				eventsPublished.WithLabelValues(evt.Topic, "failed").Inc()
 			} else {
-				b.db.WithContext(ctx).Exec(
-					`UPDATE event_outbox SET status='delivered', delivered_at=NOW(), delivery_attempts=COALESCE(delivery_attempts,0)+1 WHERE event_id=? AND status='pending'`,
+				if err := b.db.WithContext(ctx).Exec(
+					`UPDATE event_outbox SET status='delivered', delivered_at=CURRENT_TIMESTAMP, delivery_attempts=COALESCE(delivery_attempts,0)+1 WHERE event_id=? AND status='pending'`,
 					evt.ID,
-				)
+				).Error; err != nil {
+					b.logger.Error("failed to mark outbox event delivered", zap.String("event_id", evt.ID), zap.Error(err))
+				}
 				eventsPublished.WithLabelValues(evt.Topic, "delivered").Inc()
 
 				// Mark idempotency succeeded only after handler success.
@@ -737,7 +816,12 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 				if evt.IdempotencyKey != "" {
 					b.failIdempotency(ctx, evt)
 				}
-				b.dlq.MoveToDLQ(evt, lastErr, evt.DeliveryAttempts)
+				if err := b.dlq.MoveToDLQ(evt, lastErr, evt.DeliveryAttempts); err != nil {
+					b.logger.Error("failed to persist event in DLQ", zap.String("event_id", evt.ID), zap.Error(err))
+					_ = pool.backend.Enqueue(evt)
+					b.inFlight.Add(-1)
+					continue
+				}
 				b.logger.Warn("event moved to DLQ after max retries",
 					zap.String("event_id", evt.ID),
 					zap.String("topic", evt.Topic),
@@ -753,6 +837,19 @@ func (b *Bus) workerLoop(ctx context.Context, poolID, workerID int) {
 					zap.Int("attempt", evt.DeliveryAttempts))
 			}
 		}
+		b.inFlight.Add(-1)
+	}
+}
+
+func (b *Bus) markOutboxFailed(ctx context.Context, eventID, reason string) {
+	if b.db == nil {
+		return
+	}
+	if err := b.db.WithContext(ctx).Exec(
+		`UPDATE event_outbox SET status='failed', last_error=?, delivery_attempts=COALESCE(delivery_attempts,0)+1 WHERE event_id=? AND status='pending'`,
+		reason, eventID,
+	).Error; err != nil {
+		b.logger.Error("failed to mark outbox event failed", zap.String("event_id", eventID), zap.Error(err))
 	}
 }
 
@@ -792,8 +889,44 @@ func (b *Bus) persistOutbox(ctx context.Context, evt *Event) error {
 		return err
 	}
 	return b.db.WithContext(ctx).Exec(
-		`INSERT INTO event_outbox (topic, source, payload, priority, status, created_at, event_id)
-		 VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-		evt.Topic, evt.Source, payloadBytes, evt.Priority, evt.CreatedAt, evt.ID,
+		`INSERT INTO event_outbox (topic, source, payload, priority, status, created_at, event_id, version, actor, entity_id, entity_type, correlation_id, idempotency_key)
+		 VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		evt.Topic, evt.Source, payloadBytes, evt.Priority, evt.CreatedAt, evt.ID, evt.Version, evt.Actor, evt.EntityID, evt.EntityType, evt.CorrelationID, evt.IdempotencyKey,
 	).Error
+}
+
+func (b *Bus) recoverPendingOutbox(ctx context.Context) error {
+	var rows []struct {
+		Topic, Source, Payload, EventID, Version, Actor, EntityID, EntityType, CorrelationID, IdempotencyKey string
+		Priority                                                                                             int
+		CreatedAt                                                                                            time.Time
+	}
+	if err := b.db.WithContext(ctx).Raw(`SELECT topic, source, payload, priority, created_at, event_id,
+		COALESCE(version,'') AS version, COALESCE(actor,'') AS actor,
+		COALESCE(entity_id,'') AS entity_id, COALESCE(entity_type,'') AS entity_type,
+		COALESCE(correlation_id,'') AS correlation_id, COALESCE(idempotency_key,'') AS idempotency_key
+		FROM event_outbox WHERE status='pending' ORDER BY created_at ASC`).Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(row.Payload), &payload); err != nil {
+			return fmt.Errorf("decode pending outbox event %s: %w", row.EventID, err)
+		}
+		pool, ok := b.pools[row.Priority]
+		if !ok {
+			pool = b.pools[0]
+		}
+		if pool.bufferSize > 0 && pool.backend.Len() >= pool.bufferSize {
+			return ErrQueueFull
+		}
+		evt := Event{ID: row.EventID, Topic: row.Topic, Version: row.Version, Source: row.Source, Actor: row.Actor, EntityID: row.EntityID, EntityType: row.EntityType, Payload: payload, Priority: row.Priority, CreatedAt: row.CreatedAt, CorrelationID: row.CorrelationID, IdempotencyKey: row.IdempotencyKey}
+		if err := pool.backend.Enqueue(evt); err != nil {
+			return err
+		}
+	}
+	if len(rows) > 0 {
+		b.logger.Info("event bus recovered pending outbox events", zap.Int("count", len(rows)))
+	}
+	return nil
 }

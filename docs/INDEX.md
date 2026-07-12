@@ -54,6 +54,7 @@
 | [项目状态](PROJECT_STATUS.md) | 当前版本、验证状态、更新历史 |
 | [AI 无人公司长远战略愿景](LONG_TERM_VISION_AND_STRATEGY.md) | 🆕 系统终极形态：“全自动驾驶”无人公司操作系统的四道门槛与落地路线图 |
 | [模块目录](reference-module-catalog.md) | 🆕 模块、API 路由和前端页面唯一事实源 |
+| [平台真相合同审计](research/platform-truth-contract-audit-2026-07-12.md) | 平台真相只读合同、领域处置和证据限制 |
 | [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | 长期方向、阶段路线、Owner 控制规则和 Agent 提案检查表 |
 | [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | Day 1-7 完整开发计划，5 条并行线 |
 | [每日战情板](7_DAY_BATTLE_BOARD.md) | 7 天每日进度追踪 |
@@ -189,7 +190,11 @@
 | [AI 选品使用指南](sourcing-guide.md) | A8 选品引擎：利润计算、质量评分、API 参考 |
 | [物流费率引擎指南](logistics-guide.md) | Logistics Rate Engine：四种定价模式、YAML 配置、A10 接线 |
 | [ToolBridge 工具桥接](toolbridge-guide.md) | 插件驱动工具执行、添加 Driver、降级策略 |
-| [Chrome 扩展指南](chrome-extension-guide.md) | 凌镜选品助手扩展：安装、WebSocket 协议、内容脚本 |
+| [Chrome扩展指南](chrome-extension-guide.md) | 1688页面一键保存到Owner私人采集箱：安装、权限、HTTPS接口和故障提示 |
+| [1688采集助手重构规格](features/1688-browser-evidence-collector-refactor.md) | Owner页面一键采集、私人采集箱、后续选品任务与受控草稿 |
+| [市场与商品机会 Owner 流程](features/market-opportunity-owner-flow.md) | 三类研究、系统评估、Owner 市场决定、商品机会及安全边界 |
+| [市场与商品机会进展审计](research/market-opportunity-progress-audit-2026-07-12.md) | 第2单元已实现证据、验证结果与剩余缺口 |
+| [商品、货源与渠道准备缺口审计](research/product-supply-channel-gap-audit-2026-07-12.md) | 第3单元已有证据、权威缺口与实施顺序 |
 | [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试状态、已知问题 and 覆盖面 |
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 `frontend-next` build/test/lint 历史状态 |
 | [AI-Native 统一开发框架总览](guides/ai-native-framework-overview.md) | 🆕 AI 程序员开发规范入口，概述系统机制 |
@@ -259,7 +264,10 @@
 - [功能需求模板](features/TEMPLATE.md)
 - [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
 - [1688 货源到待上架草稿受控闭环](features/1688-controlled-draft-workflow.md) — Owner 自用，草稿与独立发布审批严格分离；真实商品验收待完成
-- [真实 SKU 的 AI 辅助图片草稿方案](features/ai-assisted-product-image-draft.md) — `planned`；基于获权真实商品图生成待审核背景候选，不自动选择或发布
+- [多方案商品图片系统开发规格](features/multi-provider-product-image-system.md) — 确定性首版已实现；外部 Provider 仍受审批、预算和真实合同验证门禁
+- [Image Service 与 MCP 技术合同](features/image-service-mcp-contract.md) — 独立服务、HTTP/MCP边界和一次性执行令牌已进入代码；付费 Provider 尚未开放
+- [AI 商品图片系统工程验证记录（2026-07-12）](research/ai-image-system-engineering-verification-2026-07-12.md) — 当前代码、自动验证与未完成边界
+- [真实 SKU 的 AI 辅助图片草稿方案](features/ai-assisted-product-image-draft.md) — `superseded`；历史收缩方案
 - [1688 受控草稿链工程事实审计（2026-07-12）](research/project-truth-audit-2026-07-12-1688-draft-workflow.md) — 工程实现与外部事实边界
 
 ---

@@ -15,17 +15,32 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, cfg *config.Config, logger
 	svc := NewService(db, cfg, logger)
 	h := NewHandler(svc, cfg, logger)
 
-	// Start periodic cleanup for all rate limiters.
-	go loginLimiter.CleanupPeriodic(5 * time.Minute)
-	go registerLimiter.CleanupPeriodic(5 * time.Minute)
-	go refreshLimiter.CleanupPeriodic(5 * time.Minute)
-
 	auth := rg.Group("/auth")
 	{
 		auth.POST("/login", loginLimiter.Limit(), h.Login)
-		auth.POST("/register", registerLimiter.Limit(), h.Register)
+		auth.POST("/register", registrationGate(cfg), registerLimiter.Limit(), h.Register)
 		auth.POST("/refresh", refreshLimiter.Limit(), h.Refresh)
+		auth.POST("/extension-pairings/claim", refreshLimiter.Limit(), h.ClaimExtensionPairing)
+		auth.POST("/extension-pairings/exchange", refreshLimiter.Limit(), h.ExchangeExtensionPairing)
+		auth.POST("/extension-devices/refresh", refreshLimiter.Limit(), h.RefreshExtensionDevice)
 		auth.GET("/me", middleware.Auth(cfg), h.CurrentUser)
+		auth.POST("/extension-pairings", middleware.Auth(cfg), h.CreateExtensionPairing)
+		auth.GET("/extension-pairings/:pairingId", middleware.Auth(cfg), h.GetExtensionPairing)
+		auth.POST("/extension-pairings/:pairingId/confirm", middleware.Auth(cfg), h.ConfirmExtensionPairing)
+		auth.GET("/extension-devices", middleware.Auth(cfg), h.ListExtensionDevices)
+		auth.DELETE("/extension-devices/:deviceId", middleware.Auth(cfg), h.RevokeExtensionDevice)
+		auth.POST("/logout", middleware.Auth(cfg), h.Logout)
+		auth.POST("/logout-all", middleware.Auth(cfg), h.LogoutAll)
+	}
+}
+
+func registrationGate(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if cfg == nil || (cfg.Server.Mode == "release" && !cfg.JWT.RegistrationEnabled) {
+			c.AbortWithStatusJSON(403, gin.H{"code": 403, "message": "public registration is disabled"})
+			return
+		}
+		c.Next()
 	}
 }
 

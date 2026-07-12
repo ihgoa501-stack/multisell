@@ -16,20 +16,38 @@ func (s *Service) UpdateDraft(id int64, in *ConvertInput) (*DraftDetail, error) 
 	if err := validateConvert(in); err != nil {
 		return nil, err
 	}
+	var expectedVersion int64
+	if in.TaskLinkID > 0 {
+		current, err := s.GetOwnedTaskDraft(id, in.TaskLinkID, in.CreatedBy)
+		if err != nil {
+			return nil, err
+		}
+		if in.EditableVersion <= 0 || in.EditableSHA256 == "" || in.EditableVersion != current.EditableVersion || !strings.EqualFold(in.EditableSHA256, current.EditableSHA256) {
+			return nil, fmt.Errorf("%w: draft changed; reload the exact task draft before editing", ErrWorkflowGate)
+		}
+		expectedVersion = current.EditableVersion
+	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var source Sourcing1688Product
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&source, id).Error; err != nil {
 			return err
 		}
-		if source.Status != StatusDraftCreated || source.LifecycleStatus != LifecycleEditing || source.ProductID == nil || source.SnapshotID == nil || source.DemandCaseID == nil || source.ExperimentID == nil {
-			return fmt.Errorf("%w: only an editing internal draft may be updated", ErrWorkflowGate)
+		if source.SnapshotID == nil || source.OwnerID != in.CreatedBy {
+			return fmt.Errorf("%w: update requires sourcing Owner", ErrWorkflowGate)
 		}
-		var dc demandCaseRow
-		if err := tx.First(&dc, *source.DemandCaseID).Error; err != nil {
+		task, err := requireTaskSourcingAuthority(tx, source.ID, in.CreatedBy, in.TaskLinkID)
+		if err != nil {
 			return err
 		}
-		if dc.OwnerID != in.CreatedBy || dc.Status != "experiment_ready" {
-			return fmt.Errorf("%w: update requires workflow Owner", ErrWorkflowGate)
+		if task.WorkflowStatus != "editing" && task.WorkflowStatus != "converted_to_draft" && !(task.IsPrimary && source.Status == StatusDraftCreated && source.LifecycleStatus == LifecycleEditing && (task.WorkflowStatus == "" || task.WorkflowStatus == "needs_review")) {
+			return fmt.Errorf("%w: only this task's editing internal draft may be updated", ErrWorkflowGate)
+		}
+		var dc demandCaseRow
+		if err := tx.First(&dc, task.DemandCaseID).Error; err != nil {
+			return err
+		}
+		if dc.OwnerID != in.CreatedBy {
+			return fmt.Errorf("%w: update requires selected market Owner", ErrWorkflowGate)
 		}
 		if strings.TrimSpace(dc.TargetLocale) == "" || !strings.EqualFold(dc.TargetLocale, in.TargetLocale) {
 			return fmt.Errorf("%w: draft locale does not match the approved market locale", ErrWorkflowGate)
@@ -43,7 +61,7 @@ func (s *Service) UpdateDraft(id int64, in *ConvertInput) (*DraftDetail, error) 
 			return fmt.Errorf("%w: platform does not match approved sales channel", ErrWorkflowGate)
 		}
 		var draft draftRow
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("sourcing_product_id = ?", id).First(&draft).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("sourcing_product_id = ? AND task_link_id = ?", id, task.ID).First(&draft).Error; err != nil {
 			return err
 		}
 		var listing listingRow
@@ -92,7 +110,7 @@ func (s *Service) UpdateDraft(id int64, in *ConvertInput) (*DraftDetail, error) 
 			}
 		}
 		for _, cost := range in.Costs {
-			row := costRow{ProductID: draft.ProductID, ExperimentID: *source.ExperimentID, CostType: cost.CostType, Amount: cost.Amount, Currency: cost.Currency, TruthStatus: cost.TruthStatus, SourceURI: cost.SourceURI, ObservedAt: cost.ObservedAt}
+			row := costRow{ProductID: draft.ProductID, ExperimentID: task.ExperimentID, CostType: cost.CostType, Amount: cost.Amount, Currency: cost.Currency, TruthStatus: cost.TruthStatus, SourceURI: cost.SourceURI, ObservedAt: cost.ObservedAt}
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
@@ -104,10 +122,26 @@ func (s *Service) UpdateDraft(id int64, in *ConvertInput) (*DraftDetail, error) 
 		if err := tx.Model(&listing).Updates(map[string]any{"platform_id": in.PlatformID, "platform_sku": in.PlatformSKU, "published_data": published}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&draft).Updates(map[string]any{"approval_id": nil, "approval_status": "", "approval_content_sha256": "", "approval_rejection_reason": ""}).Error
+		updates := map[string]any{"approval_id": nil, "approval_status": "", "approval_content_sha256": "", "approval_rejection_reason": ""}
+		query := tx.Model(&draft)
+		if expectedVersion > 0 {
+			query = query.Where("editable_version = ?", expectedVersion)
+			updates["editable_version"] = expectedVersion + 1
+		}
+		updated := query.Updates(updates)
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if expectedVersion > 0 && updated.RowsAffected != 1 {
+			return fmt.Errorf("%w: draft was concurrently edited", ErrWorkflowGate)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if in.TaskLinkID > 0 {
+		return s.GetTaskDraft(id, in.TaskLinkID)
 	}
 	return s.GetDraft(id)
 }

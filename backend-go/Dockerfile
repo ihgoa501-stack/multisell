@@ -1,9 +1,12 @@
 # ============================
 #  Builder stage
 # ============================
-FROM golang:1.25-alpine AS builder
+FROM golang:1.25.12-alpine AS builder
 
-RUN apk add --no-cache git ca-certificates
+ENV GOPROXY=https://goproxy.cn,direct
+
+RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine#https://mirrors.aliyun.com/alpine#g' /etc/apk/repositories \
+    && apk add --no-cache git ca-certificates
 
 WORKDIR /build
 
@@ -24,7 +27,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ============================
 FROM alpine:3.21 AS runtime
 
-RUN apk add --no-cache \
+RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine#https://mirrors.aliyun.com/alpine#g' /etc/apk/repositories \
+    && apk add --no-cache \
     ca-certificates \
     wget
 
@@ -33,6 +37,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 COPY --from=builder --chown=appuser:appgroup /app/server .
+COPY --from=builder --chown=appuser:appgroup /build/configs ./configs
 # Ship the synthetic carrier-rate YAML files so the logistics module can
 # load shipping rates at startup. Override the path at runtime via
 # CARRIER_RATES_DIR env var if mounting a different volume.

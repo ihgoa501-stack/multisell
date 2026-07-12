@@ -16,6 +16,7 @@ func newOwnerReadDB(t *testing.T) *Service {
 	db := dbtest.NewDB(t,
 		&Sourcing1688Product{}, &Sourcing1688Snapshot{}, &draftRow{}, &demandCaseRow{},
 		&experimentRow{}, &listingRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{},
+		&Sourcing1688TaskLink{}, &sourcingOpportunityRow{}, &sourcingOpportunityDecisionRow{}, &sourcingMarketDecisionRow{},
 	)
 	return NewService(db, dbtest.NewLogger(t))
 }
@@ -43,6 +44,7 @@ func seedOwnerReadFixture(t *testing.T, svc *Service) int64 {
 			t.Fatalf("seed %T: %v", row, err)
 		}
 	}
+	seedFrozenOpportunityAuthority(t, tx, source.ID, demand.ID, demand.OwnerID, experiment.ExperimentID, demand.SalesChannel)
 	return source.ID
 }
 
@@ -141,6 +143,19 @@ func TestReadOwnerViewDoesNotCrossOwnerBoundary(t *testing.T) {
 	sourceID := seedOwnerReadFixture(t, svc)
 	if _, err := svc.ReadOwnerView(context.Background(), sourceID, 99); !errors.Is(err, ErrWorkflowGate) {
 		t.Fatalf("cross-owner error = %v, want workflow gate", err)
+	}
+}
+
+func TestReadOwnerViewRejectsLegacyExperimentOnlyAuthority(t *testing.T) {
+	svc := newOwnerReadDB(t)
+	sourceID := seedOwnerReadFixture(t, svc)
+	if err := svc.db.Model(&Sourcing1688TaskLink{}).Where("sourcing_product_id = ?", sourceID).Updates(map[string]any{
+		"authority_kind": "legacy_experiment", "product_opportunity_id": nil, "opportunity_decision_id": nil,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ReadOwnerView(context.Background(), sourceID, 42); !errors.Is(err, ErrWorkflowGate) || !strings.Contains(err.Error(), "legacy experiment trace cannot authorize") {
+		t.Fatalf("legacy authority read error = %v", err)
 	}
 }
 

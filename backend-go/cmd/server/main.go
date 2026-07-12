@@ -58,14 +58,6 @@ func main() {
 	}
 	defer sentry.Flush(2 * time.Second)
 
-	// JWT_SECRET validation: fail fast if using the default in production.
-	if cfg.JWT.Secret == "dev-secret-change-in-production" {
-		if cfg.Server.Mode == "release" {
-			sugar.Fatal("JWT_SECRET is still set to the default value — production is insecure. Set JWT_SECRET via .env or environment variable.")
-		}
-		sugar.Warn("JWT_SECRET is set to the default value — not suitable for production. Set JWT_SECRET via .env or environment variable.")
-	}
-
 	// Connect to database
 	db, err := database.Connect(cfg, logger)
 	if err != nil {
@@ -87,8 +79,13 @@ func main() {
 	sugar.Infof("server listening on %s", addr)
 
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: app.Engine.Handler(),
+		Addr:              addr,
+		Handler:           app.Engine.Handler(),
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
+		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 	}
 
 	go func() {
@@ -104,17 +101,25 @@ func main() {
 
 	sugar.Info("shutting down server...")
 
-	// Stop scheduler and event bus first, then HTTP server.
-	app.Scheduler.Shutdown()
-	app.Cancel() // cancels bus context, stopping worker loops
-	app.Bus.Stop()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Fail readiness first, then stop accepting requests and let in-flight HTTP
+	// work finish while its scheduler/event-bus dependencies are still alive.
+	app.BeginDrain()
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
-
 	if err := srv.Shutdown(ctx); err != nil {
-		sugar.Fatalf("server forced to shutdown: %v", err)
+		sugar.Errorf("HTTP drain deadline exceeded: %v", err)
+		if closeErr := srv.Close(); closeErr != nil {
+			sugar.Errorf("forced HTTP close failed: %v", closeErr)
+		}
 	}
+
+	app.Scheduler.Shutdown()
+	busCtx, busCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+	if err := app.Bus.StopWithContext(busCtx); err != nil {
+		sugar.Errorf("event bus drain deadline exceeded: %v", err)
+	}
+	busCancel()
+	app.Cancel()
 
 	sugar.Info("server exited gracefully")
 }

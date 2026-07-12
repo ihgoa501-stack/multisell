@@ -1,6 +1,7 @@
 package listingtask
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -10,9 +11,18 @@ import (
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
+	"github.com/lingmirror/backend-go/internal/domain/sku"
+	"github.com/lingmirror/backend-go/internal/prismadapter"
 )
 
 var errPublishHookFailed = errors.New("publish hook failed")
+
+type countingPrism struct{ calls int }
+
+func (p *countingPrism) Generate(context.Context, *prismadapter.GenerateRequest) (*prismadapter.GenerateResponse, error) {
+	p.calls++
+	return &prismadapter.GenerateResponse{}, nil
+}
 
 func int64Ptr(v int64) *int64 { return &v }
 
@@ -612,9 +622,9 @@ func TestService_ExecuteTask_PublishHookNil(t *testing.T) {
 	}
 }
 
-// TestService_ExecuteTask_PublishHookSucceeds verifies that a successful
-// publishHook keeps the task in "completed" state.
-func TestService_ExecuteTask_PublishHookSucceeds(t *testing.T) {
+// TestService_ExecuteTask_MockDoesNotCallPublishHook verifies the default
+// dry-run mode is an explicit mock and never reaches the legacy write hook.
+func TestService_ExecuteTask_MockDoesNotCallPublishHook(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
@@ -648,15 +658,14 @@ func TestService_ExecuteTask_PublishHookSucceeds(t *testing.T) {
 	if updated.Status != "completed" {
 		t.Fatalf("status = %s, want completed", updated.Status)
 	}
-	if !hookCalled {
-		t.Fatal("publishHook was not called")
+	if hookCalled {
+		t.Fatal("mock execution must not call publishHook")
 	}
 }
 
-// TestService_ExecuteTask_PublishHookFails verifies that a failing publishHook
-// reverts the task to "failed" with last_error and item error_message set,
-// so the task can be retried via RetryFailed / RetryItem.
-func TestService_ExecuteTask_PublishHookFails(t *testing.T) {
+// TestService_ExecuteTask_MockIgnoresLegacyPublishHook verifies a configured
+// legacy hook cannot turn a simulation into an external write.
+func TestService_ExecuteTask_MockIgnoresLegacyPublishHook(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
@@ -686,18 +695,18 @@ func TestService_ExecuteTask_PublishHookFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteTask: %v", err)
 	}
-	if updated.Status != "failed" {
-		t.Fatalf("status = %s, want failed", updated.Status)
+	if updated.Status != "completed" {
+		t.Fatalf("status = %s, want completed mock", updated.Status)
 	}
-	if updated.LastError == "" {
-		t.Fatal("last_error should be set")
+	if updated.LastError != "" {
+		t.Fatalf("last_error = %q, want empty", updated.LastError)
 	}
-	// Verify items got the error message too.
+	// Mock items are explicitly labelled and have no platform error.
 	var items []ListingTaskItem
 	db.Where("task_id = ?", task.ID).Find(&items)
 	for _, it := range items {
-		if it.ErrorMessage == "" {
-			t.Fatalf("item %d: error_message not set", it.ID)
+		if it.ErrorMessage != "" || !strings.Contains(string(it.Result), `"external_write":false`) {
+			t.Fatalf("item %d is not a clean mock result: error=%q result=%s", it.ID, it.ErrorMessage, it.Result)
 		}
 	}
 }
@@ -981,9 +990,9 @@ func TestService_ExecuteTask_DryRunFromDecisionSnapshot(t *testing.T) {
 	}
 }
 
-// TestService_ExecuteTask_NonDryRunSkipsDryRunPath verifies that without mode=dry_run
-// in DecisionSnapshot, ExecuteTask goes through the normal path (requires publishHook).
-func TestService_ExecuteTask_NonDryRunSkipsDryRunPath(t *testing.T) {
+// TestService_ExecuteTask_DefaultModeIsMock verifies an omitted mode cannot
+// silently become a production publish.
+func TestService_ExecuteTask_DefaultModeIsMock(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
@@ -1026,8 +1035,44 @@ func TestService_ExecuteTask_NonDryRunSkipsDryRunPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteTask: %v", err)
 	}
-	// Without dry-run mode and with publishHook set, publishHook should have been called.
-	if !publishCalled {
-		t.Fatal("expected publishHook to be called (non-dry-run mode)")
+	if publishCalled {
+		t.Fatal("default mode must not call publishHook")
+	}
+}
+
+func TestService_ExecuteTask_ProductionRequiresImageReleaseBeforePrismOrPublish(t *testing.T) {
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{}, &sku.Product{})
+	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
+	prism := &countingPrism{}
+	publishCalls := 0
+	svc := NewService(db, dbtest.NewLogger(t), prism, false, apprSvc, nil, nil)
+	svc.publishHook = func(int64, ExecutionMode) error { publishCalls++; return nil }
+
+	product := sku.Product{Name: "unsafe legacy image", MainImage: "https://attacker.invalid/arbitrary.png"}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatal(err)
+	}
+	task := ListingTask{ProductID: product.ID, PlatformID: 1, Status: "approved", ExecutionMode: ExecutionModeProduction}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	req := approval.ApprovalRequest{RequestType: "listing_task", Requester: "owner", Status: "approved", EntityType: "listing_task", EntityID: task.ID, RiskLevel: "high"}
+	if err := db.Create(&req).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&task).Update("approval_id", req.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.ExecuteTask(task.ID, "owner")
+	if !errors.Is(err, ErrImageReleaseAttestationRequired) {
+		t.Fatalf("error = %v", err)
+	}
+	if prism.calls != 0 || publishCalls != 0 {
+		t.Fatalf("legacy external calls: prism=%d publish=%d", prism.calls, publishCalls)
+	}
+	var unchanged ListingTask
+	if err := db.First(&unchanged, task.ID).Error; err != nil || unchanged.Status != "approved" {
+		t.Fatalf("production gate mutated task: %+v err=%v", unchanged, err)
 	}
 }

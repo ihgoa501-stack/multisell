@@ -1,0 +1,7 @@
+[Unit]
+Description=Report LingMirror operations unit failure for %i
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/lingmirror/ops.env
+ExecStart=/opt/lingmirror/scripts/notify_ops_failure.sh %i

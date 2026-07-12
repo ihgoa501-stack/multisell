@@ -45,6 +45,7 @@ type publishAdapter interface {
 type publishAdapterResolver func(string) (publishAdapter, bool)
 
 type PublishRequestInput struct {
+	TaskLinkID        int64          `json:"task_link_id,omitempty"`
 	RequesterID       int64          `json:"requester_id"`
 	PlatformAccountID int64          `json:"platform_account_id" binding:"required"`
 	IdempotencyKey    string         `json:"idempotency_key" binding:"required"`
@@ -53,12 +54,14 @@ type PublishRequestInput struct {
 }
 
 type PublishDecisionInput struct {
-	OwnerID int64  `json:"owner_id"`
-	Action  string `json:"action" binding:"required"`
-	Note    string `json:"note" binding:"required"`
+	TaskLinkID int64  `json:"task_link_id,omitempty"`
+	OwnerID    int64  `json:"owner_id"`
+	Action     string `json:"action" binding:"required"`
+	Note       string `json:"note" binding:"required"`
 }
 
 type PublishReconcileInput struct {
+	TaskLinkID     int64                      `json:"task_link_id,omitempty"`
 	OwnerID        int64                      `json:"owner_id"`
 	Outcome        string                     `json:"outcome" binding:"required"` // submitted or failed
 	EvidenceURI    string                     `json:"evidence_uri" binding:"required"`
@@ -78,6 +81,7 @@ type PublishAttempt struct {
 	ID                    int64           `json:"id"`
 	SourcingProductID     int64           `json:"sourcing_product_id"`
 	DraftID               int64           `json:"draft_id"`
+	TaskLinkID            int64           `json:"task_link_id"`
 	ProductID             int64           `json:"product_id"`
 	ListingID             int64           `json:"listing_id"`
 	PlatformID            int64           `json:"platform_id"`
@@ -112,6 +116,7 @@ func (platformAccountRow) TableName() string { return "platform_integration_acco
 
 type publishRequestSnapshot struct {
 	SourcingProductID int64          `json:"sourcing_product_id"`
+	TaskLinkID        int64          `json:"task_link_id"`
 	DraftID           int64          `json:"draft_id"`
 	ProductID         int64          `json:"product_id"`
 	ListingID         int64          `json:"listing_id"`
@@ -191,27 +196,24 @@ func equalInventories(a, b map[string]int) bool {
 	return true
 }
 
-func validatePublishExperiment(tx *gorm.DB, sourceID, demandCaseID int64, experimentID string, ownerID int64) error {
-	var exp experimentRow
-	if err := tx.Where("experiment_id = ?", experimentID).First(&exp).Error; err != nil {
+// requirePublishSourcingAuthority verifies the current, frozen Owner authority
+// for this exact sourcing product. experimentID is only a trace key used to
+// locate the task link; experiment state and its historical gate never grant
+// publish authority.
+func requirePublishSourcingAuthority(tx *gorm.DB, sourceID, ownerID, demandCaseID int64, experimentID string) error {
+	var link Sourcing1688TaskLink
+	if err := tx.Where(
+		"sourcing_product_id = ? AND owner_id = ? AND demand_case_id = ? AND experiment_id = ? AND is_primary = ? AND authority_kind = ?",
+		sourceID, ownerID, demandCaseID, experimentID, true, "product_opportunity",
+	).First(&link).Error; err != nil || link.ProductOpportunityID == nil || link.OpportunityDecisionID == nil {
+		return fmt.Errorf("%w: frozen product opportunity authority for this source is required", ErrWorkflowGate)
+	}
+	decision, err := requireSourcingAuthority(tx, ownerID, demandCaseID, *link.ProductOpportunityID)
+	if err != nil {
 		return err
 	}
-	if exp.OwnerID != ownerID || exp.Status != "active" || (exp.Stage != "product" && exp.Stage != "supply" && exp.Stage != "channel") {
-		return fmt.Errorf("%w: selected market experiment is no longer active", ErrWorkflowGate)
-	}
-	var gateCount int64
-	if err := tx.Model(&gateRow{}).Where("experiment_id = ? AND stage = ? AND result = ?", experimentID, "opportunity", "pass").Count(&gateCount).Error; err != nil {
-		return err
-	}
-	var demandLinkCount, sourceLinkCount int64
-	if err := tx.Model(&objectLinkRow{}).Where("experiment_id = ? AND object_type = ? AND object_id = ?", experimentID, "demand_case", strconv.FormatInt(demandCaseID, 10)).Count(&demandLinkCount).Error; err != nil {
-		return err
-	}
-	if err := tx.Model(&objectLinkRow{}).Where("experiment_id = ? AND object_type = ? AND object_id = ?", experimentID, "sourcing_1688", strconv.FormatInt(sourceID, 10)).Count(&sourceLinkCount).Error; err != nil {
-		return err
-	}
-	if gateCount != 1 || demandLinkCount != 1 || sourceLinkCount != 1 {
-		return fmt.Errorf("%w: selected market, opportunity gate and sourcing evidence links must remain valid", ErrWorkflowGate)
+	if decision.ID != *link.OpportunityDecisionID {
+		return fmt.Errorf("%w: frozen product opportunity approval no longer matches", ErrWorkflowGate)
 	}
 	return nil
 }
@@ -242,10 +244,15 @@ func (s *Service) RequestPublish(sourceID int64, in *PublishRequestInput) (*Publ
 	}
 	var attempt PublishAttempt
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		task, err := requireTaskSourcingAuthority(tx, sourceID, in.RequesterID, in.TaskLinkID)
+		if err != nil {
+			return err
+		}
 		var replay PublishAttempt
 		if err := tx.Where("idempotency_key = ?", strings.TrimSpace(in.IdempotencyKey)).First(&replay).Error; err == nil {
 			var envelope publishApprovalEnvelope
-			if replay.SourcingProductID != sourceID || replay.RequestedBy != in.RequesterID || replay.PlatformAccountID != in.PlatformAccountID || json.Unmarshal(replay.RequestPayload, &envelope) != nil || !equalInventories(envelope.Snapshot.Inventories, in.Inventories) {
+			legacyPrimary := task.IsPrimary && replay.TaskLinkID == 0 && envelope.Snapshot.TaskLinkID == 0
+			if replay.SourcingProductID != sourceID || (!legacyPrimary && replay.TaskLinkID != task.ID) || replay.RequestedBy != in.RequesterID || replay.PlatformAccountID != in.PlatformAccountID || json.Unmarshal(replay.RequestPayload, &envelope) != nil || (!legacyPrimary && envelope.Snapshot.TaskLinkID != task.ID) || !equalInventories(envelope.Snapshot.Inventories, in.Inventories) {
 				return fmt.Errorf("%w: idempotency key is already bound to another publish request", ErrWorkflowGate)
 			}
 			attempt = replay
@@ -257,26 +264,26 @@ func (s *Service) RequestPublish(sourceID int64, in *PublishRequestInput) (*Publ
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&source, sourceID).Error; err != nil {
 			return err
 		}
-		if source.LifecycleStatus != LifecycleApprovedDraft || source.DemandCaseID == nil {
-			return fmt.Errorf("%w: a separately approved internal draft is required", ErrWorkflowGate)
-		}
-		if err := requireOwner(tx, &source, in.RequesterID); err != nil {
-			return err
+		if task.WorkflowStatus != "approved_draft" && !(task.IsPrimary && source.LifecycleStatus == LifecycleApprovedDraft && (task.WorkflowStatus == "" || task.WorkflowStatus == "needs_review")) {
+			return fmt.Errorf("%w: exact task requires a separately approved internal draft", ErrWorkflowGate)
 		}
 		var activeAttempts int64
 		if err := tx.Model(&PublishAttempt{}).
-			Where("sourcing_product_id = ? AND status IN ?", sourceID, []string{PublishStatusPending, PublishStatusApproved, PublishStatusExecuting, PublishStatusSubmitted, PublishStatusReconcile}).
+			Where("task_link_id = ? AND status IN ?", task.ID, []string{PublishStatusPending, PublishStatusApproved, PublishStatusExecuting, PublishStatusSubmitted, PublishStatusReconcile}).
 			Count(&activeAttempts).Error; err != nil {
 			return err
 		}
 		if activeAttempts > 0 {
 			return fmt.Errorf("%w: an unresolved publish request already exists for this source", ErrWorkflowGate)
 		}
-		if source.ExperimentID == nil {
-			return fmt.Errorf("%w: source experiment is required", ErrWorkflowGate)
-		}
 		var draft draftRow
-		if err := tx.Where("sourcing_product_id = ?", sourceID).First(&draft).Error; err != nil {
+		if task.DraftID != nil {
+			if err := tx.Where("id = ? AND sourcing_product_id = ? AND task_link_id = ?", *task.DraftID, sourceID, task.ID).First(&draft).Error; err != nil {
+				return err
+			}
+		} else if !task.IsPrimary {
+			return fmt.Errorf("%w: exact task draft identity is missing", ErrWorkflowGate)
+		} else if err := tx.Where("sourcing_product_id = ? AND experiment_id = ? AND task_link_id IS NULL", sourceID, task.ExperimentID).First(&draft).Error; err != nil {
 			return err
 		}
 		if draft.ApprovalID == nil || draft.ApprovalStatus != approval.StatusApproved {
@@ -306,16 +313,13 @@ func (s *Service) RequestPublish(sourceID int64, in *PublishRequestInput) (*Publ
 		if account.PlatformID != listing.PlatformID || account.Status != "active" || (account.ExecutionMode != int8(integrations.ExecutionModeApprovalRequired) && account.ExecutionMode != int8(integrations.ExecutionModeProduction)) {
 			return fmt.Errorf("%w: active write-enabled platform account must match the approved channel", ErrWorkflowGate)
 		}
-		if draft.ExperimentID != *source.ExperimentID {
-			return fmt.Errorf("%w: source and draft experiment do not match", ErrWorkflowGate)
-		}
-		if err := validatePublishExperiment(tx, sourceID, *source.DemandCaseID, draft.ExperimentID, in.RequesterID); err != nil {
-			return err
+		if draft.ExperimentID != task.ExperimentID || draft.DemandCaseID != task.DemandCaseID {
+			return fmt.Errorf("%w: task and draft authority trace do not match", ErrWorkflowGate)
 		}
 		if err := requireOnlyActivePlatformAccount(tx, account.ID, listing.PlatformID); err != nil {
 			return err
 		}
-		snapshot := publishRequestSnapshot{SourcingProductID: sourceID, DraftID: draft.ID, ProductID: draft.ProductID, ListingID: draft.ListingID, PlatformID: listing.PlatformID, PlatformAccountID: account.ID, Inventories: in.Inventories}
+		snapshot := publishRequestSnapshot{SourcingProductID: sourceID, TaskLinkID: task.ID, DraftID: draft.ID, ProductID: draft.ProductID, ListingID: draft.ListingID, PlatformID: listing.PlatformID, PlatformAccountID: account.ID, Inventories: in.Inventories}
 		adapterInput, err := buildFrozenPublishInput(tx, &draft, &listing, account.ID, strings.TrimSpace(in.IdempotencyKey), in.Inventories)
 		if err != nil {
 			return err
@@ -342,7 +346,7 @@ func (s *Service) RequestPublish(sourceID int64, in *PublishRequestInput) (*Publ
 		if !errors.Is(findErr, gorm.ErrRecordNotFound) {
 			return findErr
 		}
-		attempt = PublishAttempt{SourcingProductID: sourceID, DraftID: draft.ID, ProductID: draft.ProductID, ListingID: draft.ListingID, PlatformID: listing.PlatformID, PlatformAccountID: account.ID, ExperimentID: draft.ExperimentID, IdempotencyKey: strings.TrimSpace(in.IdempotencyKey), RequestSHA256: requestHash, RequestPayload: payload, AdapterRequestPayload: adapterPayload, Status: PublishStatusPending, RequestedBy: in.RequesterID, RequestedAt: time.Now().UTC()}
+		attempt = PublishAttempt{SourcingProductID: sourceID, TaskLinkID: task.ID, DraftID: draft.ID, ProductID: draft.ProductID, ListingID: draft.ListingID, PlatformID: listing.PlatformID, PlatformAccountID: account.ID, ExperimentID: draft.ExperimentID, IdempotencyKey: strings.TrimSpace(in.IdempotencyKey), RequestSHA256: requestHash, RequestPayload: payload, AdapterRequestPayload: adapterPayload, Status: PublishStatusPending, RequestedBy: in.RequesterID, RequestedAt: time.Now().UTC()}
 		if err := tx.Create(&attempt).Error; err != nil {
 			return err
 		}
@@ -353,6 +357,9 @@ func (s *Service) RequestPublish(sourceID int64, in *PublishRequestInput) (*Publ
 		}
 		attempt.ApprovalID = &req.ID
 		if err := tx.Model(&attempt).Update("approval_id", req.ID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(task).Updates(map[string]any{"workflow_status": "publish_pending", "workflow_updated_at": time.Now().UTC()}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&operationlog.OperationLog{Module: "sourcing1688", Action: "publish.request", ResourceID: strconv.FormatInt(attempt.ID, 10), Operator: strconv.FormatInt(in.RequesterID, 10), UserID: in.RequesterID, Content: fmt.Sprintf("publish_attempt=%d platform_account=%d", attempt.ID, account.ID), Result: PublishStatusPending, TriggerType: "manual", ApprovalID: &req.ID, EntityType: PublishApprovalTargetType, EntityID: attempt.ID}).Error
@@ -375,12 +382,12 @@ func (s *Service) DecidePublish(sourceID, attemptID int64, in *PublishDecisionIn
 		if attempt.Status != PublishStatusPending || attempt.ApprovalID == nil {
 			return fmt.Errorf("%w: publish request is not pending approval", ErrWorkflowGate)
 		}
-		var source sourcingLifecycleRow
-		if err := tx.First(&source, sourceID).Error; err != nil {
+		task, err := requireTaskSourcingAuthority(tx, sourceID, in.OwnerID, in.TaskLinkID)
+		if err != nil {
 			return err
 		}
-		if err := requireOwner(tx, &source, in.OwnerID); err != nil {
-			return err
+		if attempt.TaskLinkID != task.ID && !(task.IsPrimary && attempt.TaskLinkID == 0) {
+			return fmt.Errorf("%w: publish request belongs to another task", ErrWorkflowGate)
 		}
 		var req approval.ApprovalRequest
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&req, *attempt.ApprovalID).Error; err != nil {
@@ -412,6 +419,13 @@ func (s *Service) DecidePublish(sourceID, attemptID int64, in *PublishDecisionIn
 		if updated.RowsAffected != 1 {
 			return fmt.Errorf("%w: publish request was concurrently changed", ErrWorkflowGate)
 		}
+		taskStatus := "publish_approved"
+		if status == PublishStatusRejected {
+			taskStatus = "approved_draft"
+		}
+		if err := tx.Model(task).Updates(map[string]any{"workflow_status": taskStatus, "workflow_updated_at": now}).Error; err != nil {
+			return err
+		}
 		return tx.First(&attempt, attempt.ID).Error
 	})
 	if err != nil {
@@ -424,6 +438,14 @@ func (s *Service) DecidePublish(sourceID, attemptID int64, in *PublishDecisionIn
 // approved idempotency key before the call and never retries failed/ambiguous
 // calls automatically.
 func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, ownerID int64) (*PublishAttempt, error) {
+	link, err := findOwnedTaskLink(s.db, sourceID, ownerID, 0)
+	if err != nil {
+		return nil, err
+	}
+	return s.executePublishForTask(ctx, sourceID, link.ID, attemptID, ownerID)
+}
+
+func (s *Service) executePublishForTask(ctx context.Context, sourceID, taskLinkID, attemptID, ownerID int64) (*PublishAttempt, error) {
 	var attempt PublishAttempt
 	var input integrations.PublishInput
 	var platformCode string
@@ -433,7 +455,14 @@ func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, owner
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND sourcing_product_id = ?", attemptID, sourceID).First(&attempt).Error; err != nil {
 			return err
 		}
+		task, err := requireTaskSourcingAuthority(tx, sourceID, ownerID, attempt.TaskLinkID)
+		if err != nil {
+			return err
+		}
 		if attempt.Status == PublishStatusSubmitted || attempt.Status == PublishStatusReconcile || attempt.Status == PublishStatusSucceeded || attempt.Status == PublishStatusFailed || attempt.Status == PublishStatusExecuting {
+			if task.ExperimentID != attempt.ExperimentID {
+				return fmt.Errorf("%w: task authority trace does not match this publish request", ErrWorkflowGate)
+			}
 			return nil
 		}
 		if attempt.Status != PublishStatusApproved || attempt.ApprovalID == nil {
@@ -443,8 +472,11 @@ func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, owner
 		if err := tx.First(&source, sourceID).Error; err != nil {
 			return err
 		}
-		if source.LifecycleStatus != LifecycleApprovedDraft || requireOwner(tx, &source, ownerID) != nil {
+		if task.WorkflowStatus != "publish_approved" || requireOwner(tx, &source, ownerID) != nil {
 			return fmt.Errorf("%w: approved draft and selected market Owner are required", ErrWorkflowGate)
+		}
+		if err := requireCurrentCompliance(tx, sourceID, task.ID, ownerID, StandardPublishComplianceRequirementCodes, time.Now().UTC()); err != nil {
+			return err
 		}
 		var req approval.ApprovalRequest
 		if err := tx.First(&req, *attempt.ApprovalID).Error; err != nil {
@@ -457,7 +489,7 @@ func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, owner
 		if err := tx.First(&draft, attempt.DraftID).Error; err != nil {
 			return err
 		}
-		if draft.SourcingProductID != sourceID || draft.ProductID != attempt.ProductID || draft.ListingID != attempt.ListingID {
+		if draft.SourcingProductID != sourceID || (draft.TaskLinkID == nil && !task.IsPrimary) || (draft.TaskLinkID != nil && *draft.TaskLinkID != task.ID) || draft.ProductID != attempt.ProductID || draft.ListingID != attempt.ListingID {
 			return fmt.Errorf("%w: draft linkage changed after approval", ErrWorkflowGate)
 		}
 		if draft.ApprovalID == nil {
@@ -473,11 +505,8 @@ func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, owner
 		if err := validateDraftApprovalContentLocked(tx, &draft, &draftApproval); err != nil {
 			return err
 		}
-		if source.DemandCaseID == nil || source.ExperimentID == nil || draft.ExperimentID != attempt.ExperimentID || *source.ExperimentID != attempt.ExperimentID {
+		if draft.ExperimentID != attempt.ExperimentID || task.ExperimentID != attempt.ExperimentID {
 			return fmt.Errorf("%w: source, market and draft experiment do not match", ErrWorkflowGate)
-		}
-		if err := validatePublishExperiment(tx, sourceID, *source.DemandCaseID, attempt.ExperimentID, ownerID); err != nil {
-			return err
 		}
 		var listing listingRow
 		if err := tx.First(&listing, attempt.ListingID).Error; err != nil {
@@ -500,7 +529,7 @@ func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, owner
 		platformCode = platform.Code
 		executionMode = integrations.ExecutionMode(account.ExecutionMode)
 		var dc demandCaseRow
-		if source.DemandCaseID == nil || tx.First(&dc, *source.DemandCaseID).Error != nil {
+		if tx.First(&dc, task.DemandCaseID).Error != nil {
 			return fmt.Errorf("%w: selected market is unavailable", ErrWorkflowGate)
 		}
 		channel := strings.ToLower(dc.SalesChannel)
@@ -522,6 +551,9 @@ func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, owner
 		}
 		if updated.RowsAffected != 1 {
 			return fmt.Errorf("%w: publish request was concurrently claimed", ErrWorkflowGate)
+		}
+		if err := tx.Model(task).Updates(map[string]any{"workflow_status": "publishing", "workflow_updated_at": now}).Error; err != nil {
+			return err
 		}
 		if err := tx.Create(&operationlog.OperationLog{Module: "sourcing1688", Action: "publish.execute.claimed", ResourceID: strconv.FormatInt(attempt.ID, 10), Operator: strconv.FormatInt(ownerID, 10), UserID: ownerID, Content: fmt.Sprintf("publish_attempt=%d platform_account=%d", attempt.ID, attempt.PlatformAccountID), Result: PublishStatusExecuting, TriggerType: "owner_approval", ApprovalID: attempt.ApprovalID, EntityType: PublishApprovalTargetType, EntityID: attempt.ID}).Error; err != nil {
 			return err
@@ -592,6 +624,15 @@ func (s *Service) finishPublishAttempt(ctx context.Context, attempt *PublishAtte
 		if updated.RowsAffected != 1 {
 			return fmt.Errorf("publish attempt state changed while completing")
 		}
+		taskStatus := "publish_failed"
+		if status == PublishStatusSubmitted {
+			taskStatus = "submitted"
+		} else if status == PublishStatusReconcile {
+			taskStatus = "reconcile_required"
+		}
+		if err := tx.Model(&Sourcing1688TaskLink{}).Where("id = ? AND sourcing_product_id = ?", attempt.TaskLinkID, attempt.SourcingProductID).Updates(map[string]any{"workflow_status": taskStatus, "workflow_updated_at": completedAt}).Error; err != nil {
+			return err
+		}
 		if status == PublishStatusSubmitted {
 			updatedListing := tx.Model(&listingRow{}).Where("id = ? AND status = ?", attempt.ListingID, "draft").Updates(map[string]any{"status": "submitted", "published_data": response, "platform_product_id": result.PlatformProductID, "platform_url": result.PlatformURL, "sync_message": result.SyncMessage, "last_sync_at": completedAt})
 			if updatedListing.Error != nil {
@@ -639,11 +680,31 @@ func (s *Service) ListPublishAttempts(sourceID int64) ([]PublishAttempt, error) 
 	return items, err
 }
 
+func (s *Service) ListTaskPublishAttempts(sourceID, taskLinkID, ownerID int64) ([]PublishAttempt, error) {
+	if _, err := requireTaskSourcingAuthority(s.db, sourceID, ownerID, taskLinkID); err != nil {
+		return nil, err
+	}
+	var items []PublishAttempt
+	err := s.db.Where("sourcing_product_id = ? AND task_link_id = ?", sourceID, taskLinkID).Order("id DESC").Find(&items).Error
+	return items, err
+}
+
 // ReconcilePublish records a platform-observed/manual result after an
 // ambiguous timeout or interrupted persistence. It has no external side
 // effect and can never claim succeeded; submitted still requires later status
 // synchronization from the platform.
 func (s *Service) ReconcilePublish(ctx context.Context, sourceID, attemptID int64, in *PublishReconcileInput) (*PublishAttempt, error) {
+	if in == nil {
+		return nil, ErrInvalidWorkflow
+	}
+	link, err := findOwnedTaskLink(s.db, sourceID, in.OwnerID, 0)
+	if err != nil {
+		return nil, err
+	}
+	return s.reconcilePublishForTask(ctx, sourceID, link.ID, attemptID, in)
+}
+
+func (s *Service) reconcilePublishForTask(ctx context.Context, sourceID, taskLinkID, attemptID int64, in *PublishReconcileInput) (*PublishAttempt, error) {
 	if in == nil || in.OwnerID <= 0 || (in.Outcome != PublishStatusSubmitted && in.Outcome != PublishStatusFailed) || strings.TrimSpace(in.EvidenceURI) == "" || in.ObservedAt.IsZero() || in.ObservedAt.After(time.Now().Add(5*time.Minute)) || in.TruthStatus != "actual" {
 		return nil, fmt.Errorf("%w: actual reconciliation evidence, observation time and submitted/failed outcome are required", ErrInvalidWorkflow)
 	}
@@ -666,6 +727,13 @@ func (s *Service) ReconcilePublish(ctx context.Context, sourceID, attemptID int6
 		if attempt.Status != PublishStatusReconcile && attempt.Status != PublishStatusExecuting {
 			return fmt.Errorf("%w: only an ambiguous publish attempt may be reconciled", ErrWorkflowGate)
 		}
+		if in.TaskLinkID > 0 && in.TaskLinkID != attempt.TaskLinkID {
+			return fmt.Errorf("%w: reconciliation belongs to another task", ErrWorkflowGate)
+		}
+		task, err := requireTaskSourcingAuthority(tx, sourceID, in.OwnerID, attempt.TaskLinkID)
+		if err != nil {
+			return err
+		}
 		if attempt.Status == PublishStatusExecuting && (attempt.ExecutedAt == nil || attempt.ExecutedAt.After(time.Now().UTC().Add(-35*time.Second))) {
 			return fmt.Errorf("%w: active publish call cannot be reconciled before its timeout window", ErrWorkflowGate)
 		}
@@ -674,6 +742,12 @@ func (s *Service) ReconcilePublish(ctx context.Context, sourceID, attemptID int6
 			return err
 		}
 		if err := requireOwner(tx, &source, in.OwnerID); err != nil {
+			return err
+		}
+		if task.ExperimentID != attempt.ExperimentID {
+			return fmt.Errorf("%w: task authority trace does not match this reconciliation", ErrWorkflowGate)
+		}
+		if err := requireCurrentCompliance(tx, sourceID, task.ID, in.OwnerID, StandardPublishComplianceRequirementCodes, time.Now().UTC()); err != nil {
 			return err
 		}
 		completedAt := time.Now().UTC()
@@ -696,6 +770,13 @@ func (s *Service) ReconcilePublish(ctx context.Context, sourceID, attemptID int6
 			if listingUpdate.RowsAffected != 1 {
 				return fmt.Errorf("%w: linked draft changed before reconciliation", ErrWorkflowGate)
 			}
+		}
+		taskStatus := "publish_failed"
+		if in.Outcome == PublishStatusSubmitted {
+			taskStatus = "submitted"
+		}
+		if err := tx.Model(task).Updates(map[string]any{"workflow_status": taskStatus, "workflow_updated_at": completedAt}).Error; err != nil {
+			return err
 		}
 		if err := tx.Create(&operationlog.OperationLog{Module: "sourcing1688", Action: "publish.reconcile", ResourceID: strconv.FormatInt(attempt.ID, 10), Operator: strconv.FormatInt(in.OwnerID, 10), UserID: in.OwnerID, Content: fmt.Sprintf("publish_attempt=%d evidence_sha256=%s", attempt.ID, hex.EncodeToString(evidenceHash[:])), Result: in.Outcome, TriggerType: "owner_approval", ApprovalID: attempt.ApprovalID, EntityType: PublishApprovalTargetType, EntityID: attempt.ID}).Error; err != nil {
 			return err

@@ -50,16 +50,30 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	p := common.ParsePagination(c)
 	f := &ListFilter{
-		Search:    c.Query("search"),
-		Status:    c.Query("status"),
-		ProductID: parseOptionalInt64(c, "product_id"),
+		Search:          c.Query("search"),
+		Status:          c.Query("status"),
+		LifecycleStatus: c.Query("lifecycle_status"),
+		ProductID:       parseOptionalInt64(c, "product_id"),
 	}
-	items, total, err := h.service.ListOwned(ownerID, &p, f)
+	items, total, err := h.service.ListPrivateCollectionBox(ownerID, &p, f)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	response.Paginated(c, items, total, p.Page, p.Size)
+}
+
+func (h *Handler) ListEligibleTasks(c *gin.Context) {
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	tasks, err := h.service.ListEligibleTasks(ownerID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, tasks)
 }
 
 // Get GET /sourcing1688/:id
@@ -211,6 +225,125 @@ func workflowError(c *gin.Context, err error) {
 	default:
 		response.InternalError(c, err)
 	}
+}
+
+func parseTaskAndEvidenceIDs(c *gin.Context) (int64, int64, bool) {
+	linkID, err := strconv.ParseInt(c.Param("linkId"), 10, 64)
+	if err != nil || linkID <= 0 {
+		response.Error(c, http.StatusBadRequest, "invalid task link id")
+		return 0, 0, false
+	}
+	evidenceID := int64(0)
+	if raw := c.Param("evidenceId"); raw != "" {
+		evidenceID, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || evidenceID <= 0 {
+			response.Error(c, http.StatusBadRequest, "invalid evidence id")
+			return 0, 0, false
+		}
+	}
+	return linkID, evidenceID, true
+}
+
+func (h *Handler) ListComplianceEvidence(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, _, ok := parseTaskAndEvidenceIDs(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	rows, err := h.service.ListComplianceEvidence(id, linkID, ownerID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, rows)
+}
+
+func (h *Handler) CreateComplianceEvidence(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, _, ok := parseTaskAndEvidenceIDs(c)
+	if !ok {
+		return
+	}
+	var in CreateComplianceEvidenceInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	in.OwnerID = ownerID
+	row, err := h.service.CreateComplianceEvidence(id, linkID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+
+func (h *Handler) ReviewComplianceEvidence(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, evidenceID, ok := parseTaskAndEvidenceIDs(c)
+	if !ok {
+		return
+	}
+	var in ReviewComplianceEvidenceInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	in.OwnerID = ownerID
+	row, err := h.service.ReviewComplianceEvidence(id, linkID, evidenceID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+
+func (h *Handler) RevokeComplianceEvidence(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, evidenceID, ok := parseTaskAndEvidenceIDs(c)
+	if !ok {
+		return
+	}
+	var in RevokeComplianceEvidenceInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	in.OwnerID = ownerID
+	row, err := h.service.RevokeComplianceEvidence(id, linkID, evidenceID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
 }
 
 func requireWorkflowActor(c *gin.Context) (int64, bool) {
@@ -366,6 +499,65 @@ func (h *Handler) DecideDraftApproval(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *Handler) SubmitTaskDraftApproval(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	var in DraftApprovalSubmissionInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	actor, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	in.RequesterID = actor
+	result, err := h.service.SubmitTaskDraftApproval(id, linkID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) DecideTaskDraftApproval(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	approvalID, err := strconv.ParseInt(c.Param("approvalId"), 10, 64)
+	if err != nil || approvalID <= 0 {
+		response.Error(c, http.StatusBadRequest, "invalid approval id")
+		return
+	}
+	var in DraftApprovalDecisionInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	actor, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	in.OwnerID = actor
+	result, err := h.service.DecideTaskDraftApproval(id, linkID, approvalID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 func parseAttemptID(c *gin.Context) (int64, bool) {
 	id, err := strconv.ParseInt(c.Param("attemptId"), 10, 64)
 	if err != nil || id <= 0 {
@@ -489,6 +681,172 @@ func (h *Handler) ReconcilePublish(c *gin.Context) {
 		return
 	}
 	response.Success(c, attempt)
+}
+
+func (h *Handler) RequestTaskPublish(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	var in PublishRequestInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	actor, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	in.RequesterID = actor
+	result, err := h.service.RequestTaskPublish(id, linkID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) DecideTaskPublish(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	attemptID, ok := parseAttemptID(c)
+	if !ok {
+		return
+	}
+	var in PublishDecisionInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	actor, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	in.OwnerID = actor
+	result, err := h.service.DecideTaskPublish(id, linkID, attemptID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) ExecuteTaskPublish(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	attemptID, ok := parseAttemptID(c)
+	if !ok {
+		return
+	}
+	actor, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	result, err := h.service.ExecuteTaskPublish(c.Request.Context(), id, linkID, attemptID, actor)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) ListTaskPublishRequests(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	actor, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	result, err := h.service.ListTaskPublishAttempts(id, linkID, actor)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) ReconcileTaskPublish(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	attemptID, ok := parseAttemptID(c)
+	if !ok {
+		return
+	}
+	var in PublishReconcileInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	actor, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	in.OwnerID = actor
+	result, err := h.service.ReconcileTaskPublish(c.Request.Context(), id, linkID, attemptID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) ObserveTaskPublishTerminal(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	attemptID, ok := parseAttemptID(c)
+	if !ok {
+		return
+	}
+	var in PublishTerminalObservationInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	actor, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	in.OwnerID = actor
+	result, err := h.service.ObserveTaskPublishTerminal(c.Request.Context(), id, linkID, attemptID, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
 }
 
 func (h *Handler) Snapshot(c *gin.Context) {
@@ -663,6 +1021,188 @@ func (h *Handler) Capture(c *gin.Context) {
 	response.Success(c, p)
 }
 
+// CollectPrivate saves an Owner-triggered 1688 page as an unverified private
+// sourcing bookmark. It does not create an experiment link or listing draft.
+func (h *Handler) CollectPrivate(c *gin.Context) {
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	var in PrivateCollectInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		in.OwnerID = ownerID
+		if failure := privateCollectFailureInput(&in, err); failure != nil {
+			_, _, _ = h.service.RecordPrivateCaptureFailure(failure)
+		}
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.OwnerID = ownerID
+	result, err := h.service.CollectPrivate(&in)
+	if err != nil {
+		var duplicate *DuplicatePrivateCollectionError
+		if errors.As(err, &duplicate) {
+			c.JSON(http.StatusConflict, response.Result{Code: http.StatusConflict, Message: "该1688商品已在私人采集箱，请选择查看已有记录或保存为新观察", Data: gin.H{
+				"status": "duplicate_requires_choice", "record_id": duplicate.RecordID, "snapshot_id": duplicate.SnapshotID,
+				"existing": duplicate.Existing,
+			}})
+			return
+		}
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, PrivateCollectHTTPResult{
+		Status: "saved", RecordID: result.Product.ID, SnapshotID: result.Snapshot.ID,
+		RequestID:        result.Snapshot.CollectionRequestID,
+		IdempotentReplay: result.IdempotentReplay, NewObservation: result.NewObservation,
+	})
+}
+
+// RecordPrivateCaptureFailure accepts only the finite, server-mapped failure
+// vocabulary. Arbitrary browser errors, page source and credentials are not
+// part of this contract.
+func (h *Handler) RecordPrivateCaptureFailure(c *gin.Context) {
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	var in PrivateCaptureFailureInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.OwnerID = ownerID
+	record, replay, err := h.service.RecordPrivateCaptureFailure(&in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, PrivateCaptureFailureResult{Status: "recorded", Failure: record, IdempotentReplay: replay})
+}
+
+func (h *Handler) ListPrivateCaptureFailures(c *gin.Context) {
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	if err := h.service.RequireActiveOwnerAccount(ownerID); err != nil {
+		response.Error(c, http.StatusForbidden, "active Owner account required")
+		return
+	}
+	items, err := h.service.ListPrivateCaptureFailures(ownerID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *Handler) GetPrivateCollectionRequest(c *gin.Context) {
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	result, err := h.service.GetPrivateCollectionRequest(ownerID, c.Param("requestId"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "collection request not found")
+			return
+		}
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// LinkPrivateTask promotes a private bookmark into an approved sourcing task.
+func (h *Handler) LinkPrivateTask(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var in LinkPrivateTaskInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	in.OwnerID = ownerID
+	result, err := h.service.LinkPrivateToTask(id, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) ListPrivateTaskLinks(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	links, err := h.service.ListPrivateTaskLinks(id, ownerID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, links)
+}
+
+func (h *Handler) UpdatePrivateWorkcopy(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var in PrivateWorkcopyInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	in.OwnerID = ownerID
+	product, err := h.service.UpdatePrivateWorkcopy(id, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, product)
+}
+
+func (h *Handler) ArchivePrivateCollection(c *gin.Context) {
+	h.setPrivateCollectionArchive(c, true)
+}
+
+func (h *Handler) RestorePrivateCollection(c *gin.Context) {
+	h.setPrivateCollectionArchive(c, false)
+}
+
+func (h *Handler) setPrivateCollectionArchive(c *gin.Context, archived bool) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	product, err := h.service.SetPrivateArchive(id, ownerID, archived)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, product)
+}
+
 // Review POST /sourcing-1688/:id/review is the explicit Owner gate.
 func (h *Handler) Review(c *gin.Context) {
 	id, ok := parseID(c)
@@ -710,6 +1250,102 @@ func (h *Handler) ConvertToDraft(c *gin.Context) {
 		return
 	}
 	response.Success(c, r)
+}
+
+// ConvertTaskToDraft binds conversion to an exact Owner task link. This is the
+// multi-task canonical route; ConvertToDraft remains as the primary-link
+// compatibility route for existing clients.
+func (h *Handler) ConvertTaskToDraft(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, err := strconv.ParseInt(c.Param("linkId"), 10, 64)
+	if err != nil || linkID <= 0 {
+		response.Error(c, http.StatusBadRequest, "invalid task link id")
+		return
+	}
+	var in ConvertInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if in.TaskLinkID != 0 && in.TaskLinkID != linkID {
+		response.Error(c, http.StatusConflict, "task link id conflicts with route")
+		return
+	}
+	actor, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	in.CreatedBy, in.TaskLinkID = actor, linkID
+	r, err := h.service.Convert(id, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, r)
+}
+
+func parseTaskLinkID(c *gin.Context) (int64, bool) {
+	linkID, err := strconv.ParseInt(c.Param("linkId"), 10, 64)
+	if err != nil || linkID <= 0 {
+		response.Error(c, http.StatusBadRequest, "invalid task link id")
+		return 0, false
+	}
+	return linkID, true
+}
+
+func (h *Handler) TaskDraft(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	result, err := h.service.GetOwnedTaskDraft(id, linkID, ownerID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) UpdateTaskDraft(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, ok := parseTaskLinkID(c)
+	if !ok {
+		return
+	}
+	var in ConvertInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if in.TaskLinkID != 0 && in.TaskLinkID != linkID {
+		response.Error(c, http.StatusConflict, "task link id conflicts with route")
+		return
+	}
+	actor, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	in.CreatedBy, in.TaskLinkID = actor, linkID
+	result, err := h.service.UpdateDraft(id, &in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
 }
 
 func (h *Handler) UpdateDraft(c *gin.Context) {

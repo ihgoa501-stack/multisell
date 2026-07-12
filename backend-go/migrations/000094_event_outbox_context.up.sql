@@ -1,0 +1,10 @@
+ALTER TABLE event_outbox
+    ADD COLUMN IF NOT EXISTS version VARCHAR(50) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS actor VARCHAR(255) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS entity_id VARCHAR(255) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS entity_type VARCHAR(100) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS correlation_id VARCHAR(255) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255) NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_event_outbox_pending_created
+    ON event_outbox(status, created_at) WHERE status = 'pending';

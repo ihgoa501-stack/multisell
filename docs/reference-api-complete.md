@@ -1173,7 +1173,6 @@ curl -sS -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: appli
 
 | 方法 | 路径 | 注册条件 | 访问 | 处理器 |
 |---|---|---|---|---|
-| `POST` | `/api/v1/product-analysis/trigger-prism` | `prism.enabled=true` 且配置了 `prism.base_url` | JWT | `domain/productanalysis.(*Handler).TriggerPrism` |
 | `GET` | `/metrics` | `metrics.enabled=true` | 由部署网络边界保护；路由本身未挂 JWT | `middleware.MetricsHandler` |
 
 ## 已知边界与验证方式

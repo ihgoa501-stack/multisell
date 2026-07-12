@@ -18,6 +18,8 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 任何计划、TODO、PR、QA 或发布必须映射到 ADR-001 的唯一开发路径；无法映射的工作不得进入当前开发队列。不得以“一个小工具已经够用”主动缩小 Owner 已确认的平台目标，也不得以“完整平台”为由加入外部 SaaS、多租户、订阅、计费、公共 API、更多 Agent/MoA、展示性仪表盘或其他无关能力。
 
+平台真相与领域分类合同位于 `internal/domain/platformtruth/`，只读 API 为 `GET /api/v1/platform-truth`，Owner 页面为 `/platform-truth`。它统一展示事实等级、工程声明等级、事实/决策/协作/内核/支撑边界、对象身份、来源规则、全部领域处置和仍然未知的事项。合同必须覆盖 `internal/domain/` 全部目录；新增或改变领域职责时必须同步，漏分会使测试失败。`delete` 只表示退出目标架构的建议，不授权删除代码或数据。`xiao_q_support` 当前为 `not_applicable`，小Q不得自行修改此治理合同。
+
 商品消费者、平台买家、供应商和物流服务商只是 Owner 自营业务中的交易对手，不是凌镜的软件用户。对消费者付款、签收、售后和最终利润的核验只用于确认交易事实及经济结果；不得据此宣称经营假设获得因果验证，也不得写成凌镜的“外部需求验证”、软件市场验证或产品化信号。
 
 开始任何非平凡研究、规划、开发、审查、QA、发布或任务拆分前，必须按顺序阅读：`/Users/lc/gstack/ETHOS.md` → `docs/decisions/ADR-001-owner-complete-commerce-platform.md` → `docs/research/project-truth-audit-2026-07-12.md` → `docs/research/project-truth-audit-2026-07-11.md`。不得依赖记忆摘要代替阅读。前两份确定建设原则与唯一开发路径，后两份核对产品边界、代码和经营完成度证据。严格区分 `policy / planned / implemented / automated_verified / manually_verified / external_observed / reconciled / mock / inferred / superseded`。不得把模块存在、测试通过、页面可见或多个 Agent 意见一致写成真实市场、真实成交、生产可用或最终利润已经成立。代码、方向或真实经营状态变化后，应重新核验并生成新的带日期审计，不能静默覆盖证据限制。
@@ -32,11 +34,15 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 现有 `internal/domain/experiment/`、`/api/v1/experiments` 和 `/experiments` 按“经营事实核验案卷”解释，技术命名暂不等于业务定义正确。每个案件以 `experiment_id` 关联现有业务对象；这种关联只支持追踪，不证明行动与订单或利润之间存在因果关系。证据作用区分 `support / counter / conflict`，真实性区分 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`；利润与现金仍须保持可信来源、同一对象和对账约束。除非目标、可执行变量、真实市场作用、可靠观测、偏差判断、反馈规则和下一轮执行全部存在并验证，不得把该模块或其终局称为经营闭环。
 
-1688 货源到待上架草稿的受控入口位于 `internal/domain/sourcing1688/`，API 根路径为 `/api/v1/sourcing-1688`，前端入口为 `/sourcing1688`。它只接受已通过 opportunity gate 的 active 实验及 `experiment_ready` 候选市场，生成不可变快照、同款/变化记录、供应商与合规证据、SKU 三段映射、实际图片处理、完整成本与确定性渠道规则验证，再进入 `editing → pending_approval → approved_draft`；草稿批准仍必须保持 `product_listing.status=draft`，不得调用平台适配器。`GET /:id/acceptance-report` 只按 Owner 读取持久化证据并逐项返回 15 项 `passed / blocked / unknown`；只有服务器受控采集入口留下的 `controlled_fetch` 来源可证明真实采集，手工/历史快照不能冒充。真实发布是另一条高风险流程：必须创建独立 Owner 审批、冻结并哈希请求，再由 Owner 显式执行；无错误平台响应只记 `submitted`，超时进入 `reconcile_required`，两者都不代表真实上线。工程实现不代表真实 1688 来源、图片权利、费用或渠道契约已获外部验证。
+1688 货源入口位于 `internal/domain/sourcing1688/`，API 根路径为 `/api/v1/sourcing-1688`，前端入口为 `/sourcing1688`。Owner 可在1688商品页主动点击插件，通过 `POST /private-collections` 先保存为Owner隔离的 `unverified_lead` 私人收藏；这一步不要求候选市场或实验，页面字段最高为 `quoted`，不得冒充商品机会、可信货源或受控采集证据。Owner决定继续研究后，才通过 `POST /:id/task-links` 关联最新 `selected` 市场下经 Owner 批准的商品机会，并冻结 `product_opportunity_id + opportunity_decision_id`；`experiment_id` 仅保留事实追踪，不能授权。受控采集、复核、草稿编辑、草稿审批、验收读取和发布请求/批准/执行都会重新核验该冻结授权，市场暂停/拒绝或机会失效后 fail closed。流程继续生成不可变快照、同款/变化、供应商与合规、SKU三段映射、图片处理、完整成本和渠道规则，再进入 `editing → pending_approval → approved_draft`。草稿批准仍保持 `product_listing.status=draft`；真实发布继续要求独立Owner审批和显式执行。`extension_click` 只表示Owner保存过页面声明，只有既有 `controlled_fetch` 来源可满足受控采集闸门。
+
+插件在 `/settings/plugin` 完成Owner确认的设备配对，只使用 `/api/v1/extension/sourcing-1688` 和固定的 `sourcing1688.collect` 权限，不得接收或保存网页登录JWT。
 
 候选市场比较的统一入口位于 `internal/domain/demandcase/`，API 根路径为 `/api/v1/demand-cases`。每个候选必须明确“国家/地区 × 目标消费者 × 需求场景 × 销售渠道”，覆盖需求、竞争、获客、履约、合规、收款、售后和利润可验证性八个维度，并包含来自不同 run 的独立反证。关键维度为 unknown、mock、inferred 或缺少来源/观察时间时，只能保持 `evidence_missing`，不得生成可实验结论。
 
 候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，原始 payload 与 SHA-256 快照必须一致，重复 run 幂等。内置静态公开资料基线只建立俄罗斯/Ozon 的权限待验证基线，不是实时研究，也不代表该市场已选中。
+
+市场研究评估与 Owner 决定必须分开。`experiment_ready` 仅为兼容技术状态，业务含义是“研究材料可供 Owner 审议”，不是已选市场。Owner 通过 `POST /api/v1/demand-cases/:id/owner-decisions` 保存不可变、幂等的 `selected / rejected / paused / request_more_evidence` 决定。只有最新 `selected` 决定才能通过 `/api/v1/product-opportunities` 创建 Owner 隔离的商品机会；机会必须保存消费者问题、商品解法、渠道、价值/价格假设、来源、真实性、最强反证、unknown 和停止线，经完整性检查达到 `ready_for_owner` 后再由 Owner 批准。批准只授权进入货源研究，不得自动创建采购、Listing、投放或外部发布。完整契约见 `docs/features/market-opportunity-owner-flow.md`。
 
 小Q是凌镜唯一面向 Owner 的经营 Agent，稳定 ID 为 `xiao_q`。后端入口位于 `internal/domain/xiaoq/`，API 根路径为 `/api/v1/xiao-q`，前端入口为 `/xiaoq`。小Q只能通过登记的 Capability 调用现有领域 Service/Command，不得直接访问任意数据库表或绕过 RBAC、审批、审计和经营状态机。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；只有 Capability、权限、失败处理、证据追踪和回归测试齐全时才能标记 active。完整契约见 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md`。当前 active 能力为需求案件、决策卡、现有 `experiment` 经营事实案卷及闸门状态、1688受控内部草稿，以及从该案卷派生的脱敏订单履约、结算对账和最终利润只读；售后闭合、现金一致性及其他系统能力仍为 deferred 或 unknown。
 
@@ -64,6 +70,7 @@ When these governance docs conflict with older project docs, follow the governan
 |-------|-----|-------|
 | Backend | `backend-go/` | `cmd/server/main.go` — Go 1.25, Gin, GORM, PostgreSQL 15 |
 | Frontend | `frontend-next/` | `src/app/` — Next.js 16, React 19, TypeScript, Ant Design 6 |
+| Image Service | `services/image-service/` | `cmd/server/main.go` — Owner内部图片执行、持久化Job/Worker和安全Blob；不负责发布裁决 |
 
 API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT.
 
@@ -72,6 +79,7 @@ API prefix: `/api/v1`. Health: `/api/health`. All non-auth endpoints require JWT
 | Action | Command |
 |---|---|
 | Docker full stack | `docker compose up -d` |
+| Image Service test | `cd services/image-service && go test -race ./... && go vet ./...` |
 | Docker DB only | `docker compose up -d db` |
 | Backend dev | `cd backend-go && go run cmd/server/main.go` |
 | Backend test all | `cd backend-go && go test ./...` |
@@ -144,6 +152,7 @@ Scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/M1/trustscore/entropy
 | `SERVER_PORT` | `server.port` |
 | `REDIS_ADDR` / `REDIS_PASSWORD` | `redis.*` |
 | `SENTRY_DSN` | `sentry.dsn` |
+| `DEPLOYMENT_ENVIRONMENT` | `server.deployment_environment` (`development` / `acceptance` / `production`; empty follows server mode) |
 | `CORS_ALLOWED_ORIGINS` | `cors.allowed_origins` |
 | `METRICS_ENABLED` | `metrics.enabled` |
 

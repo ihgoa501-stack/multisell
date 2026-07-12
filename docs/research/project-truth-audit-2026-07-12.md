@@ -128,3 +128,46 @@ Owner 明确确认：凌镜的开发目标不是一个小工具、单一行动�
 | 外部 SaaS、多租户、订阅、计费和公共 API 因“完整平台”而解冻 | 不成立；仍为 `superseded / frozen` |
 
 唯一权威决策记录为 `docs/decisions/ADR-001-owner-complete-commerce-platform.md`。后续计划、TODO、PR、QA 和发布必须映射到该路径；无法映射的工作不得进入开发队列。
+
+## 1688浏览器采集重构的新增工程证据（同日后续）
+
+- `implemented / automated_verified`：Owner私人收藏、设备绑定插件凭证、页面预览确认、提交前关键摘要复读、URL与页面商品ID一致性、`sourcing1688.private.v1`、原始/结构/请求信封三类哈希、跨重启request_id对账、私人工作副本、多个选品任务关联展示和草稿转换幂等已进入当前代码并有聚焦自动测试。
+- `implemented / not externally_verified`：插件页面字段仍只是1688页面声明，最高为`quoted`；以上工程能力不证明供应商身份、价格、SKU、图片权利或可成交性真实。
+- `unknown`：迁移000101—000104尚未在真实PostgreSQL执行；真实登录Chrome与真实1688页面的逐字段、重复商品、下架/验证码、断网/重启验收尚未完成。
+- `incomplete`：私人采集失败记录、明确的`reconcile_required`持久状态、接口级载荷限制、每个任务独立草稿工作流和完整采集箱状态机仍在开发，不得将插件称为完成或生产可用。
+
+## 1688浏览器采集重构补充工程审计（2026-07-12 21:00 CST）
+
+本节取代上一节对工程缺口的旧快照，但不改变真实1688页面与经营事实仍为`unknown`的结论。
+
+| 声明 | 证据等级 |
+|---|---|
+| 私人采集失败记录、Owner隔离、有限错误码、持久化`receiving / saved / not_saved / reconcile_required`请求收据已实现 | `implemented / automated_verified`；sourcing1688、auth和routecatalog聚焦测试通过 |
+| 插件区分服务端明确未保存与仅404无收据；404不再被升级为确定未保存 | `implemented / automated_verified`；插件对账测试覆盖保存、明确未保存、无收据和断网 |
+| SKU解析失败只留下诊断记录，不再生成终局`not_saved`收据，仍允许按`parse_failed`保存私人收藏 | `implemented / automated_verified`；后端回归测试覆盖终局收据数量与SKU无阻断 |
+| 私人采集不再克隆或上传整页DOM；原始证据限于固定结构化payload及三类哈希 | `implemented / automated_verified`；DOM fixture明确断言无`raw_html` |
+| 插件已识别非商品页、未登录、验证码/风控、下架占位、页面加载中和SKU未稳定，并在初次读取及确认提交前失败关闭 | `implemented / automated_verified`；6类脱敏fixture及预览后页面变化回归测试 |
+| 采集箱显示六类关键字段完整度、多次观察数、任务关联数、状态筛选，并支持未进入事实链的私人收藏归档/恢复 | `implemented / automated_verified`；前端8项聚焦测试、Next生产构建95页面通过 |
+| 同一Owner商品的每个task link拥有独立草稿、乐观锁编辑、草稿审批、发布审批、执行与对账状态；旧商品级入口只投影主任务 | `implemented / automated_verified`；迁移000112、000118，sourcing1688聚焦测试与前端任务级测试通过；真实渠道执行仍为unknown |
+| 重复商品409只返回Owner隔离安全摘要，插件逐项显示本次与已有标题、价格、MOQ、供应商、SKU数、图片数和观察时间差异 | `implemented / automated_verified`；后端Owner隔离/泄漏测试和content-script DOM测试覆盖 |
+| 迁移000001—000120可在本机隔离真实PostgreSQL完成全量上行、最新回退/上行、全量回退及再次全量上行 | `manually_verified`（隔离数据库）；最终版本120，未触碰现有`multisell`库 |
+| 插件TypeScript与自动测试 | `automated_verified`；32项测试通过 |
+| `/sourcing1688`前端聚焦测试与生产构建 | `automated_verified`；16项聚焦测试、95页面Next生产构建通过 |
+| 后端全量测试 | `automated_verified`；当前工作树121个包共3259项测试通过，Go build与vet通过 |
+| 真实登录Chrome中的真实1688商品逐字段采集、插件侧载、重复观察和断网恢复 | `unknown`；浏览器安全策略阻止Agent直接导航该详情页，本次没有取得外部页面证据 |
+| 真实供应商身份、可成交价格、SKU/库存、图片权利和平台规则 | `unknown`；页面声明即使采集成功也最高为`quoted` |
+
+## 补充审计：市场机会权威链与货源权限收口（2026-07-12）
+
+本节记录 ADR-001 第 2 单元完成后的工程证据，不提升真实市场或真实经营事实等级。
+
+| 声明 | 等级 |
+|---|---|
+| 2—4 个候选可按八维证据、反证、冲突、unknown 和 Owner 决定同框比较 | `implemented / automated_verified` |
+| 系统评估、Owner 市场决定、商品机会及 Owner 机会批准已分离；新增证据使旧 verdict 失效 | `implemented / automated_verified` |
+| 研究批次、快照、案件、Owner、run、来源和观察时间由 PostgreSQL 外键/触发器约束，快照追加后不可改删 | `automated_verified`：真实 PostgreSQL 专项约束测试通过 |
+| 1688 受控采集、复核、草稿、验收、小Q只读和发布全边界使用冻结商品机会批准授权；experiment 只追踪 | `implemented / automated_verified` |
+| 全新临时 PostgreSQL 完成 108 对迁移全上行、全回退和再次上行至版本 111 | `automated_verified`；临时库已删除，未触碰现有数据 |
+| 后端全量 121 包 3207 个测试、Go build、相关 vet、407 条 mutation 路由安全清单 | `automated_verified` |
+| 前端候选比较测试、定向 ESLint 与 95 页面 Next.js 生产构建 | `automated_verified` |
+| 真实市场选择、真实商品机会、真实渠道权限、消费者付款及利润 | `unknown`；本次没有连接外部经营事实 |

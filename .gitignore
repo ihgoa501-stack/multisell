@@ -25,6 +25,8 @@ pom.xml
 *.class
 product-*/
 !frontend-next/src/app/(main)/product-hub/
+!frontend-next/src/app/(main)/product-images/
+!frontend-next/src/features/product-images/
 src/main/
 
 # Claude AI

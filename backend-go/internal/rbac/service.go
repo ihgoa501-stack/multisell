@@ -185,6 +185,7 @@ func (s *Service) GetUserPermissions(userID int64) ([]string, error) {
 		Distinct("permission.code").
 		Joins("JOIN role_permission ON role_permission.permission_id = permission.id").
 		Joins("JOIN user_role ON user_role.role_id = role_permission.role_id").
+		Joins("JOIN role ON role.id = user_role.role_id AND role.status = ?", 1).
 		Where("user_role.user_id = ?", userID).
 		Pluck("permission.code", &codes).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
