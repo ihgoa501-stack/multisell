@@ -194,17 +194,6 @@ func stageIndex(stage string) int {
 	}
 	return -1
 }
-func (s *Service) hasPassingGate(ctx context.Context, id string, ownerID int64, stage string) (bool, error) {
-	if err := s.requireOwner(ctx, id, ownerID); err != nil {
-		return false, err
-	}
-	var g GateDecision
-	err := s.db.WithContext(ctx).Where("experiment_id = ? AND stage = ?", id, stage).Order("id DESC").First(&g).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, nil
-	}
-	return g.Result == ResultPass, err
-}
 func (s *Service) requireOwner(ctx context.Context, id string, ownerID int64) error {
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&ExperimentCase{}).Where("experiment_id = ? AND owner_id = ?", id, ownerID).Count(&count).Error; err != nil {
@@ -391,10 +380,6 @@ type cashClosure struct {
 	RecoveredAt *time.Time
 }
 
-func (s *Service) linkedNumericID(ctx context.Context, experimentID, objectType string) (int64, error) {
-	return s.linkedNumericIDWithDB(s.db.WithContext(ctx), experimentID, objectType)
-}
-
 func (s *Service) linkedNumericIDWithDB(db *gorm.DB, experimentID, objectType string) (int64, error) {
 	var link ObjectLink
 	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("experiment_id = ? AND object_type = ?", experimentID, objectType).Order("id DESC").First(&link).Error; err != nil {
@@ -405,10 +390,6 @@ func (s *Service) linkedNumericIDWithDB(db *gorm.DB, experimentID, objectType st
 		return 0, fmt.Errorf("invalid %s link", objectType)
 	}
 	return id, nil
-}
-
-func (s *Service) validateProfitClosure(ctx context.Context, experimentID string) (*profitClosure, error) {
-	return s.validateProfitClosureWithDB(s.db.WithContext(ctx), experimentID)
 }
 
 func (s *Service) validateProfitClosureWithDB(db *gorm.DB, experimentID string) (*profitClosure, error) {
@@ -469,10 +450,6 @@ func (s *Service) validateProfitClosureWithDB(db *gorm.DB, experimentID string) 
 		return nil, errors.New("linked profit record is not final for the experiment order")
 	}
 	return &profitClosure{Revenue: p.Revenue, TotalCost: p.TotalCost, Profit: p.Profit, Currency: st.Currency}, nil
-}
-
-func (s *Service) validateCashClosure(ctx context.Context, experimentID string) (*cashClosure, error) {
-	return s.validateCashClosureWithDB(s.db.WithContext(ctx), experimentID)
 }
 
 func (s *Service) validateCashClosureWithDB(db *gorm.DB, experimentID string) (*cashClosure, error) {

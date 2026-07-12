@@ -156,7 +156,7 @@ describe('ApiClient', () => {
 
   it('refreshes token on 401 and retries the request', async () => {
     let callCount = 0;
-    fetchMock.mockImplementation(async (url: string, options: any) => {
+    fetchMock.mockImplementation(async (url: string) => {
       callCount++;
       const s = url.toString();
       // Refresh endpoint
@@ -222,7 +222,7 @@ describe('ApiClient', () => {
     });
     let refreshCallCount = 0;
 
-    fetchMock.mockImplementation(async (url: string, options: any) => {
+    fetchMock.mockImplementation(async (url: string, options: RequestInit) => {
       const s = url.toString();
       if (s.includes('/v1/auth/refresh')) {
         refreshCallCount++;

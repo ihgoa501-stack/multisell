@@ -41,13 +41,13 @@ type Route struct {
 }
 
 type ModelField struct {
-	Name     string
-	Type     string
-	JSONTag  string
-	GORMCol  string
-	IsID     bool
-	NotNull  bool
-	Default  string
+	Name    string
+	Type    string
+	JSONTag string
+	GORMCol string
+	IsID    bool
+	NotNull bool
+	Default string
 }
 
 type ModelInfo struct {
@@ -223,7 +223,10 @@ func parseMounts(routerPath string) map[string]Mount {
 		varName := content[loc[2]:loc[3]]
 		already := false
 		for _, g := range groups {
-			if g.variable == varName { already = true; break }
+			if g.variable == varName {
+				already = true
+				break
+			}
 		}
 		if !already {
 			subPfx := ""
@@ -248,13 +251,17 @@ func parseMounts(routerPath string) map[string]Mount {
 
 func findLineStart(s string, pos int) int {
 	ls := strings.LastIndex(s[:pos], "\n")
-	if ls < 0 { return 0 }
+	if ls < 0 {
+		return 0
+	}
 	return ls + 1
 }
 
 func findLineEnd(s string, pos int) int {
 	le := strings.Index(s[pos:], "\n")
-	if le < 0 { return len(s) - pos }
+	if le < 0 {
+		return len(s) - pos
+	}
 	return le
 }
 
@@ -278,16 +285,26 @@ func parseModule(name, routesFile, modelFile string, mounts map[string]Mount) Mo
 				return true
 			}
 			call, ok := as.Rhs[0].(*ast.CallExpr)
-			if !ok { return true }
+			if !ok {
+				return true
+			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "Group" { return true }
+			if !ok || sel.Sel.Name != "Group" {
+				return true
+			}
 			receiver := ""
-			if id, ok := sel.X.(*ast.Ident); ok { receiver = id.Name }
+			if id, ok := sel.X.(*ast.Ident); ok {
+				receiver = id.Name
+			}
 			parentPfx := groupPfx[receiver]
-			if parentPfx == "" { return true }
+			if parentPfx == "" {
+				return true
+			}
 			subPfx := ""
 			if len(call.Args) > 0 {
-				if lit, ok := call.Args[0].(*ast.BasicLit); ok { subPfx = strings.Trim(lit.Value, "\"") }
+				if lit, ok := call.Args[0].(*ast.BasicLit); ok {
+					subPfx = strings.Trim(lit.Value, "\"")
+				}
 			}
 			groupPfx[as.Lhs[0].(*ast.Ident).Name] = parentPfx + subPfx
 			return true
@@ -296,29 +313,44 @@ func parseModule(name, routesFile, modelFile string, mounts map[string]Mount) Mo
 		// Extract route registrations
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok { return true }
+			if !ok {
+				return true
+			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok { return true }
+			if !ok {
+				return true
+			}
 			method := sel.Sel.Name
 			switch method {
 			case "GET", "POST", "PUT", "DELETE", "PATCH":
-			default: return true
+			default:
+				return true
 			}
-			if len(call.Args) < 2 { return true }
+			if len(call.Args) < 2 {
+				return true
+			}
 			pathLit, ok := call.Args[0].(*ast.BasicLit)
-			if !ok { return true }
+			if !ok {
+				return true
+			}
 			subPath := strings.Trim(pathLit.Value, "\"")
 
 			handler := ""
 			switch h := call.Args[1].(type) {
-			case *ast.Ident: handler = h.Name
+			case *ast.Ident:
+				handler = h.Name
 			case *ast.SelectorExpr:
-				if id, ok := h.X.(*ast.Ident); ok { handler = id.Name + "." + h.Sel.Name
-				} else { handler = h.Sel.Name }
+				if id, ok := h.X.(*ast.Ident); ok {
+					handler = id.Name + "." + h.Sel.Name
+				} else {
+					handler = h.Sel.Name
+				}
 			}
 
 			receiver := ""
-			if id, ok := sel.X.(*ast.Ident); ok { receiver = id.Name }
+			if id, ok := sel.X.(*ast.Ident); ok {
+				receiver = id.Name
+			}
 			fullPath := strings.ReplaceAll(groupPfx[receiver]+subPath, "//", "/")
 			m.Routes = append(m.Routes, Route{Method: method, SubPath: subPath, FullPath: fullPath, Handler: handler})
 			return true
@@ -332,45 +364,78 @@ func parseModule(name, routesFile, modelFile string, mounts map[string]Mount) Mo
 
 func parseModelFields(fset *token.FileSet, modelFile string, m *Module) {
 	f, err := parser.ParseFile(fset, modelFile, nil, parser.ParseComments)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// TableName methods
 	tableNames := map[string]string{}
 	ast.Inspect(f, func(n ast.Node) bool {
 		fd, ok := n.(*ast.FuncDecl)
-		if !ok || fd.Name.Name != "TableName" || fd.Recv == nil || len(fd.Recv.List) != 1 { return true }
+		if !ok || fd.Name.Name != "TableName" || fd.Recv == nil || len(fd.Recv.List) != 1 {
+			return true
+		}
 		t := fd.Recv.List[0].Type
 		typeName := ""
-		if star, ok := t.(*ast.StarExpr); ok { if id, ok := star.X.(*ast.Ident); ok { typeName = id.Name }
-		} else if id, ok := t.(*ast.Ident); ok { typeName = id.Name }
-		if typeName == "" || len(fd.Body.List) == 0 { return true }
+		if star, ok := t.(*ast.StarExpr); ok {
+			if id, ok := star.X.(*ast.Ident); ok {
+				typeName = id.Name
+			}
+		} else if id, ok := t.(*ast.Ident); ok {
+			typeName = id.Name
+		}
+		if typeName == "" || len(fd.Body.List) == 0 {
+			return true
+		}
 		if ret, ok := fd.Body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
-			if lit, ok := ret.Results[0].(*ast.BasicLit); ok { tableNames[typeName] = strings.Trim(lit.Value, "\"") }
+			if lit, ok := ret.Results[0].(*ast.BasicLit); ok {
+				tableNames[typeName] = strings.Trim(lit.Value, "\"")
+			}
 		}
 		return true
 	})
 
 	for _, decl := range f.Decls {
 		gd, ok := decl.(*ast.GenDecl)
-		if !ok || gd.Tok != token.TYPE { continue }
+		if !ok || gd.Tok != token.TYPE {
+			continue
+		}
 		for _, spec := range gd.Specs {
 			ts, ok := spec.(*ast.TypeSpec)
-			if !ok || !ts.Name.IsExported() { continue }
+			if !ok || !ts.Name.IsExported() {
+				continue
+			}
 			st, ok := ts.Type.(*ast.StructType)
-			if !ok || st.Fields == nil { continue }
+			if !ok || st.Fields == nil {
+				continue
+			}
 			mi := ModelInfo{Name: ts.Name.Name, TableName: tableNames[ts.Name.Name]}
 			for _, field := range st.Fields.List {
-				if len(field.Names) == 0 { continue }
+				if len(field.Names) == 0 {
+					continue
+				}
 				fn := field.Names[0]
-				if !fn.IsExported() { continue }
+				if !fn.IsExported() {
+					continue
+				}
 				mf := ModelField{Name: fn.Name, Type: exprString(field.Type)}
 				if field.Tag != nil {
 					raw := field.Tag.Value
-					if jm := jsonTagRe.FindStringSubmatch(raw); len(jm) > 0 { mf.JSONTag = jm[1] }
-					if cm := gormColRe.FindStringSubmatch(raw); len(cm) > 0 { mf.GORMCol = cm[1] }
-					if gormNotNullRe.MatchString(raw) { mf.NotNull = true }
-					if dm := gormDefaultRe.FindStringSubmatch(raw); len(dm) > 0 { mf.Default = dm[1] }
-					if gormPKRe.MatchString(raw) { mf.IsID = true }
+					if jm := jsonTagRe.FindStringSubmatch(raw); len(jm) > 0 {
+						mf.JSONTag = jm[1]
+					}
+					if cm := gormColRe.FindStringSubmatch(raw); len(cm) > 0 {
+						mf.GORMCol = cm[1]
+					}
+					if gormNotNullRe.MatchString(raw) {
+						mf.NotNull = true
+					}
+					if dm := gormDefaultRe.FindStringSubmatch(raw); len(dm) > 0 {
+						mf.Default = dm[1]
+					}
+					if gormPKRe.MatchString(raw) {
+						mf.IsID = true
+					}
 				}
 				mi.Fields = append(mi.Fields, mf)
 			}
@@ -380,24 +445,32 @@ func parseModelFields(fset *token.FileSet, modelFile string, m *Module) {
 }
 
 var (
-	jsonTagRe      = regexp.MustCompile(`json:"([^"]*)"`)
-	gormColRe      = regexp.MustCompile(`column:([^;"]+)`)
-	gormNotNullRe  = regexp.MustCompile(`not null`)
-	gormDefaultRe  = regexp.MustCompile(`default:([^;"]+)`)
-	gormPKRe       = regexp.MustCompile(`primaryKey`)
+	jsonTagRe     = regexp.MustCompile(`json:"([^"]*)"`)
+	gormColRe     = regexp.MustCompile(`column:([^;"]+)`)
+	gormNotNullRe = regexp.MustCompile(`not null`)
+	gormDefaultRe = regexp.MustCompile(`default:([^;"]+)`)
+	gormPKRe      = regexp.MustCompile(`primaryKey`)
 )
 
 func exprString(e ast.Expr) string {
 	switch t := e.(type) {
-	case *ast.Ident:      return t.Name
-	case *ast.StarExpr:   return "*" + exprString(t.X)
-	case *ast.SelectorExpr: return exprString(t.X) + "." + t.Sel.Name
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		return "*" + exprString(t.X)
+	case *ast.SelectorExpr:
+		return exprString(t.X) + "." + t.Sel.Name
 	case *ast.ArrayType:
-		if t.Len == nil { return "[]" + exprString(t.Elt) }
+		if t.Len == nil {
+			return "[]" + exprString(t.Elt)
+		}
 		return fmt.Sprintf("[%s]%s", exprString(t.Len), exprString(t.Elt))
-	case *ast.MapType:    return fmt.Sprintf("map[%s]%s", exprString(t.Key), exprString(t.Value))
-	case *ast.InterfaceType: return "interface{}"
-	default:              return fmt.Sprintf("%T", e)
+	case *ast.MapType:
+		return fmt.Sprintf("map[%s]%s", exprString(t.Key), exprString(t.Value))
+	case *ast.InterfaceType:
+		return "interface{}"
+	default:
+		return fmt.Sprintf("%T", e)
 	}
 }
 
@@ -406,7 +479,9 @@ func exprString(e ast.Expr) string {
 func parseSchedulerTasks(routerPath string) []SchedTask {
 	var tasks []SchedTask
 	data, err := os.ReadFile(routerPath)
-	if err != nil { return tasks }
+	if err != nil {
+		return tasks
+	}
 	content := string(data)
 
 	// Match: sched.Register(scheduler.Task{...})
@@ -418,7 +493,9 @@ func parseSchedulerTasks(routerPath string) []SchedTask {
 		dp := extractStr(block, `DecisionPoint:\s*"([^"]+)"`)
 		interval := extractStr(block, `Interval:\s*([^,}]+)`)
 		desc := extractStr(block, `Description:\s*"([^"]*)"`)
-		if id == "" { continue }
+		if id == "" {
+			continue
+		}
 		// Normalize interval
 		interval = normalizeInterval(interval)
 		tasks = append(tasks, SchedTask{
@@ -434,10 +511,14 @@ func normalizeInterval(s string) string {
 	s = strings.TrimSpace(s)
 	// time.Minute * 5 → 5m, time.Hour * 1 → 1h
 	if strings.Contains(s, "time.Minute") {
-		if n := extractInt(s); n > 0 { return fmt.Sprintf("%dm", n) }
+		if n := extractInt(s); n > 0 {
+			return fmt.Sprintf("%dm", n)
+		}
 	}
 	if strings.Contains(s, "time.Hour") {
-		if n := extractInt(s); n > 0 { return fmt.Sprintf("%dh", n) }
+		if n := extractInt(s); n > 0 {
+			return fmt.Sprintf("%dh", n)
+		}
 	}
 	return s
 }
@@ -453,7 +534,9 @@ func extractInt(s string) int {
 
 func extractStr(s, pattern string) string {
 	re := regexp.MustCompile(pattern)
-	if m := re.FindStringSubmatch(s); len(m) > 1 { return m[1] }
+	if m := re.FindStringSubmatch(s); len(m) > 1 {
+		return m[1]
+	}
 	return ""
 }
 
@@ -462,7 +545,9 @@ func extractStr(s, pattern string) string {
 func parseSubscriptions(routerPath string) []Subscription {
 	var subs []Subscription
 	data, err := os.ReadFile(routerPath)
-	if err != nil { return subs }
+	if err != nil {
+		return subs
+	}
 	content := string(data)
 
 	// Match: bus.Subscribe("topic", func...) — extract topic and a brief description
@@ -505,7 +590,9 @@ func parseAgents(repoRoot string) []AgentDef {
 		if m := regexp.MustCompile(`ID:\s*"(\w+)"`).FindStringSubmatch(trimmed); len(m) > 0 {
 			currentID = m[1]
 		}
-		if currentID == "" { continue }
+		if currentID == "" {
+			continue
+		}
 
 		if m := regexp.MustCompile(`Name:\s*"([^"]+)"`).FindStringSubmatch(trimmed); len(m) > 0 {
 			setAgentField(&agents, currentID, 1, m[1])
@@ -547,10 +634,14 @@ func setAgentField(agents *[]AgentDef, id string, field int, val string) {
 	for i := range *agents {
 		if (*agents)[i].ID == id {
 			switch field {
-			case 1: (*agents)[i].Name = val
-			case 2: (*agents)[i].Squad = val
-			case 3: (*agents)[i].Description = val
-			case 4: (*agents)[i].Autonomy = val
+			case 1:
+				(*agents)[i].Name = val
+			case 2:
+				(*agents)[i].Squad = val
+			case 3:
+				(*agents)[i].Description = val
+			case 4:
+				(*agents)[i].Autonomy = val
 			}
 		}
 	}
@@ -569,9 +660,13 @@ func setAgentDps(agents *[]AgentDef, id string, dps []string) {
 func parseFrontendPages(mainDir string) []FrontendPage {
 	var pages []FrontendPage
 	entries, err := os.ReadDir(mainDir)
-	if err != nil { return pages }
+	if err != nil {
+		return pages
+	}
 	for _, e := range entries {
-		if !e.IsDir() { continue }
+		if !e.IsDir() {
+			continue
+		}
 		name := e.Name()
 		pagePath := name
 		hasPage := false
@@ -607,19 +702,27 @@ func parseFrontendPages(mainDir string) []FrontendPage {
 func writeModuleDoc(path string, m Module) {
 	os.MkdirAll(filepath.Dir(path), 0755)
 	f, _ := os.Create(path)
-	if f == nil { return }
+	if f == nil {
+		return
+	}
 	defer f.Close()
 
 	fmt.Fprintf(f, "# Module: `%s`\n\n", m.Name)
 	fmt.Fprintf(f, "Package: `backend-go/internal/domain/%s/`\n\n", m.Name)
-	if m.Prefix != "" { fmt.Fprintf(f, "**Base mount prefix:** `%s`\n", m.Prefix) }
-	if m.Permission != "" { fmt.Fprintf(f, "**Required permission:** `%s`\n", m.Permission) }
+	if m.Prefix != "" {
+		fmt.Fprintf(f, "**Base mount prefix:** `%s`\n", m.Prefix)
+	}
+	if m.Permission != "" {
+		fmt.Fprintf(f, "**Required permission:** `%s`\n", m.Permission)
+	}
 	fmt.Fprintln(f)
 
 	if len(m.Routes) > 0 {
 		fmt.Fprintf(f, "## API Routes\n\n| Method | Path | Handler |\n|--------|------|--------|\n")
 		sort.Slice(m.Routes, func(i, j int) bool {
-			if m.Routes[i].FullPath != m.Routes[j].FullPath { return m.Routes[i].FullPath < m.Routes[j].FullPath }
+			if m.Routes[i].FullPath != m.Routes[j].FullPath {
+				return m.Routes[i].FullPath < m.Routes[j].FullPath
+			}
 			return m.Routes[i].Method < m.Routes[j].Method
 		})
 		for _, r := range m.Routes {
@@ -632,15 +735,25 @@ func writeModuleDoc(path string, m Module) {
 		fmt.Fprintf(f, "## Models\n\n")
 		for _, mi := range m.Models {
 			table := mi.TableName
-			if table == "" { table = "—" }
+			if table == "" {
+				table = "—"
+			}
 			fmt.Fprintf(f, "### `%s`\n**DB table:** `%s`\n\n| Field | Type | JSON | Column | Constraints |\n|-------|------|------|--------|-------------|\n", mi.Name, table)
 			for _, mf := range mi.Fields {
 				var cons []string
-				if mf.IsID { cons = append(cons, "PK") }
-				if mf.NotNull { cons = append(cons, "NOT NULL") }
-				if mf.Default != "" { cons = append(cons, "default:"+mf.Default) }
+				if mf.IsID {
+					cons = append(cons, "PK")
+				}
+				if mf.NotNull {
+					cons = append(cons, "NOT NULL")
+				}
+				if mf.Default != "" {
+					cons = append(cons, "default:"+mf.Default)
+				}
 				col := mf.GORMCol
-				if col == "" { col = "—" }
+				if col == "" {
+					col = "—"
+				}
 				fmt.Fprintf(f, "| `%s` | `%s` | `%s` | `%s` | %s |\n", mf.Name, mf.Type, mf.JSONTag, col, strings.Join(cons, ", "))
 			}
 			fmt.Fprintln(f)
@@ -653,11 +766,15 @@ func writeModuleDoc(path string, m Module) {
 func writeCatalogDoc(path string, modules []Module) {
 	os.MkdirAll(filepath.Dir(path), 0755)
 	f, _ := os.Create(path)
-	if f == nil { return }
+	if f == nil {
+		return
+	}
 	defer f.Close()
 
 	totalRoutes := 0
-	for _, m := range modules { totalRoutes += len(m.Routes) }
+	for _, m := range modules {
+		totalRoutes += len(m.Routes)
+	}
 	fmt.Fprintf(f, "# Route Catalog (auto-generated)\n\n> Total modules: %d | Total routes: %d\n\n", len(modules), totalRoutes)
 
 	sortedMods := append([]Module{}, modules...)
@@ -665,29 +782,45 @@ func writeCatalogDoc(path string, modules []Module) {
 	fmt.Fprintf(f, "## Overview\n\n| Module | Routes | Permission | Package |\n|--------|--------|------------|--------|\n")
 	for _, m := range sortedMods {
 		perm := m.Permission
-		if perm == "" { perm = "—" }
+		if perm == "" {
+			perm = "—"
+		}
 		fmt.Fprintf(f, "| [`%s`](%s.md) | %d | `%s` | `domain/%s/` |\n", m.Name, m.Name, len(m.Routes), perm, m.Name)
 	}
 	fmt.Fprintln(f)
 
+	firstModule := true
 	for _, m := range modules {
-		if len(m.Routes) == 0 { continue }
+		if len(m.Routes) == 0 {
+			continue
+		}
+		if !firstModule {
+			fmt.Fprintln(f)
+		}
+		firstModule = false
 		fmt.Fprintf(f, "## %s\n\n", m.Name)
-		if m.Permission != "" { fmt.Fprintf(f, "**Permission:** `%s`  \n", m.Permission) }
+		if m.Permission != "" {
+			fmt.Fprintf(f, "**Permission:** `%s`\n\n", m.Permission)
+		}
 		fmt.Fprintf(f, "**Prefix:** `%s`\n\n| Method | Path | Handler |\n|--------|------|--------|\n", m.Prefix)
 		sort.Slice(m.Routes, func(i, j int) bool {
-			if m.Routes[i].FullPath != m.Routes[j].FullPath { return m.Routes[i].FullPath < m.Routes[j].FullPath }
+			if m.Routes[i].FullPath != m.Routes[j].FullPath {
+				return m.Routes[i].FullPath < m.Routes[j].FullPath
+			}
 			return m.Routes[i].Method < m.Routes[j].Method
 		})
-		for _, r := range m.Routes { fmt.Fprintf(f, "| `%s` | `%s` | `%s` |\n", r.Method, r.FullPath, r.Handler) }
-		fmt.Fprintln(f)
+		for _, r := range m.Routes {
+			fmt.Fprintf(f, "| `%s` | `%s` | `%s` |\n", r.Method, r.FullPath, r.Handler)
+		}
 	}
 }
 
 func writeIndexDoc(path string, modules []Module) {
 	os.MkdirAll(filepath.Dir(path), 0755)
 	f, _ := os.Create(path)
-	if f == nil { return }
+	if f == nil {
+		return
+	}
 	defer f.Close()
 
 	fmt.Fprintf(f, "# Auto-generated Module Reference\n\n")
@@ -695,7 +828,9 @@ func writeIndexDoc(path string, modules []Module) {
 	fmt.Fprintf(f, "| Module | Routes | Models | Permission |\n|--------|--------|--------|------------|\n")
 	for _, m := range modules {
 		perm := m.Permission
-		if perm == "" { perm = "—" }
+		if perm == "" {
+			perm = "—"
+		}
 		fmt.Fprintf(f, "| [%s](%s.md) | %d | %d | `%s` |\n", m.Name, m.Name, len(m.Routes), len(m.Models), perm)
 	}
 }
@@ -703,7 +838,9 @@ func writeIndexDoc(path string, modules []Module) {
 func writeFrontendPagesDoc(path string, pages []FrontendPage) {
 	os.MkdirAll(filepath.Dir(path), 0755)
 	f, _ := os.Create(path)
-	if f == nil { return }
+	if f == nil {
+		return
+	}
 	defer f.Close()
 
 	fmt.Fprintf(f, "# Frontend Pages (auto-generated)\n\n")
@@ -711,9 +848,13 @@ func writeFrontendPagesDoc(path string, pages []FrontendPage) {
 	fmt.Fprintf(f, "| Route | Has page.tsx | Dynamic |\n|-------|-------------|---------|\n")
 	for _, p := range pages {
 		dynamic := ""
-		if p.HasID { dynamic = "✅" }
+		if p.HasID {
+			dynamic = "✅"
+		}
 		pageStatus := "✅"
-		if !p.HasPage { pageStatus = "—" }
+		if !p.HasPage {
+			pageStatus = "—"
+		}
 		fmt.Fprintf(f, "| `/%s` | %s | %s |\n", p.Path, pageStatus, dynamic)
 	}
 	fmt.Fprintln(f)
@@ -724,7 +865,9 @@ func writeFrontendPagesDoc(path string, pages []FrontendPage) {
 func writeEventFlowDoc(path string, tasks []SchedTask, subs []Subscription) {
 	os.MkdirAll(filepath.Dir(path), 0755)
 	f, _ := os.Create(path)
-	if f == nil { return }
+	if f == nil {
+		return
+	}
 	defer f.Close()
 
 	fmt.Fprintf(f, "# Event Flow (auto-generated)\n\n")
@@ -772,7 +915,9 @@ func globStyle(topic string) string {
 func writeAgentRosterDoc(path string, agents []AgentDef) {
 	os.MkdirAll(filepath.Dir(path), 0755)
 	f, _ := os.Create(path)
-	if f == nil { return }
+	if f == nil {
+		return
+	}
 	defer f.Close()
 
 	fmt.Fprintf(f, "# Agent Roster (auto-generated)\n\n")

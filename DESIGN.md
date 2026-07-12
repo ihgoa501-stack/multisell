@@ -1,7 +1,7 @@
 # Design System — 凌镜 LingMirror
 
 > status: `historical design context / unconfirmed specifics`
-> authority: 视觉原则参考，不定义当前产品、市场或页面优先级；当前入口见 `docs/OCEAN_GOAL.md`、`docs/PRODUCT.md` 和 `docs/CURRENT.md`
+> authority: 视觉原则参考，不定义当前产品、市场或页面优先级；当前入口见 [海洋目标](docs/OCEAN_GOAL.md)、[产品方向](docs/PRODUCT.md) 和 [当前状态](docs/CURRENT.md)
 > 下文 Owner 自用实验、Ozon 和固定界面优先级均为历史语境，只有进入对应已确认湖泊后才能重新采用。
 
 ## Product Context

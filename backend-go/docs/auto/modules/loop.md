@@ -29,6 +29,7 @@ Package: `backend-go/internal/domain/loop/`
 | `Reason` | `string` | `reason` | `reason` |  |
 | `RiskFlags` | `string` | `risk_flags` | `risk_flags` |  |
 | `CreatedListingTaskID` | `*int64` | `created_listing_task_id,omitempty` | `created_listing_task_id` |  |
+| `ApprovalID` | `*int64` | `approval_id,omitempty` | `approval_id` |  |
 | `TriggeredBy` | `string` | `triggered_by` | `triggered_by` |  |
 | `FeedbackStatus` | `string` | `feedback_status` | `feedback_status` | default:pending |
 | `FeedbackNote` | `string` | `feedback_note,omitempty` | `feedback_note` |  |
@@ -53,6 +54,7 @@ Package: `backend-go/internal/domain/loop/`
 | `Reason` | `string` | `reason` | `—` |  |
 | `RiskFlags` | `[]string` | `risk_flags` | `—` |  |
 | `ListingTaskID` | `*int64` | `listing_task_id,omitempty` | `—` |  |
+| `ApprovalID` | `*int64` | `approval_id,omitempty` | `—` |  |
 | `Error` | `string` | `error,omitempty` | `—` |  |
 
 ### `EvaluateInput`

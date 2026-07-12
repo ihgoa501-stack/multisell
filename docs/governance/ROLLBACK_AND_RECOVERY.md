@@ -113,11 +113,11 @@ pg_ctl -D /var/lib/postgresql/data promote
 ```bash
 # Step 1: Identify the migration to roll back
 # Migrations are applied in version order. To roll back version 000068:
-# The down migration is at: backend-go/migrations/000068_add_execution_mode.down.sql
+# The down migration is at: backend-go/migrations/000085_add_execution_mode.down.sql
 
 # Step 2: Apply the down migration
 psql -h localhost -U multisell_user -d multisell \
-  -f backend-go/migrations/000068_add_execution_mode.down.sql
+  -f backend-go/migrations/000085_add_execution_mode.down.sql
 
 # Step 3: Remove the migration record from schema_migrations
 psql -h localhost -U multisell_user -d multisell \
