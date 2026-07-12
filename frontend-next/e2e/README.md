@@ -47,6 +47,8 @@ npx playwright test tests/business-loop.spec.ts
 
 它覆盖 `/demand-cases` 与 `/experiments` 的隔离浏览器数据、证据不足拒绝路径，以及最终利润与现金回收的独立展示。通过仅代表 `automated_verified`，不代表真实市场、真实成交或最终利润成立。
 
+`login.spec.ts`、`main-chain.spec.ts`、`owner-approval.spec.ts` 和 `products.spec.ts` 保留为历史测试，但其断言依赖已冻结的 AgentOS/Owner Mock/旧商品页面，不再进入当前发布门。恢复它们前必须先确认对应产品方向，而不是把旧 Mock 重新建设成当前功能。
+
 ### CI 配置
 
 ```yaml

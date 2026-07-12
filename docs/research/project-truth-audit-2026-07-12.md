@@ -12,7 +12,7 @@
 - `aftersales_closed` 要求签收后满 14 天，并阻止当前订单仍存在未终结退货、退款或 dispute。
 - 现金回收按同一订单、同一可信结算的已对账净额核对；同币种多笔到账按唯一交易聚合，允许 0.01 舍入误差。
 - 默认侧栏和活动通知不再显示固定平台任务、伪造数量或动态伪造时间；无数据时显示明确空状态。
-- 后端相关包测试 79 个通过；前端空状态测试通过；Next 构建通过；新增 `/demand-cases` 与 `/experiments` Playwright 回归 2 个通过。
+- 后端相关包测试 79 个通过；前端空状态测试通过；Next 构建通过；当前发布门 Playwright 回归 11 个通过，其中新增 `/demand-cases` 与 `/experiments` 回归 2 个。
 
 ## inferred / unknown
 
