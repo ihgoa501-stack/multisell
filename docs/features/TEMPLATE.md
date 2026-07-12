@@ -26,6 +26,18 @@
 
 <!-- 依赖其他功能或外部服务 -->
 
+## 小Q接入
+
+- `xiao_q_support`: active / deferred / not_applicable
+- 原因：
+- Capability：
+- 权限：
+- 审批与审计：
+- 验证测试：
+- 小Q如何向 Owner 解释结果：
+
+<!-- 规则见 docs/governance/XIAOQ_CAPABILITY_CONTRACT.md。功能存在不等于已接入小Q。 -->
+
 ## 备注
 
 <!-- 参考链接、竞品参考等 -->

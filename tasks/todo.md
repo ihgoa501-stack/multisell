@@ -1,128 +1,344 @@
-# Todo: AI-Native AgentOS Execution Path
+# 凌镜小Q与 Evidence Workshop 执行清单
 
-> [!CAUTION]
-> **2026-07-11 已冻结。** 当前任务唯一事实源是根目录 `TODOS.md`。本清单不得驱动 AgentOS、外部 SaaS 或多产品扩张。
+> 来源：`tasks/plan.md`
+> 状态：仅 Phase 0 待 Owner 批准；后续阶段不得提前实施
+> 任务原则：每项任务须在单次专注开发中完成，超过约 5 个文件则继续拆分。
 
-Source plan: `tasks/plan.md`
-Source spec: `docs/specs/2026-07-09-ai-native-agentos-execution-path.md`
+## Phase 0：小Q边界与基线
 
-## Phase 0: Product Loop E2E
+### Task 0.0：冻结小Q产品与身份契约
 
-- [x] Task: Map the current Product Loop route and API path.
-  - Acceptance: Document the actual path from candidate page to recommendation, approval, listing task, and result review.
-  - Verify: Route/API notes are added to the task PR or follow-up doc.
-  - Files: read-only first; likely `frontend-next/src/app/(main)/candidates`, `frontend-next/src/app/(main)/owner`, `frontend-next/src/app/(main)/listing-tasks`, backend candidate/listing/approval routes.
-  - Note 2026-07-10: Agent 1 completed mapping. Found 3 critical gaps (decision-queue 404, missing feedback route, listing task missing ApprovalID) and 2 high gaps (duplicate approval in OwnerPage, execute precondition block). See `docs/superpowers/plans/2026-07-10-owner-cockpit-audit.md`.
+**说明：** 定义小Q为凌镜唯一 Owner Agent，固定内部 ID、职责、禁止事项、会话边界和 Owner 可理解的行为说明。
 
-- [x] Task: Define minimum Product Loop seed data.
-  - Acceptance: Five scenarios are defined: profitable listing, loss-making listing, missing logistics fee, missing platform/category fee, approval-to-sandbox listing task.
-  - Verify: Seed data can be reset and re-run without manual cleanup.
-  - Files: `scripts/e2e_seed.sh`, E2E fixtures or backend seed helpers.
-  - Note 2026-07-10: Agent 2 added 5 scenarios to `backend-go/scripts/demo_seed.go` (~490 lines, idempotent inserts). No scripts/e2e_seed.sh changes needed. See `docs/superpowers/plans/e2e-seed-design-2026-07-10.md`.
+**验收：**
+- [ ] 稳定身份为 `xiao_q`，显示名为“小Q”；
+- [ ] 小Q只能通过登记 Capability 调用系统；
+- [ ] 明确禁止直接数据库写入、绕过审批、把推断写成事实；
+- [ ] 小Q是内部自用入口，不产生外部软件用户范围。
 
-- [x] Task: Fix Product Loop API mismatches found by the mapping.
-  - Acceptance: No 404/400/path/enum mismatch blocks the main Product Loop.
-  - Verify: Manual browser run reaches approval or controlled execution.
-  - Files: focused frontend API calls and matching backend handlers only.
-  - Note 2026-07-10: Fixed 3 critical blockers:
-    1. Frontend: changed `/v1/owner/decision-queue` (404) to `/v1/owner/suggestions` with response mapping
-    2. Backend: added `POST /listing-task/:task_id/feedback` route + handler (was 404)
-    3. Backend: set `ApprovalID` on listing task in `loop/service.go` Evaluate (was breaking execute precondition)
+**验证：** 对照 Owner Direction、Platform Constitution 和 Kernel Contracts 审查。
 
-- [ ] Task: Add Product Loop Playwright E2E.
-  - Acceptance: One test covers candidate -> recommendation -> approval -> sandbox listing task -> result review.
-  - Verify: `cd frontend-next/e2e && npx playwright test`.
-  - Files: `frontend-next/e2e/tests/*`, seed fixtures/scripts.
+**依赖：** 无。
+**预计规模：** S，文档 1—2 个文件。
 
-## Phase 1: Action Gate Closure
+### Task 0.0B：冻结 Capability Contract
 
-- [x] Task: Audit Product Loop mutation paths.
-  - Acceptance: Identify whether Owner/listing/integration execution bypasses `AgentAction`.
-  - Verify: List each mutation path as gated, exception, or needs fix.
-  - Files: backend AI, listing task, approval, integrations routes/services.
-  - Note 2026-07-10: Agent 3 completed full 13-path audit. Found 4 must-fix bypasses: (M1) `listing.read` RBAC gates all listing task CRUD; (M2) approval review directly syncs unified_action table skipping ai.action gate; (M3) approval routes have no RBAC; (M4) owner RecordFeedback has no RBAC. See `docs/superpowers/plans/action-gate-audit-2026-07-10.md`.
+**说明：** 定义以后每个业务模块如何向小Q开放读取、建议和动作能力，以及新增功能怎样同步接入小Q。
 
-- [ ] Task: Close high-risk bypasses in Product Loop.
-  - Acceptance: Product publish/listing high-risk mutations are approval-gated and audited.
-  - Verify: Focused backend tests plus Product Loop E2E.
-  - Files: no more than one vertical slice at a time.
+**验收：**
+- [ ] schema 包含风险、权限、审批、副作用、幂等、证据、超时、审计和解释；
+- [ ] 支持 active/deprecated/deferred 生命周期；
+- [ ] 新功能 PR/计划必须声明 `xiao_q_support`；
+- [ ] 没有 Capability 的内部方法不能被小Q直接调用。
 
-- [ ] Task: Add failure and blocked states to Product Loop actions.
-  - Acceptance: Owner can see failed/blocked status and recovery note.
-  - Verify: E2E includes one blocked or missing-data scenario.
-  - Files: action/listing task backend and relevant UI.
+**验证：** 用 demandcase read 和 market approve 两个例子走查合同。
 
-## Phase 2: CI / E2E Gate
+**依赖：** Task 0.0。
+**预计规模：** S，文档 1—2 个文件。
 
-- [ ] Task: Make seed path reproducible.
-  - Acceptance: Seed/reset command works from repo root and E2E working directory.
-  - Verify: Run seed twice; second run is idempotent.
-  - Files: `scripts/e2e_seed.sh`, `frontend-next/e2e` config.
-  - Note 2026-07-10: Agent 6 audit found `scripts/e2e_seed.sh` already works from any CWD and is idempotent. No changes needed.
-  - Critical finding: `scripts/verify_all.sh` defaults to `RUN_E2E=1` but runs E2E without seeding first — order must be seed → verify. Recommended fix: change default to `RUN_E2E="${RUN_E2E:-0}"` and add health check before E2E.
+### Task 0.1：建立 AI 能力事实清单
 
-- [ ] Task: Add Product Loop E2E to verification command.
-  - Acceptance: `scripts/verify_all.sh` or equivalent can run Product Loop E2E with backend/frontend dependencies.
-  - Verify: Verification command output is archived or copied into status docs.
-  - Files: `scripts/verify_all.sh`, E2E config.
+**说明：** 盘点当前真实 provider、stub/fallback、工具、MCP、Trace、成本控制、审批和业务入口，标记 `implemented / automated_verified / mock / unknown / superseded`。
 
-- [ ] Task: Update known issue status only after evidence.
-  - Acceptance: `KI-2026-07-06-003` remains OPEN until Product Loop browser proof exists.
-  - Verify: `docs/KNOWN_ISSUES.md` evidence includes command output/date.
-  - Files: `docs/KNOWN_ISSUES.md`, `docs/PROJECT_STATUS.md`.
+**验收：**
+- [ ] 每项能力有代码或测试位置；
+- [ ] stub 与真实能力明确分开；
+- [ ] 不把旧 AgentOS 页面列入当前建设范围。
 
-## Phase 3: Daily Owner Cockpit
+**验证：** CodeGraph 调用链核对；相关文档链接检查。
 
-- [ ] Task: Define cockpit cards from real Product Loop state.
-  - Acceptance: Cards are limited to top decisions, pending approvals, failed/blocked actions, and recent outcomes.
-  - Verify: No card depends on mock-only data.
-  - Files: `frontend-next/src/app/(main)/owner/page.tsx` and supporting API.
-  - Note 2026-07-10: Agent 4 audit found 7-question coverage is best on Owner page (uses HighRiskConfirmDialog correctly). Weaknesses: listing tasks list is generic CRUD with no mode/decision context; action detail has no confirmation dialog before approve/execute. 4 gaps are backend-dependent (profit impact, audit page link, agent context, reject endpoint).
+**依赖：** Tasks 0.0、0.0B。
+**预计规模：** S，文档 1—2 个文件。
 
-- [x] Task: Add execution_mode display to actions and listing tasks.
-  - Acceptance: Each action/listing task shows dry-run/sandbox/production mode.
-  - Verify: TypeScript compile and lint pass.
-  - Files: `frontend-next/src/app/(main)/actions/page.tsx`, `actions/[id]/page.tsx`, `listing-tasks/page.tsx`, `listing-tasks/[id]/page.tsx`.
-  - Note 2026-07-10: Agent 4 added mode badge and helper across 4 frontend files. All pass lint/typecheck/build.
+### Task 0.2：登记工具与权限边界
 
-- [ ] Task: Add Owner-readable decision copy.
-  - Acceptance: Each card answers what, why, risk, approve consequence, wait consequence, mode, and audit location.
-  - Verify: Browser review with seeded data.
-  - Files: Owner page/components.
+**说明：** 为当前工具建立只读/建议写入/外部写入分类，记录凭据、网络、数据去向、副作用、审批和停用方式。
 
-## Phase 4: Fulfillment Copilot
+**验收：**
+- [ ] 所有当前 ToolBridge driver 和可用 MCP 均有记录；
+- [ ] 未知第三方工具默认禁用生产凭据；
+- [ ] 外部写工具全部标记为独立审批范围。
 
-- [ ] Task: Define minimum order-risk seed scenario.
-  - Acceptance: One order can show inventory/logistics/settlement/profit risk.
-  - Verify: Seed scenario appears in UI.
-  - Files: seed scripts and order/logistics/settlement modules.
+**验证：** 对照 ToolBridge 注册点与运行配置逐项复核。
 
-- [ ] Task: Add fulfillment-risk E2E.
-  - Acceptance: Owner can review a loss-risk order and choose approve/manual handling.
-  - Verify: Playwright E2E passes against backend/database.
-  - Files: E2E test plus minimal UI/API fixes.
+**依赖：** Task 0.1。
+**预计规模：** S，文档 1—2 个文件。
 
-## Phase 5: Platform Adapter Sandbox
+### Task 0.3：测量一次人工研究基线
 
-- [x] Task: Implement platform-neutral stateful sandbox contract.
-  - Acceptance: Sandbox maintains listing task state and supports success/failure/missing-data scenarios.
-  - Verify: Backend tests and Product Loop E2E.
-  - Files: integration adapter sandbox slice.
-  - Note 2026-07-10: Agent 5 created `sandbox_adapter.go` (full PlatformAdapter interface implementation with 5 deterministic scenarios: success/blocked_missing_data/blocked_loss_making/failed_platform_validation/dry-run) and `sandbox_adapter_test.go` (16 tests, all pass). Also `sandbox-contract-2026-07-10.md` with state machine diagram and integration points table.
+**说明：** 选择一个真实候选市场问题，由 Owner 按现有方式完成一次研究，记录耗时、来源数、错误、未知和最终决定。
 
-- [ ] Task: Add Ozon/Shopee sandbox only after neutral sandbox proves loop.
-  - Acceptance: Real platform adapters remain dry-run/sandbox by default.
-  - Verify: No production write in tests.
-  - Files: integration adapters.
+**验收：**
+- [ ] 问题包含国家/地区、消费者、需求场景和渠道；
+- [ ] 有开始/结束时间和人工步骤；
+- [ ] 有支持、反证、未知和停止条件。
 
-## Phase 6: AIOS Contracts
+**验证：** Owner 确认基线记录真实反映本次过程。
 
-- [ ] Task: Draft `ProposedAgentAction` sidecar contract.
-  - Acceptance: Contract includes identity, tenant, actor, correlation, schema version, source citations, sensitivity, mode, timeout/retry/failure semantics.
-  - Verify: Reviewed against `docs/governance/KERNEL_CONTRACTS.md`.
-  - Files: docs/specs or governance docs only.
+**依赖：** 无。
+**预计规模：** S，业务记录 1 个文件；需要 Owner 参与。
 
-- [ ] Task: Draft memory and prompt/model registry contracts.
-  - Acceptance: Memory is advisory only; prompt/model changes require versioning, approval, shadow metrics, and rollback.
-  - Verify: Reviewed before any Python implementation.
-  - Files: docs/specs or governance docs only.
+### Checkpoint 0
+
+- [ ] Owner 能说明 Workshop 做什么和不做什么；
+- [ ] Owner 能说明小Q能做什么、为什么不能直接获得超级权限；
+- [ ] 至少两个现有功能完成 Capability 示例登记；
+- [ ] 没有新增生产凭据或外部写权限；
+- [ ] 已有一个可用于对比的人工基线；
+- [ ] Owner 单独决定是否批准 Phase 1。
+
+## Phase 1：小Q只读对话与单 run 可信执行
+
+### Task 1.0：注册小Q并建立最小对话入口
+
+**验收：**
+- [ ] 系统只注册一个 Owner 主 Agent `xiao_q`；
+- [ ] 会话绑定认证 Owner、correlation ID 和 trace；
+- [ ] 小Q不能调用未登记能力；
+- [ ] 对话失败、取消和超时对 Owner 可见。
+
+**验证：** 后端认证/权限测试、前端会话测试、一次浏览器冒烟。
+
+**依赖：** Checkpoint 0。
+**预计规模：** M，按后端与前端两个垂直任务分别实施。
+
+### Task 1.0B：接入第一个只读 Capability
+
+**说明：** 让小Q读取指定 demand case 的当前状态、关键证据、反证和未知，不执行任何变更。
+
+**验收：**
+- [ ] 输出来自真实 domain service，不直接查表拼答案；
+- [ ] 回答包含 demand_case_id、evidence/run 引用和事实等级；
+- [ ] 无权限、对象不存在和证据不足有明确区别。
+
+**验证：** Capability contract 测试 + 小Q对话集成测试。
+
+**依赖：** Task 1.0。
+**预计规模：** M。
+
+### Task 1.1：冻结统一 Run Contract
+
+**验收：**
+- [ ] 字段覆盖身份、业务问题、输入 hash、模型、prompt、工具、Token、费用、状态、失败、trace 和 audit；
+- [ ] `completed` 不等于事实成立；
+- [ ] schema 有版本和兼容策略。
+
+**验证：** 合同测试；对照 Kernel Contracts 审查。
+**依赖：** Task 1.0B。
+**预计规模：** M，3—5 个文件。
+
+### Task 1.2：接通一个真实 Scout provider
+
+**验收：**
+- [ ] 显式配置时调用真实模型；
+- [ ] 无配置或失败时返回 blocked/failed，不以 stub 冒充成功；
+- [ ] 模型、prompt version 和原始输出 hash 可追踪。
+
+**验证：** provider 单元测试、失败测试、一次受限手工运行。
+**依赖：** Task 1.1。
+**预计规模：** M。
+
+### Task 1.3：接入 Token、费用和超时硬限制
+
+**验收：**
+- [ ] run 前检查预算；
+- [ ] 超时、取消和超预算有不同错误状态；
+- [ ] Token 与估算费用写入 trace。
+
+**验证：** 预算边界和超时测试。
+**依赖：** Task 1.1。
+**预计规模：** M。
+
+### Task 1.4：记录真实工具调用和来源
+
+**验收：**
+- [ ] 不再生成伪造的 stub tool events；
+- [ ] 每次工具调用记录输入摘要、结果状态、耗时、来源和 correlation ID；
+- [ ] 敏感数据按审计规则脱敏。
+
+**验证：** ToolBridge/Trace 聚焦测试。
+**依赖：** Tasks 1.1、1.2。
+**预计规模：** M。
+
+### Checkpoint 1
+
+- [ ] 一个真实 Scout run 完成；
+- [ ] Owner 能向小Q询问一个真实 demand case 并获得可追溯回答；
+- [ ] 一次 provider 失败正确显示为 failed；
+- [ ] 一次预算阻断正确显示为 blocked；
+- [ ] stub 不能进入 demandcase；
+- [ ] Owner 决定是否批准 Phase 2。
+
+## Phase 2：三 run 独立研究与证据导入
+
+### Task 2.1：实现 Scout run 垂直切片
+
+**验收：** 支持证据包含来源、观察时间、原始 payload 与 hash；重复提交幂等。
+**验证：** demandcase 包测试 + API 测试。
+**依赖：** Checkpoint 1。
+**预计规模：** M。
+
+### Task 2.2：实现隔离 Falsifier run
+
+**验收：**
+- [ ] 提交前不读取 Scout 结论文本；
+- [ ] 至少能返回 counter/conflict；
+- [ ] 没有合格反证时保持 evidence_missing。
+
+**验证：** 上下文污染回归测试。
+**依赖：** Task 2.1。
+**预计规模：** M。
+
+### Task 2.3：实现 Data Reality run
+
+**验收：** 核验地区、时间、字段、权限和口径；权限未知不得写成可用。
+**验证：** unknown/mock/inferred 门禁测试。
+**依赖：** Task 2.1。
+**预计规模：** M。
+
+### Task 2.4：完成冲突、完整性和裁决接线
+
+**验收：** 关键字段缺失、来源冲突或无独立反证时不能进入 experiment_ready。
+**验证：** 状态机表驱动测试。
+**依赖：** Tasks 2.2、2.3。
+**预计规模：** M。
+
+### Checkpoint 2
+
+- [ ] 一个真实候选完成三 run；
+- [ ] 至少一个结论被反证阻止、降级或退回补证；
+- [ ] 重复运行未制造重复事实；
+- [ ] Owner 决定是否批准 Phase 3。
+
+## Phase 3：Owner 决策工作台
+
+### Task 3.1：建立只读六行决策卡
+
+**验收：** 显示候选、支持、反证、未知、成本/风险和下一步；全部来自真实 API。
+**验证：** 前端单元测试、build、浏览器检查。
+**依赖：** Checkpoint 2。
+**预计规模：** M。
+
+### Task 3.1B：让小Q支持依据追问
+
+**验收：** 小Q能回答“为什么”“反证是什么”“还缺什么”，每个回答引用同一案件的 evidence/run，不产生新事实。
+**验证：** 固定对话案例测试 + 浏览器检查。
+**依赖：** Task 3.1。
+**预计规模：** M。
+
+### Task 3.2：增加来源下钻与 run provenance
+
+**验收：** 每条结论可跳转 evidence、run、来源和原始快照；hash 不一致时阻止展示为可信。
+**验证：** 前后端聚焦测试 + 浏览器检查。
+**依赖：** Tasks 3.1、3.1B。
+**预计规模：** M。
+
+### Task 3.3：接通继续取证、淘汰和市场批准
+
+**验收：** 三种动作权限明确、可审计；批准动作不能绕过关键维度闸门。
+**验证：** 后端权限/审计测试 + Playwright E2E。
+**依赖：** Tasks 3.1、3.2。
+**预计规模：** M。
+
+### Checkpoint 3
+
+- [ ] Owner 无需阅读技术日志即可做决定；
+- [ ] 页面无 mock 经营数据；
+- [ ] 一条 E2E 覆盖研究到市场决定；
+- [ ] 与人工基线比较复核时间和错误；
+- [ ] Owner 决定是否批准 Phase 4。
+
+## Phase 4：已选市场到受控商品草稿
+
+### Task 4.1：稳定 market approval → experiment 引用
+
+**验收：** 只有批准市场能创建 active experiment；来源与审批不可丢失。
+**验证：** domain/API 测试。
+**依赖：** Checkpoint 3。
+**预计规模：** M。
+
+### Task 4.2：稳定 experiment → sourcing1688 capture
+
+**验收：** 只有通过 opportunity gate 的实验可 capture；所有货源、图片、成本和合规状态保留来源。
+**验证：** sourcing1688 聚焦测试。
+**依赖：** Task 4.1。
+**预计规模：** M。
+
+### Task 4.3：验证 approved_draft 外部写入阻断
+
+**验收：** approved_draft 始终保持 listing draft；平台适配器不被调用；发布需另一份审批。
+**验证：** 负向测试 + E2E。
+**依赖：** Task 4.2。
+**预计规模：** M。
+
+### Checkpoint 4
+
+- [ ] 一个批准市场形成一个受控草稿；
+- [ ] 没有生产发布；
+- [ ] Owner 另行冻结真实实验 SKU、预算和停止条件；
+- [ ] Owner 决定是否进入真实经营实验。
+
+## Phase 5：真实结果闭环
+
+### Task 5.1：接通非关联买家与付款事实
+
+**验收：** 同一订单核验买家资格和真实付款；文本证据不能替代订单对象。
+**验证：** domain 测试 + 负向案例。
+**依赖：** Checkpoint 4 和真实实验批准。
+**预计规模：** M。
+
+### Task 5.2：接通签收与售后观察期
+
+**验收：** 未签收、未过观察期或有未决退款/争议时不能 final。
+**验证：** 状态机测试。
+**依赖：** Task 5.1。
+**预计规模：** M。
+
+### Task 5.3：完成结算、现金和正负最终利润裁决
+
+**验收：** 同订单、可信结算、最终利润和现金可解释一致；零或负利润不能进入 continue。
+**验证：** 金融边界表驱动测试 + 对账样例。
+**依赖：** Task 5.2。
+**预计规模：** M。
+
+### Task 5.4：生成四选一 Owner 结论
+
+**验收：** 只允许停止、换品、修正后再试、小幅加码；结论不超过证据。
+**验证：** E2E + Owner 凭证复算。
+**依赖：** Task 5.3。
+**预计规模：** M。
+
+### Checkpoint 5
+
+- [ ] 至少一个实验完成最终裁决；
+- [ ] 盈亏、现金和证据可由 Owner 复算；
+- [ ] 未声明可重复或规模化；
+- [ ] 继续真实实验，暂不扩 Agent 基础设施。
+
+## Phase 6：三轮后自动化复审
+
+### Task 6.1：复盘前三轮真实使用
+
+**验收：** 记录每轮人工时间、错误、异常、成本和最终结果；识别重复且规则稳定的步骤。
+**验证：** Owner 确认事实记录。
+**依赖：** 三轮 Checkpoint 5。
+**预计规模：** S。
+
+### Task 6.2：只选择一个自动化候选
+
+**验收：** 候选可逆、可审计、失败可恢复，不涉及高风险外部写入。
+**验证：** 新的独立计划和 Owner 批准。
+**依赖：** Task 6.1。
+**预计规模：** S，规划任务。
+
+## 全程定义完成
+
+- [ ] 每项行为有对应测试或明确人工验证；
+- [ ] 每个重要结论标明事实等级；
+- [ ] 失败不隐藏，mock/stub 不冒充真实；
+- [ ] 高风险动作保持审批、审计、幂等和恢复路径；
+- [ ] 文档与代码同步；
+- [ ] 每个 checkpoint 获得 Owner 决定后才进入下一阶段。
+- [ ] 每个新增业务功能声明 `xiao_q_support: active | deferred | not_applicable`；
+- [ ] active 功能有 Capability、权限、审计、失败解释和小Q回归测试；
+- [ ] 小Q能力目录和真实代码保持同步。

@@ -24,6 +24,7 @@ export const menuGroups: MenuGroup[] = [
   {
     label: 'Owner 总控台',
     items: [
+      { key: '/xiaoq', icon: 'RobotOutlined', label: '小Q' },
       { key: '/owner', icon: 'DashboardOutlined', label: '卖家工作台' },
       { key: '/experiments', icon: 'ExperimentOutlined', label: '经营实验' },
       { key: '/demand-cases', icon: 'SearchOutlined', label: '候选市场' },

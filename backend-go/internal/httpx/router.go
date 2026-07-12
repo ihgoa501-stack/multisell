@@ -85,6 +85,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/tariff"
 	"github.com/lingmirror/backend-go/internal/domain/trustscore"
 	"github.com/lingmirror/backend-go/internal/domain/workflow"
+	"github.com/lingmirror/backend-go/internal/domain/xiaoq"
 	"github.com/lingmirror/backend-go/internal/feedback"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/actioncatalog"
@@ -836,6 +837,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			return nil
 		}))
 
+	xiaoq.RegisterRoutes(protected, db, logger)
 	candidate.RegisterRoutes(protected, db, logger)
 	completeness.RegisterRoutes(protected, db, logger)
 	compliance.RegisterRoutes(protected, db, logger)

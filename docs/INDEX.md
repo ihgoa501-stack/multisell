@@ -85,8 +85,8 @@
 | [双产品十星架构设计](designs/dual-product-cathedral.md) | ⛔ 2026-07-11 已冻结的历史决策，不得作为当前开发指令 |
 | [AI-Native AgentOS 长期愿景与架构方向](AI_NATIVE_DEVELOPMENT_PLAN.md) | 🆕 面向多领域可信自进化 AgentOS 的长期愿景；不覆盖当前执行优先级 |
 | [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
-| [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |
-| [AI-Native AgentOS 任务清单](../tasks/todo.md) | 🆕 可逐项执行的 Product Loop / Action Gate / E2E canonical 任务列表 |
+| [AI 基础建设总规划：小Q与 Evidence Workshop](../tasks/plan.md) | 小Q作为唯一 Owner Agent 的长期目标、能力目录、安全边界、阶段门禁、预算与停止条件 |
+| [小Q与 Evidence Workshop 执行清单](../tasks/todo.md) | 小Q对话、Capability 接入和经营闭环的垂直任务；每阶段需 Owner 单独批准 |
 | [方向事实审计 2026-07-12](research/project-truth-audit-2026-07-12.md) | 最新产品边界：Owner 单人自用，不验证外部软件需求 |
 | [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) | 上一版代码、测试、经营事实、mock 和未闭环部分的只读审计快照 |
 | [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | ⛔ 已被 2026-07-11 自用方向替代，仅供历史追溯 |
@@ -135,6 +135,7 @@
 | [平台宪法](governance/PLATFORM_CONSTITUTION.md) | 平台优先最高规则：系统分层、风险等级、禁止事项、Owner 决策边界 |
 | [Agent 开发协议](governance/AGENT_DEVELOPMENT_PROTOCOL.md) | 多 Agent 角色、开工检查、review、QA、交接规则 |
 | [Kernel 契约](governance/KERNEL_CONTRACTS.md) | EventBus、Command、Scheduler、ToolBridge、Approval、Audit 等内核契约 |
+| [小Q Capability Contract](governance/XIAOQ_CAPABILITY_CONTRACT.md) | 小Q唯一身份、能力字段、风险、权限、审批，以及新增功能同步接入规则 |
 | [验收大门](ACCEPTANCE_GATE.md) | 🆕 完成定义、验收等级、发布通道、Owner 决策日志 |
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境矩阵、角色矩阵、权限回归矩阵、高风险动作证据 |
 | [已知问题](KNOWN_ISSUES.md) | 🆕 未解决风险和失败项追踪、过期升级策略 |
@@ -166,6 +167,8 @@
 | [告警规则](ops/ALERT_RULES.md) | 🆕 各服务告警规则定义、阈值和响应流程 |
 | [备份策略](ops/BACKUP_POLICY.md) | 🆕 数据库/配置/文件备份策略、保留周期和恢复流程 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
+| [小Q Agent 架构官方资料调研](research/xiaoq-agent-architecture-2026-07-12.md) | 单一主Agent、动态能力目录、模型外审批和审计的官方资料依据 |
+| [小Q产品需求质量审计](research/xiaoq-product-requirement-quality-2026-07-12.md) | 原始愿景的合理性、产品经理版One-pager、指标、非目标和停止条件 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
