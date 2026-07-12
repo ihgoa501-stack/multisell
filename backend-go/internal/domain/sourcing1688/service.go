@@ -1,20 +1,53 @@
 package sourcing1688
 
 import (
+	"fmt"
+
 	"github.com/lingmirror/backend-go/internal/common"
+	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides sourcing1688 business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
+	db               *gorm.DB
+	logger           *zap.Logger
+	resolvePublisher publishAdapterResolver
 }
 
 // NewService creates a new sourcing1688 service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+	return &Service{db: db, logger: logger, resolvePublisher: func(code string) (publishAdapter, bool) {
+		return integrations.GetAdapter(code)
+	}}
+}
+
+func (s *Service) RequireSourceOwner(id, ownerID int64) error {
+	if ownerID <= 0 {
+		return ErrWorkflowGate
+	}
+	var count int64
+	err := s.db.Table("sourcing_1688_product AS sp").Joins("JOIN demand_case dc ON dc.id = sp.demand_case_id").Where("sp.id = ? AND dc.owner_id = ?", id, ownerID).Count(&count).Error
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("%w: source does not belong to authenticated Owner", ErrWorkflowGate)
+	}
+	return nil
+}
+
+func (s *Service) RequireExperimentOwner(experimentID string, ownerID int64) error {
+	var count int64
+	err := s.db.Model(&experimentRow{}).Where("experiment_id = ? AND owner_id = ?", experimentID, ownerID).Count(&count).Error
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("%w: experiment does not belong to authenticated Owner", ErrWorkflowGate)
+	}
+	return nil
 }
 
 // List returns paginated sourcing1688 products with optional filter.
@@ -38,6 +71,38 @@ func (s *Service) List(p *common.Pagination, f *ListFilter) ([]Sourcing1688Produ
 	}
 	var items []Sourcing1688Product
 	if err := q.Order("id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// ListOwned is the HTTP-facing list. It prevents an authenticated non-owner
+// account from seeing another Owner's sourcing evidence.
+func (s *Service) ListOwned(ownerID int64, p *common.Pagination, f *ListFilter) ([]Sourcing1688Product, int64, error) {
+	if ownerID <= 0 {
+		return nil, 0, ErrWorkflowGate
+	}
+	q := s.db.Model(&Sourcing1688Product{}).
+		Joins("JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
+		Where("dc.owner_id = ?", ownerID)
+	if f != nil {
+		if f.Search != "" {
+			like := "%" + f.Search + "%"
+			q = q.Where("LOWER(sourcing_1688_product.supplier_name) LIKE LOWER(?) OR LOWER(sourcing_1688_product.source_url) LIKE LOWER(?)", like, like)
+		}
+		if f.Status != "" {
+			q = q.Where("sourcing_1688_product.status = ?", f.Status)
+		}
+		if f.ProductID != nil {
+			q = q.Where("sourcing_1688_product.product_id = ?", *f.ProductID)
+		}
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []Sourcing1688Product
+	if err := q.Order("sourcing_1688_product.id DESC").Offset(p.Offset()).Limit(p.Size).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
 	return items, total, nil
@@ -206,6 +271,33 @@ func (s *Service) Summary() (*Summary, error) {
 	var scs []statusCount
 	if err := s.db.Model(&Sourcing1688Product{}).
 		Select("status, COUNT(*) AS cnt").Group("status").Scan(&scs).Error; err != nil {
+		return nil, err
+	}
+	byStatus := make(map[string]int64, len(scs))
+	for _, sc := range scs {
+		byStatus[sc.Status] = sc.Cnt
+	}
+	return &Summary{Total: total, ByStatus: byStatus}, nil
+}
+
+func (s *Service) SummaryOwned(ownerID int64) (*Summary, error) {
+	if ownerID <= 0 {
+		return nil, ErrWorkflowGate
+	}
+	base := s.db.Model(&Sourcing1688Product{}).
+		Joins("JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
+		Where("dc.owner_id = ?", ownerID)
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, err
+	}
+	type statusCount struct {
+		Status string
+		Cnt    int64
+	}
+	var scs []statusCount
+	if err := base.Select("sourcing_1688_product.status, COUNT(*) AS cnt").
+		Group("sourcing_1688_product.status").Scan(&scs).Error; err != nil {
 		return nil, err
 	}
 	byStatus := make(map[string]int64, len(scs))

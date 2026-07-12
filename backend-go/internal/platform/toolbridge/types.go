@@ -46,8 +46,13 @@ type PageData struct {
 
 	Description string          `json:"description,omitempty"`
 	RawData     json.RawMessage `json:"raw_data,omitempty"`
+	RawHTML     string          `json:"raw_html,omitempty"`
 	CollectedAt time.Time       `json:"collected_at"`
 	Driver      string          `json:"driver"`
+	// ParserVersion and SupplierBusinessID must come from the collector response;
+	// controlled evidence capture rejects responses that omit either identity.
+	ParserVersion      string `json:"parser_version,omitempty"`
+	SupplierBusinessID string `json:"supplier_business_id,omitempty"`
 }
 
 // ListItemData is one product opportunity discovered on a marketplace or

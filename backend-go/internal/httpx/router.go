@@ -894,7 +894,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	actionpolicy.RegisterRoutes(protected, db, logger)
 	aftersales.RegisterRoutes(protected, db, logger, bus)
 	sourcing.RegisterRoutes(protected, db, logger, toolBridge, sourcing.NewAgentEventPublisher(bus))
-	sourcing1688.RegisterRoutes(protected, db, logger)
+	sourcing1688.RegisterRoutes(protected, db, logger, toolBridge)
 	tariff.RegisterRoutes(protected, db, logger)
 	logistics.RegisterRoutes(protected, db, logger)
 	consolidation.RegisterRoutes(protected, db, logger)

@@ -12,25 +12,26 @@ const (
 )
 
 type ConvertInput struct {
-	CreatedBy            int64           `json:"created_by"`
-	PlatformID           int64           `json:"platform_id" binding:"required"`
-	Title                string          `json:"title" binding:"required"`
-	Description          string          `json:"description" binding:"required"`
-	CategoryID           int64           `json:"category_id" binding:"required"`
-	Unit                 string          `json:"unit" binding:"required"`
-	LocalizedTitle       string          `json:"localized_title" binding:"required"`
-	LocalizedDescription string          `json:"localized_description" binding:"required"`
-	PlatformSKU          string          `json:"platform_sku" binding:"required"`
-	SKUVariants          []DraftSKUInput `json:"sku_variants" binding:"required,min=1,dive"`
-	Media                []MediaInput    `json:"media" binding:"required,min=1,dive"`
-	Costs                []CostInput     `json:"costs" binding:"required,min=1,dive"`
-	ListingPayload       json.RawMessage `json:"listing_payload" binding:"required"`
-	TargetLocale         string          `json:"target_locale" binding:"required"`
-	ShippingTemplateID   string          `json:"shipping_template_id" binding:"required"`
-	CategorySchemaURI    string          `json:"category_schema_uri" binding:"required"`
-	CategoryObservedAt   time.Time       `json:"category_observed_at" binding:"required"`
-	SupplierAssessment   []EvidenceCheck `json:"supplier_assessment" binding:"required,min=1,dive"`
-	ComplianceChecks     []EvidenceCheck `json:"compliance_checks" binding:"required,min=1,dive"`
+	CreatedBy            int64                `json:"created_by"`
+	PlatformID           int64                `json:"platform_id" binding:"required"`
+	Title                string               `json:"title" binding:"required"`
+	Description          string               `json:"description" binding:"required"`
+	CategoryID           int64                `json:"category_id" binding:"required"`
+	Unit                 string               `json:"unit" binding:"required"`
+	LocalizedTitle       string               `json:"localized_title" binding:"required"`
+	LocalizedDescription string               `json:"localized_description" binding:"required"`
+	PlatformSKU          string               `json:"platform_sku" binding:"required"`
+	SKUVariants          []DraftSKUInput      `json:"sku_variants" binding:"required,min=1,dive"`
+	Media                []MediaInput         `json:"media" binding:"required,min=1,dive"`
+	Costs                []CostInput          `json:"costs" binding:"required,min=1,dive"`
+	ListingPayload       json.RawMessage      `json:"listing_payload" binding:"required"`
+	TargetLocale         string               `json:"target_locale" binding:"required"`
+	ShippingTemplateID   string               `json:"shipping_template_id" binding:"required"`
+	CategorySchemaURI    string               `json:"category_schema_uri" binding:"required"`
+	CategoryObservedAt   time.Time            `json:"category_observed_at" binding:"required"`
+	SupplierAssessment   []EvidenceCheck      `json:"supplier_assessment" binding:"required,min=1,dive"`
+	ComplianceChecks     []EvidenceCheck      `json:"compliance_checks" binding:"required,min=1,dive"`
+	Validation           DraftValidationInput `json:"validation" binding:"required"`
 }
 
 type EvidenceCheck struct {
@@ -44,7 +45,12 @@ type EvidenceCheck struct {
 
 type DraftSKUInput struct {
 	SupplierSKU string          `json:"supplier_sku" binding:"required"`
+	InternalSKU string          `json:"internal_sku" binding:"required"`
 	ChannelSKU  string          `json:"channel_sku" binding:"required"`
+	Color       string          `json:"color" binding:"required"`
+	Size        string          `json:"size" binding:"required"`
+	Material    string          `json:"material" binding:"required"`
+	Packaging   string          `json:"packaging" binding:"required"`
 	SpecDesc    string          `json:"spec_desc" binding:"required"`
 	SpecValues  json.RawMessage `json:"spec_values" binding:"required"`
 	CostPrice   float64         `json:"cost_price" binding:"required,gt=0"`
@@ -54,19 +60,21 @@ type DraftSKUInput struct {
 }
 
 type MediaInput struct {
-	SourceURL         string          `json:"source_url" binding:"required"`
-	ProcessedURL      string          `json:"processed_url" binding:"required"`
-	MediaRole         string          `json:"media_role" binding:"required"`
-	RightsStatus      string          `json:"rights_status" binding:"required"`
-	RightsEvidenceURI string          `json:"rights_evidence_uri" binding:"required"`
-	Operations        json.RawMessage `json:"operations" binding:"required"`
-	ContentSHA256     string          `json:"content_sha256"`
-	Width             int             `json:"width" binding:"required,gt=0"`
-	Height            int             `json:"height" binding:"required,gt=0"`
-	HasWatermark      bool            `json:"has_watermark"`
-	HasChineseText    bool            `json:"has_chinese_text"`
-	HasBrandMark      bool            `json:"has_brand_mark"`
-	ChannelRuleURI    string          `json:"channel_rule_uri" binding:"required"`
+	ProcessingRecordID int64           `json:"processing_record_id" binding:"required"`
+	SourceURL          string          `json:"source_url" binding:"required"`
+	ProcessedURL       string          `json:"processed_url" binding:"required"`
+	MediaRole          string          `json:"media_role" binding:"required"`
+	RightsStatus       string          `json:"rights_status" binding:"required"`
+	RightsEvidenceURI  string          `json:"rights_evidence_uri" binding:"required"`
+	RightsObservedAt   time.Time       `json:"rights_observed_at" binding:"required"`
+	Operations         json.RawMessage `json:"operations" binding:"required"`
+	ContentSHA256      string          `json:"content_sha256"`
+	Width              int             `json:"width" binding:"required,gt=0"`
+	Height             int             `json:"height" binding:"required,gt=0"`
+	HasWatermark       bool            `json:"has_watermark"`
+	HasChineseText     bool            `json:"has_chinese_text"`
+	HasBrandMark       bool            `json:"has_brand_mark"`
+	ChannelRuleURI     string          `json:"channel_rule_uri" binding:"required"`
 }
 
 type CostInput struct {
@@ -103,6 +111,7 @@ type productRow struct {
 	CategoryID                         int64
 	Status                             int16
 	Images                             json.RawMessage
+	UpdatedAt                          time.Time
 }
 
 func (productRow) TableName() string { return "product" }
@@ -141,9 +150,11 @@ type costRow struct {
 func (costRow) TableName() string { return "product_cost_input" }
 
 type listingRow struct {
-	ID, ProductID, PlatformID int64
-	PlatformSKU, Status       string
-	PublishedData             json.RawMessage
+	ID, ProductID, PlatformID                           int64
+	PlatformProductID, PlatformSKU, Status, PlatformURL string
+	SyncMessage                                         string
+	PublishedData                                       json.RawMessage
+	LastSyncAt                                          *time.Time
 }
 
 func (listingRow) TableName() string { return "product_listing" }
@@ -153,6 +164,9 @@ type draftRow struct {
 	ExperimentID                                                          string
 	CreatedBy                                                             int64
 	CreatedAt                                                             time.Time
+	ApprovalID                                                            *int64
+	ApprovalStatus                                                        string
+	ApprovalRejectionReason                                               string
 }
 
 func (draftRow) TableName() string { return "sourcing_listing_draft" }

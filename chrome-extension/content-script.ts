@@ -11,6 +11,7 @@ interface PageData {
   source_url: string;
   collected_at: string;
   driver: string;
+  parser_version: string;
   title: string;
   price_1688: number;
   price_min?: number | null;
@@ -21,6 +22,7 @@ interface PageData {
   spec_variants?: SpecVariant[];
   supplier_name: string;
   supplier_id_1688: string;
+  supplier_business_id: string;
   supplier_score?: number | null;
   description?: string;
   attributes?: Record<string, string>;
@@ -29,6 +31,7 @@ interface PageData {
   package_width_cm?: number | null;
   package_height_cm?: number | null;
   freight_cny?: number | null;
+  raw_html?: string;
 }
 
 interface SpecVariant {
@@ -555,6 +558,18 @@ function extractPackageFromDOM(): {
 
 // ─── Main extraction orchestrator ──────────────────────────────────────────
 
+function sanitizedDOMSnapshot(): string {
+  const root = document.documentElement.cloneNode(true) as HTMLElement;
+  root.querySelectorAll("script, noscript, iframe, meta[name*='csrf' i], meta[name*='token' i]").forEach((node) => node.remove());
+  root.querySelectorAll("input, textarea").forEach((node) => { node.removeAttribute("value"); node.textContent = ""; });
+  root.querySelectorAll("*").forEach((node) => {
+    for (const attr of Array.from(node.attributes)) {
+      if (/^on/i.test(attr.name) || /(token|secret|password|authorization|cookie)/i.test(attr.name)) node.removeAttribute(attr.name);
+    }
+  });
+  return root.outerHTML.slice(0, 256 * 1024);
+}
+
 function extractPageData(): PageData {
   const supplier = extractSupplierFromDOM();
   const dimensions = extractPackageFromDOM();
@@ -577,6 +592,7 @@ function extractPageData(): PageData {
     source_url: window.location.href,
     collected_at: new Date().toISOString(),
     driver: "plugin",
+    parser_version: "lingmirror-extension@0.1.0",
     title: extractTitleFromDOM(),
     price_1688: price,
     price_min: priceMin,
@@ -587,6 +603,7 @@ function extractPageData(): PageData {
     spec_variants: variants.length > 0 ? variants : undefined,
     supplier_name: supplier.name,
     supplier_id_1688: supplier.id,
+    supplier_business_id: supplier.id,
     supplier_score: supplier.score,
     description: extractDescriptionFromDOM(),
     attributes: Object.keys(attrs).length > 0 ? attrs : undefined,
@@ -594,6 +611,7 @@ function extractPageData(): PageData {
     package_length_cm: dimensions.length,
     package_width_cm: dimensions.width,
     package_height_cm: dimensions.height,
+    raw_html: sanitizedDOMSnapshot(),
   };
 
   // Try to improve with embedded JSON

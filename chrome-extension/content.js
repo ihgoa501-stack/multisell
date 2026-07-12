@@ -465,6 +465,18 @@ function extractPackageFromDOM() {
     return result;
 }
 // ─── Main extraction orchestrator ──────────────────────────────────────────
+function sanitizedDOMSnapshot() {
+    const root = document.documentElement.cloneNode(true);
+    root.querySelectorAll("script, noscript, iframe, meta[name*='csrf' i], meta[name*='token' i]").forEach((node) => node.remove());
+    root.querySelectorAll("input, textarea").forEach((node) => { node.removeAttribute("value"); node.textContent = ""; });
+    root.querySelectorAll("*").forEach((node) => {
+        for (const attr of Array.from(node.attributes)) {
+            if (/^on/i.test(attr.name) || /(token|secret|password|authorization|cookie)/i.test(attr.name))
+                node.removeAttribute(attr.name);
+        }
+    });
+    return root.outerHTML.slice(0, 256 * 1024);
+}
 function extractPageData() {
     const supplier = extractSupplierFromDOM();
     const dimensions = extractPackageFromDOM();
@@ -485,6 +497,7 @@ function extractPageData() {
         source_url: window.location.href,
         collected_at: new Date().toISOString(),
         driver: "plugin",
+        parser_version: "lingmirror-extension@0.1.0",
         title: extractTitleFromDOM(),
         price_1688: price,
         price_min: priceMin,
@@ -495,6 +508,7 @@ function extractPageData() {
         spec_variants: variants.length > 0 ? variants : undefined,
         supplier_name: supplier.name,
         supplier_id_1688: supplier.id,
+        supplier_business_id: supplier.id,
         supplier_score: supplier.score,
         description: extractDescriptionFromDOM(),
         attributes: Object.keys(attrs).length > 0 ? attrs : undefined,
@@ -502,6 +516,7 @@ function extractPageData() {
         package_length_cm: dimensions.length,
         package_width_cm: dimensions.width,
         package_height_cm: dimensions.height,
+        raw_html: sanitizedDOMSnapshot(),
     };
     // Try to improve with embedded JSON
     try {

@@ -5,6 +5,7 @@ export interface PageData {
   source_url: string;
   collected_at: string;
   driver: string;
+  parser_version: string;
 
   title: string;
   price_1688: number;
@@ -19,6 +20,7 @@ export interface PageData {
 
   supplier_name: string;
   supplier_id_1688: string;
+  supplier_business_id: string;
   supplier_score?: number | null;
 
   description?: string;
@@ -29,6 +31,7 @@ export interface PageData {
   package_width_cm?: number | null;
   package_height_cm?: number | null;
   freight_cny?: number | null;
+  raw_html?: string;
 }
 
 /** A single spec variant (e.g. "color:red; size:L"). */

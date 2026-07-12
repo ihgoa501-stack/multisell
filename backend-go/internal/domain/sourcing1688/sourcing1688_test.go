@@ -1,17 +1,59 @@
 package sourcing1688
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 )
 
+func TestRequireWorkflowActorRejectsMissingJWTUserID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	if _, ok := requireWorkflowActor(c); ok || w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing actor should return 401, code=%d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Set("user_id", int64(42))
+	if actor, ok := requireWorkflowActor(c); !ok || actor != 42 {
+		t.Fatalf("valid actor = %d, %v", actor, ok)
+	}
+}
+
+func TestOwnerScopedListAndSummaryDoNotLeakOtherOwners(t *testing.T) {
+	db := dbtest.NewDB(t, &Sourcing1688Product{}, &demandCaseRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+	db.Create(&demandCaseRow{ID: 1, OwnerID: 42, Status: "experiment_ready"})
+	db.Create(&demandCaseRow{ID: 2, OwnerID: 99, Status: "experiment_ready"})
+	one, two := int64(1), int64(2)
+	db.Create(&Sourcing1688Product{SourceURL: "https://detail.1688.com/offer/1.html", DemandCaseID: &one, Status: StatusPendingReview})
+	db.Create(&Sourcing1688Product{SourceURL: "https://detail.1688.com/offer/2.html", DemandCaseID: &two, Status: StatusPendingReview})
+
+	items, total, err := svc.ListOwned(42, &common.Pagination{Page: 1, Size: 20}, &ListFilter{})
+	if err != nil || total != 1 || len(items) != 1 || items[0].SourceURL != "https://detail.1688.com/offer/1.html" {
+		t.Fatalf("ListOwned = %#v, total=%d, err=%v", items, total, err)
+	}
+	summary, err := svc.SummaryOwned(42)
+	if err != nil || summary.Total != 1 || summary.ByStatus[StatusPendingReview] != 1 {
+		t.Fatalf("SummaryOwned = %#v, err=%v", summary, err)
+	}
+}
+
 func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
-	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &platformRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{})
+	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &ImageProcessingRecord{}, &CaptureAttempt{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &platformRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{})
 	svc := NewService(db, dbtest.NewLogger(t))
 	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "Ozon", Status: "experiment_ready"})
 	db.Create(&experimentRow{ExperimentID: "EXP-1", OwnerID: 42, Status: "active", Stage: "product"})
@@ -19,7 +61,10 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 	db.Create(&objectLinkRow{ExperimentID: "EXP-1", ObjectType: "demand_case", ObjectID: "7"})
 	db.Create(&platformRow{ID: 3, Name: "Ozon", Code: "ozon", Status: 1})
 	now := time.Now().UTC().Truncate(time.Second)
-	capture := &CaptureInput{DemandCaseID: 7, ExperimentID: "EXP-1", SourceURL: "https://detail.1688.com/offer/123.html#ignored", CollectedAt: now, CollectedBy: 42, Driver: "owner-browser", ParserVersion: "1.0.0", RawPayload: json.RawMessage(`{"offerId":123}`)}
+	if failed, err := svc.RecordCaptureFailure(&CaptureFailureRecordInput{DemandCaseID: 7, ExperimentID: "EXP-1", SourceURL: "https://detail.1688.com/offer/999.html", AttemptedAt: now, Driver: "owner-browser", ParserVersion: "1.0.0", ErrorCode: "login_required", ErrorMessage: "1688 login required", AttemptedBy: 42}); err != nil || failed.Status != LifecycleCaptureFailed {
+		t.Fatalf("RecordCaptureFailure = %#v, %v", failed, err)
+	}
+	capture := &CaptureInput{DemandCaseID: 7, ExperimentID: "EXP-1", SourceURL: "https://detail.1688.com/offer/123.html#ignored", CollectedAt: now, CollectedBy: 42, Driver: "owner-browser", ParserVersion: "1.0.0", SupplierBusinessID: "supplier-1688-42", RawPayload: json.RawMessage(`{"offerId":123}`)}
 	p, err := svc.Capture(capture)
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
@@ -42,13 +87,38 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 	if snapshot.ParserVersion != "1.0.0" || len(snapshot.RawSHA256) != 64 {
 		t.Fatalf("snapshot evidence = %#v", snapshot)
 	}
+	changed := *capture
+	changed.RawPayload = json.RawMessage(`{"offerId":123,"price":11,"moq":2,"images":["https://cbu01.alicdn.com/a.png"]}`)
+	changed.Price = dbtest.FloatPtr(11)
+	changed.MOQ = dbtest.IntPtr(2)
+	p, err = svc.Capture(&changed)
+	if err != nil || p.SnapshotID == nil || *p.SnapshotID == firstSnapshot {
+		t.Fatalf("changed Capture = %#v, %v", p, err)
+	}
+	currentSnapshot := *p.SnapshotID
+	var changes []SourcingChangeEvent
+	db.Where("sourcing_product_id = ?", p.ID).Find(&changes)
+	if len(changes) != 2 {
+		t.Fatalf("change events = %#v", changes)
+	}
 	if _, err := svc.Convert(p.ID, completeConvertInput(now)); !errors.Is(err, ErrWorkflowGate) {
 		t.Fatalf("convert before review err = %v", err)
 	}
 	if _, err := svc.Review(p.ID, &ReviewInput{ReviewedBy: 42, Notes: "来源、权限与字段已人工核验"}); err != nil {
 		t.Fatalf("Review: %v", err)
 	}
-	result, err := svc.Convert(p.ID, completeConvertInput(now))
+	processed, err := svc.ProcessImage(&ProcessImageInput{SourcingProductID: p.ID, SourceURL: "https://cbu01.alicdn.com/a.png", SourceBase64: testSourceImageBase64(), Width: 1200, Height: 1200, Format: "jpeg", Quality: 90, RightsEvidenceURI: "evidence://rights/1", RightsTruthStatus: "actual", RightsObservedAt: now, ChannelRuleURI: "evidence://ozon/images/1", ProcessedBy: 42})
+	if err != nil {
+		t.Fatalf("ProcessImage: %v", err)
+	}
+	convertInput := completeConvertInput(now)
+	convertInput.Media[0].ProcessingRecordID = processed.RecordID
+	convertInput.Media[0].ProcessedURL = processed.ContentURL
+	convertInput.Media[0].ContentSHA256 = processed.ProcessedSHA256
+	convertInput.Media[0].Operations = processed.Operations
+	convertInput.Validation.Images[0].TruthStatus = "actual"
+	convertInput.Validation.Images[0].SourceURI = "sha256:" + processed.ProcessedSHA256
+	result, err := svc.Convert(p.ID, convertInput)
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
@@ -60,27 +130,67 @@ func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 	if listing.Status != "draft" {
 		t.Fatalf("listing status = %s", listing.Status)
 	}
-	result2, err := svc.Convert(p.ID, completeConvertInput(now))
+	result2, err := svc.Convert(p.ID, convertInput)
 	if err != nil || result2.DraftID != result.DraftID {
 		t.Fatalf("idempotent Convert = %#v, %v", result2, err)
 	}
-	if snapshot, err := svc.GetSnapshot(p.ID); err != nil || snapshot.ID != firstSnapshot {
+	updatedInput := completeConvertInput(now)
+	updatedInput.Title = "真实商品（已编辑）"
+	updatedInput.Media[0] = convertInput.Media[0]
+	updatedInput.Validation.Images[0] = convertInput.Validation.Images[0]
+	updated, err := svc.UpdateDraft(p.ID, updatedInput)
+	if err != nil || updated.Product.Name != "真实商品（已编辑）" || updated.Listing.Status != "draft" {
+		t.Fatalf("UpdateDraft = %#v, %v", updated, err)
+	}
+	if snapshot, err := svc.GetSnapshot(p.ID); err != nil || snapshot.ID != currentSnapshot {
 		t.Fatalf("GetSnapshot = %#v, %v", snapshot, err)
 	}
-	if draft, err := svc.GetDraft(p.ID); err != nil || draft.Listing.Status != "draft" || len(draft.SKUs) != 1 || len(draft.Costs) != 11 {
+	if draft, err := svc.GetDraft(p.ID); err != nil || draft.Listing.Status != "draft" || len(draft.SKUs) != 1 || len(draft.Costs) != 10 {
 		t.Fatalf("GetDraft = %#v, %v", draft, err)
 	}
 }
 
+func testSourceImageBase64() string {
+	img := image.NewRGBA(image.Rect(0, 0, 20, 10))
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 20; x++ {
+			img.Set(x, y, color.RGBA{R: 240, G: 100, B: 50, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
 func completeConvertInput(now time.Time) *ConvertInput {
-	costTypes := []string{"purchase", "domestic_shipping", "packaging", "cross_border_shipping", "platform_fee", "payment_fee", "advertising", "tax", "duty", "return_loss", "exchange_rate"}
+	costTypes := []string{"purchase", "domestic_shipping", "packaging", "cross_border_shipping", "platform_fee", "payment_fee", "advertising", "tax", "duty", "return_loss"}
 	costs := make([]CostInput, 0, len(costTypes))
 	for _, typ := range costTypes {
 		costs = append(costs, CostInput{CostType: typ, Amount: 1, Currency: "CNY", TruthStatus: "quoted", SourceURI: "evidence://" + typ, ObservedAt: now})
 	}
-	supplierChecks := checks(now, []string{"identity", "operating_history", "transaction_history", "mixed_batch", "lead_time", "sample", "returns"})
+	validatedCosts := make([]CostLine, 0, len(costs))
+	for _, cost := range costs {
+		validatedCosts = append(validatedCosts, CostLine{Type: cost.CostType, Amount: cost.Amount, Currency: cost.Currency, TruthStatus: cost.TruthStatus, SourceURI: cost.SourceURI, ObservedAt: cost.ObservedAt})
+	}
+	supplierChecks := checks(now, []string{"identity", "operating_history", "transaction_history", "moq", "mixed_batch", "lead_time", "sample", "returns"})
 	complianceChecks := checks(now, []string{"brand_ip", "patent", "certification", "dangerous_goods", "material", "labeling_instructions"})
-	return &ConvertInput{CreatedBy: 42, PlatformID: 3, Title: "真实商品", Description: "已复核", CategoryID: 1, Unit: "件", LocalizedTitle: "Test product", LocalizedDescription: "Reviewed", TargetLocale: "ru-RU", ShippingTemplateID: "ozon-fbo-1", CategorySchemaURI: "evidence://ozon/category/1", CategoryObservedAt: now, SupplierAssessment: supplierChecks, ComplianceChecks: complianceChecks, PlatformSKU: "OZ-1", SKUVariants: []DraftSKUInput{{SupplierSKU: "1688-red", ChannelSKU: "OZ-1-red", SpecDesc: "red", SpecValues: json.RawMessage(`{"color":"red"}`), CostPrice: 10, Price: 20}}, Media: []MediaInput{{SourceURL: "https://cbu01.alicdn.com/a.jpg", ProcessedURL: "https://assets.local/a-clean.jpg", MediaRole: "main", RightsStatus: "verified", RightsEvidenceURI: "evidence://rights/1", Operations: json.RawMessage(`["crop","background_remove"]`), Width: 1200, Height: 1200, ChannelRuleURI: "evidence://ozon/images/1"}}, Costs: costs, ListingPayload: json.RawMessage(`{"category":"approved"}`)}
+	for i := range complianceChecks {
+		complianceChecks[i].TruthStatus = "actual"
+	}
+	evidence := RuleEvidence{TruthStatus: "quoted", SourceURI: "evidence://rules", ObservedAt: now}
+	channelEvidence := RuleEvidence{TruthStatus: "quoted", SourceURI: "evidence://ozon/category/1", ObservedAt: now}
+	validation := DraftValidationInput{
+		Localization:      LocalizationInput{Locale: "ru-RU", Title: "Тестовый товар", Description: "Проверенное описание", BulletPoints: []string{"Проверенное описание"}, Keywords: []string{"товар"}, Attributes: map[string]string{"material": "сталь"}, Unit: "件"},
+		LocalizationRules: LocalizationRuleSnapshot{Evidence: evidence, Locale: "ru-RU", AllowedScripts: []string{"cyrillic"}, MinTitleLength: 3, MaxTitleLength: 100, MinBulletPoints: 1, MaxBulletLength: 200, MinKeywords: 1, AllowedUnits: []string{"件"}, ProhibitedWords: []string{"запрещено"}},
+		Channel:           ChannelListingInput{PlatformID: 3, CategoryID: "1", CategorySchemaURI: "evidence://ozon/category/1", CategoryObservedAt: now, Attributes: map[string]string{"material": "steel"}, VariantDimensions: []string{"color"}, ImageCount: 1, ImageWidths: []int{1200}, ImageHeights: []int{1200}, ShippingTemplateID: "ozon-fbo-1"},
+		ChannelRules:      ChannelRuleSnapshot{Evidence: channelEvidence, PlatformID: 3, CategoryID: "1", RequiredAttributes: []string{"material"}, RequiredVariantDimensions: []string{"color"}, AllowedVariantDimensions: []string{"color"}, MinImages: 1, MaxImages: 10, MinImageWidth: 1000, MinImageHeight: 1000, AllowedShippingTemplateIDs: []string{"ozon-fbo-1"}},
+		Costs:             CostValidationInput{TargetCurrency: "CNY", Costs: validatedCosts, Revenue: RevenueInput{Amount: 30, Currency: "CNY", TruthStatus: "estimated", SourceURI: "evidence://revenue", ObservedAt: now}},
+		Images:            []ImageValidationInput{{Role: "main", Width: 1200, Height: 1200, Background: "white", Cropped: true, ClarityScore: 0.95, TruthStatus: "actual", SourceURI: "sha256:", ObservedAt: now}},
+		ImageRules:        ImageRuleSnapshot{Evidence: evidence, MinMainWidth: 1000, MinMainHeight: 1000, AllowedBackgrounds: []string{"white"}, RequireCrop: true, MinClarityScore: 0.8, MinImages: 1, MaxImages: 10},
+		SKUs:              []SKUValidationInput{{SupplierSKU: "1688-red", InternalSKU: "INT-1-red", ChannelSKU: "OZ-1-red", Color: "red", Size: "standard", Material: "steel", Packaging: "box", TruthStatus: "quoted", SourceURI: "evidence://sku", ObservedAt: now}},
+		SKURules:          SKUValidationRules{Evidence: evidence, RequireColor: true, RequireSize: true, RequireMaterial: true, RequirePackaging: true},
+	}
+	return &ConvertInput{CreatedBy: 42, PlatformID: 3, Title: "真实商品", Description: "已复核", CategoryID: 1, Unit: "件", LocalizedTitle: "Тестовый товар", LocalizedDescription: "Проверенное описание", TargetLocale: "ru-RU", ShippingTemplateID: "ozon-fbo-1", CategorySchemaURI: "evidence://ozon/category/1", CategoryObservedAt: now, SupplierAssessment: supplierChecks, ComplianceChecks: complianceChecks, PlatformSKU: "OZ-1", SKUVariants: []DraftSKUInput{{SupplierSKU: "1688-red", InternalSKU: "INT-1-red", ChannelSKU: "OZ-1-red", Color: "red", Size: "standard", Material: "steel", Packaging: "box", SpecDesc: "red", SpecValues: json.RawMessage(`{"color":"red","size":"standard","material":"steel","packaging":"box"}`), CostPrice: 10, Price: 20}}, Media: []MediaInput{{SourceURL: "https://cbu01.alicdn.com/a.png", ProcessedURL: "https://assets.local/a-clean.jpg", MediaRole: "main", RightsStatus: "verified", RightsEvidenceURI: "evidence://rights/1", RightsObservedAt: now, Operations: json.RawMessage(`["crop","background_remove"]`), Width: 1200, Height: 1200, ChannelRuleURI: "evidence://ozon/images/1"}}, Costs: costs, ListingPayload: json.RawMessage(`{"category":"approved"}`), Validation: validation}
 }
 
 func checks(now time.Time, types []string) []EvidenceCheck {
