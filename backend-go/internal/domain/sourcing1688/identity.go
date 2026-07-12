@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -58,7 +59,8 @@ func productFingerprint(title string, variants json.RawMessage) (string, error) 
 			return "", fmt.Errorf("invalid variants for fingerprint: %w", err)
 		}
 	}
-	normalizedTitle := strings.ToLower(strings.Join(strings.Fields(title), " "))
+	decoded = canonicalIdentityValue(decoded)
+	normalizedTitle := normalizeIdentityText(title)
 	payload, err := json.Marshal(struct {
 		Title    string `json:"title"`
 		Variants any    `json:"variants"`
@@ -68,6 +70,92 @@ func productFingerprint(title string, variants json.RawMessage) (string, error) 
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func normalizeIdentityText(value string) string {
+	var out []rune
+	spacePending := false
+	for _, r := range strings.ToLower(value) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			if spacePending && len(out) > 0 {
+				out = append(out, ' ')
+			}
+			out = append(out, r)
+			spacePending = false
+		} else if len(out) > 0 {
+			spacePending = true
+		}
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func canonicalIdentityValue(value any) any {
+	switch typed := value.(type) {
+	case string:
+		return normalizeIdentityText(typed)
+	case []any:
+		items := make([]any, len(typed))
+		for i := range typed {
+			items[i] = canonicalIdentityValue(typed[i])
+		}
+		sort.Slice(items, func(i, j int) bool {
+			left, _ := json.Marshal(items[i])
+			right, _ := json.Marshal(items[j])
+			return string(left) < string(right)
+		})
+		return items
+	case map[string]any:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed {
+			result[normalizeIdentityText(key)] = canonicalIdentityValue(item)
+		}
+		return result
+	default:
+		return value
+	}
+}
+
+func variantIdentity(variants *json.RawMessage) (string, error) {
+	if variants == nil || len(*variants) == 0 {
+		return "", nil
+	}
+	var decoded any
+	if err := json.Unmarshal(*variants, &decoded); err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(canonicalIdentityValue(decoded))
+	return string(raw), err
+}
+
+func titleSimilarity(left, right string) float64 {
+	a, b := []rune(normalizeIdentityText(left)), []rune(normalizeIdentityText(right))
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	if string(a) == string(b) {
+		return 1
+	}
+	bigrams := func(input []rune) map[string]bool {
+		result := map[string]bool{}
+		if len(input) == 1 {
+			result[string(input)] = true
+			return result
+		}
+		for i := 0; i < len(input)-1; i++ {
+			result[string(input[i:i+2])] = true
+		}
+		return result
+	}
+	leftSet, rightSet := bigrams(a), bigrams(b)
+	intersection, union := 0, len(leftSet)
+	for token := range rightSet {
+		if leftSet[token] {
+			intersection++
+		} else {
+			union++
+		}
+	}
+	return float64(intersection) / float64(union)
 }
 
 func jsonValue(v any) json.RawMessage {
@@ -83,25 +171,9 @@ func optionalFloatValue(v *float64) any {
 }
 
 func (s *Service) recordIdentityAndChanges(tx *gorm.DB, p *Sourcing1688Product, previous *Sourcing1688Snapshot, current *Sourcing1688Snapshot) error {
-	title := ""
-	if current.ObservedTitle != nil {
-		title = *current.ObservedTitle
-	}
-	variants := json.RawMessage(nil)
-	if p.SkuVariants != nil {
-		variants = *p.SkuVariants
-	}
-	fingerprint, err := productFingerprint(title, variants)
-	if err != nil {
-		return err
-	}
-	if err := tx.Model(p).Update("source_product_fingerprint", fingerprint).Error; err != nil {
-		return err
-	}
-	p.SourceProductFingerprint = fingerprint
-	current.ProductFingerprint = fingerprint
-	if err := tx.Model(current).Update("product_fingerprint", fingerprint).Error; err != nil {
-		return err
+	fingerprint := current.ProductFingerprint
+	if fingerprint == "" || p.SourceProductFingerprint != fingerprint {
+		return fmt.Errorf("%w: source and immutable snapshot fingerprints must match before identity recording", ErrInvalidWorkflow)
 	}
 
 	if previous != nil {
@@ -139,11 +211,52 @@ func (s *Service) recordIdentityAndChanges(tx *gorm.DB, p *Sourcing1688Product, 
 	}
 
 	var matches []Sourcing1688Product
-	if err := tx.Where("source_product_fingerprint = ? AND id <> ?", fingerprint, p.ID).Order("id").Find(&matches).Error; err != nil {
+	if p.DemandCaseID == nil {
+		return fmt.Errorf("%w: source demand case is required for duplicate isolation", ErrWorkflowGate)
+	}
+	var ownerID int64
+	if err := tx.Model(&demandCaseRow{}).Select("owner_id").Where("id = ?", *p.DemandCaseID).Scan(&ownerID).Error; err != nil {
 		return err
 	}
+	if err := tx.Table("sourcing_1688_product AS match").
+		Select("match.*").
+		Joins("JOIN demand_case match_case ON match_case.id = match.demand_case_id").
+		Where("match.id <> ? AND match_case.owner_id = ?", p.ID, ownerID).
+		Order("match.id").Scan(&matches).Error; err != nil {
+		return err
+	}
+	currentVariants, err := variantIdentity(p.SkuVariants)
+	if err != nil {
+		return err
+	}
+	currentTitle := ""
+	if p.Title != nil {
+		currentTitle = *p.Title
+	}
 	for _, match := range matches {
-		candidate := DuplicateCandidate{SourceProductID: p.ID, MatchedProductID: match.ID, MatchType: "content_fingerprint", Fingerprint: fingerprint, Status: "pending_review"}
+		matchType := ""
+		if match.SourceProductFingerprint == fingerprint {
+			matchType = "content_fingerprint"
+		} else {
+			matchedVariants, variantErr := variantIdentity(match.SkuVariants)
+			if variantErr != nil {
+				return variantErr
+			}
+			matchedTitle := ""
+			if match.Title != nil {
+				matchedTitle = *match.Title
+			}
+			similarity := titleSimilarity(currentTitle, matchedTitle)
+			if currentVariants != "" && currentVariants == matchedVariants && similarity >= 0.80 {
+				matchType = "variant_title_similarity"
+			} else if p.SupplierBusinessID != "" && p.SupplierBusinessID == match.SupplierBusinessID && similarity >= 0.70 {
+				matchType = "supplier_title_similarity"
+			}
+		}
+		if matchType == "" {
+			continue
+		}
+		candidate := DuplicateCandidate{SourceProductID: p.ID, MatchedProductID: match.ID, MatchType: matchType, Fingerprint: fingerprint, Status: "pending_review"}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate).Error; err != nil {
 			return err
 		}
@@ -187,6 +300,14 @@ func (s *Service) ResolveDuplicate(candidateID int64, in *ResolveDuplicateInput)
 		var dc demandCaseRow
 		if source.DemandCaseID == nil || tx.First(&dc, *source.DemandCaseID).Error != nil || dc.OwnerID != in.ReviewedBy {
 			return fmt.Errorf("%w: duplicate decision requires workflow Owner", ErrWorkflowGate)
+		}
+		var matched Sourcing1688Product
+		var matchedDC demandCaseRow
+		if err := tx.First(&matched, candidate.MatchedProductID).Error; err != nil {
+			return err
+		}
+		if matched.DemandCaseID == nil || tx.First(&matchedDC, *matched.DemandCaseID).Error != nil || matchedDC.OwnerID != in.ReviewedBy {
+			return fmt.Errorf("%w: duplicate candidates must belong to the same workflow Owner", ErrWorkflowGate)
 		}
 		now := time.Now().UTC()
 		if err := tx.Model(&candidate).Updates(map[string]any{"status": in.Decision, "reviewed_by": in.ReviewedBy, "reviewed_at": now}).Error; err != nil {

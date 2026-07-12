@@ -14,7 +14,7 @@ export default function DemandCasesPage(){
   <Alert type="info" showIcon title="研究证据不等于真实付费需求" description="只有来源可追溯且反证独立的案件才可能进入只读数据预检；本页没有采购、发布或投放入口。" style={{marginBottom:16}} />
   <Card styles={{body:{padding:0}}}><Table rowKey="id" dataSource={query.data?.data??[]} pagination={false} onRow={r=>({onClick:()=>router.push(`/demand-cases/${r.id}`),style:{cursor:'pointer'}})} columns={[
    {title:'候选市场',render:(_,r)=><Space orientation="vertical" size={0}><Text strong>{r.region} × {r.consumer}</Text><Text type="secondary">{r.need_scenario}</Text></Space>},
-   {title:'渠道',dataIndex:'sales_channel'},{title:'裁决',dataIndex:'status',render:(v:string)=>{const m=verdictMeta[v]??{label:v,color:'default'};return <Tag color={m.color}>{m.label}</Tag>}},
+   {title:'渠道 / 本地化',render:(_,r)=><Space orientation="vertical" size={0}><Text>{r.sales_channel}</Text><Text type="secondary">{r.target_locale || '待明确'}</Text></Space>},{title:'裁决',dataIndex:'status',render:(v:string)=>{const m=verdictMeta[v]??{label:v,color:'default'};return <Tag color={m.color}>{m.label}</Tag>}},
    {title:'停止线',dataIndex:'stop_condition',ellipsis:true}
   ]}/></Card>
  </PageContainer>;

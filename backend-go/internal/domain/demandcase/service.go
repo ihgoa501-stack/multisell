@@ -19,8 +19,8 @@ type Service struct {
 func NewService(db *gorm.DB, logger *zap.Logger) *Service { return &Service{db: db, logger: logger} }
 
 func (s *Service) Create(ctx context.Context, c *DemandCase) error {
-	if c.OwnerID <= 0 || strings.TrimSpace(c.Region) == "" || strings.TrimSpace(c.Consumer) == "" || strings.TrimSpace(c.NeedScenario) == "" || strings.TrimSpace(c.SalesChannel) == "" {
-		return errors.New("region, consumer, need_scenario and sales_channel are required")
+	if c.OwnerID <= 0 || strings.TrimSpace(c.Region) == "" || strings.TrimSpace(c.Consumer) == "" || strings.TrimSpace(c.NeedScenario) == "" || strings.TrimSpace(c.SalesChannel) == "" || strings.TrimSpace(c.TargetLocale) == "" {
+		return errors.New("region, consumer, need_scenario, sales_channel and target_locale are required")
 	}
 	c.Status = VerdictLead
 	return s.db.WithContext(ctx).Create(c).Error

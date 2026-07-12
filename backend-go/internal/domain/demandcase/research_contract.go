@@ -32,6 +32,7 @@ type ResearchResult struct {
 	Consumer      string            `json:"consumer"`
 	NeedScenario  string            `json:"need_scenario"`
 	SalesChannel  string            `json:"sales_channel"`
+	TargetLocale  string            `json:"target_locale"`
 	StopCondition string            `json:"stop_condition"`
 	SourceURI     string            `json:"source_uri"`
 	CollectedAt   time.Time         `json:"collected_at"`
@@ -77,12 +78,12 @@ func (s *Service) ImportResearchResult(ctx context.Context, ownerID int64, in Re
 			return errors.New("research roles require independent run ids")
 		}
 		if in.RunType == RunScout {
-			result = DemandCase{OwnerID: ownerID, Region: in.Region, Consumer: in.Consumer, NeedScenario: in.NeedScenario, SalesChannel: in.SalesChannel, StopCondition: in.StopCondition}
+			result = DemandCase{OwnerID: ownerID, Region: in.Region, Consumer: in.Consumer, NeedScenario: in.NeedScenario, SalesChannel: in.SalesChannel, TargetLocale: in.TargetLocale, StopCondition: in.StopCondition}
 			if err := NewService(tx, s.logger).Create(ctx, &result); err != nil {
 				return err
 			}
 		} else {
-			if err := tx.Where("owner_id = ? AND region = ? AND consumer = ? AND need_scenario = ? AND sales_channel = ?", ownerID, in.Region, in.Consumer, in.NeedScenario, in.SalesChannel).First(&result).Error; err != nil {
+			if err := tx.Where("owner_id = ? AND region = ? AND consumer = ? AND need_scenario = ? AND sales_channel = ? AND target_locale = ?", ownerID, in.Region, in.Consumer, in.NeedScenario, in.SalesChannel, in.TargetLocale).First(&result).Error; err != nil {
 				return errors.New("scout result must be imported before counter or data reality")
 			}
 		}

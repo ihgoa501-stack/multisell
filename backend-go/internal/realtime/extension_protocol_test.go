@@ -49,6 +49,17 @@ func TestDecodeExtensionMessageAcceptsListPagePayload(t *testing.T) {
 	}
 }
 
+func TestDecodeExtensionMessageAcceptsFetchProductError(t *testing.T) {
+	raw := []byte(`{"type":"fetch_product_error","id":"req-2","payload":{"code":"TAB_NOT_FOUND","message":"open the product page"}}`)
+	msg, err := decodeExtensionMessage(raw)
+	if err != nil {
+		t.Fatalf("decodeExtensionMessage() error = %v", err)
+	}
+	if msg.Type != "fetch_product_error" || msg.ID != "req-2" {
+		t.Fatalf("unexpected message: %+v", msg)
+	}
+}
+
 func TestDecodeExtensionMessageRejectsMissingPayload(t *testing.T) {
 	_, err := decodeExtensionMessage([]byte(`{"type":"fetch_product_result","id":"req-1"}`))
 	if err == nil {

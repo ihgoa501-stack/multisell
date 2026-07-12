@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -36,8 +37,8 @@ func TestRequireWorkflowActorRejectsMissingJWTUserID(t *testing.T) {
 func TestOwnerScopedListAndSummaryDoNotLeakOtherOwners(t *testing.T) {
 	db := dbtest.NewDB(t, &Sourcing1688Product{}, &demandCaseRow{})
 	svc := NewService(db, dbtest.NewLogger(t))
-	db.Create(&demandCaseRow{ID: 1, OwnerID: 42, Status: "experiment_ready"})
-	db.Create(&demandCaseRow{ID: 2, OwnerID: 99, Status: "experiment_ready"})
+	db.Create(&demandCaseRow{ID: 1, OwnerID: 42, TargetLocale: "en-US", Status: "experiment_ready"})
+	db.Create(&demandCaseRow{ID: 2, OwnerID: 99, TargetLocale: "en-US", Status: "experiment_ready"})
 	one, two := int64(1), int64(2)
 	db.Create(&Sourcing1688Product{SourceURL: "https://detail.1688.com/offer/1.html", DemandCaseID: &one, Status: StatusPendingReview})
 	db.Create(&Sourcing1688Product{SourceURL: "https://detail.1688.com/offer/2.html", DemandCaseID: &two, Status: StatusPendingReview})
@@ -52,10 +53,101 @@ func TestOwnerScopedListAndSummaryDoNotLeakOtherOwners(t *testing.T) {
 	}
 }
 
+func TestCaptureDoesNotMutateSnapshotAfterInsert(t *testing.T) {
+	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{})
+	if err := db.Exec(`CREATE TRIGGER immutable_snapshot_update
+		BEFORE UPDATE ON sourcing_1688_snapshot
+		BEGIN SELECT RAISE(ABORT, 'sourcing_1688_snapshot is immutable'); END`).Error; err != nil {
+		t.Fatalf("create immutable snapshot trigger: %v", err)
+	}
+	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, TargetLocale: "en-US", Status: "experiment_ready"})
+	db.Create(&experimentRow{ExperimentID: "EXP-IMMUTABLE", OwnerID: 42, Status: "active", Stage: "product"})
+	db.Create(&gateRow{ExperimentID: "EXP-IMMUTABLE", Stage: "opportunity", Result: "pass"})
+	db.Create(&objectLinkRow{ExperimentID: "EXP-IMMUTABLE", ObjectType: "demand_case", ObjectID: "7"})
+	title := "不可变快照测试商品"
+	variants := json.RawMessage(`[{"color":"red"}]`)
+	product, err := NewService(db, dbtest.NewLogger(t)).Capture(&CaptureInput{
+		DemandCaseID: 7, ExperimentID: "EXP-IMMUTABLE", SourceURL: "https://detail.1688.com/offer/123456.html",
+		CollectedAt: time.Now().UTC(), CollectedBy: 42, Driver: "plugin", ParserVersion: "1.0.0",
+		SupplierBusinessID: "supplier-immutable", RawPayload: json.RawMessage(`{"offerId":123456}`), Title: &title, SkuVariants: variants,
+	})
+	if err != nil {
+		t.Fatalf("Capture must not update the snapshot after insert: %v", err)
+	}
+	var snapshot Sourcing1688Snapshot
+	if product.SnapshotID == nil || db.First(&snapshot, *product.SnapshotID).Error != nil || snapshot.ProductFingerprint == "" || snapshot.ProductFingerprint != product.SourceProductFingerprint {
+		t.Fatalf("fingerprint was not atomically inserted with immutable snapshot: product=%#v snapshot=%#v", product, snapshot)
+	}
+}
+
+func TestDuplicateDetectionAndDecisionAreOwnerIsolated(t *testing.T) {
+	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+	for _, fixture := range []struct {
+		owner      int64
+		caseID     int64
+		experiment string
+		offer      string
+	}{{42, 7, "EXP-OWNER-42", "1001"}, {99, 8, "EXP-OWNER-99", "1002"}} {
+		db.Create(&demandCaseRow{ID: fixture.caseID, OwnerID: fixture.owner, TargetLocale: "en-US", Status: "experiment_ready"})
+		db.Create(&experimentRow{ExperimentID: fixture.experiment, OwnerID: fixture.owner, Status: "active", Stage: "product"})
+		db.Create(&gateRow{ExperimentID: fixture.experiment, Stage: "opportunity", Result: "pass"})
+		db.Create(&objectLinkRow{ExperimentID: fixture.experiment, ObjectType: "demand_case", ObjectID: fmt.Sprint(fixture.caseID)})
+		title := "same product"
+		if _, err := svc.Capture(&CaptureInput{DemandCaseID: fixture.caseID, ExperimentID: fixture.experiment, SourceURL: "https://detail.1688.com/offer/" + fixture.offer + ".html", CollectedAt: time.Now().UTC(), CollectedBy: fixture.owner, Driver: "plugin", ParserVersion: "1", SupplierBusinessID: "supplier-" + fixture.offer, RawPayload: json.RawMessage(`{"offer":"` + fixture.offer + `"}`), Title: &title}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var products []Sourcing1688Product
+	db.Order("id").Find(&products)
+	var candidates int64
+	db.Model(&DuplicateCandidate{}).Count(&candidates)
+	if candidates != 0 {
+		t.Fatalf("cross-Owner sources created %d duplicate candidates", candidates)
+	}
+	candidate := DuplicateCandidate{SourceProductID: products[0].ID, MatchedProductID: products[1].ID, MatchType: "legacy", Fingerprint: products[0].SourceProductFingerprint, Status: "pending_review"}
+	db.Create(&candidate)
+	if _, err := svc.ResolveDuplicate(candidate.ID, &ResolveDuplicateInput{ReviewedBy: 42, Decision: "same_product"}); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("cross-Owner duplicate decision = %v, want workflow gate", err)
+	}
+}
+
+func TestProductIdentityCanonicalizesVariantOrderAndFlagsSmallTitleChanges(t *testing.T) {
+	left := json.RawMessage(`[{"color":"red","size":"L"},{"color":"blue","size":"M"}]`)
+	right := json.RawMessage(`[{"size":"M","color":"blue"},{"size":"L","color":"red"}]`)
+	leftHash, err := productFingerprint("不锈钢宠物饮水碗-大号", left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightHash, err := productFingerprint("不锈钢宠物饮水碗 大号", right)
+	if err != nil || leftHash != rightHash {
+		t.Fatalf("canonical fingerprints differ: %s %s err=%v", leftHash, rightHash, err)
+	}
+
+	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{})
+	svc := NewService(db, dbtest.NewLogger(t))
+	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, TargetLocale: "zh-CN", Status: "experiment_ready"})
+	db.Create(&experimentRow{ExperimentID: "EXP-FUZZY", OwnerID: 42, Status: "active", Stage: "product"})
+	db.Create(&gateRow{ExperimentID: "EXP-FUZZY", Stage: "opportunity", Result: "pass"})
+	db.Create(&objectLinkRow{ExperimentID: "EXP-FUZZY", ObjectType: "demand_case", ObjectID: "7"})
+	for index, fixture := range []struct {
+		offer, title string
+		variants     json.RawMessage
+	}{{"2001", "不锈钢宠物饮水碗 大号", left}, {"2002", "不锈钢宠物饮水碗 大号款", right}} {
+		if _, err := svc.Capture(&CaptureInput{DemandCaseID: 7, ExperimentID: "EXP-FUZZY", SourceURL: "https://detail.1688.com/offer/" + fixture.offer + ".html", CollectedAt: time.Now().UTC().Add(time.Duration(index) * time.Second), CollectedBy: 42, Driver: "plugin", ParserVersion: "1", SupplierBusinessID: "supplier-" + fixture.offer, RawPayload: json.RawMessage(`{"offer":"` + fixture.offer + `"}`), Title: &fixture.title, SkuVariants: fixture.variants}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var candidate DuplicateCandidate
+	if err := db.First(&candidate).Error; err != nil || candidate.MatchType != "variant_title_similarity" || candidate.Status != "pending_review" {
+		t.Fatalf("small title change was not flagged: candidate=%#v err=%v", candidate, err)
+	}
+}
+
 func TestControlledWorkflowCaptureReviewConvertToDraft(t *testing.T) {
 	db := dbtest.NewDB(t, &Sourcing1688Product{}, &Sourcing1688Snapshot{}, &SourcingChangeEvent{}, &DuplicateCandidate{}, &ImageProcessingRecord{}, &CaptureAttempt{}, &demandCaseRow{}, &experimentRow{}, &gateRow{}, &objectLinkRow{}, &platformRow{}, &productRow{}, &skuRow{}, &mediaRow{}, &costRow{}, &listingRow{}, &draftRow{})
 	svc := NewService(db, dbtest.NewLogger(t))
-	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "Ozon", Status: "experiment_ready"})
+	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "Ozon", TargetLocale: "ru-RU", Status: "experiment_ready"})
 	db.Create(&experimentRow{ExperimentID: "EXP-1", OwnerID: 42, Status: "active", Stage: "product"})
 	db.Create(&gateRow{ExperimentID: "EXP-1", Stage: "opportunity", Result: "pass"})
 	db.Create(&objectLinkRow{ExperimentID: "EXP-1", ObjectType: "demand_case", ObjectID: "7"})
@@ -218,7 +310,7 @@ func completeConvertInput(now time.Time) *ConvertInput {
 func checks(now time.Time, types []string) []EvidenceCheck {
 	result := make([]EvidenceCheck, 0, len(types))
 	for _, typ := range types {
-		result = append(result, EvidenceCheck{CheckType: typ, Result: "pass", TruthStatus: "quoted", SourceURI: "evidence://" + typ, ObservedAt: now})
+		result = append(result, EvidenceCheck{CheckType: typ, Value: "verified-" + typ, Result: "pass", TruthStatus: "quoted", SourceURI: "evidence://" + typ, ObservedAt: now})
 	}
 	return result
 }

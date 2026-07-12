@@ -34,8 +34,13 @@ type PluginDriver struct {
 	extensionSvc   ExtensionService
 	requestTimeout time.Duration
 	mu             sync.RWMutex
-	pending        map[string]chan *toolbridge.PageData
+	pending        map[string]chan pageResponse
 	pendingLists   map[string]chan listPageResponse
+}
+
+type pageResponse struct {
+	data *toolbridge.PageData
+	err  error
 }
 
 type listPageResponse struct {
@@ -54,7 +59,7 @@ func NewPluginDriver(svc ExtensionService, timeout time.Duration) *PluginDriver 
 	d := &PluginDriver{
 		extensionSvc:   svc,
 		requestTimeout: timeout,
-		pending:        make(map[string]chan *toolbridge.PageData),
+		pending:        make(map[string]chan pageResponse),
 		pendingLists:   make(map[string]chan listPageResponse),
 	}
 	// Attempt to register the response callback. If the service ignores
@@ -115,7 +120,7 @@ func (d *PluginDriver) FetchPage(ctx context.Context, url string) (*toolbridge.P
 		return nil, errors.New("plugin driver: authenticated owner user ID required")
 	}
 	reqID := fmt.Sprintf("req_%s", uuid.New().String())
-	resultCh := make(chan *toolbridge.PageData, 1)
+	resultCh := make(chan pageResponse, 1)
 
 	d.mu.Lock()
 	d.pending[reqID] = resultCh
@@ -142,10 +147,11 @@ func (d *PluginDriver) FetchPage(ctx context.Context, url string) (*toolbridge.P
 
 	select {
 	case result := <-resultCh:
-		if result != nil {
-			result.Driver = "plugin"
+		if result.data != nil {
+			result.data.Driver = "plugin"
+			result.data.CollectionRequestID = reqID
 		}
-		return result, nil
+		return result.data, result.err
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-time.After(d.requestTimeout):
@@ -201,13 +207,43 @@ func (d *PluginDriver) Execute(_ map[string]interface{}) (*toolbridge.ToolResult
 // correct pending request channel. This is intended to be called by the
 // realtime layer when a browser extension sends back a fetch result.
 func (d *PluginDriver) HandleResponse(data []byte) {
-	var resp struct {
-		Type    string               `json:"type"`
-		ID      string               `json:"id"`
-		Data    *toolbridge.PageData `json:"data"`
+	var errorResp struct {
+		Type    string `json:"type"`
+		ID      string `json:"id"`
 		Payload *struct {
-			Status string               `json:"status"`
-			Data   *toolbridge.PageData `json:"data"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(data, &errorResp); err == nil && errorResp.Type == "fetch_product_error" && errorResp.ID != "" {
+		d.mu.RLock()
+		ch, ok := d.pending[errorResp.ID]
+		d.mu.RUnlock()
+		if !ok {
+			return
+		}
+		code, message := "COLLECTION_FAILED", "browser extension could not collect product page"
+		if errorResp.Payload != nil {
+			if errorResp.Payload.Code != "" {
+				code = errorResp.Payload.Code
+			}
+			if errorResp.Payload.Message != "" {
+				message = errorResp.Payload.Message
+			}
+		}
+		select {
+		case ch <- pageResponse{err: fmt.Errorf("%s: %s", code, message)}:
+		default:
+		}
+		return
+	}
+	var resp struct {
+		Type    string          `json:"type"`
+		ID      string          `json:"id"`
+		Data    json.RawMessage `json:"data"`
+		Payload *struct {
+			Status string          `json:"status"`
+			Data   json.RawMessage `json:"data"`
 		} `json:"payload"`
 	}
 	var listResp struct {
@@ -267,14 +303,19 @@ func (d *PluginDriver) HandleResponse(data []byte) {
 	if resp.Type != "fetch_product_result" || resp.ID == "" {
 		return
 	}
-	result := resp.Data
-	if result == nil && resp.Payload != nil && resp.Payload.Status == "ok" {
-		result = resp.Payload.Data
+	rawResult := resp.Data
+	if len(rawResult) == 0 && resp.Payload != nil && resp.Payload.Status == "ok" {
+		rawResult = resp.Payload.Data
 	}
-	if result == nil {
+	if len(rawResult) == 0 || string(rawResult) == "null" {
+		return
+	}
+	var result toolbridge.PageData
+	if err := json.Unmarshal(rawResult, &result); err != nil {
 		return
 	}
 	result.Driver = "plugin"
+	result.RawResponse = append(json.RawMessage(nil), rawResult...)
 
 	d.mu.RLock()
 	ch, ok := d.pending[resp.ID]
@@ -284,7 +325,7 @@ func (d *PluginDriver) HandleResponse(data []byte) {
 	}
 
 	select {
-	case ch <- result:
+	case ch <- pageResponse{data: &result}:
 	default:
 	}
 }

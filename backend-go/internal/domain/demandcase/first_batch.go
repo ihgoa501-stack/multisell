@@ -10,7 +10,7 @@ import (
 // It deliberately ends at evidence_missing: public sources cannot prove paid demand.
 func (s *Service) RunFirstPublicResearchBatch(ctx context.Context, ownerID int64) ([]OwnerDecisionCard, error) {
 	observed := time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)
-	base := ResearchResult{BatchKey: "public-market-baseline-2026-07-11", Region: "俄罗斯", Consumer: "Ozon 平台可观察消费者", NeedScenario: "跨境商品需求尚待账号内数据验证", SalesChannel: "Ozon", StopCondition: "无法取得账号内需求、费用、履约与售后字段时停止", CollectedAt: observed}
+	base := ResearchResult{BatchKey: "public-market-baseline-2026-07-11", Region: "俄罗斯", Consumer: "Ozon 平台可观察消费者", NeedScenario: "跨境商品需求尚待账号内数据验证", SalesChannel: "Ozon", TargetLocale: "ru-RU", StopCondition: "无法取得账号内需求、费用、履约与售后字段时停止", CollectedAt: observed}
 	runs := []ResearchResult{
 		mergeResearch(base, "public-scout-20260711", RunScout, "https://docs.ozon.com/global/en/analytics/analytics-and-metrics/analytics-tools/", []ResearchFinding{{Dimension: DimensionDemand, Kind: EvidenceSupport, TruthStatus: TruthQuoted, Title: "Ozon 官方提供卖家侧需求与竞争分析工具，但公开文档不提供具体市场需求结论"}, {Dimension: DimensionCompetition, Kind: EvidenceSupport, TruthStatus: TruthQuoted, Title: "官方分析能力可用于后续读取竞争指标，实际字段与账号权限待验证"}}),
 		mergeResearch(base, "public-falsifier-20260711", RunFalsifier, "https://support.google.com/trends/answer/4365533?hl=en", []ResearchFinding{{Dimension: DimensionDemand, Kind: EvidenceCounter, TruthStatus: TruthQuoted, Title: "公开搜索热度是抽样归一化相对兴趣，不能证明目标消费者付款"}}),

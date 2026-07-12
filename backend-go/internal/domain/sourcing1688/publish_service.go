@@ -263,6 +263,15 @@ func (s *Service) RequestPublish(sourceID int64, in *PublishRequestInput) (*Publ
 		if err := requireOwner(tx, &source, in.RequesterID); err != nil {
 			return err
 		}
+		var activeAttempts int64
+		if err := tx.Model(&PublishAttempt{}).
+			Where("sourcing_product_id = ? AND status IN ?", sourceID, []string{PublishStatusPending, PublishStatusApproved, PublishStatusExecuting, PublishStatusSubmitted, PublishStatusReconcile}).
+			Count(&activeAttempts).Error; err != nil {
+			return err
+		}
+		if activeAttempts > 0 {
+			return fmt.Errorf("%w: an unresolved publish request already exists for this source", ErrWorkflowGate)
+		}
 		if source.ExperimentID == nil {
 			return fmt.Errorf("%w: source experiment is required", ErrWorkflowGate)
 		}

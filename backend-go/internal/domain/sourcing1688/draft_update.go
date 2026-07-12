@@ -31,6 +31,9 @@ func (s *Service) UpdateDraft(id int64, in *ConvertInput) (*DraftDetail, error) 
 		if dc.OwnerID != in.CreatedBy || dc.Status != "experiment_ready" {
 			return fmt.Errorf("%w: update requires workflow Owner", ErrWorkflowGate)
 		}
+		if strings.TrimSpace(dc.TargetLocale) == "" || !strings.EqualFold(dc.TargetLocale, in.TargetLocale) {
+			return fmt.Errorf("%w: draft locale does not match the approved market locale", ErrWorkflowGate)
+		}
 		var platform platformRow
 		if err := tx.First(&platform, in.PlatformID).Error; err != nil {
 			return err

@@ -179,6 +179,34 @@ func TestPluginDriverTimeout(t *testing.T) {
 	}
 }
 
+func TestPluginDriverFetchPageReturnsActionableExtensionError(t *testing.T) {
+	svc := newMockExtService()
+	driver := NewPluginDriver(svc, time.Second)
+	go func() {
+		for i := 0; i < 100; i++ {
+			svc.mu.Lock()
+			if len(svc.sentMsgs) > 0 {
+				msg := append([]byte(nil), svc.sentMsgs[len(svc.sentMsgs)-1]...)
+				svc.mu.Unlock()
+				var req struct {
+					ID string `json:"id"`
+				}
+				_ = json.Unmarshal(msg, &req)
+				svc.invokeCallback(0, []byte(`{"type":"fetch_product_error","id":"`+req.ID+`","payload":{"code":"TAB_NOT_FOUND","message":"Open the exact 1688 product page first"}}`))
+				return
+			}
+			svc.mu.Unlock()
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	ctx := toolbridge.WithOwnerUserID(context.Background(), 42)
+	_, err := driver.FetchPage(ctx, "https://detail.1688.com/offer/1.html")
+	if err == nil || !strings.Contains(err.Error(), "TAB_NOT_FOUND") {
+		t.Fatalf("error = %v, want actionable TAB_NOT_FOUND", err)
+	}
+}
+
 // TestPluginDriverContextCancellation verifies that FetchPage respects
 // context cancellation.
 func TestPluginDriverContextCancellation(t *testing.T) {
@@ -218,7 +246,7 @@ func TestPluginDriverHandleResponseRouting(t *testing.T) {
 	driver := NewPluginDriver(svc, 10*time.Second)
 
 	// Create a result channel and manually inject it into the pending map.
-	resultCh := make(chan *toolbridge.PageData, 1)
+	resultCh := make(chan pageResponse, 1)
 	driver.mu.Lock()
 	driver.pending["test_req_1"] = resultCh
 	driver.mu.Unlock()
@@ -234,12 +262,12 @@ func TestPluginDriverHandleResponseRouting(t *testing.T) {
 	driver.HandleResponse(resp)
 
 	select {
-	case data := <-resultCh:
-		if data == nil {
+	case result := <-resultCh:
+		if result.data == nil {
 			t.Fatal("expected non-nil data on the pending channel")
 		}
-		if data.Title != "Routed Response" {
-			t.Errorf("expected Title='Routed Response', got %q", data.Title)
+		if result.data.Title != "Routed Response" {
+			t.Errorf("expected Title='Routed Response', got %q", result.data.Title)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for response to be routed")
@@ -250,21 +278,25 @@ func TestPluginDriverHandleResponseAcceptsExtensionPayloadEnvelope(t *testing.T)
 	svc := newMockExtService()
 	driver := NewPluginDriver(svc, 10*time.Second)
 
-	resultCh := make(chan *toolbridge.PageData, 1)
+	resultCh := make(chan pageResponse, 1)
 	driver.mu.Lock()
 	driver.pending["protocol_req_1"] = resultCh
 	driver.mu.Unlock()
 
-	resp := []byte(`{"type":"fetch_product_result","id":"protocol_req_1","payload":{"status":"ok","data":{"source_url":"https://detail.1688.com/offer/1.html","title":"协议商品","price_cny":88}}}`)
+	resp := []byte(`{"type":"fetch_product_result","id":"protocol_req_1","payload":{"status":"ok","data":{"source_url":"https://detail.1688.com/offer/1.html","title":"协议商品","price_1688":88,"min_order_qty":3,"supplier_id_1688":"supplier-1","package_weight_kg":0.5}}}`)
 	driver.HandleResponse(resp)
 
 	select {
-	case data := <-resultCh:
-		if data == nil {
+	case result := <-resultCh:
+		if result.data == nil {
 			t.Fatal("expected non-nil protocol payload data")
 		}
-		if data.Title != "协议商品" || data.PriceCNY != 88 {
-			t.Fatalf("unexpected data: %+v", data)
+		if result.data.Title != "协议商品" || result.data.PriceCNY != 88 || result.data.MOQ != 3 || result.data.SupplierBusinessID != "supplier-1" || result.data.WeightKg == nil || *result.data.WeightKg != 0.5 {
+			t.Fatalf("unexpected data: %+v", result.data)
+		}
+		wantRaw := `{"source_url":"https://detail.1688.com/offer/1.html","title":"协议商品","price_1688":88,"min_order_qty":3,"supplier_id_1688":"supplier-1","package_weight_kg":0.5}`
+		if string(result.data.RawResponse) != wantRaw {
+			t.Fatalf("raw response changed: %s", result.data.RawResponse)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for protocol payload response")
@@ -404,7 +436,7 @@ func TestPluginDriverHandleResponseIgnoresNonMatchingType(t *testing.T) {
 	svc := newMockExtService()
 	driver := NewPluginDriver(svc, 10*time.Second)
 
-	resultCh := make(chan *toolbridge.PageData, 1)
+	resultCh := make(chan pageResponse, 1)
 	driver.mu.Lock()
 	driver.pending["test_ignore"] = resultCh
 	driver.mu.Unlock()

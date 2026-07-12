@@ -25,7 +25,7 @@ func seedOwnerReadFixture(t *testing.T, svc *Service) int64 {
 	tx := svc.db
 	now := time.Date(2026, 7, 12, 8, 0, 0, 0, time.UTC)
 	title, price := "Owner reviewed offer", 12.5
-	demand := demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "test-channel", Status: "experiment_ready"}
+	demand := demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "test-channel", TargetLocale: "en-US", Status: "experiment_ready"}
 	experiment := experimentRow{ExperimentID: "exp-owner", OwnerID: 42, Status: "active", Stage: "supply"}
 	source := Sourcing1688Product{ID: 8, SourceURL: "https://detail.1688.com/offer/8.html?access_token=secret#private", Title: &title, Price: &price, MOQ: 2, SupplierName: "SECRET SUPPLIER", DemandCaseID: ptrInt64(7), ExperimentID: ptrString("exp-owner"), SnapshotID: ptrInt64(9), LifecycleStatus: "editing", RawData: rawJSON(`{"secret":"raw-data"}`)}
 	snapshot := Sourcing1688Snapshot{ID: 9, SourcingProductID: 8, SourceURL: source.SourceURL, CollectedAt: now, CollectedBy: 42, Driver: "controlled", ParserVersion: "v1", RawPayload: json.RawMessage(`{"secret":"raw-payload"}`), RawSHA256: strings.Repeat("a", 64), ObservedTitle: &title, ObservedPrice: &price, ObservedMOQ: 2, ObservedSupplier: "Supplier"}

@@ -18,7 +18,7 @@ func researchService(t *testing.T) *Service {
 
 func TestResearchContractRejectsMissingSourceAndHashMismatch(t *testing.T) {
 	s := researchService(t)
-	in := ResearchResult{BatchKey: "batch-1", RunID: "scout-1", RunType: RunScout, Region: "DE", Consumer: "城市养猫家庭", NeedScenario: "短途出行", SalesChannel: "独立站", CollectedAt: time.Now(), RawPayload: []byte(`{"x":1}`), RawSHA256: "wrong"}
+	in := ResearchResult{BatchKey: "batch-1", RunID: "scout-1", RunType: RunScout, Region: "DE", Consumer: "城市养猫家庭", NeedScenario: "短途出行", SalesChannel: "独立站", TargetLocale: "de-DE", CollectedAt: time.Now(), RawPayload: []byte(`{"x":1}`), RawSHA256: "wrong"}
 	if _, err := s.ImportResearchResult(context.Background(), 1, in); err == nil {
 		t.Fatal("hash mismatch must fail")
 	}
@@ -34,7 +34,7 @@ func TestResearchBatchIsIdempotentAndIndependentRunsAreRequired(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	raw := []byte(`{"claim":"lead"}`)
-	scout := ResearchResult{BatchKey: "real-1", RunID: "scout-1", RunType: RunScout, Region: "RU", Consumer: "Ozon可观察消费者", NeedScenario: "跨境商品需求待验证", SalesChannel: "Ozon", CollectedAt: now, SourceURI: "https://docs.ozon.com/global/en/analytics/analytics-and-metrics/analytics-tools/", RawPayload: raw, RawSHA256: hashPayload(raw), Findings: completeFindings(EvidenceSupport)}
+	scout := ResearchResult{BatchKey: "real-1", RunID: "scout-1", RunType: RunScout, Region: "RU", Consumer: "Ozon可观察消费者", NeedScenario: "跨境商品需求待验证", SalesChannel: "Ozon", TargetLocale: "ru-RU", CollectedAt: now, SourceURI: "https://docs.ozon.com/global/en/analytics/analytics-and-metrics/analytics-tools/", RawPayload: raw, RawSHA256: hashPayload(raw), Findings: completeFindings(EvidenceSupport)}
 	c1, err := s.ImportResearchResult(ctx, 1, scout)
 	if err != nil {
 		t.Fatal(err)

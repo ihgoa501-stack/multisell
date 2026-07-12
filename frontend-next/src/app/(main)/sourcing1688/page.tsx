@@ -1,16 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, App as AntdApp, Button, Card, Checkbox, Col, Collapse, Descriptions, Divider, Drawer, Form, Input, InputNumber,
+  Alert, App as AntdApp, Button, Card, Checkbox, Col, Collapse, Descriptions, Divider, Drawer, Form, Image, Input, InputNumber,
   Modal, Row, Select, Space, Table, Tag, Typography, Upload,
 } from 'antd';
 import { DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, UploadOutlined } from '@ant-design/icons';
 import PageContainer from '@/components/ui/PageContainer';
 import apiClient from '@/lib/api-client';
+import { getToken } from '@/lib/auth';
 
 const { Text, Paragraph } = Typography;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
+
+function protectedContentURL(path: string) {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE.replace(/\/api\/?$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
+}
 
 type SourceRecord = {
   id: number;
@@ -188,7 +195,7 @@ function formatPayload(value: unknown) {
 }
 
 function evidenceRows(types: ReadonlyArray<readonly [string, string]>, actualOnly = false) {
-  return types.map(([check_type]) => ({ check_type, result: 'pass', truth_status: actualOnly ? 'actual' : 'quoted', source_uri: '', observed_at: localDateTime(), notes: '' }));
+  return types.map(([check_type]) => ({ check_type, value: '', result: 'pass', truth_status: actualOnly ? 'actual' : 'quoted', source_uri: '', observed_at: localDateTime(), notes: '' }));
 }
 
 function defaultCosts() {
@@ -212,7 +219,7 @@ function processedMediaDefaults(processed?: Record<string, unknown> | null) {
 
 function defaultDraftValues(processed?: Record<string, unknown> | null): DraftFormValues {
   return {
-    unit: '件', target_locale: 'ru-RU', currency: 'CNY', category_observed_at: localDateTime(),
+    unit: '件', target_locale: '', currency: 'CNY', category_observed_at: localDateTime(),
     sku_variants: [{ truth_status: 'quoted', observed_at: localDateTime(), color: '', size: '', material: '', packaging: '' }],
     media: processedMediaDefaults(processed), costs: defaultCosts(),
     supplier_assessment: evidenceRows(supplierCheckTypes), compliance_checks: evidenceRows(complianceCheckTypes, true),
@@ -305,6 +312,7 @@ function EvidenceChecklist({ name, types, actualOnly = false }: { name: string; 
   return <Form.List name={name}>{(fields) => <Space orientation="vertical" style={{ width: '100%' }}>
     {fields.map((field, index) => <Card key={field.key} size="small" title={types[index]?.[1] ?? `核验 ${index + 1}`}>
       <Form.Item name={[field.name, 'check_type']} hidden><Input /></Form.Item>
+      <Form.Item name={[field.name, 'value']} label="核验到的事实值" rules={required}><Input placeholder="例如经营 6 年、近 90 天成交 320 单、交期 7 天或不适用及理由" /></Form.Item>
       <Row gutter={12}>
         <Col xs={24} md={5}><Form.Item name={[field.name, 'result']} label="结论" rules={required}><Select options={[{ value: 'pass', label: '通过' }]} /></Form.Item></Col>
         <Col xs={24} md={7}><Form.Item name={[field.name, 'truth_status']} label="证据等级" rules={required}><Select options={actualOnly ? truthOptions.slice(0, 1) : truthOptions.slice(0, 2)} /></Form.Item></Col>
@@ -340,6 +348,8 @@ export default function Sourcing1688Page() {
   const [decisionTarget, setDecisionTarget] = useState<{ record: SourceRecord; approvalId: number } | null>(null);
   const [imageTarget, setImageTarget] = useState<SourceRecord | null>(null);
   const [processedImage, setProcessedImage] = useState<Record<string, unknown> | null>(null);
+  const [processedImagePreviewURL, setProcessedImagePreviewURL] = useState<string | null>(null);
+  const [processedImagePreviewError, setProcessedImagePreviewError] = useState<string | null>(null);
   const [identityHistory, setIdentityHistory] = useState<{ sourceId: number; data: IdentityHistory } | null>(null);
   const [acceptanceReport, setAcceptanceReport] = useState<AcceptanceReport | null>(null);
   const [publishTarget, setPublishTarget] = useState<SourceRecord | null>(null);
@@ -358,6 +368,10 @@ export default function Sourcing1688Page() {
   const [publishReconcileForm] = Form.useForm();
   const publishInventoryRows = Form.useWatch('inventory_rows', publishRequestForm) ?? [];
   const reconcileOutcome = Form.useWatch('outcome', publishReconcileForm);
+
+  useEffect(() => () => {
+    if (processedImagePreviewURL) URL.revokeObjectURL(processedImagePreviewURL);
+  }, [processedImagePreviewURL]);
 
   const list = useQuery({
     queryKey: ['sourcing-1688-controlled'],
@@ -424,9 +438,24 @@ export default function Sourcing1688Page() {
 
   const processImage = useMutation({
     mutationFn: (v: Record<string, unknown>) => apiClient.post<Record<string, unknown>>('/v1/sourcing-1688/processed-images', { ...v, sourcing_product_id: imageTarget?.id, rights_observed_at: new Date(v.rights_observed_at as string).toISOString() }),
-    onSuccess: (result) => {
-      setProcessedImage({ ...(result.data ?? {}), source_url: imageForm.getFieldValue('source_url'), source_id: imageTarget?.id });
-      message.success('图片已真实处理并保存版本记录，可直接带入草稿表单');
+    onSuccess: async (result) => {
+      const processed: Record<string, unknown> = { ...(result.data ?? {}), source_url: imageForm.getFieldValue('source_url'), source_id: imageTarget?.id };
+      setProcessedImage(processed);
+      setProcessedImagePreviewError(null);
+      try {
+        const token = getToken();
+        const response = await fetch(protectedContentURL(String(processed.content_url ?? '')), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const objectURL = URL.createObjectURL(await response.blob());
+        setProcessedImagePreviewURL(objectURL);
+        message.success('图片已处理并加载预览；请实际目检后再填写草稿核验项');
+      } catch (error) {
+        setProcessedImagePreviewURL(null);
+        setProcessedImagePreviewError((error as Error).message);
+        message.error('处理记录已保存，但预览加载失败；不得在未目检时确认图片合格');
+      }
     },
     onError: (e: Error) => message.error(`图片处理失败：${e.message}`),
   });
@@ -507,6 +536,33 @@ export default function Sourcing1688Page() {
     setConverting(record);
   };
 
+  const loadEvidence = async (record: SourceRecord) => {
+    try {
+      const res = await apiClient.get<Snapshot>(`/v1/sourcing-1688/${record.id}/snapshot`);
+      setEvidence(res.data ?? null);
+    } catch (error) {
+      message.error(`来源证据读取失败：${(error as Error).message}`);
+    }
+  };
+
+  const loadIdentityHistory = async (record: SourceRecord) => {
+    try {
+      const res = await apiClient.get<IdentityHistory>(`/v1/sourcing-1688/${record.id}/identity-history`);
+      setIdentityHistory({ sourceId: record.id, data: res.data ?? {} });
+    } catch (error) {
+      message.error(`变化/同款读取失败：${(error as Error).message}`);
+    }
+  };
+
+  const loadAcceptanceReport = async (record: SourceRecord) => {
+    try {
+      const res = await apiClient.get<AcceptanceReport>(`/v1/sourcing-1688/${record.id}/acceptance-report`);
+      setAcceptanceReport(res.data ?? null);
+    } catch (error) {
+      message.error(`15 项验收读取失败：${(error as Error).message}`);
+    }
+  };
+
   const openPublishSafety = async (record: SourceRecord) => {
     setPublishTarget(record);
     publishRequestForm.resetFields();
@@ -546,12 +602,12 @@ export default function Sourcing1688Page() {
             { title: '生命周期', width: 170, render: (_, r) => <><Tag color={statusColor[r.status]}>{r.lifecycle_status || statusLabel[r.status] || r.status}</Tag><br /><Text type="secondary">{r.reviewed_at ? `Owner #${r.reviewed_by}` : '尚未复核'}</Text></> },
             { title: '追溯', width: 130, render: (_, r) => <><Text>采集 #{r.id}</Text><br /><Text type="secondary">产品 #{r.product_id ?? '未创建'}</Text></> },
             { title: '操作', fixed: 'right', width: 240, render: (_, r) => <Space wrap>
-              <Button size="small" disabled={!r.snapshot_id} onClick={async () => { const res = await apiClient.get<Snapshot>(`/v1/sourcing-1688/${r.id}/snapshot`); setEvidence(res.data ?? null); }}>查看证据</Button>
-              <Button size="small" disabled={!r.snapshot_id} onClick={async () => { const res = await apiClient.get<IdentityHistory>(`/v1/sourcing-1688/${r.id}/identity-history`); setIdentityHistory({ sourceId: r.id, data: res.data ?? {} }); }}>变化/同款</Button>
-              <Button size="small" onClick={async () => { const res = await apiClient.get<AcceptanceReport>(`/v1/sourcing-1688/${r.id}/acceptance-report`); setAcceptanceReport(res.data ?? null); }}>15项验收</Button>
+              <Button size="small" disabled={!r.snapshot_id} onClick={() => void loadEvidence(r)}>查看证据</Button>
+              <Button size="small" disabled={!r.snapshot_id} onClick={() => void loadIdentityHistory(r)}>变化/同款</Button>
+              <Button size="small" onClick={() => void loadAcceptanceReport(r)}>15项验收</Button>
               <Button size="small" disabled={!r.snapshot_id || !['collected', 'pending_review'].includes(r.status)} onClick={() => { setReviewing(r); reviewForm.setFieldsValue({ notes: '' }); }}>Owner 复核</Button>
               <Button size="small" type="primary" disabled={!r.reviewed_at || !['ready_for_product', 'editing'].includes(r.lifecycle_status || '')} onClick={() => openDraftEditor(r)}>{r.product_id ? '编辑草稿' : '转待上架草稿'}</Button>
-              <Button size="small" disabled={!r.reviewed_at} onClick={() => { setImageTarget(r); setProcessedImage(null); }}>处理图片</Button>
+              <Button size="small" disabled={!r.reviewed_at} onClick={() => { setImageTarget(r); setProcessedImage(null); setProcessedImagePreviewURL(null); setProcessedImagePreviewError(null); }}>处理图片</Button>
               <Button size="small" disabled={r.lifecycle_status !== 'editing'} onClick={() => setApprovalTarget(r)}>提交审批</Button>
               <Button size="small" disabled={r.lifecycle_status !== 'pending_approval'} onClick={async () => { const res = await apiClient.get<{ approval_id?: number }>(`/v1/sourcing-1688/${r.id}/lifecycle`); const approvalId = res.data?.approval_id; if (approvalId) setDecisionTarget({ record: r, approvalId }); else message.error('未找到草稿审批记录'); }}>审批草稿</Button>
               {r.lifecycle_status === 'approved_draft' && <Button size="small" danger icon={<SafetyCertificateOutlined />} onClick={() => void openPublishSafety(r)}>发布安全</Button>}
@@ -561,7 +617,7 @@ export default function Sourcing1688Page() {
       )}
 
       <Modal title="从 URL 采集 1 个真实 1688 商品" open={fetchOpen} width={680} onCancel={() => setFetchOpen(false)} onOk={() => fetchForm.validateFields().then((v) => controlledFetch.mutate(v))} confirmLoading={controlledFetch.isPending} okText="采集并保存证据">
-        <Alert type="info" showIcon title="采集前先检查经营闸门" description="只有已批准市场、active 实验和已通过的商品机会才能访问 1688。系统保存采集器真实返回的结构化快照；验证码、登录或网络失败会留痕并明确报错。" style={{ marginBottom: 16 }} />
+        <Alert type="info" showIcon title="先打开同一个 1688 商品页面并确认扩展已连接" description="浏览器中必须已登录 1688，并打开与下方完全相同的商品 URL；凌镜扩展状态必须为 connected。随后系统才会检查已批准市场、active 实验和商品机会，并保存真实页面快照。" style={{ marginBottom: 16 }} />
         <Form form={fetchForm} layout="vertical">
           <Row gutter={12}>
             <Col xs={24} md={10}><Form.Item name="demand_case_id" label="已批准候选市场 ID" rules={required}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item></Col>
@@ -596,7 +652,10 @@ export default function Sourcing1688Page() {
           <Space><Form.Item name="rights_truth_status" label="权利证据状态" rules={[{ required: true }]}><Select style={{ width: 120 }} options={[{ value: 'actual', label: 'Owner 已核验' }]} /></Form.Item><Form.Item name="rights_observed_at" label="权利核验时间" rules={[{ required: true }]}><Input type="datetime-local" /></Form.Item></Space>
           <Form.Item name="channel_rule_uri" label="渠道图片规则来源" rules={[{ required: true }]}><Input /></Form.Item>
         </Form>
-        {processedImage && <Alert type="success" showIcon title="处理完成" description={<Paragraph copyable style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{JSON.stringify(processedImage, null, 2)}</Paragraph>} />}
+        {processedImage && <Space orientation="vertical" style={{ width: '100%' }}>
+          {processedImagePreviewURL ? <Card size="small" title="处理后图片（必须实际目检）"><Image src={processedImagePreviewURL} alt="处理后商品图预览" style={{ maxHeight: 420, objectFit: 'contain' }} /></Card> : <Alert type="error" showIcon title="处理后图片尚未成功显示" description={processedImagePreviewError ? `预览读取失败：${processedImagePreviewError}` : '请等待受保护图片载入；未看到图片前不能确认无水印、无中文或无品牌标识。'} />}
+          <Alert type="success" showIcon title="处理记录已保存" description={<Paragraph copyable style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{JSON.stringify(processedImage, null, 2)}</Paragraph>} />
+        </Space>}
       </Modal>
 
       <Modal title={`Owner 复核采集 #${reviewing?.id ?? ''}`} open={!!reviewing} onCancel={() => setReviewing(null)} onOk={() => reviewForm.validateFields().then((v) => review.mutate(v))} confirmLoading={review.isPending} okText="通过复核" footer={(_, { OkBtn, CancelBtn }) => <><CancelBtn /><Button danger loading={rejectSource.isPending} onClick={() => reviewForm.validateFields().then((v) => rejectSource.mutate(v.notes))}>淘汰来源</Button><OkBtn /></>}>

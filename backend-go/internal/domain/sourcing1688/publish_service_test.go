@@ -46,7 +46,7 @@ func newPublishTestService(t *testing.T) (*Service, *gorm.DB, *fakePublishAdapte
 	ownerID := int64(42)
 	demandCaseID := int64(7)
 	experimentID := "EXP-PUBLISH-1"
-	db.Create(&demandCaseRow{ID: demandCaseID, OwnerID: ownerID, SalesChannel: "Ozon", Status: "experiment_ready"})
+	db.Create(&demandCaseRow{ID: demandCaseID, OwnerID: ownerID, SalesChannel: "Ozon", TargetLocale: "ru-RU", Status: "experiment_ready"})
 	db.Create(&experimentRow{ExperimentID: experimentID, OwnerID: ownerID, Status: "active", Stage: "channel"})
 	db.Create(&gateRow{ExperimentID: experimentID, Stage: "opportunity", Result: "pass"})
 	db.Create(&objectLinkRow{ExperimentID: experimentID, ObjectType: "demand_case", ObjectID: "7"})
@@ -204,6 +204,22 @@ func TestPublishRequestRejectsChangedApprovedDraftContent(t *testing.T) {
 	}
 	if fake.publishCalls != 0 {
 		t.Fatal("request validation called external adapter")
+	}
+}
+
+func TestPublishRequestRejectsSecondActiveAttemptWithDifferentKey(t *testing.T) {
+	svc, _, fake, sourceID, accountID := newPublishTestService(t)
+	first := &PublishRequestInput{RequesterID: 42, PlatformAccountID: accountID, IdempotencyKey: "publish-active-001", Reason: "first request", Inventories: map[string]int{"INT-1": 1}}
+	if _, err := svc.RequestPublish(sourceID, first); err != nil {
+		t.Fatalf("first request: %v", err)
+	}
+	second := *first
+	second.IdempotencyKey = "publish-active-002"
+	if _, err := svc.RequestPublish(sourceID, &second); !errors.Is(err, ErrWorkflowGate) {
+		t.Fatalf("second active request = %v, want workflow gate", err)
+	}
+	if fake.publishCalls != 0 {
+		t.Fatal("parallel request must not invoke platform adapter")
 	}
 }
 

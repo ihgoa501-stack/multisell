@@ -59,7 +59,7 @@ func newLifecycleTestService(t *testing.T, status string, withDraft bool) (*Serv
 		END`).Error; err != nil {
 		t.Fatalf("create lifecycle test trigger: %v", err)
 	}
-	if err := db.Create(&demandCaseRow{ID: 10, OwnerID: lifecycleTestOwnerID, SalesChannel: "test", Status: "experiment_ready"}).Error; err != nil {
+	if err := db.Create(&demandCaseRow{ID: 10, OwnerID: lifecycleTestOwnerID, SalesChannel: "test", TargetLocale: "en-US", Status: "experiment_ready"}).Error; err != nil {
 		t.Fatalf("create demand case: %v", err)
 	}
 	demandCaseID := int64(10)

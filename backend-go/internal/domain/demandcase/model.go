@@ -35,6 +35,7 @@ type DemandCase struct {
 	Consumer      string    `gorm:"size:240;not null" json:"consumer"`
 	NeedScenario  string    `gorm:"size:400;not null" json:"need_scenario"`
 	SalesChannel  string    `gorm:"size:160;not null" json:"sales_channel"`
+	TargetLocale  string    `gorm:"size:35;not null" json:"target_locale"`
 	StopCondition string    `gorm:"type:text" json:"stop_condition"`
 	Status        string    `gorm:"size:32;not null;default:lead" json:"status"`
 	CreatedAt     time.Time `json:"created_at"`

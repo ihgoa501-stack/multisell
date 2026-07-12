@@ -101,12 +101,7 @@ func evidence(kind string, id any, truth string, observed time.Time) AcceptanceE
 
 func realDriver(driver string) bool {
 	v := strings.ToLower(strings.TrimSpace(driver))
-	for _, allowed := range []string{"plugin", "playwright", "api1688"} {
-		if v == allowed || strings.HasPrefix(v, allowed+"@") || strings.HasPrefix(v, allowed+"-") || strings.HasPrefix(v, allowed+"_") {
-			return true
-		}
-	}
-	return false
+	return v == "plugin"
 }
 
 func validChecks(checks []EvidenceCheck, required []string, actualOnly bool) (bool, []AcceptanceEvidence, []string) {
@@ -120,7 +115,7 @@ func validChecks(checks []EvidenceCheck, required []string, actualOnly bool) (bo
 		}
 		seen[check.CheckType] = true
 		validTruth := check.TruthStatus == "actual" || (!actualOnly && check.TruthStatus == "quoted")
-		if check.Result != "pass" || !validTruth || strings.TrimSpace(check.SourceURI) == "" || check.ObservedAt.IsZero() {
+		if strings.TrimSpace(check.Value) == "" || check.Result != "pass" || !validTruth || strings.TrimSpace(check.SourceURI) == "" || check.ObservedAt.IsZero() {
 			problems = append(problems, "检查证据未通过: "+check.CheckType)
 		}
 		refs = append(refs, evidence("check:"+check.CheckType, check.SourceURI, check.TruthStatus, check.ObservedAt))
@@ -188,7 +183,7 @@ func (s *Service) BuildAcceptanceReport(ctx context.Context, sourceID, ownerID i
 			}
 			market.Evidence = append(market.Evidence, evidence("demand_case", dc.ID, "actual", dc.UpdatedAt), evidence("experiment", exp.ExperimentID, "actual", time.Time{}), evidence("opportunity_gate", exp.ExperimentID, "actual", time.Time{}))
 			validStage := exp.Stage == "product" || exp.Stage == "supply" || exp.Stage == "channel"
-			if strings.TrimSpace(dc.Region) == "" || strings.TrimSpace(dc.Consumer) == "" || strings.TrimSpace(dc.SalesChannel) == "" || dc.Status != "experiment_ready" || dc.OwnerID != ownerID || exp.OwnerID != ownerID || exp.Status != "active" || !validStage || gateCount != 1 || demandLinkCount != 1 || sourceLinkCount != 1 {
+			if strings.TrimSpace(dc.Region) == "" || strings.TrimSpace(dc.Consumer) == "" || strings.TrimSpace(dc.SalesChannel) == "" || strings.TrimSpace(dc.TargetLocale) == "" || dc.Status != "experiment_ready" || dc.OwnerID != ownerID || exp.OwnerID != ownerID || exp.Status != "active" || !validStage || gateCount != 1 || demandLinkCount != 1 || sourceLinkCount != 1 {
 				market.block("市场 tuple、Owner、实验或机会闸门不完整", "必须同时满足国家/地区、目标消费者、销售渠道、experiment_ready、active experiment 和 opportunity pass")
 			} else {
 				market.pass("已持久化国家/地区 × 目标消费者 × 销售渠道，并通过同一 Owner 的机会闸门")
@@ -223,7 +218,7 @@ func (s *Service) BuildAcceptanceReport(ctx context.Context, sourceID, ownerID i
 				if decodeErr == nil {
 					canonicalPage, pageErr = canonical1688URL(page.SourceURL)
 				}
-				controlledRaw = current.CaptureMode == CaptureModeControlledFetch && decodeErr == nil && sourceErr == nil && pageErr == nil && canonicalSource == canonicalPage && strings.TrimSpace(page.RawHTML) != "" && realDriver(current.Driver) && current.Driver == page.Driver && current.ParserVersion == page.ParserVersion && !current.CollectedAt.IsZero() && len(current.RawPayload) > 0 && hex.EncodeToString(sum[:]) == current.RawSHA256
+				controlledRaw = current.CaptureMode == CaptureModeControlledFetch && strings.HasPrefix(current.CollectionRequestID, "req_") && decodeErr == nil && sourceErr == nil && pageErr == nil && canonicalSource == canonicalPage && strings.TrimSpace(page.RawHTML) != "" && realDriver(current.Driver) && current.ParserVersion == page.ParserVersion && !current.CollectedAt.IsZero() && len(current.RawPayload) > 0 && hex.EncodeToString(sum[:]) == current.RawSHA256
 				rawItem.Evidence = append(rawItem.Evidence, evidence("snapshot", current.ID, "actual", current.CollectedAt))
 				if !controlledRaw {
 					rawItem.block("当前快照不能证明一次真实受控页面采集", "需由 controlled_fetch 入口产生，并同时具备 1688 原链接、采集时间、白名单驱动、解析版本、raw_html、原始载荷和正确 SHA-256")
@@ -456,6 +451,9 @@ func (s *Service) BuildAcceptanceReport(ctx context.Context, sourceID, ownerID i
 
 			localization := &report.Items[9]
 			localProblems := validationProblems(ValidateLocalization(payload.ValidationInput.Localization, payload.ValidationInput.LocalizationRules))
+			if !strings.EqualFold(payload.TargetLocale, dc.TargetLocale) {
+				localProblems = append(localProblems, "本地化语言与已批准市场 target_locale 不一致")
+			}
 			localization.Evidence = append(localization.Evidence, evidence("localization_rule", payload.ValidationInput.LocalizationRules.Evidence.SourceURI, payload.ValidationInput.LocalizationRules.Evidence.TruthStatus, payload.ValidationInput.LocalizationRules.Evidence.ObservedAt))
 			if payload.LocalizedTitle != payload.ValidationInput.Localization.Title || payload.LocalizedDescription != payload.ValidationInput.Localization.Description || payload.TargetLocale != payload.ValidationInput.Localization.Locale {
 				localProblems = append(localProblems, "冻结本地化内容与规则输入不一致")

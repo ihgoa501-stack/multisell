@@ -25,7 +25,7 @@ func testRouter(t *testing.T) *gin.Engine {
 
 func TestCandidateMarketAPIAndOwnerDecisionCard(t *testing.T) {
 	r := testRouter(t)
-	body := `{"region":"DE","consumer":"城市养猫家庭","need_scenario":"短途出行饮水","sales_channel":"独立站","stop_condition":"费用无法核实时停止"}`
+	body := `{"region":"DE","consumer":"城市养猫家庭","need_scenario":"短途出行饮水","sales_channel":"独立站","target_locale":"de-DE","stop_condition":"费用无法核实时停止"}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/demand-cases", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

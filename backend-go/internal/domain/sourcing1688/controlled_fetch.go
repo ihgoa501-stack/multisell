@@ -93,6 +93,24 @@ func captureErrorCode(err error) string {
 	}
 }
 
+func controlledFetchPublicMessage(err error) string {
+	text := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(text, "tab_not_found"):
+		return "未找到目标标签页：请先在已登录 1688 的浏览器中打开完全相同的商品 URL，并确认凌镜扩展已连接"
+	case strings.Contains(text, "content_script_error"):
+		return "浏览器扩展无法读取页面：请刷新 1688 商品页，确认扩展有页面权限后重试"
+	case captureErrorCode(err) == "login_required":
+		return "1688 页面要求登录：请在商品页完成登录后重试"
+	case captureErrorCode(err) == "captcha_required":
+		return "1688 页面要求验证码：请人工完成验证后重试"
+	case captureErrorCode(err) == "access_blocked":
+		return "1688 拒绝了页面访问：请停止重试并人工检查账号与页面状态"
+	default:
+		return "1688 采集失败且已留痕：请确认目标页面已打开、扩展已连接，再查看采集失败记录"
+	}
+}
+
 func (h *ControlledFetchHandler) Fetch(c *gin.Context) {
 	var in ControlledFetchInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -131,11 +149,11 @@ func (h *ControlledFetchHandler) Fetch(c *gin.Context) {
 			response.InternalError(c, fmt.Errorf("capture failed and attempt audit failed: %v: %w", auditErr, err))
 			return
 		}
-		response.Error(c, http.StatusBadGateway, "1688 collection failed; the attempt was recorded")
+		response.Error(c, http.StatusBadGateway, controlledFetchPublicMessage(err))
 		return
 	}
-	if page == nil || strings.TrimSpace(page.Driver) == "" || strings.TrimSpace(page.ParserVersion) == "" || strings.TrimSpace(page.SupplierBusinessID) == "" {
-		msg := "collector response lacks driver, parser version, or supplier identity"
+	if page == nil || page.Driver != "plugin" || !strings.HasPrefix(page.CollectionRequestID, "req_") || strings.TrimSpace(page.ParserVersion) == "" || strings.TrimSpace(page.SupplierBusinessID) == "" || strings.TrimSpace(page.Title) == "" || strings.TrimSpace(page.RawHTML) == "" {
+		msg := "collector response lacks authenticated plugin request, page structure, title, parser version, or supplier identity"
 		_, auditErr := h.service.RecordCaptureFailure(&CaptureFailureRecordInput{DemandCaseID: in.DemandCaseID, ExperimentID: in.ExperimentID, SourceURL: canonicalURL, AttemptedAt: time.Now().UTC(), Driver: "toolbridge", ParserVersion: "unavailable", ErrorCode: "parse_error", ErrorMessage: msg, AttemptedBy: ownerID})
 		if auditErr != nil {
 			response.InternalError(c, auditErr)
@@ -156,11 +174,11 @@ func (h *ControlledFetchHandler) Fetch(c *gin.Context) {
 		response.Error(c, http.StatusUnprocessableEntity, msg)
 		return
 	}
-	// Serialize the structured object actually returned by ToolBridge. We do not
-	// invent HTML or claim access to bytes the collector did not provide.
-	raw, err := json.Marshal(page)
-	if err != nil {
-		response.InternalError(c, err)
+	// Preserve the extension's exact data-object bytes. Server-issued transport
+	// identity remains separate snapshot metadata and is never injected into them.
+	raw := append(json.RawMessage(nil), page.RawResponse...)
+	if len(raw) == 0 || !json.Valid(raw) {
+		response.Error(c, http.StatusUnprocessableEntity, "collector response is missing exact raw JSON evidence")
 		return
 	}
 	collectedAt := page.CollectedAt
@@ -170,7 +188,7 @@ func (h *ControlledFetchHandler) Fetch(c *gin.Context) {
 	images, _ := json.Marshal(page.Images)
 	variants, _ := json.Marshal(page.SpecVariants)
 	title, price, moq := page.Title, page.PriceCNY, page.MOQ
-	product, err := h.service.Capture(&CaptureInput{DemandCaseID: in.DemandCaseID, ExperimentID: in.ExperimentID, SourceURL: canonicalURL, CollectedAt: collectedAt, CollectedBy: ownerID, Driver: page.Driver, ParserVersion: page.ParserVersion, RawPayload: raw, Title: &title, Price: &price, MOQ: &moq, SupplierName: page.SupplierName, SupplierBusinessID: page.SupplierBusinessID, Images: images, SkuVariants: variants, CaptureMode: CaptureModeControlledFetch})
+	product, err := h.service.Capture(&CaptureInput{DemandCaseID: in.DemandCaseID, ExperimentID: in.ExperimentID, SourceURL: canonicalURL, CollectedAt: collectedAt, CollectedBy: ownerID, Driver: page.Driver, ParserVersion: page.ParserVersion, RawPayload: raw, Title: &title, Price: &price, MOQ: &moq, SupplierName: page.SupplierName, SupplierBusinessID: page.SupplierBusinessID, Images: images, SkuVariants: variants, CaptureMode: CaptureModeControlledFetch, CollectionRequestID: page.CollectionRequestID})
 	if err != nil {
 		workflowError(c, err)
 		return

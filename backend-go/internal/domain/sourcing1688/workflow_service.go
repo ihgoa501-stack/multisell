@@ -71,6 +71,9 @@ func (s *Service) Capture(in *CaptureInput) (*Sourcing1688Product, error) {
 	if captureMode != CaptureModeControlledFetch && captureMode != CaptureModeManualImport && captureMode != CaptureModeLegacyUnknown {
 		return nil, fmt.Errorf("%w: invalid capture provenance", ErrInvalidWorkflow)
 	}
+	if (captureMode == CaptureModeControlledFetch) != strings.HasPrefix(strings.TrimSpace(in.CollectionRequestID), "req_") {
+		return nil, fmt.Errorf("%w: controlled capture requires a server-issued collection request", ErrInvalidWorkflow)
+	}
 	var result Sourcing1688Product
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var previousSnapshot *Sourcing1688Snapshot
@@ -165,7 +168,23 @@ func (s *Service) Capture(in *CaptureInput) (*Sourcing1688Product, error) {
 				return err
 			}
 		}
-		snap := Sourcing1688Snapshot{SourcingProductID: p.ID, SourceURL: canonicalURL, CollectedAt: in.CollectedAt, CollectedBy: in.CollectedBy, Driver: strings.TrimSpace(in.Driver), ParserVersion: strings.TrimSpace(in.ParserVersion), CaptureMode: captureMode, RawPayload: append(json.RawMessage(nil), in.RawPayload...), RawSHA256: hash, ObservedTitle: in.Title, ObservedPrice: in.Price, ObservedMOQ: p.MOQ, ObservedSupplier: in.SupplierName, ObservedSupplierBusinessID: strings.TrimSpace(in.SupplierBusinessID)}
+		title := ""
+		if in.Title != nil {
+			title = *in.Title
+		}
+		var variants json.RawMessage
+		if p.SkuVariants != nil {
+			variants = *p.SkuVariants
+		}
+		fingerprint, err := productFingerprint(title, variants)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&p).Update("source_product_fingerprint", fingerprint).Error; err != nil {
+			return err
+		}
+		p.SourceProductFingerprint = fingerprint
+		snap := Sourcing1688Snapshot{SourcingProductID: p.ID, SourceURL: canonicalURL, CollectedAt: in.CollectedAt, CollectedBy: in.CollectedBy, Driver: strings.TrimSpace(in.Driver), ParserVersion: strings.TrimSpace(in.ParserVersion), CaptureMode: captureMode, CollectionRequestID: strings.TrimSpace(in.CollectionRequestID), RawPayload: append(json.RawMessage(nil), in.RawPayload...), RawSHA256: hash, ObservedTitle: in.Title, ObservedPrice: in.Price, ObservedMOQ: p.MOQ, ObservedSupplier: in.SupplierName, ObservedSupplierBusinessID: strings.TrimSpace(in.SupplierBusinessID), ProductFingerprint: fingerprint}
 		if err := tx.Create(&snap).Error; err != nil {
 			return err
 		}
@@ -350,7 +369,7 @@ func validateChecks(checks []EvidenceCheck, required []string, actualOnly bool) 
 	}
 	for _, check := range checks {
 		validTruth := check.TruthStatus == "actual" || (!actualOnly && check.TruthStatus == "quoted")
-		if !allowed[check.CheckType] || seen[check.CheckType] || check.Result != "pass" || !validTruth || strings.TrimSpace(check.SourceURI) == "" || check.ObservedAt.IsZero() {
+		if !allowed[check.CheckType] || seen[check.CheckType] || strings.TrimSpace(check.Value) == "" || check.Result != "pass" || !validTruth || strings.TrimSpace(check.SourceURI) == "" || check.ObservedAt.IsZero() {
 			return fmt.Errorf("invalid check %q", check.CheckType)
 		}
 		seen[check.CheckType] = true
@@ -445,6 +464,9 @@ func (s *Service) Convert(id int64, in *ConvertInput) (*ConvertResult, error) {
 		}
 		if dc.Status != "experiment_ready" || exp.Status != "active" || dc.OwnerID != in.CreatedBy || exp.OwnerID != in.CreatedBy {
 			return fmt.Errorf("%w: approved market or active experiment changed", ErrWorkflowGate)
+		}
+		if strings.TrimSpace(dc.TargetLocale) == "" || !strings.EqualFold(dc.TargetLocale, in.TargetLocale) {
+			return fmt.Errorf("%w: draft locale does not match the approved market locale", ErrWorkflowGate)
 		}
 		if exp.Stage != "product" && exp.Stage != "supply" && exp.Stage != "channel" {
 			return fmt.Errorf("%w: experiment stage no longer permits draft preparation", ErrWorkflowGate)

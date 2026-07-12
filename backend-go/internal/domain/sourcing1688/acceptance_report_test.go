@@ -46,7 +46,7 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 	}
 	svc := NewService(db, dbtest.NewLogger(t))
 	now := time.Now().UTC().Truncate(time.Second)
-	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, Region: "RU", Consumer: "城市养猫家庭", NeedScenario: "日常互动", SalesChannel: "Ozon", Status: "experiment_ready", CreatedAt: now, UpdatedAt: now})
+	db.Create(&demandCaseRow{ID: 7, OwnerID: 42, Region: "RU", Consumer: "城市养猫家庭", NeedScenario: "日常互动", SalesChannel: "Ozon", TargetLocale: "ru-RU", Status: "experiment_ready", CreatedAt: now, UpdatedAt: now})
 	db.Create(&experimentRow{ExperimentID: "EXP-REAL-1", OwnerID: 42, Status: "active", Stage: "product"})
 	db.Create(&gateRow{ExperimentID: "EXP-REAL-1", Stage: "opportunity", Result: "pass"})
 	db.Create(&objectLinkRow{ExperimentID: "EXP-REAL-1", ObjectType: "demand_case", ObjectID: "7"})
@@ -57,7 +57,7 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 		MOQ: 2, Images: []string{"https://cbu01.alicdn.com/a.png"},
 		SpecVariants: []toolbridge.SpecVariant{{Spec: "红色/标准", Price: 12, Stock: 100}},
 		SupplierName: "真实供应商", Description: "页面说明", RawHTML: `<main data-offer="987654321">真实页面结构</main>`,
-		CollectedAt: now, Driver: "plugin", ParserVersion: "lingmirror-extension@0.1.0", SupplierBusinessID: "supplier-real-987",
+		CollectedAt: now, Driver: "plugin", ParserVersion: "lingmirror-extension@0.1.0", SupplierBusinessID: "supplier-real-987", CollectionRequestID: "req_acceptance-real-987",
 	}
 	raw, err := json.Marshal(page)
 	if err != nil {
@@ -66,7 +66,7 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 	title, price, moq := page.Title, page.PriceCNY, page.MOQ
 	images, _ := json.Marshal(page.Images)
 	variants, _ := json.Marshal(page.SpecVariants)
-	source, err := svc.Capture(&CaptureInput{DemandCaseID: 7, ExperimentID: "EXP-REAL-1", SourceURL: page.SourceURL, CollectedAt: now, CollectedBy: 42, Driver: page.Driver, ParserVersion: page.ParserVersion, RawPayload: raw, Title: &title, Price: &price, MOQ: &moq, SupplierName: page.SupplierName, SupplierBusinessID: page.SupplierBusinessID, Images: images, SkuVariants: variants, CaptureMode: CaptureModeControlledFetch})
+	source, err := svc.Capture(&CaptureInput{DemandCaseID: 7, ExperimentID: "EXP-REAL-1", SourceURL: page.SourceURL, CollectedAt: now, CollectedBy: 42, Driver: page.Driver, ParserVersion: page.ParserVersion, RawPayload: raw, Title: &title, Price: &price, MOQ: &moq, SupplierName: page.SupplierName, SupplierBusinessID: page.SupplierBusinessID, Images: images, SkuVariants: variants, CaptureMode: CaptureModeControlledFetch, CollectionRequestID: page.CollectionRequestID})
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
 	}
@@ -100,7 +100,9 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 	return svc, db, source.ID
 }
 
-func TestAcceptanceReportReadyOnlyForCompletePersistedRealChain(t *testing.T) {
+// This synthetic fixture verifies deterministic report logic only. It is not
+// external_observed evidence and must never be reported as a real 1688 run.
+func TestAcceptanceReportReadyOnlyForCompletePersistedFixture(t *testing.T) {
 	svc, _, sourceID := newAcceptanceTestService(t)
 	report, err := svc.BuildAcceptanceReport(context.Background(), sourceID, 42)
 	if err != nil {
@@ -240,12 +242,12 @@ func TestAcceptanceReportHTTPIsReadOnlyAndOwnerScoped(t *testing.T) {
 }
 
 func TestAcceptanceReportRealDriverUsesExplicitAllowlist(t *testing.T) {
-	for _, allowed := range []string{"plugin", "plugin@1.2.3", "playwright-v2", "api1688_prod"} {
+	for _, allowed := range []string{"plugin"} {
 		if !realDriver(allowed) {
 			t.Fatalf("expected allowed driver %q", allowed)
 		}
 	}
-	for _, denied := range []string{"manual", "owner-browser", "custom", "mock-plugin", "pluginish"} {
+	for _, denied := range []string{"manual", "owner-browser", "custom", "mock-plugin", "pluginish", "plugin@1.2.3", "playwright-v2", "api1688_prod"} {
 		if realDriver(denied) {
 			t.Fatalf("expected denied driver %q", denied)
 		}

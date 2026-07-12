@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func controlledFetchDB(t *testing.T) (*Service, *ControlledFetchHandler) {
 }
 
 func seedControlledFetchGate(svc *Service) {
-	svc.db.Create(&demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "approved-channel", Status: "experiment_ready"})
+	svc.db.Create(&demandCaseRow{ID: 7, OwnerID: 42, SalesChannel: "approved-channel", TargetLocale: "en-US", Status: "experiment_ready"})
 	svc.db.Create(&experimentRow{ExperimentID: "EXP-1", OwnerID: 42, Status: "active", Stage: "product"})
 	svc.db.Create(&gateRow{ExperimentID: "EXP-1", Stage: "opportunity", Result: "pass"})
 	svc.db.Create(&objectLinkRow{ExperimentID: "EXP-1", ObjectType: "demand_case", ObjectID: "7"})
@@ -88,7 +89,8 @@ func TestControlledFetchBindsOwnerAndReusesCapture(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc, _ := controlledFetchDB(t)
 	seedControlledFetchGate(svc)
-	stub := &controlledFetchStub{page: &toolbridge.PageData{SourceURL: "https://detail.1688.com/offer/123.html", Title: "actual structured title", PriceCNY: 12.5, MOQ: 2, Images: []string{"https://cbu01.alicdn.com/a.jpg"}, SupplierName: "supplier", SupplierBusinessID: "supplier-42", CollectedAt: time.Now().UTC(), Driver: "owner-browser", ParserVersion: "extension-1.2.3", RawData: json.RawMessage(`{"offer_id":"123"}`)}}
+	rawResponse := json.RawMessage(`{ "source_url":"https://detail.1688.com/offer/123.html", "title":"actual structured title", "price_cny":12.5, "moq":2, "images":["https://cbu01.alicdn.com/a.jpg"], "supplier_name":"supplier", "supplier_business_id":"supplier-42", "raw_data":{"offer_id":"123"}, "raw_html":"<main>actual page</main>", "parser_version":"extension-1.2.3" }`)
+	stub := &controlledFetchStub{page: &toolbridge.PageData{SourceURL: "https://detail.1688.com/offer/123.html", Title: "actual structured title", PriceCNY: 12.5, MOQ: 2, Images: []string{"https://cbu01.alicdn.com/a.jpg"}, SupplierName: "supplier", SupplierBusinessID: "supplier-42", CollectedAt: time.Now().UTC(), Driver: "plugin", ParserVersion: "extension-1.2.3", CollectionRequestID: "req_controlled-fetch-123", RawHTML: "<main>actual page</main>", RawData: json.RawMessage(`{"offer_id":"123"}`), RawResponse: rawResponse}}
 	w := performControlledFetch(t, NewControlledFetchHandler(svc, stub), 42)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
@@ -107,12 +109,15 @@ func TestControlledFetchBindsOwnerAndReusesCapture(t *testing.T) {
 	if err := svc.db.First(&snapshot, *product.SnapshotID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Driver != "owner-browser" || snapshot.ParserVersion != "extension-1.2.3" || snapshot.CaptureMode != CaptureModeControlledFetch {
+	if snapshot.Driver != "plugin" || snapshot.ParserVersion != "extension-1.2.3" || snapshot.CaptureMode != CaptureModeControlledFetch || snapshot.CollectionRequestID != "req_controlled-fetch-123" {
 		t.Fatalf("snapshot=%#v", snapshot)
 	}
 	var captured toolbridge.PageData
 	if err := json.Unmarshal(snapshot.RawPayload, &captured); err != nil || captured.Title != "actual structured title" {
 		t.Fatalf("raw evidence=%s err=%v", snapshot.RawPayload, err)
+	}
+	if !bytes.Equal(snapshot.RawPayload, rawResponse) {
+		t.Fatalf("exact extension data bytes changed: got=%q want=%q", snapshot.RawPayload, rawResponse)
 	}
 }
 
@@ -124,6 +129,9 @@ func TestControlledFetchFailureWritesAttempt(t *testing.T) {
 	w := performControlledFetch(t, NewControlledFetchHandler(svc, stub), 42)
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "完成登录") {
+		t.Fatalf("response is not actionable: %s", w.Body.String())
 	}
 	var attempt CaptureAttempt
 	if err := svc.db.First(&attempt).Error; err != nil {

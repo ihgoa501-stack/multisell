@@ -116,6 +116,17 @@ export class ApiClient {
     }
   }
 
+  private async errorFromResponse(response: Response): Promise<ApiError> {
+    let message = response.statusText || `HTTP ${response.status}`;
+    try {
+      const body = await response.clone().json() as { message?: unknown };
+      if (typeof body.message === 'string' && body.message.trim()) message = body.message;
+    } catch {
+      // Non-JSON error responses still use the HTTP status text.
+    }
+    return ApiError.fromStatus(response.status, message);
+  }
+
   /**
    * Attempt to refresh the access token using the stored refresh token.
    * Uses a queue to prevent multiple concurrent refresh calls.
@@ -247,13 +258,13 @@ export class ApiClient {
     // 403 — trigger the forbidden handler (typically re-fetches permissions)
     if (response.status === 403) {
       ApiClient.forbiddenHandler?.();
-      throw ApiError.fromStatus(403);
+      throw await this.errorFromResponse(response);
     }
 
     // If not a 401 or if we're server-side, just handle the response
     if (response.status !== 401) {
       if (!response.ok) {
-        throw ApiError.fromStatus(response.status, response.statusText);
+        throw await this.errorFromResponse(response);
       }
       return response.json();
     }
@@ -286,7 +297,7 @@ export class ApiClient {
     );
     if (!retryResponse.ok) {
       // Retry also failed — refresh token might be valid but access is denied
-      throw ApiError.fromStatus(retryResponse.status, retryResponse.statusText);
+      throw await this.errorFromResponse(retryResponse);
     }
 
     return retryResponse.json();

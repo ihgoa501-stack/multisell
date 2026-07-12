@@ -18,7 +18,7 @@ func newTestService(t *testing.T) *Service {
 func TestEvaluateRequiresEveryMarketDimensionAndIndependentCounterevidence(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
-	c := &DemandCase{OwnerID: 7, Region: "DE", Consumer: "城市养猫家庭", NeedScenario: "短途出行饮水", SalesChannel: "独立站"}
+	c := &DemandCase{OwnerID: 7, Region: "DE", Consumer: "城市养猫家庭", NeedScenario: "短途出行饮水", SalesChannel: "独立站", TargetLocale: "de-DE"}
 	if err := svc.Create(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestEvaluateRequiresEveryMarketDimensionAndIndependentCounterevidence(t *te
 func TestEvaluateKeepsUnknownCriticalCostOrPermissionBlocked(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
-	c := &DemandCase{OwnerID: 7, Region: "US", Consumer: "新手犬主", NeedScenario: "航空箱训练", SalesChannel: "marketplace"}
+	c := &DemandCase{OwnerID: 7, Region: "US", Consumer: "新手犬主", NeedScenario: "航空箱训练", SalesChannel: "marketplace", TargetLocale: "en-US"}
 	if err := svc.Create(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestEvaluateKeepsUnknownCriticalCostOrPermissionBlocked(t *testing.T) {
 func TestDecisionCardUsesFactsAndNeverClaimsDemandIsProven(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
-	c := &DemandCase{OwnerID: 7, Region: "JP", Consumer: "老年猫主人", NeedScenario: "喂药", SalesChannel: "marketplace", StopCondition: "无法取得完整费用时停止"}
+	c := &DemandCase{OwnerID: 7, Region: "JP", Consumer: "老年猫主人", NeedScenario: "喂药", SalesChannel: "marketplace", TargetLocale: "ja-JP", StopCondition: "无法取得完整费用时停止"}
 	if err := svc.Create(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestDecisionCardUsesFactsAndNeverClaimsDemandIsProven(t *testing.T) {
 func TestOrdinaryEvidenceCannotClaimActual(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
-	c := &DemandCase{OwnerID: 7, Region: "FR", Consumer: "犬主", NeedScenario: "出行", SalesChannel: "marketplace"}
+	c := &DemandCase{OwnerID: 7, Region: "FR", Consumer: "犬主", NeedScenario: "出行", SalesChannel: "marketplace", TargetLocale: "fr-FR"}
 	if err := svc.Create(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestOrdinaryEvidenceCannotClaimActual(t *testing.T) {
 func TestConflictBlocksExperimentReady(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
-	c := &DemandCase{OwnerID: 7, Region: "CA", Consumer: "猫主人", NeedScenario: "旅行", SalesChannel: "marketplace"}
+	c := &DemandCase{OwnerID: 7, Region: "CA", Consumer: "猫主人", NeedScenario: "旅行", SalesChannel: "marketplace", TargetLocale: "en-CA"}
 	if err := svc.Create(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestConflictBlocksExperimentReady(t *testing.T) {
 func TestDecisionCardDoesNotPromoteMockOrInferredEvidence(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
-	c := &DemandCase{OwnerID: 7, Region: "GB", Consumer: "犬主", NeedScenario: "训练", SalesChannel: "marketplace"}
+	c := &DemandCase{OwnerID: 7, Region: "GB", Consumer: "犬主", NeedScenario: "训练", SalesChannel: "marketplace", TargetLocale: "en-GB"}
 	if err := svc.Create(ctx, c); err != nil {
 		t.Fatal(err)
 	}

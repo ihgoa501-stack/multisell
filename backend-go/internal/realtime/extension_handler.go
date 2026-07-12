@@ -173,20 +173,20 @@ func (h *ExtensionHandler) extensionReadPump(client *Client) {
 			continue
 		}
 		switch incoming.Type {
-		case "fetch_product_result":
+		case "fetch_product_result", "fetch_product_error":
 			if incoming.ID == "" {
-				client.writeJSON(map[string]string{"type": "error", "data": "invalid fetch_product_result"})
+				client.writeJSON(map[string]string{"type": "error", "data": "invalid fetch product response"})
 				continue
 			}
 			if h.pluginDriver != nil && h.pluginDriver.HasPending(incoming.ID) {
 				h.handleFetchProductResult(client, msgBytes)
-			} else if h.autoCollectHandler != nil && client.UserID != nil {
+			} else if incoming.Type == "fetch_product_result" && h.autoCollectHandler != nil && client.UserID != nil {
 				if err := h.autoCollectHandler(*client.UserID, msgBytes); err != nil {
 					h.logger.Error("auto-collect handler failed", zap.Int64("user_id", *client.UserID), zap.Error(err))
 					client.writeJSON(map[string]string{"type": "error", "data": "auto-collect failed: " + err.Error()})
 				}
 			} else {
-				h.logger.Warn("fetch_product_result dropped: no pending or auto-collect handler", zap.String("request_id", incoming.ID))
+				h.logger.Warn("fetch product response dropped: no pending request or auto-collect handler", zap.String("request_id", incoming.ID), zap.String("message_type", incoming.Type))
 			}
 		case "ping":
 			client.writeJSON(map[string]string{"type": "pong"})

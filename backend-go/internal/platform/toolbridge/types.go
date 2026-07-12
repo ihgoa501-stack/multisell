@@ -47,12 +47,60 @@ type PageData struct {
 	Description string          `json:"description,omitempty"`
 	RawData     json.RawMessage `json:"raw_data,omitempty"`
 	RawHTML     string          `json:"raw_html,omitempty"`
+	// RawResponse preserves the exact JSON bytes of the extension's data object.
+	// It is transport evidence and must never be serialized back into that object.
+	RawResponse json.RawMessage `json:"-"`
 	CollectedAt time.Time       `json:"collected_at"`
 	Driver      string          `json:"driver"`
 	// ParserVersion and SupplierBusinessID must come from the collector response;
 	// controlled evidence capture rejects responses that omit either identity.
 	ParserVersion      string `json:"parser_version,omitempty"`
 	SupplierBusinessID string `json:"supplier_business_id,omitempty"`
+	// CollectionRequestID is assigned by the server-side plugin driver after a
+	// matching authenticated extension response. The extension cannot choose it.
+	CollectionRequestID string `json:"collection_request_id,omitempty"`
+}
+
+// UnmarshalJSON accepts both the canonical ToolBridge field names and the
+// browser-extension protocol names. The latter predate this Go type and use
+// price_1688/min_order_qty/package_* keys.
+func (p *PageData) UnmarshalJSON(data []byte) error {
+	type pageDataAlias PageData
+	aux := struct {
+		*pageDataAlias
+		Price1688      *float64 `json:"price_1688"`
+		MinOrderQty    *int     `json:"min_order_qty"`
+		PackageWeight  *float64 `json:"package_weight_kg"`
+		PackageLength  *float64 `json:"package_length_cm"`
+		PackageWidth   *float64 `json:"package_width_cm"`
+		PackageHeight  *float64 `json:"package_height_cm"`
+		SupplierID1688 string   `json:"supplier_id_1688"`
+	}{pageDataAlias: (*pageDataAlias)(p)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if p.PriceCNY == 0 && aux.Price1688 != nil {
+		p.PriceCNY = *aux.Price1688
+	}
+	if p.MOQ == 0 && aux.MinOrderQty != nil {
+		p.MOQ = *aux.MinOrderQty
+	}
+	if p.WeightKg == nil {
+		p.WeightKg = aux.PackageWeight
+	}
+	if p.PackageLengthCm == nil {
+		p.PackageLengthCm = aux.PackageLength
+	}
+	if p.PackageWidthCm == nil {
+		p.PackageWidthCm = aux.PackageWidth
+	}
+	if p.PackageHeightCm == nil {
+		p.PackageHeightCm = aux.PackageHeight
+	}
+	if p.SupplierBusinessID == "" {
+		p.SupplierBusinessID = aux.SupplierID1688
+	}
+	return nil
 }
 
 // ListItemData is one product opportunity discovered on a marketplace or
@@ -74,48 +122,6 @@ type ListPageData struct {
 	Items       []ListItemData  `json:"items"`
 	Driver      string          `json:"driver"`
 	RawData     json.RawMessage `json:"raw_data,omitempty"`
-}
-
-// UnmarshalJSON handles both content-script field names (price_1688, price_min, etc.)
-// and canonical toolbridge field names (price_cny, price_min_cny, etc.).
-// ponytail: naive map lookup for aliases — extend as new field names appear
-func (p *PageData) UnmarshalJSON(data []byte) error {
-	type alias PageData // prevent recursion
-	var raw alias
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	*p = PageData(raw)
-
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil // partial data still useful
-	}
-	if raw.PriceCNY == 0 {
-		if v, ok := m["price_1688"]; ok {
-			var f float64
-			if json.Unmarshal(v, &f) == nil && f > 0 {
-				p.PriceCNY = f
-			}
-		}
-	}
-	if raw.MOQ == 0 {
-		if v, ok := m["min_order_qty"]; ok {
-			var i int
-			if json.Unmarshal(v, &i) == nil && i > 0 {
-				p.MOQ = i
-			}
-		}
-	}
-	if raw.WeightKg == nil {
-		if v, ok := m["package_weight_kg"]; ok {
-			var f float64
-			if json.Unmarshal(v, &f) == nil && f > 0 {
-				p.WeightKg = &f
-			}
-		}
-	}
-	return nil
 }
 
 // SpecVariant describes a specific variant of a product.

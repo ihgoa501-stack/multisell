@@ -36,6 +36,7 @@ type ConvertInput struct {
 
 type EvidenceCheck struct {
 	CheckType   string    `json:"check_type" binding:"required"`
+	Value       string    `json:"value" binding:"required"`
 	Result      string    `json:"result" binding:"required"`
 	TruthStatus string    `json:"truth_status" binding:"required"`
 	SourceURI   string    `json:"source_uri" binding:"required"`
@@ -173,9 +174,9 @@ type draftRow struct {
 func (draftRow) TableName() string { return "sourcing_listing_draft" }
 
 type demandCaseRow struct {
-	ID, OwnerID                                          int64
-	Region, Consumer, NeedScenario, SalesChannel, Status string
-	CreatedAt, UpdatedAt                                 time.Time
+	ID, OwnerID                                                        int64
+	Region, Consumer, NeedScenario, SalesChannel, TargetLocale, Status string
+	CreatedAt, UpdatedAt                                               time.Time
 }
 
 func (demandCaseRow) TableName() string { return "demand_case" }

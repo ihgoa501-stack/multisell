@@ -633,7 +633,10 @@ function extractPageData(): PageData {
         }
       }
       if (embedded.supplier_name) data.supplier_name = embedded.supplier_name;
-      if (embedded.supplier_id_1688) data.supplier_id_1688 = embedded.supplier_id_1688;
+		if (embedded.supplier_id_1688) {
+			data.supplier_id_1688 = embedded.supplier_id_1688;
+			data.supplier_business_id = embedded.supplier_id_1688;
+		}
       if (embedded.description) data.description = embedded.description;
       if (embedded.price_min !== undefined) data.price_min = embedded.price_min;
       if (embedded.price_max !== undefined) data.price_max = embedded.price_max;

@@ -65,7 +65,8 @@ type Sourcing1688Snapshot struct {
 	Driver                     string          `gorm:"column:driver;not null" json:"driver"`
 	ParserVersion              string          `gorm:"column:parser_version;not null" json:"parser_version"`
 	CaptureMode                string          `gorm:"column:capture_mode;not null;default:legacy_unknown" json:"capture_mode"`
-	RawPayload                 json.RawMessage `gorm:"column:raw_payload;type:jsonb;not null" json:"raw_payload"`
+	CollectionRequestID        string          `gorm:"column:collection_request_id;size:80;not null;default:''" json:"collection_request_id"`
+	RawPayload                 json.RawMessage `gorm:"column:raw_payload;type:bytea;not null" json:"raw_payload"`
 	RawSHA256                  string          `gorm:"column:raw_sha256;size:64;not null;uniqueIndex:ux_sourcing_snapshot_hash" json:"raw_sha256"`
 	ObservedTitle              *string         `gorm:"column:observed_title" json:"observed_title,omitempty"`
 	ObservedPrice              *float64        `gorm:"column:observed_price" json:"observed_price,omitempty"`
@@ -97,6 +98,8 @@ type CaptureInput struct {
 	// CaptureMode is assigned only by trusted server-side entry points. It is
 	// never accepted from request JSON.
 	CaptureMode string `json:"-"`
+	// CollectionRequestID is assigned only by the trusted server-side fetcher.
+	CollectionRequestID string `json:"-"`
 }
 
 type ReviewInput struct {
