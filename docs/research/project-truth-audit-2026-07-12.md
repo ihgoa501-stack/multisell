@@ -70,4 +70,17 @@
 | 供应商证据含事实值，草稿语言绑定已批准市场 `target_locale`，处理后图片通过受保护读取在页面实际预览 | `implemented`；后端契约测试、前端 18 个聚焦测试和 Next.js 生产构建通过，但图片视觉质量仍需真实商品人工确认 |
 | 目标国家/地区、消费者、渠道、语言和真实 1688 商品的端到端经营验收 | `unknown`：本次仍未获得 Owner 批准的市场组合、真实 URL/登录态、图片权利、费用证据及渠道账号，不得宣称真实闭环完成 |
 
+## 补充审计：Owner 授权 Agent 自选并录入候选（2026-07-12 15:44 CST）
+
+Owner 明确要求 Agent 对可逆测试输入自行选择并录入。该授权允许建立候选与线索，不代表 Owner 已批准 opportunity gate，也不允许把公开索引升级为真实 1688 原页证据。
+
+| 事实 | 证据等级 |
+|---|---|
+| 验收库 `multisell_acceptance_20260712` 已在备份后从迁移 000097 升至 000099 | `actual`；备份位于 `/tmp/multisell_acceptance_before_agent_input_20260712_154415.dump`，迁移状态为 `99 / dirty=false` |
+| 已录入“美国 × Amazon US 日常猫毛清洁工具购买者 × en-US”候选市场，`demand_case.id=1` | `actual`；状态保持 `evidence_missing`，未生成 opportunity pass |
+| 候选市场关联 3 个独立研究快照、9 条 support/counter/conflict 证据和 1 条 evidence_missing 裁决 | `actual`（数据库记录）；公开来源内容为 `quoted`，账号、费用、履约、售后和利润仍为 `unknown` |
+| 已录入 1688 offer `692570310190` 为采集线索，关联 `collection_evidence.id=1` | `actual`（录入发生）；线索状态为 `pending_detail_collect / unverified`，证据哈希复算一致 |
+| 商品标题、报价、MOQ 和供应商来自第三方公开索引 | `quoted`；来源为 `https://www.1688wholesale.com/zh-CHS/1688/china_alibaba_item/692570310190.html`，不得冒充 1688 原页受控采集 |
+| `sourcing_1688_product` 真实受控商品记录、图片权利、完整成本、合规、SKU 与批准草稿 | `unknown`；当前记录数为 0，必须在登录后的真实 1688 页面通过 Owner 浏览器扩展采集后继续 |
+
 自动测试、页面可见和隔离数据库就绪只证明工程链可运行，不能替代真实商品、图片使用权、真实成本、平台规则或真实发布结果的外部观察。
