@@ -36,7 +36,7 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，原始 payload 与 SHA-256 快照必须一致，重复 run 幂等。内置静态公开资料基线只建立俄罗斯/Ozon 的权限待验证基线，不是实时研究，也不代表该市场已选中。
 
-小Q是凌镜唯一面向 Owner 的经营 Agent，稳定 ID 为 `xiao_q`。后端入口位于 `internal/domain/xiaoq/`，API 根路径为 `/api/v1/xiao-q`，前端入口为 `/xiaoq`。小Q只能通过登记的 Capability 调用现有领域 Service/Command，不得直接访问任意数据库表或绕过 RBAC、审批、审计和经营状态机。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；只有 Capability、权限、失败处理、证据追踪和回归测试齐全时才能标记 active。完整契约见 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md`。当前 active 能力为需求案件、决策卡、经营实验详情、实验闸门状态、1688受控内部草稿，以及从 Owner 经营实验派生的脱敏订单履约、结算对账和最终利润只读；售后闭合、现金一致性及其他系统能力仍为 deferred 或 unknown。
+小Q是凌镜唯一面向 Owner 的经营 Agent，稳定 ID 为 `xiao_q`。后端入口位于 `internal/domain/xiaoq/`，API 根路径为 `/api/v1/xiao-q`，前端入口为 `/xiaoq`。小Q只能通过登记的 Capability 调用现有领域 Service/Command，不得直接访问任意数据库表或绕过 RBAC、审批、审计和经营状态机。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；只有 Capability、权限、失败处理、证据追踪和回归测试齐全时才能标记 active。完整契约见 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md`。当前 active 能力为需求案件、决策卡、经营实验详情、实验闸门状态以及1688受控内部草稿只读；其他系统能力仍为 deferred。
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.3.0.0`.
