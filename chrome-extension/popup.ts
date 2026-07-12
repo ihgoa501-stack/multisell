@@ -18,6 +18,7 @@ const loginBtn = document.getElementById("loginBtn") as HTMLButtonElement;
 const resultCard = document.getElementById("resultCard") as HTMLDivElement;
 const resultContent = document.getElementById("resultContent") as HTMLPreElement;
 const settingsLink = document.getElementById("settingsLink") as HTMLAnchorElement;
+const boxBtn = document.getElementById("boxBtn") as HTMLButtonElement;
 
 // ─── State ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,8 @@ function updateStatus(
       loginBtn.title = "";
       break;
   }
+
+  boxBtn.style.display = status === "connected" ? "flex" : "none";
 }
 
 function showResult(payload: Record<string, unknown>): void {
@@ -204,6 +207,14 @@ async function handleSettings(): Promise<void> {
   }
 }
 
+/** Open my sourcing box page. */
+async function handleOpenBox(): Promise<void> {
+  const serverUrl = await getServerUrl();
+  const loginUrl = getLoginUrl(serverUrl);
+  const httpUrl = loginUrl.replace("/settings/plugin", "/sourcing1688");
+  chrome.tabs.create({ url: httpUrl });
+}
+
 // ─── Listen for status updates from background ────────────────────────────
 
 chrome.runtime.onMessage.addListener((message: StatusResponse | CollectionRecoveryUpdate) => {
@@ -244,6 +255,7 @@ async function init(): Promise<void> {
 fetchBtn.addEventListener("click", handleFetch);
 loginBtn.addEventListener("click", handleLogin);
 settingsLink.addEventListener("click", handleSettings);
+boxBtn.addEventListener("click", handleOpenBox);
 
 // Run init
 init();
