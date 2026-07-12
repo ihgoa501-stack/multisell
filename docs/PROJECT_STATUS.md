@@ -96,7 +96,7 @@
 | 项目 | 当前口径 |
 |------|----------|
 | 活跃代码栈 | `backend-go/` + `frontend-next/` |
-| 当前方向 | Owner 自用 Sprint 1：候选市场与独立反证闭环，见 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
+| 当前方向 | 完整 Owner 自用 AI 跨境电商经营平台是唯一开发路径；按完整纵向单元推进，见 [ADR-001](decisions/ADR-001-owner-complete-commerce-platform.md) 与 [CURRENT_DIRECTION_AND_PRIORITIES.md](CURRENT_DIRECTION_AND_PRIORITIES.md) |
 | 模块 / API / 页面事实源 | [reference-module-catalog.md](reference-module-catalog.md) |
 | 最新审计验证 | 2026-07-11：后端全量测试通过；前端 test / build 通过；lint 失败；E2E 未运行 |
 | 历史验证记录 | 本文下方各日期段落、[TEST_SUMMARY.md](TEST_SUMMARY.md)、[FRONTEND_TEST_REPORT.md](FRONTEND_TEST_REPORT.md) |

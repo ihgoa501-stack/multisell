@@ -1,16 +1,16 @@
 # CLAUDE.md
 
-> **当前最高优先级方向（2026-07-12）**：凌镜是只供 Owner 本人使用的 AI 跨境商品经营内部系统。它不服务外部软件用户，不验证谁愿意为凌镜付费，也不规划客户访谈、设计伙伴、软件试点、SaaS、订阅、计费、公共 API 或软件商业化。真实商品成交或 Owner 自用效果不会自动改变这一边界；只有 Owner 新的明确决策才能改变方向。详见 `docs/SELF_USE_OPERATING_DIRECTION.md` 和 `CONTEXT.md`。
+> **当前唯一开发路径（2026-07-12）**：建设只供 Owner 本人使用的完整 AI 跨境电商经营平台。完整平台包含经营事实系统、经营决策系统、Owner AI 协作层和平台内核；完整平台是目的地，按完整纵向单元推进，小单元不是产品上限。任何计划、TODO、PR 和验收必须映射到 `docs/decisions/ADR-001-owner-complete-commerce-platform.md`。平台不服务外部软件用户，不规划 SaaS、多租户、订阅、计费、公共 API 或软件商业化。详见 `docs/SELF_USE_OPERATING_DIRECTION.md` 和 `CONTEXT.md`。
 
-开始非平凡工作前，必须先读 `docs/research/project-truth-audit-2026-07-12.md` 确认当前产品边界，再读 `docs/research/project-truth-audit-2026-07-11.md` 核对代码与经营完成度证据。模块存在、测试通过、页面可见、mock 或 Agent 共识均不得升级为真实经营事实。代码、方向或现实状态变化时必须重新核验，而不是沿用旧完成声明。
+开始任何非平凡研究、规划、开发、审查、QA、发布或任务拆分前，必须按顺序完整阅读：`/Users/lc/gstack/ETHOS.md` → `docs/decisions/ADR-001-owner-complete-commerce-platform.md` → `docs/research/project-truth-audit-2026-07-12.md` → `docs/research/project-truth-audit-2026-07-11.md`。不得依赖记忆摘要代替阅读。模块存在、测试通过、页面可见、mock 或 Agent 共识均不得升级为真实经营事实。代码、方向或现实状态变化时必须重新核验，而不是沿用旧完成声明。
 
-当前唯一主线是：候选市场比较 → Owner 批准已选市场 → 商品经营证据与反证 → 商品机会 → Owner 批准的最小真实实验 → 非关联买家付款与签收 → 售后/争议关闭 → 最终贡献利润与现金对账 → 停止、换品、修正后再试或小幅加码。这里的消费者和买家只是 Owner 自营商品业务的交易对手，不是凌镜的软件用户；商品购买事实不得写成凌镜的“外部需求验证”。
+当前经营工作可以按候选市场、Owner 决定、经营行动、订单、售后、结算、利润和下一步决定追踪，但这只是事实路径，不是工程意义上的经营闭环。这里的消费者和买家只是 Owner 自营商品业务的交易对手，不是凌镜的软件用户；商品购买事实不得写成凌镜的“外部需求验证”，也不得自动解释为经营假设的因果验证。
 
 不得因为旧文档、旧代码或未来想象，主动恢复外部产品路线。旧材料中的外部客户、SaaS、设计伙伴、软件付费、跨客户聚合和商业化内容统一视为 `superseded`，只能用于历史追溯，不得进入当前计划、任务或验收标准。
 
 Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有明确决策用途和市场闸门时，不得启动平台商品采集。已有采集线索通过 `evidence_id` 引用不可变页面快照。
 
-经营实验统一事实链：后端 `internal/domain/experiment/`，API `/api/v1/experiments`，前端 `/experiments`。使用 `experiment_id` 关联机会、商品规格、供应、订单、履约、售后、利润与现金对象；闸门结果限定为 `pass / conditional / return / reject / expired`，证据作用限定为 `support / counter / conflict`，真实性限定为 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`；最终利润封账必须校验可信已对账结算和最终订单利润记录，现金回收必须校验同一订单与结算的银行/现金交易。最终利润与现金回收不得合并为一个状态。
+现有 `internal/domain/experiment/`、API `/api/v1/experiments` 和前端 `/experiments` 按“经营事实核验案卷”解释。`experiment_id` 关联机会、商品、订单、履约、售后、利润与现金只证明可追踪，不证明因果或反馈闭环。继续保留真实性、闸门、可信结算和同对象对账约束；但除非目标、可执行变量、真实市场作用、可靠观测、偏差判断、反馈规则和下一轮执行全部存在并验证，不得称其为经营闭环。
 
 1688 受控草稿链：后端 `internal/domain/sourcing1688/`，API `/api/v1/sourcing-1688`，前端 `/sourcing1688`。仅允许已批准候选市场和已通过 opportunity gate 的 active 实验进入；保存不可变快照、同款与变化、供应商/合规、SKU 三段映射、实际图片处理、成本与渠道规则验证，再走 Owner 草稿审批。`approved_draft` 仍必须保持 listing=`draft`，不得自动发布。`GET /:id/acceptance-report` 仅根据同一 Owner 的持久化证据逐项裁决 15 项验收；真实采集必须有服务器写入的 `controlled_fetch` 来源，手工声明 driver/raw_html 不得通过。真实发布必须另建高风险 Owner 审批并再次显式执行；平台响应只记 `submitted` 或 `reconcile_required`，不能当作真实上线。真实商品人工验收完成前只能声明工程实现。
 
@@ -18,7 +18,7 @@ Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有
 
 Owner 从 `/demand-cases` 查看候选市场。AI 研究 run 必须使用三类固定契约并保存可重算 SHA-256 原始快照；内置公开研究批次只产生权限待验证基线，不得解释为俄罗斯/Ozon 已入选。
 
-小Q是唯一面向 Owner 的经营 Agent，固定 ID `xiao_q`。后端 `internal/domain/xiaoq/`，API `/api/v1/xiao-q`，前端 `/xiaoq`。它只能调用按 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md` 登记的 Capability，并继续使用现有领域 Service/Command、RBAC、审批、审计和事实闸门。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；没有完成 Capability、权限和回归测试时不得声称已接入小Q。当前 active 能力为需求案件、决策卡、经营实验详情、实验闸门状态以及1688受控内部草稿只读。
+小Q是唯一面向 Owner 的经营 Agent，固定 ID `xiao_q`。后端 `internal/domain/xiaoq/`，API `/api/v1/xiao-q`，前端 `/xiaoq`。它只能调用按 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md` 登记的 Capability，并继续使用现有领域 Service/Command、RBAC、审批、审计和事实闸门。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；没有完成 Capability、权限和回归测试时不得声称已接入小Q。当前 active 能力为需求案件、决策卡、现有 `experiment` 经营事实案卷及闸门状态、1688受控内部草稿，以及从该案卷派生的脱敏订单履约、结算对账和最终利润只读；售后闭合和现金一致性仍为 unknown/deferred。
 
 This file gives Claude Code-specific guidance for working in this repository.
 Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.

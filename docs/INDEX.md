@@ -1,8 +1,8 @@
 # 凌镜 LingMirror — 文档索引
 
-> **当前方向（2026-07-12）**：先读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。凌镜只供 Owner 本人使用，不服务或验证外部软件需求。双产品、外部 SaaS、多租户和商业化文档均为历史材料，不得作为当前开发指令。
+> **唯一开发路径（2026-07-12）**：先读 [ADR-001：完整 Owner 自用跨境电商平台](decisions/ADR-001-owner-complete-commerce-platform.md)，再读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。完整平台是目的地，按完整纵向单元推进；凌镜只供 Owner 本人使用，外部 SaaS、多租户和商业化文档均为历史材料。
 
-> **当前事实入口**：再读 [方向事实审计 2026-07-12](research/project-truth-audit-2026-07-12.md)，工程完成度证据继续追溯到 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。
+> **当前事实入口**：先读 [经营闭环模型纠偏](research/project-truth-audit-2026-07-12-business-loop-correction.md)，再读 [方向事实审计 2026-07-12](research/project-truth-audit-2026-07-12.md)；工程完成度证据继续追溯到 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
 > 更新日期：2026-07-12
@@ -14,10 +14,10 @@
 | 文档 | 说明 |
 |------|------|
 | [入门教程](tutorial-getting-started.md) | 🆕 从零搭建开发环境到创建第一个商品——新人首选 |
-| [端到端教程](tutorial-first-workflow.md) | 🆕 从安装到运行业务闭环，30 分钟端到端体验 |
+| [端到端教程](tutorial-first-workflow.md) | ⛔ 历史教程；“业务闭环”命名已过时，只能用于了解旧工程流程 |
 | [API 快速参考](reference-api-quick.md) | 🆕 路由、认证、响应格式、中间件栈速查 |
 | [完整 API 参考](reference-api-complete.md) | Gin 基线配置的 687 条 HTTP 路由（含 683 条 `/api/v1`）及条件路由 |
-| [完整经营闭环与系统边界](research/commerce-loop-system-boundaries.md) | 平台无关的经营闭环、六个业务能力模块、统一事实链与关键闸门 |
+| [完整经营闭环与系统边界](research/commerce-loop-system-boundaries.md) | ⛔ 历史研究；其“完整经营闭环”定义已被 2026-07-12 纠偏，不得作为当前工程闭环定义 |
 | [模块目录](reference-module-catalog.md) | 🆕 全部 60+ 后端领域模块一览 |
 | [配置参考](reference-configuration.md) | 🆕 config.yaml + 环境变量完整说明 |
 | [Agent Pipeline 解释](explanation-agent-pipeline.md) | 🆕 Agent 间如何通过 EventBus 通信和协作 |
@@ -33,13 +33,13 @@
 | [运行测试与验证](howto-test-and-verify.md) | 🆕 Go 测试、前端测试、E2E |
 | [Owner 与 AI 统一部署测试手册](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md) | ⭐ 服务器初始化、部署、恢复、测试、回滚与交付的唯一运行手册 |
 | [使用 WebSocket 流式更新](howto-websocket.md) | 🆕 连接 /ws 端点接收实时数据 |
-| [执行第一个业务闭环](howto-first-business-loop.md) | 🆕 候选商品→完整度→利润→审批→上架的操作指南 |
+| [执行第一个业务闭环](howto-first-business-loop.md) | ⛔ 历史操作指南；其流程不构成当前定义的经营反馈闭环 |
 
 ## 🧠 解释 (Explanation)
 
 | 文档 | 说明 |
 |------|------|
-| [两个核心业务闭环](explanation-business-loops.md) | 🆕 商品→上架与订单→履约→结算两个主循环的设计 |
+| [两个核心业务闭环](explanation-business-loops.md) | ⛔ 历史流程设计；“闭环”命名已过时，不得作为当前领域模型 |
 | [领域模块架构](explanation-domain-architecture.md) | 🆕 60+ 模块的组织方式、协作模式和依赖关系 |
 
 ## 📋 项目概览
@@ -71,10 +71,16 @@
 
 | 文档 | 当前用途 |
 |------|----------|
+| [ADR-001：完整 Owner 自用跨境电商平台](decisions/ADR-001-owner-complete-commerce-platform.md) | Accepted；唯一开发路径、完整平台结构、纵向单元顺序和范围边界 |
 | [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律与开发路线；明确无外部软件用户目标 |
+| [经营闭环模型纠偏](research/project-truth-audit-2026-07-12-business-loop-correction.md) | 当前有效裁决：现有 experiment 是经营事实核验案卷，不构成因果实验或反馈闭环 |
+| [外部经营反馈标杆综合](research/external-benchmark-operating-feedback-synthesis-2026-07-12.md) | 三路外部调研综合：Amazon 单变量实验、eBay 单人工作台及凌镜首个现实验证建议 |
+| [真实反馈系统与实验平台标杆](research/external-benchmark-real-feedback-systems-2026-07-12.md) | Microsoft、Booking、Uber、Netflix、Airbnb、Spotify、Amazon 与 GA4 对照 |
+| [一人电商经营系统标杆](research/external-benchmark-solo-commerce-operations-2026-07-12.md) | Shopify、Amazon、eBay、Etsy、Odoo 官方能力比较 |
+| [经营决策循环工程边界](research/external-benchmark-operating-decision-loops-2026-07-12.md) | OODA、PDSA、Build-Measure-Learn、因果推断与电商反馈机制 |
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
 | [真实付费需求发现循环设计](superpowers/specs/2026-07-11-paid-demand-discovery-loop-design.md) | 历史命名；仅保留商品消费者付款、反证和交易裁决边界，不代表凌镜有外部软件需求 |
-| [真实付费需求发现循环实施计划](superpowers/plans/2026-07-11-paid-demand-discovery-loop.md) | 历史命名；实施内容按当前 Owner 自营商品实验方向解释 |
+| [真实付费需求发现循环实施计划](superpowers/plans/2026-07-11-paid-demand-discovery-loop.md) | ⛔ 历史实施计划；不得覆盖 ADR-001 的完整平台路径，仅保留证据边界参考 |
 | [付费需求信号地图](../deliverables/research/paid-demand-signal-map.md) | 代理信号与真实付款证据的边界 |
 | [付费需求反证协议](../deliverables/research/paid-demand-falsification-protocol.md) | 独立反证、污染和停止规则 |
 | [需求数据可得性现实审计](../deliverables/research/demand-data-access-reality.md) | 平台字段、权限和 unknown 边界 |
@@ -253,6 +259,7 @@
 - [功能需求模板](features/TEMPLATE.md)
 - [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
 - [1688 货源到待上架草稿受控闭环](features/1688-controlled-draft-workflow.md) — Owner 自用，草稿与独立发布审批严格分离；真实商品验收待完成
+- [真实 SKU 的 AI 辅助图片草稿方案](features/ai-assisted-product-image-draft.md) — `planned`；基于获权真实商品图生成待审核背景候选，不自动选择或发布
 - [1688 受控草稿链工程事实审计（2026-07-12）](research/project-truth-audit-2026-07-12-1688-draft-workflow.md) — 工程实现与外部事实边界
 
 ---

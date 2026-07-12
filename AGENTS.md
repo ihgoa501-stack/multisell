@@ -14,13 +14,15 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 ### Current Owner Direction (2026-07-12)
 
-凌镜当前是只供 Owner 本人使用的跨境商品实验与经营内部系统，不服务外部软件用户，也不以软件产品化或验证外部软件需求为目标。当前唯一主线是：候选市场比较 → Owner 批准已选市场 → 该市场的经营证据与反证 → 商品机会 → 最小真实实验 → 有效成交 → 退货/争议后最终净利润。不得预设国家、地区、平台、类目、商品或“20→3→1”等固定数量。完整边界见 `docs/SELF_USE_OPERATING_DIRECTION.md`，统一业务术语见 `CONTEXT.md`。
+凌镜唯一开发路径是建设一个只供 Owner 本人使用的完整 AI 跨境电商经营平台。完整平台覆盖经营事实系统、经营决策系统、Owner AI 协作层和平台内核；从市场与机会、商品与货源、渠道准备，到订单、库存、履约、售后、结算、利润、现金和下一次经营行动。完整平台是目的地，按可独立验收的完整纵向单元推进；小单元不是产品上限。权威路径见 `docs/decisions/ADR-001-owner-complete-commerce-platform.md`，产品边界见 `docs/SELF_USE_OPERATING_DIRECTION.md`，统一术语见 `CONTEXT.md`。
 
-商品消费者、平台买家、供应商和物流服务商只是 Owner 自营业务中的交易对手，不是凌镜的软件用户。对消费者付款、签收、售后和最终利润的核验只用于裁决商品经营实验，不得写成凌镜的“外部需求验证”、软件市场验证或产品化信号。
+任何计划、TODO、PR、QA 或发布必须映射到 ADR-001 的唯一开发路径；无法映射的工作不得进入当前开发队列。不得以“一个小工具已经够用”主动缩小 Owner 已确认的平台目标，也不得以“完整平台”为由加入外部 SaaS、多租户、订阅、计费、公共 API、更多 Agent/MoA、展示性仪表盘或其他无关能力。
 
-开始任何非平凡研究、规划、开发、审查、QA 或发布前，还必须先读 `docs/research/project-truth-audit-2026-07-12.md` 确认当前产品边界，再读 `docs/research/project-truth-audit-2026-07-11.md` 核对代码与经营完成度证据。严格区分 `policy / planned / implemented / automated_verified / manually_verified / external_observed / reconciled / mock / inferred / superseded`。不得把模块存在、测试通过、页面可见或多个 Agent 意见一致写成真实市场、真实成交、生产可用或最终利润已经成立。代码、方向或真实经营状态变化后，应重新核验并生成新的带日期审计，不能静默覆盖证据限制。
+商品消费者、平台买家、供应商和物流服务商只是 Owner 自营业务中的交易对手，不是凌镜的软件用户。对消费者付款、签收、售后和最终利润的核验只用于确认交易事实及经济结果；不得据此宣称经营假设获得因果验证，也不得写成凌镜的“外部需求验证”、软件市场验证或产品化信号。
 
-不得主动建设双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、设计伙伴、软件试点、跨客户聚合、未经市场选择的平台扩张、更多 Agent/MoA/自治升级或大型视觉重构。真实商品成交或自用效果不会自动改变这一边界；只有 Owner 新的明确决策才能改变方向。自用不降低审批、审计和外部写安全要求。
+开始任何非平凡研究、规划、开发、审查、QA、发布或任务拆分前，必须按顺序阅读：`/Users/lc/gstack/ETHOS.md` → `docs/decisions/ADR-001-owner-complete-commerce-platform.md` → `docs/research/project-truth-audit-2026-07-12.md` → `docs/research/project-truth-audit-2026-07-11.md`。不得依赖记忆摘要代替阅读。前两份确定建设原则与唯一开发路径，后两份核对产品边界、代码和经营完成度证据。严格区分 `policy / planned / implemented / automated_verified / manually_verified / external_observed / reconciled / mock / inferred / superseded`。不得把模块存在、测试通过、页面可见或多个 Agent 意见一致写成真实市场、真实成交、生产可用或最终利润已经成立。代码、方向或真实经营状态变化后，应重新核验并生成新的带日期审计，不能静默覆盖证据限制。
+
+完整平台只指 Owner 自用经营能力完整。不得主动建设双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、设计伙伴、软件试点、跨客户聚合、未经市场选择的平台扩张、更多 Agent/MoA/自治升级或与当前纵向单元无关的大型视觉重构。真实商品成交或自用效果不会自动改变这一边界；只有 Owner 新的明确决策才能改变方向。自用不降低审批、审计和外部写安全要求。
 
 旧文档、旧代码和旧研究中的外部客户、SaaS、设计伙伴、软件付费或商业化路线统一视为 `superseded` 历史材料，不得进入当前计划、TODO、验收标准或开发队列。
 
@@ -28,7 +30,7 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 现有 Ozon 采集器只是平台连接器，不是当前市场方向。`GET /api/v1/candidates/collection-evidence/:id` 只读取已有采集证据；除非 Ozon 对应的国家、消费者和渠道已通过市场闸门，否则不得把该接口列为当前采集任务。所有平台采集线索都必须通过 `evidence_id` 引用不可变快照，并声明它服务的经营决策。
 
-经营实验统一事实链位于 `internal/domain/experiment/`，API 根路径为 `/api/v1/experiments`，前端入口为 `/experiments`。每个案件以 `experiment_id` 关联现有业务对象；证据作用区分 `support / counter / conflict`，真实性区分 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`，必须由 Owner 对来源和观察时间单独核验。最终利润必须关联可信且全部对账的结算、最终 `order_profit_record` 和同一订单；现金回收必须关联同一订单与结算的银行/现金账户交易。利润最终确认与现金回收是两个独立状态；模拟、未知或 AI 推断不得通过经营闸门。
+现有 `internal/domain/experiment/`、`/api/v1/experiments` 和 `/experiments` 按“经营事实核验案卷”解释，技术命名暂不等于业务定义正确。每个案件以 `experiment_id` 关联现有业务对象；这种关联只支持追踪，不证明行动与订单或利润之间存在因果关系。证据作用区分 `support / counter / conflict`，真实性区分 `actual / quoted / estimated / unknown / mock / inferred`。普通录入不能直接声明 `actual`；利润与现金仍须保持可信来源、同一对象和对账约束。除非目标、可执行变量、真实市场作用、可靠观测、偏差判断、反馈规则和下一轮执行全部存在并验证，不得把该模块或其终局称为经营闭环。
 
 1688 货源到待上架草稿的受控入口位于 `internal/domain/sourcing1688/`，API 根路径为 `/api/v1/sourcing-1688`，前端入口为 `/sourcing1688`。它只接受已通过 opportunity gate 的 active 实验及 `experiment_ready` 候选市场，生成不可变快照、同款/变化记录、供应商与合规证据、SKU 三段映射、实际图片处理、完整成本与确定性渠道规则验证，再进入 `editing → pending_approval → approved_draft`；草稿批准仍必须保持 `product_listing.status=draft`，不得调用平台适配器。`GET /:id/acceptance-report` 只按 Owner 读取持久化证据并逐项返回 15 项 `passed / blocked / unknown`；只有服务器受控采集入口留下的 `controlled_fetch` 来源可证明真实采集，手工/历史快照不能冒充。真实发布是另一条高风险流程：必须创建独立 Owner 审批、冻结并哈希请求，再由 Owner 显式执行；无错误平台响应只记 `submitted`，超时进入 `reconcile_required`，两者都不代表真实上线。工程实现不代表真实 1688 来源、图片权利、费用或渠道契约已获外部验证。
 
@@ -36,7 +38,7 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 候选市场 Owner 页面为 `/demand-cases`。研究输入限定为 `scout_result / falsifier_result / data_reality_result`，原始 payload 与 SHA-256 快照必须一致，重复 run 幂等。内置静态公开资料基线只建立俄罗斯/Ozon 的权限待验证基线，不是实时研究，也不代表该市场已选中。
 
-小Q是凌镜唯一面向 Owner 的经营 Agent，稳定 ID 为 `xiao_q`。后端入口位于 `internal/domain/xiaoq/`，API 根路径为 `/api/v1/xiao-q`，前端入口为 `/xiaoq`。小Q只能通过登记的 Capability 调用现有领域 Service/Command，不得直接访问任意数据库表或绕过 RBAC、审批、审计和经营状态机。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；只有 Capability、权限、失败处理、证据追踪和回归测试齐全时才能标记 active。完整契约见 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md`。当前 active 能力为需求案件、决策卡、经营实验详情、实验闸门状态以及1688受控内部草稿只读；其他系统能力仍为 deferred。
+小Q是凌镜唯一面向 Owner 的经营 Agent，稳定 ID 为 `xiao_q`。后端入口位于 `internal/domain/xiaoq/`，API 根路径为 `/api/v1/xiao-q`，前端入口为 `/xiaoq`。小Q只能通过登记的 Capability 调用现有领域 Service/Command，不得直接访问任意数据库表或绕过 RBAC、审批、审计和经营状态机。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；只有 Capability、权限、失败处理、证据追踪和回归测试齐全时才能标记 active。完整契约见 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md`。当前 active 能力为需求案件、决策卡、现有 `experiment` 经营事实案卷及闸门状态、1688受控内部草稿，以及从该案卷派生的脱敏订单履约、结算对账和最终利润只读；售后闭合、现金一致性及其他系统能力仍为 deferred 或 unknown。
 
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.3.0.0`.
