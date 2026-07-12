@@ -28,6 +28,7 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
+	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -148,8 +149,16 @@ func seed(db *gorm.DB) error {
 	}
 	fmt.Printf("  inventory: sku_id=%d quantity=%d safety_stock=%d\n", inv.SkuID, inv.Quantity, inv.SafetyStock)
 
+	// --- Supplier required by candidate_product foreign keys ---
+	demoSupplier := supplier.Supplier{Name: "Demo Supplier", Status: 1}
+	result = db.Where("name = ?", demoSupplier.Name).FirstOrCreate(&demoSupplier)
+	if result.Error != nil {
+		return fmt.Errorf("supplier: %w", result.Error)
+	}
+	fmt.Printf("  supplier: id=%d name=%s\n", demoSupplier.ID, demoSupplier.Name)
+
 	// --- Product Loop E2E seed data ---
-	if err := seedProductLoopData(db); err != nil {
+	if err := seedProductLoopData(db, demoSupplier.ID); err != nil {
 		return fmt.Errorf("product loop seed: %w", err)
 	}
 
@@ -158,7 +167,7 @@ func seed(db *gorm.DB) error {
 
 // seedProductLoopData inserts 5 deterministic scenarios for the Product Loop E2E.
 // Idempotent: uses title-based FirstOrCreate for candidate products.
-func seedProductLoopData(db *gorm.DB) error {
+func seedProductLoopData(db *gorm.DB, supplierID int64) error {
 
 	// ========================================================================
 	// Scenario 1: Profitable Listing ("Premium Wireless Earbuds")
@@ -171,7 +180,7 @@ func seedProductLoopData(db *gorm.DB) error {
 			Title:              title,
 			Description:        "High-quality wireless Bluetooth earbuds with noise cancellation",
 			MainImage:          "https://picsum.photos/seed/earbuds1/400",
-			SupplierID:         int64Ptr(1),
+			SupplierID:         int64Ptr(supplierID),
 			PurchasePrice:      45.00,
 			PurchaseCurrency:   "CNY",
 			PackageWeightKg:    0.15,
@@ -335,7 +344,7 @@ func seedProductLoopData(db *gorm.DB) error {
 			Title:              title,
 			Description:        "Premium leather phone case for iPhone 15",
 			MainImage:          "https://picsum.photos/seed/case1/400",
-			SupplierID:         int64Ptr(1),
+			SupplierID:         int64Ptr(supplierID),
 			PurchasePrice:      20.00,
 			PurchaseCurrency:   "CNY",
 			PackageWeightKg:    0, // missing — no logistics cost data
@@ -498,7 +507,7 @@ func seedProductLoopData(db *gorm.DB) error {
 			Title:              title,
 			Description:        "BPA-free reusable stainless steel water bottle, 500ml",
 			MainImage:          "https://picsum.photos/seed/bottle1/400",
-			SupplierID:         int64Ptr(1),
+			SupplierID:         int64Ptr(supplierID),
 			PurchasePrice:      25.00,
 			PurchaseCurrency:   "CNY",
 			PackageWeightKg:    0.30,
