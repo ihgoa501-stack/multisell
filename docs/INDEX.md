@@ -16,6 +16,7 @@
 | [入门教程](tutorial-getting-started.md) | 🆕 从零搭建开发环境到创建第一个商品——新人首选 |
 | [端到端教程](tutorial-first-workflow.md) | 🆕 从安装到运行业务闭环，30 分钟端到端体验 |
 | [API 快速参考](reference-api-quick.md) | 🆕 路由、认证、响应格式、中间件栈速查 |
+| [完整 API 参考](reference-api-complete.md) | Gin 基线配置的 687 条 HTTP 路由（含 683 条 `/api/v1`）及条件路由 |
 | [完整经营闭环与系统边界](research/commerce-loop-system-boundaries.md) | 平台无关的经营闭环、六个业务能力模块、统一事实链与关键闸门 |
 | [模块目录](reference-module-catalog.md) | 🆕 全部 60+ 后端领域模块一览 |
 | [配置参考](reference-configuration.md) | 🆕 config.yaml + 环境变量完整说明 |

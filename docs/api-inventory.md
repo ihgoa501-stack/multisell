@@ -1,7 +1,8 @@
 # API Endpoint Inventory
 
-> **注意**: 本文档的内容已合并到 [reference-module-catalog.md](reference-module-catalog.md)（API 路由章节）。添加新 API 端点时，请更新该文件。
-> 本文保留仅用于向后兼容参考，不再作为 API 路由的事实源。
+> **注意**：这是 2026-07-03 的历史快照，不再作为 API 路由事实源。
+> 当前完整清单见 [完整 API 参考](reference-api-complete.md)，它由 Gin 运行时路由表生成。
+> 本文仅为兼容旧链接而保留。
 >
 > Generated 2026-07-03. Covers `backend-go/` (Go/Gin) HTTP endpoints under `/api/v1`.
 > Last updated: 2026-07-03

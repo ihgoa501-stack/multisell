@@ -1,8 +1,8 @@
 # API 快速参考 (API Quick Reference)
 
 > 凌镜 LingMirror API 路由、权限和响应格式速查
-> 更新日期: 2026-07-06
-> 完整清单: [API 端点清单](api-inventory.md)
+> 更新日期: 2026-07-12
+> 完整清单: [完整 API 参考](reference-api-complete.md)
 
 ---
 
@@ -33,8 +33,10 @@ Authorization: Bearer <token>
 | POST | `/api/v1/auth/login` |
 | POST | `/api/v1/auth/register` |
 | POST | `/api/v1/auth/refresh` |
-| GET | `/api/v1/auth/me` |
 | GET | `/api/health` |
+| GET | `/api/v1/health` |
+
+`GET /api/v1/auth/me` 需要有效 JWT，不是公共路由。
 
 ### Token 生命周期
 
@@ -160,5 +162,6 @@ Authorization: Bearer <token>
 
 - [模块目录](reference-module-catalog.md) — 完整模块列表
 - [配置参考](reference-configuration.md) — config.yaml + 环境变量
-- [API 端点清单](api-inventory.md) — 完整路由表
+- [完整 API 参考](reference-api-complete.md) — 从 Gin 运行时路由表生成的完整路由清单
+- [旧 API 端点清单](api-inventory.md) — 2026-07-03 历史快照，不再作为事实源
 - [权限与审计](PERMISSIONS_AND_AUDIT.md)
