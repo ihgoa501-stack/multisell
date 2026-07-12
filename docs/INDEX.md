@@ -2,7 +2,7 @@
 
 > **方向确认规则**：Owner 已确认“海洋目标 → 完整湖泊 → 持续推进直到达成”的建设方式和系统终点；具体市场、用户、商品、预算及经营参数仍须在对应湖泊确认。[Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 仍是 `superseded / unconfirmed` 历史提案。
 
-> **带日期的事实快照**：可读 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) 核验证据边界；其中的产品方向和行动顺序不是当前授权。
+> **带日期的事实快照**：可读 [项目真相审计 2026-07-12](research/project-truth-audit-2026-07-12.md) 核验最新工程证据边界；历史快照仍保留，不静默覆盖。
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
 > 更新日期：2026-07-11
@@ -114,6 +114,7 @@
 | [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |
 | [AI-Native AgentOS 任务清单](../tasks/todo.md) | 🆕 可逐项执行的 Product Loop / Action Gate / E2E canonical 任务列表 |
 | [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) | 当前代码、测试、经营事实、mock、过期方向和未闭环部分的只读审计快照 |
+| [项目真相审计 2026-07-12](research/project-truth-audit-2026-07-12.md) | Issue #332–#338 修复后的闸门、展示和浏览器回归证据边界 |
 | [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | ⛔ 已被 2026-07-11 自用方向替代，仅供历史追溯 |
 | [验收门禁](ACCEPTANCE_GATE.md) | 🆕 Dev Done / Test Green / Business Verified / Beta Accepted 的完成定义和证据要求 |
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |

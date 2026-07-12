@@ -36,7 +36,16 @@ npx playwright test tests/main-chain.spec.ts -g "login"
 
 ### 后端未启动时
 
-如果后端不可达，主链路测试会 **skip**（不 fail），便于 CI 在纯前端构建时不红。设置 `E2E_SKIP_WEB_SERVER=1` 可跳过自动启动 dev server（假设你已经手动起了）。
+主链路和 Owner 自用经营闭环测试在后端不可达时会直接失败，不会静默 skip。设置 `E2E_SKIP_WEB_SERVER=1` 只会跳过自动启动前端，仍要求后端健康检查通过。
+
+当前自用闭环回归可单独运行：
+
+```bash
+cd frontend-next/e2e
+npx playwright test tests/business-loop.spec.ts
+```
+
+它覆盖 `/demand-cases` 与 `/experiments` 的隔离浏览器数据、证据不足拒绝路径，以及最终利润与现金回收的独立展示。通过仅代表 `automated_verified`，不代表真实市场、真实成交或最终利润成立。
 
 ### CI 配置
 

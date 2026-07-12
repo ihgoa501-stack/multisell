@@ -10,9 +10,15 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"math"
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	afterSalesObservationPeriod = 14 * 24 * time.Hour
+	cashRoundingTolerance       = 0.01
 )
 
 type Service struct {
@@ -51,6 +57,9 @@ func validateCase(c *ExperimentCase) error {
 	}
 	if c.FinalDecision == "continue" && (c.FinalProfitStatus != ProfitFinal || c.CashRecoveryStatus != CashRecovered) {
 		return errors.New("continue requires final profit and recovered cash")
+	}
+	if c.FinalDecision == "continue" && c.FinalProfitAmount <= 0 {
+		return errors.New("continue requires positive final profit")
 	}
 	if c.Status == StatusCompleted && (c.FinalProfitStatus != ProfitFinal || c.CashRecoveryStatus != CashRecovered || c.FinalDecision == "") {
 		return errors.New("completed requires final profit, recovered cash, and a final decision")
@@ -356,6 +365,22 @@ func (s *Service) EvaluateGate(ctx context.Context, id string, ownerID int64, in
 	g := &GateDecision{ExperimentID: id, Stage: in.Stage, GateCode: in.GateCode, Result: in.Result, Reason: in.Reason, EvidenceIDs: string(raw), DecidedBy: in.DecidedBy}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var caseUpdates map[string]any
+		if in.Result == ResultPass {
+			switch in.Stage {
+			case StageOrder:
+				if err := s.validatePaidOrderWithDB(tx, id); err != nil {
+					return err
+				}
+			case StageFulfillment:
+				if err := s.validateDeliveredOrderWithDB(tx, id); err != nil {
+					return err
+				}
+			case StageAftersales:
+				if err := s.validateAftersalesClosureWithDB(tx, id, time.Now()); err != nil {
+					return err
+				}
+			}
+		}
 		if in.Result == ResultPass && in.Stage == StageProfit {
 			truth, err := s.validateProfitClosureWithDB(tx, id)
 			if err != nil {
@@ -379,6 +404,72 @@ func (s *Service) EvaluateGate(ctx context.Context, id string, ownerID int64, in
 		return nil
 	})
 	return g, err
+}
+
+type linkedOrderFacts struct {
+	ID                               int64
+	Status                           string
+	PayAmount                        float64
+	PaidAt, DeliveredAt, CancelledAt *time.Time
+}
+
+func (s *Service) linkedOrderWithDB(db *gorm.DB, experimentID string) (*linkedOrderFacts, error) {
+	orderID, err := s.linkedNumericIDWithDB(db, experimentID, "order")
+	if err != nil {
+		return nil, err
+	}
+	var order linkedOrderFacts
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("sales_order").Where("id = ?", orderID).First(&order).Error; err != nil {
+		return nil, errors.New("linked order not found")
+	}
+	return &order, nil
+}
+
+func (s *Service) validatePaidOrderWithDB(db *gorm.DB, experimentID string) error {
+	order, err := s.linkedOrderWithDB(db, experimentID)
+	if err != nil {
+		return err
+	}
+	if order.PaidAt == nil || order.PayAmount <= 0 || order.CancelledAt != nil || strings.EqualFold(order.Status, "cancelled") {
+		return errors.New("paid_order requires a paid, positive-value, non-cancelled linked order")
+	}
+	return nil
+}
+
+func (s *Service) validateDeliveredOrderWithDB(db *gorm.DB, experimentID string) error {
+	order, err := s.linkedOrderWithDB(db, experimentID)
+	if err != nil {
+		return err
+	}
+	if order.DeliveredAt == nil || order.CancelledAt != nil || strings.EqualFold(order.Status, "cancelled") || strings.EqualFold(order.Status, "pending") {
+		return errors.New("delivered requires a delivered, non-cancelled linked order")
+	}
+	return nil
+}
+
+func (s *Service) validateAftersalesClosureWithDB(db *gorm.DB, experimentID string, checkedAt time.Time) error {
+	order, err := s.linkedOrderWithDB(db, experimentID)
+	if err != nil {
+		return err
+	}
+	if order.DeliveredAt == nil || checkedAt.Before(order.DeliveredAt.Add(afterSalesObservationPeriod)) {
+		return errors.New("aftersales closure requires 14 days after delivery")
+	}
+	var openReturns int64
+	if err := db.Table("after_sales_order").Where("order_id = ? AND status NOT IN ?", order.ID, []string{"rejected", "refunded"}).Count(&openReturns).Error; err != nil {
+		return err
+	}
+	if openReturns > 0 {
+		return errors.New("aftersales closure blocked by unresolved return or refund")
+	}
+	var openDisputes int64
+	if err := db.Table("dispute_case").Where("order_id = ? AND status NOT IN ?", order.ID, []string{"approved", "rejected", "closed", "resolved"}).Count(&openDisputes).Error; err != nil {
+		return err
+	}
+	if openDisputes > 0 {
+		return errors.New("aftersales closure blocked by unresolved dispute")
+	}
+	return nil
 }
 
 type profitClosure struct {
@@ -405,6 +496,30 @@ func (s *Service) linkedNumericIDWithDB(db *gorm.DB, experimentID, objectType st
 		return 0, fmt.Errorf("invalid %s link", objectType)
 	}
 	return id, nil
+}
+
+func (s *Service) linkedNumericIDsWithDB(db *gorm.DB, experimentID, objectType string) ([]int64, error) {
+	var links []ObjectLink
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("experiment_id = ? AND object_type = ?", experimentID, objectType).Order("id").Find(&links).Error; err != nil {
+		return nil, err
+	}
+	if len(links) == 0 {
+		return nil, fmt.Errorf("%s link required", objectType)
+	}
+	seen := map[int64]struct{}{}
+	ids := make([]int64, 0, len(links))
+	for _, link := range links {
+		id, err := strconv.ParseInt(link.ObjectID, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("invalid %s link", objectType)
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func (s *Service) validateProfitClosure(ctx context.Context, experimentID string) (*profitClosure, error) {
@@ -476,7 +591,7 @@ func (s *Service) validateCashClosure(ctx context.Context, experimentID string) 
 }
 
 func (s *Service) validateCashClosureWithDB(db *gorm.DB, experimentID string) (*cashClosure, error) {
-	transactionID, err := s.linkedNumericIDWithDB(db, experimentID, "cash_transaction")
+	transactionIDs, err := s.linkedNumericIDsWithDB(db, experimentID, "cash_transaction")
 	if err != nil {
 		return nil, err
 	}
@@ -492,6 +607,13 @@ func (s *Service) validateCashClosureWithDB(db *gorm.DB, experimentID string) (*
 	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("settlement").Where("id = ?", settlementID).Pluck("currency", &settlementCurrency).Error; err != nil {
 		return nil, errors.New("linked settlement not found")
 	}
+	var expectedNet float64
+	if err := db.Table("settlement_item").Select("COALESCE(SUM(net), 0)").Where("settlement_id = ? AND (order_id = ? OR order_no = (SELECT order_no FROM sales_order WHERE id = ?)) AND reconciliation_status = ? AND reconciled_at IS NOT NULL AND reconciled_by <> ''", settlementID, orderID, orderID, "matched").Scan(&expectedNet).Error; err != nil {
+		return nil, err
+	}
+	if expectedNet <= 0 {
+		return nil, errors.New("linked settlement has no positive reconciled net receivable for the experiment order")
+	}
 	var row struct {
 		ID                                     int64
 		Amount                                 float64
@@ -499,19 +621,37 @@ func (s *Service) validateCashClosureWithDB(db *gorm.DB, experimentID string) (*
 		TransactionDate                        *time.Time
 		SettlementID, OrderID                  *int64
 	}
-	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("finance_transaction AS ft").Select("ft.*, fa.account_type").Joins("JOIN finance_account AS fa ON fa.id = ft.account_id").Where("ft.id = ?", transactionID).First(&row).Error; err != nil {
-		return nil, errors.New("linked cash transaction not found")
+	var total float64
+	var recoveredAt *time.Time
+	for _, transactionID := range transactionIDs {
+		row = struct {
+			ID                                     int64
+			Amount                                 float64
+			Currency, TransactionType, AccountType string
+			TransactionDate                        *time.Time
+			SettlementID, OrderID                  *int64
+		}{}
+		if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Table("finance_transaction AS ft").Select("ft.*, fa.account_type").Joins("JOIN finance_account AS fa ON fa.id = ft.account_id").Where("ft.id = ?", transactionID).First(&row).Error; err != nil {
+			return nil, errors.New("linked cash transaction not found")
+		}
+		if row.Amount <= 0 || row.TransactionDate == nil || (row.AccountType != "bank" && row.AccountType != "cash") || row.TransactionType != "revenue" {
+			return nil, errors.New("linked cash transaction is not an actual available receipt")
+		}
+		if row.SettlementID == nil || *row.SettlementID != settlementID || row.OrderID == nil || *row.OrderID != orderID {
+			return nil, errors.New("cash transaction is not linked to the experiment order and settlement")
+		}
+		if strings.TrimSpace(row.Currency) == "" || row.Currency != settlementCurrency {
+			return nil, errors.New("cash transaction currency does not match the linked settlement")
+		}
+		total += row.Amount
+		if recoveredAt == nil || row.TransactionDate.After(*recoveredAt) {
+			recoveredAt = row.TransactionDate
+		}
 	}
-	if row.Amount <= 0 || row.TransactionDate == nil || (row.AccountType != "bank" && row.AccountType != "cash") || row.TransactionType != "revenue" {
-		return nil, errors.New("linked cash transaction is not an actual available receipt")
+	if math.Abs(total-expectedNet) > cashRoundingTolerance {
+		return nil, fmt.Errorf("cash receipts %.2f %s do not match reconciled net receivable %.2f %s", total, settlementCurrency, expectedNet, settlementCurrency)
 	}
-	if row.SettlementID == nil || *row.SettlementID != settlementID || row.OrderID == nil || *row.OrderID != orderID {
-		return nil, errors.New("cash transaction is not linked to the experiment order and settlement")
-	}
-	if strings.TrimSpace(row.Currency) == "" || row.Currency != settlementCurrency {
-		return nil, errors.New("cash transaction currency does not match the linked settlement")
-	}
-	return &cashClosure{Amount: row.Amount, Currency: row.Currency, RecoveredAt: row.TransactionDate}, nil
+	return &cashClosure{Amount: total, Currency: settlementCurrency, RecoveredAt: recoveredAt}, nil
 }
 
 func (s *Service) OwnerSummary(ctx context.Context, id string, ownerID int64) (*OwnerSummary, error) {
