@@ -28,7 +28,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/platformfee"
 	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"github.com/lingmirror/backend-go/internal/domain/sku"
-	"github.com/lingmirror/backend-go/internal/domain/supplier"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -150,15 +149,25 @@ func seed(db *gorm.DB) error {
 	fmt.Printf("  inventory: sku_id=%d quantity=%d safety_stock=%d\n", inv.SkuID, inv.Quantity, inv.SafetyStock)
 
 	// --- Supplier required by candidate_product foreign keys ---
-	demoSupplier := supplier.Supplier{Name: "Demo Supplier", Status: 1}
-	result = db.Where("name = ?", demoSupplier.Name).FirstOrCreate(&demoSupplier)
-	if result.Error != nil {
-		return fmt.Errorf("supplier: %w", result.Error)
+	// Use only columns present in the migration schema. The richer domain model
+	// currently contains fields that older databases do not have.
+	const demoSupplierName = "Demo Supplier"
+	var demoSupplierID int64
+	if err := db.Table("supplier").Select("id").Where("name = ?", demoSupplierName).Scan(&demoSupplierID).Error; err != nil {
+		return fmt.Errorf("find supplier: %w", err)
 	}
-	fmt.Printf("  supplier: id=%d name=%s\n", demoSupplier.ID, demoSupplier.Name)
+	if demoSupplierID == 0 {
+		if err := db.Table("supplier").Create(map[string]any{"name": demoSupplierName, "status": 1}).Error; err != nil {
+			return fmt.Errorf("create supplier: %w", err)
+		}
+		if err := db.Table("supplier").Select("id").Where("name = ?", demoSupplierName).Scan(&demoSupplierID).Error; err != nil {
+			return fmt.Errorf("reload supplier: %w", err)
+		}
+	}
+	fmt.Printf("  supplier: id=%d name=%s\n", demoSupplierID, demoSupplierName)
 
 	// --- Product Loop E2E seed data ---
-	if err := seedProductLoopData(db, demoSupplier.ID); err != nil {
+	if err := seedProductLoopData(db, demoSupplierID); err != nil {
 		return fmt.Errorf("product loop seed: %w", err)
 	}
 
