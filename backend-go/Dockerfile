@@ -3,6 +3,8 @@
 # ============================
 FROM golang:1.25.12-alpine AS builder
 
+ENV GOPROXY=https://goproxy.cn,direct
+
 RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine#https://mirrors.aliyun.com/alpine#g' /etc/apk/repositories \
     && apk add --no-cache git ca-certificates
 
