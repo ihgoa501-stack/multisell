@@ -168,7 +168,7 @@ func seed(db *gorm.DB) error {
 	fmt.Printf("  supplier: id=%d name=%s\n", demoSupplierID, demoSupplierName)
 
 	// --- Product Loop E2E seed data ---
-	if err := seedProductLoopData(db, demoSupplierID); err != nil {
+	if err := seedProductLoopData(db, demoSupplierID, product.ID); err != nil {
 		return fmt.Errorf("product loop seed: %w", err)
 	}
 
@@ -177,7 +177,7 @@ func seed(db *gorm.DB) error {
 
 // seedProductLoopData inserts 5 deterministic scenarios for the Product Loop E2E.
 // Idempotent: uses title-based FirstOrCreate for candidate products.
-func seedProductLoopData(db *gorm.DB, supplierID int64) error {
+func seedProductLoopData(db *gorm.DB, supplierID, listingProductID int64) error {
 
 	// ========================================================================
 	// Scenario 1: Profitable Listing ("Premium Wireless Earbuds")
@@ -586,7 +586,7 @@ func seedProductLoopData(db *gorm.DB, supplierID int64) error {
 		// Create listing_task in blocked state (pre-approval)
 		_ = db.Where("source_item_key = ?", fmt.Sprintf("candidate:%d", prod.ID)).Delete(&listingtask.ListingTask{})
 		lTask := listingtask.ListingTask{
-			ProductID:           prod.ID,
+			ProductID:           listingProductID,
 			PlatformID:          1,
 			SourceType:          "decision",
 			SourceItemKey:       fmt.Sprintf("candidate:%d", prod.ID),
@@ -605,7 +605,7 @@ func seedProductLoopData(db *gorm.DB, supplierID int64) error {
 		// Create approval_request linked to listing_task
 		_ = db.Where("entity_type = 'listing_task' AND entity_id = ?", lTask.ID).Delete(&approval.ApprovalRequest{})
 		appReq := approval.ApprovalRequest{
-			ProductID:   prod.ID,
+			ProductID:   listingProductID,
 			RequestType: "listing_task",
 			Requester:   "seed",
 			Status:      "pending",
