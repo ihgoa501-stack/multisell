@@ -1,12 +1,20 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, infra-q3-buildout]
   pull_request:
     branches: [main, infra-q3-buildout]
   schedule:
     - cron: '0 6 * * *'   # UTC 06:00 daily — triggers daily-health-report
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   # ==========================================
@@ -154,6 +162,7 @@ jobs:
   # ==========================================
   e2e-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend-next/e2e
@@ -237,7 +246,25 @@ jobs:
       - name: Run E2E tests
         run: npx playwright test --reporter=list
         env:
-          API_BASE_URL: http://localhost:8080
+          E2E_API_BASE: http://localhost:8080
+      - name: Upload E2E failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-${{ github.run_id }}
+          path: |
+            frontend-next/e2e/playwright-report/
+            frontend-next/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload backend log on E2E failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-backend-log-${{ github.run_id }}
+          path: /tmp/lingmirror-backend.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Stop backend
         if: always()
         run: pkill -f "cmd/server/main.go" 2>/dev/null || true
@@ -247,7 +274,7 @@ jobs:
   # ==========================================
   push-images:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [go-lint, go-test, next-build]
+    needs: [governance-checks, go-lint, go-test, next-build, e2e-test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
