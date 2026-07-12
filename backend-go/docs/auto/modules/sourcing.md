@@ -10,6 +10,7 @@ Package: `backend-go/internal/domain/sourcing/`
 |--------|------|--------|
 | `POST` | `/api/v1/sourcing/fetch` | `h.Fetch` |
 | `GET` | `/api/v1/sourcing/keyword-trends` | `h.KeywordTrends` |
+| `GET` | `/api/v1/sourcing/market-overview` | `h.MarketOverview` |
 | `GET` | `/api/v1/sourcing/market-trends` | `h.MarketTrends` |
 | `GET` | `/api/v1/sourcing/recommendations` | `h.ListRecommendations` |
 
