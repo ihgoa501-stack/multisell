@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily LingMirror private database backup
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+RandomizedDelaySec=10min
+Unit=lingmirror-private-backup.service
+
+[Install]
+WantedBy=timers.target

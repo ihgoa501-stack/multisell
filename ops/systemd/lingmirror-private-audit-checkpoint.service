@@ -1,0 +1,11 @@
+[Unit]
+Description=LingMirror private audit checkpoint
+Requires=docker.service
+After=docker.service
+OnFailure=lingmirror-ops-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/multisell
+ExecStart=/usr/bin/docker compose --profile manual -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.private.yml run --rm audit-checkpoint
+TimeoutStartSec=15min
