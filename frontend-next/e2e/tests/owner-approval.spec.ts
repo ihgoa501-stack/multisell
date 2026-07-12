@@ -25,6 +25,10 @@ const APPROVABLE_SUGGESTION = {
   reason: 'High demand, good profit margin, compliant with platform policies',
   confidence: 0.85,
   risk_level: 'low',
+  risk_flags: '',
+  task_status: 'pending_approval',
+  approval_status: 'pending',
+  feedback_status: 'pending',
   created_at: '2026-06-29T10:00:00Z',
   listing_task_id: 42,
 };
@@ -99,6 +103,27 @@ test.describe('Owner Approval — 经营总控台', () => {
         });
       }
 
+      if (url.endsWith('/v1/approval') && route.request().method() === 'POST') {
+        return route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify({ code: 0, message: 'ok', data: { id: 9001, status: 'pending' } }),
+        });
+      }
+
+      if (url.includes('/v1/approval/9001/review') && route.request().method() === 'PUT') {
+        return route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify({ code: 0, message: 'ok', data: { id: 9001, status: 'approved' } }),
+        });
+      }
+
+      if (url.includes('/v1/listing-task/42/feedback') && route.request().method() === 'POST') {
+        return route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify({ code: 0, message: 'ok', data: { status: 'accepted' } }),
+        });
+      }
+
       if (url.includes('/v1/listing-tasks/') && route.request().method() === 'PUT') {
         return route.fulfill({
           status: 200, contentType: 'application/json',
@@ -115,12 +140,11 @@ test.describe('Owner Approval — 经营总控台', () => {
     await expect(page.locator('h1')).toContainText('Owner', { timeout: 10000 });
 
     // Scope stat value assertions to specific cards to avoid ambiguity
-    const pendingCard = page.locator('.ant-statistic').filter({ hasText: '待审批上架' });
+    const pendingCard = page.locator('.ant-statistic').filter({ hasText: '待审批动作' });
     await expect(pendingCard).toBeVisible();
     await expect(pendingCard.locator('.ant-statistic-content-value-int')).toHaveText('1');
 
-    await expect(page.locator('.ant-statistic').filter({ hasText: '低利润商品' }).locator('.ant-statistic-content-value-int')).toHaveText('3');
-    await expect(page.locator('.ant-statistic').filter({ hasText: '资料不完整商品' }).locator('.ant-statistic-content-value-int')).toHaveText('5');
+    await expect(page.locator('.ant-statistic').filter({ hasText: '低利润 / 不完整商品' }).locator('.ant-statistic-content-value-int')).toHaveText('8');
     await expect(page.locator('.ant-statistic').filter({ hasText: '同步异常' }).locator('.ant-statistic-content-value-int')).toHaveText('0');
     await expect(page.getByText('候选商品总数')).toBeVisible();
     await expect(page.getByText('评估建议总数')).toBeVisible();
@@ -130,7 +154,7 @@ test.describe('Owner Approval — 经营总控台', () => {
   test('agent suggestions table shows correct status tags', async ({ page }) => {
     await page.goto('/owner');
     await expect(page.locator('h1')).toContainText('Owner', { timeout: 10000 });
-    await expect(page.getByText('Agent 上架建议')).toBeVisible();
+    await expect(page.getByText('Agent 决策队列')).toBeVisible();
 
     const table = page.locator('.ant-table-tbody');
     await expect(table).toBeVisible();
@@ -151,15 +175,33 @@ test.describe('Owner Approval — 经营总控台', () => {
     await expect(row).toBeVisible();
 
     // The approve button uses Ant Design Button — use CSS + text as fallback
-    const approveBtn = row.locator('button').filter({ hasText: /批准/ });
+    const approveBtn = row.getByRole('button', { name: /批准/ });
     await expect(approveBtn).toBeEnabled();
     await approveBtn.click();
 
-    // Approval modal should appear — check title text
-    await expect(page.getByText('确认批准上架')).toBeVisible({ timeout: 5000 });
+    // The real approval dialog exposes the environment, risk, consequence,
+    // audit destination and rollback boundary before confirmation.
+    const modal = page.getByRole('dialog');
+    await expect(modal.getByText('模拟环境操作确认')).toBeVisible({ timeout: 5000 });
+    await expect(modal.getByText('中风险')).toBeVisible();
+    await expect(modal).toContainText('创建审批 → 执行上架任务');
+    await expect(modal).toContainText('操作已记录至 operation_log 表');
+    await expect(modal).toContainText('上架后无法自动回滚');
 
-    // Click the modal footer's primary button
-    await page.locator('.ant-modal-footer .ant-btn-primary').click();
+    await modal.getByPlaceholder('补充说明（选填）').fill('Owner 已核对风险、后果与回滚边界，同意进入审批流程');
+
+    const approvalCreated = page.waitForRequest((request) =>
+      request.url().endsWith('/v1/approval') && request.method() === 'POST'
+    );
+    const approvalReviewed = page.waitForRequest((request) =>
+      request.url().includes('/v1/approval/9001/review') && request.method() === 'PUT'
+    );
+    const feedbackRecorded = page.waitForRequest((request) =>
+      request.url().includes('/v1/listing-task/42/feedback') && request.method() === 'POST'
+    );
+
+    await modal.getByRole('button', { name: '批准上架' }).click();
+    await Promise.all([approvalCreated, approvalReviewed, feedbackRecorded]);
 
     // Wait for success toast — Ant Design message
     await expect(page.locator('.ant-message')).toContainText(/已批准上架/, { timeout: 10000 });

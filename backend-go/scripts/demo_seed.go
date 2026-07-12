@@ -166,7 +166,6 @@ func seed(db *gorm.DB) error {
 	if err := seedProductLoopData(db, demoSupplierID, product.ID); err != nil {
 		return fmt.Errorf("product loop seed: %w", err)
 	}
-
 	return nil
 }
 

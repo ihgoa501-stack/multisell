@@ -2,7 +2,7 @@
 
 > **方向确认规则**：Owner 已确认“海洋目标 → 完整湖泊 → 持续推进直到达成”的建设方式和系统终点；具体市场、用户、商品、预算及经营参数仍须在对应湖泊确认。[Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 仍是 `superseded / unconfirmed` 历史提案。
 
-> **带日期的事实快照**：可读 [项目真相审计 2026-07-12](research/project-truth-audit-2026-07-12.md) 核验最新工程证据边界；历史快照仍保留，不静默覆盖。
+> **带日期的事实快照**：可读 [项目真相审计 2026-07-12](research/project-truth-audit-2026-07-12.md) 核验最新工程证据边界；[2026-07-11 历史快照](research/project-truth-audit-2026-07-11.md) 仍保留，但其中的产品方向和行动顺序不是当前授权。
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
 > 更新日期：2026-07-11
