@@ -15,6 +15,7 @@ import {
   submitPrivateCaptureFailure,
 	DuplicatePrivateCollectionError,
 	duplicateComparisonLines,
+	isTrustedPrivateCollectionSource,
 } from '../build/shared/private-collection.js';
 import { getApiBaseUrl } from '../build/shared/auth.js';
 
@@ -156,6 +157,20 @@ test('duplicate comparison shows every safe current-vs-existing field without ra
 	assert.ok(lines.some((line) => line.includes('本次 3件｜已有 3件（相同）')));
 	assert.equal(lines.join('\n').includes('raw_payload'), false);
 	assert.equal(lines.join('\n').includes('raw_html'), false);
+});
+
+test('collection source accepts exact detail identity or supported visible list pages only', () => {
+	const page = {
+		offer_id_url: '123', offer_id_page: '123', source_url: 'https://detail.1688.com/offer/123.html',
+		driver: 'chrome_extension_list_visible', parser_version: '1688-list-visible-v1',
+	};
+	assert.equal(isTrustedPrivateCollectionSource('https://s.1688.com/selloffer/offer_search.htm', page), true);
+	assert.equal(isTrustedPrivateCollectionSource('https://www.1688.com/', page), true);
+	assert.equal(isTrustedPrivateCollectionSource('https://evil.example/list', page), false);
+	assert.equal(isTrustedPrivateCollectionSource('https://s.1688.com.evil.example/list', page), false);
+	assert.equal(isTrustedPrivateCollectionSource('https://detail.1688.com/offer/999.html', page), false);
+	assert.equal(isTrustedPrivateCollectionSource('https://s.1688.com/list', { ...page, offer_id_page: '999' }), false);
+	assert.equal(isTrustedPrivateCollectionSource('https://s.1688.com/list', { ...page, driver: 'forged' }), false);
 });
 
 test('capture failure reports only safe metadata and never page contents', async () => {

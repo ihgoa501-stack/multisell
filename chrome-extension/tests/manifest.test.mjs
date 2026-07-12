@@ -8,9 +8,12 @@ test('manifest is limited to the Owner 1688 private collection scope', async () 
   assert.equal(manifest.version, '0.2.0');
   assert.deepEqual(manifest.permissions, ['storage', 'activeTab', 'alarms']);
   assert.ok(manifest.host_permissions.includes('https://detail.1688.com/*'));
-  assert.equal(manifest.host_permissions.some((value) => value.includes('*.') || value === '<all_urls>'), false);
+  assert.ok(manifest.host_permissions.includes('https://*.1688.com/*'));
+  assert.equal(manifest.host_permissions.some((value) => (value.includes('*.') && value !== 'https://*.1688.com/*') || value === '<all_urls>'), false);
   assert.equal(manifest.host_permissions.some((value) => value.includes('ozon') || value.includes('taobao')), false);
-  assert.equal(manifest.content_scripts.some((entry) => entry.js.includes('build/content-script-list.js')), false);
+  const listScriptEntry = manifest.content_scripts.find((entry) => entry.js.includes('build/content-script-list.js'));
+  assert.ok(listScriptEntry);
+  assert.deepEqual(listScriptEntry.matches, ['https://www.1688.com/*', 'https://s.1688.com/*', 'https://*.1688.com/*']);
   assert.deepEqual(
     manifest.content_scripts.flatMap((entry) => entry.matches).filter((value) => value.includes('lingmirror')),
     ['https://lingmirror.com/settings/plugin*', 'https://owner.lingmirror.com/settings/plugin*'],

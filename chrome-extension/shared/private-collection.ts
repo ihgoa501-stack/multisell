@@ -67,6 +67,19 @@ export function duplicateComparisonLines(page: PageData, existing: ExistingPriva
 	];
 }
 
+export function isTrustedPrivateCollectionSource(senderURL: string, page: PageData): boolean {
+	const senderOffer = senderURL.match(/^https:\/\/detail\.1688\.com\/offer\/(\d+)\.html(?:[?#].*)?$/i)?.[1];
+	const listSender = /^https:\/\/(?!(?:detail)\.)[a-zA-Z0-9_-]+\.1688\.com\//i.test(senderURL);
+	const payloadOffer = page.source_url.match(/^https:\/\/detail\.1688\.com\/offer\/(\d+)\.html(?:[?#].*)?$/i)?.[1];
+	const identityMatches = Boolean(payloadOffer)
+		&& page.offer_id_url === payloadOffer
+		&& page.offer_id_page === payloadOffer;
+	const trustedDetail = Boolean(senderOffer && senderOffer === payloadOffer);
+	const trustedVisibleList = listSender && page.driver === "chrome_extension_list_visible"
+		&& page.parser_version === "1688-list-visible-v1";
+	return identityMatches && (trustedDetail || trustedVisibleList);
+}
+
 export interface PrivateCaptureFailureInput {
   requestId: string;
   sourceUrl: string;

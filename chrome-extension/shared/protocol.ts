@@ -13,6 +13,7 @@ export interface PageData {
   title: string;
   price_1688: number;
 	price_model: "fixed" | "range" | "tiered" | "sku" | "unknown";
+  price_tiers?: Array<{ min_qty: number; max_qty?: number; price: number }>;
   price_min?: number | null;
   price_max?: number | null;
   currency: string;

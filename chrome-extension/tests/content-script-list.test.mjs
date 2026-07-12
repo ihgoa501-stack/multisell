@@ -26,11 +26,21 @@ function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer
   window.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 200, height: 120, top: 20, left: 20, right: 220, bottom: 140 });
   Object.defineProperty(window, 'location', { value: new URL(pageURL), configurable: true });
   const messages = [];
-  const chrome = { runtime: { sendMessage: async (message) => {
-    messages.push(message);
-    return responder ? responder(message) : { type: 'private_collection_result', requestId: message.requestId,
-      payload: { status: 'saved', recordId: messages.length, snapshotId: messages.length, idempotentReplay: false, newObservation: true } };
-  } } };
+  const messageListeners = [];
+  const chrome = {
+    runtime: {
+      sendMessage: async (message) => {
+        messages.push(message);
+        return responder ? responder(message) : { type: 'private_collection_result', requestId: message.requestId,
+          payload: { status: 'saved', recordId: messages.length, snapshotId: messages.length, idempotentReplay: false, newObservation: true } };
+      },
+      onMessage: {
+        addListener: (listener) => {
+          messageListeners.push(listener);
+        }
+      }
+    }
+  };
   const timeoutsCalled = [];
   const context = vm.createContext({
     ...window, window, document: window.document, location: window.location, chrome,
@@ -47,7 +57,7 @@ function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer
     timeoutsCalled,
   });
   vm.runInContext(compiled, context, { filename: 'content-script-list.js' });
-  return { context, window, document: window.document, messages, timeoutsCalled };
+  return { context, window, document: window.document, messages, timeoutsCalled, messageListeners };
 }
 
 test('visible list extraction keeps only exact offer links and explicit fields', () => {
@@ -166,6 +176,15 @@ test('visible list extraction parses supplier name and id if present in card', (
   assert.equal(offers[0].pageData.field_statuses.supplier, 'observed');
 });
 
+test('visible list extraction ignores generic boilerplate link text as supplier name', () => {
+  const loaded = loadList(productCard('7002', { shopId: 'hzsourcing', company: '' }) + `<a href="https://hzsourcing.1688.com">进入店铺</a>`);
+  const offers = JSON.parse(vm.runInContext('JSON.stringify(extractVisibleOffers().map(({offerId,pageData}) => ({offerId,pageData})))', loaded.context));
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].pageData.supplier_id_1688, 'hzsourcing');
+  assert.equal(offers[0].pageData.supplier_name, ''); // Should be empty, not '进入店铺'
+  assert.equal(offers[0].pageData.field_statuses.supplier, 'unknown');
+});
+
 test('custom batch delay and jitter is read from the UI input and respects the minimum boundary', async () => {
   // Test default delay logic (value = 2.0s -> targetDelayMs = 2000 -> jitter in [1400, 2600])
   const loadedDefault = loadList(productCard('8001') + productCard('8002'));
@@ -193,4 +212,22 @@ test('custom batch delay and jitter is read from the UI input and respects the m
   const minDelays = loadedMin.timeoutsCalled.filter(t => t >= 300);
   assert.equal(minDelays.length, 1);
   assert.ok(minDelays[0] >= 350 && minDelays[0] <= 650, `Enforced minimum 0.5s delay ${minDelays[0]} should be between 350 and 650 ms`);
+});
+
+test('fetch_list_page message listener extracts list items and responds', async () => {
+  const loaded = loadList(productCard('9001', { title: '测试商品9001', price: '12.50' }));
+  assert.equal(loaded.messageListeners.length, 1);
+  const listener = loaded.messageListeners[0];
+  let responseData;
+  const sendResponse = (response) => {
+    responseData = response;
+  };
+  const isAsync = listener({ type: 'fetch_list_page' }, {}, sendResponse);
+  assert.ok(isAsync);
+  assert.ok(responseData);
+  assert.ok(responseData.data);
+  assert.equal(responseData.data.length, 1);
+  assert.equal(responseData.data[0].title, '测试商品9001');
+  assert.equal(responseData.data[0].price_range, '12.5');
+  assert.equal(responseData.data[0].detail_url, 'https://detail.1688.com/offer/9001.html');
 });

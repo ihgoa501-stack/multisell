@@ -11,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const extensionRoot = resolve(here, '..');
 const compiledScript = await readFile(resolve(extensionRoot, 'build/content-script.js'), 'utf8');
 
-async function loadFixture(name, url, messageResponder) {
+async function loadFixture(name, url, messageResponder, storageValues = {}) {
   const html = await readFile(resolve(here, 'fixtures', name), 'utf8');
   const { window } = parseHTML(html);
   const sentMessages = [];
@@ -22,8 +22,16 @@ async function loadFixture(name, url, messageResponder) {
       onMessage: { addListener: (listener) => listeners.push(listener) },
       sendMessage: async (message) => { sentMessages.push(message); return messageResponder ? messageResponder(message) : undefined; },
     },
+    storage: {
+      local: {
+        get: async (key) => ({ [key]: storageValues[key] }),
+        set: async (values) => { Object.assign(storageValues, JSON.parse(JSON.stringify(values))); },
+      },
+    },
   };
   Object.defineProperty(window, 'location', { value: new URL(url), configurable: true });
+  Object.defineProperty(window, 'innerWidth', { value: 1200, writable: true, configurable: true });
+  Object.defineProperty(window, 'innerHeight', { value: 800, writable: true, configurable: true });
   const context = vm.createContext({
     ...window,
     window,
@@ -58,6 +66,8 @@ async function loadFixture(name, url, messageResponder) {
     sentMessages,
     listeners,
     document: window.document,
+    window,
+    storageValues,
   };
 }
 
@@ -72,7 +82,7 @@ test('realistic detail DOM extracts identity, tiered price, MOQ, supplier, image
   assert.equal(data.title, '加厚猫毛清洁滚筒');
   assert.equal(data.price_1688, 3.8);
   assert.equal(data.price_model, 'tiered');
-  assert.equal(data.price_min, 3.5);
+  assert.equal(data.price_min, 3.2);
   assert.equal(data.price_max, 3.8);
   assert.equal(data.min_order_qty, 10);
   assert.equal(data.supplier_name, '义乌市清洁用品厂');
@@ -108,6 +118,34 @@ test('missing detail fields stay explicit and visible SKU controls with incomple
   });
 });
 
+test('modern tiered detail ignores reference price, uses first quantity as MOQ, and preserves visible specification combinations', async () => {
+  const loaded = await loadFixture(
+    '1688-detail-modern-tiered.html',
+    'https://detail.1688.com/offer/778899001122.html',
+  );
+  const { data } = loaded;
+  assert.equal(data.price_1688, 11.9);
+  assert.equal(data.price_min, 10.8);
+  assert.equal(data.price_max, 11.9);
+  assert.equal(data.price_model, 'tiered');
+  assert.deepEqual(JSON.parse(JSON.stringify(data.price_tiers)), [
+    { min_qty: 1, max_qty: 9, price: 11.9 },
+    { min_qty: 10, max_qty: 59, price: 11.5 },
+    { min_qty: 60, price: 10.8 },
+  ]);
+  assert.equal(data.min_order_qty, 1, '≥60 tier must not be mistaken for MOQ');
+  assert.equal(data.supplier_name, '泉州市童装制品有限公司');
+  assert.equal(data.supplier_business_id, 'b2b-220991');
+  assert.deepEqual(Array.from(data.spec_variants, (item) => item.spec), [
+    '黄色 / 90cm', '黄色 / 100cm', '蓝色 / 90cm', '蓝色 / 100cm',
+  ]);
+  assert.equal(data.field_statuses.sku, 'parse_failed', 'visible combinations without authoritative price/stock stay explicit');
+  const result = await loaded.collect();
+  assert.equal(result.payload.saved, false);
+  assert.match(result.payload.message, /禁止确认保存/);
+  assert.equal(loaded.document.body.textContent.includes('确认保存'), false);
+});
+
 test('loading the content script installs local UI and listener but never uploads automatically', async () => {
   const loaded = await loadFixture(
     '1688-detail-complete.html',
@@ -117,6 +155,73 @@ test('loading the content script installs local UI and listener but never upload
   assert.equal(loaded.listeners.length, 1);
   assert.ok(loaded.document.getElementById('lingmirror-private-collector'));
   assert.deepEqual(loaded.sentMessages, []);
+});
+
+test('detail collector can drag, snap, collapse, remember position and stay visible after resize', async () => {
+  const storageValues = {};
+  const loaded = await loadFixture(
+    '1688-detail-complete.html',
+    'https://detail.1688.com/offer/692570310190.html',
+    undefined,
+    storageValues,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const panel = loaded.document.getElementById('lingmirror-private-collector-panel');
+  const handle = loaded.document.getElementById('lingmirror-private-collector-drag-handle');
+  const launch = loaded.document.querySelector('[aria-controls="lingmirror-private-collector-panel"]');
+  assert.ok(panel && handle && launch);
+  panel.getBoundingClientRect = () => {
+    const left = panel.style.left === 'auto' || !panel.style.left ? loaded.window.innerWidth - 20 - 340 : Number.parseFloat(panel.style.left);
+    return { left, right: left + 340, top: Number.parseFloat(panel.style.top) || 80, bottom: (Number.parseFloat(panel.style.top) || 80) + 200, width: 340, height: 200, x: left, y: Number.parseFloat(panel.style.top) || 80, toJSON() {} };
+  };
+
+  await loaded.collect();
+  assert.equal(panel.style.display, 'block');
+  assert.equal(launch.getAttribute('aria-expanded'), 'true');
+
+  const pointer = (type, values) => {
+    const event = new loaded.window.Event(type, { bubbles: true, cancelable: true });
+    for (const [key, value] of Object.entries(values)) Object.defineProperty(event, key, { value });
+    handle.dispatchEvent(event);
+  };
+  pointer('pointerdown', { pointerId: 1, clientX: 1100, clientY: 100 });
+  pointer('pointermove', { pointerId: 1, clientX: 100, clientY: 180 });
+  pointer('pointerup', { pointerId: 1, clientX: 100, clientY: 180 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(panel.style.left, '20px', 'drag release should snap to the left edge');
+  assert.equal(storageValues.lingmirror_detail_collector_position_v1.side, 'left');
+
+  const keydown = (key) => {
+    const event = new loaded.window.Event('keydown', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'key', { value: key });
+    handle.dispatchEvent(event);
+  };
+  keydown('ArrowRight');
+  assert.equal(panel.style.right, '20px');
+  const beforeTop = Number.parseFloat(panel.style.top);
+  keydown('ArrowDown');
+  assert.ok(Number.parseFloat(panel.style.top) > beforeTop);
+
+  loaded.window.innerHeight = 240;
+  loaded.window.dispatchEvent(new loaded.window.Event('resize'));
+  assert.ok(Number.parseFloat(panel.style.top) <= 68, 'resize should clamp the panel into the visible viewport');
+
+  keydown('Escape');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(panel.style.display, 'none');
+  assert.equal(launch.getAttribute('aria-expanded'), 'false');
+  assert.equal(storageValues.lingmirror_detail_collector_position_v1.collapsed, true);
+
+  const restored = await loadFixture(
+    '1688-detail-complete.html',
+    'https://detail.1688.com/offer/692570310190.html',
+    undefined,
+    storageValues,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const restoredPanel = restored.document.getElementById('lingmirror-private-collector-panel');
+  assert.equal(restoredPanel.style.right, '20px');
+  assert.equal(restoredPanel.style.display, 'none');
 });
 
 const blockedPages = [

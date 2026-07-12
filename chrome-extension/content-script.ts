@@ -18,6 +18,7 @@ interface PageData {
   title: string;
   price_1688: number;
 	price_model: "fixed" | "range" | "tiered" | "sku" | "unknown";
+  price_tiers?: Array<{ min_qty: number; max_qty?: number; price: number }>;
   price_min?: number | null;
   price_max?: number | null;
   currency: string;
@@ -272,6 +273,29 @@ function extractSKUData(skuData: any): SpecVariant[] {
 
 // ─── DOM-based extraction (fallback) ───────────────────────────────────────
 
+const FOREIGN_INJECTION_SELECTOR = [
+  "[data-extension-root]", "[data-plugin-root]", "[data-erp-plugin]",
+  "[id*='extension']", "[id*='plugin']", "[id*='erp']",
+  "[class*='extension-panel']", "[class*='plugin-panel']", "[class*='erp-panel']",
+  "[style*='position:fixed']", "[style*='position: fixed']",
+].join(",");
+
+function isTrustedPageNode(node: Element): boolean {
+  return !node.closest(FOREIGN_INJECTION_SELECTOR) && !node.closest("#lingmirror-private-collector");
+}
+
+let cachedTrustedText: string | null = null;
+function clearTrustedTextCache(): void {
+  cachedTrustedText = null;
+}
+function trustedPageText(): string {
+  if (cachedTrustedText !== null) return cachedTrustedText;
+  const clone = document.body.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(`${FOREIGN_INJECTION_SELECTOR}, #lingmirror-private-collector, script, style`).forEach((node) => node.remove());
+  cachedTrustedText = (clone.textContent || "").replace(/\s+/g, " ").trim();
+  return cachedTrustedText;
+}
+
 function extractTitleFromDOM(): string {
   const selectors = [
     "h1[data-title]",
@@ -286,7 +310,7 @@ function extractTitleFromDOM(): string {
 
   for (const sel of selectors) {
     const el = document.querySelector(sel);
-    if (el) {
+    if (el && isTrustedPageNode(el)) {
       const text = (el as HTMLElement).innerText?.trim() || el.textContent?.trim() || "";
       if (text) return text;
     }
@@ -315,12 +339,11 @@ function extractPriceFromDOM(): number {
     '#mod-detail-price .price',
     '.offer-price',
     '.product-price',
-    '[class*="price"]',
   ];
 
   for (const sel of selectors) {
     const el = document.querySelector(sel);
-    if (el) {
+    if (el && isTrustedPageNode(el)) {
       const text = el.getAttribute("data-price") || el.textContent?.trim() || "";
       const match = text.match(/(\d+\.?\d*)/);
       if (match) return parseFloat(match[1]);
@@ -333,6 +356,60 @@ function extractPriceFromDOM(): number {
   if (priceMatch) return parseFloat(priceMatch[1]);
 
   return 0;
+}
+
+type TierPricing = { detected: boolean; reliable: boolean; prices: number[]; minimumQty: number | null; tiers: Array<{ min_qty: number; max_qty?: number; price: number }> };
+
+function extractTierPricingFromDOM(): TierPricing {
+  const texts = new Set<string>();
+  const selectors = [
+    "[class*='ladder-price']", "[class*='price-range']", "[class*='volume-price']",
+    "[class*='price-step']", "[class*='price-ladder']", "[data-price-range]", "[data-price-ladder]",
+  ];
+  for (const selector of selectors) {
+    document.querySelectorAll(selector).forEach((node) => {
+      if (!isTrustedPageNode(node)) return;
+      const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+      if (text) texts.add(text);
+    });
+  }
+  const body = trustedPageText();
+  if (texts.size === 0 && /(?:起批量|起订量|\d+\s*(?:件|个|套)\s*(?:起批|起订|以上)|[≥>]=?\s*\d+\s*(?:件|个|套)).{0,80}[¥￥]\s*\d/.test(body)) {
+    texts.add(body);
+  }
+  const prices: number[] = [];
+  const quantities: number[] = [];
+  const tiers: Array<{ min_qty: number; max_qty?: number; price: number }> = [];
+  let detected = false;
+  for (const text of texts) {
+    for (const match of text.matchAll(/(\d+)\s*[-~至]\s*(\d+)\s*(?:件|个|套).*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
+      tiers.push({ min_qty: Number(match[1]), max_qty: Number(match[2]), price: Number(match[3]) });
+    }
+    for (const match of text.matchAll(/(?:≥|>=|大于等于)\s*(\d+)\s*(?:件|个|套)?.*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
+      tiers.push({ min_qty: Number(match[1]), price: Number(match[2]) });
+    }
+    for (const match of text.matchAll(/(\d+)\s*(?:件|个|套)\s*(?:起|起批|起订|以上|及以上).*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
+      if (!tiers.some((tier) => tier.min_qty === Number(match[1]) && tier.price === Number(match[2]))) tiers.push({ min_qty: Number(match[1]), price: Number(match[2]) });
+    }
+    const priceMatches = Array.from(text.matchAll(/[¥￥]\s*(\d+(?:\.\d{1,4})?)/g));
+    const qtyMatches = Array.from(text.matchAll(/(?:起批量\s*)?(\d+)\s*(?:[-~至]\s*\d+\s*)?(?:件|个|套)(?:\s*(?:起批|起订|以上|及以上))?/g));
+    const thresholdMatches = Array.from(text.matchAll(/(?:≥|>=|大于等于)\s*(\d+)\s*(?:件|个|套)?/g));
+    if (priceMatches.length > 0 && (qtyMatches.length > 0 || thresholdMatches.length > 0)) detected = true;
+    for (const match of priceMatches) {
+      const value = Number.parseFloat(match[1]);
+      if (Number.isFinite(value) && value > 0 && value < 1_000_000) prices.push(value);
+    }
+    for (const match of [...qtyMatches, ...thresholdMatches]) {
+      const value = Number.parseInt(match[1], 10);
+      if (Number.isFinite(value) && value > 0) quantities.push(value);
+    }
+  }
+  const normalizedTiers = tiers.filter((tier) => tier.min_qty > 0 && tier.price > 0).sort((a, b) => a.min_qty - b.min_qty);
+  const uniqueTiers = normalizedTiers.filter((tier, index, self) =>
+    index === self.findIndex((t) => t.min_qty === tier.min_qty && t.price === tier.price && t.max_qty === tier.max_qty)
+  );
+  return { detected, reliable: detected && prices.length > 0 && quantities.length > 0,
+    prices: Array.from(new Set(prices)), minimumQty: quantities.length > 0 ? Math.min(...quantities) : null, tiers: uniqueTiers };
 }
 
 function extractImagesFromDOM(): string[] {
@@ -384,7 +461,7 @@ function extractSpecVariantsFromDOM(): SpecVariant[] {
   const variants: SpecVariant[] = [];
 
   // Try to parse SKU data embedded in data attributes
-  const skuContainers = document.querySelectorAll("[data-sku], [data-skuid]");
+  const skuContainers = Array.from(document.querySelectorAll("[data-sku], [data-skuid]")).filter(isTrustedPageNode);
   if (skuContainers.length > 0) {
     skuContainers.forEach((el) => {
       const spec = (el as HTMLElement).innerText?.trim() || "";
@@ -407,6 +484,28 @@ function extractSpecVariantsFromDOM(): SpecVariant[] {
     });
   }
 
+  // Modern 1688 detail pages render each specification dimension as a group
+  // of buttons/divs rather than data-sku rows. Preserve the visible Cartesian
+  // combinations instead of incorrectly reporting SKU=0.
+  if (variants.length === 0) {
+    const groups: string[][] = [];
+    const containers = Array.from(document.querySelectorAll("[data-sku-property], .sku-prop, .sku-prop-group, [class*='skuProperty'], [class*='sale-prop']")).filter(isTrustedPageNode);
+    containers.forEach((container) => {
+      const values = Array.from(container.querySelectorAll("[data-sku-value], [data-prop-value], button, [role='button'], [class*='value-item'], [class*='prop-value']"))
+        .map((node) => (node.textContent || "").replace(/\s+/g, " ").trim())
+        .filter((text) => text && text.length <= 120 && !/^(颜色|颜色分类|尺码|身高|规格)[：:]?$/.test(text));
+      const unique = Array.from(new Set(values));
+      if (unique.length > 0 && unique.length <= 100) groups.push(unique);
+    });
+    if (groups.length > 0) {
+      let combinations: string[][] = [[]];
+      for (const group of groups) {
+        combinations = combinations.flatMap((prefix) => group.map((value) => [...prefix, value])).slice(0, 2000);
+      }
+      for (const combination of combinations) variants.push({ spec: combination.join(" / ") });
+    }
+  }
+
   // Fallback: look for spec selectors
   if (variants.length === 0) {
     const specSelectors = [
@@ -418,7 +517,7 @@ function extractSpecVariantsFromDOM(): SpecVariant[] {
     ];
 
     for (const sel of specSelectors) {
-      const items = document.querySelectorAll(sel);
+      const items = Array.from(document.querySelectorAll(sel)).filter(isTrustedPageNode);
       if (items.length > 0) {
         items.forEach((item) => {
           const spec = (item as HTMLElement).innerText?.trim() || "";
@@ -448,27 +547,32 @@ function extractSupplierFromDOM(): { name: string; id: string; score: number | n
     ".seller-info .name",
     ".shop-info .name",
     ".store-name",
-    '[class*="supplier"]',
-    '[class*="shop"]',
-    '[class*="store"]',
+    "[data-company-name]",
   ];
 
   for (const sel of nameSelectors) {
-    const el = document.querySelector(sel);
-    if (el) {
-      name = (el as HTMLElement).innerText?.trim() || "";
-      if (name) break;
+    const candidates = Array.from(document.querySelectorAll(sel)).filter(isTrustedPageNode);
+    for (const el of candidates) {
+      const candidate = ((el as HTMLElement).innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+      if (candidate && candidate.length <= 160 && !/^(进店|进入店铺|联系商家|收藏店铺|查看全部|实力商家|金牌制造)$/.test(candidate)) { name = candidate; break; }
     }
+    if (name) break;
   }
 
   // Try to extract supplier ID from links
   const allLinks = document.querySelectorAll('a[href*="1688.com"]');
+  const systemSubdomains = /^(s|search|detail|member|login|cbu|page|work|info|spm|show|m|club|dianpu|winport)$/i;
   for (const link of allLinks) {
+    if (!isTrustedPageNode(link)) continue;
     const href = (link as HTMLAnchorElement).href || "";
-    const match = href.match(/companyid=(\d+)/) || href.match(/company\/(\d+)/);
+    if (href.includes("/offer/")) continue;
+    const match = href.match(/[?&](?:companyid|companyId|memberId|sellerId)=([^&#]+)/) || href.match(/company\/([^/?#]+)/) || href.match(/^https?:\/\/([a-zA-Z0-9_-]+)\.1688\.com/);
     if (match) {
-      id = match[1];
-      break;
+      const parsedId = decodeURIComponent(match[1]).replace(/\.html$/i, "").trim();
+      if (!systemSubdomains.test(parsedId)) {
+        id = parsedId;
+        break;
+      }
     }
   }
 
@@ -557,14 +661,20 @@ function extractAttributesFromDOM(): Record<string, string> {
 }
 
 function extractMOQFromDOM(): number {
-  const bodyText = document.body.innerText;
+  const bodyText = trustedPageText();
 
   const moqMatch = bodyText.match(
-    /(?:起订量|最小起订|MOQ|min\s*order)[：:]\s*(\d+)/i
+    /(?:起批量|起订量|最小起订|MOQ|min\s*order)\s*[：:]?\s*(\d+)\s*(?:件|个|套)?/i
   );
   if (moqMatch) return parseInt(moqMatch[1], 10);
 
-  const batchMatch = bodyText.match(/(?:≥|>=|起批)\s*(\d+)/);
+  const directBatch = bodyText.match(/(\d+)\s*(?:件|个|套)\s*(?:起批|起订)/);
+  if (directBatch) return parseInt(directBatch[1], 10);
+
+  const tier = extractTierPricingFromDOM();
+  if (tier.reliable && tier.minimumQty) return tier.minimumQty;
+
+  const batchMatch = bodyText.match(/(?:起批|起订)\s*(\d+)/);
   if (batchMatch) return parseInt(batchMatch[1], 10);
 
   return 0;
@@ -626,18 +736,23 @@ function extractPackageFromDOM(): {
 // ─── Main extraction orchestrator ──────────────────────────────────────────
 
 function extractPageData(): PageData {
+  clearTrustedTextCache();
   const supplier = extractSupplierFromDOM();
   const dimensions = extractPackageFromDOM();
   const images = extractImagesFromDOM();
   const variants = extractSpecVariantsFromDOM();
-  const price = extractPriceFromDOM();
+  const tierPricing = extractTierPricingFromDOM();
+  const price = tierPricing.reliable ? tierPricing.prices[0] : extractPriceFromDOM();
   const attrs = extractAttributesFromDOM();
 
   // Resolve price range from variants
   let priceMin: number | null = null;
   let priceMax: number | null = null;
   const variantPrices = variants.map((v) => v.price).filter((v): v is number => typeof v === "number" && v > 0);
-  if (variantPrices.length > 0) {
+  if (tierPricing.reliable) {
+    priceMin = Math.min(...tierPricing.prices);
+    priceMax = Math.max(...tierPricing.prices);
+  } else if (variantPrices.length > 0) {
     priceMin = Math.min(...variantPrices);
     priceMax = Math.max(...variantPrices);
   }
@@ -655,6 +770,7 @@ function extractPageData(): PageData {
     title: extractTitleFromDOM(),
     price_1688: price,
 	price_model: "unknown",
+    price_tiers: tierPricing.tiers.length > 0 ? tierPricing.tiers : undefined,
     price_min: priceMin,
     price_max: priceMax,
     currency: "CNY",
@@ -686,7 +802,7 @@ function extractPageData(): PageData {
     if (embedded) {
       // Merge: embedded overrides DOM values when present
       if (embedded.title) data.title = embedded.title;
-      if (embedded.price_1688 && embedded.price_1688 > 0) data.price_1688 = embedded.price_1688;
+      if (!tierPricing.reliable && embedded.price_1688 && embedded.price_1688 > 0) data.price_1688 = embedded.price_1688;
       if (embedded.images && embedded.images.length > 0) data.images = embedded.images;
       if (embedded.spec_variants && embedded.spec_variants.length > 0) {
         data.spec_variants = embedded.spec_variants;
@@ -704,27 +820,28 @@ function extractPageData(): PageData {
 			data.supplier_business_id = embedded.supplier_id_1688;
 		}
       if (embedded.description) data.description = embedded.description;
-      if (embedded.price_min !== undefined) data.price_min = embedded.price_min;
-      if (embedded.price_max !== undefined) data.price_max = embedded.price_max;
+      if (!tierPricing.reliable && embedded.price_min !== undefined) data.price_min = embedded.price_min;
+      if (!tierPricing.reliable && embedded.price_max !== undefined) data.price_max = embedded.price_max;
     }
   } catch {
     // Embedded JSON is optional enhancement
   }
-	const visibleSKUControls = Boolean(document.querySelector("[data-sku], [data-skuid], .sku-item, [class*='sku'] li")) || /规格|颜色分类|尺码/.test(document.body.innerText);
-	const visibleTierPrices = Boolean(document.querySelector("[class*='ladder-price'], [class*='price-range'], [class*='volume-price']")) || /\d+\s*(?:件|个|套)\s*(?:起|以上).*?[¥￥]\s*\d/.test(document.body.innerText);
+	const visibleSKUControls = Array.from(document.querySelectorAll("[data-sku], [data-skuid], .sku-item, [class*='sku'] li, [data-sku-property]")).some(isTrustedPageNode) || /规格|颜色分类|尺码|身高/.test(trustedPageText());
+	const visibleTierPrices = tierPricing.detected;
 	data.price_model = visibleTierPrices ? "tiered" : data.spec_variants?.some((variant) => typeof variant.price === "number") ? "sku"
 		: (data.price_min ?? 0) > 0 && (data.price_max ?? 0) > 0 && data.price_min !== data.price_max ? "range"
 		: data.price_1688 > 0 ? "fixed" : "unknown";
 	data.field_statuses = {
 		title: data.title ? "observed" : "parse_failed",
-		price: data.price_1688 > 0 || (data.price_min ?? 0) > 0 || (data.price_max ?? 0) > 0 ? "observed" : "unknown",
-		moq: data.min_order_qty > 0 ? "observed" : "unknown",
-		supplier: data.supplier_name || data.supplier_business_id ? "observed" : "unknown",
+		price: tierPricing.detected && !tierPricing.reliable ? "parse_failed" : data.price_1688 > 0 || (data.price_min ?? 0) > 0 || (data.price_max ?? 0) > 0 ? "observed" : "unknown",
+		moq: tierPricing.detected && !tierPricing.minimumQty ? "parse_failed" : data.min_order_qty > 0 ? "observed" : "unknown",
+		supplier: data.supplier_business_id ? "observed" : /供应商|生产厂家|店铺|商家/.test(trustedPageText()) ? "parse_failed" : "unknown",
 		images: data.images.length > 0 ? "observed" : "unknown",
 		sku: !data.spec_variants?.length ? (visibleSKUControls ? "parse_failed" : "no_sku")
 			: data.spec_variants.some((variant) => variant.price === undefined || variant.stock === undefined) ? "parse_failed" : "observed",
 	};
 
+  clearTrustedTextCache();
   return data;
 }
 
@@ -849,6 +966,61 @@ let collectorBody: HTMLDivElement | null = null;
 let collectorButton: HTMLButtonElement | null = null;
 let pendingPreview: { requestId: string; pageData: PageData; observationIntent?: "save_new_observation" } | null = null;
 
+type CollectorDock = "left" | "right";
+type CollectorPosition = { side: CollectorDock; top: number; collapsed: boolean };
+const collectorPositionKey = "lingmirror_detail_collector_position_v1";
+const collectorEdge = 20;
+let collectorPosition: CollectorPosition = { side: "right", top: 80, collapsed: true };
+
+function clampCollectorTop(top: number): number {
+  const panelHeight = Math.max(160, collectorPanel?.getBoundingClientRect().height || 420);
+  return Math.max(12, Math.min(Math.round(top), Math.max(12, window.innerHeight - Math.min(panelHeight, window.innerHeight - 24) - 12)));
+}
+
+function applyCollectorPosition(): void {
+  if (!collectorPanel || !collectorButton) return;
+  collectorPosition.top = clampCollectorTop(collectorPosition.top);
+  const isLeft = collectorPosition.side === "left";
+  Object.assign(collectorPanel.style, {
+    top: `${collectorPosition.top}px`, bottom: "auto",
+    left: isLeft ? `${collectorEdge}px` : "auto",
+    right: isLeft ? "auto" : `${collectorEdge}px`,
+    display: collectorPosition.collapsed ? "none" : "block",
+  });
+  Object.assign(collectorButton.style, {
+    left: isLeft ? `${collectorEdge}px` : "auto",
+    right: isLeft ? "auto" : `${collectorEdge}px`,
+  });
+  collectorButton.setAttribute("aria-expanded", collectorPosition.collapsed ? "false" : "true");
+}
+
+async function persistCollectorPosition(): Promise<void> {
+  try {
+    await chrome.storage?.local?.set({ [collectorPositionKey]: collectorPosition });
+  } catch {
+    // Position persistence is convenience only; collection must keep working.
+  }
+}
+
+async function restoreCollectorPosition(): Promise<void> {
+  try {
+    const stored = (await chrome.storage?.local?.get(collectorPositionKey))?.[collectorPositionKey] as Partial<CollectorPosition> | undefined;
+    if (stored && (stored.side === "left" || stored.side === "right") && Number.isFinite(stored.top)) {
+      collectorPosition = { side: stored.side, top: Number(stored.top), collapsed: stored.collapsed !== false };
+    }
+  } catch {
+    // Use the safe default when extension storage is unavailable.
+  }
+  applyCollectorPosition();
+}
+
+function setCollectorCollapsed(collapsed: boolean): void {
+  collectorPosition.collapsed = collapsed;
+  applyCollectorPosition();
+  void persistCollectorPosition();
+  if (!collapsed) collectorPanel?.focus({ preventScroll: true });
+}
+
 function newCollectionRequestId(): string {
   const id = typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -878,7 +1050,7 @@ function showPageBlock(reason: PageBlockReason): void {
 }
 
 function openCollectorPanel(): void {
-  if (collectorPanel) collectorPanel.style.display = "block";
+  setCollectorCollapsed(false);
 }
 
 function collectionIdentity(data: PageData): string {
@@ -900,6 +1072,7 @@ function previewLines(pageData: PageData): string[] {
     "请确认后再保存：",
     `商品：${pageData.title}`,
     `价格：${pageData.price_min && pageData.price_max ? `¥${pageData.price_min}–¥${pageData.price_max}` : pageData.price_1688 > 0 ? `¥${pageData.price_1688}` : "未取得"}`,
+    ...(pageData.price_tiers?.length ? [`阶梯价：${pageData.price_tiers.map((tier) => `${tier.min_qty}${tier.max_qty ? `–${tier.max_qty}` : "+"}件 ¥${tier.price}`).join("；")}`] : []),
     `起订量：${pageData.min_order_qty > 0 ? `${pageData.min_order_qty}件` : "未取得"}`,
     `供应商：${pageData.supplier_name || "未取得稳定身份"}`,
     `SKU：${pageData.spec_variants?.length || 0}　图片：${pageData.images.length}`,
@@ -1044,6 +1217,12 @@ async function collectCurrentPage(): Promise<CollectPrivateProductResponse> {
     if (pageData.field_statuses.sku === "parse_failed") {
       void reportPrivateFailure(requestId, pageData, "sku_parse_failed");
     }
+	const criticalFailures = Object.entries(pageData.field_statuses)
+		.filter(([field, status]) => ["price", "moq", "supplier", "sku"].includes(field) && status === "parse_failed")
+		.map(([field]) => ({ price: "阶梯价格", moq: "起批量", supplier: "供应商身份", sku: "规格/SKU" }[field] || field));
+	if (criticalFailures.length > 0) {
+		throw new Error(`${criticalFailures.join("、")}读取不可靠，本次禁止确认保存。请刷新页面或展开全部规格后重试`);
+	}
     pendingPreview = { requestId, pageData };
     setCollectorBody(previewLines(pageData));
     appendPreviewActions();
@@ -1088,6 +1267,7 @@ function installCollectorUI(): void {
   button.type = "button";
   button.textContent = "采集到凌镜";
   button.setAttribute("aria-label", "将当前1688商品采集到凌镜私人采集箱");
+  button.setAttribute("aria-controls", "lingmirror-private-collector-panel");
   Object.assign(button.style, {
     position: "fixed", right: "20px", bottom: "24px", zIndex: "2147483646",
     border: "0", borderRadius: "10px", padding: "11px 16px", cursor: "pointer",
@@ -1098,21 +1278,79 @@ function installCollectorUI(): void {
   collectorButton = button;
 
   const panel = document.createElement("div");
+  panel.id = "lingmirror-private-collector-panel";
+  panel.tabIndex = -1;
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "凌镜采集助手");
   Object.assign(panel.style, {
-    display: "none", position: "fixed", right: "20px", bottom: "78px", zIndex: "2147483646",
-    width: "340px", maxWidth: "calc(100vw - 40px)", maxHeight: "65vh", overflow: "auto",
+    display: "none", position: "fixed", right: "20px", top: "80px", zIndex: "2147483646",
+    width: "340px", maxWidth: "calc(100vw - 40px)", maxHeight: "calc(100vh - 24px)", overflow: "auto",
     background: "white", border: "1px solid #e4e7ec", borderRadius: "12px", padding: "16px",
     boxShadow: "0 16px 40px rgba(16,24,40,.22)", color: "#101828", fontFamily: "system-ui, sans-serif",
   });
   const header = document.createElement("div");
-  header.textContent = "凌镜采集助手";
-  header.style.fontWeight = "700";
+  header.id = "lingmirror-private-collector-drag-handle";
+  header.tabIndex = 0;
+  header.setAttribute("role", "toolbar");
+  header.setAttribute("aria-label", "拖动凌镜采集助手；方向键调整位置");
+  const title = document.createElement("span");
+  title.textContent = "凌镜采集助手";
+  header.appendChild(title);
+  Object.assign(header.style, { fontWeight: "700", cursor: "grab", userSelect: "none", touchAction: "none", minHeight: "28px" });
   const close = document.createElement("button");
   close.type = "button";
   close.textContent = "收起";
+  close.setAttribute("aria-label", "收起凌镜采集助手");
   Object.assign(close.style, { float: "right", border: "0", background: "transparent", cursor: "pointer", color: "#475467" });
-  close.addEventListener("click", () => { panel.style.display = "none"; });
+  close.addEventListener("click", (event) => { event.stopPropagation(); setCollectorCollapsed(true); collectorButton?.focus(); });
   header.appendChild(close);
+
+  let dragStart: { pointerId: number; clientX: number; clientY: number; left: number; top: number } | null = null;
+  header.addEventListener("pointerdown", (event) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    const rect = panel.getBoundingClientRect();
+    dragStart = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, left: rect.left, top: rect.top };
+    header.setPointerCapture?.(event.pointerId);
+    header.style.cursor = "grabbing";
+    event.preventDefault();
+  });
+  header.addEventListener("pointermove", (event) => {
+    if (!dragStart || dragStart.pointerId !== event.pointerId) return;
+    const width = Math.max(280, panel.getBoundingClientRect().width || 340);
+    const nextLeft = Math.max(12, Math.min(dragStart.left + event.clientX - dragStart.clientX, Math.max(12, window.innerWidth - width - 12)));
+    collectorPosition.top = clampCollectorTop(dragStart.top + event.clientY - dragStart.clientY);
+    Object.assign(panel.style, { left: `${nextLeft}px`, right: "auto", top: `${collectorPosition.top}px` });
+  });
+  const finishDrag = (event: PointerEvent) => {
+    if (!dragStart || dragStart.pointerId !== event.pointerId) return;
+    const rect = panel.getBoundingClientRect();
+    collectorPosition.side = rect.left + rect.width / 2 < window.innerWidth / 2 ? "left" : "right";
+    collectorPosition.top = clampCollectorTop(rect.top);
+    dragStart = null;
+    header.releasePointerCapture?.(event.pointerId);
+    header.style.cursor = "grab";
+    applyCollectorPosition();
+    void persistCollectorPosition();
+  };
+  header.addEventListener("pointerup", finishDrag);
+  header.addEventListener("pointercancel", finishDrag);
+  header.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      collectorPosition.side = event.key === "ArrowLeft" ? "left" : "right";
+    } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      collectorPosition.top = clampCollectorTop(collectorPosition.top + (event.key === "ArrowUp" ? -16 : 16));
+    } else if (event.key === "Escape") {
+      setCollectorCollapsed(true);
+      collectorButton?.focus();
+      event.preventDefault();
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    applyCollectorPosition();
+    void persistCollectorPosition();
+  });
   const body = document.createElement("div");
   body.style.fontSize = "13px";
   panel.append(header, body);
@@ -1121,6 +1359,11 @@ function installCollectorUI(): void {
 
   host.append(panel, button);
   document.documentElement.appendChild(host);
+  window.addEventListener("resize", () => {
+    applyCollectorPosition();
+    void persistCollectorPosition();
+  });
+  void restoreCollectorPosition();
 }
 
 if (document.readyState === "loading") {

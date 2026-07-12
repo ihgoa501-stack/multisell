@@ -211,8 +211,14 @@ async function handleSettings(): Promise<void> {
 async function handleOpenBox(): Promise<void> {
   const serverUrl = await getServerUrl();
   const loginUrl = getLoginUrl(serverUrl);
-  const httpUrl = loginUrl.replace("/settings/plugin", "/sourcing1688");
-  chrome.tabs.create({ url: httpUrl });
+  try {
+    const url = new URL(loginUrl);
+    url.pathname = "/sourcing1688";
+    chrome.tabs.create({ url: url.toString() });
+  } catch {
+    const httpUrl = loginUrl.replace("/settings/plugin", "/sourcing1688");
+    chrome.tabs.create({ url: httpUrl });
+  }
 }
 
 // ─── Listen for status updates from background ────────────────────────────

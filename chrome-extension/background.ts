@@ -24,6 +24,7 @@ import {
   addPendingCollection,
   buildPendingCollectionMarker,
   mergeCollectionRecoveryHistory,
+	isTrustedPrivateCollectionSource,
   reconcilePrivateCollectionRequest,
   removePendingCollection,
   submitPrivateCaptureFailure,
@@ -547,11 +548,10 @@ chrome.runtime.onMessage.addListener(
 		return true;
 	}
 
-    if (message.type === "collect_private_product") {
+	if (message.type === "collect_private_product") {
       const collect = message as CollectPrivateProductRequest;
-	  const senderOffer = sender.tab?.url?.match(/^https:\/\/detail\.1688\.com\/offer\/(\d+)\.html/i)?.[1];
-	  const payloadOffer = collect.pageData.source_url.match(/^https:\/\/detail\.1688\.com\/offer\/(\d+)\.html/i)?.[1];
-	  if (!senderOffer || senderOffer !== payloadOffer || !collect.requestId.startsWith("collect_")) {
+	  const senderURL = sender.tab?.url || "";
+	  if (!isTrustedPrivateCollectionSource(senderURL, collect.pageData) || !collect.requestId.startsWith("collect_")) {
 		sendResponse({ type: "private_collection_result", requestId: collect.requestId, payload: {
 		  status: "not_saved", code: "INVALID_MESSAGE_SOURCE", message: "当前标签页与采集商品不一致，本次没有保存", saved: false,
 		} } satisfies CollectPrivateProductResponse);

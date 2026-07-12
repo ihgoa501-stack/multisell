@@ -1,5 +1,7 @@
 /** Owner-triggered collection for visible 1688 home/search/list cards. */
 
+type ListItemData = import("./shared/protocol.js").ListItemData;
+
 type ListFieldStatus = "observed" | "unknown" | "parse_failed" | "no_sku";
 
 interface ListPageData {
@@ -44,6 +46,8 @@ let cancelBatch = false;
 let panelStatus: HTMLElement | null = null;
 let panelResults: HTMLElement | null = null;
 let collectSelectedButton: HTMLButtonElement | null = null;
+let selectAllButton: HTMLButtonElement | null = null;
+let collectPageButton: HTMLButtonElement | null = null;
 
 function reliableOfferURL(raw: string): { offerId: string; sourceURL: string } | null {
   try {
@@ -63,13 +67,13 @@ function isVisibleCard(element: HTMLElement): boolean {
     const style = node.getAttribute("style") || "";
     if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style)) return false;
   }
-	const computed = getComputedStyle(element);
-	if (computed.display === "none" || computed.visibility === "hidden" || computed.visibility === "collapse" || computed.opacity === "0") return false;
-	if (typeof element.getBoundingClientRect === "function") {
-		const rect = element.getBoundingClientRect();
-		if (rect.width <= 0 || rect.height <= 0) return false;
-		if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= window.innerHeight || rect.left >= window.innerWidth) return false;
-	}
+  const computed = getComputedStyle(element);
+  if (computed.display === "none" || computed.visibility === "hidden" || computed.visibility === "collapse" || computed.opacity === "0") return false;
+  if (typeof element.getBoundingClientRect === "function") {
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= window.innerHeight || rect.left >= window.innerWidth) return false;
+  }
   return true;
 }
 
@@ -125,13 +129,16 @@ function extractReliableMOQ(card: HTMLElement): number {
   return 0;
 }
 
-function extractReliableImage(card: HTMLElement): string[] {
-  const image = card.querySelector<HTMLImageElement>("img");
+function extractReliableImage(card: HTMLElement, anchor?: HTMLAnchorElement): string[] {
+  const image = anchor?.querySelector<HTMLImageElement>("img") || card.querySelector<HTMLImageElement>("img");
   const raw = image?.currentSrc || image?.getAttribute("src") || image?.getAttribute("data-src") || "";
   if (!raw) return [];
   try {
     const url = new URL(raw, location.href);
-    const approved = url.protocol === "https:" && (url.hostname.endsWith(".alicdn.com") || url.hostname.endsWith(".1688.com"));
+    const approved = url.protocol === "https:" && (
+      url.hostname === "alicdn.com" || url.hostname.endsWith(".alicdn.com") ||
+      url.hostname === "1688.com" || url.hostname.endsWith(".1688.com")
+    );
     return approved ? [url.toString()] : [];
   } catch {
     return [];
@@ -143,26 +150,33 @@ function extractReliableSupplier(card: HTMLElement): { name: string; id: string 
     ".company-name", ".company", ".shop-name", ".shopname", ".seller-name",
     "[class*='company']", "[class*='shop']", "[data-company]",
   ];
+  const isValid = (val: string) => val && val.length <= 160 && !/^(进店|进入店铺|联系商家|收藏店铺|查看全部|实力商家|金牌制造)$/.test(val);
+
   let name = "";
   for (const sel of selectors) {
     const el = card.querySelector<HTMLElement>(sel);
     if (el) {
-      name = safeText(el.textContent);
-      if (name && name.length <= 160 && !/^(进店|进入店铺|联系商家|收藏店铺|查看全部|实力商家|金牌制造)$/.test(name)) {
+      const candidate = safeText(el.textContent);
+      if (isValid(candidate)) {
+        name = candidate;
         break;
       }
     }
   }
   let id = "";
   const anchors = card.querySelectorAll<HTMLAnchorElement>("a[href]");
+  const systemSubdomains = /^(s|search|detail|member|login|cbu|page|work|info|spm|show|m|club|dianpu|winport)$/i;
   for (const anchor of Array.from(anchors)) {
     const href = anchor.href;
     if (!href || href.includes("/offer/")) continue;
-    const match = href.match(/^https?:\/\/([a-zA-Z0-9_-]+)\.1688\.com(?:\/|$)/);
-    if (match) {
+    const match = href.match(/^https?:\/\/([a-zA-Z0-9_-]+)\.1688\.com(?:\/|\?|#|$)/);
+    if (match && !systemSubdomains.test(match[1])) {
       id = match[1].trim();
       if (!name) {
-        name = safeText(anchor.getAttribute("title") || anchor.textContent);
+        const candidate = safeText(anchor.getAttribute("title") || anchor.textContent);
+        if (isValid(candidate)) {
+          name = candidate;
+        }
       }
       break;
     }
@@ -175,7 +189,7 @@ function pageDataFromCard(anchor: HTMLAnchorElement, card: HTMLElement, identity
   if (!title) return null;
   const price = extractReliablePrice(card);
   const moq = extractReliableMOQ(card);
-  const images = extractReliableImage(card);
+  const images = extractReliableImage(card, anchor);
   const supplier = extractReliableSupplier(card);
   const pageData: ListPageData = {
     schema_version: "sourcing1688.private.v1",
@@ -223,7 +237,12 @@ function extractVisibleOffers(): VisibleOffer[] {
 
 function addIsolatedSelector(offer: VisibleOffer): void {
   const selector = `span[${LIST_CHECKBOX_ATTR}="${offer.offerId}"]`;
-  if (offer.card.querySelector(selector)) return;
+  const existing = offer.card.querySelector(selector);
+  if (existing) {
+    const checkbox = existing.shadowRoot?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    if (checkbox) checkbox.checked = selectedOfferIDs.has(offer.offerId);
+    return;
+  }
   const host = document.createElement("span");
   host.setAttribute(LIST_CHECKBOX_ATTR, offer.offerId);
   Object.assign(host.style, { position: "absolute", zIndex: "2147483000", left: "6px", top: "6px" });
@@ -252,6 +271,8 @@ function addIsolatedSelector(offer: VisibleOffer): void {
 function updatePanelSummary(message?: string): void {
   if (panelStatus) panelStatus.textContent = message || `本页当前可见 ${currentOffers.size} 个可靠商品链接，已选 ${selectedOfferIDs.size} 个`;
   if (collectSelectedButton) collectSelectedButton.disabled = collectingBatch || selectedOfferIDs.size === 0;
+  if (selectAllButton) selectAllButton.disabled = collectingBatch;
+  if (collectPageButton) collectPageButton.disabled = collectingBatch;
 }
 
 function scanVisibleOffers(): void {
@@ -289,28 +310,39 @@ function appendBatchResult(text: string, tone: "ok" | "warn" | "error", actions?
   panelResults.append(row);
 }
 
-async function submitVisibleOffer(offer: VisibleOffer, observationIntent?: "save_new_observation"): Promise<void> {
+async function submitVisibleOffer(offer: VisibleOffer, observationIntent?: "save_new_observation"): Promise<boolean> {
   const requestId = collectionRequestID();
-  const response = await chrome.runtime.sendMessage({
-    type: "collect_private_product", requestId, pageData: offer.pageData, observationIntent,
-  }) as any;
-  const payload = response?.payload;
-  if (payload?.status === "saved") {
-    appendBatchResult(`${offer.pageData.title}：已保存 #${payload.recordId}`, "ok");
-    return;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "collect_private_product", requestId, pageData: offer.pageData, observationIntent,
+    }) as any;
+    const payload = response?.payload;
+    if (payload?.status === "saved") {
+      appendBatchResult(`${offer.pageData.title}：已保存 #${payload.recordId}`, "ok");
+      selectedOfferIDs.delete(offer.offerId);
+      selectedOfferSnapshots.delete(offer.offerId);
+      const host = offer.card.querySelector(`span[${LIST_CHECKBOX_ATTR}="${offer.offerId}"]`);
+      const checkbox = host?.shadowRoot?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+      if (checkbox) checkbox.checked = false;
+      return true;
+    }
+    if (payload?.status === "duplicate_requires_choice") {
+      const view = document.createElement("button");
+      view.textContent = "查看已有";
+      view.addEventListener("click", () => void chrome.runtime.sendMessage({ type: "open_private_collection", recordId: payload.recordId }));
+      const save = document.createElement("button");
+      save.textContent = "保存新观察";
+      save.style.marginLeft = "6px";
+      save.addEventListener("click", () => void submitVisibleOffer(offer, "save_new_observation"));
+      appendBatchResult(`${offer.pageData.title}：已有记录，需Owner选择`, "warn", [view, save]);
+      return false;
+    }
+    appendBatchResult(`${offer.pageData.title}：${payload?.message || "未确认保存"}`, "error");
+    return false;
+  } catch (err: any) {
+    appendBatchResult(`${offer.pageData.title}：发送失败 (${err?.message || err})`, "error");
+    return false;
   }
-  if (payload?.status === "duplicate_requires_choice") {
-    const view = document.createElement("button");
-    view.textContent = "查看已有";
-    view.addEventListener("click", () => void chrome.runtime.sendMessage({ type: "open_private_collection", recordId: payload.recordId }));
-    const save = document.createElement("button");
-    save.textContent = "保存新观察";
-    save.style.marginLeft = "6px";
-    save.addEventListener("click", () => void submitVisibleOffer(offer, "save_new_observation"));
-    appendBatchResult(`${offer.pageData.title}：已有记录，需Owner选择`, "warn", [view, save]);
-    return;
-  }
-  appendBatchResult(`${offer.pageData.title}：${payload?.message || "未确认保存"}`, "error");
 }
 
 async function collectOffers(offers: VisibleOffer[]): Promise<void> {
@@ -322,19 +354,19 @@ async function collectOffers(offers: VisibleOffer[]): Promise<void> {
   try {
     const host = document.getElementById(LIST_UI_HOST_ID);
     const delayInput = host?.shadowRoot?.getElementById("lingmirror-batch-delay-input") as HTMLInputElement | null;
-    const parsed = parseFloat(delayInput?.value || "");
-    const inputSeconds = isNaN(parsed) ? 2.0 : parsed;
-    const targetDelayMs = Math.max(0.5, inputSeconds) * 1000;
 
     for (let index = 0; index < offers.length; index += 1) {
       if (cancelBatch) {
-        appendBatchResult(`已停止；剩余 ${offers.length - index} 个未提交`, "warn");
+        appendBatchResult("已停止；剩余 " + (offers.length - index) + " 个未提交", "warn");
         break;
       }
-      updatePanelSummary(`正在采集 ${index + 1}/${offers.length}：${offers[index].pageData.title}`);
+      updatePanelSummary("正在采集 " + (index + 1) + "/" + offers.length + "：" + offers[index].pageData.title);
       await submitVisibleOffer(offers[index]);
       if (index + 1 < offers.length) {
-        const jitter = (targetDelayMs * 0.7) + Math.random() * (targetDelayMs * 0.6);
+        const parsed = parseFloat(delayInput?.value || "");
+        const currentInputSeconds = isNaN(parsed) ? 2.0 : parsed;
+        const currentDelayMs = Math.max(0.5, currentInputSeconds) * 1000;
+        const jitter = (currentDelayMs * 0.7) + Math.random() * (currentDelayMs * 0.6);
         await new Promise((resolve) => setTimeout(resolve, jitter));
       }
     }
@@ -378,8 +410,8 @@ function installListCollectorUI(): void {
   Object.assign(delayInput.style, { width: "55px", border: "1px solid #c7d2fe", borderRadius: "5px", padding: "3px 5px", font: "12px system-ui" });
   delayContainer.append(delayLabel, delayInput);
 
-  const selectAll = makePanelButton("勾选当前可见");
-  selectAll.addEventListener("click", () => {
+  selectAllButton = makePanelButton("勾选当前可见");
+  selectAllButton.addEventListener("click", () => {
     for (const [id, offer] of currentOffers) {
       selectedOfferIDs.add(id);
       selectedOfferSnapshots.set(id, offer);
@@ -390,19 +422,72 @@ function installListCollectorUI(): void {
   collectSelectedButton.addEventListener("click", () => void collectOffers(Array.from(selectedOfferIDs)
     .map((id) => currentOffers.get(id) || selectedOfferSnapshots.get(id))
     .filter((offer): offer is VisibleOffer => Boolean(offer))));
-  const collectPage = makePanelButton("采集本页");
-  collectPage.addEventListener("click", () => { scanVisibleOffers(); void collectOffers(Array.from(currentOffers.values())); });
+  collectPageButton = makePanelButton("采集本页");
+  collectPageButton.addEventListener("click", () => { scanVisibleOffers(); void collectOffers(Array.from(currentOffers.values())); });
   const cancel = makePanelButton("停止批量");
   cancel.addEventListener("click", () => { cancelBatch = true; });
   panelResults = document.createElement("div");
-  panel.append(title, panelStatus, delayContainer, selectAll, collectSelectedButton, collectPage, cancel, panelResults);
+  panel.append(title, panelStatus, delayContainer, selectAllButton, collectSelectedButton, collectPageButton, cancel, panelResults);
   shadow.append(panel);
   host.setAttribute("aria-label", "凌镜1688列表采集");
   document.documentElement.append(host);
 }
 
-installListCollectorUI();
-scanVisibleOffers();
-new MutationObserver(queueScan).observe(document.documentElement, { childList: true, subtree: true });
-window.addEventListener("scroll", queueScan, { passive: true });
-window.addEventListener("popstate", queueScan);
+function extractListItemsData(): ListItemData[] {
+  const offers = extractVisibleOffers();
+  return offers.map((offer) => {
+    const data = offer.pageData;
+    const priceRange = data.price_min && data.price_max
+      ? `${data.price_min}-${data.price_max}`
+      : data.price_1688 > 0
+      ? `${data.price_1688}`
+      : "";
+    return {
+      title: data.title,
+      price_range: priceRange,
+      detail_url: data.source_url,
+      image_url: data.images[0] || "",
+      raw_text: offer.card.textContent || "",
+    };
+  });
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "fetch_list_page") {
+    try {
+      const items = extractListItemsData();
+      sendResponse({ data: items });
+    } catch (err: any) {
+      sendResponse({ error: err?.message || String(err) });
+    }
+    return true;
+  }
+});
+
+if (window.location.hostname !== "detail.1688.com") {
+  installListCollectorUI();
+  scanVisibleOffers();
+  new MutationObserver((mutations) => {
+    const isExtensionMutation = mutations.every((m) => {
+      const target = m.target as HTMLElement | null;
+      if (target?.id === LIST_UI_HOST_ID || target?.closest(`#${LIST_UI_HOST_ID}`)) return true;
+      if (target?.hasAttribute(LIST_CHECKBOX_ATTR) || target?.closest(`[${LIST_CHECKBOX_ATTR}]`)) return true;
+
+      const isExtensionNode = (node: Node) => {
+        if (node instanceof HTMLElement) {
+          return node.id === LIST_UI_HOST_ID || node.hasAttribute(LIST_CHECKBOX_ATTR) || node.closest(`[${LIST_CHECKBOX_ATTR}]`) !== null;
+        }
+        return false;
+      };
+
+      const addedAllExtension = Array.from(m.addedNodes).every(isExtensionNode);
+      const removedAllExtension = Array.from(m.removedNodes).every(isExtensionNode);
+      return addedAllExtension && removedAllExtension;
+    });
+    if (!isExtensionMutation) {
+      queueScan();
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("scroll", queueScan, { passive: true });
+  window.addEventListener("popstate", queueScan);
+}

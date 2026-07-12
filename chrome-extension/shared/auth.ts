@@ -8,19 +8,19 @@ export interface ExtensionDeviceCredential {
   deviceId: string;
   deviceSecret: string;
   environment: "development" | "acceptance" | "production";
-	apiOrigin: string;
+  apiOrigin: string;
 }
 
 function tokenExpiresAfter(token: string, minimumRemainingSeconds = 30): boolean {
-	try {
-		const part = token.split(".")[1];
-		if (!part) return false;
-		const encoded = part.replace(/-/g, "+").replace(/_/g, "/");
-		const payload = JSON.parse(atob(encoded));
-		return payload?.type === "extension_access" && typeof payload?.exp === "number" && payload.exp > Math.floor(Date.now() / 1000) + minimumRemainingSeconds;
-	} catch {
-		return false;
-	}
+  try {
+    const part = token.split(".")[1];
+    if (!part) return false;
+    const encoded = part.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(encoded));
+    return payload?.type === "extension_access" && typeof payload?.exp === "number" && payload.exp > Math.floor(Date.now() / 1000) + minimumRemainingSeconds;
+  } catch {
+    return false;
+  }
 }
 
 /** Retrieve the short-lived JWT from session storage. Legacy local tokens are

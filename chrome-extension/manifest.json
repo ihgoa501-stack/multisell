@@ -10,6 +10,7 @@
   ],
   "host_permissions": [
     "https://detail.1688.com/*",
+    "https://*.1688.com/*",
     "http://localhost:3000/*",
     "http://localhost:8080/*",
     "https://lingmirror.com/*",
@@ -32,6 +33,11 @@
     {
       "matches": ["https://detail.1688.com/offer/*"],
       "js": ["utils.js", "build/content-script.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.1688.com/*", "https://s.1688.com/*", "https://*.1688.com/*"],
+      "js": ["build/content-script-list.js"],
       "run_at": "document_idle"
     },
     {
