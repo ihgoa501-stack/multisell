@@ -1,6 +1,6 @@
 # Route Catalog (auto-generated)
 
-> Total modules: 65 | Total routes: 589
+> Total modules: 65 | Total routes: 598
 
 ## Overview
 
@@ -10,30 +10,30 @@
 | [`producthub`](producthub.md) | 30 | `product.read` | `domain/producthub/` |
 | [`price`](price.md) | 20 | `finance.read` | `domain/price/` |
 | [`workflow`](workflow.md) | 19 | `—` | `domain/workflow/` |
+| [`finance`](finance.md) | 18 | `finance.read` | `domain/finance/` |
 | [`sku`](sku.md) | 18 | `product.read` | `domain/sku/` |
 | [`integrations`](integrations.md) | 18 | `—` | `domain/integrations/` |
-| [`finance`](finance.md) | 18 | `finance.read` | `domain/finance/` |
+| [`demandcase`](demandcase.md) | 18 | `—` | `domain/demandcase/` |
 | [`aftersales`](aftersales.md) | 17 | `—` | `domain/aftersales/` |
 | [`inventory`](inventory.md) | 17 | `inventory.read` | `domain/inventory/` |
-| [`listingtask`](listingtask.md) | 17 | `listing.read` | `domain/listingtask/` |
 | [`support`](support.md) | 17 | `—` | `domain/support/` |
+| [`listingtask`](listingtask.md) | 17 | `listing.read` | `domain/listingtask/` |
 | [`listing`](listing.md) | 16 | `listing.read` | `domain/listing/` |
 | [`imagegen`](imagegen.md) | 16 | `—` | `domain/imagegen/` |
 | [`supplier`](supplier.md) | 16 | `—` | `domain/supplier/` |
 | [`candidate`](candidate.md) | 14 | `—` | `domain/candidate/` |
 | [`allocation`](allocation.md) | 13 | `—` | `domain/allocation/` |
-| [`settlement`](settlement.md) | 11 | `settlement.read` | `domain/settlement/` |
 | [`notification`](notification.md) | 11 | `—` | `domain/notification/` |
 | [`supplychain`](supplychain.md) | 11 | `—` | `domain/supplychain/` |
+| [`settlement`](settlement.md) | 11 | `settlement.read` | `domain/settlement/` |
 | [`exceptions`](exceptions.md) | 10 | `—` | `domain/exceptions/` |
 | [`platform`](platform.md) | 10 | `—` | `domain/platform/` |
-| [`demandcase`](demandcase.md) | 9 | `—` | `domain/demandcase/` |
 | [`experiment`](experiment.md) | 9 | `—` | `domain/experiment/` |
+| [`decision`](decision.md) | 8 | `—` | `domain/decision/` |
 | [`orderimport`](orderimport.md) | 8 | `order.read` | `domain/orderimport/` |
 | [`competitor`](competitor.md) | 8 | `—` | `domain/competitor/` |
 | [`sourcing1688`](sourcing1688.md) | 8 | `—` | `domain/sourcing1688/` |
 | [`purchase`](purchase.md) | 8 | `—` | `domain/purchase/` |
-| [`decision`](decision.md) | 8 | `—` | `domain/decision/` |
 | [`trustscore`](trustscore.md) | 7 | `—` | `domain/trustscore/` |
 | [`importbatch`](importbatch.md) | 7 | `—` | `domain/importbatch/` |
 | [`agentrule`](agentrule.md) | 7 | `—` | `domain/agentrule/` |
@@ -324,8 +324,17 @@
 | `POST` | `/api/v1/demand-cases/:id/evaluate` | `h.Evaluate` |
 | `POST` | `/api/v1/demand-cases/:id/evidence` | `h.AddEvidence` |
 | `POST` | `/api/v1/demand-cases/:id/falsifications` | `h.AddFalsification` |
-| `POST` | `/api/v1/demand-cases/research/first-public-batch` | `h.RunFirstBatch` |
+| `GET` | `/api/v1/demand-cases/:id/permission-requests` | `h.PermissionRequests` |
 | `POST` | `/api/v1/demand-cases/research/import` | `h.ImportResearch` |
+| `POST` | `/api/v1/demand-cases/research/reviewed-market-permission-batch` | `h.ImportReviewedBatch` |
+| `GET` | `/api/v1/problem-cases` | `h.ListProblems` |
+| `POST` | `/api/v1/problem-cases` | `h.CreateProblem` |
+| `GET` | `/api/v1/problem-cases/:id` | `h.GetProblem` |
+| `POST` | `/api/v1/problem-cases/:id/evaluate` | `h.EvaluateProblem` |
+| `POST` | `/api/v1/problem-cases/:id/evidence` | `h.AddProblemEvidence` |
+| `POST` | `/api/v1/problem-cases/:id/promote` | `h.PromoteProblem` |
+| `POST` | `/api/v1/problem-cases/research/reviewed-problem-batch` | `h.ImportReviewedProblemBatch` |
+| `POST` | `/api/v1/problem-cases/research/reviewed-wildfire-event-batch` | `h.ImportReviewedWildfireEventBatch` |
 
 ## entropy
 

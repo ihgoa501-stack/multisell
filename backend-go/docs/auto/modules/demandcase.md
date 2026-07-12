@@ -15,8 +15,17 @@ Package: `backend-go/internal/domain/demandcase/`
 | `POST` | `/api/v1/demand-cases/:id/evaluate` | `h.Evaluate` |
 | `POST` | `/api/v1/demand-cases/:id/evidence` | `h.AddEvidence` |
 | `POST` | `/api/v1/demand-cases/:id/falsifications` | `h.AddFalsification` |
-| `POST` | `/api/v1/demand-cases/research/first-public-batch` | `h.RunFirstBatch` |
+| `GET` | `/api/v1/demand-cases/:id/permission-requests` | `h.PermissionRequests` |
 | `POST` | `/api/v1/demand-cases/research/import` | `h.ImportResearch` |
+| `POST` | `/api/v1/demand-cases/research/reviewed-market-permission-batch` | `h.ImportReviewedBatch` |
+| `GET` | `/api/v1/problem-cases` | `h.ListProblems` |
+| `POST` | `/api/v1/problem-cases` | `h.CreateProblem` |
+| `GET` | `/api/v1/problem-cases/:id` | `h.GetProblem` |
+| `POST` | `/api/v1/problem-cases/:id/evaluate` | `h.EvaluateProblem` |
+| `POST` | `/api/v1/problem-cases/:id/evidence` | `h.AddProblemEvidence` |
+| `POST` | `/api/v1/problem-cases/:id/promote` | `h.PromoteProblem` |
+| `POST` | `/api/v1/problem-cases/research/reviewed-problem-batch` | `h.ImportReviewedProblemBatch` |
+| `POST` | `/api/v1/problem-cases/research/reviewed-wildfire-event-batch` | `h.ImportReviewedWildfireEventBatch` |
 
 ## Models
 
@@ -75,6 +84,7 @@ Package: `backend-go/internal/domain/demandcase/`
 | `DemandCaseID` | `int64` | `demand_case_id` | `—` | NOT NULL |
 | `RunID` | `string` | `run_id` | `—` | NOT NULL |
 | `RunType` | `string` | `run_type` | `—` | NOT NULL |
+| `Collector` | `string` | `collector` | `—` | NOT NULL |
 | `SourceURI` | `string` | `source_uri` | `—` | NOT NULL |
 | `CollectedAt` | `time.Time` | `collected_at` | `—` |  |
 | `RawPayload` | `string` | `-` | `—` | NOT NULL |
@@ -104,6 +114,7 @@ Package: `backend-go/internal/domain/demandcase/`
 | `Evidence` | `[]DemandEvidence` | `evidence` | `—` |  |
 | `Verdict` | `*DemandVerdict` | `verdict,omitempty` | `—` |  |
 | `Snapshots` | `[]ResearchSnapshot` | `snapshots` | `—` |  |
+| `DataAccess` | `[]DataAccessRecord` | `data_access` | `—` |  |
 
 ### `OwnerDecisionCard`
 **DB table:** `—`

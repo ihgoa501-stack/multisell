@@ -21,7 +21,7 @@
 | [cost](cost.md) | 1 | 3 | `—` |
 | [dashboard](dashboard.md) | 6 | 13 | `—` |
 | [decision](decision.md) | 8 | 7 | `—` |
-| [demandcase](demandcase.md) | 9 | 7 | `—` |
+| [demandcase](demandcase.md) | 18 | 7 | `—` |
 | [entropy](entropy.md) | 5 | 15 | `—` |
 | [evolution](evolution.md) | 4 | 1 | `—` |
 | [exceptions](exceptions.md) | 10 | 2 | `—` |

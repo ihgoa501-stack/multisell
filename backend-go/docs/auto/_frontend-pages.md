@@ -43,6 +43,7 @@
 | `/platform-fees` | ✅ |  |
 | `/platform-integrations` | ✅ |  |
 | `/platforms` | ✅ |  |
+| `/problem-cases` | ✅ |  |
 | `/product-hub` | ✅ |  |
 | `/products` | ✅ |  |
 | `/profit` | ✅ |  |
