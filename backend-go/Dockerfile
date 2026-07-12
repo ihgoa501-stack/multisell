@@ -3,7 +3,8 @@
 # ============================
 FROM golang:1.25.12-alpine AS builder
 
-RUN apk add --no-cache git ca-certificates
+RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine#https://mirrors.aliyun.com/alpine#g' /etc/apk/repositories \
+    && apk add --no-cache git ca-certificates
 
 WORKDIR /build
 
@@ -24,7 +25,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ============================
 FROM alpine:3.21 AS runtime
 
-RUN apk add --no-cache \
+RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine#https://mirrors.aliyun.com/alpine#g' /etc/apk/repositories \
+    && apk add --no-cache \
     ca-certificates \
     wget
 
