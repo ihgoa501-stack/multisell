@@ -1,11 +1,11 @@
 # 凌镜 LingMirror — 文档索引
 
-> **当前方向（2026-07-11）**：先读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。双产品、外部 SaaS、多租户和商业化文档均为冻结历史材料，不得作为当前开发指令。
+> **当前方向（2026-07-12）**：先读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。凌镜只供 Owner 本人使用，不服务或验证外部软件需求。双产品、外部 SaaS、多租户和商业化文档均为历史材料，不得作为当前开发指令。
 
-> **当前事实入口**：再读 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。它区分政策、计划、代码实现、自动验证、真实外部观察、对账、mock、推断和已过期声明。
+> **当前事实入口**：再读 [方向事实审计 2026-07-12](research/project-truth-audit-2026-07-12.md)，工程完成度证据继续追溯到 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 更新日期：2026-07-11
+> 更新日期：2026-07-12
 
 ---
 
@@ -71,10 +71,10 @@
 
 | 文档 | 当前用途 |
 |------|----------|
-| [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律、开发路线与解冻门槛 |
+| [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律与开发路线；明确无外部软件用户目标 |
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向和下一阶段优先级 |
-| [真实付费需求发现循环设计](superpowers/specs/2026-07-11-paid-demand-discovery-loop-design.md) | 候选市场、需求案件、独立反证和真实交易裁决边界 |
-| [真实付费需求发现循环实施计划](superpowers/plans/2026-07-11-paid-demand-discovery-loop.md) | Sprint 1 分阶段实施与验收计划 |
+| [真实付费需求发现循环设计](superpowers/specs/2026-07-11-paid-demand-discovery-loop-design.md) | 历史命名；仅保留商品消费者付款、反证和交易裁决边界，不代表凌镜有外部软件需求 |
+| [真实付费需求发现循环实施计划](superpowers/plans/2026-07-11-paid-demand-discovery-loop.md) | 历史命名；实施内容按当前 Owner 自营商品实验方向解释 |
 | [付费需求信号地图](../deliverables/research/paid-demand-signal-map.md) | 代理信号与真实付款证据的边界 |
 | [付费需求反证协议](../deliverables/research/paid-demand-falsification-protocol.md) | 独立反证、污染和停止规则 |
 | [需求数据可得性现实审计](../deliverables/research/demand-data-access-reality.md) | 平台字段、权限和 unknown 边界 |
@@ -87,7 +87,8 @@
 | [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
 | [AI-Native AgentOS 执行计划](../tasks/plan.md) | 🆕 Product Loop E2E -> Action Gate -> CI/E2E -> Cockpit 的 canonical 阶段计划 |
 | [AI-Native AgentOS 任务清单](../tasks/todo.md) | 🆕 可逐项执行的 Product Loop / Action Gate / E2E canonical 任务列表 |
-| [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) | 当前代码、测试、经营事实、mock、过期方向和未闭环部分的只读审计快照 |
+| [方向事实审计 2026-07-12](research/project-truth-audit-2026-07-12.md) | 最新产品边界：Owner 单人自用，不验证外部软件需求 |
+| [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) | 上一版代码、测试、经营事实、mock 和未闭环部分的只读审计快照 |
 | [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | ⛔ 已被 2026-07-11 自用方向替代，仅供历史追溯 |
 | [验收门禁](ACCEPTANCE_GATE.md) | 🆕 Dev Done / Test Green / Business Verified / Beta Accepted 的完成定义和证据要求 |
 | [验收矩阵](ACCEPTANCE_MATRIX.md) | 🆕 环境、角色、业务闭环、高风险动作和运行时证据矩阵 |

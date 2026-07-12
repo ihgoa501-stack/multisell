@@ -1,6 +1,6 @@
 # TODOs
 
-> Current direction: Owner 自用真实付费需求发现循环。
+> Current direction: Owner 自用跨境商品经营实验循环；不验证外部软件需求。
 > Source of truth: `docs/SELF_USE_OPERATING_DIRECTION.md`。
 
 ## P0 — 需求案件与证据裁决
@@ -61,4 +61,4 @@
 
 ## Frozen Backlog
 
-以下项目不进入当前开发队列：双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、Outcome Proof、Evidence Warranty、跨客户聚合、未经实证的平台扩张、更多内部 Agent/MoA/自治升级以及大型视觉重构。
+以下项目不进入当前开发队列：外部软件用户研究、设计伙伴、软件试点、双产品、外部 SaaS、多租户、订阅计费、公共 API、外部 onboarding、Outcome Proof、Evidence Warranty、跨客户聚合、未经实证的平台扩张、更多内部 Agent/MoA/自治升级以及大型视觉重构。

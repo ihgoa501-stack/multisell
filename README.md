@@ -1,4 +1,4 @@
-# LingMirror — Owner 自用真实付费需求验证系统
+# LingMirror — Owner 自用 AI 跨境商品经营系统
 
 > 技术项目名暂保留 `MultiSell`；当前只服务 Owner 本人的真实跨境经营，不面向外部客户。
 
@@ -17,10 +17,10 @@
 
 ## 核心定位
 
-**真实数据 → 需求假设 → 独立反证 → Owner 批准的最小实验 → 陌生客户付款与签收 → 售后闭合后的正贡献利润。**
+**真实数据 → 商品经营假设 → 独立反证 → Owner 批准的最小实验 → 非关联买家付款与签收 → 售后闭合后的最终贡献利润。**
 
 当前执行方向见 [docs/CURRENT_DIRECTION_AND_PRIORITIES.md](docs/CURRENT_DIRECTION_AND_PRIORITIES.md)。
-完整经营边界见 [docs/SELF_USE_OPERATING_DIRECTION.md](docs/SELF_USE_OPERATING_DIRECTION.md)。当前没有选定目标客户、市场、类目或商品；Ozon、Shopee 和 Shopify 都只是待实证数据源。短期唯一目标是发现或证伪一个可核查的真实付费需求。
+完整经营边界见 [docs/SELF_USE_OPERATING_DIRECTION.md](docs/SELF_USE_OPERATING_DIRECTION.md)。凌镜仅供 Owner 本人使用，不寻找或服务外部软件用户。当前没有选定商品消费者、市场、类目或商品；Ozon、Shopee 和 Shopify 都只是待实证数据源。短期唯一目标是完成一轮可核查的自营商品实验并得到最终利润裁决。
 
 ## 功能模块
 

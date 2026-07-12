@@ -1,13 +1,13 @@
 # LingMirror Current Direction and Priorities
 
-> Updated: 2026-07-11
+> Updated: 2026-07-12
 > Status: current execution guidance
 
 ## Current Direction
 
-凌镜当前是 **Owner 本人自用的真实付费需求发现与经营验证系统**，不是对外 SaaS，也不并行建设双产品。
+凌镜当前是 **只供 Owner 本人使用的 AI 跨境商品经营内部系统**。它不服务外部软件用户，不验证外部软件需求，也不规划 SaaS、设计伙伴或软件商业化。
 
-完整产品边界、结果定义、资金纪律和解冻门槛以 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 为准。
+完整产品边界、结果定义和资金纪律以 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 为准。
 
 ## Current North Star
 
@@ -40,7 +40,7 @@
 
 ### P0. Strategic Source Alignment
 
-- 冻结双产品、外部 SaaS、多租户、计费、公共 API 和展示性扩张；
+- 排除外部软件用户研究、设计伙伴、软件试点、双产品、外部 SaaS、多租户、计费、公共 API 和展示性扩张；
 - 统一下单、有效成交、最终有效成交、预计利润和最终净利润定义；
 - 所有当前事实源指向同一开发路线。
 
@@ -86,6 +86,7 @@
 
 - Dual-Product Cathedral；
 - LingMirror Intelligence / Portfolio Launch OS 拆分；
+- 外部软件用户研究、客户访谈、设计伙伴和软件试点；
 - 外部客户、自助注册、订阅、计费、公共 API；
 - Outcome Proof、Evidence Warranty、跨客户知识聚合；
 - 未通过只读预检的平台扩张；

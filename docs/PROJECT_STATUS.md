@@ -1,10 +1,10 @@
 # 凌镜 LingMirror Project Status
 
-> **当前方向覆盖（2026-07-11）**：凌镜只做 Owner 自用经营实验内部系统。双产品、外部 SaaS、多租户和未经市场选择的平台扩张均冻结。Ozon 等已有适配器只是连接器，不是默认经营方向。当前已实现的是实验案卷与部分终局账务校验；候选市场比较、Owner 选定市场、独立 AI 反证、真实成交资格、售后观察期和正利润裁决尚未闭环。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md) 和 [项目真相审计](research/project-truth-audit-2026-07-11.md)。
+> **当前方向覆盖（2026-07-12）**：凌镜只供 Owner 本人用于跨境商品经营，不服务外部软件用户，也不验证或规划外部软件需求。双产品、外部 SaaS、多租户和未经市场选择的平台扩张不属于产品方向。Ozon 等已有适配器只是连接器，不是默认经营方向。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md) 和 [方向事实审计](research/project-truth-audit-2026-07-12.md)。
 
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
-当前事实复核：2026-07-11
+当前事实复核：2026-07-12（方向文档）；工程验证数据仍以各记录日期为准
 
 ## 当前完成度裁决
 
