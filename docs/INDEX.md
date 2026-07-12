@@ -169,6 +169,7 @@
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
 | [小Q Agent 架构官方资料调研](research/xiaoq-agent-architecture-2026-07-12.md) | 单一主Agent、动态能力目录、模型外审批和审计的官方资料依据 |
 | [小Q产品需求质量审计](research/xiaoq-product-requirement-quality-2026-07-12.md) | 原始愿景的合理性、产品经理版One-pager、指标、非目标和停止条件 |
+| [小Q多领域路由规范 v1](specs/xiaoq-multi-domain-routing-v1.md) | Target、会话、按需能力发现、事实追踪、错误码和多领域接入测试矩阵 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |

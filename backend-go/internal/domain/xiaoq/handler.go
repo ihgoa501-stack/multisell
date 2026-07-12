@@ -45,16 +45,16 @@ func (h *Handler) Message(c *gin.Context) {
 	}
 	var in MessageInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		response.Error(c, http.StatusBadRequest, "message and demand_case_id are required")
+		response.Error(c, http.StatusBadRequest, "message and a supported target are required")
 		return
 	}
 	result, err := h.service.SendMessage(c.Request.Context(), owner, in)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
-			response.Error(c, http.StatusBadRequest, "invalid message or demand_case_id")
+			response.Error(c, http.StatusBadRequest, "invalid message or target")
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			response.Error(c, http.StatusNotFound, "demand case not found")
+			response.Error(c, http.StatusNotFound, "target not found")
 		default:
 			var runErr *RunError
 			if errors.As(err, &runErr) {

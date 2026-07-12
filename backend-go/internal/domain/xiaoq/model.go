@@ -6,10 +6,12 @@ import (
 )
 
 const (
-	AgentID         = "xiao_q"
-	TruthMock       = "mock"
-	TruthInferred   = "inferred"
-	MaxMessageRunes = 2000
+	AgentID          = "xiao_q"
+	TargetDemandCase = "demand_case"
+	TargetExperiment = "experiment"
+	TruthMock        = "mock"
+	TruthInferred    = "inferred"
+	MaxMessageRunes  = 2000
 )
 
 var (
@@ -20,14 +22,18 @@ var (
 
 type MessageInput struct {
 	Message      string `json:"message" binding:"required"`
-	DemandCaseID int64  `json:"demand_case_id" binding:"required"`
+	TargetType   string `json:"target_type,omitempty"`
+	DemandCaseID int64  `json:"demand_case_id,omitempty"`
+	ExperimentID string `json:"experiment_id,omitempty"`
 }
 
 type MessageResponse struct {
 	TraceID      string         `json:"trace_id"`
 	AgentID      string         `json:"agent_id"`
 	Mode         string         `json:"mode"`
+	TargetType   string         `json:"target_type"`
 	DemandCaseID int64          `json:"demand_case_id"`
+	ExperimentID string         `json:"experiment_id,omitempty"`
 	Answer       string         `json:"answer"`
 	TruthStatus  string         `json:"truth_status"`
 	Trusted      bool           `json:"trusted"`
@@ -52,6 +58,8 @@ type EvidenceItem struct {
 	RunID          string `json:"run_id"`
 	SnapshotID     int64  `json:"snapshot_id"`
 	SnapshotSHA256 string `json:"snapshot_sha256,omitempty"`
+	VerifiedBy     int64  `json:"verified_by,omitempty"`
+	VerifiedAt     string `json:"verified_at,omitempty"`
 }
 
 type ResponseLink struct {

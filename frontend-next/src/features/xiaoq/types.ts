@@ -39,6 +39,7 @@ export interface XiaoQEvidence {
   observed_at?: string;
   run_id?: string | number;
   snapshot_id?: string | number;
+  snapshot_sha256?: string;
 }
 
 export interface XiaoQLink {
@@ -54,10 +55,19 @@ export interface XiaoQProvenance {
   [key: string]: unknown;
 }
 
-export interface XiaoQMessageRequest {
+export interface XiaoQDemandCaseMessageRequest {
   message: string;
   demand_case_id: number;
+  target_type?: 'demand_case';
 }
+
+export interface XiaoQExperimentMessageRequest {
+  message: string;
+  target_type: 'experiment';
+  experiment_id: string;
+}
+
+export type XiaoQMessageRequest = XiaoQDemandCaseMessageRequest | XiaoQExperimentMessageRequest;
 
 export interface XiaoQMessageResponse {
   trace_id: string;
@@ -65,6 +75,10 @@ export interface XiaoQMessageResponse {
   answer: string;
   truth_status: XiaoQTruthStatus;
   mode: XiaoQMode;
+  target_type?: 'demand_case' | 'experiment';
+  demand_case_id?: number;
+  experiment_id?: string;
+  trusted?: boolean;
   case_summary?: string;
   evidence: XiaoQEvidence[];
   unknowns: string[];

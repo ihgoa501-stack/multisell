@@ -2,6 +2,7 @@ package experiment
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	orderDomain "github.com/lingmirror/backend-go/internal/domain/order"
 	profitDomain "github.com/lingmirror/backend-go/internal/domain/profit"
 	settlementDomain "github.com/lingmirror/backend-go/internal/domain/settlement"
+	"gorm.io/gorm"
 )
 
 func testService(t *testing.T) *Service {
@@ -97,6 +99,31 @@ func TestCreateAndGetDetailKeepsIndependentProfitAndCashState(t *testing.T) {
 	}
 	if d.Case.FinalProfitStatus != "pending" || d.Case.CashRecoveryStatus != "pending" {
 		t.Fatalf("profit and cash states were not independent: %+v", d.Case)
+	}
+}
+
+func TestGetDetailFailsClosedWhenAnyChildQueryFails(t *testing.T) {
+	for _, failAt := range []int{2, 3, 4} {
+		t.Run(strconv.Itoa(failAt), func(t *testing.T) {
+			s := testService(t)
+			c := &ExperimentCase{Name: "query failure", Stage: StageOpportunity, OwnerID: 1}
+			if err := s.Create(context.Background(), c); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			name := "fail_get_detail_query_" + strconv.Itoa(failAt)
+			if err := s.db.Callback().Query().Before("gorm:query").Register(name, func(tx *gorm.DB) {
+				calls++
+				if calls == failAt {
+					tx.AddError(errors.New("injected child query failure"))
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if detail, err := s.GetDetail(context.Background(), c.ExperimentID, 1); err == nil || detail != nil {
+				t.Fatalf("GetDetail query %d returned detail=%#v err=%v", failAt, detail, err)
+			}
+		})
 	}
 }
 

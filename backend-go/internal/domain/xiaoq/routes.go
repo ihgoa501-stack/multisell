@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/domain/demandcase"
+	"github.com/lingmirror/backend-go/internal/domain/experiment"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -11,11 +12,11 @@ import (
 
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	provider := ai.NewLLMProvider(logger)
-	service := NewService(db, logger, demandcase.NewService(db, logger), provider, ai.NewTraceWriter(db, logger))
+	service := NewService(db, logger, demandcase.NewService(db, logger), experiment.NewService(db, logger), provider, ai.NewTraceWriter(db, logger))
 	h := NewHandler(service)
 	g := rg.Group("/xiao-q", middleware.RequirePermission(db, "agent.read"))
 	g.GET("/identity", h.Identity)
-	g.GET("/capabilities", h.Capabilities)
+	g.GET("/capabilities", middleware.RequirePermission(db, "agent.write"), h.Capabilities)
 	g.GET("/traces/:trace_id", h.Trace)
 	g.POST("/messages", middleware.RequirePermission(db, "agent.write"), h.Message)
 }

@@ -1,15 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, Button, Card, Col, Input, InputNumber, Row, Skeleton, Space, Typography } from 'antd';
+import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Skeleton, Space, Typography } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import PageHeader from '@/components/ui/PageHeader';
 import { ApiError } from '@/lib/api-client';
 import { getXiaoQCapabilities, getXiaoQIdentity, sendXiaoQMessage } from '@/features/xiaoq/api';
 import { XiaoQAnswerCard, XiaoQBoundaryBanner, XiaoQCapabilities } from '@/features/xiaoq/components';
+import type { XiaoQMessageRequest } from '@/features/xiaoq/types';
 
 const { Paragraph, Text } = Typography;
-const prompts = ['这个案件还缺什么关键证据？', '这个案件的最强反证是什么？', '为什么这个案件当前不能进入下一步？'];
+type SupportedTarget = 'demand_case' | 'experiment';
+
+const prompts: Record<SupportedTarget, string[]> = {
+  demand_case: ['这个案件还缺什么关键证据？', '这个案件的最强反证是什么？', '为什么这个案件当前不能进入下一步？'],
+  experiment: ['这个实验有哪些已核验证据？', '哪些闸门正在阻断实验？', '最终利润和现金回收还有哪些未知？'],
+};
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -22,8 +28,10 @@ function errorMessage(error: unknown): string {
 
 export default function XiaoQPage() {
   const [message, setMessage] = useState('');
+  const [targetType, setTargetType] = useState<SupportedTarget>('demand_case');
   const [demandCaseId, setDemandCaseId] = useState<number | null>(null);
-  const [lastRequest, setLastRequest] = useState<{ message: string; demand_case_id: number } | null>(null);
+  const [experimentId, setExperimentId] = useState('');
+  const [lastRequest, setLastRequest] = useState<XiaoQMessageRequest | null>(null);
 
   const identity = useQuery({ queryKey: ['xiao-q-identity'], queryFn: getXiaoQIdentity, retry: 1 });
   const capabilities = useQuery({ queryKey: ['xiao-q-capabilities'], queryFn: getXiaoQCapabilities, retry: 1 });
@@ -31,8 +39,12 @@ export default function XiaoQPage() {
 
   const submit = (value = message) => {
     const trimmed = value.trim();
-    if (!trimmed || !demandCaseId || ask.isPending) return;
-    const request = { message: trimmed, demand_case_id: demandCaseId };
+    const trimmedExperimentId = experimentId.trim();
+    const hasTarget = targetType === 'demand_case' ? Boolean(demandCaseId) : Boolean(trimmedExperimentId);
+    if (!trimmed || !hasTarget || ask.isPending) return;
+    const request: XiaoQMessageRequest = targetType === 'demand_case'
+      ? { message: trimmed, demand_case_id: demandCaseId as number }
+      : { message: trimmed, target_type: 'experiment', experiment_id: trimmedExperimentId };
     setMessage('');
     setLastRequest(request);
     ask.mutate(request);
@@ -61,32 +73,74 @@ export default function XiaoQPage() {
             <Card title="问小Q">
               <Paragraph type="secondary">先从当前经营主线提问。小Q不知道的内容会明确标为未知。</Paragraph>
               <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 12 }}>
-                <Text strong>候选市场案件 ID</Text>
-                <InputNumber
-                  min={1}
-                  precision={0}
-                  value={demandCaseId}
-                  onChange={(value) => setDemandCaseId(value)}
-                  placeholder="请输入要查询的案件 ID"
+                <Text strong>查询对象</Text>
+                <Select<SupportedTarget>
+                  aria-label="查询对象"
+                  value={targetType}
+                  onChange={(value) => setTargetType(value)}
+                  options={[
+                    { value: 'demand_case', label: '候选市场' },
+                    { value: 'experiment', label: '经营实验' },
+                  ]}
                   style={{ width: '100%' }}
                   disabled={ask.isPending}
                 />
-                <Text type="secondary">小Q V1 只读取一个已存在的候选市场案件，不会跨案件猜测。</Text>
+                {targetType === 'demand_case' ? (
+                  <>
+                    <Text strong>候选市场案件 ID</Text>
+                    <InputNumber
+                      min={1}
+                      precision={0}
+                      value={demandCaseId}
+                      onChange={(value) => setDemandCaseId(value)}
+                      placeholder="请输入要查询的案件 ID"
+                      aria-label="候选市场案件 ID"
+                      style={{ width: '100%' }}
+                      disabled={ask.isPending}
+                    />
+                    <Text type="secondary">小Q只读取这个已存在的候选市场案件，不会跨案件猜测。</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text strong>经营实验 ID</Text>
+                    <Input
+                      value={experimentId}
+                      onChange={(event) => setExperimentId(event.target.value)}
+                      placeholder="请输入要查询的实验 ID"
+                      aria-label="经营实验 ID"
+                      disabled={ask.isPending}
+                    />
+                    <Text type="secondary">小Q只读解释该实验的证据、闸门阻断项与未知事实，不会改变实验状态。</Text>
+                  </>
+                )}
               </Space>
               <Space wrap style={{ marginBottom: 12 }}>
-                {prompts.map((prompt) => <Button key={prompt} onClick={() => submit(prompt)} disabled={ask.isPending || !demandCaseId}>{prompt}</Button>)}
+                {prompts[targetType].map((prompt) => (
+                  <Button
+                    key={prompt}
+                    onClick={() => submit(prompt)}
+                    disabled={ask.isPending || (targetType === 'demand_case' ? !demandCaseId : !experimentId.trim())}
+                  >{prompt}</Button>
+                ))}
               </Space>
               <Input.TextArea
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); submit(); } }}
-                placeholder="输入关于候选市场、经营证据或实验状态的问题"
+                placeholder={targetType === 'demand_case'
+                  ? '输入关于候选市场和决策证据的问题'
+                  : '输入关于实验阶段、证据、闸门或最终利润的问题'}
                 autoSize={{ minRows: 3, maxRows: 8 }}
                 disabled={ask.isPending}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
                 <Text type="secondary">Enter 发送，Shift+Enter 换行</Text>
-                <Button type="primary" onClick={() => submit()} loading={ask.isPending} disabled={!message.trim() || !demandCaseId}>发送</Button>
+                <Button
+                  type="primary"
+                  onClick={() => submit()}
+                  loading={ask.isPending}
+                  disabled={!message.trim() || (targetType === 'demand_case' ? !demandCaseId : !experimentId.trim())}
+                >发送</Button>
               </div>
             </Card>
 

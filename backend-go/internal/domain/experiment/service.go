@@ -176,9 +176,15 @@ func (s *Service) GetDetail(ctx context.Context, id string, ownerID int64) (*Det
 	if err := s.db.WithContext(ctx).Where("experiment_id = ? AND owner_id = ?", id, ownerID).First(&d.Case).Error; err != nil {
 		return nil, err
 	}
-	s.db.WithContext(ctx).Where("experiment_id = ?", id).Order("id").Find(&d.Gates)
-	s.db.WithContext(ctx).Where("experiment_id = ?", id).Order("id").Find(&d.Evidence)
-	s.db.WithContext(ctx).Where("experiment_id = ?", id).Order("id").Find(&d.ObjectLinks)
+	if err := s.db.WithContext(ctx).Where("experiment_id = ?", id).Order("id").Find(&d.Gates).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.WithContext(ctx).Where("experiment_id = ?", id).Order("id").Find(&d.Evidence).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.WithContext(ctx).Where("experiment_id = ?", id).Order("id").Find(&d.ObjectLinks).Error; err != nil {
+		return nil, err
+	}
 	return &d, nil
 }
 func (s *Service) AddEvidence(ctx context.Context, ownerID int64, e *EvidenceRecord) error {

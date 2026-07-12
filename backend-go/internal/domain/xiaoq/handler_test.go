@@ -39,8 +39,24 @@ func TestHTTPIdentityAndCapabilitiesExposeOnlyReadV1(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/xiao-q/capabilities", nil))
-	if strings.Contains(w.Body.String(), "mutate") || !strings.Contains(w.Body.String(), CapabilityDemandCaseRead) || !strings.Contains(w.Body.String(), CapabilityDemandCaseDecisionRead) {
+	if strings.Contains(w.Body.String(), "mutate") || !strings.Contains(w.Body.String(), CapabilityDemandCaseRead) || !strings.Contains(w.Body.String(), CapabilityDemandCaseDecisionRead) || !strings.Contains(w.Body.String(), CapabilityExperimentRead) || !strings.Contains(w.Body.String(), CapabilityExperimentGateRead) {
 		t.Fatalf("unexpected capabilities: %s", w.Body.String())
+	}
+}
+
+func TestHTTPMessageAcceptsExplicitExperimentTarget(t *testing.T) {
+	detail, summary := testExperimentData()
+	reader := &fakeExperimentReader{detail: detail, summary: summary}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, reader, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
+	owner := int64(42)
+	r := testHTTPRouter(t, svc, &owner)
+
+	body, _ := json.Marshal(MessageInput{Message: "实验怎么样？", TargetType: TargetExperiment, ExperimentID: "exp_test"})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/xiao-q/messages", bytes.NewReader(body)))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"target_type":"experiment"`) || !strings.Contains(w.Body.String(), `"experiment_id":"exp_test"`) {
+		t.Fatalf("experiment message status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -126,6 +142,11 @@ func TestRegisteredRoutesEnforceReadAndMessageWritePermissions(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/xiao-q/identity", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("agent.read GET status=%d body=%s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/xiao-q/capabilities", nil))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("capabilities without agent.write status=%d body=%s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/xiao-q/messages", strings.NewReader(`{"message":"查看","demand_case_id":7}`)))

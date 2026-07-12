@@ -53,6 +53,58 @@ describe('xiao-q api', () => {
     });
   });
 
+  it('posts the explicit experiment target using the current backend contract', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      code: 0,
+      message: 'ok',
+      data: {
+        trace_id: 'trace-exp', agent_id: 'xiao_q', target_type: 'experiment',
+        experiment_id: 'EXP-2026-001', answer: '实验仍被证据闸门阻断。',
+        truth_status: 'inferred', mode: 'read_only_v1', evidence: [],
+        unknowns: ['缺少付款证据'], links: [],
+      },
+    });
+
+    await expect(sendXiaoQMessage({
+      message: '为什么还不能进入下一步？',
+      target_type: 'experiment',
+      experiment_id: 'EXP-2026-001',
+    })).resolves.toMatchObject({ target_type: 'experiment', experiment_id: 'EXP-2026-001' });
+    expect(apiClient.post).toHaveBeenCalledWith('/v1/xiao-q/messages', {
+      message: '为什么还不能进入下一步？',
+      target_type: 'experiment',
+      experiment_id: 'EXP-2026-001',
+    });
+  });
+
+  it('normalizes missing collections and experiment backend links', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      code: 0,
+      message: 'ok',
+      data: {
+        trace_id: 'trace-exp', agent_id: 'xiao_q', target_type: 'experiment',
+        experiment_id: 'EXP-1', answer: '回答', truth_status: 'inferred',
+        links: {
+          experiment: '/experiments?experiment_id=EXP-1',
+          gate_status: '/api/v1/experiments/EXP-1/owner-summary',
+          trace: '/api/v1/xiao-q/traces/trace-exp',
+        },
+      },
+    });
+
+    await expect(sendXiaoQMessage({
+      message: '问题', target_type: 'experiment', experiment_id: 'EXP-1',
+    })).resolves.toMatchObject({
+      evidence: [],
+      unknowns: [],
+      links: [
+        { label: '查看经营实验', href: '/experiments?experiment_id=EXP-1' },
+        { label: '查看实验闸门状态', href: '/api/v1/experiments/EXP-1/owner-summary' },
+        { label: '查看运行追踪', href: '/api/v1/xiao-q/traces/trace-exp' },
+      ],
+    });
+  });
+
   it('normalizes the real backend links object into canonical link items', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({
       code: 0,

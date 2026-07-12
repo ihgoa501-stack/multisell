@@ -11,6 +11,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/demandcase"
+	"github.com/lingmirror/backend-go/internal/domain/experiment"
+	"gorm.io/gorm"
 )
 
 type failingTraceRecorder struct {
@@ -50,6 +52,24 @@ type fakeDemandReader struct {
 	detail *demandcase.Detail
 	card   *demandcase.OwnerDecisionCard
 	err    error
+}
+
+type fakeExperimentReader struct {
+	detail      *experiment.Detail
+	summary     *experiment.OwnerSummary
+	ownerIDSeen int64
+	detailErr   error
+	summaryErr  error
+}
+
+func (f *fakeExperimentReader) GetDetail(_ context.Context, _ string, ownerID int64) (*experiment.Detail, error) {
+	f.ownerIDSeen = ownerID
+	return f.detail, f.detailErr
+}
+
+func (f *fakeExperimentReader) OwnerSummary(_ context.Context, _ string, ownerID int64) (*experiment.OwnerSummary, error) {
+	f.ownerIDSeen = ownerID
+	return f.summary, f.summaryErr
 }
 
 func (f *fakeDemandReader) Get(context.Context, int64, int64) (*demandcase.Detail, error) {
@@ -93,7 +113,170 @@ func newTestService(t *testing.T, provider ai.LLMProvider) *Service {
 	t.Helper()
 	detail, card := testDemandData()
 	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
-	return NewService(db, dbtest.NewLogger(t), &fakeDemandReader{detail: detail, card: card}, provider, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
+	return NewService(db, dbtest.NewLogger(t), &fakeDemandReader{detail: detail, card: card}, nil, provider, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
+}
+
+func testExperimentData() (*experiment.Detail, *experiment.OwnerSummary) {
+	observed := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	detail := &experiment.Detail{
+		Case:  experiment.ExperimentCase{ExperimentID: "exp_test", OwnerID: 42, Name: "真实商品实验", Stage: experiment.StageOrder, Status: experiment.StatusActive, FinalProfitStatus: experiment.ProfitPending, CashRecoveryStatus: experiment.CashPending},
+		Gates: []experiment.GateDecision{{ID: 11, ExperimentID: "exp_test", Stage: experiment.StageOpportunity, GateCode: "demand_evidence", Result: experiment.ResultPass}},
+		Evidence: []experiment.EvidenceRecord{
+			{ID: 21, ExperimentID: "exp_test", Stage: experiment.StageOrder, EvidenceKind: "support", TruthStatus: experiment.TruthActual, Title: "Owner 已核验付款凭证", SourceURI: "internal://orders/8", ObservedAt: &observed, VerifiedBy: 42, VerifiedAt: &observed},
+			{ID: 22, ExperimentID: "exp_test", Stage: experiment.StageOrder, EvidenceKind: "counter", TruthStatus: experiment.TruthUnknown, Title: "买家关联关系尚未核验"},
+		},
+	}
+	summary := &experiment.OwnerSummary{ExperimentID: "exp_test", Stage: experiment.StageOrder, PassedGates: 1, Blockers: []string{"order:gate_missing", "profit:gate_missing"}, FinalProfitStatus: experiment.ProfitPending, CashRecoveryStatus: experiment.CashPending}
+	return detail, summary
+}
+
+func TestSendMessageReadsOwnerScopedExperimentWithoutMutation(t *testing.T) {
+	detail, summary := testExperimentData()
+	reader := &fakeExperimentReader{detail: detail, summary: summary}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, reader, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
+
+	got, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "这个实验卡在哪里？", TargetType: TargetExperiment, ExperimentID: "exp_test"})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if reader.ownerIDSeen != 42 {
+		t.Fatalf("experiment reader owner = %d, want 42", reader.ownerIDSeen)
+	}
+	if got.TargetType != TargetExperiment || got.ExperimentID != "exp_test" || got.DemandCaseID != 0 {
+		t.Fatalf("wrong target grounding: %#v", got)
+	}
+	if len(got.Evidence) != 2 || got.Evidence[0].TruthStatus != experiment.TruthActual {
+		t.Fatalf("experiment evidence not preserved: %#v", got.Evidence)
+	}
+	if got.Evidence[0].VerifiedBy != 42 || got.Evidence[0].VerifiedAt == "" {
+		t.Fatalf("experiment verification provenance missing: %#v", got.Evidence[0])
+	}
+	if !strings.Contains(strings.Join(got.Unknowns, "|"), "买家关联关系尚未核验") || !strings.Contains(strings.Join(got.Unknowns, "|"), "order:gate_missing") {
+		t.Fatalf("missing experiment unknowns/blockers: %#v", got.Unknowns)
+	}
+	if len(got.Links) != 3 || !strings.Contains(got.Links[0].Href, "exp_test") {
+		t.Fatalf("missing experiment links: %#v", got.Links)
+	}
+	trace, traceErr := svc.GetTrace(context.Background(), 42, got.TraceID)
+	if traceErr != nil || len(trace.Evidence) != 2 {
+		t.Fatalf("experiment trace evidence = %#v, err=%v", trace, traceErr)
+	}
+}
+
+func TestExperimentReadDoesNotCrossOwnerBoundary(t *testing.T) {
+	reader := &fakeExperimentReader{detailErr: gorm.ErrRecordNotFound}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, reader, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
+	_, err := svc.SendMessage(context.Background(), 99, MessageInput{Message: "读取", TargetType: TargetExperiment, ExperimentID: "exp_owner_42"})
+	if !errors.Is(err, gorm.ErrRecordNotFound) || reader.ownerIDSeen != 99 {
+		t.Fatalf("cross-owner read err=%v owner=%d", err, reader.ownerIDSeen)
+	}
+}
+
+func TestExperimentReadUsesRealDomainOwnerIsolation(t *testing.T) {
+	db := dbtest.NewDB(t, &experiment.ExperimentCase{}, &experiment.GateDecision{}, &experiment.EvidenceRecord{}, &experiment.ObjectLink{}, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	logger := dbtest.NewLogger(t)
+	experimentService := experiment.NewService(db, logger)
+	c := &experiment.ExperimentCase{Name: "Owner 42 experiment", Stage: experiment.StageOpportunity, OwnerID: 42}
+	if err := experimentService.Create(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(db, logger, nil, experimentService, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, logger))
+	_, err := svc.SendMessage(context.Background(), 99, MessageInput{Message: "读取", TargetType: TargetExperiment, ExperimentID: c.ExperimentID})
+	var runErr *RunError
+	if !errors.As(err, &runErr) || !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("real domain cross-owner error=%T %v", err, err)
+	}
+	trace, traceErr := svc.GetTrace(context.Background(), 99, runErr.TraceID)
+	if traceErr != nil || trace.Trace.Status != "failed" {
+		t.Fatalf("cross-owner attempt trace=%#v err=%v", trace, traceErr)
+	}
+}
+
+func TestExperimentDomainReadFailurePersistsFailedTrace(t *testing.T) {
+	reader := &fakeExperimentReader{detailErr: errors.New("experiment store unavailable")}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, reader, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
+	_, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "读取", TargetType: TargetExperiment, ExperimentID: "exp_test"})
+	var runErr *RunError
+	if !errors.As(err, &runErr) || runErr.TraceID == "" {
+		t.Fatalf("expected traced RunError, got %T %v", err, err)
+	}
+	trace, getErr := svc.GetTrace(context.Background(), 42, runErr.TraceID)
+	if getErr != nil || trace.Trace.Status != "failed" || len(trace.Events) != 1 || trace.Events[0].EventType != "capability_failed" || trace.Events[0].Content != CapabilityExperimentRead {
+		t.Fatalf("failed domain trace=%#v err=%v", trace, getErr)
+	}
+	if strings.Contains(string(trace.Trace.InputContext), "store unavailable") || strings.Contains(string(trace.Trace.InputContext), "detail") {
+		t.Fatalf("trace input must contain only request target: %s", trace.Trace.InputContext)
+	}
+}
+
+func TestExperimentSummaryFailureNamesGateCapability(t *testing.T) {
+	detail, _ := testExperimentData()
+	reader := &fakeExperimentReader{detail: detail, summaryErr: errors.New("summary unavailable")}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, reader, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
+	_, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "读取", TargetType: TargetExperiment, ExperimentID: "exp_test"})
+	var runErr *RunError
+	if !errors.As(err, &runErr) {
+		t.Fatalf("expected RunError, got %v", err)
+	}
+	trace, getErr := svc.GetTrace(context.Background(), 42, runErr.TraceID)
+	if getErr != nil || len(trace.Events) != 2 || trace.Events[1].EventType != "capability_failed" || trace.Events[1].Content != CapabilityExperimentGateRead {
+		t.Fatalf("summary failure trace=%#v err=%v", trace, getErr)
+	}
+}
+
+func TestExperimentProviderFailureMarksTraceFailed(t *testing.T) {
+	detail, summary := testExperimentData()
+	reader := &fakeExperimentReader{detail: detail, summary: summary}
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, reader, &fakeProvider{name: "openai", err: errors.New("provider unavailable")}, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
+	_, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "读取", TargetType: TargetExperiment, ExperimentID: "exp_test"})
+	var runErr *RunError
+	if !errors.As(err, &runErr) {
+		t.Fatalf("expected RunError, got %v", err)
+	}
+	trace, getErr := svc.GetTrace(context.Background(), 42, runErr.TraceID)
+	if getErr != nil || trace.Trace.Status != "failed" || len(trace.Evidence) != 2 {
+		t.Fatalf("provider failure trace=%#v err=%v", trace, getErr)
+	}
+}
+
+func TestExperimentTraceWriteFailuresCannotReturnSuccess(t *testing.T) {
+	for _, failAt := range []string{"append", "evidence", "complete"} {
+		t.Run(failAt, func(t *testing.T) {
+			detail, summary := testExperimentData()
+			db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+			writer := ai.NewTraceWriter(db, dbtest.NewLogger(t))
+			recorder := &failingTraceRecorder{failAt: failAt, trace: writer}
+			svc := NewService(db, dbtest.NewLogger(t), nil, &fakeExperimentReader{detail: detail, summary: summary}, &fakeProvider{name: "stub"}, recorder)
+			if _, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "读取", TargetType: TargetExperiment, ExperimentID: "exp_test"}); err == nil {
+				t.Fatalf("experiment %s trace failure returned success", failAt)
+			}
+		})
+	}
+}
+
+func TestLegacyDemandCaseInputRemainsCompatible(t *testing.T) {
+	svc := newTestService(t, &fakeProvider{name: "stub"})
+	got, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "查看案件", DemandCaseID: 7})
+	if err != nil || got.TargetType != TargetDemandCase || got.DemandCaseID != 7 {
+		t.Fatalf("legacy demand case input got=%#v err=%v", got, err)
+	}
+}
+
+func TestSendMessageRejectsConflictingTargetFields(t *testing.T) {
+	svc := newTestService(t, &fakeProvider{name: "stub"})
+	for _, in := range []MessageInput{
+		{Message: "冲突", TargetType: TargetExperiment, ExperimentID: "exp_test", DemandCaseID: 7},
+		{Message: "冲突", TargetType: TargetDemandCase, DemandCaseID: 7, ExperimentID: "exp_test"},
+	} {
+		if _, err := svc.SendMessage(context.Background(), 42, in); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("conflicting input %#v error=%v", in, err)
+		}
+	}
 }
 
 func TestSendMessageStubIsExplicitMockAndNotTrusted(t *testing.T) {
@@ -220,7 +403,7 @@ func TestTraceWriteFailuresCannotReturnSuccess(t *testing.T) {
 			db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
 			writer := ai.NewTraceWriter(db, dbtest.NewLogger(t))
 			recorder := &failingTraceRecorder{failAt: failAt, trace: writer}
-			svc := NewService(db, dbtest.NewLogger(t), &fakeDemandReader{detail: detail, card: card}, &fakeProvider{name: "stub"}, recorder)
+			svc := NewService(db, dbtest.NewLogger(t), &fakeDemandReader{detail: detail, card: card}, nil, &fakeProvider{name: "stub"}, recorder)
 			if _, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "查看", DemandCaseID: 7}); err == nil {
 				t.Fatalf("%s failure returned success", failAt)
 			}

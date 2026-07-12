@@ -18,7 +18,7 @@ Ozon 自动采集接口属于待按市场选择启用的平台连接器。没有
 
 Owner 从 `/demand-cases` 查看候选市场。AI 研究 run 必须使用三类固定契约并保存可重算 SHA-256 原始快照；内置公开研究批次只产生权限待验证基线，不得解释为俄罗斯/Ozon 已入选。
 
-小Q是唯一面向 Owner 的经营 Agent，固定 ID `xiao_q`。后端 `internal/domain/xiaoq/`，API `/api/v1/xiao-q`，前端 `/xiaoq`。它只能调用按 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md` 登记的 Capability，并继续使用现有领域 Service/Command、RBAC、审批、审计和事实闸门。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；没有完成 Capability、权限和回归测试时不得声称已接入小Q。当前只有需求案件和决策卡只读能力。
+小Q是唯一面向 Owner 的经营 Agent，固定 ID `xiao_q`。后端 `internal/domain/xiaoq/`，API `/api/v1/xiao-q`，前端 `/xiaoq`。它只能调用按 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md` 登记的 Capability，并继续使用现有领域 Service/Command、RBAC、审批、审计和事实闸门。新增功能必须声明 `xiao_q_support: active | deferred | not_applicable`；没有完成 Capability、权限和回归测试时不得声称已接入小Q。当前 active 能力为需求案件、决策卡、经营实验详情与实验闸门状态只读。
 
 This file gives Claude Code-specific guidance for working in this repository.
 Canonical cross-agent rules are in `AGENTS.md`; keep this file consistent with it.

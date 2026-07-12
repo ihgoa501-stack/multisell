@@ -42,4 +42,23 @@ describe('XiaoQ components', () => {
     expect(screen.getByText('active')).toBeInTheDocument();
     expect(screen.getByText('无需审批')).toBeInTheDocument();
   });
+
+  it('shows experiment evidence, gate blockers, unknowns and links without actions', () => {
+    render(<XiaoQAnswerCard response={{
+      trace_id: 'trace-exp', agent_id: 'xiao_q', target_type: 'experiment',
+      experiment_id: 'EXP-1', answer: '实验尚未通过闸门。',
+      truth_status: 'inferred', mode: 'read_only_v1',
+      evidence: [{ title: '支付记录', summary: 'payment/payment', truth_status: 'actual' }],
+      unknowns: ['机会闸门尚未通过', '最终利润尚未确认（pending）'],
+      links: [{ label: '经营实验', href: '/experiments?experiment_id=EXP-1' }],
+    }} />);
+
+    expect(screen.getByText('经营实验证据')).toBeInTheDocument();
+    expect(screen.getByText('支付记录')).toBeInTheDocument();
+    expect(screen.getByText('闸门阻断与仍然未知')).toBeInTheDocument();
+    expect(screen.getByText('机会闸门尚未通过')).toBeInTheDocument();
+    expect(screen.getByText('最终利润尚未确认（pending）')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '经营实验' })).toHaveAttribute('href', '/experiments?experiment_id=EXP-1');
+    expect(screen.queryByRole('button', { name: /批准|执行/ })).not.toBeInTheDocument();
+  });
 });

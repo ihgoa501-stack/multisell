@@ -116,5 +116,7 @@ owner_explanation:
 
 - `demand_case.read`
 - `demand_case.decision_card.read`
+- `experiment.read`
+- `experiment.gate_status.read`
 
-其他模块均为 `deferred`，不能解释为小Q已经能够调用整个系统。
+经营实验能力只读取当前 Owner 的案件详情、原始事实等级、已有闸门决定、阻断项与终局状态；不新增或核验证据，不执行闸门评估，不改变实验状态。其他模块均为 `deferred`，不能解释为小Q已经能够调用整个系统。
