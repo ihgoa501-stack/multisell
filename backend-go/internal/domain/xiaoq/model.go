@@ -6,13 +6,14 @@ import (
 )
 
 const (
-	AgentID            = "xiao_q"
-	TargetDemandCase   = "demand_case"
-	TargetExperiment   = "experiment"
-	TargetSourcing1688 = "sourcing_1688"
-	TruthMock          = "mock"
-	TruthInferred      = "inferred"
-	MaxMessageRunes    = 2000
+	AgentID               = "xiao_q"
+	TargetDemandCase      = "demand_case"
+	TargetExperiment      = "experiment"
+	TargetBusinessClosure = "business_closure"
+	TargetSourcing1688    = "sourcing_1688"
+	TruthMock             = "mock"
+	TruthInferred         = "inferred"
+	MaxMessageRunes       = 2000
 )
 
 var (

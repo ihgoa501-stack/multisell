@@ -73,10 +73,17 @@ export interface XiaoQSourcing1688MessageRequest {
   source_id: number;
 }
 
+export interface XiaoQBusinessClosureMessageRequest {
+  message: string;
+  target_type: 'business_closure';
+  experiment_id: string;
+}
+
 export type XiaoQMessageRequest =
   | XiaoQDemandCaseMessageRequest
   | XiaoQExperimentMessageRequest
-  | XiaoQSourcing1688MessageRequest;
+  | XiaoQSourcing1688MessageRequest
+  | XiaoQBusinessClosureMessageRequest;
 
 export interface XiaoQMessageResponse {
   trace_id: string;
@@ -84,7 +91,7 @@ export interface XiaoQMessageResponse {
   answer: string;
   truth_status: XiaoQTruthStatus;
   mode: XiaoQMode;
-  target_type?: 'demand_case' | 'experiment' | 'sourcing_1688';
+  target_type?: 'demand_case' | 'experiment' | 'sourcing_1688' | 'business_closure';
   demand_case_id?: number;
   experiment_id?: string;
   source_id?: number;

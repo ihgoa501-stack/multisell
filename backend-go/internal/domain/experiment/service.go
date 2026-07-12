@@ -351,7 +351,7 @@ func (s *Service) validateProfitClosure(ctx context.Context, experimentID string
 	if err := s.db.WithContext(ctx).Table("settlement").Where("id = ?", settlementID).First(&st).Error; err != nil {
 		return nil, errors.New("linked settlement not found")
 	}
-	if (st.Status != "reconciled" && st.Status != "closed") || (st.SourceType != "platform_import" && st.SourceType != "api_sync") || st.ImportedAt == nil {
+	if !isTrustedSettlement(st.Status, st.SourceType, st.ImportedAt) {
 		return nil, errors.New("linked settlement is not trusted and reconciled")
 	}
 	var itemCount, unmatched int64
@@ -362,15 +362,12 @@ func (s *Service) validateProfitClosure(ctx context.Context, experimentID string
 	if err := q.Where("reconciliation_status <> ? OR reconciled_at IS NULL OR reconciled_by = ''", "matched").Count(&unmatched).Error; err != nil {
 		return nil, err
 	}
-	if itemCount == 0 || unmatched != 0 {
-		return nil, errors.New("linked settlement items are not fully reconciled")
-	}
 	var matched int64
 	if err := s.db.WithContext(ctx).Table("settlement_item AS si").Where("si.settlement_id = ? AND (si.order_id = ? OR si.order_no = (SELECT order_no FROM sales_order WHERE id = ?))", settlementID, orderID, orderID).Count(&matched).Error; err != nil {
 		return nil, err
 	}
-	if matched == 0 {
-		return nil, errors.New("settlement is not linked to the experiment order")
+	if !isFullyReconciledSettlement(itemCount, unmatched, matched) {
+		return nil, errors.New("linked settlement items are not fully reconciled or not linked to the experiment order")
 	}
 	var p struct {
 		ID, OrderID                int64
@@ -380,7 +377,7 @@ func (s *Service) validateProfitClosure(ctx context.Context, experimentID string
 	if err := s.db.WithContext(ctx).Table("order_profit_record").Where("id = ?", profitID).First(&p).Error; err != nil {
 		return nil, errors.New("linked profit record not found")
 	}
-	if p.OrderID != orderID || p.ProfitStatus != "final" || strings.TrimSpace(p.MissingCosts) != "" {
+	if !isFinalProfitForOrder(p.OrderID, orderID, p.ProfitStatus, p.MissingCosts) {
 		return nil, errors.New("linked profit record is not final for the experiment order")
 	}
 	return &profitClosure{Revenue: p.Revenue, TotalCost: p.TotalCost, Profit: p.Profit, Currency: st.Currency}, nil
