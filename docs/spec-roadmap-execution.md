@@ -1,5 +1,9 @@
 # Spec: Roadmap Execution — AI 决策质量平台 (#321)
 
+> status: `superseded / unconfirmed / not executable`
+> authority: 历史路线规格；年 GMV、团队规模、用户和周次均未获当前确认
+> current: [OCEAN_GOAL.md](OCEAN_GOAL.md)、[PRODUCT.md](PRODUCT.md)、[CURRENT.md](CURRENT.md)、[BACKLOG.md](BACKLOG.md)
+
 ## Objective
 
 一人跨境卖家（年 GMV 500-2000 万，1-3 人团队）的 AI 决策质量平台。

@@ -1,6 +1,6 @@
 # 凌镜 LingMirror — 文档索引
 
-> **方向确认规则**：当前没有可自动继承的最高产品方向。制定目标、预算或经营路线前必须先确认 Owner 的当前意图。[Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 已降级为 `superseded / unconfirmed` 历史提案。
+> **方向确认规则**：Owner 已确认“海洋目标 → 完整湖泊 → 持续推进直到达成”的建设方式和系统终点；具体市场、用户、商品、预算及经营参数仍须在对应湖泊确认。[Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) 仍是 `superseded / unconfirmed` 历史提案。
 
 > **带日期的事实快照**：可读 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) 核验证据边界；其中的产品方向和行动顺序不是当前授权。
 
@@ -13,17 +13,20 @@
 
 | 问题 | 唯一入口 |
 |---|---|
+| 凌镜最终要达到什么、怎样逐步达到？ | [海洋目标](OCEAN_GOAL.md) |
 | Owner 当前确认了什么产品方向？ | [产品方向](PRODUCT.md) |
 | 现在处于什么阶段、只做什么？ | [当前管理状态](CURRENT.md) |
 | NOW / NEXT / LATER / FROZEN 是什么？ | [任务池](BACKLOG.md) |
 | 当前代码与验证事实是什么？ | [项目状态](PROJECT_STATUS.md) |
 | 有哪些已知失败和风险？ | [已知问题](KNOWN_ISSUES.md) |
 | 非小型功能如何写任务卡？ | [功能任务模板](features/TEMPLATE.md) |
+| 当前第一片湖是什么？ | [系统可用性恢复](features/SYSTEM_USABILITY_LAKE.md)（`in_progress`） |
+| 三个月发布候选是什么？ | [跨境电商单品利润计算器发布提案](features/CROSS_BORDER_PROFIT_CALCULATOR_RELEASE_PROPOSAL.md)（`draft / unconfirmed`） |
 | 开发如何循环？ | [开发闭环](DEVELOPMENT_LOOP.md) |
 
 项目级 Codex Agent 定义位于 `.codex/agents/`：`researcher`、`implementer`、`reviewer` 和 `qa`。全局并发与嵌套限制位于 `.codex/config.toml`。
 
-产品方向、当前任务、工程事实和历史研究必须分开记录。历史文档即使含有“当前”“P0”或“唯一主线”，也不能覆盖以上入口。
+海洋目标、产品决定、当前任务、工程事实和历史研究必须分开记录。历史文档即使含有“当前”“P0”或“唯一主线”，也不能覆盖以上入口。
 
 ## 🚀 快速入门 (Quick Start)
 
@@ -69,12 +72,12 @@
 | [项目状态](PROJECT_STATUS.md) | 当前版本、验证状态、更新历史 |
 | [AI 无人公司长远战略愿景](LONG_TERM_VISION_AND_STRATEGY.md) | 🆕 系统终极形态：“全自动驾驶”无人公司操作系统的四道门槛与落地路线图 |
 | [模块目录](reference-module-catalog.md) | 🆕 模块、API 路由和前端页面唯一事实源 |
-| [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | 长期方向、阶段路线、Owner 控制规则和 Agent 提案检查表 |
-| [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | Day 1-7 完整开发计划，5 条并行线 |
+| [一人 Agent 公司长期作战地图](ONE_PERSON_AGENT_COMPANY_STRATEGY.md) | `historical vision / unconfirmed specifics`，仅作长期愿景参考 |
+| [7 天一人 Agent 公司 MVP 计划](7_DAY_AGENT_COMPANY_MVP_PLAN.md) | 历史 Day 1-7 开发计划，不是当前任务顺序 |
 | [每日战情板](7_DAY_BATTLE_BOARD.md) | 7 天每日进度追踪 |
 | [Agent Commerce OS 完整蓝图](LINGMIRROR_AGENT_COMMERCE_OS_BLUEPRINT.md) | 完整产品定位、系统分层、开发路径 |
-| [产品愿景与 MVP](PRODUCT_VISION_AND_MVP.md) | 产品定位、第一可用版本定义 |
-| [路线图](ROADMAP.md) | Phase 0–8 详细阶段规划 |
+| [历史产品愿景与 MVP](PRODUCT_VISION_AND_MVP.md) | `superseded / unconfirmed`，不是当前切入口 |
+| [历史 Owner 自用路线图](ROADMAP.md) | `superseded / unconfirmed`，不是当前路线；当前顺序见 `BACKLOG.md` |
 | [项目治理与 Agent 协作规范](PROJECT_GOVERNANCE_AND_AGENT_WORKFLOW.md) | 协作规则、验收标准 |
 | [Active Stack Policy](ACTIVE_STACK_POLICY.md) | Go + Next 活跃技术栈和旧栈边界 |
 | [AIOS 基础设施架构](aios-architecture.md) | AIOS 内核层 11 个基础设施模块的接口契约与实现路径 |

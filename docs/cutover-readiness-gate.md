@@ -1,9 +1,9 @@
 # 凌镜 LingMirror — 生产切流前置门禁（Cutover Readiness Gate）
 
-> 日期：2026-06-23 · 状态：**🟡 受控切流 / Conditional Ready**（部分工程项有进展，但生产切流门禁没有全部通过）
+> 日期：2026-06-23 · 状态：`historical engineering snapshot / production readiness unknown`
 > 2026-06-24 复核说明：本文保留为迁移切流历史记录。当前新栈质量状态以 `docs/PROJECT_STATUS.md`、`docs/TEST_SUMMARY.md` 和 `docs/FRONTEND_TEST_REPORT.md` 为准；当前 `frontend-next` lint 尚未通过，不能把本文的历史 Gate 结论当作最新质量门禁。
 >
-> 本文档保存在项目仓库中，作为生产环境受控切流决策的最终核验文件。
+> 本文档只用于追溯当时的迁移核验，不是当前生产切流授权，也不证明系统可用性湖或商业闭环完成。当前生产操作仅按 `docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md` 执行。
 
 ---
 

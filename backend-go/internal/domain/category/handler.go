@@ -15,6 +15,14 @@ type Handler struct {
 	service *Service
 }
 
+type updateCategoryInput struct {
+	Name      *string `json:"name"`
+	ParentID  *int64  `json:"parent_id"`
+	Level     *int    `json:"level"`
+	SortOrder *int    `json:"sort_order"`
+	Status    *int16  `json:"status"`
+}
+
 // NewHandler creates a new category handler.
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
@@ -83,14 +91,38 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	var cat Category
-	if err := c.ShouldBindJSON(&cat); err != nil {
+	cat, err := h.service.GetByID(c.Request.Context(), id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			response.Error(c, http.StatusNotFound, "category not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, "failed to get category: "+err.Error())
+		return
+	}
+
+	var input updateCategoryInput
+	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-	cat.ID = id
+	if input.Name != nil {
+		cat.Name = *input.Name
+	}
+	if input.ParentID != nil {
+		cat.ParentID = *input.ParentID
+	}
+	if input.Level != nil {
+		cat.Level = *input.Level
+	}
+	if input.SortOrder != nil {
+		cat.SortOrder = *input.SortOrder
+	}
+	if input.Status != nil {
+		cat.Status = *input.Status
+	}
 
-	if err := h.service.Update(c.Request.Context(), &cat); err != nil {
+	if err := h.service.Update(c.Request.Context(), cat); err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to update category: "+err.Error())
 		return
 	}

@@ -42,10 +42,10 @@ export default function AppSidebar() {
     fetchPermissions();
 
     // Register the 403 handler: when the backend returns 403, re-fetch permissions.
-    ApiClient.setForbiddenHandler(() => {
+    ApiClient.setForbiddenHandler(async () => {
       const { clearPermissions, fetchPermissions } = usePermissionStore.getState();
       clearPermissions();
-      fetchPermissions();
+      await fetchPermissions();
     });
 
     return () => {

@@ -1,8 +1,11 @@
-# 凌镜 Owner 自用开发路线
+# 凌镜历史 Owner 自用开发路线
 
 > 更新时间：2026-07-11
-> 当前阶段：Sprint 1，候选市场与独立反证闭环
-> 产品边界：[SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md)
+> status: `superseded / unconfirmed`
+> authority: 历史路线，不是当前任务或产品授权
+> 当前入口：[OCEAN_GOAL.md](OCEAN_GOAL.md)、[CURRENT.md](CURRENT.md)、[BACKLOG.md](BACKLOG.md)
+
+> 下文保留 2026-07-11 当时的 Owner 自用需求发现路线用于追溯。固定市场漏斗、实验数量、预算和 Sprint 顺序未经当前重新确认，不得自动执行。
 
 ## 路线目标
 

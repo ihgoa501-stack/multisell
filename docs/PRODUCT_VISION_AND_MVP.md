@@ -5,6 +5,10 @@
 
 更新时间：2026-07-06
 
+> status: `superseded / unconfirmed`
+> authority: 历史产品愿景，不是当前切入口或开发授权；当前入口见 [OCEAN_GOAL.md](OCEAN_GOAL.md)、[PRODUCT.md](PRODUCT.md) 和 [CURRENT.md](CURRENT.md)
+> 下文 Copilot/Autopilot、外部目标用户和“上架前决策”切入口均须在对应湖泊重新确认。
+
 > **定位更新：短期 Copilot，长期 Autopilot**
 >
 > 凌镜当前定位是 **AI 辅助经营决策平台（Copilot）**——Agent 给出建议，人类做最终决策和审批。

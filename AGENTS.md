@@ -12,15 +12,17 @@ This repository is indexed by CodeGraph (`.codegraph/` exists at the repo root).
 
 ## Project
 
-### Owner Direction Must Be Confirmed
+### Owner-Confirmed Ocean Goal
 
-仓库目前没有一份已经由 Owner 在当前对话中确认、可以自动继承的最高产品方向。制定系统大目标、商业方向、资金预算、目标用户或经营主线前，必须先询问并记录 Owner 的当前意图；不得仅因历史文档日期较新或写有“当前”“生效”字样，就把它当作 Owner 现行决定。
+Owner 已于 2026-07-11 确认“海洋目标 → 完整湖泊 → 持续推进直到达成”的建设方式。当前海洋目标、完成条件和第一片湖的唯一入口是 `docs/OCEAN_GOAL.md`。当前管理状态和任务顺序分别以 `docs/CURRENT.md` 与 `docs/BACKLOG.md` 为准。
+
+海洋目标的确认不等于具体市场、用户、商品、预算或渠道已经确认。这些字段仍以 `docs/PRODUCT.md` 为准；未知项不得从历史文档、现有模块或较新的日期推断。
 
 `docs/SELF_USE_OPERATING_DIRECTION.md` 是 2026-07-11 的历史提案，状态为 `superseded / unconfirmed`。其中的 Owner 自用定位、跨市场实验主线、3,000 CNY 总预算、1,200 CNY 损失线及其他范围约束均不得自动用于规划、开发或结果判断。它只能作为历史背景，除非 Owner 再次逐项确认。
 
 开始非平凡研究、规划、开发、审查、QA 或发布前，仍应阅读 `docs/research/project-truth-audit-2026-07-11.md`，但只能把它当作带日期的仓库证据快照，不能把其中的产品方向和行动顺序当成当前授权。审计中的证据等级规则仍适用：不得把模块存在、测试通过、页面可见或多个 Agent 意见一致写成真实市场、真实成交、生产可用或最终利润已经成立。代码或真实经营状态变化后，应重新核验并生成新的带日期审计，不能静默覆盖证据限制。
 
-在 Owner 确认新方向前，不主动扩大产品范围或执行高成本、不可逆的外部动作。下文关于候选市场、经营实验和平台连接器的内容用于描述现有代码、证据边界与安全规则，不构成当前产品方向或继续建设授权。
+当前湖泊内必要的实现、测试、错误处理、安全和恢复边界应完整完成；与当前湖无关的平台、产品、Agent 或商业化扩张不自动进入范围。高成本、不可逆外部动作和具体经营方向仍由 Owner 决定。下文关于候选市场、经营实验和平台连接器的内容用于描述现有代码、证据边界与安全规则，不构成这些具体方向的授权。
 
 生产服务器初始化、SSH、部署、恢复、测试和回滚只有一个可执行入口：`docs/ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md`。
 
@@ -218,6 +220,7 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 ## Documentation
 
 - `CLAUDE.md` — Claude Code guidance (keep consistent).
+- `docs/OCEAN_GOAL.md` — Owner 已确认的建设终点、湖泊规则和完成判定唯一入口。
 - `docs/PRODUCT.md` — Owner 已确认产品方向的唯一入口；未确认字段必须保持 `unknown`。
 - `docs/CURRENT.md` / `docs/BACKLOG.md` — 当前管理状态和任务顺序；`NOW` 最多一项。
 - `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.

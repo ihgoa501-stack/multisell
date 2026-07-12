@@ -1,6 +1,12 @@
 # CLAUDE.md
 
-> **方向确认规则**：仓库没有可自动继承的当前最高产品方向。制定系统目标、商业方向、预算或经营主线前，必须先确认 Owner 的当前意图。`docs/SELF_USE_OPERATING_DIRECTION.md` 是 `superseded / unconfirmed` 的历史提案，不得自动采用其中的自用定位、3,000 CNY 预算、1,200 CNY 损失线或跨市场实验路线。
+> **海洋目标规则**：Owner 已于 2026-07-11 确认“海洋目标 → 完整湖泊 → 持续推进直到达成”的建设方式。唯一入口是 `docs/OCEAN_GOAL.md`。
+>
+> 当前状态见 `docs/CURRENT.md`。
+>
+> 当前顺序见 `docs/BACKLOG.md`。
+>
+> 具体市场、用户、商品、预算或经营路线仍须在对应湖泊确认。`docs/SELF_USE_OPERATING_DIRECTION.md` 是 `superseded / unconfirmed` 的历史提案，不得自动采用其中的自用定位、3,000 CNY 预算、1,200 CNY 损失线或跨市场实验路线。
 
 开始非平凡工作前必须阅读 `docs/research/project-truth-audit-2026-07-11.md`。该审计只是带日期的仓库证据快照，不是当前产品方向或行动授权；模块存在、测试通过、页面可见、mock 或 Agent 共识均不得升级为真实经营事实。代码或现实状态变化时必须重新核验，而不是沿用旧完成声明。
 
@@ -286,6 +292,7 @@ cd frontend-next/e2e && npx playwright test
 ## Documentation
 
 - `AGENTS.md` — canonical cross-agent project instructions. **Read the "Project Medical Record" section first — it lists known issues, what was fixed, and project rules.**
+- `docs/OCEAN_GOAL.md` — Owner-confirmed ocean goal, lake rules, completion evidence, and current first lake.
 - `docs/PRODUCT.md` — only source for Owner-confirmed product direction; keep unknowns explicit.
 - `docs/CURRENT.md` / `docs/BACKLOG.md` — current management state and work order; `NOW` may contain at most one task.
 - `docs/governance/` — Owner-first and platform-first multi-Agent governance rules.

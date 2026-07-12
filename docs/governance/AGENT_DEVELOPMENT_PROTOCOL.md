@@ -135,12 +135,13 @@ For low-risk documentation changes, this may be brief. For high-risk work, it mu
 
 Agents must:
 
-- Modify only files needed for the task.
+- Modify only files needed for the current lake.
 - Read a file before editing it.
 - Preserve unrelated dirty work.
 - Avoid broad formatting churn.
 - Avoid opportunistic refactors.
-- Stop when the requested outcome is achieved.
+- Complete the selected lake's necessary implementation, tests, primary error paths, safety, and recovery boundaries before calling it done.
+- Stop when the lake's acceptance outcome is achieved, then record the next lake rather than silently expanding into it.
 
 If an unrelated issue is discovered, report it as follow-up instead of fixing it silently.
 

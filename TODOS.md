@@ -1,7 +1,8 @@
 # TODOs
 
-> Current direction: Owner 自用真实付费需求发现循环。
-> Source of truth: `docs/SELF_USE_OPERATING_DIRECTION.md`。
+> status: `superseded / unconfirmed`
+> authority: 历史任务记录，不是当前 backlog；当前唯一任务顺序见 `docs/BACKLOG.md`
+> 下文 Owner 自用付费需求循环、3,000 CNY 预算和 1,200 CNY 损失线均来自未确认历史提案，不得自动执行。
 
 ## P0 — 需求案件与证据裁决
 

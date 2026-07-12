@@ -1,6 +1,6 @@
-# LingMirror — Owner 自用真实付费需求验证系统
+# LingMirror — 跨境电商 AI AgentOS
 
-> 技术项目名暂保留 `MultiSell`；当前只服务 Owner 本人的真实跨境经营，不面向外部客户。
+> 技术项目名暂保留 `MultiSell`。当前建设终点与湖泊规则见 [海洋目标](docs/OCEAN_GOAL.md)；具体市场、用户、商品、预算与商业形态仍待对应湖泊确认。
 
 凌镜现在以新技术栈为唯一活跃开发目标：
 
@@ -15,12 +15,11 @@
 
 完整条款见 [LICENSE](LICENSE)。第三方依赖仍按其各自许可证执行。
 
-## 核心定位
+## 当前建设目标
 
-**真实数据 → 需求假设 → 独立反证 → Owner 批准的最小实验 → 陌生客户付款与签收 → 售后闭合后的正贡献利润。**
+**先恢复 Owner 可实际使用的系统，再逐片完成可信、可控、可恢复的跨境经营闭环，直到真实结果能够进入下一轮决策。**
 
-当前执行方向见 [docs/CURRENT_DIRECTION_AND_PRIORITIES.md](docs/CURRENT_DIRECTION_AND_PRIORITIES.md)。
-完整经营边界见 [docs/SELF_USE_OPERATING_DIRECTION.md](docs/SELF_USE_OPERATING_DIRECTION.md)。当前没有选定目标客户、市场、类目或商品；Ozon、Shopee 和 Shopify 都只是待实证数据源。短期唯一目标是发现或证伪一个可核查的真实付费需求。
+当前执行状态见 [docs/CURRENT.md](docs/CURRENT.md)，任务顺序见 [docs/BACKLOG.md](docs/BACKLOG.md)，产品决定与未知见 [docs/PRODUCT.md](docs/PRODUCT.md)。旧的 Owner 自用需求发现路线和固定预算均为历史提案，不能自动继承。
 
 ## 功能模块
 
@@ -113,7 +112,9 @@ npm run lint
 ### 📖 参考
 | 文档 | 用途 |
 |------|------|
-| [当前方向与优先级](docs/CURRENT_DIRECTION_AND_PRIORITIES.md) | 当前产品方向、AgentOS 安全优先级、下一阶段建议 |
+| [海洋目标](docs/OCEAN_GOAL.md) | 当前建设终点、湖泊规则和完成判定 |
+| [当前管理状态](docs/CURRENT.md) | 当前唯一工作和停止条件 |
+| [历史方向与优先级](docs/CURRENT_DIRECTION_AND_PRIORITIES.md) | `superseded / unconfirmed` 历史提案 |
 | [API 快速参考](docs/reference-api-quick.md) | 路由、认证、响应格式、中间件栈速查 |
 | [模块目录](docs/reference-module-catalog.md) | 全部 60+ 后端领域模块一览 |
 | [配置参考](docs/reference-configuration.md) | config.yaml + 环境变量完整说明 |

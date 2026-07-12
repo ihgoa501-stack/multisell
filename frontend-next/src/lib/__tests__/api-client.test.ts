@@ -286,4 +286,27 @@ describe('ApiClient', () => {
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
+
+  it('does not recursively invoke the forbidden handler for a nested 403', async () => {
+    let nestedRequestStarted = false;
+    const handler = vi.fn(async () => {
+      if (!nestedRequestStarted) {
+        nestedRequestStarted = true;
+        await client.get('/v1/rbac/current/permissions').catch(() => undefined);
+      }
+    });
+    ApiClient.setForbiddenHandler(handler);
+
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      json: () => Promise.resolve({ code: 403, message: 'Forbidden' }),
+    });
+
+    await expect(client.get('/v1/skus')).rejects.toThrow();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 });
