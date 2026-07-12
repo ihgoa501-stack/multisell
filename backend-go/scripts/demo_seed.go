@@ -10,6 +10,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -585,15 +586,16 @@ func seedProductLoopData(db *gorm.DB, supplierID int64) error {
 		// Create listing_task in blocked state (pre-approval)
 		_ = db.Where("source_item_key = ?", fmt.Sprintf("candidate:%d", prod.ID)).Delete(&listingtask.ListingTask{})
 		lTask := listingtask.ListingTask{
-			ProductID:          prod.ID,
-			PlatformID:         1,
-			SourceType:         "decision",
-			SourceItemKey:      fmt.Sprintf("candidate:%d", prod.ID),
-			Status:             "blocked",
-			DestinationCountry: "US",
-			TargetSalePrice:    float64Ptr(19.99),
-			TargetProfitMargin: float64Ptr(47.62),
-			CreatedBy:          "seed",
+			ProductID:           prod.ID,
+			PlatformID:          1,
+			SourceType:          "decision",
+			SourceItemKey:       fmt.Sprintf("candidate:%d", prod.ID),
+			Status:              "blocked",
+			MissingRequirements: json.RawMessage("[]"),
+			DestinationCountry:  "US",
+			TargetSalePrice:     float64Ptr(19.99),
+			TargetProfitMargin:  float64Ptr(47.62),
+			CreatedBy:           "seed",
 		}
 		if err := db.Create(&lTask).Error; err != nil {
 			return fmt.Errorf("scenario5 listing task: %w", err)
