@@ -10,8 +10,8 @@ function trustedLoginOrigin(origin: string): boolean {
   try {
     const url = new URL(origin);
     if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-    if (url.hostname === "localhost" && url.port === "3000") return true;
-	return url.protocol === "https:" && (url.hostname === "lingmirror.com" || url.hostname === "owner.lingmirror.com");
+    if ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && url.port === "3000") return true;
+    return url.protocol === "https:" && (url.hostname === "lingmirror.com" || url.hostname === "owner.lingmirror.com" || url.hostname === "118.196.42.156");
   } catch {
     return false;
   }

@@ -8,12 +8,18 @@ test('manifest is limited to the Owner 1688 private collection scope', async () 
   assert.equal(manifest.version, '0.2.0');
   assert.deepEqual(manifest.permissions, ['storage', 'activeTab', 'alarms']);
   assert.ok(manifest.host_permissions.includes('https://detail.1688.com/*'));
-  assert.ok(manifest.host_permissions.includes('https://*.1688.com/*'));
-  assert.equal(manifest.host_permissions.some((value) => (value.includes('*.') && value !== 'https://*.1688.com/*') || value === '<all_urls>'), false);
+  assert.ok(manifest.host_permissions.includes('https://www.1688.com/*'));
+  assert.ok(manifest.host_permissions.includes('https://s.1688.com/*'));
+  assert.ok(manifest.host_permissions.includes('https://118.196.42.156/*'));
+  assert.equal(manifest.host_permissions.some((value) => value.includes('*.') || value === '<all_urls>'), false);
   assert.equal(manifest.host_permissions.some((value) => value.includes('ozon') || value.includes('taobao')), false);
   const listScriptEntry = manifest.content_scripts.find((entry) => entry.js.includes('build/content-script-list.js'));
   assert.ok(listScriptEntry);
-  assert.deepEqual(listScriptEntry.matches, ['https://www.1688.com/*', 'https://s.1688.com/*', 'https://*.1688.com/*']);
+  assert.deepEqual(listScriptEntry.matches, ['https://www.1688.com/*', 'https://s.1688.com/*']);
+
+  const authEntry = manifest.content_scripts.find((entry) => entry.js.includes('build/auth-bridge.js'));
+  assert.ok(authEntry.matches.includes('http://127.0.0.1:3000/settings/plugin*'));
+  assert.ok(authEntry.matches.includes('https://118.196.42.156/settings/plugin*'));
   assert.deepEqual(
     manifest.content_scripts.flatMap((entry) => entry.matches).filter((value) => value.includes('lingmirror')),
     ['https://lingmirror.com/settings/plugin*', 'https://owner.lingmirror.com/settings/plugin*'],

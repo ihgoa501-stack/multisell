@@ -21,6 +21,13 @@ test('production extension login preserves the configured origin', () => {
   );
 });
 
+test('current owner IP login targets its paired settings page', () => {
+  assert.equal(
+    getLoginUrl('wss://118.196.42.156'),
+    'https://118.196.42.156/settings/plugin',
+  );
+});
+
 test('expired session access token is refreshed from the paired device instead of appearing connected', async () => {
   const expired = unsignedToken({ type: 'extension_access', exp: Math.floor(Date.now() / 1000) - 10 });
   const refreshed = unsignedToken({ type: 'extension_access', exp: Math.floor(Date.now() / 1000) + 900 });

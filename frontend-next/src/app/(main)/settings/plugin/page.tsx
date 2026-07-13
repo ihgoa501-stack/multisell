@@ -38,7 +38,7 @@ export default function ExtensionPairingPage() {
   const environment = useMemo(currentEnvironment, []);
 
   const loadDevices = async () => {
-    const result = await apiClient.get<Device[]>('/auth/extension-devices');
+    const result = await apiClient.get<Device[]>('/v1/auth/extension-devices');
     setDevices(result.data ?? []);
   };
 
@@ -49,10 +49,10 @@ export default function ExtensionPairingPage() {
       if (event.source !== window || event.origin !== window.location.origin || !activePairing) return;
       if (event.data?.source !== 'lingmirror-extension') return;
       if (event.data.type === 'LINGMIRROR_EXTENSION_PAIRING_RESULT') {
-        if (!event.data.ok) { message.error(event.data.error || '插件没有接受配对'); return; }
-		const result = await apiClient.get<Omit<Pairing, 'nonce' | 'environment'>>(`/auth/extension-pairings/${activePairing.pairing_id}`);
-		const next = { ...activePairing, ...(result.data ?? {}) };
-		pairingRef.current = next; setPairing(next);
+        if (!event.data.ok) { setBusy(false); message.error(event.data.error || '插件没有接受配对'); return; }
+        const result = await apiClient.get<Omit<Pairing, 'nonce' | 'environment'>>(`/v1/auth/extension-pairings/${activePairing.pairing_id}`);
+        const next = { ...activePairing, ...(result.data ?? {}) };
+        pairingRef.current = next; setPairing(next); setBusy(false);
       }
       if (event.data.type === 'LINGMIRROR_EXTENSION_PAIRING_FINISHED') {
         setBusy(false);
@@ -67,7 +67,7 @@ export default function ExtensionPairingPage() {
   const beginPairing = async () => {
     setBusy(true);
     try {
-      const result = await apiClient.post<Pairing>('/auth/extension-pairings', { environment });
+      const result = await apiClient.post<Pairing>('/v1/auth/extension-pairings', { environment });
       if (!result.data?.nonce) throw new Error('服务端没有返回一次性配对码');
 	  pairingRef.current = result.data;
       setPairing(result.data);
@@ -81,13 +81,13 @@ export default function ExtensionPairingPage() {
     if (!pairing) return;
     setBusy(true);
     try {
-      await apiClient.post(`/auth/extension-pairings/${pairing.pairing_id}/confirm`, {});
+      await apiClient.post(`/v1/auth/extension-pairings/${pairing.pairing_id}/confirm`, {});
 	  window.postMessage({ source: 'lingmirror-web', type: 'LINGMIRROR_EXTENSION_PAIRING_CONFIRMED', nonce: pairing.nonce, environment: pairing.environment }, window.location.origin);
     } catch (error) { setBusy(false); message.error(error instanceof Error ? error.message : '确认失败'); }
   };
 
   const revoke = async (deviceID: string) => {
-    await apiClient.delete(`/auth/extension-devices/${encodeURIComponent(deviceID)}`);
+    await apiClient.delete(`/v1/auth/extension-devices/${encodeURIComponent(deviceID)}`);
     message.success('已断开此浏览器'); await loadDevices();
   };
 
