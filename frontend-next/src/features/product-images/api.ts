@@ -108,8 +108,8 @@ export async function createCandidateFeedback(taskId: number, input: CandidateFe
   return result.data;
 }
 
-export async function getRecipeSummary(recipeKey: string): Promise<RecipeSummary> {
-  const result = await apiClient.get<RecipeSummary>(`${ROOT}/recipes/${encodeURIComponent(recipeKey)}/summary`);
+export async function getRecipeSummary(recipeKey: string, skuId: number): Promise<RecipeSummary> {
+	const result = await apiClient.get<RecipeSummary>(`${ROOT}/recipes/${encodeURIComponent(recipeKey)}/summary`, { sku_id: String(skuId) });
   if (!result.data) throw new Error('作图配方统计接口没有返回数据');
   return result.data;
 }

@@ -60,10 +60,10 @@ describe('product images API', () => {
     vi.mocked(apiClient.get).mockResolvedValue({ code: 0, message: 'ok', data: summary });
     await expect(listSKUOptions()).resolves.toEqual([sku]);
     await expect(createCandidateFeedback(7, feedback)).resolves.toEqual(feedback);
-    await expect(getRecipeSummary('recipe-1')).resolves.toEqual(summary);
+		await expect(getRecipeSummary('recipe-1', 5)).resolves.toEqual(summary);
     expect(apiClient.getPage).toHaveBeenCalledWith('/v1/skus', { page: '1', size: '100' });
     expect(apiClient.post).toHaveBeenCalledWith('/v1/product-images/tasks/7/feedback', feedback);
-    expect(apiClient.get).toHaveBeenCalledWith('/v1/product-images/recipes/recipe-1/summary');
+		expect(apiClient.get).toHaveBeenCalledWith('/v1/product-images/recipes/recipe-1/summary', { sku_id: '5' });
   });
 
   it('uploads manual import bytes with immutable provenance and lists them', async () => {

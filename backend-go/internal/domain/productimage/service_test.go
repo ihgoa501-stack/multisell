@@ -235,7 +235,10 @@ func TestCandidateFeedbackAndRecipeSummary(t *testing.T) {
 	if err := svc.db.Create(&CostEntry{OwnerID: 11, TaskID: tasks[0].ID, Kind: "actual", Category: "provider", Provider: "deterministic", Amount: "1.25", Currency: "USD", ExchangeRate: "1", ExchangeRateSource: "test", ObservedAt: now, BillingStatus: "paid", IdempotencyKey: "summary-cost", RequestHash: strings.Repeat("9", 64), ExpectedTaskVersion: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
-	summary, err := svc.RecipeSummary(t.Context(), 11, "summary-recipe")
+	if err := svc.db.Create(&Task{OwnerID: 11, AssetID: 1, SKUID: 2, RecipeKey: "summary-recipe", RecipeVersion: 1, RecipeManifest: json.RawMessage(`{}`), RecipeHash: strings.Repeat("8", 64), CandidateRound: 1, IdempotencyKey: "summary-other-sku", ManifestHash: strings.Repeat("7", 64), Operation: "DETERMINISTIC_RESIZE", Processor: "deterministic", Purpose: "scene_gallery", Channel: "ozon", Region: "local", Version: 1, Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("6", 64), CreatedAt: now.Add(-time.Minute), UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := svc.RecipeSummary(t.Context(), 11, 1, "summary-recipe")
 	if err != nil {
 		t.Fatal(err)
 	}
