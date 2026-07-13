@@ -384,3 +384,11 @@ standard	POST	/api/v1/workflows	-	backend-go/internal/domain/workflow/routes.go
 high	POST	/api/v1/workflows/runs/:id/approve	agent_approve	backend-go/internal/domain/workflow/routes.go
 high	POST	/api/v1/workflows/runs/:id/reject	agent_approve	backend-go/internal/domain/workflow/routes.go
 standard	POST	/api/v1/xiao-q/messages	-	backend-go/internal/domain/xiaoq/routes.go
+public	POST	/api/v1/auth/extension-devices/refresh	-	backend-go/internal/auth/routes.go
+high	DELETE	/api/v1/auth/extension-devices/:deviceId	permission_change	backend-go/internal/auth/routes.go
+standard	POST	/api/v1/auth/extension-pairings	-	backend-go/internal/auth/routes.go
+standard	POST	/api/v1/auth/extension-pairings/:pairingId/confirm	-	backend-go/internal/auth/routes.go
+public	POST	/api/v1/auth/extension-pairings/claim	-	backend-go/internal/auth/routes.go
+public	POST	/api/v1/auth/extension-pairings/exchange	-	backend-go/internal/auth/routes.go
+standard	POST	/api/v1/extension/sourcing-1688/private-collections/failures	-	backend-go/internal/domain/sourcing1688/routes.go
+standard	POST	/api/v1/extension/sourcing-1688/private-collections	-	backend-go/internal/domain/sourcing1688/routes.go

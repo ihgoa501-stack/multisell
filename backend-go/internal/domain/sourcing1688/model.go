@@ -7,6 +7,7 @@ import (
 
 const (
 	CaptureModeControlledFetch = "controlled_fetch"
+	CaptureModeExtensionClick  = "extension_click"
 	CaptureModeManualImport    = "manual_import"
 	CaptureModeLegacyUnknown   = "legacy_unknown"
 )
@@ -15,8 +16,9 @@ const (
 // Column definitions match migration 000001_init_schema.up.sql.
 type Sourcing1688Product struct {
 	ID                       int64            `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	SourceURL                string           `gorm:"column:source_url;uniqueIndex;not null" json:"source_url"`
-	SourceOfferID            string           `gorm:"column:source_offer_id" json:"source_offer_id,omitempty"`
+	OwnerID                  int64            `gorm:"column:owner_id;index;uniqueIndex:ux_sourcing_owner_offer,priority:1,where:source_offer_id <> ''" json:"owner_id"`
+	SourceURL                string           `gorm:"column:source_url;not null" json:"source_url"`
+	SourceOfferID            string           `gorm:"column:source_offer_id;uniqueIndex:ux_sourcing_owner_offer,priority:2,where:source_offer_id <> ''" json:"source_offer_id,omitempty"`
 	SourceProductFingerprint string           `gorm:"column:source_product_fingerprint" json:"source_product_fingerprint,omitempty"`
 	SupplierBusinessID       string           `gorm:"column:supplier_business_id" json:"supplier_business_id,omitempty"`
 	Title                    *string          `gorm:"column:title" json:"title,omitempty"`
@@ -58,16 +60,20 @@ type Sourcing1688Product struct {
 // for an Owner decision. Normal update flows never modify snapshot rows.
 type Sourcing1688Snapshot struct {
 	ID                         int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	SourcingProductID          int64           `gorm:"column:sourcing_product_id;not null;uniqueIndex:ux_sourcing_snapshot_hash" json:"sourcing_product_id"`
+	SourcingProductID          int64           `gorm:"column:sourcing_product_id;not null;index:idx_sourcing_snapshot_hash,priority:1" json:"sourcing_product_id"`
 	SourceURL                  string          `gorm:"column:source_url;not null" json:"source_url"`
 	CollectedAt                time.Time       `gorm:"column:collected_at;not null" json:"collected_at"`
 	CollectedBy                int64           `gorm:"column:collected_by;not null" json:"collected_by"`
 	Driver                     string          `gorm:"column:driver;not null" json:"driver"`
 	ParserVersion              string          `gorm:"column:parser_version;not null" json:"parser_version"`
+	ExtensionVersion           string          `gorm:"column:extension_version;not null;default:''" json:"extension_version"`
+	SchemaVersion              string          `gorm:"column:schema_version;not null;default:''" json:"schema_version"`
 	CaptureMode                string          `gorm:"column:capture_mode;not null;default:legacy_unknown" json:"capture_mode"`
 	CollectionRequestID        string          `gorm:"column:collection_request_id;size:80;not null;default:''" json:"collection_request_id"`
 	RawPayload                 json.RawMessage `gorm:"column:raw_payload;type:bytea;not null" json:"raw_payload"`
-	RawSHA256                  string          `gorm:"column:raw_sha256;size:64;not null;uniqueIndex:ux_sourcing_snapshot_hash" json:"raw_sha256"`
+	RawSHA256                  string          `gorm:"column:raw_sha256;size:64;not null;index:idx_sourcing_snapshot_hash,priority:2" json:"raw_sha256"`
+	StructuredDataSHA256       string          `gorm:"column:structured_data_sha256;size:64;not null;default:''" json:"structured_data_sha256"`
+	RequestEnvelopeSHA256      string          `gorm:"column:request_envelope_sha256;size:64;not null;default:''" json:"request_envelope_sha256"`
 	ObservedTitle              *string         `gorm:"column:observed_title" json:"observed_title,omitempty"`
 	ObservedPrice              *float64        `gorm:"column:observed_price" json:"observed_price,omitempty"`
 	ObservedMOQ                int             `gorm:"column:observed_moq" json:"observed_moq"`

@@ -5,8 +5,9 @@
  * allows manual triggering of product data extraction on the current tab.
  */
 
-import { getJWT, clearJWT, getServerUrl, setServerUrl, getLoginUrl } from "./shared/auth.js";
-import type { ContentScriptFetchRequest, ContentScriptFetchResult, StatusResponse } from "./shared/protocol.js";
+import { getJWT, getServerUrl, setServerUrl, getLoginUrl } from "./shared/auth.js";
+import type { CollectionRecoveryUpdate, ContentScriptFetchRequest, ContentScriptFetchResult, StatusResponse } from "./shared/protocol.js";
+import { describeCollectionRecovery, type CollectionReconciliationResult } from "./shared/private-collection.js";
 
 // ─── DOM references ────────────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ const loginBtn = document.getElementById("loginBtn") as HTMLButtonElement;
 const resultCard = document.getElementById("resultCard") as HTMLDivElement;
 const resultContent = document.getElementById("resultContent") as HTMLPreElement;
 const settingsLink = document.getElementById("settingsLink") as HTMLAnchorElement;
+const boxBtn = document.getElementById("boxBtn") as HTMLButtonElement;
 
 // ─── State ─────────────────────────────────────────────────────────────────
 
@@ -57,11 +59,31 @@ function updateStatus(
       loginBtn.title = "";
       break;
   }
+
+  boxBtn.style.display = status === "connected" ? "flex" : "none";
 }
 
 function showResult(payload: Record<string, unknown>): void {
   resultCard.classList.add("visible");
 
+  if (payload.status === "saved" && payload.recordId) {
+    resultContent.className = "";
+    resultContent.textContent =
+      `已保存到凌镜私人采集箱\n` +
+      `记录编号：#${payload.recordId}\n` +
+      `可以关闭插件并继续浏览`;
+    return;
+  }
+  if (payload.status === "not_saved") {
+    resultContent.className = "error-text";
+    resultContent.textContent = describeCollectionRecovery(payload as unknown as CollectionReconciliationResult);
+    return;
+  }
+  if (payload.status === "reconcile_required") {
+    resultContent.className = "error-text";
+    resultContent.textContent = describeCollectionRecovery(payload as unknown as CollectionReconciliationResult);
+    return;
+  }
   if (payload.status === "ok" && payload.data) {
     const data = payload.data as Record<string, unknown>;
     // Show a compact summary
@@ -114,19 +136,13 @@ async function handleFetch(): Promise<void> {
       return;
     }
 
-    // Send fetch request to content script
-    const fetchReq: ContentScriptFetchRequest = {
-      type: "fetch_product_from_page",
-      requestId: "popup_" + Date.now(),
-    };
+    const response = await chrome.tabs.sendMessage(tab.id, { type: "collect_private_product_from_page" });
+    const result = response as { type?: string; payload?: Record<string, unknown> };
 
-    const response = await chrome.tabs.sendMessage(tab.id, fetchReq);
-    const result = response as ContentScriptFetchResult;
-
-    if (result.type === "fetch_product_from_page_result") {
-      showResult(result.payload as any);
+    if (result.type === "private_collection_result" && result.payload) {
+      showResult(result.payload);
     } else {
-      showResult({ code: "UNEXPECTED", message: "Unexpected response from content script" } as any);
+      showResult({ code: "UNEXPECTED", message: "页面没有返回保存结果，本次不能视为已保存" } as any);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -166,13 +182,9 @@ async function handleLogin(): Promise<void> {
     }
   }
 
-  // Open login page — user will copy JWT from there
+  // Open the Owner-confirmed browser pairing page. No JWT is copied.
   const loginUrl = getLoginUrl(await getServerUrl());
-  chrome.tabs.create({ url: loginUrl }, () => {
-    // After opening login, listen for JWT from the page
-    // (In production, use chrome.identity.launchWebAuthFlow or
-    //  a content script on lingmirror.com to intercept the JWT)
-  });
+  chrome.tabs.create({ url: loginUrl });
 }
 
 /** Show settings prompt. */
@@ -195,12 +207,27 @@ async function handleSettings(): Promise<void> {
   }
 }
 
+/** Open my sourcing box page. */
+async function handleOpenBox(): Promise<void> {
+  const serverUrl = await getServerUrl();
+  const loginUrl = getLoginUrl(serverUrl);
+  try {
+    const url = new URL(loginUrl);
+    url.pathname = "/sourcing1688";
+    chrome.tabs.create({ url: url.toString() });
+  } catch {
+    const httpUrl = loginUrl.replace("/settings/plugin", "/sourcing1688");
+    chrome.tabs.create({ url: httpUrl });
+  }
+}
+
 // ─── Listen for status updates from background ────────────────────────────
 
-chrome.runtime.onMessage.addListener((message: StatusResponse) => {
+chrome.runtime.onMessage.addListener((message: StatusResponse | CollectionRecoveryUpdate) => {
   if (message.type === "connection_status") {
     updateStatus(message.status);
   }
+  if (message.type === "collection_recovery_update") showResult(message.payload);
 });
 
 // ─── Initial state check ───────────────────────────────────────────────────
@@ -217,7 +244,16 @@ async function init(): Promise<void> {
   const token = await getJWT();
   if (!token) {
     updateStatus("no_token");
+	} else {
+	  // getJWT may have restored the device token after the background's first
+	  // startup attempt; explicitly resume every uncertain request now.
+	  void chrome.runtime.sendMessage({ type: "reconcile_pending_collections" });
   }
+
+  const recovery = (await chrome.storage.local.get(["lastCollectionRecovery"])).lastCollectionRecovery as
+    | Record<string, unknown>
+    | undefined;
+  if (recovery?.status) showResult(recovery);
 }
 
 // ─── Wire up event listeners ───────────────────────────────────────────────
@@ -225,6 +261,7 @@ async function init(): Promise<void> {
 fetchBtn.addEventListener("click", handleFetch);
 loginBtn.addEventListener("click", handleLogin);
 settingsLink.addEventListener("click", handleSettings);
+boxBtn.addEventListener("click", handleOpenBox);
 
 // Run init
 init();

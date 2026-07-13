@@ -1,10 +1,10 @@
 {
   "name": "lingmirror-sourcing-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "UNLICENSED",
   "private": true,
-  "description": "LingMirror Owner-only AI sourcing extension — collect Ozon and supplier evidence",
+  "description": "LingMirror Owner-only 1688 private collection extension",
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test tests/*.test.mjs",
@@ -13,7 +13,8 @@
     "rebuild": "npm run clean && npm run build"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "@types/chrome": "^0.0.270"
+    "@types/chrome": "^0.0.270",
+    "linkedom": "^0.18.13",
+    "typescript": "^5.5.0"
   }
 }

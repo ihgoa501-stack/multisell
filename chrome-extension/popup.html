@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>凌镜 AI 选品助手</title>
+  <title>凌镜 1688 采集助手</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
   <div class="header">
     <div class="brand">
       <div class="logo">镜</div>
-      <span class="title">凌镜 选品助手</span>
+      <span class="title">凌镜 1688 采集助手</span>
     </div>
     <div class="status-badge">
       <span class="status-dot disconnected" id="statusDot"></span>
@@ -20,9 +20,12 @@
 
   <div class="actions">
     <button id="fetchBtn" class="btn-primary" disabled>
-      <span class="btn-icon">⟳</span> 采集当前商品
+      <span class="btn-icon">＋</span> 采集到凌镜
     </button>
     <button id="loginBtn" class="btn-secondary">登录凌镜</button>
+    <button id="boxBtn" class="btn-secondary" style="display: none;">
+      <span class="btn-icon">📦</span> 我的采集箱
+    </button>
   </div>
 
   <div class="result-card" id="resultCard">
@@ -30,7 +33,7 @@
   </div>
 
   <div class="footer">
-    <span>v0.1.0</span>
+    <span>v0.2.0</span>
     <a id="settingsLink">设置</a>
   </div>
 

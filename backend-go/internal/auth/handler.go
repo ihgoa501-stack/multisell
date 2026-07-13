@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/config"
@@ -95,6 +96,27 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
+type extensionPairingCreateRequest struct {
+	Environment string `json:"environment" binding:"required"`
+}
+type extensionPairingClaimRequest struct {
+	Nonce        string `json:"nonce" binding:"required"`
+	ClaimSecret  string `json:"claim_secret" binding:"required"`
+	DeviceID     string `json:"device_id" binding:"required"`
+	ExtensionID  string `json:"extension_id" binding:"required"`
+	Environment  string `json:"environment" binding:"required"`
+	BrowserLabel string `json:"browser_label" binding:"required"`
+}
+type extensionPairingExchangeRequest struct {
+	Nonce       string `json:"nonce" binding:"required"`
+	ClaimSecret string `json:"claim_secret" binding:"required"`
+}
+type extensionDeviceRefreshRequest struct {
+	DeviceID     string `json:"device_id" binding:"required"`
+	DeviceSecret string `json:"device_secret" binding:"required"`
+	Environment  string `json:"environment" binding:"required"`
+}
+
 func authenticatedUserID(c *gin.Context) (int64, bool) {
 	uid, ok := c.Get("user_id")
 	if !ok {
@@ -151,6 +173,10 @@ func (h *Handler) Logout(c *gin.Context) {
 		response.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
+	if err := h.service.RevokeAllExtensionDevices(userID); err != nil {
+		response.InternalError(c, err)
+		return
+	}
 	response.Success(c, gin.H{"revoked": true})
 }
 
@@ -162,6 +188,10 @@ func (h *Handler) LogoutAll(c *gin.Context) {
 		return
 	}
 	if err := h.service.RevokeAllRefreshSessions(userID); err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	if err := h.service.RevokeAllExtensionDevices(userID); err != nil {
 		response.InternalError(c, err)
 		return
 	}
@@ -190,4 +220,128 @@ func (h *Handler) CurrentUser(c *gin.Context) {
 	}
 
 	response.Success(c, user.ToVO())
+}
+
+func (h *Handler) CreateExtensionPairing(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	var req extensionPairingCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "环境不能为空")
+		return
+	}
+	result, err := h.service.CreateExtensionPairing(userID, h.cfg.Server.EffectiveDeploymentEnvironment())
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) ClaimExtensionPairing(c *gin.Context) {
+	var req extensionPairingClaimRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "浏览器身份不完整")
+		return
+	}
+	if err := h.service.ClaimExtensionPairing(req.Nonce, req.ClaimSecret, req.DeviceID, req.ExtensionID, req.Environment, req.BrowserLabel); err != nil {
+		response.Error(c, http.StatusConflict, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"claimed": true})
+}
+
+func (h *Handler) GetExtensionPairing(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	pairingID, err := strconv.ParseInt(c.Param("pairingId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid pairing id")
+		return
+	}
+	row, err := h.service.GetExtensionPairing(userID, pairingID)
+	if err != nil {
+		response.Error(c, http.StatusNotFound, "pairing not found")
+		return
+	}
+	response.Success(c, row)
+}
+
+func (h *Handler) ConfirmExtensionPairing(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	pairingID, err := strconv.ParseInt(c.Param("pairingId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid pairing id")
+		return
+	}
+	if err := h.service.ConfirmExtensionPairing(userID, pairingID); err != nil {
+		response.Error(c, http.StatusConflict, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"confirmed": true})
+}
+
+func (h *Handler) ExchangeExtensionPairing(c *gin.Context) {
+	var req extensionPairingExchangeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "配对凭据不完整")
+		return
+	}
+	result, err := h.service.ExchangeExtensionPairing(req.Nonce, req.ClaimSecret)
+	if err != nil {
+		response.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) RefreshExtensionDevice(c *gin.Context) {
+	var req extensionDeviceRefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "设备凭据不完整")
+		return
+	}
+	result, err := h.service.RefreshExtensionDevice(req.DeviceID, req.DeviceSecret, req.Environment)
+	if err != nil {
+		response.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) ListExtensionDevices(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	rows, err := h.service.ListExtensionDevices(userID)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, rows)
+}
+
+func (h *Handler) RevokeExtensionDevice(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	if err := h.service.RevokeExtensionDevice(userID, c.Param("deviceId")); err != nil {
+		response.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"revoked": true})
 }

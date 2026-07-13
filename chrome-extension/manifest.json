@@ -1,38 +1,49 @@
 {
   "manifest_version": 3,
-  "name": "凌镜 AI 选品助手",
-  "version": "0.1.0",
-  "description": "凌镜自用 AI 选品采集助手 — 自动采集 Ozon 与供应商证据",
+  "name": "凌镜 1688 采集助手",
+  "version": "0.2.0",
+  "description": "Owner 在 1688 首页、搜索页和商品页保存到凌镜私人采集箱",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "alarms"
   ],
   "host_permissions": [
-    "https://*.1688.com/*",
-    "https://*.taobao.com/*",
-    "https://*.ozon.ru/*",
+    "https://detail.1688.com/*",
+    "https://www.1688.com/*",
+    "https://s.1688.com/*",
     "http://localhost:3000/*",
     "http://localhost:8080/*",
-    "https://*.lingmirror.com/*",
-    "wss://*.lingmirror.com/*"
+    "https://lingmirror.com/*",
+    "https://owner.lingmirror.com/*",
+    "https://118.196.42.156/*"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {
-      "matches": ["https://detail.1688.com/*", "https://item.taobao.com/*"],
+      "matches": ["https://detail.1688.com/offer/*"],
       "js": ["utils.js", "build/content-script.js"],
       "run_at": "document_idle"
     },
     {
-      "matches": ["*://*.1688.com/*", "*://s.1688.com/*", "https://*.ozon.ru/*"],
+      "matches": ["https://www.1688.com/*", "https://s.1688.com/*"],
       "js": ["build/content-script-list.js"],
-      "exclude_matches": ["*://detail.1688.com/offer/*"],
       "run_at": "document_idle"
     },
     {
-      "matches": ["http://localhost:3000/login*", "https://*.lingmirror.com/login*"],
+      "matches": ["http://localhost:3000/settings/plugin*", "http://127.0.0.1:3000/settings/plugin*", "https://lingmirror.com/settings/plugin*", "https://owner.lingmirror.com/settings/plugin*", "https://118.196.42.156/settings/plugin*"],
       "js": ["build/auth-bridge.js"],
       "run_at": "document_start"
     }

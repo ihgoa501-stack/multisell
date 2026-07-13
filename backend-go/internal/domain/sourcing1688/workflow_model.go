@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	StatusPendingReview = "pending_review"
-	StatusReviewed      = "reviewed"
-	StatusDraftCreated  = "draft_created"
+	StatusUnverifiedLead = "unverified_lead"
+	StatusPendingReview  = "pending_review"
+	StatusReviewed       = "reviewed"
+	StatusDraftCreated   = "draft_created"
 )
 
 type ConvertInput struct {

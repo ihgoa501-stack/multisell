@@ -663,6 +663,70 @@ func (h *Handler) Capture(c *gin.Context) {
 	response.Success(c, p)
 }
 
+func (h *Handler) CollectPrivate(c *gin.Context) {
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	var in PrivateCollectInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		in.OwnerID = ownerID
+		if failure := privateCollectFailureInput(&in, err); failure != nil {
+			_, _, _ = h.service.RecordPrivateCaptureFailure(failure)
+		}
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.OwnerID = ownerID
+	result, err := h.service.CollectPrivate(&in)
+	if err != nil {
+		var duplicate *DuplicatePrivateCollectionError
+		if errors.As(err, &duplicate) {
+			c.JSON(http.StatusConflict, response.Result{Code: http.StatusConflict, Message: "该1688商品已在私人采集箱，请选择查看已有记录或保存为新观察", Data: gin.H{"status": "duplicate_requires_choice", "record_id": duplicate.RecordID, "snapshot_id": duplicate.SnapshotID, "existing": duplicate.Existing}})
+			return
+		}
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, PrivateCollectHTTPResult{Status: "saved", RecordID: result.Product.ID, SnapshotID: result.Snapshot.ID, RequestID: result.Snapshot.CollectionRequestID, IdempotentReplay: result.IdempotentReplay, NewObservation: result.NewObservation})
+}
+
+func (h *Handler) RecordPrivateCaptureFailure(c *gin.Context) {
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	var in PrivateCaptureFailureInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.OwnerID = ownerID
+	record, replay, err := h.service.RecordPrivateCaptureFailure(&in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, PrivateCaptureFailureResult{Status: "recorded", Failure: record, IdempotentReplay: replay})
+}
+
+func (h *Handler) GetPrivateCollectionRequest(c *gin.Context) {
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	result, err := h.service.GetPrivateCollectionRequest(ownerID, c.Param("requestId"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "collection request not found")
+			return
+		}
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 // Review POST /sourcing-1688/:id/review is the explicit Owner gate.
 func (h *Handler) Review(c *gin.Context) {
 	id, ok := parseID(c)

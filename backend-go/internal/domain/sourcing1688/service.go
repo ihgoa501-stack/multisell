@@ -28,7 +28,7 @@ func (s *Service) RequireSourceOwner(id, ownerID int64) error {
 		return ErrWorkflowGate
 	}
 	var count int64
-	err := s.db.Table("sourcing_1688_product AS sp").Joins("JOIN demand_case dc ON dc.id = sp.demand_case_id").Where("sp.id = ? AND dc.owner_id = ?", id, ownerID).Count(&count).Error
+	err := s.db.Table("sourcing_1688_product AS sp").Joins("LEFT JOIN demand_case dc ON dc.id = sp.demand_case_id").Where("sp.id = ? AND (sp.owner_id = ? OR (sp.owner_id = 0 AND dc.owner_id = ?))", id, ownerID, ownerID).Count(&count).Error
 	if err != nil {
 		return err
 	}
@@ -83,8 +83,8 @@ func (s *Service) ListOwned(ownerID int64, p *common.Pagination, f *ListFilter) 
 		return nil, 0, ErrWorkflowGate
 	}
 	q := s.db.Model(&Sourcing1688Product{}).
-		Joins("JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
-		Where("dc.owner_id = ?", ownerID)
+		Joins("LEFT JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
+		Where("sourcing_1688_product.owner_id = ? OR (sourcing_1688_product.owner_id = 0 AND dc.owner_id = ?)", ownerID, ownerID)
 	if f != nil {
 		if f.Search != "" {
 			like := "%" + f.Search + "%"
@@ -285,8 +285,8 @@ func (s *Service) SummaryOwned(ownerID int64) (*Summary, error) {
 		return nil, ErrWorkflowGate
 	}
 	base := s.db.Model(&Sourcing1688Product{}).
-		Joins("JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
-		Where("dc.owner_id = ?", ownerID)
+		Joins("LEFT JOIN demand_case dc ON dc.id = sourcing_1688_product.demand_case_id").
+		Where("sourcing_1688_product.owner_id = ? OR (sourcing_1688_product.owner_id = 0 AND dc.owner_id = ?)", ownerID, ownerID)
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
 		return nil, err

@@ -2,11 +2,20 @@ package sourcing1688
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/config"
 	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+func RegisterExtensionRoutes(rg *gin.RouterGroup, db *gorm.DB, cfg *config.Config, logger *zap.Logger) {
+	h := NewHandler(NewService(db, logger))
+	group := rg.Group("/extension/sourcing-1688", middleware.ExtensionAuth(cfg, db, "sourcing1688.collect"))
+	group.POST("/private-collections", h.CollectPrivate)
+	group.POST("/private-collections/failures", h.RecordPrivateCaptureFailure)
+	group.GET("/private-collections/requests/:requestId", h.GetPrivateCollectionRequest)
+}
 
 // RegisterRoutes registers sourcing1688 routes on the given router group.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bridge toolbridge.Bridge) {

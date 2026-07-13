@@ -3,6 +3,9 @@ package sourcing1688
 import "time"
 
 const (
+	LifecycleUnverifiedLead  = "unverified_lead"
+	LifecycleNeedsReview     = "needs_review"
+	LifecycleArchived        = "archived"
 	LifecycleCaptureFailed   = "capture_failed"
 	LifecyclePendingReview   = "pending_review"
 	LifecycleRejected        = "rejected"

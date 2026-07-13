@@ -38,17 +38,28 @@ type LLMConfig struct {
 
 // ServerConfig holds server-specific settings.
 type ServerConfig struct {
-	Port                int           `mapstructure:"port"`
-	Mode                string        `mapstructure:"mode"`
-	Version             string        `mapstructure:"version"`
-	ReadHeaderTimeout   time.Duration `mapstructure:"read_header_timeout"`
-	ReadTimeout         time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout        time.Duration `mapstructure:"write_timeout"`
-	IdleTimeout         time.Duration `mapstructure:"idle_timeout"`
-	ShutdownTimeout     time.Duration `mapstructure:"shutdown_timeout"`
-	MaxHeaderBytes      int           `mapstructure:"max_header_bytes"`
-	MaxRequestBodyBytes int64         `mapstructure:"max_request_body_bytes"`
-	SwaggerEnabled      bool          `mapstructure:"swagger_enabled"`
+	Port                  int           `mapstructure:"port"`
+	Mode                  string        `mapstructure:"mode"`
+	DeploymentEnvironment string        `mapstructure:"deployment_environment"`
+	Version               string        `mapstructure:"version"`
+	ReadHeaderTimeout     time.Duration `mapstructure:"read_header_timeout"`
+	ReadTimeout           time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout          time.Duration `mapstructure:"write_timeout"`
+	IdleTimeout           time.Duration `mapstructure:"idle_timeout"`
+	ShutdownTimeout       time.Duration `mapstructure:"shutdown_timeout"`
+	MaxHeaderBytes        int           `mapstructure:"max_header_bytes"`
+	MaxRequestBodyBytes   int64         `mapstructure:"max_request_body_bytes"`
+	SwaggerEnabled        bool          `mapstructure:"swagger_enabled"`
+}
+
+func (s ServerConfig) EffectiveDeploymentEnvironment() string {
+	if s.DeploymentEnvironment != "" {
+		return s.DeploymentEnvironment
+	}
+	if s.Mode == "release" {
+		return "production"
+	}
+	return "development"
 }
 
 // SchemaDriftConfig holds schema drift detection settings.
@@ -179,6 +190,7 @@ func Load() (*Config, error) {
 	v.BindEnv("jwt.registration_enabled", "AUTH_REGISTRATION_ENABLED")
 	v.BindEnv("server.port", "SERVER_PORT")
 	v.BindEnv("server.mode", "SERVER_MODE")
+	v.BindEnv("server.deployment_environment", "DEPLOYMENT_ENVIRONMENT")
 	v.BindEnv("server.read_header_timeout", "SERVER_READ_HEADER_TIMEOUT")
 	v.BindEnv("server.read_timeout", "SERVER_READ_TIMEOUT")
 	v.BindEnv("server.write_timeout", "SERVER_WRITE_TIMEOUT")
@@ -228,6 +240,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.Mode != "debug" && c.Server.Mode != "release" && c.Server.Mode != "test" {
 		return fmt.Errorf("server.mode must be debug, release, or test")
+	}
+	if environment := c.Server.EffectiveDeploymentEnvironment(); environment != "development" && environment != "acceptance" && environment != "production" {
+		return fmt.Errorf("server.deployment_environment must be development, acceptance, or production")
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port must be between 1 and 65535")

@@ -102,6 +102,7 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/finance/mock", ActionType: "destructive_data_change", Description: "财务模拟"},
 
 		// ── RBAC mutations ──
+		{Method: "DELETE", PathPattern: "/api/v1/auth/extension-devices/:deviceId", ActionType: "permission_change", Description: "撤销浏览器采集插件凭证"},
 		{Method: "POST", PathPattern: "/api/v1/rbac/roles", ActionType: "permission_change", Description: "创建角色"},
 		{Method: "PUT", PathPattern: "/api/v1/rbac/roles/:id", ActionType: "permission_change", Description: "更新角色"},
 		{Method: "DELETE", PathPattern: "/api/v1/rbac/roles/:id", ActionType: "permission_change", Description: "删除角色"},

@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS sourcing_1688_private_capture_failure;

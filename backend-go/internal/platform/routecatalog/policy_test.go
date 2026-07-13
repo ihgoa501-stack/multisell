@@ -34,7 +34,9 @@ func TestMutationPolicyPublicRoutesAreOnlyAuthLifecycle(t *testing.T) {
 	allowed := map[string]struct{}{
 		"POST:/api/v1/auth/login": {}, "POST:/api/v1/auth/register": {},
 		"POST:/api/v1/auth/refresh": {}, "POST:/api/v1/webhooks/:platform": {},
-		"POST:/api/v1/feedback/submissions": {},
+		"POST:/api/v1/auth/extension-pairings/claim": {}, "POST:/api/v1/auth/extension-pairings/exchange": {},
+		"POST:/api/v1/auth/extension-devices/refresh": {},
+		"POST:/api/v1/feedback/submissions":           {},
 	}
 	for _, policy := range MutationPolicies() {
 		if policy.Class == MutationPublic {
@@ -64,8 +66,8 @@ func TestMutationPolicyHasCurrentFullInventory(t *testing.T) {
 	// This number is not the security gate by itself; the source cross-check in
 	// check_audit_coverage.sh catches additions, removals and path changes. It
 	// makes accidental parser or embedded-file truncation immediately visible.
-	if got := len(MutationPolicies()); got != 385 {
-		t.Fatalf("expected 385 explicitly classified mutations, got %d", got)
+	if got := len(MutationPolicies()); got != 393 {
+		t.Fatalf("expected 393 explicitly classified mutations, got %d", got)
 	}
 }
 

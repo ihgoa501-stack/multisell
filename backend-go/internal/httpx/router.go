@@ -587,6 +587,8 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 
 	// Auth routes (public — login, register, refresh)
 	auth.RegisterRoutes(api, db, cfg, logger)
+	// Device-bound Owner browser extension seam.
+	sourcing1688.RegisterExtensionRoutes(api, db, cfg, logger)
 
 	// Protected routes (require JWT authentication)
 	protected := api.Group("")

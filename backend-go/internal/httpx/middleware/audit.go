@@ -59,14 +59,17 @@ func Audit(db *gorm.DB, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// Snapshot the request body (capped) so handlers can still read it.
+		// Preserve the complete body for downstream handlers; cap only the audit copy.
 		var bodySnippet string
 		if c.Request.Body != nil {
-			bodyBytes, err := io.ReadAll(io.LimitReader(c.Request.Body, 2048))
+			bodyBytes, err := io.ReadAll(c.Request.Body)
 			if err == nil {
-				bodySnippet = string(bodyBytes)
-				// Restore the body for downstream handlers.
 				c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+				auditBytes := bodyBytes
+				if len(auditBytes) > 2048 {
+					auditBytes = auditBytes[:2048]
+				}
+				bodySnippet = string(auditBytes)
 				bodySnippet = operationlog.RedactSensitive(bodySnippet)
 			}
 		}
