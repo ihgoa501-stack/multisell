@@ -99,6 +99,9 @@ func (s *Service) ListOwned(ownerID int64, p *common.Pagination, f *ListFilter) 
 		if f.ProductID != nil {
 			q = q.Where("sourcing_1688_product.product_id = ?", *f.ProductID)
 		}
+		if f.RecordID != nil {
+			q = q.Where("sourcing_1688_product.id = ?", *f.RecordID)
+		}
 	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -162,17 +165,20 @@ func (s *Service) ListPrivateCollectionBox(ownerID int64, p *common.Pagination, 
 	items := make([]PrivateCollectionListItem, 0, len(products))
 	for _, product := range products {
 		statuses := map[string]string{}
+		item := PrivateCollectionListItem{Sourcing1688Product: product, ObservationCount: observationByProduct[product.ID], TaskLinkCount: taskByProduct[product.ID]}
 		if product.SnapshotID != nil {
 			if snapshot, ok := snapshotByID[*product.SnapshotID]; ok {
-				var payload struct {
-					FieldStatuses map[string]string `json:"field_statuses"`
+				var raw collectionRawPayload
+				if json.Unmarshal(snapshot.RawPayload, &raw) == nil && raw.FieldStatuses != nil {
+					statuses = raw.FieldStatuses
 				}
-				if json.Unmarshal(snapshot.RawPayload, &payload) == nil && payload.FieldStatuses != nil {
-					statuses = payload.FieldStatuses
-				}
+				observedAt := snapshot.CollectedAt
+				item.LatestPageKind = collectionPageKind(snapshot, raw)
+				item.LatestObservedAt = &observedAt
 			}
 		}
-		items = append(items, PrivateCollectionListItem{Sourcing1688Product: product, FieldStatuses: statuses, ObservationCount: observationByProduct[product.ID], TaskLinkCount: taskByProduct[product.ID]})
+		item.FieldStatuses = statuses
+		items = append(items, item)
 	}
 	return items, total, nil
 }

@@ -2,9 +2,13 @@ package sourcing1688
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 )
@@ -45,6 +49,45 @@ func TestListPrivateCollectionBoxExposesImmutableFieldStatusesAndRelationshipCou
 	}
 	if items[0].FieldStatuses["sku"] != "parse_failed" || items[0].FieldStatuses["price"] != "unknown" {
 		t.Fatalf("field statuses=%#v", items[0].FieldStatuses)
+	}
+	if items[0].LatestPageKind != CollectionPageDetail || items[0].LatestObservedAt == nil {
+		t.Fatalf("latest source=%#v", items[0])
+	}
+
+	otherTitle := "其他Owner商品"
+	other := Sourcing1688Product{OwnerID: 99, SourceURL: "https://detail.1688.com/offer/999.html", SourceOfferID: "999", Title: &otherTitle, Status: StatusUnverifiedLead, LifecycleStatus: LifecycleNeedsReview}
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	found, total, err := svc.ListPrivateCollectionBox(42, &common.Pagination{Page: 1, Size: 20}, &ListFilter{RecordID: &product.ID})
+	if err != nil || total != 1 || len(found) != 1 || found[0].ID != product.ID {
+		t.Fatalf("exact record items=%#v total=%d err=%v", found, total, err)
+	}
+	leaked, total, err := svc.ListPrivateCollectionBox(42, &common.Pagination{Page: 1, Size: 20}, &ListFilter{RecordID: &other.ID})
+	if err != nil || total != 0 || len(leaked) != 0 {
+		t.Fatalf("cross-owner exact record leaked items=%#v total=%d err=%v", leaked, total, err)
+	}
+
+	requestList := func(recordID string) (int, int64) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Set("user_id", int64(42))
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/sourcing-1688?record_id="+recordID, nil)
+		NewHandler(svc).List(c)
+		var body struct {
+			Total int64 `json:"total"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &body)
+		return w.Code, body.Total
+	}
+	if code, gotTotal := requestList(strconv.FormatInt(product.ID, 10)); code != http.StatusOK || gotTotal != 1 {
+		t.Fatalf("record API code=%d total=%d", code, gotTotal)
+	}
+	if code, gotTotal := requestList(strconv.FormatInt(other.ID, 10)); code != http.StatusOK || gotTotal != 0 {
+		t.Fatalf("cross-owner record API code=%d total=%d", code, gotTotal)
+	}
+	if code, _ := requestList("bad"); code != http.StatusBadRequest {
+		t.Fatalf("invalid record API code=%d", code)
 	}
 
 	empty, total, err := svc.ListPrivateCollectionBox(42, &common.Pagination{Page: 1, Size: 20}, &ListFilter{LifecycleStatus: LifecycleArchived})

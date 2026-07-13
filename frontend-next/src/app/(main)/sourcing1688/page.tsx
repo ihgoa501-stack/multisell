@@ -42,6 +42,8 @@ type SourceRecord = {
 	field_statuses?: Record<string, string>;
 	observation_count?: number;
 	task_link_count?: number;
+	latest_page_kind?: CollectionPageKind;
+	latest_observed_at?: string;
 	created_at: string;
 	updated_at: string;
 };
@@ -79,6 +81,11 @@ const pageKindMeta: Record<CollectionPageKind, { label: string; color: string }>
 	detail_observation: { label: '详情观察', color: 'blue' },
 	controlled_fetch: { label: '受控详情', color: 'purple' },
 };
+
+export function collectionRecordIDFromSearch(search: string) {
+	const value = Number(new URLSearchParams(search).get('record_id'));
+	return Number.isInteger(value) && value > 0 ? value : null;
+}
 
 export function safe1688DetailURL(value?: string) {
 	try {
@@ -771,6 +778,7 @@ export default function Sourcing1688Page() {
   const qc = useQueryClient();
 	  const [fetchOpen, setFetchOpen] = useState(false);
 	  const [collectionStatus, setCollectionStatus] = useState<string>();
+	const [requestedRecordID, setRequestedRecordID] = useState<number | null>();
   const [captureOpen, setCaptureOpen] = useState(false);
   const [reviewing, setReviewing] = useState<SourceRecord | null>(null);
   const [linkingTask, setLinkingTask] = useState<SourceRecord | null>(null);
@@ -822,9 +830,14 @@ export default function Sourcing1688Page() {
     if (processedImagePreviewURL) URL.revokeObjectURL(processedImagePreviewURL);
   }, [processedImagePreviewURL]);
 
+	useEffect(() => {
+		setRequestedRecordID(collectionRecordIDFromSearch(window.location.search));
+	}, []);
+
 	  const list = useQuery({
-	    queryKey: ['sourcing-1688-controlled', collectionStatus],
-	    queryFn: () => apiClient.getPage<SourceRecord>('/v1/sourcing-1688', { page: '1', size: '100', ...(collectionStatus ? { lifecycle_status: collectionStatus } : {}) }),
+	    queryKey: ['sourcing-1688-controlled', collectionStatus, requestedRecordID],
+		enabled: requestedRecordID !== undefined,
+	    queryFn: () => apiClient.getPage<SourceRecord>('/v1/sourcing-1688', { page: '1', size: '100', ...(collectionStatus ? { lifecycle_status: collectionStatus } : {}), ...(requestedRecordID ? { record_id: String(requestedRecordID) } : {}) }),
 	  });
 
   const eligibleTasks = useQuery({
@@ -1233,17 +1246,19 @@ export default function Sourcing1688Page() {
   const records = list.data?.data ?? [];
 	const openedRecordFromURL = useRef<number | null>(null);
 	useEffect(() => {
-		const recordID = Number(new URLSearchParams(window.location.search).get('record_id'));
-		if (!Number.isInteger(recordID) || recordID <= 0 || openedRecordFromURL.current === recordID || records.length === 0) return;
-		const record = records.find((item) => item.id === recordID);
+		if (!requestedRecordID || openedRecordFromURL.current === requestedRecordID || !list.isSuccess) return;
+		const record = list.data?.data?.find((item) => item.id === requestedRecordID);
 		if (!record) {
-			openedRecordFromURL.current = recordID;
-			message.warning(`没有找到私人采集记录 #${recordID}`);
+			openedRecordFromURL.current = requestedRecordID;
+			message.warning(`没有找到私人采集记录 #${requestedRecordID}，或该记录不属于当前Owner`);
 			return;
 		}
-		openedRecordFromURL.current = recordID;
-		void loadEvidence(record);
-	}, [records]);
+		openedRecordFromURL.current = requestedRecordID;
+		message.success(`已定位私人采集记录 #${requestedRecordID}`);
+		void apiClient.get<Snapshot>(`/v1/sourcing-1688/${record.id}/snapshot`)
+			.then((res) => setEvidence(res.data ?? null))
+			.catch((error) => message.error(`来源证据读取失败：${(error as Error).message}`));
+	}, [list.data, list.isSuccess, requestedRecordID, message]);
   const attempts = publishAttempts.data?.data ?? [];
   const allTaskLinks = taskLinks.data?.data ?? [];
   const primaryTaskLinks = allTaskLinks.filter((link) => link.is_primary);
@@ -1277,6 +1292,7 @@ export default function Sourcing1688Page() {
       extra={<Space wrap><Button icon={<ReloadOutlined />} onClick={() => void list.refetch()}>刷新</Button><Button onClick={() => setCaptureOpen(true)}>高级证据导入</Button><Button icon={<PlusOutlined />} onClick={() => setFetchOpen(true)}>旧版受控URL采集</Button></Space>}
     >
 	      <Alert type="info" showIcon title="在1688商品页点击“采集到凌镜”" description="商品会直接进入Owner私人采集箱，不要求提前建立选品任务；未关联前只表示页面线索，不代表商品机会或可信货源。" style={{ marginBottom: 16 }} />
+	      {requestedRecordID && <Alert type="success" showIcon title={`正在定位采集记录 #${requestedRecordID}`} description="只会显示当前Owner自己的记录；找到后会自动打开来源证据。" style={{ marginBottom: 16 }} />}
 	      <Alert type="warning" showIcon icon={<SafetyCertificateOutlined />} title="外部发布受独立审批保护" description="草稿批准不会发布。只有 approved_draft 才显示发布安全区；请求发布、Owner 独立批准、再次执行和异常对账必须分别手动完成。" style={{ marginBottom: 16 }} />
 	      <Space wrap style={{ marginBottom: 16 }}>
 	        <Text strong>按状态筛选</Text>
@@ -1297,12 +1313,12 @@ export default function Sourcing1688Page() {
           pagination={{ pageSize: 20, showTotal: (n) => `共 ${n} 条` }}
           columns={[
             { title: '商品 / 供应商', width: 220, render: (_, r) => <><Text strong>{r.title || '未解析标题'}</Text><br /><Text type="secondary">{r.supplier_name || '供应商待核验'}</Text></> },
-            { title: '来源证据', width: 230, render: (_, r) => <><a href={r.source_url} target="_blank" rel="noreferrer">1688 原链接</a><br /><Text type="secondary">快照 #{r.snapshot_id ?? '缺失'}</Text></> },
+	            { title: '采集来源', width: 230, render: (_, r) => { const meta = r.latest_page_kind ? pageKindMeta[r.latest_page_kind] : null; return <><Tag color={meta?.color}>{meta?.label ?? '来源待确认'}</Tag><Text type="secondary">{r.latest_page_kind === 'controlled_fetch' ? '受控复核记录' : '1688页面声明，尚未核验'}</Text><br /><a href={r.source_url} target="_blank" rel="noreferrer">查看1688原页面</a></>; } },
 	            { title: '任务关联', width: 220, render: (_, r) => (r.task_link_count ?? (r.experiment_id ? 1 : 0)) > 0 ? <><Tag color="blue">已关联 {r.task_link_count ?? 1} 个任务</Tag>{r.experiment_id && <><br /><Text type="secondary">主工作流：{r.experiment_id}</Text></>}<br /><Text type="secondary">点击查看每个任务的状态</Text></> : <><Tag>尚未关联任务</Tag><br /><Text type="secondary">私人收藏，不代表商品机会</Text></> },
 	            { title: '采购信息', width: 130, render: (_, r) => <><Text>{r.field_statuses?.price === 'observed' && r.price != null ? `¥${r.price}` : '价格未取得'}</Text><br /><Text type="secondary">{r.field_statuses?.moq === 'observed' ? `MOQ ${r.moq}` : '起订量未取得'}</Text></> },
 	            { title: '采集完整度', width: 250, render: (_, r) => { const completeness = collectionCompleteness(r.field_statuses); return <Space orientation="vertical" size={2}><Tag color={completeness.isComplete ? 'green' : 'gold'}>{completeness.isComplete ? '关键字段已取得' : `已取得 ${completeness.complete}/${completeness.total}`}</Tag>{completeness.missing.length > 0 && <Space wrap size={[4, 4]}>{completeness.missing.map((item) => <Tag key={item.field} color={item.status === 'parse_failed' ? 'red' : 'default'}>{item.label}：{item.status === 'parse_failed' ? '解析失败' : '未取得'}</Tag>)}</Space>}</Space>; } },
 	            { title: '线索 / 最近观察 / 冲突', width: 245, render: (_, r) => <QualitySummaryCell record={r} onOpen={() => setQualityTarget(r)} /> },
-	            { title: '状态 / 重复', width: 180, render: (_, r) => { const state = r.lifecycle_status || r.status; const observations = r.observation_count ?? (r.snapshot_id ? 1 : 0); return <><Tag color={statusColor[state] || statusColor[r.status]}>{statusLabel[state] || state}</Tag><br />{observations > 1 ? <Tag color="orange">{observations} 次观察</Tag> : <Text type="secondary">暂无重复观察</Text>}<br /><Text type="secondary">采集于 {r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '未知'}</Text></>; } },
+	            { title: '状态 / 观察', width: 180, render: (_, r) => { const state = r.lifecycle_status || r.status; const observations = r.observation_count ?? (r.snapshot_id ? 1 : 0); const observedAt = r.latest_observed_at || r.created_at; return <><Tag color={statusColor[state] || statusColor[r.status]}>{statusLabel[state] || state}</Tag><br />{observations > 1 ? <Tag color="orange">共 {observations} 次观察</Tag> : <Text type="secondary">首次观察</Text>}<br /><Text type="secondary">最近观察 {observedAt ? new Date(observedAt).toLocaleString('zh-CN') : '未知'}</Text></>; } },
             { title: '追溯', width: 130, render: (_, r) => <><Text>采集 #{r.id}</Text><br /><Text type="secondary">产品 #{r.product_id ?? '未创建'}</Text></> },
             { title: '操作', fixed: 'right', width: 240, render: (_, r) => <Space wrap>
               <Button size="small" icon={<EyeOutlined />} onClick={() => setTaskLinksTarget(r)}>全部任务关联</Button>
