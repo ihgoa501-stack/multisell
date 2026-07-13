@@ -26,7 +26,7 @@ window.addEventListener("message", (event: MessageEvent<LingMirrorAuthMessage>) 
   const type = data.type === "LINGMIRROR_EXTENSION_PAIRING" ? "begin_extension_pairing"
     : data.type === "LINGMIRROR_EXTENSION_PAIRING_CONFIRMED" ? "finish_extension_pairing" : "";
   if (!type) return;
-  chrome.runtime.sendMessage({ type, nonce, environment: data.environment }, (response) => {
+  chrome.runtime.sendMessage({ type, nonce, environment: data.environment, origin: event.origin }, (response) => {
     window.postMessage(
       {
         source: "lingmirror-extension",

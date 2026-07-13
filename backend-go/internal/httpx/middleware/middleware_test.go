@@ -123,12 +123,13 @@ func TestAuditPreservesRequestBodyLargerThanAuditSnippet(t *testing.T) {
 }
 
 func TestExtensionAuthAcceptsOnlyActiveScopedDevice(t *testing.T) {
+	const extensionID = "abcdefghijklmnopabcdefghijklmnop"
 	db := newTestDB(t)
 	for _, sql := range []string{
 		`CREATE TABLE "user" (id INTEGER PRIMARY KEY, status INTEGER NOT NULL, role TEXT NOT NULL)`,
-		`CREATE TABLE extension_device (device_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, environment TEXT NOT NULL, scope TEXT NOT NULL, revoked_at DATETIME)`,
+		`CREATE TABLE extension_device (device_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, extension_id TEXT NOT NULL, environment TEXT NOT NULL, scope TEXT NOT NULL, revoked_at DATETIME)`,
 		`INSERT INTO "user" (id,status,role) VALUES (7,1,'owner')`,
-		`INSERT INTO extension_device (device_id,user_id,environment,scope) VALUES ('device-7',7,'development','sourcing1688.collect')`,
+		`INSERT INTO extension_device (device_id,user_id,extension_id,environment,scope) VALUES ('device-7',7,'` + extensionID + `','development','sourcing1688.collect')`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {
 			t.Fatal(err)
@@ -146,29 +147,33 @@ func TestExtensionAuthAcceptsOnlyActiveScopedDevice(t *testing.T) {
 		}
 		return signed
 	}
-	run := func(token string) int {
+	run := func(token, origin string) int {
 		r := gin.New()
 		r.Use(ExtensionAuth(cfg, db, "sourcing1688.collect"))
 		r.POST("/collect", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		req := httptest.NewRequest(http.MethodPost, "/collect", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Origin", origin)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		return w.Code
 	}
-	if got := run(makeToken("extension_access", []string{"sourcing1688.collect"})); got != http.StatusNoContent {
+	if got := run(makeToken("extension_access", []string{"sourcing1688.collect"}), "chrome-extension://"+extensionID); got != http.StatusNoContent {
 		t.Fatalf("valid device status=%d", got)
 	}
-	if got := run(makeToken("access", []string{"sourcing1688.collect"})); got != http.StatusUnauthorized {
+	if got := run(makeToken("access", []string{"sourcing1688.collect"}), "chrome-extension://"+extensionID); got != http.StatusUnauthorized {
 		t.Fatalf("web token status=%d", got)
 	}
-	if got := run(makeToken("extension_access", []string{"other"})); got != http.StatusForbidden {
+	if got := run(makeToken("extension_access", []string{"other"}), "chrome-extension://"+extensionID); got != http.StatusForbidden {
 		t.Fatalf("wrong scope status=%d", got)
+	}
+	if got := run(makeToken("extension_access", []string{"sourcing1688.collect"}), "chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba"); got != http.StatusUnauthorized {
+		t.Fatalf("wrong extension origin status=%d", got)
 	}
 	if err := db.Exec(`UPDATE extension_device SET revoked_at = CURRENT_TIMESTAMP WHERE device_id = 'device-7'`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if got := run(makeToken("extension_access", []string{"sourcing1688.collect"})); got != http.StatusUnauthorized {
+	if got := run(makeToken("extension_access", []string{"sourcing1688.collect"}), "chrome-extension://"+extensionID); got != http.StatusUnauthorized {
 		t.Fatalf("revoked device status=%d", got)
 	}
 }
@@ -1568,6 +1573,48 @@ func TestCORS_RejectsUnconfiguredOrigin(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestCORS_AllowsChromeExtensionOnlyForExtensionRoutes(t *testing.T) {
+	const origin = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+	cfg := &config.Config{CORS: config.CORSConfig{AllowedOrigins: "https://owner.example.com"}}
+	r := gin.New()
+	r.Use(CORS(cfg))
+	r.POST("/api/v1/auth/extension-pairings/claim", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	r.POST("/api/v1/auth/extension-pairings/exchange", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	r.POST("/api/v1/auth/extension-devices/refresh", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	r.GET("/api/v1/extension/sourcing-1688/requests/1", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	r.GET("/api/v1/orders", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	allowed := []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/auth/extension-pairings/claim"},
+		{http.MethodPost, "/api/v1/auth/extension-pairings/exchange"},
+		{http.MethodPost, "/api/v1/auth/extension-devices/refresh"},
+		{http.MethodGet, "/api/v1/extension/sourcing-1688/requests/1"},
+	}
+	for _, tc := range allowed {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != origin {
+			t.Fatalf("path=%s status=%d allow-origin=%q", tc.path, w.Code, w.Header().Get("Access-Control-Allow-Origin"))
+		}
+	}
+	bad := httptest.NewRequest(http.MethodPost, "/api/v1/auth/extension-pairings/claim", nil)
+	bad.Header.Set("Origin", "chrome-extension://not-a-chrome-extension-id")
+	badResponse := httptest.NewRecorder()
+	r.ServeHTTP(badResponse, bad)
+	if badResponse.Code != http.StatusForbidden {
+		t.Fatalf("malformed extension origin status=%d", badResponse.Code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
+	req.Header.Set("Origin", origin)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("ordinary route status=%d content-type=%q body=%s", w.Code, w.Header().Get("Content-Type"), w.Body.String())
 	}
 }
 

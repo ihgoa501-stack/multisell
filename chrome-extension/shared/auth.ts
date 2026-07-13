@@ -4,6 +4,14 @@ const JWT_KEY = "lingmirror_jwt";
 const SERVER_URL_KEY = "lingmirror_server_url";
 const DEVICE_KEY = "lingmirror_extension_device";
 
+const PAIRING_ORIGINS = new Set([
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://lingmirror.com",
+  "https://owner.lingmirror.com",
+  "https://118.196.42.156",
+]);
+
 export interface ExtensionDeviceCredential {
   deviceId: string;
   deviceSecret: string;
@@ -91,6 +99,16 @@ export async function setServerUrl(url: string): Promise<void> {
 	try { changed = new URL(getApiBaseUrl(current)).origin !== new URL(getApiBaseUrl(url)).origin; } catch { changed = true; }
 	if (changed) await clearDeviceCredential();
   await chrome.storage.local.set({ [SERVER_URL_KEY]: url });
+}
+
+/** Validate a pairing page origin and map it to the matching backend. */
+export function getServerUrlFromPairingOrigin(origin: string): string {
+  const url = new URL(origin);
+  if (url.origin !== origin || !PAIRING_ORIGINS.has(url.origin)) {
+    throw new Error("配对页面不是受信的凌镜地址");
+  }
+  if (url.protocol === "http:") return `ws://${url.hostname}:8080`;
+  return `wss://${url.host}`;
 }
 
 /** Build the HTTP login URL from a WebSocket server URL. */
