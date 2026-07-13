@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/image-service ./cmd/server && \
     CGO_ENABLED=0 go build -trimpath -o /out/image-service-migrate ./cmd/migrate
 
 FROM alpine:3.22
-RUN addgroup -S app && adduser -S -G app app
+RUN apk add --no-cache ca-certificates wget && addgroup -S app && adduser -S -G app app
 WORKDIR /app
 COPY --from=build /out/image-service /usr/local/bin/image-service
 COPY --from=build /out/image-service-migrate /usr/local/bin/image-service-migrate
