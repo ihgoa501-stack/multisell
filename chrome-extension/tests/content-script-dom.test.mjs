@@ -158,6 +158,12 @@ test('visible modern SKU rows bind selected specification, price and stock', asy
     { spec: '咖啡色 / 90 建议身高75-85CM', price: 11.9, stock: 6469 },
     { spec: '咖啡色 / 110 建议身高95-105CM', price: 11.9, stock: 6469 },
   ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(loaded.data.price_tiers)), [
+    { min_qty: 1, price: 11.9 },
+    { min_qty: 2, max_qty: 19, price: 11.5 },
+    { min_qty: 20, price: 10.8 },
+  ]);
+  assert.equal(loaded.data.min_order_qty, 1);
   assert.equal(loaded.data.field_statuses.sku, 'observed');
   const result = await loaded.collect();
   assert.equal(result.payload.code, 'PREVIEW_REQUIRED');

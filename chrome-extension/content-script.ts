@@ -360,6 +360,11 @@ function extractPriceFromDOM(): number {
 
 type TierPricing = { detected: boolean; reliable: boolean; prices: number[]; minimumQty: number | null; tiers: Array<{ min_qty: number; max_qty?: number; price: number }> };
 
+function textWithElementBoundaries(node: Node): string {
+  if (node.nodeType === 3) return node.textContent || "";
+  return Array.from(node.childNodes).map(textWithElementBoundaries).join(" ");
+}
+
 function extractTierPricingFromDOM(): TierPricing {
   const texts = new Set<string>();
   const selectors = [
@@ -369,7 +374,7 @@ function extractTierPricingFromDOM(): TierPricing {
   for (const selector of selectors) {
     document.querySelectorAll(selector).forEach((node) => {
       if (!isTrustedPageNode(node)) return;
-      const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+      const text = textWithElementBoundaries(node).replace(/\s+/g, " ").trim();
       if (text) texts.add(text);
     });
   }
@@ -382,14 +387,28 @@ function extractTierPricingFromDOM(): TierPricing {
   const tiers: Array<{ min_qty: number; max_qty?: number; price: number }> = [];
   let detected = false;
   for (const text of texts) {
-    for (const match of text.matchAll(/(\d+)\s*[-~至]\s*(\d+)\s*(?:件|个|套).*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
-      tiers.push({ min_qty: Number(match[1]), max_qty: Number(match[2]), price: Number(match[3]) });
-    }
-    for (const match of text.matchAll(/(?:≥|>=|大于等于)\s*(\d+)\s*(?:件|个|套)?.*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
-      tiers.push({ min_qty: Number(match[1]), price: Number(match[2]) });
-    }
-    for (const match of text.matchAll(/(\d+)\s*(?:件|个|套)\s*(?:起|起批|起订|以上|及以上).*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
-      if (!tiers.some((tier) => tier.min_qty === Number(match[1]) && tier.price === Number(match[2]))) tiers.push({ min_qty: Number(match[1]), price: Number(match[2]) });
+    const firstPrice = text.search(/[¥￥]\s*\d/);
+    const firstQuantity = text.search(/(?:\d+\s*(?:[-~至]\s*\d+\s*)?(?:件|个|套)|(?:≥|>=|大于等于)\s*\d+)/);
+    if (firstPrice >= 0 && (firstQuantity < 0 || firstPrice < firstQuantity)) {
+      for (const match of text.matchAll(/[¥￥]\s*(\d+(?:\.\d{1,4})?)\s*(\d+)\s*[-~至]\s*(\d+)\s*(?:件|个|套)/g)) {
+        tiers.push({ min_qty: Number(match[2]), max_qty: Number(match[3]), price: Number(match[1]) });
+      }
+      for (const match of text.matchAll(/[¥￥]\s*(\d+(?:\.\d{1,4})?)\s*(?:≥|>=|大于等于)\s*(\d+)\s*(?:件|个|套)?/g)) {
+        tiers.push({ min_qty: Number(match[2]), price: Number(match[1]) });
+      }
+      for (const match of text.matchAll(/[¥￥]\s*(\d+(?:\.\d{1,4})?)\s*(\d+)\s*(?:件|个|套)\s*(?:起|起批|起订|以上|及以上)/g)) {
+        tiers.push({ min_qty: Number(match[2]), price: Number(match[1]) });
+      }
+    } else {
+      for (const match of text.matchAll(/(\d+)\s*[-~至]\s*(\d+)\s*(?:件|个|套).*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
+        tiers.push({ min_qty: Number(match[1]), max_qty: Number(match[2]), price: Number(match[3]) });
+      }
+      for (const match of text.matchAll(/(?:≥|>=|大于等于)\s*(\d+)\s*(?:件|个|套)?.*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
+        tiers.push({ min_qty: Number(match[1]), price: Number(match[2]) });
+      }
+      for (const match of text.matchAll(/(\d+)\s*(?:件|个|套)\s*(?:起|起批|起订|以上|及以上).*?[¥￥]\s*(\d+(?:\.\d{1,4})?)/g)) {
+        if (!tiers.some((tier) => tier.min_qty === Number(match[1]) && tier.price === Number(match[2]))) tiers.push({ min_qty: Number(match[1]), price: Number(match[2]) });
+      }
     }
     const priceMatches = Array.from(text.matchAll(/[¥￥]\s*(\d+(?:\.\d{1,4})?)/g));
     const qtyMatches = Array.from(text.matchAll(/(?:起批量\s*)?(\d+)\s*(?:[-~至]\s*\d+\s*)?(?:件|个|套)(?:\s*(?:起批|起订|以上|及以上))?/g));
@@ -712,6 +731,8 @@ function extractAttributesFromDOM(): Record<string, string> {
 }
 
 function extractMOQFromDOM(): number {
+  const tier = extractTierPricingFromDOM();
+  if (tier.detected) return tier.reliable && tier.minimumQty ? tier.minimumQty : 0;
   const bodyText = trustedPageText();
 
   const moqMatch = bodyText.match(
@@ -721,9 +742,6 @@ function extractMOQFromDOM(): number {
 
   const directBatch = bodyText.match(/(\d+)\s*(?:件|个|套)\s*(?:起批|起订)/);
   if (directBatch) return parseInt(directBatch[1], 10);
-
-  const tier = extractTierPricingFromDOM();
-  if (tier.reliable && tier.minimumQty) return tier.minimumQty;
 
   const batchMatch = bodyText.match(/(?:起批|起订)\s*(\d+)/);
   if (batchMatch) return parseInt(batchMatch[1], 10);
