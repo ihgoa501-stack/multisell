@@ -70,3 +70,15 @@
 - 版本差异：当前正式运行的 `/api/v1/platform-truth` 返回 404，说明线上仍是旧运行版本；这不是候选平台真相能力的生产验证。
 
 以上只证明生产网络边界和部分鉴权行为实际存在，不证明正式系统已达到可用、可恢复或真实经营闭环。
+
+## 16:05 补充：精确候选完成与并发生产发布偏差
+
+- 合并候选：分支 `codex/real-operation-readiness` 已推进到 `14b3f91b`。验证过程中发现 `.gitignore` 的 `product-*/` 规则误排除了 `/product-opportunities` 页面，导致测试失败且构建路由缺失；现已显式放行并恢复页面。合并后 Go 全量测试 3504 项通过，前端 44 个测试文件、235 项测试通过，lint 为 0 error/8 个既有 warning，生产构建通过且包含 `/product-opportunities`。
+- 图片服务运行镜像曾删除 CA 证书和 `wget`，会同时破坏 HTTPS Provider 证书校验基础及 Compose 健康检查；`14b3f91b` 恢复两者并使用与后端一致、服务器可达的 Alpine 包镜像。图片服务 `go test -race ./...` 114 项通过，`go vet ./...` 通过。
+- 服务器候选镜像已生成但没有切换：`lingmirror-backend:14b3f91b`、`lingmirror-frontend:14b3f91b`、`multisell-image-service:14b3f91b`。图片服务临时容器 `/readyz` 返回 ready，运行 UID 为 100，CA trust store 存在，`wget` 可执行；临时容器已删除。
+- 并发偏差：本轮期间另一发布流程把正式后端和前端切换到 `fe07479f`，并把正式库从迁移 111 升至 151。该提交不包含审计链 152 修复、Ozon 默认调度关闭或小Q单入口改造。正式日志已再次出现 `scheduler.tick.ozon_sync` 的 adapter 重复注册 panic。
+- 当前审计链：迁移 151 的正式库有 1330 条记录、1 个根、47 个分叉点、49 个链尾；因此审计 checkpoint 明确失败。迁移 152 仍只在隔离恢复库验证，尚未用于正式库。
+- 并发发布前备份 `multisell_pre_l3_20260713T072216Z.dump` 的哈希与 `pg_restore --list` 均通过，备份内迁移版本为 111。发现该备份及校验文件权限为 644 后已立即收紧为 600、root-only。它仍然只在本机，不满足异地不可变要求。
+- 当前正式容器没有运行 image-service。后端、前端和数据库容器显示 healthy，但这不能覆盖审计分叉、Ozon panic、图片服务缺失和异地恢复门禁缺失。
+
+因此不得继续把当前正式状态表述为 P0-2 完成，也不得在没有异地不可变备份和真实告警确认的情况下把 `14b3f91b` 切换为正式运行版本。
