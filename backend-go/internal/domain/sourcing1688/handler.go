@@ -48,12 +48,18 @@ func (h *Handler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
+	recordID := parseOptionalInt64(c, "record_id")
+	if c.Query("record_id") != "" && (recordID == nil || *recordID <= 0) {
+		response.Error(c, http.StatusBadRequest, "采集记录编号必须是正整数")
+		return
+	}
 	p := common.ParsePagination(c)
 	f := &ListFilter{
 		Search:          c.Query("search"),
 		Status:          c.Query("status"),
 		LifecycleStatus: c.Query("lifecycle_status"),
 		ProductID:       parseOptionalInt64(c, "product_id"),
+		RecordID:        recordID,
 	}
 	items, total, err := h.service.ListPrivateCollectionBox(ownerID, &p, f)
 	if err != nil {

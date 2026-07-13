@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { buildDraftPayload, buildPublishRequestPayload, buildReconcilePayload, buildSampleTransitionPayload, collectionCompleteness, collectionQualityRows, editableDraftToForm, publishStatusMeta, safe1688DetailURL, sampleNextStatuses, taskLinkAvailableActions, taskLinkStatus, taskWorkflowPath } from './page';
+import { buildDraftPayload, buildPublishRequestPayload, buildReconcilePayload, buildSampleTransitionPayload, collectionCompleteness, collectionQualityRows, collectionRecordIDFromSearch, editableDraftToForm, publishStatusMeta, safe1688DetailURL, sampleNextStatuses, taskLinkAvailableActions, taskLinkStatus, taskWorkflowPath } from './page';
 
 const observedAt = '2026-07-12T03:00:00.000Z';
 
@@ -142,6 +142,12 @@ describe('task link status presentation', () => {
 });
 
 describe('collection box completeness', () => {
+	it('accepts only a positive integer collection record link', () => {
+		expect(collectionRecordIDFromSearch('?record_id=42')).toBe(42);
+		expect(collectionRecordIDFromSearch('?record_id=0')).toBeNull();
+		expect(collectionRecordIDFromSearch('?record_id=other')).toBeNull();
+	});
+
   it('treats an explicitly confirmed no-SKU page as collected instead of inventing variants', () => {
     expect(collectionCompleteness({
       title: 'observed', price: 'observed', moq: 'observed', supplier: 'observed', images: 'observed', sku: 'no_sku',

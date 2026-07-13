@@ -65,6 +65,8 @@ type PrivateCollectionListItem struct {
 	FieldStatuses    map[string]string `json:"field_statuses"`
 	ObservationCount int64             `json:"observation_count"`
 	TaskLinkCount    int64             `json:"task_link_count"`
+	LatestPageKind   string            `json:"latest_page_kind,omitempty"`
+	LatestObservedAt *time.Time        `json:"latest_observed_at,omitempty"`
 }
 
 // Sourcing1688Snapshot is an immutable copy of the exact source payload used
@@ -166,6 +168,7 @@ type ListFilter struct {
 	Status          string
 	LifecycleStatus string
 	ProductID       *int64
+	RecordID        *int64
 }
 
 // ImportInput is the body for POST /sourcing1688/:id/import.
