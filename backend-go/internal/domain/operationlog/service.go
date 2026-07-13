@@ -18,32 +18,33 @@ type ListFilter struct {
 	To       time.Time
 }
 
-// VerifyIntegrity recomputes the database-owned hash chain and reports the
-// first broken record. PostgreSQL triggers own hash generation so every insert
-// path, including writes inside domain transactions, is covered.
+// VerifyIntegrity validates hashes and the linked-list shape independently of
+// row ID allocation order. PostgreSQL triggers own hash generation so every
+// insert path, including writes inside domain transactions, is covered.
 func (s *Service) VerifyIntegrity(ctx context.Context) error {
-	var broken struct{ ID int64 }
-	err := s.db.WithContext(ctx).Raw(`
-		WITH chained AS (
-			SELECT id, previous_hash, record_hash,
-				LAG(record_hash, 1, '') OVER (ORDER BY id) AS expected_previous,
-				audit_operation_hash(
-					LAG(record_hash, 1, '') OVER (ORDER BY id), module, action, resource_id,
-					content, operator, user_id, result, ip, duration, trigger_type,
-					agent_suggestion_id, approval_id, entity_type, entity_id, created_at, correlation_id
-				) AS expected_hash
-			FROM operation_log
-		)
-		SELECT id FROM chained
-		WHERE previous_hash IS DISTINCT FROM expected_previous OR record_hash IS DISTINCT FROM expected_hash
-		ORDER BY id LIMIT 1`).Scan(&broken).Error
+	var status struct {
+		Total               int64
+		SelfHashBad         int64
+		Roots               int64
+		MissingPredecessors int64
+		ForkPoints          int64
+		Tips                int64
+		Reachable           int64
+	}
+	err := s.db.WithContext(ctx).Raw(`SELECT * FROM audit_operation_chain_status()`).Scan(&status).Error
 	if err != nil {
 		auditIntegrity.Set(0)
 		return err
 	}
-	if broken.ID != 0 {
+	validShape := status.Total == 0 || (status.Roots == 1 && status.Tips == 1)
+	if status.SelfHashBad != 0 || status.MissingPredecessors != 0 || status.ForkPoints != 0 ||
+		status.Reachable != status.Total || !validShape {
 		auditIntegrity.Set(0)
-		return fmt.Errorf("operation log integrity broken at id %d", broken.ID)
+		return fmt.Errorf(
+			"operation log integrity broken: total=%d self_hash_bad=%d roots=%d missing_predecessors=%d forks=%d tips=%d reachable=%d",
+			status.Total, status.SelfHashBad, status.Roots, status.MissingPredecessors,
+			status.ForkPoints, status.Tips, status.Reachable,
+		)
 	}
 	auditIntegrity.Set(1)
 	return nil

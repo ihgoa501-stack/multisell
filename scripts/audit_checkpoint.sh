@@ -29,18 +29,20 @@ fi
 mkdir -p "$CHECKPOINT_DIR"
 chmod 700 "$CHECKPOINT_DIR"
 
-broken=$(db_psql -X -v ON_ERROR_STOP=1 -Atc "WITH chained AS (
-  SELECT id, previous_hash, record_hash,
-    LAG(record_hash,1,'') OVER (ORDER BY id) expected_previous,
-    audit_operation_hash(LAG(record_hash,1,'') OVER (ORDER BY id),module,action,resource_id,content,operator,user_id,result,ip,duration,trigger_type,agent_suggestion_id,approval_id,entity_type,entity_id,created_at,correlation_id) expected_hash
-  FROM operation_log
-) SELECT count(*) FROM chained WHERE previous_hash IS DISTINCT FROM expected_previous OR record_hash IS DISTINCT FROM expected_hash;")
-if [ "$broken" != "0" ]; then
-  echo "audit checkpoint refused: hash chain has $broken broken rows" >&2
+status=$(db_psql -X -v ON_ERROR_STOP=1 -At -F '|' -c "SELECT * FROM audit_operation_chain_status();")
+old_ifs=$IFS
+IFS='|'
+set -- $status
+IFS=$old_ifs
+total=$1 self_hash_bad=$2 roots=$3 missing_predecessors=$4 fork_points=$5 tips=$6 reachable=$7
+if [ "$self_hash_bad" != "0" ] || [ "$missing_predecessors" != "0" ] || \
+   [ "$fork_points" != "0" ] || [ "$reachable" != "$total" ] || \
+   { [ "$total" != "0" ] && { [ "$roots" != "1" ] || [ "$tips" != "1" ]; }; }; then
+  echo "audit checkpoint refused: invalid hash chain (total=$total self_hash_bad=$self_hash_bad roots=$roots missing_predecessors=$missing_predecessors forks=$fork_points tips=$tips reachable=$reachable)" >&2
   exit 1
 fi
 
-head=$(db_psql -X -v ON_ERROR_STOP=1 -At -F '|' -c "SELECT COALESCE(MAX(id),0), COALESCE((SELECT record_hash FROM operation_log ORDER BY id DESC LIMIT 1),'') FROM operation_log;")
+head=$(db_psql -X -v ON_ERROR_STOP=1 -At -F '|' -c "SELECT COALESCE(id,0), COALESCE(record_hash,'') FROM operation_log candidate WHERE NOT EXISTS (SELECT 1 FROM operation_log child WHERE child.previous_hash = candidate.record_hash) UNION ALL SELECT 0, '' WHERE NOT EXISTS (SELECT 1 FROM operation_log) LIMIT 1;")
 last_id=${head%%|*}
 last_hash=${head#*|}
 created_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
