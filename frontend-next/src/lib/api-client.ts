@@ -72,6 +72,14 @@ export class ApiClient {
     this.baseUrl = baseUrl;
   }
 
+  private buildUrl(path: string): URL {
+    const value = `${this.baseUrl}${path}`;
+    const origin = typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'http://localhost';
+    return new URL(value, origin);
+  }
+
   /**
    * Register a callback that fires whenever a 403 response is received.
    * The permission store uses this to re-fetch permissions automatically.
@@ -213,7 +221,7 @@ export class ApiClient {
     params?: Record<string, string>,
     extraHeaders?: Record<string, string>,
   ): Promise<T> {
-    const url = new URL(`${this.baseUrl}${path}`);
+    const url = this.buildUrl(path);
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         url.searchParams.append(key, value);
@@ -368,7 +376,7 @@ export class ApiClient {
    * sets the correct multipart boundary automatically.
    */
   async upload<T>(path: string, formData: FormData): Promise<Result<T>> {
-    const url = new URL(`${this.baseUrl}${path}`);
+    const url = this.buildUrl(path);
     const token = typeof window !== 'undefined' ? getToken() : null;
     const headers: HeadersInit = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -383,7 +391,7 @@ export class ApiClient {
   }
 
   async getBlob(path: string): Promise<Blob> {
-    const url = new URL(`${this.baseUrl}${path}`);
+    const url = this.buildUrl(path);
     let token = typeof window !== 'undefined' ? getToken() : null;
     let response = await this.fetchWithTimeout(url.toString(), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (response.status === 401 && typeof window !== 'undefined' && token) {

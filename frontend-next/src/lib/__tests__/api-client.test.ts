@@ -74,6 +74,25 @@ describe('ApiClient', () => {
     );
   });
 
+  it('resolves a relative production API base against the browser origin', async () => {
+    Object.defineProperty(window, 'location', {
+      value: { href: '', origin: 'https://lingmirror.test' },
+      writable: true,
+    });
+    client = new ApiClient('/api');
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ code: 0, data: { access_token: 'token' } }),
+    });
+
+    await client.post('/v1/auth/login', { username: 'owner', password: 'secret' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://lingmirror.test/api/v1/auth/login',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   // --- Authorization header ---
 
   it('includes Authorization header when token is available', async () => {
