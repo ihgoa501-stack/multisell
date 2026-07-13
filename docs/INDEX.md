@@ -278,6 +278,7 @@
 - [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
 - [1688 货源到待上架草稿受控闭环](features/1688-controlled-draft-workflow.md) — Owner 自用，草稿与独立发布审批严格分离；真实商品验收待完成
 - [商品视觉生产与学习系统开发规格](features/multi-provider-product-image-system.md) — 单 SKU 配方冻结、反馈、返工和统计已完成隔离浏览器验收；Owner 真实 SKU/场景图验收后再进入3 SKU对照
+- [商品图片单 SKU 无 Key 验收手册](ops/PRODUCT_IMAGE_SINGLE_SKU_NO_KEY_ACCEPTANCE.md) — 使用确定性处理完成真实 SKU 配方、反馈、返工和批准闭环，不调用付费 Provider
 - [AI 商品图片系统的长期价值、提示词资产与建设边界](research/ai-product-image-system-value-and-scope-2026-07-13.md) — 提示词不是孤立核心资产；定义长期数据资产、做/不做边界和最小真实验证
 - [AI 电商作图核心卡点、成本与方案](research/ai-commerce-image-core-bottlenecks-cost-options-2026-07-13.md) — 商品保真、人审返工、成本模型与多路线建议
 - [Image Service 与 MCP 技术合同](features/image-service-mcp-contract.md) — 独立服务、HTTP/MCP边界和一次性执行令牌已进入代码；付费 Provider 尚未开放

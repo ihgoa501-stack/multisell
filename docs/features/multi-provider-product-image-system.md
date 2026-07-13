@@ -50,6 +50,8 @@ Owner 私人图片资产/已审货源图片
 
 完成标准不是 API、页面或测试单独存在，而是 Owner 能亲自在页面从真实素材走到批准的最终场景副图，并能读取完整配方和成本。首轮不使用 AI 重绘承担商品事实的主图主体。该闭环真实验收前，后续 Provider、批量和高级能力只保留为方向，不进入当前开发队列。
 
+不配置 Provider Key 时，按 [`PRODUCT_IMAGE_SINGLE_SKU_NO_KEY_ACCEPTANCE.md`](../ops/PRODUCT_IMAGE_SINGLE_SKU_NO_KEY_ACCEPTANCE.md) 使用确定性处理完成首次 Owner 验收。
+
 ### 1.2 下一验证单元：3 SKU 三路线对照
 
 只有第 1.1 节由 Owner 真实操作通过后，才进入：
