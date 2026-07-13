@@ -29,9 +29,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/experiments', icon: 'ExperimentOutlined', label: '事实核验案卷' },
       { key: '/demand-cases', icon: 'SearchOutlined', label: '候选市场' },
       { key: '/product-opportunities', icon: 'BulbOutlined', label: '商品机会' },
-      { key: '/candidates', label: '候选商品', status: 'mock' },
-      { key: '/approval', label: '审批管理', status: 'mock' },
-      { key: '/sandbox-listing', label: '沙箱上架', status: 'sandbox' },
+      { key: '/approval', label: '审批管理' },
       { key: '/profit', icon: 'DollarOutlined', label: '利润真相' },
       { key: '/support', icon: 'MessageOutlined', label: '统一客服' },
       { key: '/dashboard', label: '每日简报' },
@@ -51,7 +49,7 @@ export const menuGroups: MenuGroup[] = [
       { key: '/competitors', label: '竞品监控' },
       { key: '/listings', label: '刊登管理' },
       { key: '/listing-tasks', label: '刊登任务' },
-      { key: '/platform-integrations', label: '平台集成', status: 'sandbox' },
+      { key: '/platform-integrations', label: '平台集成' },
     ],
   },
   {
@@ -59,7 +57,6 @@ export const menuGroups: MenuGroup[] = [
     items: [
       { key: '/orders', icon: 'FileTextOutlined', label: '订单', permission: 'order.read' },
       { key: '/shipping', label: '物流' },
-      { key: '/fulfillment', icon: 'ControlOutlined', label: '履约中枢', status: 'sandbox' },
       { key: '/supplychain', icon: 'ApartmentOutlined', label: '供应链追踪' },
       { key: '/aftersales', label: '售后' },
       { key: '/aftersales/disputes', label: '争议管理' },
@@ -82,7 +79,6 @@ export const menuGroups: MenuGroup[] = [
       { key: '/settings', icon: 'SettingOutlined', label: '系统设置', permission: 'settings.read' },
       { key: '/settings/rbac', label: '权限管理', permission: 'rbac.manage' },
       { key: '/settings/policy', label: '审批策略' },
-      { key: '/design-system', label: '设计系统', status: 'shell' },
     ],
   },
   {

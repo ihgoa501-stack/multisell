@@ -425,8 +425,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	producthub.RegisterRoutes(productRoutes, db, logger)
 	sentiment.RegisterRoutes(protected, db, logger)
 
-	shippingRoutes := protected.Group("", middleware.RequirePermission(db, "shipping.read"))
-	shipping.RegisterRoutes(shippingRoutes, db, logger)
+	shipping.RegisterRoutes(protected, db, logger, developmentFixtures)
 	platformfee.RegisterRoutes(protected, db, logger)
 	orderRoutes := protected.Group("", middleware.RequirePermission(db, "order.read"))
 	order.RegisterRoutes(orderRoutes, db, logger, approvalSvc)

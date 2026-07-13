@@ -2,74 +2,78 @@ package shipping
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers shipping routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, allowMock bool) {
 	svc := NewService(db, logger)
 	h := NewHandler(svc)
 
-	g := rg.Group("/shipping")
+	read := rg.Group("/shipping", middleware.RequirePermission(db, "shipping.read"))
 	{
-		// Quote
-		g.POST("/quote", h.Quote)
+		read.POST("/quote", h.Quote)
+		read.POST("/quote-unified", h.QuoteUnified)
 
 		// Providers
-		g.GET("/providers", h.ListProviders)
-		g.GET("/providers/:id", h.GetProvider)
-		g.POST("/providers", h.CreateProvider)
-		g.PUT("/providers/:id", h.UpdateProvider)
-		g.DELETE("/providers/:id", h.DeleteProvider)
+		read.GET("/providers", h.ListProviders)
+		read.GET("/providers/:id", h.GetProvider)
 
 		// Channels
-		g.GET("/channels", h.ListChannels)
-		g.GET("/channels/:id", h.GetChannel)
-		g.POST("/channels", h.CreateChannel)
-		g.PUT("/channels/:id", h.UpdateChannel)
-		g.DELETE("/channels/:id", h.DeleteChannel)
+		read.GET("/channels", h.ListChannels)
+		read.GET("/channels/:id", h.GetChannel)
 
 		// Zones
-		g.GET("/zones", h.ListZones)
-		g.POST("/zones", h.CreateZone)
-		g.DELETE("/zones/:id", h.DeleteZone)
+		read.GET("/zones", h.ListZones)
 
 		// Quote rules
-		g.GET("/rules", h.ListRules)
-		g.POST("/rules", h.CreateRule)
-		g.DELETE("/rules/:id", h.DeleteRule)
+		read.GET("/rules", h.ListRules)
+		read.GET("/rules/:id/versions", h.ListRuleVersions)
 
 		// Bill batches
-		g.GET("/bill-batches", h.ListBillBatches)
-		g.GET("/bill-batches/:id", h.GetBillBatch)
-		g.POST("/bill-batches", h.CreateBillBatch)
-		g.POST("/bill-batches/import", h.ImportBill)
-		g.DELETE("/bill-batches/:id", h.DeleteBillBatch)
-		g.GET("/bill-batches/:id/items", h.ListBillItems)
-		g.POST("/bill-batches/:id/reconcile", h.ReconcileBillBatch)
-		g.GET("/bill-batches/:id/anomalies", h.ListBillAnomalies)
+		read.GET("/bill-batches", h.ListBillBatches)
+		read.GET("/bill-batches/:id", h.GetBillBatch)
+		read.GET("/bill-batches/:id/items", h.ListBillItems)
+		read.GET("/bill-batches/:id/anomalies", h.ListBillAnomalies)
 
 		// Phase 1: Fulfillment Intelligence OS
-		g.POST("/quote-unified", h.QuoteUnified)
-		g.POST("/snapshots", h.CreateSnapshot)
-		g.GET("/snapshots", h.ListSnapshots)
-		g.GET("/snapshots/:orderId", h.GetSnapshot)
-		g.PUT("/bill-items/:id/review", h.ReviewBillItem)
-		g.GET("/rules/:id/versions", h.ListRuleVersions)
+		read.GET("/snapshots", h.ListSnapshots)
+		read.GET("/snapshots/:orderId", h.GetSnapshot)
 
 		// Phase 3: Fulfillment tracking
-		g.POST("/tracking", h.CreateTracking)
-		g.GET("/tracking", h.ListTracking)
-		g.GET("/tracking/:orderId", h.GetTracking)
-		g.PUT("/tracking/:id/event", h.UpdateTrackingEvent)
-		g.PUT("/tracking/:id/exception", h.MarkTrackingException)
+		read.GET("/tracking", h.ListTracking)
+		read.GET("/tracking/:orderId", h.GetTracking)
 
 		// Phase 4: Carrier performance
-		g.GET("/carrier-performance", h.GetCarrierPerformance)
+		read.GET("/carrier-performance", h.GetCarrierPerformance)
 
-		// Phase 5: Carrier API (mock-backed)
-		g.GET("/carriers", h.ListCarriers)
-		g.POST("/carriers/:code/quote", h.CarrierQuote)
+		// Mock carriers are development fixtures, never production capabilities.
+		if allowMock {
+			read.GET("/carriers", h.ListCarriers)
+			read.POST("/carriers/:code/quote", h.CarrierQuote)
+		}
 	}
+
+	write := rg.Group("/shipping", middleware.RequirePermission(db, "shipping.write"))
+	write.POST("/providers", h.CreateProvider)
+	write.PUT("/providers/:id", h.UpdateProvider)
+	write.DELETE("/providers/:id", h.DeleteProvider)
+	write.POST("/channels", h.CreateChannel)
+	write.PUT("/channels/:id", h.UpdateChannel)
+	write.DELETE("/channels/:id", h.DeleteChannel)
+	write.POST("/zones", h.CreateZone)
+	write.DELETE("/zones/:id", h.DeleteZone)
+	write.POST("/rules", h.CreateRule)
+	write.DELETE("/rules/:id", h.DeleteRule)
+	write.POST("/bill-batches", h.CreateBillBatch)
+	write.POST("/bill-batches/import", h.ImportBill)
+	write.DELETE("/bill-batches/:id", h.DeleteBillBatch)
+	write.POST("/bill-batches/:id/reconcile", h.ReconcileBillBatch)
+	write.POST("/snapshots", h.CreateSnapshot)
+	write.PUT("/bill-items/:id/review", h.ReviewBillItem)
+	write.POST("/tracking", h.CreateTracking)
+	write.PUT("/tracking/:id/event", h.UpdateTrackingEvent)
+	write.PUT("/tracking/:id/exception", h.MarkTrackingException)
 }

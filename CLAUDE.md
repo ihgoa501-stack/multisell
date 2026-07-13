@@ -73,6 +73,8 @@ requests it. See `LICENSE`.
 
 The legacy Prism runtime client, trigger route, Listing/loop injection, and `PRISM_*` configuration are retired and must not be restored to production paths. Historical `imagegen` data and the standalone `/Users/lc/prism` repository remain preserved.
 
+Production Owner navigation must not expose entries explicitly marked Mock, Sandbox, or shell. Shipping reads require `shipping.read`; mutations require `shipping.write`, granted only to enabled Owner/Admin roles. Mock carrier routes are development-only and must not register in acceptance or production.
+
 API prefix: `/api/v1`. Health: `/api/health`. Swagger: `GET /swagger/index.html` (44 endpoints annotated). All non-auth endpoints require JWT.
 
 ## Commands

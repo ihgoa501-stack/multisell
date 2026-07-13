@@ -44,6 +44,7 @@ var optionalRuntimePolicies = map[string]struct{}{
 	"POST:/api/v1/mock/seed":                                            {},
 	"POST:/api/v1/owner/suggestions/:id/feedback":                       {},
 	"POST:/api/v1/platform-integrations/mock/seed":                      {},
+	"POST:/api/v1/shipping/carriers/:code/quote":                        {},
 	"POST:/api/v1/content/generate":                                     {},
 	"POST:/api/v1/content/validate":                                     {},
 	"PUT:/api/v1/settings/llm":                                          {},

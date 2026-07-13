@@ -54,6 +54,8 @@ Owner 权威 HTTP 路由还必须通过专用 RBAC capability：采购 `purchase
 
 Owner 经营决策权威位于 `internal/domain/businessdecision/`，受控行动与反馈位于 `internal/domain/businessfeedback/`。AI 建议、Owner 决定、Command 执行和结果观察必须分层保存；`selected` 决定只授权其冻结的 exact capability/command/target/input hash。结果只可记录为 `support / counter / conflict`，不得宣称因果成立。旧 `experiment` 始终是 `trace_only` 经营事实核验案卷，不能写最终决定或反馈闭环终态。
 
+正式 Owner 导航只展示真实纵向经营入口；明确标记为 Mock、Sandbox 或壳的演示入口不得出现。物流读取要求 `shipping.read`，物流变更要求只授予启用 Owner/Admin 的 `shipping.write`；固定返回成功的 mock carrier 路由只允许 development，acceptance 与 production 不注册。
+
 凌镜 LingMirror (technical name: MultiSell) — cross-border e-commerce AI AgentOS.
 Version `v0.3.0.0`.
 
