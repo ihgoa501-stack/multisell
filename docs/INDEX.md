@@ -198,6 +198,7 @@
 | [ToolBridge 工具桥接](toolbridge-guide.md) | 插件驱动工具执行、添加 Driver、降级策略 |
 | [Chrome扩展指南](chrome-extension-guide.md) | 1688页面一键保存到Owner私人采集箱：安装、权限、HTTPS接口和故障提示 |
 | [1688采集助手重构规格](features/1688-browser-evidence-collector-refactor.md) | Owner页面一键采集、私人采集箱、后续选品任务与受控草稿 |
+| [1688采集插件 L3 验收合同](features/1688-plugin-l3-acceptance.md) | 设备配对、详情/列表采集、采集箱定位、重复与恢复的自动化和真实 Chrome 发布门禁 |
 | [市场与商品机会 Owner 流程](features/market-opportunity-owner-flow.md) | 三类研究、系统评估、Owner 市场决定、商品机会及安全边界 |
 | [Owner 经营决策与反馈案卷](features/business-decision-feedback-owner-flow.md) | 权威事实快照、exact Owner 决定、受控执行、观测与可恢复反馈链 |
 | [市场与商品机会进展审计](research/market-opportunity-progress-audit-2026-07-12.md) | 第2单元已实现证据、验证结果与剩余缺口 |
