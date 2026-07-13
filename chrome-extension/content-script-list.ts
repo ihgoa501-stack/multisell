@@ -48,6 +48,63 @@ let panelResults: HTMLElement | null = null;
 let collectSelectedButton: HTMLButtonElement | null = null;
 let selectAllButton: HTMLButtonElement | null = null;
 let collectPageButton: HTMLButtonElement | null = null;
+let listPanel: HTMLElement | null = null;
+let listPanelContent: HTMLElement | null = null;
+let listPanelCollapseButton: HTMLButtonElement | null = null;
+type ListPanelSide = "left" | "right";
+type ListPanelPosition = { side: ListPanelSide; top: number; collapsed: boolean };
+const LIST_PANEL_POSITION_KEY = "lingmirror_list_collector_position_v1";
+const LIST_PANEL_EDGE = 18;
+let listPanelPosition: ListPanelPosition = { side: "right", top: 80, collapsed: false };
+
+function clampListPanelTop(top: number): number {
+  const height = Math.max(44, listPanel?.getBoundingClientRect().height || 360);
+  return Math.max(12, Math.min(Math.round(top), Math.max(12, window.innerHeight - Math.min(height, window.innerHeight - 24) - 12)));
+}
+
+function applyListPanelPosition(): void {
+  const host = document.getElementById(LIST_UI_HOST_ID);
+  if (!host || !listPanel || !listPanelContent || !listPanelCollapseButton) return;
+  listPanelPosition.top = clampListPanelTop(listPanelPosition.top);
+  const isLeft = listPanelPosition.side === "left";
+  Object.assign(host.style, {
+    top: `${listPanelPosition.top}px`, bottom: "auto",
+    left: isLeft ? `${LIST_PANEL_EDGE}px` : "auto",
+    right: isLeft ? "auto" : `${LIST_PANEL_EDGE}px`,
+  });
+  listPanelContent.style.display = listPanelPosition.collapsed ? "none" : "block";
+  listPanel.style.width = listPanelPosition.collapsed ? "auto" : "330px";
+  listPanelCollapseButton.textContent = listPanelPosition.collapsed ? "展开" : "收起";
+  listPanelCollapseButton.setAttribute("aria-expanded", listPanelPosition.collapsed ? "false" : "true");
+}
+
+async function persistListPanelPosition(): Promise<void> {
+  try {
+    await chrome.storage?.local?.set({ [LIST_PANEL_POSITION_KEY]: listPanelPosition });
+  } catch {
+    // Position persistence is convenience only; collection must keep working.
+  }
+}
+
+async function restoreListPanelPosition(): Promise<void> {
+  try {
+    const stored = (await chrome.storage?.local?.get(LIST_PANEL_POSITION_KEY))?.[LIST_PANEL_POSITION_KEY] as Partial<ListPanelPosition> | undefined;
+    if (stored && (stored.side === "left" || stored.side === "right") && Number.isFinite(stored.top)) {
+      listPanelPosition = { side: stored.side, top: Number(stored.top), collapsed: stored.collapsed === true };
+    } else {
+      listPanelPosition.top = clampListPanelTop(window.innerHeight - (listPanel?.getBoundingClientRect().height || 360) - LIST_PANEL_EDGE);
+    }
+  } catch {
+    // Use the safe default when extension storage is unavailable.
+  }
+  applyListPanelPosition();
+}
+
+function setListPanelCollapsed(collapsed: boolean): void {
+  listPanelPosition.collapsed = collapsed;
+  applyListPanelPosition();
+  void persistListPanelPosition();
+}
 
 function reliableOfferURL(raw: string): { offerId: string; sourceURL: string } | null {
   try {
@@ -420,9 +477,24 @@ function installListCollectorUI(): void {
   Object.assign(host.style, { position: "fixed", right: "18px", bottom: "18px", zIndex: "2147483647" });
   const shadow = host.attachShadow({ mode: "open" });
   const panel = document.createElement("section");
-  Object.assign(panel.style, { width: "330px", maxHeight: "55vh", overflow: "auto", background: "#fff", color: "#111827", border: "1px solid #c7d2fe", borderRadius: "12px", padding: "12px", boxShadow: "0 10px 30px #0003", font: "13px/1.45 system-ui" });
+  Object.assign(panel.style, { width: "330px", maxWidth: "calc(100vw - 36px)", maxHeight: "calc(100vh - 24px)", overflow: "auto", background: "#fff", color: "#111827", border: "1px solid #c7d2fe", borderRadius: "12px", padding: "12px", boxShadow: "0 10px 30px #0003", font: "13px/1.45 system-ui" });
+  listPanel = panel;
+  const header = document.createElement("div");
+  header.id = "lingmirror-list-collector-drag-handle";
+  header.tabIndex = 0;
+  header.setAttribute("role", "toolbar");
+  header.setAttribute("aria-label", "拖动凌镜列表采集；方向键调整位置");
+  Object.assign(header.style, { fontWeight: "700", cursor: "grab", userSelect: "none", touchAction: "none", minHeight: "26px" });
   const title = document.createElement("strong");
   title.textContent = "凌镜 · 当前可见商品";
+  const collapse = makePanelButton("收起");
+  collapse.setAttribute("aria-label", "收起或展开凌镜列表采集");
+  Object.assign(collapse.style, { float: "right", margin: "0", padding: "2px 7px" });
+  collapse.addEventListener("click", (event) => { event.stopPropagation(); setListPanelCollapsed(!listPanelPosition.collapsed); });
+  listPanelCollapseButton = collapse;
+  header.append(title, collapse);
+  const content = document.createElement("div");
+  listPanelContent = content;
   const scopeHint = document.createElement("div");
   scopeHint.textContent = "只处理当前已加载且可见的商品，不自动翻页。";
   Object.assign(scopeHint.style, { marginTop: "4px", color: "#4b5563" });
@@ -459,10 +531,62 @@ function installListCollectorUI(): void {
   const cancel = makePanelButton("停止批量");
   cancel.addEventListener("click", () => { cancelBatch = true; });
   panelResults = document.createElement("div");
-  panel.append(title, scopeHint, panelStatus, delayContainer, selectAllButton, collectSelectedButton, collectPageButton, cancel, panelResults);
+  content.append(scopeHint, panelStatus, delayContainer, selectAllButton, collectSelectedButton, collectPageButton, cancel, panelResults);
+  panel.append(header, content);
   shadow.append(panel);
   host.setAttribute("aria-label", "凌镜1688列表采集");
   document.documentElement.append(host);
+
+  let dragStart: { pointerId: number; clientX: number; clientY: number; left: number; top: number } | null = null;
+  header.addEventListener("pointerdown", (event) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    const rect = host.getBoundingClientRect();
+    dragStart = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, left: rect.left, top: rect.top };
+    header.setPointerCapture?.(event.pointerId);
+    header.style.cursor = "grabbing";
+    event.preventDefault();
+  });
+  header.addEventListener("pointermove", (event) => {
+    if (!dragStart || dragStart.pointerId !== event.pointerId) return;
+    const width = Math.max(180, host.getBoundingClientRect().width || 354);
+    const nextLeft = Math.max(12, Math.min(dragStart.left + event.clientX - dragStart.clientX, Math.max(12, window.innerWidth - width - 12)));
+    listPanelPosition.top = clampListPanelTop(dragStart.top + event.clientY - dragStart.clientY);
+    Object.assign(host.style, { left: `${nextLeft}px`, right: "auto", top: `${listPanelPosition.top}px`, bottom: "auto" });
+  });
+  const finishDrag = (event: PointerEvent) => {
+    if (!dragStart || dragStart.pointerId !== event.pointerId) return;
+    const rect = host.getBoundingClientRect();
+    listPanelPosition.side = rect.left + rect.width / 2 < window.innerWidth / 2 ? "left" : "right";
+    listPanelPosition.top = clampListPanelTop(rect.top);
+    dragStart = null;
+    header.releasePointerCapture?.(event.pointerId);
+    header.style.cursor = "grab";
+    applyListPanelPosition();
+    void persistListPanelPosition();
+  };
+  header.addEventListener("pointerup", finishDrag);
+  header.addEventListener("pointercancel", finishDrag);
+  header.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      listPanelPosition.side = event.key === "ArrowLeft" ? "left" : "right";
+    } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      listPanelPosition.top = clampListPanelTop(listPanelPosition.top + (event.key === "ArrowUp" ? -16 : 16));
+    } else if (event.key === "Escape") {
+      setListPanelCollapsed(true);
+      event.preventDefault();
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    applyListPanelPosition();
+    void persistListPanelPosition();
+  });
+  window.addEventListener("resize", () => {
+    applyListPanelPosition();
+    void persistListPanelPosition();
+  });
+  void restoreListPanelPosition();
 }
 
 function extractListItemsData(): ListItemData[] {

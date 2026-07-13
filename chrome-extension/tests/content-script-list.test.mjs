@@ -21,10 +21,12 @@ function productCard(id, options = {}) {
   </li>`;
 }
 
-function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer_search.htm?keywords=test') {
+function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer_search.htm?keywords=test', storageValues = {}) {
   const { window } = parseHTML(`<html><body><ul id="results">${html}</ul></body></html>`);
   window.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 200, height: 120, top: 20, left: 20, right: 220, bottom: 140 });
   Object.defineProperty(window, 'location', { value: new URL(pageURL), configurable: true });
+  Object.defineProperty(window, 'innerWidth', { value: 1200, writable: true, configurable: true });
+  Object.defineProperty(window, 'innerHeight', { value: 800, writable: true, configurable: true });
   const messages = [];
   const messageListeners = [];
   const chrome = {
@@ -39,7 +41,13 @@ function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer
           messageListeners.push(listener);
         }
       }
-    }
+    },
+    storage: {
+      local: {
+        get: async (key) => ({ [key]: storageValues[key] }),
+        set: async (values) => { Object.assign(storageValues, JSON.parse(JSON.stringify(values))); },
+      },
+    },
   };
   const timeoutsCalled = [];
   const context = vm.createContext({
@@ -57,7 +65,7 @@ function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer
     timeoutsCalled,
   });
   vm.runInContext(compiled, context, { filename: 'content-script-list.js' });
-  return { context, window, document: window.document, messages, timeoutsCalled, messageListeners };
+  return { context, window, document: window.document, messages, timeoutsCalled, messageListeners, storageValues };
 }
 
 test('visible list extraction keeps only exact offer links and explicit fields', () => {
@@ -109,6 +117,55 @@ test('list collector has isolated selection UI and both Owner batch actions', ()
     const selectorHost = card.querySelector('[data-lingmirror-offer-selector]');
     assert.ok(selectorHost?.shadowRoot, 'card selector must be isolated from marketplace/ERP CSS');
   }
+});
+
+test('list collector can drag within viewport edges, collapse, remember position and stay visible after resize', async () => {
+  const storageValues = {};
+  const loaded = loadList(productCard('2051'), undefined, undefined, storageValues);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const host = loaded.document.getElementById('lingmirror-list-collector-host');
+  const panel = host.shadowRoot.querySelector('section');
+  const handle = host.shadowRoot.getElementById('lingmirror-list-collector-drag-handle');
+  const collapse = Array.from(host.shadowRoot.querySelectorAll('button')).find((button) => button.textContent === '收起');
+  assert.ok(panel && handle && collapse);
+  host.getBoundingClientRect = () => {
+    const width = panel.style.width === 'auto' ? 180 : 354;
+    const left = host.style.left === 'auto' || !host.style.left ? loaded.window.innerWidth - 18 - width : Number.parseFloat(host.style.left);
+    const top = Number.parseFloat(host.style.top) || 80;
+    return { left, right: left + width, top, bottom: top + 120, width, height: 120, x: left, y: top, toJSON() {} };
+  };
+  const pointer = (type, values) => {
+    const event = new loaded.window.Event(type, { bubbles: true, cancelable: true });
+    for (const [key, value] of Object.entries(values)) Object.defineProperty(event, key, { value });
+    handle.dispatchEvent(event);
+  };
+  pointer('pointerdown', { pointerId: 1, clientX: 1100, clientY: 650 });
+  pointer('pointermove', { pointerId: 1, clientX: -500, clientY: -500 });
+  assert.ok(Number.parseFloat(host.style.left) >= 12, 'drag must not leave the left viewport edge');
+  assert.ok(Number.parseFloat(host.style.top) >= 12, 'drag must not leave the top viewport edge');
+  pointer('pointerup', { pointerId: 1, clientX: -500, clientY: -500 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(host.style.left, '18px');
+  assert.equal(storageValues.lingmirror_list_collector_position_v1.side, 'left');
+
+  collapse.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(panel.querySelector('div:not([role="toolbar"])').style.display, 'none');
+  assert.equal(collapse.textContent, '展开');
+  assert.equal(storageValues.lingmirror_list_collector_position_v1.collapsed, true);
+
+  loaded.window.innerHeight = 100;
+  loaded.window.dispatchEvent(new loaded.window.Event('resize'));
+  assert.ok(Number.parseFloat(host.style.top) >= 12);
+  assert.ok(Number.parseFloat(host.style.top) <= 44, 'resize must clamp the collapsed panel into the viewport');
+
+  const restored = loadList(productCard('2052'), undefined, undefined, storageValues);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const restoredHost = restored.document.getElementById('lingmirror-list-collector-host');
+  const restoredPanel = restoredHost.shadowRoot.querySelector('section');
+  assert.equal(restoredHost.style.left, '18px');
+  assert.equal(restoredPanel.style.width, 'auto');
+  assert.ok(Array.from(restoredHost.shadowRoot.querySelectorAll('button')).some((button) => button.textContent === '展开'));
 });
 
 test('collect current page submits every currently visible offer without a fixed quota and keeps per-item results', async () => {
