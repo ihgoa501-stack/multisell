@@ -74,8 +74,11 @@ jobs:
           docker run --rm -v "$PWD/deploy/prometheus:/etc/prometheus:ro" prom/prometheus:v2.53.0 promtool check rules /etc/prometheus/rules/lingmirror_alerts.yml
       - name: Validate Alertmanager routing
         run: docker run --rm -v "$PWD/deploy/alertmanager:/etc/alertmanager:ro" prom/alertmanager:v0.27.0 amtool check-config /etc/alertmanager/alertmanager.yml
-      - name: Validate systemd operations timers
-        run: systemd-analyze verify ops/systemd/*.service ops/systemd/*.timer
+      - name: Validate operations delivery contracts
+        run: |
+          systemd-analyze verify ops/systemd/*.service ops/systemd/*.timer
+          chmod +x scripts/tests/test_ops_config_contracts.sh
+          ./scripts/tests/test_ops_config_contracts.sh
 
   # ==========================================
   # PR compliance: validate template checkboxes

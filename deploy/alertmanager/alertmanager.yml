@@ -6,6 +6,7 @@ receivers:
   - name: "default"
     slack_configs:
       - api_url_file: "/run/secrets/slack_webhook_url"
+        send_resolved: true
         channel: "#alerts"
         title: '{{ .GroupLabels.alertname }}'
         text: '{{ .CommonAnnotations.description }}'
