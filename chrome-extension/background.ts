@@ -19,7 +19,7 @@ import type {
   CollectPrivateProductRequest,
   CollectPrivateProductResponse,
 } from "./shared/protocol.js";
-import { getApiBaseUrl, getJWT, getLoginUrl, getServerUrl, getWsUrl, setDeviceCredential, setJWT } from "./shared/auth.js";
+import { getApiBaseUrl, getJWT, getServerUrl, getServerUrlFromPairingOrigin, getWsUrl, setDeviceCredential, setJWT, setServerUrl } from "./shared/auth.js";
 import {
   addPendingCollection,
   buildPendingCollectionMarker,
@@ -479,13 +479,14 @@ chrome.runtime.onMessage.addListener(
 		if (sender.id !== chrome.runtime.id || !sender.url) throw new Error("无效的配对消息来源");
 		const senderURL = new URL(sender.url);
 		if (senderURL.pathname !== "/settings/plugin") throw new Error("配对只能从凌镜插件设置页发起");
+		if (input.origin !== senderURL.origin) throw new Error("配对页面来源校验失败");
+		await setServerUrl(getServerUrlFromPairingOrigin(input.origin));
         const deviceStored = await chrome.storage.local.get(["lingmirror_device_id"]);
         const deviceId = deviceStored.lingmirror_device_id || crypto.randomUUID();
         await chrome.storage.local.set({ lingmirror_device_id: deviceId });
         const claimSecret = crypto.randomUUID() + crypto.randomUUID();
         const serverUrl = await getServerUrl();
 		const apiOrigin = new URL(getApiBaseUrl(serverUrl)).origin;
-		if (senderURL.origin !== new URL(getLoginUrl(serverUrl)).origin) throw new Error("配对页面与目标凌镜服务器不一致");
         const response = await fetch(`${getApiBaseUrl(serverUrl)}/auth/extension-pairings/claim`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
             nonce: input.nonce, claim_secret: claimSecret, device_id: deviceId,
@@ -505,7 +506,7 @@ chrome.runtime.onMessage.addListener(
       void (async () => {
 		const pending = (await chrome.storage.session.get(["pendingExtensionPairing"])).pendingExtensionPairing;
 		if (!pending || pending.nonce !== (message as any).nonce) throw new Error("配对会话已失效，请重新开始");
-		if (sender.id !== chrome.runtime.id || !sender.url || new URL(sender.url).origin !== pending.senderOrigin) throw new Error("确认消息不是来自原配对页面");
+		if (sender.id !== chrome.runtime.id || !sender.url || new URL(sender.url).origin !== pending.senderOrigin || (message as any).origin !== pending.senderOrigin) throw new Error("确认消息不是来自原配对页面");
         const serverUrl = await getServerUrl();
 		if (new URL(getApiBaseUrl(serverUrl)).origin !== pending.apiOrigin) throw new Error("目标服务器已变化，请重新配对");
         const response = await fetch(`${getApiBaseUrl(serverUrl)}/auth/extension-pairings/exchange`, {
