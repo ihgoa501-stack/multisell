@@ -1,11 +1,11 @@
 # 凌镜 LingMirror — 文档索引
 
-> **唯一开发路径（2026-07-12）**：先读 [ADR-001：完整 Owner 自用跨境电商平台](decisions/ADR-001-owner-complete-commerce-platform.md)，再读 [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md)。完整平台是目的地，按完整纵向单元推进；凌镜只供 Owner 本人使用，外部 SaaS、多租户和商业化文档均为历史材料。
+> **唯一开发路径（2026-07-13）**：先读 [ADR-001：完整 Owner 自用跨境电商平台](decisions/ADR-001-owner-complete-commerce-platform.md)，再读 [ADR-002：实践—认识项目运行方法](decisions/ADR-002-practice-cognition-operating-method.md)和 [真实可运行系统完善计划](plan/REAL_OPERATION_READINESS_PLAN.md)。完整平台是目的地，按系统建设验收与受控真实经营两类循环推进；凌镜只供 Owner 本人使用，外部 SaaS、多租户和商业化文档均为历史材料。
 
-> **当前事实入口**：先读 [经营闭环模型纠偏](research/project-truth-audit-2026-07-12-business-loop-correction.md)，再读 [方向事实审计 2026-07-12](research/project-truth-audit-2026-07-12.md)；工程完成度证据继续追溯到 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。
+> **当前事实入口**：先读 [真实经营就绪基线 2026-07-13](research/real-operation-readiness-baseline-2026-07-13.md)与 [本地运行验收事实审计 2026-07-13](research/project-truth-audit-2026-07-13.md)，再读 [经营闭环模型纠偏](research/project-truth-audit-2026-07-12-business-loop-correction.md)与 [方向事实审计 2026-07-12](research/project-truth-audit-2026-07-12.md)；历史工程边界继续追溯到 [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md)。
 
 > 跨境電商 AI Agent 运营平台（技术名：MultiSell）
-> 更新日期：2026-07-12
+> 更新日期：2026-07-13
 
 ---
 
@@ -50,6 +50,8 @@
 | 文档 | 说明 |
 |------|------|
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 🆕 当前执行口径：产品方向、AgentOS 安全优先级、文档清理规则 |
+| [真实可运行系统完善计划](plan/REAL_OPERATION_READINESS_PLAN.md) | ⭐ 当前唯一执行计划：从工程基线、正式环境到真实经营、对账和下一轮行动 |
+| [真实经营就绪基线 2026-07-13](research/real-operation-readiness-baseline-2026-07-13.md) | P0-1 结果：完整经营路径的权威入口、证据等级、现场阻塞和下一验收动作 |
 | [设计系统](DESIGN.md) | 🆕 UI 设计规范：色彩、字体、间距、动画、组件风格、无障碍 |
 | [项目状态](PROJECT_STATUS.md) | 当前版本、验证状态、更新历史 |
 | [AI 无人公司长远战略愿景](LONG_TERM_VISION_AND_STRATEGY.md) | 🆕 系统终极形态：“全自动驾驶”无人公司操作系统的四道门槛与落地路线图 |
@@ -73,6 +75,7 @@
 | 文档 | 当前用途 |
 |------|----------|
 | [ADR-001：完整 Owner 自用跨境电商平台](decisions/ADR-001-owner-complete-commerce-platform.md) | Accepted；唯一开发路径、完整平台结构、纵向单元顺序和范围边界 |
+| [ADR-002：实践—认识项目运行方法](decisions/ADR-002-practice-cognition-operating-method.md) | Accepted；区分工程实践与经营实践，规定真实可运行门槛和循环推进方法 |
 | [Owner 自用经营方向](SELF_USE_OPERATING_DIRECTION.md) | 当前最高优先级产品边界、资金纪律与开发路线；明确无外部软件用户目标 |
 | [经营闭环模型纠偏](research/project-truth-audit-2026-07-12-business-loop-correction.md) | 当前有效裁决：现有 experiment 是经营事实核验案卷，不构成因果实验或反馈闭环 |
 | [外部经营反馈标杆综合](research/external-benchmark-operating-feedback-synthesis-2026-07-12.md) | 三路外部调研综合：Amazon 单变量实验、eBay 单人工作台及凌镜首个现实验证建议 |
@@ -94,6 +97,8 @@
 | [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
 | [AI 基础建设总规划：小Q与 Evidence Workshop](../tasks/plan.md) | 小Q作为唯一 Owner Agent 的长期目标、能力目录、安全边界、阶段门禁、预算与停止条件 |
 | [小Q与 Evidence Workshop 执行清单](../tasks/todo.md) | 小Q对话、Capability 接入和经营闭环的垂直任务；每阶段需 Owner 单独批准 |
+| [本地运行验收事实审计 2026-07-13](research/project-truth-audit-2026-07-13.md) | PostgreSQL 145、跨层浏览器验收、Schema Drift 与图片服务契约的最新本地证据 |
+| [真实经营就绪基线 2026-07-13](research/real-operation-readiness-baseline-2026-07-13.md) | 正式服务器只读现场检查与全经营路径 P0-1 基线；当前最早门槛为 P0-2 |
 | [方向事实审计 2026-07-12](research/project-truth-audit-2026-07-12.md) | 最新产品边界：Owner 单人自用，不验证外部软件需求 |
 | [项目真相审计 2026-07-11](research/project-truth-audit-2026-07-11.md) | 上一版代码、测试、经营事实、mock 和未闭环部分的只读审计快照 |
 | [商品出海决策与执行层](features/product-export-decision-execution-layer.md) | ⛔ 已被 2026-07-11 自用方向替代，仅供历史追溯 |
@@ -174,9 +179,10 @@
 | [告警规则](ops/ALERT_RULES.md) | 🆕 各服务告警规则定义、阈值和响应流程 |
 | [备份策略](ops/BACKUP_POLICY.md) | 🆕 数据库/配置/文件备份策略、保留周期和恢复流程 |
 | [AgentOS 开发文档](AGENTOS_DEVELOPMENT_GUIDE.md) | AgentOS 团队系统工程 |
+| [小Q Agent Runtime Architecture v1](architecture/XIAOQ_AGENT_RUNTIME_V1.md) | 小Q唯一真实运行循环、能力目录、安全控制、第一湖验收与旧架构迁移的第一版权威设计 |
 | [小Q Agent 架构官方资料调研](research/xiaoq-agent-architecture-2026-07-12.md) | 单一主Agent、动态能力目录、模型外审批和审计的官方资料依据 |
 | [小Q产品需求质量审计](research/xiaoq-product-requirement-quality-2026-07-12.md) | 原始愿景的合理性、产品经理版One-pager、指标、非目标和停止条件 |
-| [小Q多领域路由规范 v1](specs/xiaoq-multi-domain-routing-v1.md) | Target、会话、按需能力发现、事实追踪、错误码和多领域接入测试矩阵 |
+| [小Q多领域路由规范 v1](specs/xiaoq-multi-domain-routing-v1.md) | `superseded`：固定能力路由设计，保留历史参考；新实现遵循Agent Runtime v1 |
 | [前端页面与路由](FRONTEND_PAGES_AND_ROUTING.md) | Next App Router 页面结构、菜单覆盖和 API 路径规则 |
 | [UI 覆盖审计](UI_FRAMEWORK_GAP_ANALYSIS.md) | 当前 Next App Router 页面覆盖、菜单覆盖和 UI 风险 |
 | [LingMirror Development Loop](DEVELOPMENT_LOOP.md) | Intake → Translate → Discover → Slice → Implement → Verify → Review → Record → Repeat 的项目开发闭环 |
@@ -193,8 +199,13 @@
 | [Chrome扩展指南](chrome-extension-guide.md) | 1688页面一键保存到Owner私人采集箱：安装、权限、HTTPS接口和故障提示 |
 | [1688采集助手重构规格](features/1688-browser-evidence-collector-refactor.md) | Owner页面一键采集、私人采集箱、后续选品任务与受控草稿 |
 | [市场与商品机会 Owner 流程](features/market-opportunity-owner-flow.md) | 三类研究、系统评估、Owner 市场决定、商品机会及安全边界 |
+| [Owner 经营决策与反馈案卷](features/business-decision-feedback-owner-flow.md) | 权威事实快照、exact Owner 决定、受控执行、观测与可恢复反馈链 |
 | [市场与商品机会进展审计](research/market-opportunity-progress-audit-2026-07-12.md) | 第2单元已实现证据、验证结果与剩余缺口 |
 | [商品、货源与渠道准备缺口审计](research/product-supply-channel-gap-audit-2026-07-12.md) | 第3单元已有证据、权威缺口与实施顺序 |
+| [订单、库存、履约与售后纵向单元审计](research/order-inventory-fulfillment-aftersales-gap-audit-2026-07-12.md) | 第4单元事实链、自动验证与仍然未知的外部经营结果 |
+| [结算、最终利润与现金纵向单元审计](research/settlement-profit-cash-gap-audit-2026-07-12.md) | 第5单元单一金额权威链、自动验证与真实金额证据边界 |
+| [Owner 经营决策与反馈纵向单元审计](research/business-decision-feedback-gap-audit-2026-07-12.md) | 第6单元事实快照、Owner决定、受控行动、结果反馈与因果边界 |
+| [小Q Owner 协作层审计](research/xiaoq-owner-collaboration-audit-2026-07-12.md) | 第7单元 active/deferred Capability、Owner交互与安全边界 |
 | [测试说明](TEST_SUMMARY.md) | 2026-06-24 历史测试状态、已知问题 and 覆盖面 |
 | [前端测试报告](FRONTEND_TEST_REPORT.md) | 2026-06-24 `frontend-next` build/test/lint 历史状态 |
 | [AI-Native 统一开发框架总览](guides/ai-native-framework-overview.md) | 🆕 AI 程序员开发规范入口，概述系统机制 |
@@ -262,11 +273,17 @@
 
 - [商品出海决策与执行层](features/product-export-decision-execution-layer.md) — ⛔ 已被当前 Owner 自用方向替代，仅供历史追溯
 - [功能需求模板](features/TEMPLATE.md)
+- [经营实践—认识循环底座（架构草案）](features/operating-practice-cognition-loop.md) — `draft`；经营事实、构思、Owner决定、真实行动、结果与下一轮的概念设计
 - [Phase 1: 商品出海Dry-Run闭环修复](features/phase1-dry-run-closed-loop-spec.md)
 - [1688 货源到待上架草稿受控闭环](features/1688-controlled-draft-workflow.md) — Owner 自用，草稿与独立发布审批严格分离；真实商品验收待完成
-- [多方案商品图片系统开发规格](features/multi-provider-product-image-system.md) — 确定性首版已实现；外部 Provider 仍受审批、预算和真实合同验证门禁
+- [商品视觉生产与学习系统开发规格](features/multi-provider-product-image-system.md) — 单 SKU 配方冻结、反馈、返工和统计已完成隔离浏览器验收；Owner 真实 SKU/场景图验收后再进入3 SKU对照
+- [AI 商品图片系统的长期价值、提示词资产与建设边界](research/ai-product-image-system-value-and-scope-2026-07-13.md) — 提示词不是孤立核心资产；定义长期数据资产、做/不做边界和最小真实验证
+- [AI 电商作图核心卡点、成本与方案](research/ai-commerce-image-core-bottlenecks-cost-options-2026-07-13.md) — 商品保真、人审返工、成本模型与多路线建议
 - [Image Service 与 MCP 技术合同](features/image-service-mcp-contract.md) — 独立服务、HTTP/MCP边界和一次性执行令牌已进入代码；付费 Provider 尚未开放
 - [AI 商品图片系统工程验证记录（2026-07-12）](research/ai-image-system-engineering-verification-2026-07-12.md) — 当前代码、自动验证与未完成边界
+- [AI 商品图片 Provider 官方合同核验（2026-07-12）](research/ai-image-provider-contract-verification-2026-07-12.md) — Photoroom、Adobe、OpenAI 官方合同矩阵与 sandbox/生产门禁
+- [Photoroom Sandbox 单次 Canary 运行手册](ops/PHOTOROOM_SANDBOX_CANARY_RUNBOOK.md) — Owner 凭据、权利、一次配额、停止条件与结果裁决
+- [Prism → Image Service 迁移盘点（2026-07-12）](research/prism-to-image-service-inventory-2026-07-12.md) — MultiSell 旧 Prism 运行路径已退役；历史数据与独立 Prism 仓库保留
 - [真实 SKU 的 AI 辅助图片草稿方案](features/ai-assisted-product-image-draft.md) — `superseded`；历史收缩方案
 - [1688 受控草稿链工程事实审计（2026-07-12）](research/project-truth-audit-2026-07-12-1688-draft-workflow.md) — 工程实现与外部事实边界
 

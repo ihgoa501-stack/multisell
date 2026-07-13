@@ -10,6 +10,10 @@ env \
   DB_PASSWORD=render_password \
   DB_NAME=render_db \
   JWT_SECRET=render_only_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_SHARED_SECRET=render_only_image_shared_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_EXECUTION_TOKEN_SECRET=render_only_image_execution_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_RELEASE_ATTESTATION_SECRET=render_only_image_attestation_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_DATABASE_URL=postgresql://render_user:render_password@db:5432/render_db?sslmode=disable \
   AUDIT_CHECKPOINT_KEY=render_only_audit_checkpoint_key \
   DOMAIN=example.invalid \
   docker compose \
@@ -28,7 +32,7 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 services = config.get("services", {})
 errors = []
 
-for name in ("db", "backend", "frontend", "backup", "audit-checkpoint"):
+for name in ("db", "backend", "frontend", "image-service", "backup", "audit-checkpoint"):
     service = services.get(name, {})
     if service.get("ports"):
         errors.append(f"{name} must not publish host ports: {service['ports']}")
@@ -55,6 +59,28 @@ if str(backend_env.get("AUTH_REGISTRATION_ENABLED", "")).lower() != "false":
     errors.append("production public registration must be disabled")
 if str(backend_env.get("SWAGGER_ENABLED", "")).lower() != "false":
     errors.append("production public Swagger must be disabled")
+
+image_service_env = services.get("image-service", {}).get("environment", {})
+if image_service_env.get("IMAGE_SERVICE_ENVIRONMENT") != "production":
+    errors.append("image-service environment must be production")
+if image_service_env.get("IMAGE_SERVICE_JOB_STORE") != "postgres":
+    errors.append("image-service must use the persistent postgres job store")
+
+required_secret_bindings = {
+    "backend.JWT_SECRET": backend_env.get("JWT_SECRET"),
+    "backend.IMAGE_SERVICE_SHARED_SECRET": backend_env.get("IMAGE_SERVICE_SHARED_SECRET"),
+    "backend.IMAGE_SERVICE_EXECUTION_TOKEN_SECRET": backend_env.get("IMAGE_SERVICE_EXECUTION_TOKEN_SECRET"),
+    "backend.IMAGE_RELEASE_ATTESTATION_SECRET": backend_env.get("IMAGE_RELEASE_ATTESTATION_SECRET"),
+    "image-service.IMAGE_SERVICE_SHARED_SECRET": image_service_env.get("IMAGE_SERVICE_SHARED_SECRET"),
+    "image-service.IMAGE_SERVICE_EXECUTION_TOKEN_SECRET": image_service_env.get("IMAGE_SERVICE_EXECUTION_TOKEN_SECRET"),
+}
+for binding, value in required_secret_bindings.items():
+    if not value or str(value).startswith(("dev-", "change-me")):
+        errors.append(f"production secret binding is missing or unsafe: {binding}")
+if backend_env.get("IMAGE_SERVICE_SHARED_SECRET") != image_service_env.get("IMAGE_SERVICE_SHARED_SECRET"):
+    errors.append("backend and image-service shared secrets must match")
+if backend_env.get("IMAGE_SERVICE_EXECUTION_TOKEN_SECRET") != image_service_env.get("IMAGE_SERVICE_EXECUTION_TOKEN_SECRET"):
+    errors.append("backend and image-service execution token secrets must match")
 
 backup_env = services.get("backup", {}).get("environment", {})
 if str(backup_env.get("BACKUP_REQUIRE_OFFSITE", "")).lower() != "true":

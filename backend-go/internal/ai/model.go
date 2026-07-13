@@ -32,13 +32,13 @@ func (AITrace) TableName() string { return "ai_trace" }
 
 // AITraceEvent maps to "ai_trace_event".
 type AITraceEvent struct {
-	ID         int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TraceID    string          `gorm:"column:trace_id;not null;uniqueIndex:uq_trace_seq" json:"trace_id"`
-	EventType  string          `gorm:"column:event_type;not null" json:"event_type"`
-	Seq        int             `gorm:"column:seq;not null;uniqueIndex:uq_trace_seq" json:"seq"`
-	Content    string          `gorm:"column:content" json:"content"`
-	Payload    json.RawMessage `gorm:"column:payload;type:jsonb" json:"payload"`
-	CreatedAt  time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	ID        int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TraceID   string          `gorm:"column:trace_id;not null;uniqueIndex:uq_trace_seq" json:"trace_id"`
+	EventType string          `gorm:"column:event_type;not null" json:"event_type"`
+	Seq       int             `gorm:"column:seq;not null;uniqueIndex:uq_trace_seq" json:"seq"`
+	Content   string          `gorm:"column:content" json:"content"`
+	Payload   json.RawMessage `gorm:"column:payload;type:jsonb" json:"payload"`
+	CreatedAt time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 
 func (AITraceEvent) TableName() string { return "ai_trace_event" }
@@ -59,13 +59,13 @@ func (AIEvidenceRef) TableName() string { return "ai_evidence_ref" }
 
 // UnifiedAction status constants
 const (
-	ActionStatusSuggested  = "suggested"
-	ActionStatusApproved   = "approved"
-	ActionStatusRejected   = "rejected"
-	ActionStatusExecuting  = "executing"
-	ActionStatusExecuted   = "executed"
-	ActionStatusReviewed   = "reviewed"
-	ActionStatusEscalated  = "escalated"
+	ActionStatusSuggested = "suggested"
+	ActionStatusApproved  = "approved"
+	ActionStatusRejected  = "rejected"
+	ActionStatusExecuting = "executing"
+	ActionStatusExecuted  = "executed"
+	ActionStatusReviewed  = "reviewed"
+	ActionStatusEscalated = "escalated"
 )
 
 // UnifiedAction maps to "unified_action".
@@ -106,10 +106,10 @@ type UnifiedAction struct {
 	IdempotencyKey     string          `gorm:"column:idempotency_key;index" json:"idempotency_key,omitempty"`
 	ApprovedByUserID   *int64          `gorm:"column:approved_by_user_id" json:"approved_by_user_id,omitempty"`
 	ExecutedByUserID   *int64          `gorm:"column:executed_by_user_id" json:"executed_by_user_id,omitempty"`
-		RejectedByUserID   *int64          `gorm:"column:rejected_by_user_id" json:"rejected_by_user_id,omitempty"`
-		CreatedAt          time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-		UpdatedAt          time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
-	}
+	RejectedByUserID   *int64          `gorm:"column:rejected_by_user_id" json:"rejected_by_user_id,omitempty"`
+	CreatedAt          time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt          time.Time       `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
 
 func (UnifiedAction) TableName() string { return "unified_action" }
 
@@ -151,6 +151,7 @@ type AddEvidenceInput struct {
 // CompleteTraceInput closes a running trace.
 type CompleteTraceInput struct {
 	FinalOutput json.RawMessage `json:"final_output"`
+	ModelName   string          `json:"model_name,omitempty"`
 	Confidence  *float64        `json:"confidence"`
 	RiskLevel   string          `json:"risk_level"`
 	TokenCount  int             `json:"token_count"`
@@ -191,10 +192,10 @@ type ActionDecisionInput struct {
 
 // ChatInput is the payload for POST /ai/chat.
 type ChatInput struct {
-	Message    string                 `json:"message" binding:"required"`
-	AgentID    string                 `json:"agent_id"`
-	Context    map[string]interface{} `json:"context"`
-	Stream     bool                   `json:"stream"`
+	Message string                 `json:"message" binding:"required"`
+	AgentID string                 `json:"agent_id"`
+	Context map[string]interface{} `json:"context"`
+	Stream  bool                   `json:"stream"`
 }
 
 // ChatResponse is the non-streaming chat response.

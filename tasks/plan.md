@@ -4,6 +4,7 @@
 > 状态：待 Owner 审阅；获批后按阶段执行
 > 适用边界：Owner 单人自用跨境商品实验系统
 > 历史计划：原 AI-Native AgentOS 扩张计划已冻结，归档见 `tasks/ai-native-agentos-execution-plan.md`
+> 第一版运行架构：`docs/architecture/XIAOQ_AGENT_RUNTIME_V1.md`；需求案件第一湖已`implemented / automated_verified`，真实Provider人工验收仍为`unknown`
 
 ## 1. 结论
 
@@ -218,9 +219,9 @@ MCP 或插件只负责连接工具。每个工具仍需登记：用途、输入�
 
 目标：先让 Owner 能和小Q对话，让小Q安全读取一个需求案件；再让一个 Scout run 真正调用模型和只读工具，完整保存 trace、来源和失败，而不是扩展多 Agent。
 
-交付：小Q对话会话、意图路由、只读 Capability 调用、统一 Run Contract、真实 provider 调用、工具调用记录、预算硬限制、超时/取消、结构化输出校验、stub 显式标记。
+交付：小Q对话入口、受控模型工具循环、动态只读 Capability 过滤、统一 Run Contract、真实 provider 工具调用、工具结果回传、预算硬限制、超时/取消、结构化输出校验、stub 显式标记。
 
-通过门：小Q能正确回答一个需求案件的当前状态并给出事实链接；一个真实 Scout run 可重复执行；失败不会伪装成成功；任何 stub 输出均不能进入需求案件。
+通过门：小Q至少完成一次“模型选择能力 → 真实能力结果 → 模型继续判断 → 最终回答”的需求案件运行并给出事实链接；真实运行可重复验证；失败不会伪装成成功；任何 stub 输出均不能进入需求案件。
 
 ### Phase 2：独立三 run 与证据导入（2—3 周）
 

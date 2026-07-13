@@ -116,6 +116,9 @@ Package: `backend-go/internal/domain/experiment/`
 | Field | Type | JSON | Column | Constraints |
 |-------|------|------|--------|-------------|
 | `ExperimentID` | `string` | `experiment_id` | `—` |  |
+| `AuthorityScope` | `string` | `authority_scope` | `—` |  |
+| `CausalStatus` | `string` | `causal_status` | `—` |  |
+| `FeedbackLoopStatus` | `string` | `feedback_loop_status` | `—` |  |
 | `Stage` | `string` | `stage` | `—` |  |
 | `PassedGates` | `int64` | `passed_gates` | `—` |  |
 | `Blockers` | `[]string` | `blockers` | `—` |  |

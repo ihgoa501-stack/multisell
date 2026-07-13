@@ -10,10 +10,9 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
-	"github.com/lingmirror/backend-go/internal/domain/sku"
-	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Service provides listing task business logic.
@@ -22,8 +21,6 @@ import (
 type Service struct {
 	db          *gorm.DB
 	logger      *zap.Logger
-	prismSvc    prismadapter.PrismService // nil = Prism disabled at runtime
-	prismStrict bool                      // block on Prism error vs warn+continue
 	approvalSvc *approval.Service
 	oplogSvc    *operationlog.Service
 	loopRec     LoopRecorder
@@ -37,15 +34,12 @@ type LoopRecorder interface {
 }
 
 // NewService creates a new listingtask service.
-// prismSvc may be nil, in which case Prism is never called.
 // oplogSvc may be nil (audit logging disabled).
 // loopRec may be nil (feedback recording disabled).
-func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool, approvalSvc *approval.Service, oplogSvc *operationlog.Service, loopRec LoopRecorder) *Service {
+func NewService(db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service, oplogSvc *operationlog.Service, loopRec LoopRecorder) *Service {
 	return &Service{
 		db:          db,
 		logger:      logger,
-		prismSvc:    prismSvc,
-		prismStrict: prismStrict,
 		approvalSvc: approvalSvc,
 		oplogSvc:    oplogSvc,
 		loopRec:     loopRec,
@@ -259,6 +253,41 @@ func (s *Service) Update(id int64, in *UpdateTaskInput) (*ListingTask, error) {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// ApplyOwnerApproval advances one listing task and records the authoritative
+// approval audit in the same transaction. Event subscribers call this method;
+// they do not own listing state transitions.
+func (s *Service) ApplyOwnerApproval(taskID, approvalID int64, reviewer string) error {
+	if taskID <= 0 || approvalID <= 0 || reviewer == "" {
+		return errors.New("listing approval event is incomplete")
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var task ListingTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error; err != nil {
+			return err
+		}
+		if task.Status == "approved" && task.ApprovalID != nil && *task.ApprovalID == approvalID {
+			return nil
+		}
+		sm := NewListingTaskStateMachine()
+		if task.Status == "blocked" {
+			if !sm.CanTransition("blocked", "pending_approval") {
+				return fmt.Errorf("listing task %d: blocked -> pending_approval not allowed", taskID)
+			}
+			if err := tx.Model(&task).Update("status", "pending_approval").Error; err != nil {
+				return err
+			}
+			task.Status = "pending_approval"
+		}
+		if task.Status != "pending_approval" || !sm.CanTransition("pending_approval", "approved") {
+			return fmt.Errorf("listing task %d cannot apply approval from %s", taskID, task.Status)
+		}
+		if err := tx.Model(&task).Updates(map[string]interface{}{"status": "approved", "approval_id": approvalID}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&operationlog.OperationLog{Module: "listing_task", Action: "listing_task.approval_approved", ResourceID: fmt.Sprint(taskID), Operator: reviewer, Content: fmt.Sprintf("listing_task_id=%d approval_id=%d status=approved", taskID, approvalID), Result: "approved", TriggerType: "eventbus", ApprovalID: &approvalID, EntityType: "listing_task", EntityID: taskID}).Error
+	})
 }
 
 // Delete removes a listing task by id (and its items via cascade expectation).
@@ -689,11 +718,11 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		return nil, ErrImageReleaseAttestationRequired
 	}
 
-	// Dry-run and sandbox are explicit mock executions. They do not call Prism,
-	// a platform adapter, or any other external writer.
+	// Dry-run and sandbox are explicit mock executions. They do not call a
+	// platform adapter or any other external writer.
 	if task.DryRun || task.ExecutionMode <= ExecutionModeSandbox {
 		modeName := ExecutionModeNames[task.ExecutionMode]
-		s.logger.Info("listing task mock execution: skipping Prism and platform publish",
+		s.logger.Info("listing task mock execution: skipping platform publish",
 			zap.Int64("task_id", task.ID),
 			zap.String("mode", modeName),
 		)
@@ -737,26 +766,9 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 
 	oldStatus := task.Status
 
-	// Run Prism check outside the main transaction so transient failures don't
-	// block the task-update transaction.
-	prismResult := s.runPrismForTask(&task)
-
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&task).Update("status", "executing").Error; err != nil {
 			return err
-		}
-
-		// If Prism blocked execution, update task + listing states and abort.
-		if prismResult != nil && prismResult.action == "block" {
-			_ = tx.Model(&task).Updates(map[string]interface{}{
-				"status":     "blocked",
-				"last_error": prismResult.lastError,
-			}).Error
-			if task.ProductListingID != nil {
-				_ = tx.Model(&ProductListing{}).Where("id = ?", *task.ProductListingID).
-					Update("status", "blocked").Error
-			}
-			return fmt.Errorf("prism compliance failed: %s", prismResult.lastError)
 		}
 
 		var items []ListingTaskItem
@@ -767,9 +779,6 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 		finalStatus := "completed"
 		for i := range items {
 			result := map[string]interface{}{"executed_at": now}
-			if prismResult != nil {
-				result["prism"] = prismResult.data
-			}
 			resultBytes, _ := json.Marshal(result)
 			updates := map[string]interface{}{
 				"status":      "completed",
@@ -781,32 +790,10 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 			}
 		}
 
-		// Persist Prism result into the ProductListing's published_data.
-		if prismResult != nil && prismResult.data != nil && task.ProductListingID != nil {
-			prismMeta, _ := json.Marshal(prismResult.data)
-			_ = tx.Model(&ProductListing{}).Where("id = ?", *task.ProductListingID).
-				Update("published_data", gorm.Expr("published_data || ?::jsonb", string(prismMeta))).Error
-		}
-
 		return tx.Model(&task).Update("status", finalStatus).Error
 	})
 	if err != nil {
-		// If it's a Prism block the DB was updated correctly; return blocked state.
-		if prismResult != nil && prismResult.action == "block" {
-			if err := s.db.First(&task, taskID).Error; err != nil {
-				return nil, err
-			}
-			// Audit: blocked by Prism
-			s.writeAudit("listing_task.execute", "blocked", fmt.Sprintf("%d", taskID), operator,
-				fmt.Sprintf("listing_task_id=%d prism_blocked error=%s", taskID, task.LastError),
-				&task)
-			s.statusChangeAudit(taskID, oldStatus, task.Status, operator)
-			if s.loopRec != nil {
-				_ = s.loopRec.RecordExecutionResult(task.ProductID, task.ID, false, "prism_blocked: "+task.LastError)
-			}
-			return &task, nil
-		}
-		// Audit: execution failed (non-Prism error)
+		// Audit: execution failed.
 		s.writeAudit("listing_task.execute", "failure", fmt.Sprintf("%d", taskID), operator,
 			fmt.Sprintf("listing_task_id=%d error=%v", taskID, err),
 			&task)
@@ -866,128 +853,3 @@ func (s *Service) ExecuteTask(taskID int64, operator string) (*ListingTask, erro
 
 	return &task, nil
 }
-
-// prismResult carries the action and metadata from a Prism check.
-type prismResult struct {
-	action    string // "pass", "warn", "block"
-	data      map[string]interface{}
-	lastError string
-}
-
-// runPrismForTask checks whether this task should run Prism and if so, calls it.
-// Returns nil if Prism is skipped or disabled.
-func (s *Service) runPrismForTask(task *ListingTask) *prismResult {
-	if s.prismSvc == nil {
-		return nil
-	}
-
-	// Read the ProductListing to check if Prism was enabled.
-	if task.ProductListingID == nil {
-		return nil
-	}
-	var listing ProductListing
-	if err := s.db.First(&listing, *task.ProductListingID).Error; err != nil {
-		return nil
-	}
-
-	var pd struct {
-		Prism struct {
-			Enabled bool            `json:"enabled"`
-			Options json.RawMessage `json:"options"`
-		} `json:"prism"`
-	}
-	if len(listing.PublishedData) > 0 {
-		_ = json.Unmarshal(listing.PublishedData, &pd)
-	}
-	if !pd.Prism.Enabled {
-		return nil
-	}
-
-	// Look up platform code.
-	var plat platform.Platform
-	if err := s.db.First(&plat, task.PlatformID).Error; err != nil {
-		s.logger.Warn("prism: platform lookup failed", zap.Int64("platform_id", task.PlatformID), zap.Error(err))
-		return s.prismError("platform_not_found")
-	}
-
-	// Look up product main_image.
-	var prod sku.Product
-	if err := s.db.First(&prod, task.ProductID).Error; err != nil {
-		s.logger.Warn("prism: product lookup failed", zap.Int64("product_id", task.ProductID), zap.Error(err))
-		return s.prismError("product_not_found")
-	}
-	if prod.MainImage == "" {
-		s.logger.Warn("prism: product has no main_image", zap.Int64("product_id", task.ProductID))
-		return s.prismError("no_main_image")
-	}
-
-	// Call Prism.
-	resp, err := s.prismSvc.Generate(nil, &prismadapter.GenerateRequest{
-		ImageURL:  prod.MainImage,
-		Platform:  plat.Code,
-		ProductID: task.ProductID,
-	})
-	if err != nil {
-		s.logger.Warn("prism: generate call failed", zap.Error(err))
-		return s.prismError(fmt.Sprintf("prism_service_error: %v", err))
-	}
-
-	// Build metadata for storage.
-	data := map[string]interface{}{
-		"prism": map[string]interface{}{
-			"job_id":            resp.JobID,
-			"output_url":        resp.OutputURL,
-			"compliance_report": resp.ComplianceReport,
-			"risk_score":        resp.RiskScore,
-			"failure_reasons":   resp.FailureReasons,
-		},
-	}
-
-	switch resp.ComplianceReport.Status {
-	case prismadapter.StatusPass:
-		return &prismResult{action: "pass", data: data}
-	case prismadapter.StatusWarning:
-		return &prismResult{action: "warn", data: data}
-	case prismadapter.StatusFail:
-		reasons := ""
-		if len(resp.FailureReasons) > 0 {
-			for i, r := range resp.FailureReasons {
-				if i > 0 {
-					reasons += "; "
-				}
-				reasons += r
-			}
-		}
-		return &prismResult{
-			action:    "block",
-			data:      data,
-			lastError: fmt.Sprintf("prism compliance failed: %s", reasons),
-		}
-	default:
-		s.logger.Warn("prism: unknown compliance status", zap.String("status", resp.ComplianceReport.Status))
-		return &prismResult{
-			action:    "block",
-			data:      data,
-			lastError: fmt.Sprintf("prism unknown compliance status: %s", resp.ComplianceReport.Status),
-		}
-	}
-}
-
-// prismError returns a block/warn result depending on strict mode.
-func (s *Service) prismError(errMsg string) *prismResult {
-	if s.prismStrict {
-		return &prismResult{action: "block", lastError: errMsg}
-	}
-	s.logger.Warn("prism: non-strict mode, continuing despite error", zap.String("error", errMsg))
-	return nil
-}
-
-// ProductListing is a minimal projection for Prism data storage.
-type ProductListing struct {
-	ID            int64           `gorm:"column:id;primaryKey;autoIncrement"`
-	Status        string          `gorm:"column:status"`
-	PublishedData json.RawMessage `gorm:"column:published_data;type:jsonb"`
-}
-
-// TableName explicitly sets the table name.
-func (ProductListing) TableName() string { return "product_listing" }

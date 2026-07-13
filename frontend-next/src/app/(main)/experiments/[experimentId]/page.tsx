@@ -11,7 +11,7 @@ import PageContainer from '@/components/ui/PageContainer';
 import { formatBlocker, gateMeta, nextExperimentStage, stageGateCodes, stageLabels, truthMeta } from '@/lib/experiment-display';
 import { experimentStages, type EvidenceTruth, type ExperimentDetail, type ExperimentOwnerSummary, type ExperimentStage, type GateResult } from '@/types/experiment';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 const truthOptions = (Object.keys(truthMeta) as EvidenceTruth[])
   .filter((value) => value !== 'actual')
   .map((value) => ({ value, label: truthMeta[value].label }));
@@ -68,19 +68,12 @@ export default function ExperimentDetailPage() {
 
   const advanceCase = () => {
     if (!data || !nextStage) return;
-    const overrides: Record<string, unknown> = { stage: nextStage };
-    if (data.case.stage === 'profit') overrides.final_profit_status = 'final';
-    if (data.case.stage === 'cash') overrides.cash_recovery_status = 'recovered';
-    updateCase.mutate(overrides);
-  };
-
-  const finishCase = (decision: 'continue' | 'adjust' | 'switch' | 'stop') => {
-    updateCase.mutate({ final_decision: decision, status: decision === 'stop' ? 'stopped' : 'completed' });
+    updateCase.mutate({ stage: nextStage });
   };
 
   return (
     <PageContainer
-      title={data?.case.name ?? '经营实验案卷'}
+      title={data?.case.name ?? '经营事实核验案卷'}
       subtitle={experimentId}
       loading={detail.isLoading}
       error={detail.isError}
@@ -89,11 +82,10 @@ export default function ExperimentDetailPage() {
       extra={<Space><Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/experiments')}>全部案件</Button><Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button></Space>}
     >
       {data && <>
+        <Alert style={{ marginBottom: 16 }} showIcon type="warning" title="此模块仅作历史经营事实追踪" description="对象关联、闸门通过、订单终态、最终利润或现金到账都不证明因果关系，也不能把案卷标记为经营反馈闭环完成。" />
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-          <Col xs={24} md={6}><Card><Statistic title="当前阶段" value={stageLabels[data.case.stage] ?? data.case.stage} /></Card></Col>
-          <Col xs={24} md={6}><Card><Statistic title="已通过闸门" value={owner?.passed_gates ?? 0} suffix="项" /></Card></Col>
-          <Col xs={24} md={6}><Card><Text type="secondary">最终净利润</Text><Title level={4} style={{ margin: '8px 0 0' }}>{data.case.final_profit_status === 'final' ? `${data.case.profit_currency} ${data.case.final_profit_amount.toFixed(2)}` : '尚未封账'}</Title><Text type="secondary">收入 {data.case.final_revenue?.toFixed(2) ?? '0.00'} − 成本 {data.case.final_total_cost?.toFixed(2) ?? '0.00'}</Text></Card></Col>
-          <Col xs={24} md={6}><Card><Text type="secondary">现金实际回收</Text><Title level={4} style={{ margin: '8px 0 0' }}>{data.case.cash_recovery_status === 'recovered' ? `${data.case.cash_currency} ${data.case.cash_recovered_amount.toFixed(2)}` : '尚未到账'}</Title><Text type="secondary">{data.case.cash_recovered_at ? dayjs(data.case.cash_recovered_at).format('YYYY-MM-DD HH:mm') : '以真实到账交易为准'}</Text></Card></Col>
+          <Col xs={24} md={12}><Card><Statistic title="当前阶段" value={stageLabels[data.case.stage] ?? data.case.stage} /></Card></Col>
+          <Col xs={24} md={12}><Card><Statistic title="已通过闸门" value={owner?.passed_gates ?? 0} suffix="项" /></Card></Col>
         </Row>
 
         <Card title="当前阻塞" style={{ marginBottom: 16 }}>
@@ -101,28 +93,23 @@ export default function ExperimentDetailPage() {
         </Card>
 
         <Card title="当前阶段操作" style={{ marginBottom: 16 }}>
-          {!currentGatePassed ? (
+          {data.case.stage === 'decision' ? (
+            <Alert type="error" showIcon title="历史决策阶段已冻结" description="该案卷不得作为最终决定或反馈闭环的权威来源。" />
+          ) : !currentGatePassed ? (
             <Alert type="warning" showIcon title={`先完成当前闸门：${stageGateCodes[data.case.stage]}`} description="只有当前阶段最新判断为“通过”，案件才允许进入下一阶段。" action={<Button type="primary" onClick={openCurrentGate}>评估当前闸门</Button>} />
-          ) : data.case.stage === 'decision' ? (
-            <Space wrap>
-              <Text strong>最终决定：</Text>
-              {(['continue', 'adjust', 'switch', 'stop'] as const).map((decision) => (
-                <Popconfirm key={decision} title={`确认记录最终决定：${decision}？`} description={decision === 'stop' ? '案件将标记为 stopped。' : '案件将标记为 completed。'} onConfirm={() => finishCase(decision)}>
-                  <Button danger={decision === 'stop'} loading={updateCase.isPending}>{decision}</Button>
-                </Popconfirm>
-              ))}
-            </Space>
+          ) : data.case.stage === 'cash' ? (
+            <Alert type="info" showIcon title="交易事实已追踪至现金阶段" description="案卷在此停止；这不是因果结论、最终经营决定或反馈闭环完成。" />
           ) : (
             <Space orientation="vertical">
               <Alert type="success" showIcon title="当前阶段闸门已通过" />
-              <Popconfirm title={`确认推进到“${nextStage ? stageLabels[nextStage] : ''}”？`} description={data.case.stage === 'profit' ? '同时把最终利润状态设为 final。' : data.case.stage === 'cash' ? '同时把现金回收状态设为 recovered。' : '只推进一个阶段，不会触发任何外部动作。'} onConfirm={advanceCase}>
-                <Button type="primary" icon={<CheckCircleOutlined />} loading={updateCase.isPending}>{data.case.stage === 'profit' ? '确认最终利润并推进' : data.case.stage === 'cash' ? '确认现金回收并推进' : `推进到${nextStage ? stageLabels[nextStage] : '下一阶段'}`}</Button>
+              <Popconfirm title={`确认推进到“${nextStage ? stageLabels[nextStage] : ''}”？`} description="只推进历史事实追踪阶段，不会形成利润、现金或经营决定终局。" onConfirm={advanceCase}>
+                <Button type="primary" icon={<CheckCircleOutlined />} loading={updateCase.isPending}>{`推进到${nextStage ? stageLabels[nextStage] : '下一阶段'}`}</Button>
               </Popconfirm>
             </Space>
           )}
         </Card>
 
-        <Card title="闭环位置" style={{ marginBottom: 16 }}>
+        <Card title="事实核验阶段（非因果、非反馈闭环）" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
             {experimentStages.map((stage, index) => <div key={stage} style={{ minWidth: 112, padding: 12, borderRadius: 8, border: stage === data.case.stage ? '2px solid #1677ff' : '1px solid var(--border)', background: stage === data.case.stage ? 'var(--brand-bg, #e6f4ff)' : 'var(--surface)' }}><Text type="secondary">{String(index + 1).padStart(2, '0')}</Text><div><Text strong={stage === data.case.stage}>{stageLabels[stage]}</Text></div></div>)}
           </div>

@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -25,63 +26,69 @@ const (
 )
 
 type Config struct {
-	APIKey      string
-	BaseURL     string
-	Model       string
-	Blobs       *blobstore.Store
-	HTTPClient  *http.Client
-	MaxAttempts int
-	RetryDelay  time.Duration
+	APIKey     string
+	BaseURL    string
+	Blobs      *blobstore.Store
+	Repository core.Repository
+	HTTPClient *http.Client
 }
 
 type Provider struct {
-	apiKey      string
-	baseURL     string
-	model       string
-	blobs       *blobstore.Store
-	client      *http.Client
-	maxAttempts int
-	retryDelay  time.Duration
+	apiKey     string
+	baseURL    string
+	blobs      *blobstore.Store
+	repository core.Repository
+	client     *http.Client
 }
 
 func New(cfg Config) (*Provider, error) {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com"
 	}
-	if cfg.Model == "" {
-		cfg.Model = DefaultModel
-	}
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: 90 * time.Second}
 	}
-	if cfg.MaxAttempts <= 0 {
-		cfg.MaxAttempts = 3
+	if err := validateBaseURL(cfg.BaseURL); err != nil {
+		return nil, err
 	}
-	if cfg.MaxAttempts > 5 {
-		return nil, errors.New("OpenAI max attempts must not exceed 5")
-	}
-	if cfg.RetryDelay <= 0 {
-		cfg.RetryDelay = 250 * time.Millisecond
-	}
-	return &Provider{apiKey: strings.TrimSpace(cfg.APIKey), baseURL: strings.TrimRight(cfg.BaseURL, "/"), model: cfg.Model, blobs: cfg.Blobs, client: cfg.HTTPClient, maxAttempts: cfg.MaxAttempts, retryDelay: cfg.RetryDelay}, nil
+	client := *cfg.HTTPClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &Provider{apiKey: strings.TrimSpace(cfg.APIKey), baseURL: strings.TrimRight(cfg.BaseURL, "/"), blobs: cfg.Blobs, repository: cfg.Repository, client: &client}, nil
 }
 
-func (p *Provider) Available() bool { return p != nil && p.apiKey != "" && p.blobs != nil }
+func validateBaseURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return errors.New("invalid OpenAI base URL")
+	}
+	host := strings.ToLower(u.Hostname())
+	if u.Scheme == "https" && host == "api.openai.com" && u.Port() == "" {
+		return nil
+	}
+	if u.Scheme == "http" && (host == "127.0.0.1" || host == "localhost") {
+		return nil
+	}
+	return errors.New("OpenAI base URL is not allowlisted")
+}
 
-func (p *Provider) Execute(ctx context.Context, job core.Job) (string, *jobs.ExecutionError) {
+func (p *Provider) Available() bool {
+	return p != nil && p.apiKey != "" && p.blobs != nil && p.repository != nil
+}
+
+func (p *Provider) Execute(ctx context.Context, job core.Job) (jobs.ExecutionResult, *jobs.ExecutionError) {
 	if !p.Available() {
-		return "", &jobs.ExecutionError{Code: "PROVIDER_UNAVAILABLE", Err: errors.New("OpenAI image provider is not configured")}
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "PROVIDER_UNAVAILABLE", Err: errors.New("OpenAI image provider is not configured")}
 	}
 	if job.Operation != Operation || strings.TrimSpace(job.Prompt) == "" {
-		return "", &jobs.ExecutionError{Code: "VALIDATION_ERROR", Err: errors.New("OpenAI image edit requires a prompt")}
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "VALIDATION_ERROR", Err: errors.New("OpenAI image edit requires a prompt")}
 	}
 	input, err := p.blobs.Get(job.InputBlobID)
 	if err != nil {
-		return "", &jobs.ExecutionError{Code: "INPUT_BLOB_INVALID", Err: err}
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "INPUT_BLOB_INVALID", Err: err}
 	}
 	meta, err := p.blobs.GetMetadata(job.InputBlobID)
 	if err != nil {
-		return "", &jobs.ExecutionError{Code: "INPUT_BLOB_INVALID", Err: err}
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "INPUT_BLOB_INVALID", Err: err}
 	}
 	filename := "input.png"
 	if meta.Format == "jpeg" {
@@ -89,46 +96,43 @@ func (p *Provider) Execute(ctx context.Context, job core.Job) (string, *jobs.Exe
 	}
 	size, err := imageSize(job.Width, job.Height)
 	if err != nil {
-		return "", &jobs.ExecutionError{Code: "VALIDATION_ERROR", Err: err}
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "VALIDATION_ERROR", Err: err}
+	}
+	claimed, err := p.repository.ClaimProviderSubmit(job.ID, "openai")
+	if err != nil {
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "SUBMIT_GUARD_ERROR", Err: errors.New("OpenAI submit gate unavailable")}
+	}
+	if !claimed {
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "RECONCILE_REQUIRED", Err: errors.New("OpenAI submit was already attempted; do not retry")}
 	}
 
-	var last *jobs.ExecutionError
-	for attempt := 1; attempt <= p.maxAttempts; attempt++ {
-		output, executionErr := p.editOnce(ctx, input, filename, strings.TrimSpace(job.Prompt), size, job.IdempotencyKey)
-		if executionErr == nil {
-			id, putErr := p.blobs.Put(output)
-			if putErr != nil {
-				return "", &jobs.ExecutionError{Code: "OUTPUT_INVALID", Err: putErr}
-			}
-			return id, nil
+	output, requestID, executionErr := p.editOnce(ctx, input, filename, strings.TrimSpace(job.Prompt), size, job.IdempotencyKey)
+	if executionErr != nil {
+		if executionErr.Code == "PROVIDER_NETWORK_ERROR" || executionErr.Code == "PROVIDER_RESPONSE_ERROR" || executionErr.Code == "PROVIDER_RETRYABLE" || executionErr.Code == "EXECUTION_CANCELLED" {
+			executionErr.Code = "RECONCILE_REQUIRED"
+			executionErr.Retryable = false
 		}
-		last = executionErr
-		if !executionErr.Retryable || attempt == p.maxAttempts {
-			break
-		}
-		timer := time.NewTimer(p.retryDelay * time.Duration(attempt))
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return "", &jobs.ExecutionError{Code: "EXECUTION_CANCELLED", Err: ctx.Err(), RequestID: executionErr.RequestID}
-		case <-timer.C:
-		}
+		return jobs.ExecutionResult{}, executionErr
 	}
-	return "", last
+	id, putErr := p.blobs.Put(output)
+	if putErr != nil {
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "RECONCILE_REQUIRED", Err: putErr, RequestID: requestID}
+	}
+	return jobs.ExecutionResult{OutputID: id, ProviderRequestID: requestID}, nil
 }
 
-func (p *Provider) editOnce(ctx context.Context, input []byte, filename, prompt, size, idempotencyKey string) ([]byte, *jobs.ExecutionError) {
+func (p *Provider) editOnce(ctx context.Context, input []byte, filename, prompt, size, idempotencyKey string) ([]byte, string, *jobs.ExecutionError) {
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
-	if err := writeMultipart(w, input, filename, p.model, prompt, size); err != nil {
-		return nil, &jobs.ExecutionError{Code: "REQUEST_BUILD_FAILED", Err: err}
+	if err := writeMultipart(w, input, filename, DefaultModel, prompt, size); err != nil {
+		return nil, "", &jobs.ExecutionError{Code: "REQUEST_BUILD_FAILED", Err: err}
 	}
 	if err := w.Close(); err != nil {
-		return nil, &jobs.ExecutionError{Code: "REQUEST_BUILD_FAILED", Err: err}
+		return nil, "", &jobs.ExecutionError{Code: "REQUEST_BUILD_FAILED", Err: err}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/v1/images/edits", &body)
 	if err != nil {
-		return nil, &jobs.ExecutionError{Code: "REQUEST_BUILD_FAILED", Err: err}
+		return nil, "", &jobs.ExecutionError{Code: "REQUEST_BUILD_FAILED", Err: err}
 	}
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("Content-Type", w.FormDataContentType())
@@ -138,18 +142,18 @@ func (p *Provider) editOnce(ctx context.Context, input []byte, filename, prompt,
 	resp, err := p.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, &jobs.ExecutionError{Code: "EXECUTION_CANCELLED", Err: ctx.Err()}
+			return nil, "", &jobs.ExecutionError{Code: "EXECUTION_CANCELLED", Err: ctx.Err()}
 		}
-		return nil, &jobs.ExecutionError{Code: "PROVIDER_NETWORK_ERROR", Err: err}
+		return nil, "", &jobs.ExecutionError{Code: "PROVIDER_NETWORK_ERROR", Err: err}
 	}
 	defer resp.Body.Close()
-	requestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
+	requestID := cleanToken(strings.ReplaceAll(resp.Header.Get("x-request-id"), p.apiKey, ""))
 	b, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
 	if err != nil {
-		return nil, &jobs.ExecutionError{Code: "PROVIDER_RESPONSE_ERROR", Err: err, RequestID: requestID}
+		return nil, requestID, &jobs.ExecutionError{Code: "PROVIDER_RESPONSE_ERROR", Err: err, RequestID: requestID}
 	}
 	if len(b) > MaxResponseBytes {
-		return nil, &jobs.ExecutionError{Code: "OUTPUT_INVALID", Err: errors.New("OpenAI response exceeds size limit"), RequestID: requestID}
+		return nil, requestID, &jobs.ExecutionError{Code: "OUTPUT_INVALID", Err: errors.New("OpenAI response exceeds size limit"), RequestID: requestID}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		code := "PROVIDER_REJECTED"
@@ -157,7 +161,7 @@ func (p *Provider) editOnce(ctx context.Context, input []byte, filename, prompt,
 		if retryable {
 			code = "PROVIDER_RETRYABLE"
 		}
-		return nil, &jobs.ExecutionError{Code: code, Err: providerError(resp.StatusCode, b), RequestID: requestID, Retryable: retryable}
+		return nil, requestID, &jobs.ExecutionError{Code: code, Err: providerError(resp.StatusCode, b), RequestID: requestID, Retryable: retryable}
 	}
 	var decoded struct {
 		Data []struct {
@@ -165,13 +169,13 @@ func (p *Provider) editOnce(ctx context.Context, input []byte, filename, prompt,
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(b, &decoded); err != nil || len(decoded.Data) != 1 || decoded.Data[0].B64JSON == "" {
-		return nil, &jobs.ExecutionError{Code: "OUTPUT_INVALID", Err: errors.New("OpenAI returned an invalid image response"), RequestID: requestID}
+		return nil, requestID, &jobs.ExecutionError{Code: "OUTPUT_INVALID", Err: errors.New("OpenAI returned an invalid image response"), RequestID: requestID}
 	}
 	imageBytes, err := base64.StdEncoding.DecodeString(decoded.Data[0].B64JSON)
 	if err != nil || len(imageBytes) == 0 || len(imageBytes) > blobstore.MaxBlobBytes {
-		return nil, &jobs.ExecutionError{Code: "OUTPUT_INVALID", Err: errors.New("OpenAI returned invalid image bytes"), RequestID: requestID}
+		return nil, requestID, &jobs.ExecutionError{Code: "OUTPUT_INVALID", Err: errors.New("OpenAI returned invalid image bytes"), RequestID: requestID}
 	}
-	return imageBytes, nil
+	return imageBytes, requestID, nil
 }
 
 func writeMultipart(w *multipart.Writer, input []byte, filename, model, prompt, size string) error {

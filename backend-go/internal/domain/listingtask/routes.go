@@ -4,20 +4,17 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
-	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes registers listing task routes on the given router group.
-// prismSvc may be nil (Prism disabled); prismStrict controls error handling.
 // approvalSvc, oplogSvc, rbacSvc, loopRec, publishHook may be nil (feature disabled).
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger,
-	prismSvc prismadapter.PrismService, prismStrict bool,
 	approvalSvc *approval.Service, oplogSvc *operationlog.Service, rbacSvc *rbac.Service,
-	loopRec LoopRecorder, publishHook PublishHook) {
-	svc := NewService(db, logger, prismSvc, prismStrict, approvalSvc, oplogSvc, loopRec)
+	loopRec LoopRecorder, publishHook PublishHook) *Service {
+	svc := NewService(db, logger, approvalSvc, oplogSvc, loopRec)
 	svc.publishHook = publishHook
 	h := NewHandler(svc, rbacSvc)
 
@@ -48,4 +45,5 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger,
 		chain.POST("/:task_id/feedback", h.Feedback)
 		chain.POST("/:task_id/items/:item_id/retry", h.RetryItem)
 	}
+	return svc
 }

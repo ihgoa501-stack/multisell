@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/lingmirror/backend-go/internal/domain/integrations"
 )
 
 func submittedPublishForTerminalTest(t *testing.T) (*Service, int64, int64, int64) {
@@ -18,12 +20,21 @@ func submittedPublishForTerminalTest(t *testing.T) (*Service, int64, int64, int6
 	if _, err = svc.DecidePublish(sourceID, attempt.ID, &PublishDecisionInput{OwnerID: 42, Action: "approve", Note: "approved"}); err != nil {
 		t.Fatal(err)
 	}
-	completed, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
-	if err != nil || completed.Status != PublishStatusSubmitted {
-		t.Fatalf("execute=%+v err=%v", completed, err)
-	}
 	var link Sourcing1688TaskLink
 	if err := svc.db.Where("sourcing_product_id = ?", sourceID).First(&link).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Historical fixture only: terminal-observation behavior still has to read
+	// records that were submitted before the URL adapter seam was frozen. New
+	// ExecutePublish calls cannot create this state.
+	response, err := json.Marshal(integrations.PublishResult{PlatformProductID: "external-123", PlatformURL: "https://platform.example/p/external-123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.db.Model(&PublishAttempt{}).Where("id = ?", attempt.ID).Updates(map[string]any{"status": PublishStatusSubmitted, "response_payload": response}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.db.Model(&Sourcing1688TaskLink{}).Where("id = ?", link.ID).Update("workflow_status", PublishStatusSubmitted).Error; err != nil {
 		t.Fatal(err)
 	}
 	return svc, sourceID, link.ID, attempt.ID

@@ -14,6 +14,10 @@ Package: `backend-go/internal/domain/finance/`
 | `DELETE` | `/api/v1/finance/accounts/:id` | `h.DeleteAccount` |
 | `GET` | `/api/v1/finance/accounts/:id` | `h.GetAccount` |
 | `PUT` | `/api/v1/finance/accounts/:id` | `h.UpdateAccount` |
+| `GET` | `/api/v1/finance/cash-receipts` | `h.ListCashReceipts` |
+| `POST` | `/api/v1/finance/cash-receipts` | `h.CreateCashReceipt` |
+| `GET` | `/api/v1/finance/cash-reconciliations` | `h.ListCashReconciliations` |
+| `POST` | `/api/v1/finance/cash-reconciliations` | `h.CreateCashReconciliation` |
 | `GET` | `/api/v1/finance/ledger` | `h.ListLedger` |
 | `POST` | `/api/v1/finance/mock` | `h.Mock` |
 | `GET` | `/api/v1/finance/orders/:order_id/ledger` | `h.ListOrderLedger` |
@@ -36,6 +40,7 @@ Package: `backend-go/internal/domain/finance/`
 | Field | Type | JSON | Column | Constraints |
 |-------|------|------|--------|-------------|
 | `ID` | `int64` | `id` | `id` | PK |
+| `OwnerID` | `int64` | `owner_id` | `owner_id` | NOT NULL |
 | `Name` | `string` | `name` | `name` | NOT NULL |
 | `AccountType` | `string` | `account_type` | `account_type` | NOT NULL |
 | `PlatformID` | `*int64` | `platform_id,omitempty` | `platform_id` |  |
@@ -83,6 +88,7 @@ Package: `backend-go/internal/domain/finance/`
 
 | Field | Type | JSON | Column | Constraints |
 |-------|------|------|--------|-------------|
+| `OwnerID` | `int64` | `-` | `—` |  |
 | `Name` | `string` | `name` | `—` |  |
 | `AccountType` | `string` | `account_type` | `—` |  |
 | `PlatformID` | `*int64` | `platform_id` | `—` |  |

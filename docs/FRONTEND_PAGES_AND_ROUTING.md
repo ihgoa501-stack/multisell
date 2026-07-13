@@ -106,6 +106,7 @@ API client：
 | `/settlement/[id]` | 结算详情 |
 | `/decision` | 决策总览 |
 | `/decision/prelisting` | 上架前决策 |
+| `/business-decisions/[id]` | Owner 经营决策案卷；AI 建议与 Owner 决定分开保存 |
 | `/allocation` | 分配 |
 | `/allocation/cost` | 成本分摊 |
 

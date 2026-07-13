@@ -360,6 +360,7 @@ type driftReport struct {
 	ExtraTables    []string
 	MissingColumns map[string][]string
 	ColumnMismatch int
+	TypeMismatches []string
 }
 
 // detect compares migration SQL definitions against live DB schema.
@@ -406,9 +407,19 @@ func (d *DriftDetector) detect(actual map[string][]columnInfo, migrations []Tabl
 				r.MissingColumns[t.Name] = append(r.MissingColumns[t.Name], col.Name)
 			} else {
 				actualType := NormalizeType(actualColType[col.Name])
-				expectedType := col.Type
-				if actualType != "" && expectedType != "" && actualType != expectedType {
+				expectedType := NormalizeType(col.Type)
+				// information_schema.data_type does not include varchar/numeric
+				// modifiers, so live comparison can only soundly compare base types.
+				if i := strings.Index(expectedType, "("); i >= 0 {
+					expectedType = expectedType[:i]
+				}
+				// information_schema.data_type reports ARRAY and USER-DEFINED
+				// without the element/UDT identity required for a sound comparison.
+				// Treat those as unknown here instead of manufacturing drift.
+				comparable := actualType != "array" && actualType != "user-defined"
+				if comparable && actualType != "" && expectedType != "" && actualType != expectedType {
 					r.ColumnMismatch++
+					r.TypeMismatches = append(r.TypeMismatches, fmt.Sprintf("%s.%s: expected %s, actual %s", t.Name, col.Name, expectedType, actualType))
 				}
 			}
 		}
@@ -446,6 +457,10 @@ func (d *DriftDetector) report(r driftReport) {
 		if len(cols) > 0 {
 			b.WriteString(fmt.Sprintf("\n  missing columns in %s: %s", table, strings.Join(cols, ", ")))
 		}
+	}
+	if len(r.TypeMismatches) > 0 {
+		sort.Strings(r.TypeMismatches)
+		b.WriteString("\n  type mismatches: " + strings.Join(r.TypeMismatches, "; "))
 	}
 
 	msg := b.String()

@@ -89,7 +89,7 @@
 | 平台集成与映射 | `integrations` |
 | 刊登记录 | `listing` |
 | 上架任务与任务条目 | `listingtask` |
-| ⇨ 平台发布钩子 | `listingtask.PublishHook` — ExecuteTask 成功后调用 adapter.Publish 推送到 Ozon/Shopee 等平台。失败时 task 状态转 failed 可重试，成功时 publish 结果合并到 item result（不覆盖 Prism 数据）。通过 auditSvc.LogStructured 记录发布审计。 |
+| ⇨ 平台发布钩子（旧入口已冻结） | `listingtask.PublishHook` — `production/approval_required` 在任何 Prism、任意图片 URL 或平台 adapter 调用前失败关闭，返回 `image release attestation required; use controlled publish attempt`；`dry_run/sandbox` 只记录 `mock=true, external_write=false`，不产生外部写。真实发布必须走绑定精确图片放行凭证的受控 publish attempt。 |
 | 平台费用规则 | `platformfee` |
 
 ### 订单、物流与售后

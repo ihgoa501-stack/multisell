@@ -1,7 +1,6 @@
 package productanalysis
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,22 +8,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/dbtest"
-	"github.com/lingmirror/backend-go/internal/prismadapter"
 )
-
-type recordingPrism struct{ calls int }
-
-func (p *recordingPrism) Generate(context.Context, *prismadapter.GenerateRequest) (*prismadapter.GenerateResponse, error) {
-	p.calls++
-	return &prismadapter.GenerateResponse{}, nil
-}
 
 func TestLegacyPrismTriggerIsNotRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTestDB(t)
 	engine := gin.New()
-	legacy := &recordingPrism{}
-	RegisterRoutesWithPrism(engine.Group("/api/v1"), db, dbtest.NewLogger(t), legacy)
+	RegisterRoutes(engine.Group("/api/v1"), db, dbtest.NewLogger(t))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/product-analysis/trigger-prism", strings.NewReader(`{"image_url":"http://169.254.169.254/latest/meta-data","platform":"test"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -33,8 +23,5 @@ func TestLegacyPrismTriggerIsNotRegistered(t *testing.T) {
 
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
-	}
-	if legacy.calls != 0 {
-		t.Fatalf("legacy Prism called %d times", legacy.calls)
 	}
 }

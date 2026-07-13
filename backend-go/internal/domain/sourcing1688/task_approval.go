@@ -90,11 +90,17 @@ func (s *Service) SubmitTaskDraftApproval(sourceID, taskLinkID int64, in *DraftA
 		if listing.Status != "draft" {
 			return fmt.Errorf("%w: only an internal draft may be submitted", ErrWorkflowGate)
 		}
+		if err := requireDraftMaterialsReady(tx, in.RequesterID, sourceID, link.ID); err != nil {
+			return err
+		}
+		if err := freezeDraftCostVersion(tx, &draft, in.RequesterID, link.ID, in.CostVersionID); err != nil {
+			return err
+		}
 		contentHash, err := calculateDraftContentSHA256Locked(tx, &draft)
 		if err != nil {
 			return err
 		}
-		frozenValue, err := marshalDraftApprovalNewValue(contentHash)
+		frozenValue, err := marshalDraftApprovalNewValue(contentHash, &draft)
 		if err != nil {
 			return err
 		}

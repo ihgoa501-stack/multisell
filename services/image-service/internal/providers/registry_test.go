@@ -11,8 +11,8 @@ import (
 
 type stubExecutor struct{}
 
-func (stubExecutor) Execute(context.Context, core.Job) (string, *jobs.ExecutionError) {
-	return "ok", nil
+func (stubExecutor) Execute(context.Context, core.Job) (jobs.ExecutionResult, *jobs.ExecutionError) {
+	return jobs.ExecutionResult{OutputID: "ok"}, nil
 }
 
 func TestRegistryRejectsDuplicateAndUnknownOperations(t *testing.T) {
@@ -34,7 +34,7 @@ func TestRegistryDispatchesRegisteredOperation(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, executionErr := r.Execute(context.Background(), core.Job{Operation: "OPENAI_IMAGE_EDIT"})
-	if executionErr != nil || got != "ok" {
-		t.Fatalf("got=%q err=%v", got, executionErr)
+	if executionErr != nil || got.OutputID != "ok" {
+		t.Fatalf("got=%+v err=%v", got, executionErr)
 	}
 }

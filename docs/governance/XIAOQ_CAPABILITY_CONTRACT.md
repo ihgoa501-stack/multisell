@@ -3,6 +3,7 @@
 > 生效日期：2026-07-12
 > 适用范围：所有希望被小Q读取、解释、建议或调用的凌镜功能
 > 产品边界：小Q只服务 Owner，不是外部 SaaS 或通用 Agent 平台
+> 运行架构：[小Q Agent Runtime Architecture v1](../architecture/XIAOQ_AGENT_RUNTIME_V1.md)
 
 ## 1. 目标
 
@@ -13,6 +14,8 @@
 - 模块代码、API 或页面存在：`implemented`；
 - Capability、权限、审计、失败处理和小Q回归测试齐全：`xiao_q_support=active`；
 - 只有规划或接口占位：`planned`，不得显示为小Q可用能力。
+
+“Capability active”和“Agent runtime已实现”是两个独立事实。需求案件的两个只读能力已完成模型工具调用、结果回传、继续判断、停止条件和自动验收，可声明该纵向湖为`agent_runtime_v1 implemented / automated_verified`；其他active能力仍由固定路由调用，不得顺带宣称已迁入Agent循环。真实Provider人工验收仍为`unknown`。
 
 ## 2. 唯一身份
 
@@ -119,10 +122,20 @@ owner_explanation:
 - `experiment.read`
 - `experiment.gate_status.read`
 - `sourcing_1688.controlled_draft.read`
-- `order.fulfillment.read`
+- `order.fact.read`（v2，以 `order_id` 为主体）
+- `inventory.ledger.read`
+- `fulfillment.fact.read`
+- `aftersales.fact.read`
 - `settlement.reconciliation.read`
 - `profit.final.read`
+- `cash.reconciliation.read`
+- `business_decision.read`
+- `business_decision.recommendation.create`
 
 经营实验能力只读取当前 Owner 的案件详情、原始事实等级、已有闸门决定、阻断项与终局状态；不新增或核验证据，不执行闸门评估，不改变实验状态。1688能力只读取与当前 Owner、候选市场、实验和不可变快照一致的受控内部草稿；原始采集载荷、平台发布载荷、内部 URI 和未经独立真实性字段支持的图片权利事实不进入模型上下文，且不能发布、采购或批准。
 
-订单、结算与最终利润能力必须从当前 Owner 的经营实验出发，只读取实验明确关联的唯一订单、结算和 `order_profit_record`。客户个人信息、原始结算载荷和账户详情不得进入模型上下文。订单付款/签收时间仍是内部记录，真实性保持 `unknown`；只有同一订单、可信且完全对账的单一结算，以及无缺失成本的 final 利润记录同时成立时，才可说明“系统记录满足最终利润闸门”。售后观察期及现金金额/币种一致性目前仍为 `unknown`，不属于 active 能力。其他模块均为 `deferred`，不能解释为小Q已经能够调用整个系统。
+Unit 4—6 经营事实能力必须以当前 Owner 的 exact `order_id` 为主体，从权威领域 Service 读取不可变平台订单、库存动作账本、承运商事件、售后请求与终局回执、平台结算、最终利润版本和现金对账。旧 `order.fulfillment.read` 及 `business_closure + experiment_id` 契约已退役，不再是 active 能力；`experiment` 只能继续作为 trace-only 案卷。客户个人信息以及平台、承运商、结算和银行原始载荷不得进入模型上下文。
+
+现金只在结算批次唯一归属该订单时进入单订单视图；多订单结算批次只能显示“批次级现金不可归属单订单”的阻断项。缺少外部承运商事件、售后终局回执、最终利润版本或现金对账时必须保持 `unknown`，不能用人工状态或请求提交状态补足。
+
+经营决策能力只允许读取 Owner 隔离的冻结事实案卷，并可通过 `business_decision.Service.Recommend` 保存绑定 manifest 与幂等键、真实性固定为 `inferred` 的 AI 建议。小Q不得调用 `Decide` 形成 Owner 决定，不得创建或执行任意 Command；Owner 决定仍只来自 Owner 在权威经营决定页面的明确操作。`businessfeedback` 当前仅有确定性领域 API，尚未提供小Q专用的脱敏只读 Capability，因此为 `deferred`。其他未登记模块也均为 `deferred`，不能解释为小Q已经能够调用整个系统。

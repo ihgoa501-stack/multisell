@@ -18,10 +18,12 @@ const truthLabels: Record<XiaoQTruthStatus, string> = {
   inferred: '推断',
   unknown: '未知',
   mock: '模拟',
+  external_observed: '外部已观察',
+  reconciled: '已对账',
 };
 
 const truthColors: Record<XiaoQTruthStatus, string> = {
-  actual: 'green', quoted: 'blue', estimated: 'gold', inferred: 'orange', unknown: 'default', mock: 'magenta',
+  actual: 'green', quoted: 'blue', estimated: 'gold', inferred: 'orange', unknown: 'default', mock: 'magenta', external_observed: 'cyan', reconciled: 'green',
 };
 
 export function TruthStatusTag({ status }: { status: XiaoQTruthStatus }) {
@@ -29,8 +31,9 @@ export function TruthStatusTag({ status }: { status: XiaoQTruthStatus }) {
 }
 
 export function ModeTag({ mode }: { mode: XiaoQMode }) {
-  const readOnly = mode === 'read_only' || mode === 'read_only_v1';
-  return <Tag color={readOnly ? 'blue' : 'purple'}>{readOnly ? '只读模式' : '建议模式'}</Tag>;
+  const readOnly = mode === 'read_only' || mode === 'read_only_v1' || mode === 'read_only_v2' || mode === 'agent_runtime_v1';
+  const label = mode === 'agent_runtime_v1' ? '受控 Agent 循环' : readOnly ? '只读模式' : '建议模式';
+  return <Tag color={readOnly ? 'blue' : 'purple'}>{label}</Tag>;
 }
 
 export function XiaoQBoundaryBanner({ identity }: { identity?: XiaoQIdentity }) {
@@ -77,6 +80,8 @@ export function XiaoQAnswerCard({ response }: { response: XiaoQMessageResponse }
   const isExperiment = response.target_type === 'experiment';
   const isSourcing = response.target_type === 'sourcing_1688';
   const isBusinessClosure = response.target_type === 'business_closure';
+  const isOperatingFacts = response.target_type === 'operating_facts';
+  const isBusinessDecision = response.target_type === 'business_decision';
   return (
     <Card title={<Space wrap><span>小Q回答</span><ModeTag mode={response.mode} /><TruthStatusTag status={response.truth_status} /></Space>}>
       <Paragraph style={{ whiteSpace: 'pre-wrap', fontSize: 15 }}>{response.answer}</Paragraph>
@@ -88,6 +93,10 @@ export function XiaoQAnswerCard({ response }: { response: XiaoQMessageResponse }
           ? '受控来源、快照与成本证据'
           : isBusinessClosure
             ? '订单、结算与最终利润证据'
+            : isOperatingFacts
+              ? '订单经营事实'
+              : isBusinessDecision
+                ? '决策案卷与 AI 建议依据'
             : '证据与反证'}</Text>
       {response.evidence.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本次回答没有可核验证据" />
@@ -117,10 +126,32 @@ export function XiaoQAnswerCard({ response }: { response: XiaoQMessageResponse }
             ? '闸门阻断与仍然未知'
             : isSourcing
               ? '限制与仍然未知'
-              : isBusinessClosure
-                ? '经营闭环仍然未知'
+              : isBusinessClosure || isOperatingFacts
+                ? '仍未核验的经营事实'
+                : isBusinessDecision
+                  ? '决定前仍然未知'
                 : '仍然未知'}
           description={<ul style={{ margin: 0, paddingLeft: 20 }}>{response.unknowns.map((item) => <li key={item}>{item}</li>)}</ul>}
+          style={{ marginTop: 16 }}
+        />
+      )}
+
+      {(response.blockers?.length ?? 0) > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          message="当前阻断原因"
+          description={<ul style={{ margin: 0, paddingLeft: 20 }}>{response.blockers?.map((item) => <li key={item}>{item}</li>)}</ul>}
+          style={{ marginTop: 16 }}
+        />
+      )}
+
+      {isBusinessDecision && (
+        <Alert
+          type="info"
+          showIcon
+          message="AI 建议不是 Owner 决定"
+          description="小Q生成的内容固定为推断（inferred）。只有你在权威经营决策页面明确提交的决定，才会成为 Owner 决定；本页面不会替你批准或执行。"
           style={{ marginTop: 16 }}
         />
       )}

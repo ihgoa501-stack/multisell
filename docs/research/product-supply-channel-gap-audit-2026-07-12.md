@@ -15,13 +15,13 @@
 - 每个规范 SKU 可创建不可变精确成本版本：10 类金额使用最小货币单位，跨币种汇率使用十进制字符串并保存来源和观察时间；验收报告不再以旧浮点成本判定通过。
 - 合规已提升为独立证据对象；只有当前、未撤销、Owner 批准的 `actual` 证据可通过六项验收。
 - productimage 已实现 asset → job → output → 权利/五项审核 → frozen image set；旧 Listing 直接发布入口被封闭，必须使用受控发布尝试。
+- 渠道发布已增加不可变终态证据：只有平台回执或受控对账可把 exact task 从 `submitted/reconcile_required` 推进为 `succeeded/failed`；执行、对账和终态写入均重新核验当前合规。
 
 ## 仍需开发
 
 1. **变更失效联动**：成本、合规、图片集或渠道规则形成新版本后，必须使旧草稿/发布批准失效并要求 Owner 重新审议。
 2. **图片链单一入口**：把 sourcing 页面直接引导到已绑定 Listing 的 productimage frozen image set，清理旧 `ImageProcessingRecord` 只能支撑历史验收的并行含义。
-3. **发布终态**：在 `submitted` 后通过平台状态同步和不可变外部回执确认 `succeeded/failed`；submitted 不能写成真实上线。
-4. **跨层验收**：补 PostgreSQL + JWT/RBAC + 审批 + 浏览器 E2E，覆盖正常链、权限撤销、刷新恢复、超时不重试和图片回写。
+3. **跨层验收**：补 JWT/RBAC + 审批 + 浏览器 E2E，覆盖正常链、权限撤销、刷新恢复、超时不重试和图片回写。PostgreSQL 119 对迁移已完成全量 up → down → up 验证至版本 123。
 
 ## 证据边界
 

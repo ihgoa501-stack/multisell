@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -136,6 +137,35 @@ func TestCreateAlwaysResetsClientSuppliedTerminalState(t *testing.T) {
 	}
 	if c.Status != StatusActive || c.FinalProfitStatus != ProfitPending || c.CashRecoveryStatus != CashPending || c.FinalDecision != "" || c.FinalProfitAmount != 0 || c.CashRecoveredAmount != 0 || c.CashRecoveredAt != nil {
 		t.Fatalf("terminal injection survived create: %+v", c)
+	}
+}
+
+func TestLegacyExperimentCannotBecomeDecisionOrFeedbackAuthority(t *testing.T) {
+	s := testService(t)
+	c := &ExperimentCase{Name: "trace dossier", Stage: StageOpportunity, OwnerID: 1}
+	if err := s.Create(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, mutation := range []*ExperimentCase{
+		{Name: c.Name, Stage: StageDecision, OwnerID: 1, Status: StatusActive, FinalProfitStatus: ProfitPending, CashRecoveryStatus: CashPending},
+		{Name: c.Name, Stage: StageOpportunity, OwnerID: 1, Status: StatusCompleted, FinalProfitStatus: ProfitFinal, CashRecoveryStatus: CashRecovered, FinalDecision: "continue"},
+		{Name: c.Name, Stage: StageOpportunity, OwnerID: 1, Status: StatusStopped, FinalProfitStatus: ProfitPending, CashRecoveryStatus: CashPending, FinalDecision: "stop"},
+	} {
+		if err := s.Update(context.Background(), c.ExperimentID, 1, mutation); err == nil || !strings.Contains(err.Error(), "trace-only") {
+			t.Fatalf("legacy terminal mutation must fail closed, got %v", err)
+		}
+	}
+
+	if _, err := s.EvaluateGate(context.Background(), c.ExperimentID, 1, GateInput{Stage: StageDecision, GateCode: "final_decision", Result: ResultReturn}); err == nil || !strings.Contains(err.Error(), "trace-only") {
+		t.Fatalf("legacy decision gate must fail closed, got %v", err)
+	}
+	summary, err := s.OwnerSummary(context.Background(), c.ExperimentID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.AuthorityScope != "trace_only" || summary.CausalStatus != "not_established" || summary.FeedbackLoopStatus != "not_authorized" {
+		t.Fatalf("owner API must expose truth boundary, got %#v", summary)
 	}
 }
 

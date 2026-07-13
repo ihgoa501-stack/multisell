@@ -27,6 +27,19 @@ for command in pg_restore psql; do
     command -v "$command" >/dev/null 2>&1 || { echo "[ERROR] $command not found." >&2; exit 1; }
 done
 [ -s "$BACKUP_FILE" ] || { echo "[ERROR] backup archive is missing or empty." >&2; exit 1; }
+CHECKSUM_FILE="${BACKUP_FILE}.sha256"
+[ -s "$CHECKSUM_FILE" ] || {
+    echo "[ERROR] backup checksum is missing: $CHECKSUM_FILE" >&2
+    exit 1
+}
+if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$CHECKSUM_FILE")") >/dev/null
+elif command -v shasum >/dev/null 2>&1; then
+    (cd "$(dirname "$BACKUP_FILE")" && shasum -a 256 -c "$(basename "$CHECKSUM_FILE")") >/dev/null
+else
+    echo "[ERROR] sha256sum or shasum is required." >&2
+    exit 1
+fi
 pg_restore --list "$BACKUP_FILE" >/dev/null
 
 export PGPASSWORD=$DB_PASSWORD

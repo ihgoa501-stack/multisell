@@ -18,6 +18,8 @@ Package: `backend-go/internal/domain/settlement/`
 | `POST` | `/api/v1/settlement/:id/items` | `h.AddItem` |
 | `POST` | `/api/v1/settlement/:id/reconcile` | `h.Reconcile` |
 | `PUT` | `/api/v1/settlement/items/:item_id/reconciliation` | `h.UpdateItemReconciliation` |
+| `POST` | `/api/v1/settlement/platform-accounts/:id/events` | `h.IngestPlatformFact` |
+| `GET` | `/api/v1/settlement/platform-facts/:id` | `h.GetPlatformFact` |
 | `POST` | `/api/v1/settlement/recalculate` | `h.RecalculateAll` |
 | `GET` | `/api/v1/settlement/summary` | `h.Summary` |
 

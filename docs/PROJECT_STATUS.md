@@ -2,6 +2,8 @@
 
 > **当前方向覆盖（2026-07-12）**：凌镜只供 Owner 本人用于跨境商品经营，不服务外部软件用户，也不验证或规划外部软件需求。双产品、外部 SaaS、多租户和未经市场选择的平台扩张不属于产品方向。Ozon 等已有适配器只是连接器，不是默认经营方向。详见 [SELF_USE_OPERATING_DIRECTION.md](SELF_USE_OPERATING_DIRECTION.md) 和 [方向事实审计](research/project-truth-audit-2026-07-12.md)。
 
+> **当前执行方法（2026-07-13）**：完整平台目的地不变；按 [ADR-002](decisions/ADR-002-practice-cognition-operating-method.md) 区分系统建设认识与真实经营认识，并执行 [真实可运行系统完善计划](plan/REAL_OPERATION_READINESS_PLAN.md)。本文件中的历史完成项不得覆盖最新带日期审计与当前计划。
+
 说明：`MultiSell` 是历史技术项目名；当前产品品牌为 `凌镜 LingMirror`。
 
 当前事实复核：2026-07-12（方向文档）；工程验证数据仍以各记录日期为准
@@ -60,7 +62,7 @@
 | P0 | EventBus/Scheduler 生命周期验证 | ✅ 已完成 | EventBus 生命周期测试覆盖 start→publish→receive→stop→no-more-deliveries |
 | P0 | 统一执行门禁 `/ai/actions/:id/execute` | ✅ 已完成 | ExecuteAction 审计写入 + 幂等守卫 + RBAC 权限路由 |
 | P0 | 审批/执行绑定登录用户和 RBAC | ✅ 已完成 | ActionDecisionInput 移除 operator 字段；approve/execute/reject 路由需 `ai.action` 权限 |
-| P1 | 外部平台写 dry-run/sandbox 模式 | ✅ 已完成 | ExecutionMode 类型 + context 传递 + PublishToOzon dry-run 守卫 |
+| P1 | 旧 Ozon URL 发布入口 fail-closed | ✅ 已完成 | `publish-to-ozon` 仅 dry-run/sandbox 返回无状态 mock；其余模式在 Adapter 前固定返回 428 `IMAGE_RELEASE_ATTESTATION_REQUIRED` |
 | P1 | 商品出海决策与执行层 Phase 1 | ✅ 已完成 (2026-07-07) | 修复5个断点: approval topic统一→事件写回approval_id+状态→dry_run mode传播→防止重复审批→publishHook门禁; PR #318 |
 | P1 | 审计日志敏感字段脱敏 | ✅ 已完成 | `operationlog.RedactSensitive` 正则脱敏；Log 和 LogStructured 自动应用 |
 | P1 | 前端高风险操作确认 UX | ✅ 已完成 | `HighRiskConfirmDialog` 组件含风险等级/目标/前后值/环境模式/审计去向/回滚说明 |

@@ -40,6 +40,7 @@ frontend/.sdd_finale_base
 
 # Active stack exclusions
 backend-go/server
+services/image-service/server
 backend-go/coverage.out
 bin/
 backend-go/loadtest/results/

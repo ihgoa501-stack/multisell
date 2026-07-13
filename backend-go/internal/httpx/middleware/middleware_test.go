@@ -60,6 +60,48 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
+func TestOwnerAuthorityPermissionsRejectOperationalRoles(t *testing.T) {
+	db := newTestDB(t, &rbac.Role{}, &rbac.Permission{}, &rbac.UserRole{}, &rbac.RolePermission{})
+	roles := []rbac.Role{{ID: 1, Code: "owner", Name: "Owner", Status: 1}, {ID: 2, Code: "admin", Name: "Admin", Status: 1}, {ID: 3, Code: "ops", Name: "Ops", Status: 1}, {ID: 4, Code: "viewer", Name: "Viewer", Status: 1}}
+	if err := db.Create(&roles).Error; err != nil {
+		t.Fatal(err)
+	}
+	permissions := []rbac.Permission{{ID: 1, Code: "purchase.owner"}, {ID: 2, Code: "business_feedback.owner"}, {ID: 3, Code: "aftersales.owner"}}
+	if err := db.Create(&permissions).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, roleID := range []int64{1, 2} {
+		for _, permissionID := range []int64{1, 2, 3} {
+			if err := db.Create(&rbac.RolePermission{RoleID: roleID, PermissionID: permissionID}).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for userID, roleID := range map[int64]int64{11: 1, 12: 2, 13: 3, 14: 4} {
+		if err := db.Create(&rbac.UserRole{UserID: userID, RoleID: roleID}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, permission := range []string{"purchase.owner", "business_feedback.owner", "aftersales.owner"} {
+		for _, tc := range []struct {
+			name   string
+			userID int64
+			want   int
+		}{{"owner", 11, 200}, {"admin", 12, 200}, {"ops", 13, 403}, {"viewer", 14, 403}} {
+			t.Run(permission+"/"+tc.name, func(t *testing.T) {
+				r := gin.New()
+				r.Use(func(c *gin.Context) { c.Set("user_id", tc.userID); c.Next() })
+				r.POST("/authority", RequirePermission(db, permission), func(c *gin.Context) { c.Status(200) })
+				w := httptest.NewRecorder()
+				r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/authority", nil))
+				if w.Code != tc.want {
+					t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+				}
+			})
+		}
+	}
+}
+
 func TestAuditPreservesRequestBodyLargerThanAuditSnippet(t *testing.T) {
 	db := newTestDB(t, &operationlog.OperationLog{})
 	r := gin.New()

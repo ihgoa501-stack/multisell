@@ -29,6 +29,9 @@ func TestReadOwnerBusinessClosureIsOwnerScopedAndRedacted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if view.AuthorityScope != "trace_only" || view.CausalStatus != "not_established" || view.FeedbackLoopStatus != "not_authorized" {
+		t.Fatalf("closure projection must expose trace-only truth boundary: %#v", view)
+	}
 	if view.Order.TruthStatus != TruthUnknown || view.Order.SourceStatus != "internal_record" {
 		t.Fatalf("order truth upgraded: %#v", view.Order)
 	}

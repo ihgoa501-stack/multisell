@@ -71,31 +71,10 @@ func (p *Pipeline) persist(ctx context.Context, targetTable string, domainModel 
 
 	switch targetTable {
 	case "sales_order":
-		// Upsert on order_no.
-		orderNo, _ := domainModel["order_no"].(string)
-		if orderNo == "" {
-			return fmt.Errorf("pipeline: sales_order missing order_no")
-		}
-		return p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			var count int64
-			tx.Table("sales_order").Where("order_no = ?", orderNo).Count(&count)
-			if count > 0 {
-				return tx.Table("sales_order").Where("order_no = ?", orderNo).Updates(domainModel).Error
-			}
-			return tx.Table("sales_order").Create(domainModel).Error
-		})
+		return fmt.Errorf("pipeline: direct sales_order persistence is disabled; use the Owner/account order fact ingest")
 
 	case "settlement_item":
-		txnID, _ := domainModel["transaction_id"].(string)
-		if txnID == "" {
-			return nil // skip if no transaction_id
-		}
-		var count int64
-		p.db.Table("settlement_item").Where("transaction_id = ?", txnID).Count(&count)
-		if count > 0 {
-			return nil // already imported
-		}
-		return p.db.WithContext(ctx).Table("settlement_item").Create(domainModel).Error
+		return fmt.Errorf("pipeline: direct settlement_item persistence is disabled; use the Owner/account platform settlement fact ingest")
 
 	case "after_sales_order":
 		orderNo, _ := domainModel["order_no"].(string)

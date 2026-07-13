@@ -21,7 +21,7 @@ func (f *fakeBusinessClosureReader) ReadOwnerBusinessClosure(ctx context.Context
 	return f.view, nil
 }
 
-func TestBusinessClosureMessageUsesThreeReadCapabilitiesAndGrounding(t *testing.T) {
+func TestLegacyExperimentBusinessClosureIsUnavailable(t *testing.T) {
 	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
 	reader := &fakeBusinessClosureReader{view: &experiment.OwnerBusinessClosureView{
 		ExperimentID: "exp-1",
@@ -31,32 +31,16 @@ func TestBusinessClosureMessageUsesThreeReadCapabilitiesAndGrounding(t *testing.
 	}}
 	svc := NewService(db, dbtest.NewLogger(t), nil, nil, &fakeProvider{name: "stub"}, ai.NewTraceWriter(db, dbtest.NewLogger(t))).WithBusinessClosureReader(reader)
 	response, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "经营闭环怎么样", TargetType: TargetBusinessClosure, ExperimentID: "exp-1"})
-	if err != nil {
-		t.Fatal(err)
+	if err != ErrCapabilityUnavailable || response != nil {
+		t.Fatalf("got response=%#v err=%v", response, err)
 	}
-	if reader.ownerID != 42 || !reader.deadlineSeen || response.TargetType != TargetBusinessClosure || response.Trusted || len(response.Evidence) != 1 || len(response.Unknowns) != 2 {
-		t.Fatalf("unexpected response: %#v", response)
-	}
-	var calls int64
-	if err := db.Model(&ai.AITraceEvent{}).Where("trace_id = ? AND event_type = ?", response.TraceID, "capability_call").Count(&calls).Error; err != nil {
-		t.Fatal(err)
-	}
-	if calls != 3 {
-		t.Fatalf("capability calls=%d want=3", calls)
-	}
-	detail, err := ai.NewTraceWriter(db, dbtest.NewLogger(t)).GetDetail(response.TraceID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(detail.Evidence) != 1 || len(response.Links) != 2 {
-		t.Fatalf("grounding missing: %#v", response)
+	if reader.ownerID != 0 || reader.deadlineSeen {
+		t.Fatal("deprecated reader must not be invoked")
 	}
 }
 
-func TestBusinessClosureCapabilitiesAreActive(t *testing.T) {
-	for _, id := range []string{CapabilityOrderFulfillmentRead, CapabilitySettlementRead, CapabilityProfitFinalRead} {
-		if capability, ok := activeCapability(id); !ok || capability.Status != "active" {
-			t.Fatalf("%s not active", id)
-		}
+func TestLegacyExperimentBusinessClosureCapabilityIsNotActive(t *testing.T) {
+	if _, ok := activeCapability(CapabilityOrderFulfillmentRead); ok {
+		t.Fatal("deprecated experiment-scoped capability must not be active")
 	}
 }

@@ -79,8 +79,6 @@ Package: `backend-go/internal/domain/listing/`
 | `ExternalID` | `string` | `external_id` | `—` |  |
 | `ListingURL` | `string` | `listing_url` | `—` |  |
 | `Status` | `string` | `status` | `—` |  |
-| `PrismEnabled` | `bool` | `prism_enabled` | `—` |  |
-| `PrismOptions` | `json.RawMessage` | `prism_options,omitempty` | `—` |  |
 
 ### `CreateTasksFromDecisionsInput`
 **DB table:** `—`

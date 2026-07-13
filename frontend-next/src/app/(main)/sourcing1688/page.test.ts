@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildDraftPayload, buildPublishRequestPayload, buildReconcilePayload, buildSampleTransitionPayload, collectionCompleteness, editableDraftToForm, publishStatusMeta, sampleNextStatuses, taskLinkAvailableActions, taskLinkStatus, taskWorkflowPath } from './page';
+import { readFileSync } from 'node:fs';
+import { buildDraftPayload, buildPublishRequestPayload, buildReconcilePayload, buildSampleTransitionPayload, collectionCompleteness, collectionQualityRows, editableDraftToForm, publishStatusMeta, safe1688DetailURL, sampleNextStatuses, taskLinkAvailableActions, taskLinkStatus, taskWorkflowPath } from './page';
 
 const observedAt = '2026-07-12T03:00:00.000Z';
 
@@ -55,6 +56,13 @@ describe('buildDraftPayload', () => {
 });
 
 describe('publish safety payloads', () => {
+  it('executes controlled publish only through the frozen one-time approval', () => {
+    const source = readFileSync(`${process.cwd()}/src/app/(main)/sourcing1688/page.tsx`, 'utf8');
+    expect(source).toContain('apiClient.postApproved<PublishAttempt>');
+    expect(source).toContain('approvalId: publishExecuteTarget.approval_id');
+    expect(source).toContain('idempotencyKey: publishExecuteTarget.idempotency_key');
+    expect(source).toContain("缺少已批准的一次性审批记录");
+  });
   it('freezes a complete SKU inventory map without carrying UI-only rows', () => {
     expect(buildPublishRequestPayload({
       platform_account_id: 12,
@@ -154,6 +162,48 @@ describe('collection box completeness', () => {
       isComplete: false,
     });
   });
+});
+
+describe('collection quality center', () => {
+  it('compares list and detail observations and surfaces conflicts and missing fields', () => {
+    const source = (page_kind: 'list_lead' | 'detail_observation', snapshot_id: number) => ({ page_kind, snapshot_id, observed_at: observedAt, parser: 'parser-v1' });
+    const listPrice = { field: 'price', status: 'observed' as const, value_summary: '¥10-12', source: source('list_lead', 1) };
+    const detailPrice = { field: 'price', status: 'observed' as const, value_summary: '¥11', source: source('detail_observation', 2) };
+    const rows = collectionQualityRows({
+      sourcing_product_id: 8, source_url: 'https://detail.1688.com/offer/123.html',
+      observations: [],
+      latest_list_observation: { snapshot_id: 1, page_kind: 'list_lead', observed_at: observedAt, parser: 'parser-v1', fields: { price: listPrice } },
+      latest_detail_observation: { snapshot_id: 2, page_kind: 'detail_observation', observed_at: observedAt, parser: 'parser-v1', fields: { price: detailPrice } },
+      best_fields: { price: detailPrice },
+      conflicts: [{ field: 'price', values: [listPrice, detailPrice], message: '列表与详情价格不同' }],
+      missing: ['sku'], recapture_action: { kind: 'none', url: '', reason: '' },
+    });
+
+    expect(rows.find((row) => row.field === 'price')).toMatchObject({ best: detailPrice, conflict: { message: '列表与详情价格不同' }, missing: false });
+    expect(rows.find((row) => row.field === 'sku')).toMatchObject({ missing: true });
+  });
+
+  it('only allows a strict HTTPS 1688 offer URL for the detail recapture action', () => {
+    expect(safe1688DetailURL('https://detail.1688.com/offer/904602290153.html?spm=test')).toContain('/offer/904602290153.html');
+    expect(safe1688DetailURL('https://login.1688.com/offer/904602290153.html')).toBeNull();
+    expect(safe1688DetailURL('javascript:alert(1)')).toBeNull();
+    expect(safe1688DetailURL('https://detail.1688.com.evil.example/offer/904602290153.html')).toBeNull();
+  });
+
+  it('renders the final collection-quality endpoint and safe recapture wording', () => {
+    const source = readFileSync(`${process.cwd()}/src/app/(main)/sourcing1688/page.tsx`, 'utf8');
+    expect(source).toContain('/collection-quality`');
+    expect(source).toContain('打开1688详情补采');
+    expect(source).toContain('刷新新观察');
+		expect(source).not.toContain("queryKey: ['sourcing-1688-collection-quality', record.id]");
+  });
+
+	it('requires an explicit precise cost version at every draft approval entry', () => {
+		const source = readFileSync(`${process.cwd()}/src/app/(main)/sourcing1688/page.tsx`, 'utf8');
+		expect(source).toContain('cost_version_id: v.cost_version_id');
+		expect(source).toContain("name=\"cost_version_id\"");
+		expect(source).toContain('审批不会自动选择 latest');
+	});
 });
 
 describe('sample fact chain', () => {

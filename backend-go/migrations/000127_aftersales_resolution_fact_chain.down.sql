@@ -1,0 +1,9 @@
+DROP TRIGGER IF EXISTS trg_aftersales_resolution_receipt_no_delete ON aftersales_resolution_receipt;
+DROP TRIGGER IF EXISTS trg_aftersales_resolution_receipt_no_update ON aftersales_resolution_receipt;
+DROP FUNCTION IF EXISTS reject_aftersales_resolution_receipt_mutation();
+DROP TABLE IF EXISTS aftersales_resolution_receipt;
+DROP TRIGGER IF EXISTS trg_aftersales_resolution_identity_immutable ON aftersales_resolution_case;
+DROP FUNCTION IF EXISTS protect_aftersales_resolution_identity();
+DROP TRIGGER IF EXISTS trg_aftersales_resolution_owner_authority ON aftersales_resolution_case;
+DROP FUNCTION IF EXISTS enforce_aftersales_resolution_owner_authority();
+DROP TABLE IF EXISTS aftersales_resolution_case;

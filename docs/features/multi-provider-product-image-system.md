@@ -1,13 +1,22 @@
-# 多方案商品图片系统开发规格
+# 商品视觉生产与学习系统开发规格
 
-> 日期：2026-07-12
-> 状态：`implemented_initial_deterministic / external_providers_gated`
-> Owner 决策：完整建设多方案商品图片纵向单元
+> 初始日期：2026-07-12
+> Owner 范围更新：2026-07-13
+> 状态：`implemented / automated_verified / isolated_browser_verified / owner_real_sku_pending`
+> Owner 决策：建设 Owner 自用的商品视觉生产与学习能力；先完成单 SKU 配方闭环，暂停无真实验证的 Provider 和功能扩张
 > 证据限制：本规格不代表 Provider 已配置、图片权利已取得、真实渠道已接受或经营效果已成立
 
 ## 1. 目标与边界
 
-建设凌镜统一的商品图片制作、证据、审核和草稿接入系统。系统同时支持确定性处理、专业商品图片 API、通用生成模型和外部工具导入；所有路径共享同一资产、权利、预算、审核与审计规则。
+建设凌镜统一的商品视觉生产与学习系统：把 exact SKU 的可信素材，通过确定性处理、生成式 AI、模板、人工处理或实拍，转化为适配具体渠道与经营用途的图片；保存完整制作配方、Owner 选择与拒绝原因、成本、渠道结果和经营效果，逐步学习“什么制作方法对什么商品、渠道和目标有效”。
+
+AI 是重要生产手段，但不是产品边界。系统的核心资产不是某个 Provider、模型或孤立提示词，而是：
+
+- exact SKU 商品事实与获权原始素材；
+- 参考图、主体 mask、模板和品牌规则；
+- 绑定模型版本、参数和输出的版本化制作配方；
+- Owner 选择、拒绝、错误区域和返工反馈；
+- 渠道规则、制作效率、发布结果与经营效果数据。
 
 ```text
 Owner 私人图片资产/已审货源图片
@@ -20,22 +29,53 @@ Owner 私人图片资产/已审货源图片
 → 独立受控发布
 ```
 
-它不是通用绘画 SaaS，不服务外部用户，不训练自有基础模型，不自动发布，不以图片生成成功替代真实商品与渠道事实。
+它不是通用绘画 SaaS、Canva/Photoshop 替代品或提示词库，不服务外部用户，不训练自有基础模型，不自动发布，不以图片生成成功或主观美观替代真实商品、渠道和经营效果。
 
-## 2. 完整能力范围
+### 1.1 当前开发单元：单 SKU 可用生产闭环
+
+当前系统已有资产、任务、确定性处理、权利、预算、审核、图片集合、发布门禁和 Image Service，并已实现 exact SKU 配方冻结、候选反馈、返工继承和实时统计。2026-07-13 在隔离 PostgreSQL 与浏览器中完成“首轮候选 → 要求返工 → 第二轮候选 → 五类审核 → 选用”的工程验收；该证据是 `manually_verified` 的隔离工程行为，不是 Owner 真实 SKU、真实场景图、真实 Provider 或渠道效果验证，因此仍不能开始 3 SKU 对照验证。
+
+当前唯一开发目标是完成：
+
+```text
+1 个真实 exact SKU + 场景副图用途
+→ 绑定真实商品事实与获权素材
+→ 选择人工导入、确定性模板或 1 个真实可调用 AI Provider
+→ 保存完整 workflow recipe
+→ 生成/导入候选并与原图并排检查
+→ 记录选择、拒绝原因、错误区域与返工
+→ Owner 批准精确最终文件
+→ 自动汇总耗时、人工分钟、调用/外包成本、候选数与返工次数
+```
+
+完成标准不是 API、页面或测试单独存在，而是 Owner 能亲自在页面从真实素材走到批准的最终场景副图，并能读取完整配方和成本。首轮不使用 AI 重绘承担商品事实的主图主体。该闭环真实验收前，后续 Provider、批量和高级能力只保留为方向，不进入当前开发队列。
+
+### 1.2 下一验证单元：3 SKU 三路线对照
+
+只有第 1.1 节由 Owner 真实操作通过后，才进入：
+
+```text
+3 个真实 exact SKU × 1 个真实目标渠道 × 场景副图用途
+→ A：现有人工/现成工具基线
+→ B：真实商品图 + 确定性处理/模板
+→ C：真实商品图 + 1 个 AI 场景 Provider + Owner 审批
+→ 比较时间、人工分钟、总成本、首轮通过率、返工、事实错误、渠道结果和可比经营效果
+```
+
+## 2. 目标能力边界
 
 ### 2.1 处理路径
 
-| 路径 | 首批实现 | 主要用途 | 是否外部付费 |
+| 路径 | 当前处置 | 主要用途 | 是否外部付费 |
 |---|---|---|---:|
-| `deterministic` | LingMirror | 裁剪、缩放、白底、格式、压缩、固定模板 | 否 |
-| `commerce_ai` | Photoroom | 去背景、阴影、补光、商品场景和批量商品处理 | 是 |
-| `precision_edit` | Adobe Firefly/Precise Composite | 局部修补、精确合成、扩图 | 是 |
-| `creative_ai` | OpenAI Images | 场景副图和广告创意候选 | 是 |
-| `manual_import` | Pebblely、Canva、Photoshop、Pixelcut 等 | 外部编辑结果回传 | 视外部工具而定 |
-| `channel_native_import` | Shopify、Google、Amazon 等 | 渠道内置工具结果回传，仅限对应渠道 | 视渠道而定 |
+| `deterministic` | 保留并作为验证路线 B | 裁剪、缩放、白底、格式、压缩、固定模板 | 否 |
+| `commerce_ai` | 只选择 1 个 Provider 作为验证路线 C；当前真实 canary 仍为 `unknown` | 去背景、阴影、补光和商品场景 | 是 |
+| `precision_edit` | 暂停扩张 | 局部修补、精确合成、扩图 | 是 |
+| `creative_ai` | 暂停扩张 | 场景副图和广告创意候选 | 是 |
+| `manual_import` | 保留，作为路线 A 和人工兜底的事实记录入口 | 外部编辑结果回传 | 视外部工具而定 |
+| `channel_native_import` | 保留导入合同，不新增渠道接入 | 渠道内置工具结果回传，仅限对应渠道 | 视渠道而定 |
 
-首批接口完整支持上述六条路径。外部 API 适配器只有在配置和官方契约核验完成后才标为 `available`；未配置时明确 `unavailable`，不得以 mock 结果冒充。
+统一领域合同可以容纳上述路径，不代表六条路径都要在首批实现或当前开发。外部 API 适配器只有在真实需要、配置和官方契约核验完成后才标为 `available`；未配置时明确 `unavailable`，不得以 mock 结果冒充。
 
 ### 2.2 图片用途
 
@@ -53,6 +93,12 @@ Owner 私人图片资产/已审货源图片
 - 未经渠道决定的销售平台连接器扩张；
 - 图片任务直接调用发布适配器；
 - 小Q绕过领域服务、审批或审计执行付费处理。
+- 通用画布编辑器、提示词市场或海量提示词模板库；
+- 把单独 prompt 字符串当成跨模型、跨版本稳定的核心资产；
+- 在单 SKU 流程未真实稳定前建设批量生成；
+- 在当前验证前新增视频、虚拟模特、自训练 LoRA 或更多 Provider；
+- 用 AI 重绘主图商品主体替代真实商品证据；
+- 仅凭图片更美观宣称点击、转化或利润改善。
 
 ## 3. 领域边界与现有能力复用
 
@@ -89,7 +135,9 @@ Owner 的冻结经营意图：商品/SKU、图片用途、目标渠道规则、�
 
 ### 4.4 `product_image_attempt`
 
-一次处理执行：processor、provider/model/version、稳定 Provider 幂等键、Provider 请求 ID、参数、prompt/mask、预计和实际费用、状态、错误、提交/对账时间。网络重试复用同一外部幂等键；只有明确的新生成意图才创建新键。
+一次处理执行：processor、provider/model/version、凌镜内部稳定幂等键、Provider 请求 ID、参数、prompt/mask、预计和实际费用、状态、错误、提交/对账时间。只有 Provider 官方契约明确支持并可验证去重时，才能把内部键作为 Provider 幂等键；否则付费请求只允许单次提交，响应未知后禁止自动重试。
+
+这里保存的是完整版本化 `workflow recipe`，而不是孤立 prompt：目标用途、exact SKU 不可变事实、输入/参考资产、mask、模板/品牌规则、结构化创作意图、Provider 特定 prompt、模型版本、参数、渠道规则、候选和输出哈希必须可以共同追溯。模型或版本变化后，旧 recipe 必须重新验证，不能承诺原 prompt 自动复现旧结果。
 
 ### 4.5 `product_image_review`
 
@@ -98,6 +146,10 @@ Owner 的冻结经营意图：商品/SKU、图片用途、目标渠道规则、�
 ### 4.6 `product_image_cost_entry`
 
 保存 Provider、存储、外部工具、人工/外包等现金成本及币种、汇率来源、观察时间和账单状态；连接项目预算账本，不允许拆任务绕过总预算。
+
+### 4.7 生产反馈与效果观察
+
+逐个图片集合保存总耗时、人工审核分钟、候选数、首轮通过率、返工轮次、事实错误类型、渠道批准/拒绝和与图片不符有关的投诉/退货。曝光、点击、加购、转化等效果必须绑定商品、渠道、图片集合版本和观察窗口；价格、标题、流量、促销等混杂因素保持显式 `unknown`，没有受控比较时不得宣称图片导致经营结果变化。
 
 ## 5. Processor 契约
 
@@ -119,7 +171,7 @@ type Processor interface {
 - `ReconcileResult` 使用判别联合：`processing/succeeded/failed/not_found/unknown`；
 - 同一 Provider 只保留一个现行适配器版本，扩展字段保持向后兼容；
 - Provider 特有原始响应加密保存或脱敏，不进入普通 Owner API；
-- 不支持可靠对账或幂等的 Provider，生产付费调用失败关闭。
+- 不支持可靠查询或可验证 Provider 幂等的付费能力，只允许 Owner 明确接受的单次调用；响应未知后失败关闭并进入人工对账，绝不自动重试。
 
 ## 6. 状态机
 
@@ -142,7 +194,7 @@ reconcile_required → processing | succeeded | failed | unknown
 processing → succeeded | failed
 ```
 
-终态不可覆盖；状态更新使用 PostgreSQL 约束和 `status + version` CAS。job/attempt/output ordinal、Provider request ID、Owner 选中主资产均有数据库唯一约束。
+终态不可覆盖；Worker 使用同一 Repository 事务同时终结 job 与 attempt，Provider request ID 和输出/错误不会被拆成两个崩溃窗口；其他状态更新使用 PostgreSQL 约束和 `status + version` CAS。job/attempt/output ordinal、Provider request ID、Owner 选中主资产均有数据库唯一约束。
 
 ## 7. API
 
@@ -150,6 +202,7 @@ processing → succeeded | failed
 
 - `GET /processors`：返回已配置能力，不泄漏凭据；
 - `POST /assets`：注册受控来源或上传外部结果；
+- `POST /manual-imports`、`GET /manual-imports`：上传并分页读取外部编辑结果；服务端冻结父资产 SHA-256、工具、操作、费用、模型/版本、来源时间和渠道限制，字节仍须经过 Image Service 清洗；
 - `GET /assets`、`GET /assets/:id`、`GET /assets/:id/content`；
 - `POST /tasks`、`GET /tasks`、`GET /tasks/:id`；
 - `POST /tasks/:id/approval-requests`；
@@ -157,6 +210,8 @@ processing → succeeded | failed
 - `POST /tasks/:id/reconciliations`；
 - `POST /tasks/:id/retries`；
 - `POST /tasks/:id/reviews`：提交 G1–G5；
+- `POST /tasks/:id/feedback`：冻结 `selected/rejected/rework_requested`、原因、错误区域、返工要求和人工审核秒数；
+- `GET /recipes/:recipe_key/summary?sku_id=`：按 exact SKU 与配方实时汇总候选、采用、拒绝、返工、通过率、审核/生产耗时和已对账成本；
 - `POST /tasks/:id/decisions`：Owner 选择/拒绝；
 - `POST /tasks/:id/media-preparations`：创建最终派生 media；
 - `GET /tasks/:id/costs`。
@@ -207,7 +262,7 @@ Owner 保持最终选择权，第一版不做 AI 自动路由。系统仅提供�
 
 ## 11. 失败、安全与运行保障
 
-- Provider 接收请求但响应丢失：以稳定幂等键和 Provider 查询对账；无法查询则 `unknown`，禁止付费重试；
+- Provider 接收请求但响应丢失：有官方查询能力时按精确请求编号查询；没有查询能力时保持 `RECONCILE_REQUIRED`，禁止付费重试。Owner 只能用可信证据结案为“追回输出”“确认未扣费”或“确认已扣费但无可恢复输出”；
 - 对象存储：`staging → hash verify → DB commit → finalize`，读取和审批重新校验哈希；
 - 预算并发：事务内预占最坏费用，迟到费用归属 attempt；
 - 429/5xx：按 Provider 契约有限重试，生产 mutation 复用原幂等键；
@@ -228,9 +283,9 @@ Owner 保持最终选择权，第一版不做 AI 自动路由。系统仅提供�
 
 小Q可以解释能力、证据、费用和阻断，不能把模型成功升级为商品真实、权利成立或渠道合规。
 
-## 13. 开发切片
+## 13. 验证后再启动的开发切片
 
-每个切片都完成领域、API、Owner 体验、权限、审批、审计、错误、测试、运行验证和文档；不是长期 90% 实现。
+下列 Lake 是已有工程和可能的后续方向，不代表当前自动继续开发。当前活动任务只有第 1.1 节的单 SKU 可用生产闭环；该闭环由 Owner 真实验收后才进入第 1.2 节对照验证。只有验证显示明确的时间、成本、错误、素材供给或经营价值改善，Owner 才决定恢复对应 Lake。恢复后，每个切片都完成领域、API、Owner 体验、权限、审批、审计、错误、测试、运行验证和文档。
 
 ### Lake 1：统一资产与确定性处理
 
@@ -241,26 +296,42 @@ Owner 保持最终选择权，第一版不做 AI 自动路由。系统仅提供�
 - `product_image_rights_grants` 将 Owner 与精确资产 SHA-256 绑定，逐项记录复制、修改、第三方 AI、跨境、商业发布、平台再许可、商标和肖像许可，以及用途、法域、渠道、Provider、地域、有效期、撤销、证据 SHA-256 和 Owner 核验；
 - 五类审核分别保存商品真实性、权利、渠道规则、声明/场景和技术视觉的 `passed / blocked / unknown`，普通 API 输入不能把证据声明为 `actual`；
 - `product_image_cost_entries` 保存预计/实际金额、严格十进制字符串、币种、汇率及来源、观察时间和账单状态；付费执行批准同时落一条预算上限预计成本；
+- `product_image_budget_policies`、预算预占和追加式费用记录按 Owner、币种和周期共享总上限；付费审批在事务内预占，外呼前 `reserved → claimed`，结果未知时不得释放。可信未扣费证据必须先让 Image Service 原子停止精确任务，随后记录不可变 `no_charge` 并释放；真实账单使其进入 `spent`，确认已扣费但无可恢复输出记录 `charged_no_output` 终态；迟到费用继续追加并可标记 `over_budget`；
 - 权利、审核和成本写命令使用 Owner scope、`expected_version` 与幂等键，读取接口分页；跨 Owner 对象按不存在处理；
 - Listing image set 在创建和冻结时都会重新核验精确输出字节的有效发布权利和五类全通过。确定性处理不因成本未知而阻断；付费候选还必须存在非 `unknown` 成本记录。
 
 Owner 尚未为真实商品录入权利证据或完成五类审核，因此这些工程门禁不能被解释为真实图片已获授权、渠道已接受或可生产发布。
 
+预算 API：
+
+- `POST /api/v1/product-images/budget-policies`
+- `GET /api/v1/product-images/budget-policies`
+- `GET /api/v1/product-images/budget-reservations`
+- `POST /api/v1/product-images/budget-reservations/:reservation_id/cancel`
+- `POST /api/v1/product-images/budget-reservations/:reservation_id/charges`
+- `POST /api/v1/product-images/budget-reservations/:reservation_id/no-charge-reconciliations`
+
+预算并发验收：周期上限 `1.00 USD`、100 个并发 `0.02 USD` 审批只能成功 50 个，总预占精确为 `1.0000`。这只证明数据库预占约束，不证明 Provider 账单或经营成本已对账。
+
 ### Lake 2：外部工具导入
 
-完整支持 Pebblely、Canva、Photoshop及渠道内置结果的统一回传、来源标记、费用和渠道限制。
+如真实验证需要，继续维护 Pebblely、Canva、Photoshop及渠道内置结果的统一回传、来源标记、费用和渠道限制；不为每个外部工具分别建设集成。
 
-### Lake 3：专业商品 AI
+当前工程状态：`implemented / automated_verified`。通用外部编辑与渠道内置结果都只做安全回传，不调用外部工具；渠道内置结果强制限定为原渠道。导入资产的真实性固定为 `unknown`，不会绕过权利或五类审核。
+
+### Lake 3：专业商品 AI（当前仅保留隔离 canary，暂停扩张）
 
 实现 Photoroom Provider、目标绑定付费审批、预算、幂等、对账、失败和 sandbox/生产契约验证。
 
-### Lake 4：精确编辑与创意
+当前工程状态：`sandbox_path_automated_verified / real_canary_unknown / production_forbidden`。Photoroom 只有同时满足显式 sandbox 开关、专用 API key、sandbox 账号确认和训练退出确认时才注册；仅 development/acceptance 可开启，production 环境开启会拒绝启动。任务固定为 US 区域、sandbox 环境、PNG、`0 USD` 和三个允许操作，消耗一次不可自动重置的 canary 次数。系统不假定 Provider 已添加像素水印；Image Service 对成功结果本地叠加明显的 `SANDBOX` 像素横幅，重编码后逐像素验证，验证成功才永久绑定 `sandbox + watermarked + non_publishable`。这些输出不能进入 Image Set、release attestation 或受控发布。HTTP 客户端拒绝所有重定向，断流、连接失败和 5xx 进入 `RECONCILE_REQUIRED`，没有自动重试。当前没有真实凭据，也没有执行真实网络 canary。
 
-实现 Adobe 与 OpenAI Provider；分别限制为精确编辑和场景/广告用途，不允许绕过主图规则。
+### Lake 4：精确编辑与创意（暂停）
 
-### Lake 5：完整 Owner 工作室与小Q只读
+OpenAI 场景编辑已接入显式关闭的生产付费路径，只允许 `gpt-image-2`、单张精确原图和冻结 Prompt；创建、批准、执行分别校验版权、任务版本、预算预占和单次提交门禁。OpenAI Images Edits 官方契约当前未提供可验证的请求幂等或按请求查询结果能力，因此系统不把 `Idempotency-Key` 请求头当作供应商去重证据：一旦响应不确定就禁止自动重试，并要求 Owner 对账。成功、响应异常和本地 Blob 写入失败均尽量保留脱敏 Provider request ID。`max_cost` 是凌镜预算预占上限，不是供应商硬封顶。当前仅为 `automated_verified`，没有项目专用凭据和 Owner 真实 SKU 外部运行证据，因此不得写成 `external_observed` 或生产验收完成。Adobe 仍只在真实缺口出现后评估。
 
-统一对比、批量任务、全尺寸审核、成本视图、运行监控和满足契约后的只读 Capability。
+### Lake 5：完整 Owner 工作室与小Q只读（等待真实验证）
+
+真实验证通过后，按已观察到的重复需求建设统一对比、必要批量任务、全尺寸审核、成本视图、运行监控和满足契约后的只读 Capability。
 
 ## 14. 验收矩阵
 
@@ -275,6 +346,33 @@ Owner 尚未为真实商品录入权利证据或完成五类审核，因此这�
 
 工程通过只能记 `automated_verified`；真实 Provider 调用为注明环境的 `manually_verified`；渠道真实展示为 `external_observed`；图片对经营的因果影响在没有受控比较时保持 `unknown`。
 
+## 16. 图片发布证明（Image Release Attestation）
+
+当前后端已建立发布前证明与受控媒体交付合同，但尚无真实平台 Adapter 实现该新合同：
+
+- `product_image_rule_snapshots` 保存渠道、站点、语言、类目和规则正文的不可变版本与规范哈希；新规则版本不会覆盖旧快照；
+- `product_image_set_decisions` 保存 Owner 对精确 frozen image set 版本与 manifest 的批准或拒绝；
+- `product_image_release_attestations` 绑定 Owner、Listing、商品、平台、账号、渠道、站点、语言、类目、Listing 快照、图片集、规则、Owner 决定、权利与五类审核 manifest；
+- 每个 item 固定 ordinal、role、task、blob、SHA-256、MIME、宽高。签发和消费都会重新读取 Image Service 字节并复算 SHA-256；
+- claims 使用规范 JSON、SHA-256 与独立 HMAC 密钥签名，保存 key ID、nonce、签发时间和过期时间；发布 attempt 与证明在同一事务内完成 `issued → claimed`，任何外呼不确定性进入 `reconcile_required`，只有确定成功回执才能进入 `consumed`；
+- `ControlledPublisher` 只接收后端从 Image Service 重新读取并复算后的 bytes、SHA-256、MIME、role 和尺寸，不存在任意 URL 字段；100 个并发请求只能产生一次外呼；
+- 旧 `PublishInput.MainImage/Images` URL Adapter 不满足新合同，默认不注册并以 `CONTROLLED_PUBLISHER_UNSUPPORTED` 失败关闭；
+- 权利撤销、最新规则版本改变、Listing 内容改变、图片字节改变、审核或任务血缘改变、签名篡改和过期均失败关闭。
+
+Owner API：
+
+- `POST /api/v1/product-images/rule-snapshots`
+- `POST /api/v1/product-images/image-sets/:set_id/decisions`
+- `POST /api/v1/product-images/release-attestations`
+- `GET /api/v1/product-images/release-attestations/:attestation_id`
+- `POST /api/v1/product-images/release-attestations/:attestation_id/publish-attempts`
+- `GET /api/v1/product-images/publish-attempts/:attempt_id`
+- `POST /api/v1/product-images/publish-attempts/:attempt_id/reconcile`
+
+`unknown`：现有真实平台 Adapter 仍只支持旧 URL 合同，没有一个已经实现 `ControlledPublisher` 并在真实 sandbox/production 验证。因此当前可证明“旧 Adapter 无法绕过、受控 attempt 状态机正确”，不能宣称任何真实渠道已经发布成功或受到该证明保护。
+
+旧 `/api/v1/platform-integrations/publish-to-ozon` 和 `sourcing1688` 旧发布执行已经移除真实 Adapter 调用代码。production、approval-required、未知或未声明模式固定返回 `428 IMAGE_RELEASE_ATTESTATION_REQUIRED`，即使携带审批、任意 HTTPS URL 或伪造 `sandbox://` URL 也不能外写；显式 dry-run/sandbox 只返回无状态 mock，不创建真实发布事实。
+
 ## 15. 当前未知与实施前置
 
 - Provider 账号、当前价格、配额、地区、数据保留和正式合同；
@@ -287,7 +385,7 @@ Owner 尚未为真实商品录入权利证据或完成五类审核，因此这�
 
 ## 16. 文档关系
 
-- 本文是多方案图片系统的当前开发规格；
+- 本文是商品视觉生产与学习系统的当前权威规格；
 - `ai-assisted-product-image-draft.md` 自本文生效后为 `superseded` 历史方案；
 - 外部工具、API、工作流和风险报告保留为事实来源；
 - 代码或外部状态变化后生成新的带日期工程验证记录，不静默提高证据等级。
@@ -333,17 +431,21 @@ pending 后冻结 manifest；任何输入、用途、费用、Provider、规则�
 
 每个 Provider 必须标记：`contract_defined / sandbox_only / manual_only / production_safe / unavailable`。公开资料未确认 Photoroom 同步二进制 API 具有可靠幂等、任务查询或 webhook；因此 Photoroom 当前只能 `sandbox_only/manual_only`。只有正式采购合同或官方能力证明能够防止响应断流后的重复收费并支持可靠对账，才能升级为 `production_safe`。
 
+当前 Photoroom 接线默认关闭，使用 `IMAGE_SERVICE_PHOTOROOM_SANDBOX_ENABLED=true`、API key、sandbox 账号确认和 training opt-out 确认四门同时开启。Image Service 的只读 capability 必须明确返回 `sandbox_only / us / sandbox / watermarked / non_publishable / quota_remaining=1`，LingMirror 才允许创建、批准和执行。这里的 `watermarked` 是 Image Service 本地重编码并逐像素验证的 SANDBOX 横幅事实，不是对 Provider 原始输出的推测。任务创建、批准和执行都会重新核验精确的复制、修改、第三方 AI 与跨境权利，Provider 与 region 不接受通配绕过。执行令牌精确绑定 task/version、manifest、operation、region、provider environment、sandbox/watermarked/non-publishable、`0 USD` 和 nonce。
+
+Photoroom HTTP 客户端拒绝全部重定向，固定正式 Host，并禁止 Base URL 携带 userinfo、query 或 fragment。执行阶段以固定锁顺序在同一事务锁定 Task、精确 RightsGrant、Approval 和预算预占，创建不可变 `ExecutionRightsSnapshot` 后才签发执行令牌；撤权先提交则零入队，执行先 claim 则冻结该次 grant ID/version/evidence，后续撤权只影响新执行。部署环境只接受 `development / acceptance / production`，Photoroom 只允许前两者；acceptance/production 服务密钥至少32字节且不得复用执行令牌密钥。
+
 生产付费执行的 approval manifest 必须绑定 Owner、task/version、输入及清洗后字节哈希、processor/adapter version、Provider 账号/项目、endpoint/region/model、完整参数/prompt/mask、数量、最坏含税费用、币种和过期时间。预算预占、attempt 创建和 approval 单次消费在同一数据库事务中完成，并以 approval ID 唯一约束阻止并发双花。
 
 ### 17.6 BlobStore 与旧数据迁移
 
-仓库当前主要把处理后图片保存在 PostgreSQL `BYTEA`，不能假定对象存储已经存在。先定义 `BlobStore`：`PutStaged/Open/Promote/Delete`，并保存 `staged/ready/quarantined/delete_pending`、object key/version/etag/hash；事务 outbox 驱动 promote/reconcile，只有 `ready` 资产可以审核。
+当前 Image Service 的 Job/Attempt/nonce/Provider submit claim 保存在 PostgreSQL，图片字节保存在内容寻址的本地持久卷；它不是对象存储，也没有完成备份恢复演练。readiness 会实际写入、fsync、读回并清理探针文件，但这只能证明当前卷可用。
 
 Lake 1 可继续使用 BYTEA 完成正确领域链，但必须明确旧 `processed_bytes` 双读、回填、哈希核对、前端切换、停止旧写、回滚和保留只读的迁移顺序。不得在新存储未就绪时声称对象存储完成。
 
 ### 17.7 图片预算账户
 
-通用外部 Provider 预算账本目前不存在，必须在首次付费 Lake 中建设 `image_budget_account` 与 `image_budget_reservation`。金额使用 NUMERIC 与 ISO 币种，状态为 `reserved/captured/released/late_charge`；事务原子预占最坏费用，账单迟到和汇率差异不能被静默覆盖。
+预算政策、预占和追加式费用账本已实现。金额使用 PostgreSQL NUMERIC 与 ISO 币种，状态为 `reserved/claimed/spent/released`；事务原子预占最坏费用，结果未知时不能释放，账单迟到和超支只追加新记录而不覆盖历史。免费 Photoroom sandbox 另有一次性 canary 次数门禁，因为 `0 USD` 不等于不消耗 Provider 配额。
 
 ### 17.8 权利、规则与发布的跨阶段重验
 

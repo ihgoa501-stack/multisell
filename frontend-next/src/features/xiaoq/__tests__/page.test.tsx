@@ -71,20 +71,48 @@ describe('XiaoQ page target routing', () => {
     expect(screen.queryByRole('button', { name: /批准|执行|发布|采购/ })).not.toBeInTheDocument();
   });
 
-  it('queries order and final profit closure by experiment without actions', async () => {
+  it('does not expose the legacy experiment-based business closure', async () => {
     const user = userEvent.setup();
     renderPage();
 
     await user.click(screen.getByLabelText('查询对象'));
-    await user.click(await screen.findByText('订单与最终利润'));
-    await user.type(screen.getByLabelText('经营实验 ID'), 'EXP-CLOSE-1');
-    await user.click(screen.getByRole('button', { name: '这笔订单的最终利润是否已经确认？' }));
+    expect(screen.queryByText('订单与最终利润')).not.toBeInTheDocument();
+    expect(screen.getByText('订单经营事实')).toBeInTheDocument();
+  });
+
+  it('queries the authoritative Unit 4-5 fact chain by order id', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText('查询对象'));
+    await user.click(await screen.findByText('订单经营事实'));
+    await user.type(screen.getByLabelText('订单 ID'), '81');
+    await user.click(screen.getByRole('button', { name: '库存、履约和售后有哪些阻断？' }));
 
     await waitFor(() => expect(sendXiaoQMessage).toHaveBeenCalledWith({
-      message: '这笔订单的最终利润是否已经确认？',
-      target_type: 'business_closure',
-      experiment_id: 'EXP-CLOSE-1',
+      message: '库存、履约和售后有哪些阻断？',
+      target_type: 'operating_facts',
+      order_id: 81,
     }, expect.anything()));
-    expect(screen.queryByRole('button', { name: /批准|执行|发货|退款|收款/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/不会发货、退款、调库存或收款/)).toBeInTheDocument();
+  });
+
+  it('keeps an AI recommendation separate from an Owner decision', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByLabelText('查询对象'));
+    await user.click(await screen.findByText('经营决策案卷'));
+    await user.type(screen.getByLabelText('经营决策案卷 ID'), '9');
+    await user.click(screen.getByRole('button', { name: '根据现有事实生成一条新建议' }));
+
+    await waitFor(() => expect(sendXiaoQMessage).toHaveBeenCalledWith(expect.objectContaining({
+      message: '根据现有事实生成一条新建议',
+      target_type: 'business_decision',
+      decision_case_id: 9,
+      create_recommendation: true,
+      idempotency_key: expect.stringMatching(/^xiao-q-recommendation-9-/),
+    }), expect.anything()));
+    expect(screen.getByText(/不会生成、批准或执行 Owner 决定/)).toBeInTheDocument();
   });
 });

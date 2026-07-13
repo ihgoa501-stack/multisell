@@ -14,7 +14,6 @@ func validConfig() *Config {
 		JWT:         JWTConfig{Secret: defaultDevelopmentJWTSecret, ExpiryHours: 24, RefreshExpiryHours: 168},
 		Log:         LogConfig{Level: "debug", Format: "console"},
 		SchemaDrift: SchemaDriftConfig{Enabled: true, OnDrift: "warn"},
-		Prism:       PrismConfig{Timeout: 30},
 	}
 }
 
@@ -68,7 +67,6 @@ func TestValidate_RejectsInvalidOperationalBounds(t *testing.T) {
 		{"invalid log", func(c *Config) { c.Log.Level = "verbose" }},
 		{"invalid drift policy", func(c *Config) { c.SchemaDrift.OnDrift = "ignore" }},
 		{"negative budget", func(c *Config) { c.LLM.DailyBudgetUSD = -1 }},
-		{"invalid timeout", func(c *Config) { c.Prism.Timeout = 0 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

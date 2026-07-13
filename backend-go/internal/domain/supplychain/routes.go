@@ -23,7 +23,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *e
 
 	// Tracking routes
 	trackingSvc := NewTrackingService(db, logger)
-	th := NewTrackingHandler(trackingSvc).SetCarrierClient(NewMockCarrierClient())
+	// A mock carrier must never be registered on the authenticated runtime API:
+	// synthetic events are not external delivery evidence.
+	th := NewTrackingHandler(trackingSvc)
 
 	trackingGroup := rg.Group("/supply-chain/tracking")
 	{
@@ -31,6 +33,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, bus *e
 		trackingGroup.GET("/:id", th.Get)
 		trackingGroup.GET("/flow/:flowId", th.GetByFlow)
 		trackingGroup.POST("", th.Create)
+		trackingGroup.GET("/:id/carrier-events", th.ListCarrierEvents)
+		trackingGroup.POST("/:id/carrier-events", th.IngestCarrierEvent)
 		trackingGroup.PUT("/:id/status", th.UpdateStatus)
 		trackingGroup.POST("/:id/sync", th.SyncFromCarrier)
 	}

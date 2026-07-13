@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation>
+  <qa_pair>
+    <question>For the closed image-work batch containing task references 1101, 1102, and 1103, inspect each task and its output metadata. Which task has a READY output and the largest pixel area? Answer with the numeric task reference only.</question>
+    <answer>1103</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Audit task references 1101, 1102, and 1103 using processor capabilities, task details, estimates, and output metadata. Which task uniquely combines an unavailable processor with no output? Answer with the numeric task reference only.</question>
+    <answer>1102</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Page through the complete processor capability catalogue two entries at a time and cross-check availability on both pages. How many processors are available in this frozen fixture? Answer with one integer.</question>
+    <answer>1</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Read both pages of the processor capability catalogue using a page size of two. What is the human-readable name of the first processor on page 2?</question>
+    <answer>Adobe Firefly</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Compare task references 1101 and 1103, verify that each has an output, and select the one with the larger pixel area. What controlled media reference identifies its output? Return the path exactly.</question>
+    <answer>/api/v1/product-images/tasks/1103/output/content</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>For task 1102, reconcile what its task detail, processor catalogue, estimate, and output metadata say. Does merely requesting the estimate create an approval or paid intent? Answer True or False.</question>
+    <answer>False</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Compare the estimates and task details for references 1101 and 1102. What exact amount is returned for the available deterministic task? Return only the decimal value.</question>
+    <answer>0</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Inspect task references 1101 and 1103 and their controlled output metadata. For the READY task whose requested format is webp, what is the first hexadecimal character of its output SHA-256?</question>
+    <answer>c</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Among task references 1102, 1104, and 1105, inspect both task details and output metadata. Which task is failed, carries a non-empty error code, and has no output? Answer with the numeric task reference only.</question>
+    <answer>1104</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>For the frozen batch of task references 1101 through 1105, inspect every task, estimate, and output page. How many tasks simultaneously have an output and an exact zero estimate? Answer with one integer.</question>
+    <answer>2</answer>
+  </qa_pair>
+</evaluation>

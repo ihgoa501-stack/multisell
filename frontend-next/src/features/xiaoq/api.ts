@@ -69,6 +69,7 @@ export async function sendXiaoQMessage(
     mode: data.mode ?? 'read_only',
     evidence: data.evidence ?? [],
     unknowns: data.unknowns ?? [],
+    blockers: data.blockers ?? [],
     links: normalizeLinks(data.links, data.demand_case_id),
     provenance: data.provenance ?? (data.provider ? { source: data.provider, model: data.model } : undefined),
   };

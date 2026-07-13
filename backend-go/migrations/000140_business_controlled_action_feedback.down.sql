@@ -1,0 +1,8 @@
+DROP TRIGGER IF EXISTS business_next_action_recommendation_immutable ON business_next_action_recommendation;
+DROP TRIGGER IF EXISTS business_action_observation_immutable ON business_action_observation;
+DROP TRIGGER IF EXISTS business_controlled_action_authority_immutable ON business_controlled_action;
+DROP FUNCTION IF EXISTS guard_business_controlled_action_authority();
+DROP FUNCTION IF EXISTS prevent_business_feedback_mutation();
+DROP TABLE IF EXISTS business_next_action_recommendation;
+DROP TABLE IF EXISTS business_action_observation;
+DROP TABLE IF EXISTS business_controlled_action;

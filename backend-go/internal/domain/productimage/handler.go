@@ -21,13 +21,8 @@ func (h *Handler) Capabilities(c *gin.Context) {
 	if _, ok := ownerID(c); !ok {
 		return
 	}
-	configured := h.service != nil && h.service.image != nil
-	response.Success(c, []gin.H{
-		{"code": "deterministic", "name": "凌镜标准处理", "configured": configured, "operations": []string{"DETERMINISTIC_RESIZE"}},
-		{"code": "photoroom", "name": "Photoroom", "configured": false, "operations": []string{}},
-		{"code": "adobe", "name": "Adobe Firefly", "configured": false, "operations": []string{}},
-		{"code": "openai", "name": "OpenAI Images", "configured": false, "operations": []string{}},
-	})
+	items, _ := h.service.ListCapabilitiesContext(c.Request.Context(), 1, 100)
+	response.Success(c, items)
 }
 
 func ownerID(c *gin.Context) (int64, bool) {
@@ -191,6 +186,12 @@ func (h *Handler) OutputContent(c *gin.Context) {
 	c.Header("Content-Type", media)
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
+	if task, taskErr := h.service.GetTask(c.Request.Context(), owner, id); taskErr == nil && isNonPublishableOutput(task, nil) {
+		c.Header("X-Image-Sandbox", strconv.FormatBool(task.Sandbox || task.Processor == photoroomProcessor))
+		c.Header("X-Image-Watermarked", strconv.FormatBool(task.Watermarked || task.Processor == photoroomProcessor))
+		c.Header("X-Image-Publishable", "false")
+		c.Header("X-Image-Restriction", "photoroom_sandbox_output")
+	}
 	c.Data(200, media, b)
 }
 
@@ -226,6 +227,32 @@ func writeServiceError(c *gin.Context, err error) {
 			message = "task version or processor changed"
 		case "BUDGET_COST_REQUIRED":
 			message = "paid execution requires a current budget and cost record"
+		case "BUDGET_POLICY_REQUIRED":
+			message = "an active Owner budget policy is required"
+		case "BUDGET_EXCEEDED":
+			message = "the Owner budget period has insufficient remaining funds"
+		case "BUDGET_PERIOD_OVERLAP":
+			message = "budget periods for the same currency may not overlap"
+		case "BUDGET_RESERVATION_REQUIRED":
+			message = "the exact execution has no active budget reservation"
+		case "BUDGET_RELEASE_FORBIDDEN":
+			message = "claimed, spent, or result-unknown funds cannot be released"
+		case "BUDGET_RECONCILE_FORBIDDEN":
+			message = "only claimed or spent executions can be reconciled"
+		case "BUDGET_NO_CHARGE_FORBIDDEN":
+			message = "no-charge evidence requires the exact claimed execution to be awaiting reconciliation with no recorded charge"
+		case "RECONCILE_REQUIRED":
+			message = "external execution outcome is unknown; do not retry before reconciliation"
+		case "BUDGET_RESERVATION_RELEASED":
+			message = "this exact task version was cancelled or expired; create a new task version before approving again"
+		case "PARENT_HASH_MISMATCH":
+			message = "parent asset hash does not match the immutable source asset"
+		case "INPUT_RIGHTS_REQUIRED":
+			message = "exact current copy and modification rights are required before image processing"
+		case "ASSET_CHANNEL_RESTRICTED":
+			message = "the imported asset is restricted to another sales channel"
+		case "NON_PUBLISHABLE_OUTPUT":
+			message = "sandbox or watermarked output cannot be selected as the final image"
 		}
 		problem(c, 409, conflict.Code, message)
 		return

@@ -1,6 +1,7 @@
 package supplychain
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +14,15 @@ import (
 type TrackingHandler struct {
 	service *TrackingService
 	carrier *MockCarrierClient
+}
+
+func trackingOwnerID(c *gin.Context) (int64, bool) {
+	id := common.UserIDFromCtx(c)
+	if id == nil || *id <= 0 {
+		response.Error(c, http.StatusUnauthorized, "Owner authentication required")
+		return 0, false
+	}
+	return *id, true
 }
 
 // NewTrackingHandler creates a new supply chain tracking handler.
@@ -32,7 +42,12 @@ func (h *TrackingHandler) SetCarrierClient(c *MockCarrierClient) *TrackingHandle
 // List returns a paginated list of tracking records.
 // GET /api/v1/supplychain/tracking?page=1&size=20&flow_id=&order_id=&status=&carrier_code=
 func (h *TrackingHandler) List(c *gin.Context) {
+	ownerID, ok := trackingOwnerID(c)
+	if !ok {
+		return
+	}
 	req := ListTrackingRequest{}
+	req.OwnerID = ownerID
 	req.FlowID = c.Query("flow_id")
 	req.OrderID = c.Query("order_id")
 	req.Status = c.Query("status")
@@ -54,13 +69,17 @@ func (h *TrackingHandler) List(c *gin.Context) {
 // Get returns a single tracking record by ID.
 // GET /api/v1/supplychain/tracking/:id
 func (h *TrackingHandler) Get(c *gin.Context) {
+	ownerID, ok := trackingOwnerID(c)
+	if !ok {
+		return
+	}
 	id := c.Param("id")
 	if id == "" {
 		response.Error(c, http.StatusBadRequest, "missing id")
 		return
 	}
 
-	item, err := h.service.GetByID(c.Request.Context(), id)
+	item, err := h.service.GetByIDForOwner(c.Request.Context(), ownerID, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			response.Error(c, http.StatusNotFound, "tracking record not found")
@@ -76,13 +95,17 @@ func (h *TrackingHandler) Get(c *gin.Context) {
 // GetByFlow returns tracking records for a given flow ID.
 // GET /api/v1/supplychain/tracking/flow/:flowId
 func (h *TrackingHandler) GetByFlow(c *gin.Context) {
+	ownerID, ok := trackingOwnerID(c)
+	if !ok {
+		return
+	}
 	flowID := c.Param("flowId")
 	if flowID == "" {
 		response.Error(c, http.StatusBadRequest, "missing flow_id")
 		return
 	}
 
-	items, err := h.service.GetByFlowID(c.Request.Context(), flowID)
+	items, err := h.service.GetByFlowIDForOwner(c.Request.Context(), ownerID, flowID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to get tracking records by flow: "+err.Error())
 		return
@@ -94,13 +117,17 @@ func (h *TrackingHandler) GetByFlow(c *gin.Context) {
 // Create creates a new tracking record.
 // POST /api/v1/supplychain/tracking
 func (h *TrackingHandler) Create(c *gin.Context) {
+	ownerID, ok := trackingOwnerID(c)
+	if !ok {
+		return
+	}
 	var req CreateTrackingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
-	item, err := h.service.Create(c.Request.Context(), &req)
+	item, err := h.service.CreateForOwner(c.Request.Context(), ownerID, &req)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "failed to create tracking record: "+err.Error())
 		return
@@ -109,9 +136,54 @@ func (h *TrackingHandler) Create(c *gin.Context) {
 	response.Success(c, item)
 }
 
+// IngestCarrierEvent records an immutable observation from a real carrier or
+// channel connector. The caller must supply the external payload digest.
+func (h *TrackingHandler) IngestCarrierEvent(c *gin.Context) {
+	ownerID, ok := trackingOwnerID(c)
+	if !ok {
+		return
+	}
+	var req IngestCarrierEventRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	item, replayed, err := h.service.IngestCarrierEvent(c.Request.Context(), ownerID, c.Param("id"), &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrTrackingNotOwned):
+			response.Error(c, http.StatusNotFound, "tracking record not found")
+		case errors.Is(err, ErrCarrierEventConflict):
+			response.Error(c, http.StatusConflict, err.Error())
+		default:
+			response.Error(c, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	c.Header("Idempotent-Replay", map[bool]string{true: "true", false: "false"}[replayed])
+	response.Success(c, item)
+}
+
+func (h *TrackingHandler) ListCarrierEvents(c *gin.Context) {
+	ownerID, ok := trackingOwnerID(c)
+	if !ok {
+		return
+	}
+	items, err := h.service.ListCarrierEvents(c.Request.Context(), ownerID, c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to list carrier events")
+		return
+	}
+	response.Success(c, items)
+}
+
 // UpdateStatus updates a tracking record's status.
 // PUT /api/v1/supplychain/tracking/:id/status
 func (h *TrackingHandler) UpdateStatus(c *gin.Context) {
+	ownerID, ok := trackingOwnerID(c)
+	if !ok {
+		return
+	}
 	id := c.Param("id")
 	if id == "" {
 		response.Error(c, http.StatusBadRequest, "missing id")
@@ -124,7 +196,7 @@ func (h *TrackingHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.UpdateStatus(c.Request.Context(), id, &req)
+	item, err := h.service.UpdateStatusForOwner(c.Request.Context(), ownerID, id, &req)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			response.Error(c, http.StatusNotFound, "tracking record not found")

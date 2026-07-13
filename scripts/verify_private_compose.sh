@@ -10,6 +10,10 @@ env \
   DB_PASSWORD=render_password \
   DB_NAME=render_db \
   JWT_SECRET=render_only_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_SHARED_SECRET=render_only_image_shared_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_EXECUTION_TOKEN_SECRET=render_only_image_execution_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_RELEASE_ATTESTATION_SECRET=render_only_image_attestation_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_DATABASE_URL=postgresql://render_user:render_password@db:5432/render_db?sslmode=disable \
   AUDIT_CHECKPOINT_KEY=render_only_audit_checkpoint_key \
   DOMAIN=unused.invalid \
   PRIVATE_PORT=8088 \

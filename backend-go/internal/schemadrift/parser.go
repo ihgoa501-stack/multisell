@@ -48,6 +48,30 @@ func (p *MigrationParser) ParseAll() ([]TableDef, error) {
 				tableMap[tbl.Name] = &t
 			}
 		}
+		// CREATE TABLE parsing establishes the baseline, then later migrations may
+		// rename an existing column. Apply those renames in migration order so the
+		// expected schema represents the final state instead of reporting the old
+		// column as missing forever.
+		for _, rename := range parseColumnRenames(string(data)) {
+			if tbl, ok := tableMap[rename.table]; ok {
+				for i := range tbl.Columns {
+					if tbl.Columns[i].Name == rename.from {
+						tbl.Columns[i].Name = rename.to
+						break
+					}
+				}
+			}
+		}
+		for _, change := range parseColumnTypeChanges(string(data)) {
+			if tbl, ok := tableMap[change.table]; ok {
+				for i := range tbl.Columns {
+					if tbl.Columns[i].Name == change.column {
+						tbl.Columns[i].Type = change.sqlType
+						break
+					}
+				}
+			}
+		}
 	}
 
 	result := make([]TableDef, 0, len(tableMap))
@@ -55,6 +79,47 @@ func (p *MigrationParser) ParseAll() ([]TableDef, error) {
 		result = append(result, *tbl)
 	}
 	return result, nil
+}
+
+type columnRename struct{ table, from, to string }
+
+var alterRenameColumnRE = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+RENAME\s+COLUMN\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+TO\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?`)
+
+func parseColumnRenames(sql string) []columnRename {
+	matches := alterRenameColumnRE.FindAllStringSubmatch(removeBlockComments(sql), -1)
+	out := make([]columnRename, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, columnRename{
+			table: strings.ToLower(match[1]),
+			from:  strings.ToLower(match[2]),
+			to:    strings.ToLower(match[3]),
+		})
+	}
+	return out
+}
+
+type columnTypeChange struct{ table, column, sqlType string }
+
+var alterColumnTypeRE = regexp.MustCompile(`(?i)^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+ALTER\s+COLUMN\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+TYPE\s+((?:TIMESTAMP|TIME)\s+(?:WITH|WITHOUT)\s+TIME\s+ZONE|DOUBLE\s+PRECISION|CHARACTER\s+VARYING(?:\([^)]*\))?|[a-zA-Z_][a-zA-Z0-9_]*(?:\([^)]*\))?(?:\[\])?)`)
+
+func parseColumnTypeChanges(sql string) []columnTypeChange {
+	out := make([]columnTypeChange, 0)
+	clean := removeBlockComments(sql)
+	var cleanLines []string
+	for _, line := range strings.Split(clean, "\n") {
+		if idx := strings.Index(line, "--"); idx >= 0 {
+			line = line[:idx]
+		}
+		cleanLines = append(cleanLines, line)
+	}
+	for _, statement := range splitSQLStatements(strings.Join(cleanLines, "\n")) {
+		match := alterColumnTypeRE.FindStringSubmatch(statement)
+		if match == nil {
+			continue
+		}
+		out = append(out, columnTypeChange{table: strings.ToLower(match[1]), column: strings.ToLower(match[2]), sqlType: NormalizeType(match[3])})
+	}
+	return out
 }
 
 // knownMigrationLedgerTables are owned by migration tools rather than an
@@ -324,6 +389,14 @@ func parseColumnDef(s string) *ColumnDef {
 	name := strings.ToLower(matches[1])
 	rawType := strings.TrimSpace(matches[2])
 	constraints := strings.TrimSpace(matches[3])
+	upperConstraints := strings.ToUpper(constraints)
+	for _, suffix := range []string{"WITH TIME ZONE", "WITHOUT TIME ZONE", "PRECISION", "VARYING"} {
+		if strings.HasPrefix(upperConstraints, suffix) {
+			rawType += " " + constraints[:len(suffix)]
+			constraints = strings.TrimSpace(constraints[len(suffix):])
+			break
+		}
+	}
 
 	col := &ColumnDef{
 		Name: name,

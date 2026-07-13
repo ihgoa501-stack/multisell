@@ -2,6 +2,7 @@ package blobstore
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -15,6 +16,42 @@ import (
 	"path/filepath"
 	"testing"
 )
+
+func TestPingVerifiesStorageAndLeavesNoProbeFile(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping() error = %v", err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("readiness probe left files behind: %v", entries)
+	}
+}
+
+func TestPingFailsWhenConfiguredRootIsUnavailable(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "blobs")
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(root, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Ping(context.Background()); err == nil {
+		t.Fatal("Ping() succeeded with unavailable blob root")
+	}
+}
 
 func TestPutAcceptsSanitizesAndDescribesStaticRaster(t *testing.T) {
 	store, err := New(t.TempDir())
@@ -152,6 +189,68 @@ func TestGetDetectsTamperingAndRejectsInvalidIDs(t *testing.T) {
 		if _, err := store.Get(bad); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("Get(%q) = %v, want not exist", bad, err)
 		}
+	}
+}
+
+func TestSandboxRestrictionIsPersistentAndCannotBeDowngraded(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imageBytes bytes.Buffer
+	if err := png.Encode(&imageBytes, testImage(2, 2)); err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.Put(imageBytes.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkRestricted(id, Restriction{Sandbox: true, Watermarked: true, NonPublishable: true, Reason: "sandbox_fixture"}); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, err := reopened.GetMetadata(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !meta.Sandbox || !meta.Watermarked || !meta.NonPublishable || meta.RestrictionReason != "sandbox_fixture" {
+		t.Fatalf("metadata=%+v", meta)
+	}
+	if err := reopened.MarkRestricted(id, Restriction{Reason: "try_to_clear"}); err == nil {
+		t.Fatal("downgrade must be rejected")
+	}
+	meta, _ = reopened.GetMetadata(id)
+	if !meta.Sandbox || !meta.Watermarked || !meta.NonPublishable {
+		t.Fatalf("restriction was downgraded: %+v", meta)
+	}
+}
+
+func TestProviderSubmitClaimSurvivesRestartAndAllowsOnlyOneClaim(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimProviderSubmit("photoroom-sandbox", "job-1")
+	if err != nil || !claimed {
+		t.Fatalf("first claim=%v err=%v", claimed, err)
+	}
+	reopened, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = reopened.ClaimProviderSubmit("photoroom-sandbox", "job-1")
+	if err != nil || claimed {
+		t.Fatalf("second claim=%v err=%v", claimed, err)
+	}
+	claimed, err = reopened.ClaimProviderSubmit("photoroom-sandbox", "job-2")
+	if err != nil || !claimed {
+		t.Fatalf("different job claim=%v err=%v", claimed, err)
 	}
 }
 

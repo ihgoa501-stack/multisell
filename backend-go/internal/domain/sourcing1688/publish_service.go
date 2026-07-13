@@ -29,20 +29,15 @@ const (
 	PublishStatusReconcile     = "reconcile_required"
 	PublishStatusSucceeded     = "succeeded"
 	PublishStatusFailed        = "failed"
+	PublishStatusMocked        = "mocked"
 	publishApprovalTTL         = 24 * time.Hour
 )
 
-var (
-	errPublishAdapterUnavailable = errors.New("publish adapter unavailable")
-	errPublishCredentialsInvalid = errors.New("publish credentials invalid")
-)
-
-type publishAdapter interface {
-	Publish(context.Context, *integrations.PublishInput) (*integrations.PublishResult, error)
-	ValidateCredentials(context.Context, int64) (bool, error)
-}
-
-type publishAdapterResolver func(string) (publishAdapter, bool)
+// ErrImageReleaseAttestationRequired freezes the retired URL-based publish
+// seam. Real listing publication must enter through productimage's release
+// attestation plus ControlledPublisher byte contract; this service must never
+// consume an attestation or forward a URL to a legacy adapter.
+var ErrImageReleaseAttestationRequired = errors.New("IMAGE_RELEASE_ATTESTATION_REQUIRED: controlled byte publish is required")
 
 type PublishRequestInput struct {
 	TaskLinkID        int64          `json:"task_link_id,omitempty"`
@@ -310,8 +305,8 @@ func (s *Service) RequestPublish(sourceID int64, in *PublishRequestInput) (*Publ
 		if err := tx.First(&account, in.PlatformAccountID).Error; err != nil {
 			return err
 		}
-		if account.PlatformID != listing.PlatformID || account.Status != "active" || (account.ExecutionMode != int8(integrations.ExecutionModeApprovalRequired) && account.ExecutionMode != int8(integrations.ExecutionModeProduction)) {
-			return fmt.Errorf("%w: active write-enabled platform account must match the approved channel", ErrWorkflowGate)
+		if account.PlatformID != listing.PlatformID || account.Status != "active" || account.ExecutionMode < int8(integrations.ExecutionModeDryRun) || account.ExecutionMode > int8(integrations.ExecutionModeProduction) {
+			return fmt.Errorf("%w: active platform account with an explicit execution mode must match the approved channel", ErrWorkflowGate)
 		}
 		if draft.ExperimentID != task.ExperimentID || draft.DemandCaseID != task.DemandCaseID {
 			return fmt.Errorf("%w: task and draft authority trace do not match", ErrWorkflowGate)
@@ -448,9 +443,7 @@ func (s *Service) ExecutePublish(ctx context.Context, sourceID, attemptID, owner
 func (s *Service) executePublishForTask(ctx context.Context, sourceID, taskLinkID, attemptID, ownerID int64) (*PublishAttempt, error) {
 	var attempt PublishAttempt
 	var input integrations.PublishInput
-	var platformCode string
 	var executionMode integrations.ExecutionMode
-	shouldExecute := false
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND sourcing_product_id = ?", attemptID, sourceID).First(&attempt).Error; err != nil {
 			return err
@@ -516,7 +509,7 @@ func (s *Service) executePublishForTask(ctx context.Context, sourceID, taskLinkI
 		if err := tx.First(&account, attempt.PlatformAccountID).Error; err != nil {
 			return err
 		}
-		if listing.Status != "draft" || listing.PlatformID != attempt.PlatformID || account.PlatformID != attempt.PlatformID || account.Status != "active" || (account.ExecutionMode != int8(integrations.ExecutionModeApprovalRequired) && account.ExecutionMode != int8(integrations.ExecutionModeProduction)) {
+		if listing.Status != "draft" || listing.PlatformID != attempt.PlatformID || account.PlatformID != attempt.PlatformID || account.Status != "active" || account.ExecutionMode < int8(integrations.ExecutionModeDryRun) || account.ExecutionMode > int8(integrations.ExecutionModeProduction) {
 			return fmt.Errorf("%w: draft or platform account changed after approval", ErrWorkflowGate)
 		}
 		if err := requireOnlyActivePlatformAccount(tx, account.ID, attempt.PlatformID); err != nil {
@@ -526,7 +519,6 @@ func (s *Service) executePublishForTask(ctx context.Context, sourceID, taskLinkI
 		if err := tx.First(&platform, attempt.PlatformID).Error; err != nil {
 			return err
 		}
-		platformCode = platform.Code
 		executionMode = integrations.ExecutionMode(account.ExecutionMode)
 		var dc demandCaseRow
 		if tx.First(&dc, task.DemandCaseID).Error != nil {
@@ -544,134 +536,49 @@ func (s *Service) executePublishForTask(ctx context.Context, sourceID, taskLinkI
 		if err := json.Unmarshal(attempt.AdapterRequestPayload, &input); err != nil || input.ProductID != attempt.ProductID || input.PlatformID != attempt.PlatformID || input.AccountID != attempt.PlatformAccountID || input.IdempotencyKey != attempt.IdempotencyKey {
 			return fmt.Errorf("%w: frozen adapter request is invalid", ErrWorkflowGate)
 		}
+		// The legacy sourcing request contains MainImage as a URL. Even when every
+		// sourcing, compliance and Owner-approval gate passes, URL publication is
+		// not an acceptable substitute for a release attestation whose bytes are
+		// fetched and re-hashed immediately before a ControlledPublisher call.
+		// Fail before claiming the attempt or mutating the task/listing so a future
+		// controlled flow can use the still-approved business intent safely.
+		if executionMode == integrations.ExecutionModeApprovalRequired || executionMode == integrations.ExecutionModeProduction {
+			return ErrImageReleaseAttestationRequired
+		}
+		// Dry-run and sandbox are local simulations only. They deliberately do
+		// not resolve or call any adapter (a platform "sandbox" may still be an
+		// external write). The mock receipt contains no provider URL/reference and
+		// leaves the listing in draft, so it cannot be mistaken for observed output.
 		now := time.Now().UTC()
-		updated := tx.Model(&attempt).Where("status = ?", PublishStatusApproved).Updates(map[string]any{"status": PublishStatusExecuting, "executed_at": now})
+		mockPayload, err := json.Marshal(map[string]any{"execution_mode": executionMode.String(), "external_write": false, "truth_status": "mock"})
+		if err != nil {
+			return err
+		}
+		mockHash := sha256.Sum256(mockPayload)
+		updated := tx.Model(&attempt).Where("status = ?", PublishStatusApproved).Updates(map[string]any{"status": PublishStatusMocked, "response_payload": mockPayload, "response_sha256": hex.EncodeToString(mockHash[:]), "executed_at": now, "completed_at": now})
 		if updated.Error != nil {
 			return updated.Error
 		}
 		if updated.RowsAffected != 1 {
-			return fmt.Errorf("%w: publish request was concurrently claimed", ErrWorkflowGate)
+			return fmt.Errorf("%w: mock publish request was concurrently completed", ErrWorkflowGate)
 		}
-		if err := tx.Model(task).Updates(map[string]any{"workflow_status": "publishing", "workflow_updated_at": now}).Error; err != nil {
+		if err := tx.Model(task).Updates(map[string]any{"workflow_status": "publish_mocked", "workflow_updated_at": now}).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&operationlog.OperationLog{Module: "sourcing1688", Action: "publish.execute.claimed", ResourceID: strconv.FormatInt(attempt.ID, 10), Operator: strconv.FormatInt(ownerID, 10), UserID: ownerID, Content: fmt.Sprintf("publish_attempt=%d platform_account=%d", attempt.ID, attempt.PlatformAccountID), Result: PublishStatusExecuting, TriggerType: "owner_approval", ApprovalID: attempt.ApprovalID, EntityType: PublishApprovalTargetType, EntityID: attempt.ID}).Error; err != nil {
+		if err := tx.Create(&operationlog.OperationLog{Module: "sourcing1688", Action: "publish.execute.mock", ResourceID: strconv.FormatInt(attempt.ID, 10), Operator: strconv.FormatInt(ownerID, 10), UserID: ownerID, Content: fmt.Sprintf("publish_attempt=%d execution_mode=%s external_write=false", attempt.ID, executionMode.String()), Result: PublishStatusMocked, TriggerType: "owner_approval", ApprovalID: attempt.ApprovalID, EntityType: PublishApprovalTargetType, EntityID: attempt.ID}).Error; err != nil {
 			return err
 		}
-		shouldExecute = true
+		attempt.Status = PublishStatusMocked
+		attempt.ResponsePayload = mockPayload
+		attempt.ResponseSHA256 = hex.EncodeToString(mockHash[:])
+		attempt.ExecutedAt = &now
+		attempt.CompletedAt = &now
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	if !shouldExecute {
-		return &attempt, nil
-	}
-	normalizedCode := strings.ToLower(strings.TrimSpace(platformCode))
-	if normalizedCode == "sandbox" || normalizedCode == "mock" || strings.HasPrefix(normalizedCode, "mock-") || strings.HasSuffix(normalizedCode, "-sandbox") {
-		return s.finishPublishAttempt(ctx, &attempt, nil, errPublishAdapterUnavailable)
-	}
-	adapter, ok := s.resolvePublisher(platformCode)
-	if !ok || adapter == nil {
-		return s.finishPublishAttempt(ctx, &attempt, nil, errPublishAdapterUnavailable)
-	}
-	callCtx, cancelCall := context.WithTimeout(ctx, 30*time.Second)
-	defer cancelCall()
-	callCtx = integrations.WithApprovalID(callCtx, *attempt.ApprovalID)
-	callCtx = integrations.WithExecutionMode(callCtx, executionMode)
-	valid, credentialErr := adapter.ValidateCredentials(callCtx, attempt.PlatformAccountID)
-	if credentialErr != nil || !valid {
-		if errors.Is(credentialErr, context.DeadlineExceeded) || errors.Is(credentialErr, context.Canceled) {
-			return s.finishPublishAttempt(ctx, &attempt, nil, credentialErr)
-		}
-		return s.finishPublishAttempt(ctx, &attempt, nil, errPublishCredentialsInvalid)
-	}
-	result, publishErr := adapter.Publish(callCtx, &input)
-	if publishErr == nil && (result == nil || strings.TrimSpace(result.PlatformProductID) == "") {
-		publishErr = errors.New("platform did not confirm a product identifier")
-	}
-	return s.finishPublishAttempt(ctx, &attempt, result, publishErr)
-}
-
-func (s *Service) finishPublishAttempt(ctx context.Context, attempt *PublishAttempt, result *integrations.PublishResult, callErr error) (*PublishAttempt, error) {
-	completedAt := time.Now().UTC()
-	status, safeError := PublishStatusSubmitted, ""
-	response, marshalErr := json.Marshal(result)
-	if marshalErr != nil {
-		callErr = errors.New("platform result serialization failed")
-		response = nil
-	}
-	if callErr != nil || result == nil {
-		status = PublishStatusFailed
-		if errors.Is(callErr, context.DeadlineExceeded) || errors.Is(callErr, context.Canceled) {
-			status = PublishStatusReconcile
-		}
-		if callErr == nil {
-			callErr = errors.New("platform returned no publish result")
-		}
-		safeError = classifyPublishError(callErr)
-	}
-	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	err := s.db.WithContext(persistCtx).Transaction(func(tx *gorm.DB) error {
-		updates := map[string]any{"status": status, "response_payload": response, "error_message": safeError, "completed_at": completedAt}
-		responseHash := sha256.Sum256(response)
-		updates["response_sha256"] = hex.EncodeToString(responseHash[:])
-		updated := tx.Model(&PublishAttempt{}).Where("id = ? AND status = ?", attempt.ID, PublishStatusExecuting).Updates(updates)
-		if updated.Error != nil {
-			return updated.Error
-		}
-		if updated.RowsAffected != 1 {
-			return fmt.Errorf("publish attempt state changed while completing")
-		}
-		taskStatus := "publish_failed"
-		if status == PublishStatusSubmitted {
-			taskStatus = "submitted"
-		} else if status == PublishStatusReconcile {
-			taskStatus = "reconcile_required"
-		}
-		if err := tx.Model(&Sourcing1688TaskLink{}).Where("id = ? AND sourcing_product_id = ?", attempt.TaskLinkID, attempt.SourcingProductID).Updates(map[string]any{"workflow_status": taskStatus, "workflow_updated_at": completedAt}).Error; err != nil {
-			return err
-		}
-		if status == PublishStatusSubmitted {
-			updatedListing := tx.Model(&listingRow{}).Where("id = ? AND status = ?", attempt.ListingID, "draft").Updates(map[string]any{"status": "submitted", "published_data": response, "platform_product_id": result.PlatformProductID, "platform_url": result.PlatformURL, "sync_message": result.SyncMessage, "last_sync_at": completedAt})
-			if updatedListing.Error != nil {
-				return updatedListing.Error
-			}
-			if updatedListing.RowsAffected != 1 {
-				return fmt.Errorf("listing changed while platform result was being recorded")
-			}
-		}
-		return tx.Create(&operationlog.OperationLog{Module: "sourcing1688", Action: "publish.execute", ResourceID: strconv.FormatInt(attempt.ID, 10), Operator: strconv.FormatInt(attempt.RequestedBy, 10), UserID: attempt.RequestedBy, Content: fmt.Sprintf("publish_attempt=%d platform_account=%d", attempt.ID, attempt.PlatformAccountID), Result: status, TriggerType: "owner_approval", ApprovalID: attempt.ApprovalID, EntityType: PublishApprovalTargetType, EntityID: attempt.ID}).Error
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := s.db.First(attempt, attempt.ID).Error; err != nil {
-		return nil, err
-	}
-	if callErr != nil {
-		return attempt, fmt.Errorf("platform publish failed; result retained in attempt %d", attempt.ID)
-	}
-	return attempt, nil
-}
-
-func classifyPublishError(err error) string {
-	if err == nil {
-		return ""
-	}
-	switch {
-	case errors.Is(err, errPublishAdapterUnavailable):
-		return "adapter_unavailable"
-	case errors.Is(err, errPublishCredentialsInvalid):
-		return "credentials_invalid"
-	case errors.Is(err, context.DeadlineExceeded):
-		return "timeout"
-	case errors.Is(err, context.Canceled):
-		return "canceled"
-	default:
-		return "platform_publish_failed"
-	}
+	return &attempt, nil
 }
 
 func (s *Service) ListPublishAttempts(sourceID int64) ([]PublishAttempt, error) {

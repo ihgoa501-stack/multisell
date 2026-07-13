@@ -184,6 +184,8 @@ type draftRow struct {
 	ApprovalStatus                                                        string
 	ApprovalContentSHA256                                                 string
 	ApprovalRejectionReason                                               string
+	CostVersionID                                                         *int64 `json:"cost_version_id,omitempty"`
+	CostVersionContentHash                                                string `json:"cost_version_content_hash,omitempty"`
 }
 
 func (draftRow) TableName() string { return "sourcing_listing_draft" }

@@ -423,8 +423,6 @@ Owner 审核时间上限：
 - `docs/research/ai-commerce-image-platform-risks-2026-07-12.md`
 - `docs/research/ai-commerce-image-rights-risks-2026-07-12.md`
 - `docs/research/ai-commerce-image-fidelity-workflow-2026-07-12.md`
-- `docs/SELF_USE_OPERATING_DIRECTION.md`
-- `docs/research/project-truth-audit-2026-07-12.md`
 
 ## 18. Owner 下一项决策
 

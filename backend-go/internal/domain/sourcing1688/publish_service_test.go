@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,9 +94,6 @@ func newPublishTestService(t *testing.T) (*Service, *gorm.DB, *fakePublishAdapte
 	db.Create(&account)
 	fake := &fakePublishAdapter{valid: true}
 	svc := NewService(db, dbtest.NewLogger(t))
-	svc.resolvePublisher = func(code string) (publishAdapter, bool) {
-		return fake, code == "ozon"
-	}
 	return svc, db, fake, source.ID, account.ID
 }
 
@@ -152,40 +150,39 @@ func TestPublishWorkflowRequiresIndependentApprovalAndIsIdempotent(t *testing.T)
 	if fake.publishCalls != 0 {
 		t.Fatal("adapter called for tampered approved draft")
 	}
-	// Restore the exact approved content; the already frozen publish request is
-	// still byte-identical and may now be explicitly executed.
+	// Restore the exact approved content. The legacy request is still a URL-based
+	// adapter payload, so even complete sourcing/compliance/Owner approval must
+	// fail closed before any adapter or state mutation.
 	db.Model(&skuRow{}).Where("product_id = ?", attempt.ProductID).Update("price", 19.99)
-	completed, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
-	if err != nil {
-		t.Fatalf("ExecutePublish: %v", err)
+	blocked, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
+	if !errors.Is(err, ErrImageReleaseAttestationRequired) || blocked != nil {
+		t.Fatalf("legacy publish = %+v, %v", blocked, err)
 	}
-	if completed.Status != PublishStatusSubmitted || fake.validateCalls != 1 || fake.publishCalls != 1 {
-		t.Fatalf("completed=%+v validation=%d publish=%d", completed, fake.validateCalls, fake.publishCalls)
+	if fake.validateCalls != 0 || fake.publishCalls != 0 || fake.lastInput != nil {
+		t.Fatalf("legacy adapter reached: validation=%d publish=%d input=%+v", fake.validateCalls, fake.publishCalls, fake.lastInput)
 	}
-	if fake.lastInput == nil || fake.lastInput.AccountID != accountID || fake.lastInput.IdempotencyKey != in.IdempotencyKey || fake.lastInput.Inventories[fake.lastInput.SKUs[0].SkuID] != 3 {
-		t.Fatalf("frozen publish input = %+v", fake.lastInput)
-	}
-	if fake.lastInput.Prices[fake.lastInput.SKUs[0].SkuID] != "19.99" {
-		t.Fatalf("approved price snapshot was not frozen: %+v", fake.lastInput.Prices)
-	}
-	// Exact replay returns the ledger result and never calls the adapter again.
-	replayed, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
-	if err != nil || replayed.Status != PublishStatusSubmitted || fake.publishCalls != 1 {
-		t.Fatalf("replay=%+v err=%v calls=%d", replayed, err, fake.publishCalls)
+	var stored PublishAttempt
+	if err := db.First(&stored, attempt.ID).Error; err != nil || stored.Status != PublishStatusApproved || stored.ExecutedAt != nil || stored.CompletedAt != nil {
+		t.Fatalf("blocked attempt mutated: %+v err=%v", stored, err)
 	}
 	replayedRequest, err := svc.RequestPublish(sourceID, in)
-	if err != nil || replayedRequest.ID != attempt.ID || fake.publishCalls != 1 {
+	if err != nil || replayedRequest.ID != attempt.ID || fake.publishCalls != 0 {
 		t.Fatalf("request replay=%+v err=%v calls=%d", replayedRequest, err, fake.publishCalls)
 	}
 	var listing listingRow
 	db.First(&listing, attempt.ListingID)
-	if listing.Status != "submitted" {
+	if listing.Status != "draft" {
 		t.Fatalf("listing status = %q", listing.Status)
 	}
 	var auditCount int64
 	db.Model(&operationlog.OperationLog{}).Where("action = ? AND entity_id = ?", "publish.execute", attempt.ID).Count(&auditCount)
-	if auditCount != 1 {
+	if auditCount != 0 {
 		t.Fatalf("publish audit count = %d", auditCount)
+	}
+	var claimedAuditCount int64
+	db.Model(&operationlog.OperationLog{}).Where("action = ? AND entity_id = ?", "publish.execute.claimed", attempt.ID).Count(&claimedAuditCount)
+	if claimedAuditCount != 0 {
+		t.Fatalf("publish claimed audit count = %d", claimedAuditCount)
 	}
 	var requestAuditCount int64
 	db.Model(&operationlog.OperationLog{}).Where("action = ? AND entity_id = ?", "publish.request", attempt.ID).Count(&requestAuditCount)
@@ -247,22 +244,16 @@ func TestPublishFailureStoresOnlySafeClassificationAndNeverRetries(t *testing.T)
 		t.Fatal(err)
 	}
 	failed, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
-	if err == nil || failed == nil || failed.Status != PublishStatusFailed || failed.ErrorMessage != "platform_publish_failed" {
-		t.Fatalf("failed=%+v err=%v", failed, err)
+	if !errors.Is(err, ErrImageReleaseAttestationRequired) || failed != nil {
+		t.Fatalf("legacy adapter failure path must be unreachable: failed=%+v err=%v", failed, err)
 	}
-	if string(failed.ResponsePayload) != "null" && len(failed.ResponsePayload) != 0 {
-		t.Fatalf("unexpected failed response payload %s", failed.ResponsePayload)
-	}
-	if _, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); err != nil {
-		t.Fatalf("terminal failure replay: %v", err)
-	}
-	if fake.publishCalls != 1 {
-		t.Fatalf("failed publish was retried, calls=%d", fake.publishCalls)
+	if fake.validateCalls != 0 || fake.publishCalls != 0 {
+		t.Fatalf("legacy adapter was called: validate=%d publish=%d", fake.validateCalls, fake.publishCalls)
 	}
 	var stored PublishAttempt
 	db.First(&stored, attempt.ID)
-	if stored.ErrorMessage != "platform_publish_failed" {
-		t.Fatalf("unsafe error persisted: %q", stored.ErrorMessage)
+	if stored.Status != PublishStatusApproved || stored.ErrorMessage != "" || stored.ExecutedAt != nil || stored.CompletedAt != nil {
+		t.Fatalf("blocked attempt mutated: %+v", stored)
 	}
 }
 
@@ -277,8 +268,61 @@ func TestPublishRejectsMockPlatformCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
-	if err == nil || failed.ErrorMessage != "adapter_unavailable" || fake.publishCalls != 0 {
-		t.Fatalf("mock execution failed=%+v err=%v calls=%d", failed, err, fake.publishCalls)
+	if !errors.Is(err, ErrImageReleaseAttestationRequired) || failed != nil || fake.validateCalls != 0 || fake.publishCalls != 0 {
+		t.Fatalf("legacy mock-code path failed=%+v err=%v validate=%d calls=%d", failed, err, fake.validateCalls, fake.publishCalls)
+	}
+}
+
+func TestPublishDryRunAndSandboxAreLocalMockOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode integrations.ExecutionMode
+	}{
+		{name: "dry_run", mode: integrations.ExecutionModeDryRun},
+		{name: "sandbox", mode: integrations.ExecutionModeSandbox},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, db, fake, sourceID, accountID := newPublishTestService(t)
+			if err := db.Model(&platformAccountRow{}).Where("id = ?", accountID).Update("execution_mode", int8(tc.mode)).Error; err != nil {
+				t.Fatal(err)
+			}
+			// The fixture's approved draft deliberately contains an arbitrary HTTPS
+			// image URL. Mock execution must never forward it to an adapter or
+			// reinterpret it as controlled image bytes.
+			attempt, err := svc.RequestPublish(sourceID, &PublishRequestInput{RequesterID: 42, PlatformAccountID: accountID, IdempotencyKey: "mock-" + tc.name, Reason: "Owner mock verification", Inventories: map[string]int{"INT-1": 0}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.DecidePublish(sourceID, attempt.ID, &PublishDecisionInput{OwnerID: 42, Action: "approve", Note: "mock only"}); err != nil {
+				t.Fatal(err)
+			}
+			got, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
+			if err != nil || got == nil || got.Status != PublishStatusMocked {
+				t.Fatalf("mock result=%+v err=%v", got, err)
+			}
+			if fake.validateCalls != 0 || fake.publishCalls != 0 || fake.lastInput != nil {
+				t.Fatalf("adapter reached: validate=%d publish=%d input=%+v", fake.validateCalls, fake.publishCalls, fake.lastInput)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(got.ResponsePayload, &payload); err != nil || payload["truth_status"] != "mock" || payload["external_write"] != false || payload["execution_mode"] != tc.mode.String() {
+				t.Fatalf("mock payload=%s parsed=%+v err=%v", got.ResponsePayload, payload, err)
+			}
+			if strings.Contains(string(got.ResponsePayload), "asset.example") {
+				t.Fatalf("mock response leaked input URL: %s", got.ResponsePayload)
+			}
+			var listing listingRow
+			if err := db.First(&listing, attempt.ListingID).Error; err != nil || listing.Status != "draft" {
+				t.Fatalf("mock mutated listing=%+v err=%v", listing, err)
+			}
+			var link Sourcing1688TaskLink
+			if err := db.First(&link, attempt.TaskLinkID).Error; err != nil || link.WorkflowStatus != "publish_mocked" {
+				t.Fatalf("mock task=%+v err=%v", link, err)
+			}
+			terminal := &PublishTerminalObservationInput{OwnerID: 42, Outcome: PublishStatusSucceeded, SourceType: PublishTerminalSourcePlatformReceipt, EvidenceID: "must-not-exist", ExternalReceiptID: "must-not-exist", ObservedAt: time.Now().UTC(), PlatformProductID: "fake", ReceiptPayload: json.RawMessage(`{"status":"fake"}`)}
+			if _, err := svc.ObserveTaskPublishTerminal(context.Background(), sourceID, link.ID, attempt.ID, terminal); !errors.Is(err, ErrWorkflowGate) {
+				t.Fatalf("mock upgraded to external observation: %v", err)
+			}
+		})
 	}
 }
 
@@ -321,11 +365,11 @@ func TestPublishBlocksMultipleActiveAccountsAndExperimentGateIsTraceOnly(t *test
 		}
 		db.Model(&gateRow{}).Where("experiment_id = ? AND stage = ?", "EXP-PUBLISH-1", "opportunity").Update("result", "return")
 		got, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
-		if err != nil || got.Status != PublishStatusSubmitted {
-			t.Fatalf("experiment trace changed current authority: got=%+v err=%v", got, err)
+		if !errors.Is(err, ErrImageReleaseAttestationRequired) || got != nil {
+			t.Fatalf("legacy publish did not reach image release gate: got=%+v err=%v", got, err)
 		}
-		if fake.publishCalls != 1 {
-			t.Fatalf("adapter calls = %d, want 1", fake.publishCalls)
+		if fake.validateCalls != 0 || fake.publishCalls != 0 {
+			t.Fatalf("adapter reached: validate=%d publish=%d", fake.validateCalls, fake.publishCalls)
 		}
 	})
 }
@@ -413,11 +457,13 @@ func TestPublishTimeoutRequiresReconciliation(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42)
-	if err == nil || got.Status != PublishStatusReconcile || got.ErrorMessage != "timeout" {
-		t.Fatalf("timeout attempt=%+v err=%v", got, err)
+	if !errors.Is(err, ErrImageReleaseAttestationRequired) || got != nil || fake.publishCalls != 0 {
+		t.Fatalf("legacy timeout seam must be unreachable: attempt=%+v err=%v calls=%d", got, err, fake.publishCalls)
 	}
-	if _, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); err != nil || fake.publishCalls != 1 {
-		t.Fatalf("timeout must not auto-retry: err=%v calls=%d", err, fake.publishCalls)
+	// Preserve coverage of reconciliation for a historical attempt that had
+	// already reached an ambiguous external outcome before this seam was frozen.
+	if err := svc.db.Model(&PublishAttempt{}).Where("id = ?", attempt.ID).Updates(map[string]any{"status": PublishStatusReconcile, "error_message": "timeout"}).Error; err != nil {
+		t.Fatal(err)
 	}
 	reconciled, err := svc.ReconcilePublish(context.Background(), sourceID, attempt.ID, &PublishReconcileInput{OwnerID: 42, Outcome: PublishStatusSubmitted, EvidenceURI: "evidence://platform/query/123", ObservedAt: time.Now().UTC(), TruthStatus: "actual", PlatformResult: integrations.PublishResult{PlatformProductID: "observed-123", PlatformURL: "https://platform.example/p/observed-123", PublishedData: map[string]any{"status": "observed"}, SyncMessage: "observed by Owner"}})
 	if err != nil || reconciled.Status != PublishStatusSubmitted || reconciled.ResponseSHA256 == "" {
@@ -440,8 +486,11 @@ func TestPublishReconciliationFailsClosedAfterOpportunityAuthorityRevocation(t *
 	if _, err := svc.DecidePublish(sourceID, attempt.ID, &PublishDecisionInput{OwnerID: 42, Action: "approve", Note: "批准"}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); err == nil || got.Status != PublishStatusReconcile {
-		t.Fatalf("timeout attempt=%+v err=%v", got, err)
+	if got, err := svc.ExecutePublish(context.Background(), sourceID, attempt.ID, 42); !errors.Is(err, ErrImageReleaseAttestationRequired) || got != nil || fake.publishCalls != 0 {
+		t.Fatalf("legacy timeout seam must be unreachable: attempt=%+v err=%v calls=%d", got, err, fake.publishCalls)
+	}
+	if err := db.Model(&PublishAttempt{}).Where("id = ?", attempt.ID).Updates(map[string]any{"status": PublishStatusReconcile, "error_message": "timeout"}).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := db.Create(&sourcingMarketDecisionRow{DemandCaseID: 7, OwnerID: 42, Decision: "paused"}).Error; err != nil {
 		t.Fatal(err)

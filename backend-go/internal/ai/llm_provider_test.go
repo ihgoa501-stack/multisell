@@ -2,14 +2,84 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStubProvider_Name(t *testing.T) {
 	p := &StubProvider{logger: testLogger()}
 	if got := p.Name(); got != "stub" {
 		t.Errorf("Name() = %q, want %q", got, "stub")
+	}
+}
+
+func TestOpenAICompatibleChatRoundTripsStructuredToolCalls(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"model":"test-model","choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call-1","type":"function","function":{"name":"demand_case_read","arguments":"{\"demand_case_id\":7}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":12,"completion_tokens":3}}`))
+	}))
+	defer server.Close()
+
+	provider := &openAICompatible{name: "openai", apiKey: "test-key", baseURL: server.URL, model: "test-model", http: &http.Client{Timeout: time.Second}, logger: testLogger()}
+	resp, err := provider.Chat(context.Background(), &LLMRequest{
+		Messages: []LLMMessage{
+			{Role: "user", Content: "查看案件"},
+			{Role: "assistant", ToolCalls: []LLMToolCall{{ID: "previous", Name: "demand_case_read", Arguments: json.RawMessage(`{"demand_case_id":7}`)}}},
+			{Role: "tool", ToolCallID: "previous", Name: "demand_case_read", Content: `{"ok":true}`},
+		},
+		Tools: []LLMTool{{Name: "demand_case_read", Description: "read", Strict: true, Parameters: map[string]interface{}{"type": "object", "additionalProperties": false}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Name != "demand_case_read" || string(resp.ToolCalls[0].Arguments) != `{"demand_case_id":7}` {
+		t.Fatalf("tool response not parsed: %#v", resp)
+	}
+	tools, ok := requestBody["tools"].([]interface{})
+	if !ok || len(tools) != 1 || requestBody["tool_choice"] != "auto" {
+		t.Fatalf("tool definition missing: %#v", requestBody)
+	}
+	messages, ok := requestBody["messages"].([]interface{})
+	if !ok || len(messages) != 3 || messages[2].(map[string]interface{})["tool_call_id"] != "previous" {
+		t.Fatalf("tool continuation missing: %#v", requestBody["messages"])
+	}
+}
+
+func TestAnthropicChatRoundTripsStructuredToolCalls(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"model":"claude-test","stop_reason":"tool_use","content":[{"type":"text","text":"先读取。"},{"type":"tool_use","id":"toolu-1","name":"demand_case_read","input":{"demand_case_id":7}}],"usage":{"input_tokens":10,"output_tokens":4}}`))
+	}))
+	defer server.Close()
+
+	provider := &anthropicProvider{apiKey: "test-key", baseURL: server.URL, model: "claude-test", http: &http.Client{Timeout: time.Second}, logger: testLogger()}
+	resp, err := provider.Chat(context.Background(), &LLMRequest{
+		Messages: []LLMMessage{{Role: "user", Content: "查看"}, {Role: "assistant", ToolCalls: []LLMToolCall{{ID: "old", Name: "demand_case_read", Arguments: json.RawMessage(`{"demand_case_id":7}`)}}}, {Role: "tool", ToolCallID: "old", Content: `{"ok":true}`}},
+		Tools:    []LLMTool{{Name: "demand_case_read", Parameters: map[string]interface{}{"type": "object"}}}, MaxTokens: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Answer != "先读取。" || len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "toolu-1" || string(resp.ToolCalls[0].Arguments) != `{"demand_case_id":7}` {
+		t.Fatalf("anthropic tool response not parsed: %#v", resp)
+	}
+	if tools, ok := requestBody["tools"].([]interface{}); !ok || len(tools) != 1 {
+		t.Fatalf("anthropic tools missing: %#v", requestBody)
+	}
+	if messages, ok := requestBody["messages"].([]interface{}); !ok || len(messages) != 3 || messages[2].(map[string]interface{})["role"] != "user" {
+		t.Fatalf("anthropic tool result continuation missing: %#v", requestBody["messages"])
 	}
 }
 
@@ -155,6 +225,13 @@ func TestCountApproxTokens_Empty(t *testing.T) {
 	n := countApproxTokens(req)
 	if n != 0 {
 		t.Errorf("countApproxTokens = %d, want 0", n)
+	}
+}
+
+func TestReadLLMResponseRejectsOversizeBody(t *testing.T) {
+	_, err := readLLMResponse(strings.NewReader(strings.Repeat("x", maxLLMResponseBytes+1)))
+	if err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("oversize response error = %v", err)
 	}
 }
 

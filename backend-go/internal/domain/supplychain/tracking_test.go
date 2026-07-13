@@ -12,6 +12,7 @@ import (
 const sqliteTrackingDDL = `
 	CREATE TABLE IF NOT EXISTS supply_chain_tracking (
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+		owner_id INTEGER,
 		flow_id TEXT,
 		order_id TEXT DEFAULT '',
 		carrier_code TEXT DEFAULT '',

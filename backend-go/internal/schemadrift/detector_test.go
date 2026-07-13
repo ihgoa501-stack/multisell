@@ -26,6 +26,38 @@ func TestDetectLiveIgnoresMigrationLedgerTable(t *testing.T) {
 	}
 }
 
+func TestDetectLiveComparesInformationSchemaBaseTypes(t *testing.T) {
+	d := &DriftDetector{}
+	report := d.detect(map[string][]columnInfo{
+		"sample": {
+			{ColumnName: "name", DataType: "character varying"},
+			{ColumnName: "amount", DataType: "numeric"},
+		},
+	}, []TableDef{{Name: "sample", Columns: []ColumnDef{
+		{Name: "name", Type: "character varying(80)"},
+		{Name: "amount", Type: "numeric(12,2)"},
+	}}})
+	if report.ColumnMismatch != 0 {
+		t.Fatalf("type modifiers unavailable from information_schema must not be drift: %+v", report)
+	}
+}
+
+func TestDetectLiveDoesNotGuessArrayOrUserDefinedElementTypes(t *testing.T) {
+	d := &DriftDetector{}
+	report := d.detect(map[string][]columnInfo{
+		"sample": {
+			{ColumnName: "tags", DataType: "ARRAY"},
+			{ColumnName: "state", DataType: "USER-DEFINED"},
+		},
+	}, []TableDef{{Name: "sample", Columns: []ColumnDef{
+		{Name: "tags", Type: "text[]"},
+		{Name: "state", Type: "custom_state"},
+	}}})
+	if report.ColumnMismatch != 0 {
+		t.Fatalf("insufficient information_schema type identity must not create drift: %+v", report)
+	}
+}
+
 func (testUser) TableName() string { return "test_users" }
 
 type testProduct struct {

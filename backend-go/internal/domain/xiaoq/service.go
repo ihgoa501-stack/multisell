@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/lingmirror/backend-go/internal/ai"
+	"github.com/lingmirror/backend-go/internal/domain/businessdecision"
 	"github.com/lingmirror/backend-go/internal/domain/demandcase"
 	"github.com/lingmirror/backend-go/internal/domain/experiment"
+	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"github.com/lingmirror/backend-go/internal/domain/sourcing1688"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -24,8 +26,19 @@ type Service struct {
 	experiment ExperimentReader
 	sourcing   Sourcing1688Reader
 	closure    BusinessClosureReader
+	operating  OwnerOperatingReader
+	decision   BusinessDecisionReader
 	provider   ai.LLMProvider
 	traces     TraceRecorder
+}
+
+func (s *Service) WithOwnerOperatingReader(reader OwnerOperatingReader) *Service {
+	s.operating = reader
+	return s
+}
+func (s *Service) WithBusinessDecisionReader(reader BusinessDecisionReader) *Service {
+	s.decision = reader
+	return s
 }
 
 func (s *Service) WithSourcingReader(reader Sourcing1688Reader) *Service {
@@ -66,10 +79,28 @@ func (s *Service) SendMessage(ctx context.Context, ownerID int64, in MessageInpu
 		target = TargetDemandCase
 	}
 	if target == TargetExperiment {
-		if strings.TrimSpace(in.ExperimentID) == "" || in.DemandCaseID != 0 || in.SourceID != 0 || s.experiment == nil {
+		if strings.TrimSpace(in.ExperimentID) == "" || in.DemandCaseID != 0 || in.SourceID != 0 || in.OrderID != 0 || in.DecisionCaseID != 0 || s.experiment == nil {
 			return nil, ErrInvalidInput
 		}
 		return s.sendExperimentMessage(ctx, ownerID, message, in.ExperimentID)
+	}
+	if target == TargetOperatingFacts {
+		if in.OrderID <= 0 || in.DemandCaseID != 0 || in.SourceID != 0 || in.DecisionCaseID != 0 || strings.TrimSpace(in.ExperimentID) != "" || in.CreateRecommendation || strings.TrimSpace(in.IdempotencyKey) != "" || s.operating == nil {
+			return nil, ErrInvalidInput
+		}
+		return s.sendOperatingFactsMessage(ctx, ownerID, message, in.OrderID)
+	}
+	if target == TargetBusinessDecision {
+		if in.DecisionCaseID <= 0 || in.DemandCaseID != 0 || in.SourceID != 0 || in.OrderID != 0 || strings.TrimSpace(in.ExperimentID) != "" || s.decision == nil {
+			return nil, ErrInvalidInput
+		}
+		if in.CreateRecommendation && strings.TrimSpace(in.IdempotencyKey) == "" {
+			return nil, ErrInvalidInput
+		}
+		if !in.CreateRecommendation && strings.TrimSpace(in.IdempotencyKey) != "" {
+			return nil, ErrInvalidInput
+		}
+		return s.sendBusinessDecisionMessage(ctx, ownerID, message, in.DecisionCaseID, in.CreateRecommendation, in.IdempotencyKey)
 	}
 	if target == TargetBusinessClosure {
 		if strings.TrimSpace(in.ExperimentID) == "" || in.DemandCaseID != 0 || in.SourceID != 0 || s.closure == nil {
@@ -83,7 +114,7 @@ func (s *Service) SendMessage(ctx context.Context, ownerID int64, in MessageInpu
 		}
 		return s.sendSourcingMessage(ctx, ownerID, message, in.SourceID)
 	}
-	if target != TargetDemandCase || in.DemandCaseID <= 0 || in.SourceID != 0 || strings.TrimSpace(in.ExperimentID) != "" || s.demand == nil {
+	if target != TargetDemandCase || in.DemandCaseID <= 0 || in.SourceID != 0 || in.OrderID != 0 || in.DecisionCaseID != 0 || strings.TrimSpace(in.ExperimentID) != "" || in.CreateRecommendation || strings.TrimSpace(in.IdempotencyKey) != "" || s.demand == nil {
 		return nil, ErrInvalidInput
 	}
 	if _, ok := activeCapability(CapabilityDemandCaseRead); !ok {
@@ -92,83 +123,126 @@ func (s *Service) SendMessage(ctx context.Context, ownerID int64, in MessageInpu
 	if _, ok := activeCapability(CapabilityDemandCaseDecisionRead); !ok {
 		return nil, ErrCapabilityUnavailable
 	}
-	traceID, err := s.startReadTrace(ownerID, "demand_case_explain", "xiaoq-v1", map[string]interface{}{"target_type": TargetDemandCase, "question": message, "demand_case_id": in.DemandCaseID})
+	if s.provider.Name() == "stub" {
+		return s.sendDemandStubMessage(ctx, ownerID, message, in.DemandCaseID)
+	}
+	return s.sendDemandAgentMessage(ctx, ownerID, message, in.DemandCaseID)
+}
+
+func (s *Service) sendOperatingFactsMessage(ctx context.Context, ownerID int64, message string, orderID int64) (*MessageResponse, error) {
+	capabilities := []string{CapabilityOrderFactRead, CapabilityInventoryLedgerRead, CapabilityFulfillmentFactRead, CapabilityAftersalesFactRead, CapabilitySettlementRead, CapabilityProfitFinalRead, CapabilityCashReconciliationRead}
+	for _, id := range capabilities {
+		if _, ok := activeCapability(id); !ok {
+			return nil, ErrCapabilityUnavailable
+		}
+	}
+	timedCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	traceID, err := s.startReadTrace(ownerID, "operating_facts_explain", "xiaoq-operating-facts-v2", map[string]interface{}{"target_type": TargetOperatingFacts, "question": message, "order_id": orderID})
 	if err != nil {
 		return nil, err
 	}
-	detail, err := s.demand.Get(ctx, in.DemandCaseID, ownerID)
+	view, err := s.operating.ReadOwnerOperatingView(timedCtx, ownerID, orderID)
 	if err != nil {
-		return nil, s.capabilityFailure(traceID, CapabilityDemandCaseRead, err, map[string]interface{}{"demand_case_id": in.DemandCaseID})
+		return nil, s.capabilityFailure(traceID, CapabilityOrderFactRead, err, map[string]interface{}{"order_id": orderID})
 	}
-	if _, err := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "capability_call", Content: CapabilityDemandCaseRead, Payload: mustJSON(map[string]interface{}{"demand_case_id": in.DemandCaseID, "risk": "read", "status": "succeeded"})}); err != nil {
-		return nil, s.failTrace(traceID, err)
-	}
-	card, err := s.demand.DecisionCard(ctx, in.DemandCaseID, ownerID)
-	if err != nil {
-		return nil, s.capabilityFailure(traceID, CapabilityDemandCaseDecisionRead, err, map[string]interface{}{"demand_case_id": in.DemandCaseID})
-	}
-	if _, err := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "capability_call", Content: CapabilityDemandCaseDecisionRead, Payload: mustJSON(map[string]interface{}{"demand_case_id": in.DemandCaseID, "risk": "read", "status": "succeeded"})}); err != nil {
-		return nil, s.failTrace(traceID, err)
-	}
-	contextPayload := struct {
-		Question     string      `json:"question"`
-		DemandCaseID int64       `json:"demand_case_id"`
-		Detail       interface{} `json:"detail"`
-		DecisionCard interface{} `json:"decision_card"`
-		Capabilities []string    `json:"capabilities"`
-	}{message, in.DemandCaseID, detail, card, []string{CapabilityDemandCaseRead, CapabilityDemandCaseDecisionRead}}
-	inputJSON, err := json.Marshal(contextPayload)
-	if err != nil {
-		return nil, err
-	}
-	snapshotHashes := make(map[int64]string, len(detail.Snapshots))
-	for _, snapshot := range detail.Snapshots {
-		snapshotHashes[snapshot.ID] = snapshot.RawSHA256
-	}
-	for _, ev := range detail.Evidence {
-		observedAt := ""
-		if ev.ObservedAt != nil {
-			observedAt = ev.ObservedAt.UTC().Format(time.RFC3339)
-		}
-		payload := map[string]interface{}{"demand_case_id": in.DemandCaseID, "kind": ev.Kind, "dimension": ev.Dimension, "truth_status": ev.TruthStatus, "source_uri": ev.SourceURI, "run_id": ev.RunID, "snapshot_id": ev.SnapshotID, "observed_at": observedAt}
-		if hash := snapshotHashes[ev.SnapshotID]; hash != "" {
-			payload["snapshot_sha256"] = hash
-		}
-		if _, err := s.traces.AddEvidence(traceID, &ai.AddEvidenceInput{SourceType: "demand_evidence", SourceID: fmt.Sprint(ev.ID), Title: ev.Title, Summary: ev.TruthStatus, Payload: mustJSON(payload)}); err != nil {
+	for _, id := range capabilities {
+		if _, err = s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "capability_call", Content: id, Payload: mustJSON(map[string]interface{}{"order_id": orderID, "risk": "read", "status": "succeeded"})}); err != nil {
 			return nil, s.failTrace(traceID, err)
 		}
 	}
-
-	if s.provider.Name() == "stub" {
-		answer := "这是模拟回答，不能作为可信经营建议。当前案件裁决为「" + card.Verdict + "」；请查看案件证据和未知项。"
-		final := &MessageResponse{TraceID: traceID, AgentID: AgentID, Mode: "read_only_v1", TargetType: TargetDemandCase, DemandCaseID: in.DemandCaseID, Answer: answer, TruthStatus: TruthMock, Trusted: false, Provider: "stub", Model: "stub-v1"}
-		s.addGrounding(final, detail, card)
-		if err := s.complete(traceID, final, "completed"); err != nil {
-			return nil, &RunError{TraceID: traceID, Err: err}
+	for _, ref := range view.Evidence {
+		if _, err = s.traces.AddEvidence(traceID, &ai.AddEvidenceInput{SourceType: ref.SourceType, SourceID: fmt.Sprint(ref.SourceID), Title: ref.SourceType, Summary: ref.TruthStatus, Payload: mustJSON(ref)}); err != nil {
+			return nil, s.failTrace(traceID, err)
 		}
-		return final, nil
 	}
-
-	request := &ai.LLMRequest{
-		System:   "你是凌镜的小Q。只能根据提供的候选市场案件与决策卡回答。明确区分有来源事实、推断和未知；不得改变系统裁决，不得声称已成交、已盈利或可自动执行。用简明中文说明当前结论、最强反证/缺口和下一步。",
-		Messages: []ai.LLMMessage{{Role: "user", Content: string(inputJSON)}}, MaxTokens: 800,
-		Metadata: map[string]interface{}{"agent_id": AgentID, "demand_case_id": in.DemandCaseID},
-	}
-	resp, err := s.provider.Chat(ctx, request)
+	payload, err := json.Marshal(struct {
+		Question     string                           `json:"question"`
+		View         *integrations.OwnerOperatingView `json:"view"`
+		Capabilities []string                         `json:"capabilities"`
+	}{message, view, capabilities})
 	if err != nil {
-		failure := mustJSON(map[string]interface{}{"error": err.Error()})
-		if _, appendErr := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "provider_error", Content: "LLM provider call failed", Payload: failure}); appendErr != nil {
-			return nil, s.failTrace(traceID, errors.Join(err, appendErr))
-		}
-		_, _ = s.traces.Complete(traceID, &ai.CompleteTraceInput{FinalOutput: failure, RiskLevel: "low", Status: "failed"})
-		return nil, &RunError{TraceID: traceID, Err: err}
-	}
-	final := &MessageResponse{TraceID: traceID, AgentID: AgentID, Mode: "read_only_v1", TargetType: TargetDemandCase, DemandCaseID: in.DemandCaseID, Answer: resp.Answer, TruthStatus: TruthInferred, Trusted: false, Provider: s.provider.Name(), Model: resp.Model, TokensIn: resp.TokensIn, TokensOut: resp.TokensOut, LatencyMs: resp.LatencyMs}
-	s.addGrounding(final, detail, card)
-	if _, err := s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "model_response", Content: "provider response received", Payload: mustJSON(map[string]interface{}{"provider": final.Provider, "model": final.Model, "tokens_in": final.TokensIn, "tokens_out": final.TokensOut, "truth_status": final.TruthStatus})}); err != nil {
 		return nil, s.failTrace(traceID, err)
 	}
-	if err := s.complete(traceID, final, "completed"); err != nil {
+	final := &MessageResponse{TraceID: traceID, AgentID: AgentID, Mode: "read_only_v2", TargetType: TargetOperatingFacts, OrderID: orderID, Trusted: false, Unknowns: append([]string(nil), view.Unknowns...), Blockers: append([]string(nil), view.Blockers...)}
+	if s.provider.Name() == "stub" {
+		final.Answer, final.TruthStatus, final.Provider, final.Model = "这是模拟回答，不能作为可信经营结论。请直接核对订单事实、库存账本、履约、售后、结算、利润和现金证据。", TruthMock, "stub", "stub-v1"
+	} else {
+		resp, e := s.provider.Chat(timedCtx, &ai.LLMRequest{System: "你是凌镜的小Q。只能根据同一Owner、同一order_id的权威经营事实视图回答。严格保留每条truth_status；不得读取或推测买家PII、平台/承运商/银行原始载荷；不得把缺失事实、人工状态、已提交请求或批次级现金升级为订单终局；不得作Owner决定或执行任何动作。用简明中文分事实、阻断、未知和下一步。", Messages: []ai.LLMMessage{{Role: "user", Content: string(payload)}}, MaxTokens: 900, Metadata: map[string]interface{}{"agent_id": AgentID, "order_id": orderID}})
+		if e != nil {
+			return nil, s.capabilityFailure(traceID, CapabilityOrderFactRead, e, map[string]interface{}{"order_id": orderID})
+		}
+		final.Answer, final.TruthStatus, final.Provider, final.Model, final.TokensIn, final.TokensOut, final.LatencyMs = resp.Answer, TruthInferred, s.provider.Name(), resp.Model, resp.TokensIn, resp.TokensOut, resp.LatencyMs
+	}
+	for _, ref := range view.Evidence {
+		final.Evidence = append(final.Evidence, EvidenceItem{ID: ref.SourceID, Title: ref.SourceType, TruthStatus: ref.TruthStatus, ObservedAt: ref.ObservedAt.UTC().Format(time.RFC3339), Summary: ref.Summary, SnapshotSHA256: ref.SHA256})
+	}
+	final.Links = []ResponseLink{{Label: "订单事实", Href: "/orders/" + strconv.FormatInt(orderID, 10)}, {Label: "小Q 执行记录", Href: "/xiaoq/traces/" + traceID}}
+	final.Provenance = Provenance{Provider: final.Provider, Model: final.Model, TokensIn: final.TokensIn, TokensOut: final.TokensOut, LatencyMs: final.LatencyMs}
+	if err = s.complete(traceID, final, "completed"); err != nil {
+		return nil, &RunError{TraceID: traceID, Err: err}
+	}
+	return final, nil
+}
+
+func (s *Service) sendBusinessDecisionMessage(ctx context.Context, ownerID int64, message string, caseID int64, create bool, key string) (*MessageResponse, error) {
+	if _, ok := activeCapability(CapabilityBusinessDecisionRead); !ok {
+		return nil, ErrCapabilityUnavailable
+	}
+	if create {
+		if _, ok := activeCapability(CapabilityBusinessRecommend); !ok {
+			return nil, ErrCapabilityUnavailable
+		}
+	}
+	timedCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	traceID, err := s.startReadTrace(ownerID, "business_decision_explain", "xiaoq-business-decision-v1", map[string]interface{}{"target_type": TargetBusinessDecision, "question": message, "decision_case_id": caseID, "create_recommendation": create})
+	if err != nil {
+		return nil, err
+	}
+	detail, err := s.decision.Get(timedCtx, ownerID, caseID)
+	if err != nil {
+		return nil, s.capabilityFailure(traceID, CapabilityBusinessDecisionRead, err, map[string]interface{}{"decision_case_id": caseID})
+	}
+	if _, err = s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "capability_call", Content: CapabilityBusinessDecisionRead, Payload: mustJSON(map[string]interface{}{"decision_case_id": caseID, "risk": "read", "status": "succeeded", "manifest_sha256": detail.Case.ManifestSHA256})}); err != nil {
+		return nil, s.failTrace(traceID, err)
+	}
+	if _, err = s.traces.AddEvidence(traceID, &ai.AddEvidenceInput{SourceType: "business_decision_fact_snapshot", SourceID: fmt.Sprint(detail.Snapshot.ID), Title: "冻结经营事实", Summary: detail.Snapshot.TruthStatus, Payload: mustJSON(map[string]interface{}{"decision_case_id": caseID, "object_type": detail.Snapshot.ObjectType, "object_id": detail.Snapshot.ObjectID, "truth_status": detail.Snapshot.TruthStatus, "payload_sha256": detail.Snapshot.PayloadSHA256, "source_observed_at": detail.Snapshot.SourceObservedAt})}); err != nil {
+		return nil, s.failTrace(traceID, err)
+	}
+	payload, err := json.Marshal(struct {
+		Question string                   `json:"question"`
+		Detail   *businessdecision.Detail `json:"detail"`
+	}{message, detail})
+	if err != nil {
+		return nil, s.failTrace(traceID, err)
+	}
+	final := &MessageResponse{TraceID: traceID, AgentID: AgentID, Mode: "decision_support_v1", TargetType: TargetBusinessDecision, DecisionCaseID: caseID, Trusted: false}
+	if s.provider.Name() == "stub" {
+		final.Answer, final.TruthStatus, final.Provider, final.Model = "这是模拟回答，不能保存为可信经营建议，也不能替Owner形成决定。", TruthMock, "stub", "stub-v1"
+		create = false
+	} else {
+		resp, e := s.provider.Chat(timedCtx, &ai.LLMRequest{System: "你是凌镜的小Q。只能根据冻结经营事实和现有案卷提出建议。回答必须保持inferred，说明依据和未知；不得替Owner选择、批准或执行，不得声称因果成立。", Messages: []ai.LLMMessage{{Role: "user", Content: string(payload)}}, MaxTokens: 800, Metadata: map[string]interface{}{"agent_id": AgentID, "decision_case_id": caseID}})
+		if e != nil {
+			return nil, s.capabilityFailure(traceID, CapabilityBusinessDecisionRead, e, map[string]interface{}{"decision_case_id": caseID})
+		}
+		final.Answer, final.TruthStatus, final.Provider, final.Model, final.TokensIn, final.TokensOut, final.LatencyMs = resp.Answer, TruthInferred, s.provider.Name(), resp.Model, resp.TokensIn, resp.TokensOut, resp.LatencyMs
+	}
+	if create {
+		rec, e := s.decision.Recommend(timedCtx, ownerID, caseID, businessdecision.RecommendInput{Recommendation: final.Answer, Rationale: "小Q基于冻结事实清单生成；请Owner核对证据与未知后决定", TruthStatus: "inferred", Unknowns: detail.Case.Unknowns, IdempotencyKey: strings.TrimSpace(key)})
+		if e != nil {
+			return nil, s.capabilityFailure(traceID, CapabilityBusinessRecommend, e, map[string]interface{}{"decision_case_id": caseID})
+		}
+		final.RecommendationID = rec.ID
+		if _, e = s.traces.AppendEvent(traceID, &ai.AppendEventInput{EventType: "capability_call", Content: CapabilityBusinessRecommend, Payload: mustJSON(map[string]interface{}{"decision_case_id": caseID, "recommendation_id": rec.ID, "risk": "suggest", "status": "succeeded", "truth_status": "inferred", "manifest_sha256": rec.ManifestSHA256})}); e != nil {
+			return nil, s.failTrace(traceID, e)
+		}
+	}
+	final.Evidence = []EvidenceItem{{ID: detail.Snapshot.ID, Title: "冻结经营事实", TruthStatus: detail.Snapshot.TruthStatus, ObservedAt: detail.Snapshot.SourceObservedAt.UTC().Format(time.RFC3339), Summary: detail.Snapshot.ObjectType, SnapshotSHA256: detail.Snapshot.PayloadSHA256}}
+	final.Unknowns = append([]string(nil), detail.Case.Unknowns...)
+	final.Links = []ResponseLink{{Label: "经营决定案卷", Href: "/business-decisions/" + strconv.FormatInt(caseID, 10)}, {Label: "小Q 执行记录", Href: "/xiaoq/traces/" + traceID}}
+	final.Provenance = Provenance{Provider: final.Provider, Model: final.Model, TokensIn: final.TokensIn, TokensOut: final.TokensOut, LatencyMs: final.LatencyMs}
+	if err = s.complete(traceID, final, "completed"); err != nil {
 		return nil, &RunError{TraceID: traceID, Err: err}
 	}
 	return final, nil
@@ -229,7 +303,7 @@ func (s *Service) sendBusinessClosureMessage(ctx context.Context, ownerID int64,
 		final.Evidence = append(final.Evidence, EvidenceItem{ID: id, Title: ref.SourceType, TruthStatus: ref.TruthStatus, Summary: ref.Summary})
 	}
 	final.Unknowns = append(append([]string{}, view.Unknowns...), view.Blockers...)
-	final.Links = []ResponseLink{{Label: "经营实验", Href: "/experiments/" + experimentID}, {Label: "小Q 执行记录", Href: "/api/v1/xiao-q/traces/" + traceID}}
+	final.Links = []ResponseLink{{Label: "经营实验", Href: "/experiments/" + experimentID}, {Label: "小Q 执行记录", Href: "/xiaoq/traces/" + traceID}}
 	final.Provenance = Provenance{Provider: final.Provider, Model: final.Model, TokensIn: final.TokensIn, TokensOut: final.TokensOut, LatencyMs: final.LatencyMs}
 	if err := s.complete(traceID, final, "completed"); err != nil {
 		return nil, &RunError{TraceID: traceID, Err: err}
@@ -323,7 +397,7 @@ func (s *Service) addSourcingGrounding(response *MessageResponse, view *sourcing
 		{Label: "1688受控货源", Href: "/sourcing1688?record_id=" + fmt.Sprint(response.SourceID)},
 		{Label: "关联候选市场", Href: "/demand-cases/" + fmt.Sprint(view.Source.DemandCaseID)},
 		{Label: "关联经营实验", Href: "/experiments/" + view.Source.ExperimentID},
-		{Label: "小Q 执行记录", Href: "/api/v1/xiao-q/traces/" + response.TraceID},
+		{Label: "小Q 执行记录", Href: "/xiaoq/traces/" + response.TraceID},
 	}
 	response.Provenance = Provenance{Provider: response.Provider, Model: response.Model, TokensIn: response.TokensIn, TokensOut: response.TokensOut, LatencyMs: response.LatencyMs}
 }
@@ -388,7 +462,7 @@ func (s *Service) sendExperimentMessage(ctx context.Context, ownerID int64, mess
 		return final, nil
 	}
 	request := &ai.LLMRequest{
-		System:   "你是凌镜的小Q。只能根据提供的经营实验案件与闸门状态回答。严格保留 actual/quoted/estimated/unknown/mock/inferred；不得新增或核验证据、通过闸门、改变实验状态，也不得把待定利润或现金说成已最终确认。用简明中文说明当前阶段、已有证据、阻断项、未知和下一步。",
+		System:   "你是凌镜的小Q。只能根据提供的历史经营事实核验案卷与闸门记录回答。严格保留 actual/quoted/estimated/unknown/mock/inferred；不得新增或核验证据、通过闸门或改变状态。对象关联、闸门通过、交易终态、利润或现金到账都不证明因果关系或反馈闭环，不得宣称最终经营决定已被该案卷授权。用简明中文说明当前阶段、已有证据、阻断项和未知。",
 		Messages: []ai.LLMMessage{{Role: "user", Content: string(inputJSON)}}, MaxTokens: 800,
 		Metadata: map[string]interface{}{"agent_id": AgentID, "experiment_id": experimentID},
 	}
@@ -437,47 +511,48 @@ func (s *Service) addExperimentGrounding(response *MessageResponse, detail *expe
 	response.Links = []ResponseLink{
 		{Label: "经营实验", Href: "/experiments/" + response.ExperimentID},
 		{Label: "实验闸门状态", Href: "/api/v1/experiments/" + response.ExperimentID + "/owner-summary"},
-		{Label: "小Q 执行记录", Href: "/api/v1/xiao-q/traces/" + response.TraceID},
+		{Label: "小Q 执行记录", Href: "/xiaoq/traces/" + response.TraceID},
 	}
 	response.Provenance = Provenance{Provider: response.Provider, Model: response.Model, TokensIn: response.TokensIn, TokensOut: response.TokensOut, LatencyMs: response.LatencyMs}
 }
 
 func (s *Service) addGrounding(response *MessageResponse, detail *demandcase.Detail, card *demandcase.OwnerDecisionCard) {
-	response.Evidence = make([]EvidenceItem, 0, len(detail.Evidence))
+	evidenceCount := 0
+	if detail != nil {
+		evidenceCount = len(detail.Evidence)
+	}
+	response.Evidence = make([]EvidenceItem, 0, evidenceCount)
 	response.Unknowns = make([]string, 0)
-	snapshotHashes := make(map[int64]string, len(detail.Snapshots))
-	for _, snapshot := range detail.Snapshots {
-		snapshotHashes[snapshot.ID] = snapshot.RawSHA256
-	}
-	for _, item := range detail.Evidence {
-		observedAt := ""
-		if item.ObservedAt != nil {
-			observedAt = item.ObservedAt.UTC().Format(time.RFC3339)
+	if detail != nil {
+		snapshotHashes := make(map[int64]string, len(detail.Snapshots))
+		for _, snapshot := range detail.Snapshots {
+			snapshotHashes[snapshot.ID] = snapshot.RawSHA256
 		}
-		response.Evidence = append(response.Evidence, EvidenceItem{
-			ID: item.ID, Title: item.Title, TruthStatus: item.TruthStatus,
-			SourceURL: item.SourceURI, ObservedAt: observedAt,
-			Summary: item.Kind + "/" + item.Dimension, RunID: item.RunID,
-			SnapshotID: item.SnapshotID, SnapshotSHA256: snapshotHashes[item.SnapshotID],
-		})
-		if item.TruthStatus == demandcase.TruthUnknown || item.TruthStatus == demandcase.TruthMock || item.TruthStatus == demandcase.TruthInferred {
-			response.Unknowns = append(response.Unknowns, item.Title+"（"+item.TruthStatus+"）")
+		for _, item := range detail.Evidence {
+			observedAt := ""
+			if item.ObservedAt != nil {
+				observedAt = item.ObservedAt.UTC().Format(time.RFC3339)
+			}
+			response.Evidence = append(response.Evidence, EvidenceItem{ID: item.ID, Title: item.Title, TruthStatus: item.TruthStatus, SourceURL: item.SourceURI, ObservedAt: observedAt, Summary: item.Kind + "/" + item.Dimension, RunID: item.RunID, SnapshotID: item.SnapshotID, SnapshotSHA256: snapshotHashes[item.SnapshotID]})
+			if item.TruthStatus == demandcase.TruthUnknown || item.TruthStatus == demandcase.TruthMock || item.TruthStatus == demandcase.TruthInferred {
+				response.Unknowns = append(response.Unknowns, item.Title+"（"+item.TruthStatus+"）")
+			}
 		}
 	}
-	if strings.TrimSpace(card.NotProven) != "" {
+	if card != nil && strings.TrimSpace(card.NotProven) != "" {
 		response.Unknowns = append(response.Unknowns, card.NotProven)
 	}
 	response.Links = []ResponseLink{
 		{Label: "候选市场案件", Href: "/demand-cases/" + fmt.Sprint(response.DemandCaseID)},
 		{Label: "Owner 决策卡", Href: "/api/v1/demand-cases/" + fmt.Sprint(response.DemandCaseID) + "/decision-card"},
-		{Label: "小Q 执行记录", Href: "/api/v1/xiao-q/traces/" + response.TraceID},
+		{Label: "小Q 执行记录", Href: "/xiaoq/traces/" + response.TraceID},
 	}
 	response.Provenance = Provenance{Provider: response.Provider, Model: response.Model, TokensIn: response.TokensIn, TokensOut: response.TokensOut, LatencyMs: response.LatencyMs}
 }
 
 func (s *Service) complete(traceID string, response *MessageResponse, status string) error {
 	out, _ := json.Marshal(response)
-	_, err := s.traces.Complete(traceID, &ai.CompleteTraceInput{FinalOutput: out, RiskLevel: "low", TokenCount: response.TokensIn + response.TokensOut, Status: status})
+	_, err := s.traces.Complete(traceID, &ai.CompleteTraceInput{FinalOutput: out, ModelName: response.Model, RiskLevel: "low", TokenCount: response.TokensIn + response.TokensOut, Status: status})
 	return err
 }
 

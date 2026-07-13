@@ -6,50 +6,66 @@ import (
 )
 
 const (
-	AgentID               = "xiao_q"
-	TargetDemandCase      = "demand_case"
-	TargetExperiment      = "experiment"
-	TargetBusinessClosure = "business_closure"
-	TargetSourcing1688    = "sourcing_1688"
-	TruthMock             = "mock"
-	TruthInferred         = "inferred"
-	MaxMessageRunes       = 2000
+	AgentID                = "xiao_q"
+	TargetDemandCase       = "demand_case"
+	TargetExperiment       = "experiment"
+	TargetBusinessClosure  = "business_closure"
+	TargetSourcing1688     = "sourcing_1688"
+	TargetOperatingFacts   = "operating_facts"
+	TargetBusinessDecision = "business_decision"
+	TruthMock              = "mock"
+	TruthInferred          = "inferred"
+	TruthUnknown           = "unknown"
+	MaxMessageRunes        = 2000
 )
 
 var (
 	ErrInvalidInput          = errors.New("invalid xiao-q input")
 	ErrTraceNotFound         = errors.New("xiao-q trace not found")
 	ErrCapabilityUnavailable = errors.New("required xiao-q capability unavailable")
+	ErrAgentRunLimit         = errors.New("xiao-q agent runtime limit reached")
+	ErrAgentEmptyResponse    = errors.New("xiao-q agent returned neither answer nor tool call")
+	ErrAgentCanceled         = errors.New("xiao-q agent run canceled")
+	ErrAgentInvalidOutput    = errors.New("xiao-q agent final output is invalid")
+	ErrAgentProviderDisabled = errors.New("xiao-q real provider is not configured")
 )
 
 type MessageInput struct {
-	Message      string `json:"message" binding:"required"`
-	TargetType   string `json:"target_type,omitempty"`
-	DemandCaseID int64  `json:"demand_case_id,omitempty"`
-	ExperimentID string `json:"experiment_id,omitempty"`
-	SourceID     int64  `json:"source_id,omitempty"`
+	Message              string `json:"message" binding:"required"`
+	TargetType           string `json:"target_type,omitempty"`
+	DemandCaseID         int64  `json:"demand_case_id,omitempty"`
+	ExperimentID         string `json:"experiment_id,omitempty"`
+	SourceID             int64  `json:"source_id,omitempty"`
+	OrderID              int64  `json:"order_id,omitempty"`
+	DecisionCaseID       int64  `json:"decision_case_id,omitempty"`
+	CreateRecommendation bool   `json:"create_recommendation,omitempty"`
+	IdempotencyKey       string `json:"idempotency_key,omitempty"`
 }
 
 type MessageResponse struct {
-	TraceID      string         `json:"trace_id"`
-	AgentID      string         `json:"agent_id"`
-	Mode         string         `json:"mode"`
-	TargetType   string         `json:"target_type"`
-	DemandCaseID int64          `json:"demand_case_id"`
-	ExperimentID string         `json:"experiment_id,omitempty"`
-	SourceID     int64          `json:"source_id,omitempty"`
-	Answer       string         `json:"answer"`
-	TruthStatus  string         `json:"truth_status"`
-	Trusted      bool           `json:"trusted"`
-	Provider     string         `json:"provider"`
-	Model        string         `json:"model"`
-	TokensIn     int            `json:"tokens_in"`
-	TokensOut    int            `json:"tokens_out"`
-	LatencyMs    int            `json:"latency_ms"`
-	Evidence     []EvidenceItem `json:"evidence"`
-	Unknowns     []string       `json:"unknowns"`
-	Links        []ResponseLink `json:"links"`
-	Provenance   Provenance     `json:"provenance"`
+	TraceID          string         `json:"trace_id"`
+	AgentID          string         `json:"agent_id"`
+	Mode             string         `json:"mode"`
+	TargetType       string         `json:"target_type"`
+	DemandCaseID     int64          `json:"demand_case_id"`
+	ExperimentID     string         `json:"experiment_id,omitempty"`
+	SourceID         int64          `json:"source_id,omitempty"`
+	OrderID          int64          `json:"order_id,omitempty"`
+	DecisionCaseID   int64          `json:"decision_case_id,omitempty"`
+	RecommendationID int64          `json:"recommendation_id,omitempty"`
+	Answer           string         `json:"answer"`
+	TruthStatus      string         `json:"truth_status"`
+	Trusted          bool           `json:"trusted"`
+	Provider         string         `json:"provider"`
+	Model            string         `json:"model"`
+	TokensIn         int            `json:"tokens_in"`
+	TokensOut        int            `json:"tokens_out"`
+	LatencyMs        int            `json:"latency_ms"`
+	Evidence         []EvidenceItem `json:"evidence"`
+	Unknowns         []string       `json:"unknowns"`
+	Blockers         []string       `json:"blockers"`
+	Links            []ResponseLink `json:"links"`
+	Provenance       Provenance     `json:"provenance"`
 }
 
 type EvidenceItem struct {

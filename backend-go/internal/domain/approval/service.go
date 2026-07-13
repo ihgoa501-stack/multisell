@@ -74,6 +74,43 @@ func (s *Service) List(page, size int, status, requestType string) ([]ApprovalRe
 	return items, total, nil
 }
 
+func (s *Service) ListForOwner(ownerID int64, page, size int, status, requestType string) ([]ApprovalRequest, int64, error) {
+	q := s.db.Model(&ApprovalRequest{}).Where("requester_user_id = ?", ownerID)
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	if requestType != "" {
+		q = q.Where("request_type = ?", requestType)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []ApprovalRequest
+	if err := q.Order("created_at DESC").Offset((page - 1) * size).Limit(size).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	if items == nil {
+		items = []ApprovalRequest{}
+	}
+	return items, total, nil
+}
+
+func (s *Service) GetForOwner(ownerID, id int64) (*ApprovalRequest, error) {
+	var req ApprovalRequest
+	if err := s.db.Where("id = ? AND requester_user_id = ?", id, ownerID).First(&req).Error; err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+func (s *Service) ReviewForOwner(ownerID, id int64, input *ReviewApprovalInput) (*ApprovalRequest, error) {
+	if _, err := s.GetForOwner(ownerID, id); err != nil {
+		return nil, err
+	}
+	return s.Review(id, input)
+}
+
 // Get returns a single approval request by ID.
 func (s *Service) Get(id int64) (*ApprovalRequest, error) {
 	var req ApprovalRequest

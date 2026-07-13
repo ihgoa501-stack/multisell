@@ -35,7 +35,7 @@ export default function ExtensionPairingPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [busy, setBusy] = useState(false);
 	const pairingRef = useRef<Pairing | null>(null);
-  const environment = useMemo(currentEnvironment, []);
+  const environment = useMemo(() => currentEnvironment(), []);
 
   const loadDevices = async () => {
     const result = await apiClient.get<Device[]>('/v1/auth/extension-devices');

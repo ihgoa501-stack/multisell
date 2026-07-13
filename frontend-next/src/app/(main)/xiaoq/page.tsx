@@ -10,13 +10,14 @@ import { XiaoQAnswerCard, XiaoQBoundaryBanner, XiaoQCapabilities } from '@/featu
 import type { XiaoQMessageRequest } from '@/features/xiaoq/types';
 
 const { Paragraph, Text } = Typography;
-type SupportedTarget = 'demand_case' | 'experiment' | 'sourcing_1688' | 'business_closure';
+type SupportedTarget = 'demand_case' | 'experiment' | 'sourcing_1688' | 'operating_facts' | 'business_decision';
 
 const prompts: Record<SupportedTarget, string[]> = {
   demand_case: ['这个案件还缺什么关键证据？', '这个案件的最强反证是什么？', '为什么这个案件当前不能进入下一步？'],
   experiment: ['这个实验有哪些已核验证据？', '哪些闸门正在阻断实验？', '最终利润和现金回收还有哪些未知？'],
   sourcing_1688: ['这条来源的快照是否完整？', '内部草稿还缺什么？', '哪些成本仍是估算或未知？'],
-  business_closure: ['这笔订单的最终利润是否已经确认？', '结算与订单是否完全对账？', '退货、争议和现金回收还有哪些未知？'],
+  operating_facts: ['这笔订单现在有哪些已核验事实？', '库存、履约和售后有哪些阻断？', '结算、利润和现金还有哪些未知？'],
+  business_decision: ['这个决策案卷的事实和未知是什么？', '已有 AI 建议与 Owner 决定分别是什么？', '根据现有事实生成一条新建议'],
 };
 
 function errorMessage(error: unknown): string {
@@ -34,6 +35,8 @@ export default function XiaoQPage() {
   const [demandCaseId, setDemandCaseId] = useState<number | null>(null);
   const [experimentId, setExperimentId] = useState('');
   const [sourceId, setSourceId] = useState<number | null>(null);
+  const [orderId, setOrderId] = useState<number | null>(null);
+  const [decisionCaseId, setDecisionCaseId] = useState<number | null>(null);
   const [lastRequest, setLastRequest] = useState<XiaoQMessageRequest | null>(null);
 
   const identity = useQuery({ queryKey: ['xiao-q-identity'], queryFn: getXiaoQIdentity, retry: 1 });
@@ -42,9 +45,13 @@ export default function XiaoQPage() {
 
   const hasTarget = targetType === 'demand_case'
     ? Boolean(demandCaseId)
-    : targetType === 'experiment' || targetType === 'business_closure'
+    : targetType === 'experiment'
       ? Boolean(experimentId.trim())
-      : Boolean(sourceId);
+      : targetType === 'sourcing_1688'
+        ? Boolean(sourceId)
+        : targetType === 'operating_facts'
+          ? Boolean(orderId)
+          : Boolean(decisionCaseId);
 
   const submit = (value = message) => {
     const trimmed = value.trim();
@@ -52,10 +59,23 @@ export default function XiaoQPage() {
     let request: XiaoQMessageRequest;
     if (targetType === 'demand_case') {
       request = { message: trimmed, demand_case_id: demandCaseId as number };
-    } else if (targetType === 'experiment' || targetType === 'business_closure') {
-      request = { message: trimmed, target_type: targetType, experiment_id: experimentId.trim() };
-    } else {
+    } else if (targetType === 'experiment') {
+      request = { message: trimmed, target_type: 'experiment', experiment_id: experimentId.trim() };
+    } else if (targetType === 'sourcing_1688') {
       request = { message: trimmed, target_type: 'sourcing_1688', source_id: sourceId as number };
+    } else if (targetType === 'operating_facts') {
+      request = { message: trimmed, target_type: 'operating_facts', order_id: orderId as number };
+    } else {
+      const createRecommendation = trimmed === '根据现有事实生成一条新建议';
+      request = {
+        message: trimmed,
+        target_type: 'business_decision',
+        decision_case_id: decisionCaseId as number,
+        ...(createRecommendation ? {
+          create_recommendation: true,
+          idempotency_key: `xiao-q-recommendation-${decisionCaseId}-${crypto.randomUUID()}`,
+        } : {}),
+      };
     }
     setMessage('');
     setLastRequest(request);
@@ -93,7 +113,8 @@ export default function XiaoQPage() {
                   options={[
                     { value: 'demand_case', label: '候选市场' },
                     { value: 'experiment', label: '经营实验' },
-                    { value: 'business_closure', label: '订单与最终利润' },
+                    { value: 'operating_facts', label: '订单经营事实' },
+                    { value: 'business_decision', label: '经营决策案卷' },
                     { value: 'sourcing_1688', label: '1688受控草稿' },
                   ]}
                   style={{ width: '100%' }}
@@ -114,7 +135,7 @@ export default function XiaoQPage() {
                     />
                     <Text type="secondary">小Q只读取这个已存在的候选市场案件，不会跨案件猜测。</Text>
                   </>
-                ) : targetType === 'experiment' || targetType === 'business_closure' ? (
+                ) : targetType === 'experiment' ? (
                   <>
                     <Text strong>经营实验 ID</Text>
                     <Input
@@ -124,11 +145,9 @@ export default function XiaoQPage() {
                       aria-label="经营实验 ID"
                       disabled={ask.isPending}
                     />
-                    <Text type="secondary">{targetType === 'business_closure'
-                      ? '小Q只读核对该实验关联订单、结算与最终利润记录；不会发货、退款、收款或改变订单。'
-                      : '小Q只读解释该实验的证据、闸门阻断项与未知事实，不会改变实验状态。'}</Text>
+                    <Text type="secondary">小Q只读解释该实验的证据、闸门阻断项与未知事实，不会改变实验状态。</Text>
                   </>
-                ) : (
+                ) : targetType === 'sourcing_1688' ? (
                   <>
                     <Text strong>1688 来源 ID</Text>
                     <InputNumber
@@ -142,6 +161,41 @@ export default function XiaoQPage() {
                       disabled={ask.isPending}
                     />
                     <Text type="secondary">小Q只读核对受控来源、不可变快照、内部草稿和成本真实性，不会发布、采购或批准。</Text>
+                  </>
+                ) : targetType === 'operating_facts' ? (
+                  <>
+                    <Text strong>订单 ID</Text>
+                    <InputNumber
+                      min={1}
+                      precision={0}
+                      value={orderId}
+                      onChange={(value) => setOrderId(value)}
+                      placeholder="请输入要核对的订单 ID"
+                      aria-label="订单 ID"
+                      style={{ width: '100%' }}
+                      disabled={ask.isPending}
+                    />
+                    <Text type="secondary">小Q只读汇总该订单的库存、履约、售后、结算、利润和现金事实；不会发货、退款、调库存或收款。</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text strong>经营决策案卷 ID</Text>
+                    <InputNumber
+                      min={1}
+                      precision={0}
+                      value={decisionCaseId}
+                      onChange={(value) => setDecisionCaseId(value)}
+                      placeholder="请输入要查看的决策案卷 ID"
+                      aria-label="经营决策案卷 ID"
+                      style={{ width: '100%' }}
+                      disabled={ask.isPending}
+                    />
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="建议与决定分开"
+                      description="小Q可以解释案卷或保存一条 inferred（推断）建议，但不会生成、批准或执行 Owner 决定。"
+                    />
                   </>
                 )}
               </Space>
@@ -162,9 +216,11 @@ export default function XiaoQPage() {
                   ? '输入关于候选市场和决策证据的问题'
                   : targetType === 'experiment'
                     ? '输入关于实验阶段、证据、闸门或最终利润的问题'
-                    : targetType === 'business_closure'
-                      ? '输入关于订单履约、结算对账、售后或最终利润的问题'
-                      : '输入关于1688来源、快照、草稿或成本未知的问题'}
+                    : targetType === 'sourcing_1688'
+                        ? '输入关于1688来源、快照、草稿或成本未知的问题'
+                        : targetType === 'operating_facts'
+                          ? '输入关于订单、库存、履约、售后、结算、利润或现金的问题'
+                          : '输入关于决策案卷、AI建议、Owner决定或执行阻断的问题'}
                 autoSize={{ minRows: 3, maxRows: 8 }}
                 disabled={ask.isPending}
               />

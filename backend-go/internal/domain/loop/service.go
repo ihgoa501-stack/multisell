@@ -6,14 +6,13 @@ import (
 	"math"
 	"strings"
 
+	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/completeness"
 	"github.com/lingmirror/backend-go/internal/domain/exchangerate"
 	"github.com/lingmirror/backend-go/internal/domain/listingtask"
-	"github.com/lingmirror/backend-go/internal/domain/profit"
-	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/operationlog"
-	"github.com/lingmirror/backend-go/internal/prismadapter"
+	"github.com/lingmirror/backend-go/internal/domain/profit"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -30,7 +29,7 @@ type Service struct {
 }
 
 // NewService creates a new evaluation loop service.
-func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismService, prismStrict bool) *Service {
+func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 	oplogSvc := operationlog.NewService(db, logger)
 	approvalSvc := approval.NewService(db, logger, oplogSvc)
 	rateSvc := exchangerate.NewService(db, logger)
@@ -39,7 +38,7 @@ func NewService(db *gorm.DB, logger *zap.Logger, prismSvc prismadapter.PrismServ
 		logger:          logger,
 		completenessSvc: completeness.NewService(db, logger),
 		profitSvc:       profit.NewService(db, logger, rateSvc, 7.2),
-		listingtaskSvc:  listingtask.NewService(db, logger, prismSvc, prismStrict, approvalSvc, oplogSvc, nil),
+		listingtaskSvc:  listingtask.NewService(db, logger, approvalSvc, oplogSvc, nil),
 		approvalSvc:     approvalSvc,
 		oplogSvc:        oplogSvc,
 	}
@@ -145,18 +144,18 @@ func (s *Service) Evaluate(productID int64, triggeredBy string) (*EvaluateResult
 	// 6. Store the recommendation record
 	riskJSON, _ := json.Marshal(riskFlags)
 	rec := ListingRecommendation{
-		ProductID:         productID,
-		CompletenessScore: compResult.Score,
-		ProfitMargin:      profitResult.ProfitMargin,
-		EstimatedProfit:   profitResult.EstimatedProfit,
-		Decision:          decision,
-		Confidence:        confidence,
-		Reason:            reason,
-		RiskFlags:         string(riskJSON),
+		ProductID:            productID,
+		CompletenessScore:    compResult.Score,
+		ProfitMargin:         profitResult.ProfitMargin,
+		EstimatedProfit:      profitResult.EstimatedProfit,
+		Decision:             decision,
+		Confidence:           confidence,
+		Reason:               reason,
+		RiskFlags:            string(riskJSON),
 		CreatedListingTaskID: listingTaskID,
-		ApprovalID:         approvalID,
-		TriggeredBy:       triggeredBy,
-		FeedbackStatus:    "pending",
+		ApprovalID:           approvalID,
+		TriggeredBy:          triggeredBy,
+		FeedbackStatus:       "pending",
 	}
 	if err := s.db.Create(&rec).Error; err != nil {
 		s.logger.Error("failed to save listing recommendation",
@@ -286,7 +285,7 @@ func (s *Service) createListingTask(db *gorm.DB, prod *candidate.CandidateProduc
 	targetMargin := profitResult.ProfitMargin
 	targetPrice := prod.TargetSalePrice
 
-	task, err := listingtask.NewService(db, s.logger, nil, false, s.approvalSvc, s.oplogSvc, nil).Create(&listingtask.CreateTaskInput{
+	task, err := listingtask.NewService(db, s.logger, s.approvalSvc, s.oplogSvc, nil).Create(&listingtask.CreateTaskInput{
 		ProductID:           prod.ID,
 		PlatformID:          platformID,
 		SourceType:          "campaign",

@@ -28,7 +28,12 @@ func (h *Handler) ListApprovals(c *gin.Context) {
 	status := c.Query("status")
 	requestType := c.Query("request_type")
 
-	items, total, err := h.service.List(p.Page, p.Size, status, requestType)
+	owner := common.UserIDFromCtx(c)
+	if owner == nil {
+		response.Error(c, http.StatusUnauthorized, "Owner authentication required")
+		return
+	}
+	items, total, err := h.service.ListForOwner(*owner, p.Page, p.Size, status, requestType)
 	if err != nil {
 		response.InternalError(c, err)
 		return
@@ -45,7 +50,12 @@ func (h *Handler) GetApproval(c *gin.Context) {
 		return
 	}
 
-	req, err := h.service.Get(id)
+	owner := common.UserIDFromCtx(c)
+	if owner == nil {
+		response.Error(c, http.StatusUnauthorized, "Owner authentication required")
+		return
+	}
+	req, err := h.service.GetForOwner(*owner, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "审批请求不存在")
@@ -66,9 +76,9 @@ func (h *Handler) CreateApproval(c *gin.Context) {
 		return
 	}
 
-		// Enforce JWT identity for requester.
-		input.Requester = common.ReviewerFromCtx(c)
-		input.RequesterUserID = common.UserIDFromCtx(c)
+	// Enforce JWT identity for requester.
+	input.Requester = common.ReviewerFromCtx(c)
+	input.RequesterUserID = common.UserIDFromCtx(c)
 
 	req, err := h.service.Create(&input)
 	if err != nil {
@@ -101,7 +111,12 @@ func (h *Handler) ReviewApproval(c *gin.Context) {
 	input.Reviewer = common.ReviewerFromCtx(c)
 	input.ReviewerUserID = common.UserIDFromCtx(c)
 
-	req, err := h.service.Review(id, &input)
+	owner := common.UserIDFromCtx(c)
+	if owner == nil {
+		response.Error(c, http.StatusUnauthorized, "Owner authentication required")
+		return
+	}
+	req, err := h.service.ReviewForOwner(*owner, id, &input)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "审批请求不存在")

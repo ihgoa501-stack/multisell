@@ -360,7 +360,7 @@ npm run lint         # 已知 ~34 problems（12 errors + 22 warnings），非阻
 | P0 | EventBus/Scheduler 生命周期验证 | ✅ 已完成 | 测试覆盖 start→publish→receive→stop→no-more-deliveries |
 | P0 | 统一执行门禁 `/ai/actions/:id/execute` | ✅ 已完成 | 审计日志 + 幂等守卫 + RBAC 权限路由 |
 | P0 | 审批/执行绑定登录用户 + RBAC | ✅ 已完成 | ActionDecisionInput 移除 operator；approve/execute 需 `ai.action` 权限 |
-| P1 | 外部平台写安全（dry-run/sandbox/approval） | ✅ 已完成 | ExecutionMode 类型 + PublishToOzon dry-run 守卫 |
+| P1 | 旧 Ozon URL 发布入口安全 | ✅ 已完成 | dry-run/sandbox 仅无状态 mock；production/approval/未知模式在 Adapter 前固定返回 428 `IMAGE_RELEASE_ATTESTATION_REQUIRED` |
 | P1 | 审计日志敏感字段脱敏 | ✅ 已完成 | `operationlog.RedactSensitive` — Log 和 LogStructured 自动脱敏 |
 | P1 | 前端统一高风险动作确认 UX | ✅ 已完成 | HighRiskConfirmDialog 组件（已集成到 Owner 工作台）|
 

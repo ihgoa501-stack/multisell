@@ -13,6 +13,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 
 	group := rg.Group("/settlement")
 	{
+		group.POST("/platform-accounts/:id/events", h.IngestPlatformFact)
+		group.GET("/platform-facts/:id", h.GetPlatformFact)
 		group.POST("/recalculate", h.RecalculateAll)
 
 		// Static routes first to avoid conflict with /:id

@@ -2,8 +2,11 @@ package blobstore
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -12,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const (
@@ -27,21 +31,95 @@ var (
 )
 
 type Metadata struct {
-	ID        string `json:"id"`
-	SizeBytes int64  `json:"size_bytes"`
-	MediaType string `json:"media_type"`
-	Format    string `json:"format"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
+	ID                string `json:"id"`
+	SizeBytes         int64  `json:"size_bytes"`
+	MediaType         string `json:"media_type"`
+	Format            string `json:"format"`
+	Width             int    `json:"width"`
+	Height            int    `json:"height"`
+	Sandbox           bool   `json:"sandbox"`
+	Watermarked       bool   `json:"watermarked"`
+	NonPublishable    bool   `json:"non_publishable"`
+	RestrictionReason string `json:"restriction_reason,omitempty"`
 }
 
-type Store struct{ root string }
+type Store struct {
+	root string
+	mu   sync.Mutex
+}
+
+// Restriction is monotonic provenance attached to an output blob. There is no
+// API for clearing it: once any source marks bytes unsafe for publication,
+// every later use of the same content-addressed blob remains restricted.
+type Restriction struct {
+	Sandbox        bool   `json:"sandbox"`
+	Watermarked    bool   `json:"watermarked"`
+	NonPublishable bool   `json:"non_publishable"`
+	Reason         string `json:"reason"`
+}
 
 func New(root string) (*Store, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
 	return &Store{root: root}, nil
+}
+
+// Ping verifies that the configured blob root can complete the same durable
+// filesystem operations required by normal writes: create, write, sync, read
+// and cleanup. The probe never enters the content-addressed blob namespace and
+// must leave no file behind.
+func (s *Store) Ping(ctx context.Context) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	payload := make([]byte, 32)
+	if _, err := rand.Read(payload); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(s.root, ".readiness-")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	closed := false
+	defer func() {
+		if !closed {
+			if closeErr := f.Close(); err == nil {
+				err = closeErr
+			}
+		}
+		if removeErr := os.Remove(name); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) && err == nil {
+			err = removeErr
+		}
+	}()
+	if err = f.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err = f.Write(payload); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	closed = true
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	got, err := os.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(got, payload) {
+		return errors.New("blob readiness read-back mismatch")
+	}
+	if err = os.Remove(name); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Put validates and decodes a static raster image, then re-encodes it before
@@ -111,7 +189,136 @@ func (s *Store) GetMetadata(id string) (Metadata, error) {
 	if err != nil {
 		return Metadata{}, err
 	}
-	return Metadata{ID: id, SizeBytes: int64(len(b)), MediaType: mediaType, Format: format, Width: cfg.Width, Height: cfg.Height}, nil
+	meta := Metadata{ID: id, SizeBytes: int64(len(b)), MediaType: mediaType, Format: format, Width: cfg.Width, Height: cfg.Height}
+	if restriction, ok, err := s.GetRestriction(id); err != nil {
+		return Metadata{}, err
+	} else if ok {
+		meta.Sandbox, meta.Watermarked, meta.NonPublishable = restriction.Sandbox, restriction.Watermarked, restriction.NonPublishable
+		meta.RestrictionReason = restriction.Reason
+	}
+	return meta, nil
+}
+
+// MarkRestricted atomically adds immutable safety restrictions to a blob.
+// Existing true flags can never be downgraded by a subsequent caller.
+func (s *Store) MarkRestricted(id string, in Restriction) error {
+	if _, err := s.Get(id); err != nil {
+		return err
+	}
+	if !in.Sandbox || !in.Watermarked || !in.NonPublishable || strings.TrimSpace(in.Reason) == "" {
+		return errors.New("sandbox restriction must be watermarked and non-publishable")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, _, err := s.getRestriction(id)
+	if err != nil {
+		return err
+	}
+	current.Sandbox = current.Sandbox || in.Sandbox
+	current.Watermarked = current.Watermarked || in.Watermarked
+	current.NonPublishable = current.NonPublishable || in.NonPublishable
+	if current.Reason == "" {
+		current.Reason = strings.TrimSpace(in.Reason)
+	}
+	b, err := json.Marshal(current)
+	if err != nil {
+		return err
+	}
+	return atomicWrite(filepath.Join(s.root, ".restriction-"+id+".json"), b)
+}
+
+func (s *Store) GetRestriction(id string) (Restriction, bool, error) {
+	if !validID(id) {
+		return Restriction{}, false, os.ErrNotExist
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.getRestriction(id)
+}
+
+func (s *Store) getRestriction(id string) (Restriction, bool, error) {
+	b, err := os.ReadFile(filepath.Join(s.root, ".restriction-"+id+".json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return Restriction{}, false, nil
+	}
+	if err != nil {
+		return Restriction{}, false, err
+	}
+	var out Restriction
+	if err := json.Unmarshal(b, &out); err != nil {
+		return Restriction{}, false, err
+	}
+	if !out.Sandbox || !out.Watermarked || !out.NonPublishable || out.Reason == "" {
+		return Restriction{}, false, errors.New("invalid blob restriction metadata")
+	}
+	return out, true, nil
+}
+
+// ClaimProviderSubmit is a durable, fail-closed once-only gate. It is claimed
+// before the first network byte can be sent, so a crash or ambiguous response
+// can never cause an automatic second mutation for the same job/provider.
+func (s *Store) ClaimProviderSubmit(provider, jobID string) (bool, error) {
+	provider, jobID = strings.TrimSpace(provider), strings.TrimSpace(jobID)
+	if provider == "" || jobID == "" || strings.ContainsAny(provider+jobID, "/\\\x00") {
+		return false, errors.New("provider and job ID are required")
+	}
+	h := sha256.Sum256([]byte(provider + "\x00" + jobID))
+	f, err := os.OpenFile(filepath.Join(s.root, ".provider-submit-"+hex.EncodeToString(h[:])), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return false, err
+	}
+	if err := f.Close(); err != nil {
+		return false, err
+	}
+	if err := syncDirectory(s.root); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func atomicWrite(path string, b []byte) error {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".metadata-")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		return err
+	}
+	return syncDirectory(dir)
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func validID(id string) bool {

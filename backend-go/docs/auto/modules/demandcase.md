@@ -15,8 +15,16 @@ Package: `backend-go/internal/domain/demandcase/`
 | `POST` | `/api/v1/demand-cases/:id/evaluate` | `h.Evaluate` |
 | `POST` | `/api/v1/demand-cases/:id/evidence` | `h.AddEvidence` |
 | `POST` | `/api/v1/demand-cases/:id/falsifications` | `h.AddFalsification` |
+| `GET` | `/api/v1/demand-cases/:id/owner-decision` | `h.LatestMarketDecision` |
+| `POST` | `/api/v1/demand-cases/:id/owner-decisions` | `h.DecideMarket` |
+| `GET` | `/api/v1/demand-cases/comparison` | `h.Compare` |
 | `POST` | `/api/v1/demand-cases/research/first-public-batch` | `h.RunFirstBatch` |
 | `POST` | `/api/v1/demand-cases/research/import` | `h.ImportResearch` |
+| `GET` | `/api/v1/product-opportunities` | `h.ListProductOpportunities` |
+| `POST` | `/api/v1/product-opportunities` | `h.CreateProductOpportunity` |
+| `GET` | `/api/v1/product-opportunities/:id` | `h.GetProductOpportunity` |
+| `POST` | `/api/v1/product-opportunities/:id/evaluate` | `h.EvaluateProductOpportunity` |
+| `POST` | `/api/v1/product-opportunities/:id/owner-decisions` | `h.DecideProductOpportunity` |
 
 ## Models
 
@@ -31,6 +39,7 @@ Package: `backend-go/internal/domain/demandcase/`
 | `Consumer` | `string` | `consumer` | `—` | NOT NULL |
 | `NeedScenario` | `string` | `need_scenario` | `—` | NOT NULL |
 | `SalesChannel` | `string` | `sales_channel` | `—` | NOT NULL |
+| `TargetLocale` | `string` | `target_locale` | `—` | NOT NULL |
 | `StopCondition` | `string` | `stop_condition` | `—` |  |
 | `Status` | `string` | `status` | `—` | NOT NULL, default:lead |
 | `CreatedAt` | `time.Time` | `created_at` | `—` |  |
@@ -88,6 +97,7 @@ Package: `backend-go/internal/domain/demandcase/`
 |-------|------|------|--------|-------------|
 | `ID` | `int64` | `id` | `—` | PK |
 | `DemandCaseID` | `int64` | `demand_case_id` | `—` | NOT NULL |
+| `EvidenceMaxID` | `int64` | `evidence_max_id` | `—` | NOT NULL, default:0 |
 | `Status` | `string` | `status` | `—` | NOT NULL |
 | `BlockersJSON` | `string` | `-` | `—` |  |
 | `Reason` | `string` | `reason` | `—` |  |

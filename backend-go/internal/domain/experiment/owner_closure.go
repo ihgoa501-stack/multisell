@@ -16,16 +16,19 @@ import (
 // owner-scoped experiment. It deliberately does not expose customer PII, raw
 // settlement payloads, account names/balances, or free-text finance details.
 type OwnerBusinessClosureView struct {
-	ExperimentID string                    `json:"experiment_id"`
-	Order        OwnerOrderClosure         `json:"order"`
-	Aftersales   OwnerAftersalesClosure    `json:"aftersales"`
-	Settlement   OwnerSettlementClosure    `json:"settlement"`
-	Profit       OwnerProfitClosure        `json:"profit"`
-	Cash         OwnerCashClosure          `json:"cash"`
-	Blockers     []string                  `json:"blockers"`
-	Unknowns     []string                  `json:"unknowns"`
-	EvidenceRefs []OwnerClosureEvidenceRef `json:"evidence_refs"`
-	AsOf         time.Time                 `json:"as_of"`
+	ExperimentID       string                    `json:"experiment_id"`
+	AuthorityScope     string                    `json:"authority_scope"`
+	CausalStatus       string                    `json:"causal_status"`
+	FeedbackLoopStatus string                    `json:"feedback_loop_status"`
+	Order              OwnerOrderClosure         `json:"order"`
+	Aftersales         OwnerAftersalesClosure    `json:"aftersales"`
+	Settlement         OwnerSettlementClosure    `json:"settlement"`
+	Profit             OwnerProfitClosure        `json:"profit"`
+	Cash               OwnerCashClosure          `json:"cash"`
+	Blockers           []string                  `json:"blockers"`
+	Unknowns           []string                  `json:"unknowns"`
+	EvidenceRefs       []OwnerClosureEvidenceRef `json:"evidence_refs"`
+	AsOf               time.Time                 `json:"as_of"`
 }
 
 type OwnerOrderClosure struct {
@@ -175,7 +178,7 @@ func (s *Service) readOwnerBusinessClosure(ctx context.Context, ownerID int64, e
 	if err := s.db.WithContext(ctx).Where("id = ?", orderID).First(&order).Error; err != nil {
 		return nil, err
 	}
-	view := &OwnerBusinessClosureView{ExperimentID: experimentID, AsOf: time.Now().UTC()}
+	view := &OwnerBusinessClosureView{ExperimentID: experimentID, AuthorityScope: "trace_only", CausalStatus: "not_established", FeedbackLoopStatus: "not_authorized", AsOf: time.Now().UTC()}
 	view.Order = OwnerOrderClosure{ID: order.ID, OrderNoMasked: maskIdentifier(order.OrderNo), Status: order.Status, PaidAt: order.PaidAt, DeliveredAt: order.DeliveredAt, TruthStatus: TruthUnknown, SourceStatus: "internal_record"}
 	view.Order.PaymentRecorded = order.PaidAt != nil && order.PayAmount > 0 && order.CancelledAt == nil
 	view.Order.DeliveryRecorded = order.DeliveredAt != nil && (order.Status == "delivered" || order.Status == "completed")

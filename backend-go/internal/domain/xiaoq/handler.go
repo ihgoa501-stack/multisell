@@ -55,6 +55,13 @@ func (h *Handler) Message(c *gin.Context) {
 			response.Error(c, http.StatusBadRequest, "invalid message or target")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			response.Error(c, http.StatusNotFound, "target not found")
+		case errors.Is(err, ErrAgentRunLimit), errors.Is(err, ErrAgentEmptyResponse), errors.Is(err, ErrAgentCanceled), errors.Is(err, ErrAgentInvalidOutput), errors.Is(err, ErrAgentProviderDisabled):
+			var runErr *RunError
+			if errors.As(err, &runErr) {
+				response.Error(c, http.StatusConflict, "AI run stopped safely; trace_id="+runErr.TraceID)
+				return
+			}
+			response.Error(c, http.StatusConflict, "AI run stopped safely")
 		default:
 			var runErr *RunError
 			if errors.As(err, &runErr) {

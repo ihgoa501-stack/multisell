@@ -8,12 +8,20 @@ Package: `backend-go/internal/domain/purchase/`
 
 | Method | Path | Handler |
 |--------|------|--------|
+| `GET` | `/api/v1/purchase/authorities` | `h.ListAuthorities` |
+| `POST` | `/api/v1/purchase/authorities` | `h.CreateAuthority` |
+| `GET` | `/api/v1/purchase/authorities/:id` | `h.GetAuthority` |
+| `POST` | `/api/v1/purchase/authorities/:id/external-submissions` | `h.RecordSubmission` |
+| `POST` | `/api/v1/purchase/authorities/:id/failure-receipts` | `h.RecordFailureReceipt` |
+| `POST` | `/api/v1/purchase/authorities/:id/order-receipts` | `h.RecordOrderReceipt` |
+| `POST` | `/api/v1/purchase/authorities/:id/owner-approval` | `h.ApproveAuthority` |
+| `POST` | `/api/v1/purchase/authorities/:id/receiving-events` | `h.RecordReceiving` |
 | `GET` | `/api/v1/purchase/orders` | `h.ListOrders` |
-| `POST` | `/api/v1/purchase/orders` | `h.CreateOrder` |
+| `POST` | `/api/v1/purchase/orders` | `h.LegacyWriteFrozen` |
 | `GET` | `/api/v1/purchase/orders/:id` | `h.GetOrder` |
-| `POST` | `/api/v1/purchase/orders/:id/approve` | `h.ApproveOrder` |
-| `POST` | `/api/v1/purchase/orders/:id/cancel` | `h.CancelOrder` |
-| `POST` | `/api/v1/purchase/orders/:id/receive` | `h.ReceiveOrder` |
+| `POST` | `/api/v1/purchase/orders/:id/approve` | `h.LegacyWriteFrozen` |
+| `POST` | `/api/v1/purchase/orders/:id/cancel` | `h.LegacyWriteFrozen` |
+| `POST` | `/api/v1/purchase/orders/:id/receive` | `h.LegacyWriteFrozen` |
 | `GET` | `/api/v1/purchase/suggestions` | `h.ListSuggestions` |
 | `POST` | `/api/v1/purchase/suggestions/generate` | `h.GenerateSuggestions` |
 

@@ -47,7 +47,7 @@ describe('xiao-q api', () => {
     };
     vi.mocked(apiClient.post).mockResolvedValue({ code: 0, message: 'ok', data: response });
 
-    await expect(sendXiaoQMessage({ message: '能继续吗？', demand_case_id: 7 })).resolves.toEqual(response);
+    await expect(sendXiaoQMessage({ message: '能继续吗？', demand_case_id: 7 })).resolves.toMatchObject(response);
     expect(apiClient.post).toHaveBeenCalledWith('/v1/xiao-q/messages', {
       message: '能继续吗？', demand_case_id: 7,
     });
@@ -160,5 +160,25 @@ describe('xiao-q api', () => {
   it('rejects an empty message response', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ code: 0, message: 'ok' });
     await expect(sendXiaoQMessage({ message: '问题', demand_case_id: 1 })).rejects.toThrow('小Q没有返回回答');
+  });
+
+  it('preserves order fact blockers and authoritative deep links', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ code: 0, message: 'ok', data: {
+      trace_id: 'order-trace', agent_id: 'xiao_q', target_type: 'operating_facts', order_id: 81,
+      answer: '事实说明', truth_status: 'inferred', mode: 'read_only_v1', evidence: [],
+      unknowns: ['签收未知'], blockers: ['现金未对账'], links: [{ label: '查看订单', href: '/orders/81' }],
+    } });
+    await expect(sendXiaoQMessage({ message: '状态？', target_type: 'operating_facts', order_id: 81 }))
+      .resolves.toMatchObject({ order_id: 81, blockers: ['现金未对账'] });
+  });
+
+  it('posts recommendation creation explicitly without creating an Owner decision', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ code: 0, message: 'ok', data: {
+      trace_id: 'decision-trace', agent_id: 'xiao_q', target_type: 'business_decision', decision_case_id: 9,
+      answer: '推断建议', truth_status: 'inferred', mode: 'decision_support_v1', recommendation_id: 17, evidence: [], unknowns: [], links: [],
+    } });
+    const request = { message: '生成建议', target_type: 'business_decision' as const, decision_case_id: 9, create_recommendation: true, idempotency_key: 'recommend-9-a' };
+    await expect(sendXiaoQMessage(request)).resolves.toMatchObject({ truth_status: 'inferred', decision_case_id: 9, recommendation_id: 17 });
+    expect(apiClient.post).toHaveBeenCalledWith('/v1/xiao-q/messages', request);
   });
 });

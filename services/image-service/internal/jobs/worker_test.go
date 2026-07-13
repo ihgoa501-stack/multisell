@@ -11,14 +11,15 @@ import (
 )
 
 type fakeExecutor struct {
-	output string
-	err    *ExecutionError
-	calls  int
+	output    string
+	requestID string
+	err       *ExecutionError
+	calls     int
 }
 
-func (f *fakeExecutor) Execute(context.Context, core.Job) (string, *ExecutionError) {
+func (f *fakeExecutor) Execute(context.Context, core.Job) (ExecutionResult, *ExecutionError) {
 	f.calls++
-	return f.output, f.err
+	return ExecutionResult{OutputID: f.output, ProviderRequestID: f.requestID}, f.err
 }
 
 func workerStore(t *testing.T) (*core.Store, *core.Job, *core.Attempt) {
@@ -40,7 +41,7 @@ func workerStore(t *testing.T) (*core.Store, *core.Job, *core.Attempt) {
 
 func TestWorkerCompletesJobAndAttempt(t *testing.T) {
 	store, job, _ := workerStore(t)
-	executor := &fakeExecutor{output: "output-blob"}
+	executor := &fakeExecutor{output: "output-blob", requestID: "provider-request-1"}
 	worker, err := NewWorker(store, executor, "worker-1", time.Second, time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +55,7 @@ func TestWorkerCompletesJobAndAttempt(t *testing.T) {
 		t.Fatalf("unexpected job/executor: %+v calls=%d", done, executor.calls)
 	}
 	attempts := store.ListAttempts(job.ID)
-	if len(attempts) != 1 || attempts[0].Status != core.AttemptSucceeded {
+	if len(attempts) != 1 || attempts[0].Status != core.AttemptSucceeded || attempts[0].ProviderRequestID != "provider-request-1" {
 		t.Fatalf("unexpected attempts: %+v", attempts)
 	}
 }
@@ -73,6 +74,29 @@ func TestWorkerPersistsExecutionFailure(t *testing.T) {
 	attempts := store.ListAttempts(job.ID)
 	if len(attempts) != 1 || attempts[0].Status != core.AttemptFailed || attempts[0].ErrorCode != "PROCESSING_FAILED" {
 		t.Fatalf("unexpected attempts: %+v", attempts)
+	}
+}
+
+func TestWorkerPersistsAmbiguousProviderResultForReconciliationWithoutRetry(t *testing.T) {
+	store, job, _ := workerStore(t)
+	executor := &fakeExecutor{err: &ExecutionError{Code: "RECONCILE_REQUIRED", Err: errors.New("response interrupted"), RequestID: "safe-request-1"}}
+	worker, _ := NewWorker(store, executor, "worker-1", time.Second, time.Millisecond)
+	if handled, err := worker.RunOne(context.Background()); err != nil || !handled {
+		t.Fatalf("run: handled=%v err=%v", handled, err)
+	}
+	got, _ := store.Get(job.ID)
+	if got.Status != core.JobReconcileRequired || got.ErrorCode != "RECONCILE_REQUIRED" {
+		t.Fatalf("job=%+v", got)
+	}
+	attempts := store.ListAttempts(job.ID)
+	if len(attempts) != 1 || attempts[0].Status != core.AttemptReconcileRequired || attempts[0].ProviderRequestID != "safe-request-1" {
+		t.Fatalf("attempts=%+v", attempts)
+	}
+	if handled, err := worker.RunOne(context.Background()); err != nil || handled {
+		t.Fatalf("ambiguous work retried: handled=%v err=%v", handled, err)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("provider calls=%d", executor.calls)
 	}
 }
 

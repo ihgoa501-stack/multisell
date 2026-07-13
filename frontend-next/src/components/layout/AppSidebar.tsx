@@ -1,6 +1,6 @@
  'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import { usePermissionStore } from '@/stores/permission-store';
@@ -21,22 +21,11 @@ type SessionItem = {
   status?: string;
 };
 
-function elapsedStr(startedAt: Date): string {
-  const diff = Date.now() - startedAt.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '<1m';
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  const rem = mins % 60;
-  return `${hours}h ${rem}m`;
-}
-
 export default function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { toggleToolPanel, setActiveTool } = useAppStore();
   const { fetchPermissions, hasPermission } = usePermissionStore();
-  const [, setTick] = useState(0);
 
   useEffect(() => {
     fetchPermissions();
@@ -52,12 +41,6 @@ export default function AppSidebar() {
       ApiClient.setForbiddenHandler(null);
     };
   }, [fetchPermissions]);
-
-  // Tick every 30s to update elapsed times
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30000);
-    return () => clearInterval(id);
-  }, []);
 
   function isItemVisible(item: MenuItem): boolean {
     if (!item.permission) return true;
@@ -80,15 +63,13 @@ export default function AppSidebar() {
   const activeSession =
     sessions.find((s) => pathname.startsWith(s.key))?.key ?? '';
 
-  const [runningTasks] = useState(() => [
-    { label: '补货 Shopee', status: '3/3', color: 'var(--i4)', startedAt: new Date(Date.now() - 3 * 60 * 1000) },
-    { label: '标题优化', status: '5/12', color: 'var(--y4)', startedAt: new Date(Date.now() - 15 * 60 * 1000) },
-    { label: 'Ozon 价格对比', status: '✓', color: 'var(--g4)', startedAt: new Date(Date.now() - 30 * 60 * 1000) },
-  ]);
+  const runningTasks = [
+    { label: '运行任务事实', status: '未核验', color: 'var(--t4)' },
+  ];
 
   const toolButtons = [
-    { icon: <ShoppingOutlined />, label: '商品管理', badge: '2,847', tool: 'products' },
-    { icon: <SendOutlined />, label: '平台发布', badge: '8 待处理', tool: 'publish' },
+    { icon: <ShoppingOutlined />, label: '商品管理', badge: '未核验', tool: 'products' },
+    { icon: <SendOutlined />, label: '平台发布', badge: '未核验', tool: 'publish' },
     { icon: <BarChartOutlined />, label: '数据分析', badge: null, tool: 'analytics' },
     { icon: <DollarOutlined />, label: '价格监控', badge: null, tool: 'price' },
     { icon: <BulbOutlined />, label: 'AI 文案', badge: null, tool: 'copywriting' },
@@ -219,7 +200,7 @@ export default function AppSidebar() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {runningTasks.map((task) => {
-              const isDone = task.status === '✓';
+              const isDone = false;
               return (
                 <div
                   key={task.label}
@@ -262,7 +243,7 @@ export default function AppSidebar() {
                       flexShrink: 0,
                     }}
                   >
-                    {isDone ? task.status : `${task.status} · ${elapsedStr(task.startedAt)}`}
+                    {task.status}
                   </span>
                 </div>
               );
@@ -302,7 +283,7 @@ export default function AppSidebar() {
               >
                 <div
                   style={{
-                    width: '85%',
+                    width: '0%',
                     height: '100%',
                     borderRadius: 3,
                     background: 'linear-gradient(90deg, var(--i4), var(--c4))',
@@ -320,7 +301,7 @@ export default function AppSidebar() {
                 lineHeight: 1,
               }}
             >
-              85
+              —
             </span>
           </div>
           <div
@@ -330,7 +311,7 @@ export default function AppSidebar() {
               marginTop: 2,
             }}
           >
-            基于 127 次决策 · 良好
+            未接入权威信任事实
           </div>
         </div>
 

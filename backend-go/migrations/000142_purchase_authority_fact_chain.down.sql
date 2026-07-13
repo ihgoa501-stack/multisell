@@ -1,0 +1,13 @@
+DROP TRIGGER IF EXISTS trg_purchase_authority_transition ON purchase_authority;
+DROP FUNCTION IF EXISTS validate_purchase_authority_transition();
+DROP TRIGGER IF EXISTS trg_purchase_authority_no_delete ON purchase_authority;
+DROP TRIGGER IF EXISTS trg_purchase_authority_links ON purchase_authority;
+DROP FUNCTION IF EXISTS validate_purchase_authority_links();
+DROP TRIGGER IF EXISTS trg_purchase_receipt_ledger_immutable ON purchase_inventory_receipt_ledger;
+DROP TRIGGER IF EXISTS trg_purchase_external_fact_immutable ON purchase_external_fact;
+DROP FUNCTION IF EXISTS reject_purchase_fact_mutation();
+DROP TRIGGER IF EXISTS trg_purchase_authority_identity_immutable ON purchase_authority;
+DROP FUNCTION IF EXISTS protect_purchase_authority_identity();
+DROP TABLE IF EXISTS purchase_inventory_receipt_ledger;
+DROP TABLE IF EXISTS purchase_external_fact;
+DROP TABLE IF EXISTS purchase_authority;

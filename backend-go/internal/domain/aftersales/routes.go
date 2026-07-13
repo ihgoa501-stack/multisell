@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -27,6 +28,12 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, events
 
 	group := rg.Group("/aftersales")
 	{
+		resolutions := group.Group("/resolutions", middleware.RequirePermission(db, "aftersales.owner"))
+		resolutions.POST("", h.CreateResolution)
+		resolutions.GET("/:id", h.GetResolution)
+		resolutions.POST("/:id/decisions", h.DecideResolution)
+		resolutions.POST("/:id/executions", h.SubmitResolution)
+		resolutions.POST("/:id/receipts", h.RecordResolutionReceipt)
 		group.GET("", h.List)
 		group.GET("/summary", h.Summary)
 		group.GET("/:id", h.Get)

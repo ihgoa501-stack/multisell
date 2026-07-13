@@ -35,8 +35,9 @@ func (imageSetTestVariant) TableName() string { return "product_variant" }
 
 func imageSetHandlerRouter(t *testing.T, owner int64) (*gin.Engine, *gorm.DB, *fakeImageService) {
 	t.Helper()
-	db := dbtest.NewDB(t, &Task{}, &RightsGrant{}, &Review{}, &CostEntry{}, &ImageSet{}, &ImageSetItem{}, &imageSetTestListing{}, &imageSetTestPlatform{}, &imageSetTestMaster{}, &imageSetTestVariant{})
+	db := dbtest.NewDB(t, &Asset{}, &Task{}, &RightsGrant{}, &Review{}, &CostEntry{}, &ImageSet{}, &ImageSetItem{}, &imageSetTestListing{}, &imageSetTestPlatform{}, &imageSetTestMaster{}, &imageSetTestVariant{})
 	remote := newFakeImageService()
+	db.Create(&Asset{ID: 1, OwnerID: owner, BlobID: strings.Repeat("9", 64), SHA256: strings.Repeat("9", 64), Filename: "input.png", ContentType: "image/png", SourceKind: "upload", ChannelRestriction: "*"})
 	db.Create(&imageSetTestPlatform{ID: 5, Code: "ozon"})
 	db.Create(&imageSetTestMaster{ID: 6, OwnerID: owner})
 	db.Create(&imageSetTestVariant{ID: 7, ProductMasterID: 6, SKUProductID: 8})
@@ -61,10 +62,25 @@ func seedImageSetGate(t *testing.T, db *gorm.DB, task Task, purpose string) {
 	}
 }
 
+func normalizeImageSetTask(task *Task) {
+	if task.Processor == "" {
+		task.Processor = "deterministic"
+	}
+	if task.Purpose == "" {
+		task.Purpose = "listing_main"
+	}
+	if task.Channel == "" {
+		task.Channel = "ozon"
+	}
+	if task.Region == "" {
+		task.Region = "local"
+	}
+}
+
 func TestImageSetHandlerCreatesAndFreezesOwnerReadyCandidates(t *testing.T) {
 	r, db, remote := imageSetHandlerRouter(t, 42)
-	ready := Task{OwnerID: 42, AssetID: 1, ImageServiceJobID: "job-ready", IdempotencyKey: "ready", ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("b", 64)}
-	remote.jobs["job-ready"] = imageservice.Job{ID: "job-ready", OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Status: "READY", OutputBlobID: ready.OutputBlobID}
+	ready := Task{OwnerID: 42, AssetID: 1, ImageServiceJobID: "job-ready", IdempotencyKey: "ready", ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Processor: "deterministic", Purpose: "listing_main", Channel: "ozon", Region: "local", Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("b", 64)}
+	remote.jobs["job-ready"] = imageservice.Job{ID: "job-ready", OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Processor: ready.Processor, Status: "READY", OutputBlobID: ready.OutputBlobID}
 	if err := db.Create(&ready).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -92,14 +108,14 @@ func TestImageSetHandlerCreatesAndFreezesOwnerReadyCandidates(t *testing.T) {
 func TestImageSetHandlerRejectsNonReadyAndAnotherOwnersCandidates(t *testing.T) {
 	r, db, remote := imageSetHandlerRouter(t, 42)
 	for _, task := range []Task{
-		{OwnerID: 42, AssetID: 1, ImageServiceJobID: "queued", IdempotencyKey: "queued", ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Width: 100, Height: 100, Format: "png", Status: "QUEUED"},
-		{OwnerID: 99, AssetID: 1, ImageServiceJobID: "other", IdempotencyKey: "other", ManifestHash: strings.Repeat("c", 64), Operation: "DETERMINISTIC_RESIZE", Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("d", 64)},
+		{OwnerID: 42, AssetID: 1, ImageServiceJobID: "queued", IdempotencyKey: "queued", ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Processor: "deterministic", Purpose: "listing_main", Channel: "ozon", Region: "local", Width: 100, Height: 100, Format: "png", Status: "QUEUED"},
+		{OwnerID: 99, AssetID: 1, ImageServiceJobID: "other", IdempotencyKey: "other", ManifestHash: strings.Repeat("c", 64), Operation: "DETERMINISTIC_RESIZE", Processor: "deterministic", Purpose: "listing_main", Channel: "ozon", Region: "local", Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("d", 64)},
 	} {
 		if err := db.Create(&task).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	remote.jobs["queued"] = imageservice.Job{ID: "queued", OwnerID: 42, ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Status: "QUEUED"}
+	remote.jobs["queued"] = imageservice.Job{ID: "queued", OwnerID: 42, ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Processor: "deterministic", Status: "QUEUED"}
 	for id, want := range map[int]string{1: "CANDIDATE_NOT_READY", 2: "NOT_FOUND"} {
 		w := httptest.NewRecorder()
 		body := fmt.Sprintf(`{"listing_id":91,"channel":"ozon","locale":"ru-RU","items":[{"task_id":%d,"role":"main","ordinal":1}]}`, id)
@@ -113,10 +129,11 @@ func TestImageSetHandlerRejectsNonReadyAndAnotherOwnersCandidates(t *testing.T) 
 func TestImageSetHandlerBlocksReadyCandidateWithoutRightsAndFiveReviews(t *testing.T) {
 	r, db, remote := imageSetHandlerRouter(t, 42)
 	ready := Task{OwnerID: 42, AssetID: 1, ImageServiceJobID: "job-gated", IdempotencyKey: "gated", ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Processor: "deterministic", Version: 1, Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("b", 64)}
+	normalizeImageSetTask(&ready)
 	if err := db.Create(&ready).Error; err != nil {
 		t.Fatal(err)
 	}
-	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Status: "READY", OutputBlobID: ready.OutputBlobID}
+	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Processor: ready.Processor, Status: "READY", OutputBlobID: ready.OutputBlobID}
 	body := fmt.Sprintf(`{"listing_id":91,"channel":"ozon","locale":"ru-RU","items":[{"task_id":%d,"role":"main","ordinal":1}]}`, ready.ID)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/product-images/image-sets", strings.NewReader(body)))
@@ -128,11 +145,12 @@ func TestImageSetHandlerBlocksReadyCandidateWithoutRightsAndFiveReviews(t *testi
 func TestImageSetFreezeRechecksRightsRevocation(t *testing.T) {
 	r, db, remote := imageSetHandlerRouter(t, 42)
 	ready := Task{OwnerID: 42, AssetID: 1, ImageServiceJobID: "job-revoke", IdempotencyKey: "revoke", ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Processor: "deterministic", Version: 1, Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("b", 64)}
+	normalizeImageSetTask(&ready)
 	if err := db.Create(&ready).Error; err != nil {
 		t.Fatal(err)
 	}
 	seedImageSetGate(t, db, ready, "listing_main")
-	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Status: "READY", OutputBlobID: ready.OutputBlobID}
+	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Processor: ready.Processor, Status: "READY", OutputBlobID: ready.OutputBlobID}
 	body := fmt.Sprintf(`{"listing_id":91,"channel":"ozon","locale":"ru-RU","items":[{"task_id":%d,"role":"main","ordinal":1}]}`, ready.ID)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/product-images/image-sets", strings.NewReader(body)))
@@ -157,10 +175,11 @@ func TestImageSetFreezeRechecksRightsRevocation(t *testing.T) {
 func TestImageSetHandlerRejectsMissingOrUnownedListing(t *testing.T) {
 	r, db, remote := imageSetHandlerRouter(t, 42)
 	ready := Task{OwnerID: 42, AssetID: 1, ImageServiceJobID: "job-ready", IdempotencyKey: "ready-listing", ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("b", 64)}
+	normalizeImageSetTask(&ready)
 	if err := db.Create(&ready).Error; err != nil {
 		t.Fatal(err)
 	}
-	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Status: "READY", OutputBlobID: ready.OutputBlobID}
+	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Processor: ready.Processor, Status: "READY", OutputBlobID: ready.OutputBlobID}
 	seedImageSetGate(t, db, ready, "listing_main")
 	for _, listingID := range []int{999, 91} {
 		if listingID == 91 {
@@ -178,11 +197,12 @@ func TestImageSetHandlerRejectsMissingOrUnownedListing(t *testing.T) {
 func TestImageSetHandlerRejectsForgedReadyAndChangedLineageAtFreeze(t *testing.T) {
 	r, db, remote := imageSetHandlerRouter(t, 42)
 	ready := Task{OwnerID: 42, AssetID: 1, ImageServiceJobID: "job-ready", IdempotencyKey: "ready-lineage", ManifestHash: strings.Repeat("a", 64), Operation: "DETERMINISTIC_RESIZE", Width: 100, Height: 100, Format: "png", Status: "READY", OutputBlobID: strings.Repeat("b", 64)}
+	normalizeImageSetTask(&ready)
 	if err := db.Create(&ready).Error; err != nil {
 		t.Fatal(err)
 	}
 	seedImageSetGate(t, db, ready, "listing_main")
-	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Status: "RUNNING"}
+	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Processor: ready.Processor, Status: "RUNNING"}
 	body := fmt.Sprintf(`{"listing_id":91,"channel":"ozon","locale":"ru-RU","items":[{"task_id":%d,"role":"main","ordinal":1}]}`, ready.ID)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/product-images/image-sets", strings.NewReader(body)))
@@ -190,7 +210,7 @@ func TestImageSetHandlerRejectsForgedReadyAndChangedLineageAtFreeze(t *testing.T
 		t.Fatalf("forged ready status=%d body=%s", w.Code, w.Body.String())
 	}
 
-	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Status: "READY", OutputBlobID: ready.OutputBlobID}
+	remote.jobs[ready.ImageServiceJobID] = imageservice.Job{ID: ready.ImageServiceJobID, OwnerID: 42, ManifestHash: ready.ManifestHash, Operation: ready.Operation, Processor: ready.Processor, Status: "READY", OutputBlobID: ready.OutputBlobID}
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/product-images/image-sets", strings.NewReader(body)))
 	if w.Code != http.StatusCreated {

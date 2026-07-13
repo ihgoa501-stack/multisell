@@ -74,6 +74,10 @@ func (h *ImageSetHandler) Create(c *gin.Context) {
 			return
 		}
 		purpose := imagePurposeForRole(input.Role)
+		if err := verifyTaskChannelLineage(c.Request.Context(), h.db, owner, &task, channel, purpose); err != nil {
+			problem(c, http.StatusConflict, "LINEAGE_INVALID", "task purpose, channel, or imported-asset restriction does not match this image-set item")
+			return
+		}
 		if err := h.governance.VerifyPublicationGate(c.Request.Context(), owner, task.ID, remote.OutputBlobID, purpose, channel, req.Locale); err != nil {
 			if errors.Is(err, ErrGateBlocked) {
 				problem(c, http.StatusConflict, "GATE_BLOCKED", "valid exact-byte rights and five passed reviews are required")
@@ -82,7 +86,7 @@ func (h *ImageSetHandler) Create(c *gin.Context) {
 			problem(c, http.StatusInternalServerError, "STORE_ERROR", "could not verify image publication gate")
 			return
 		}
-		items[i] = ImageSetItemInput{Role: input.Role, Ordinal: input.Ordinal, Locale: strings.TrimSpace(req.Locale), Channel: channel, AssetSHA: remote.OutputBlobID, TaskID: task.ID, OutputBlobID: remote.OutputBlobID, TaskManifestHash: task.ManifestHash, Operation: task.Operation, Processor: "deterministic", ImageServiceJobID: task.ImageServiceJobID}
+		items[i] = ImageSetItemInput{Role: input.Role, Ordinal: input.Ordinal, Locale: strings.TrimSpace(req.Locale), Channel: channel, AssetSHA: remote.OutputBlobID, TaskID: task.ID, OutputBlobID: remote.OutputBlobID, TaskManifestHash: task.ManifestHash, Operation: task.Operation, Processor: task.Processor, ImageServiceJobID: task.ImageServiceJobID}
 	}
 	set, err := h.service.CreateDraft(c.Request.Context(), CreateImageSetInput{OwnerID: uint64(owner), ListingID: req.ListingID, Channel: req.Channel, Locale: req.Locale, Items: items})
 	if err != nil {
@@ -126,7 +130,7 @@ func (h *ImageSetHandler) Freeze(c *gin.Context) {
 			return
 		}
 		remote, verifyErr := h.verifyTaskLineage(c.Request.Context(), owner, &task)
-		if verifyErr != nil || remote.OutputBlobID != item.OutputBlobID || task.ManifestHash != item.TaskManifestHash || task.Operation != item.Operation || task.ImageServiceJobID != item.ImageServiceJobID {
+		if verifyErr != nil || remote.OutputBlobID != item.OutputBlobID || task.ManifestHash != item.TaskManifestHash || task.Operation != item.Operation || task.Processor != item.Processor || task.ImageServiceJobID != item.ImageServiceJobID || verifyTaskChannelLineage(c.Request.Context(), h.db, owner, &task, draft.Channel, imagePurposeForRole(item.Role)) != nil {
 			problem(c, http.StatusConflict, "LINEAGE_INVALID", "image task lineage changed before freeze")
 			return
 		}
@@ -184,7 +188,7 @@ func (h *ImageSetHandler) verifyTaskLineage(ctx context.Context, owner int64, ta
 	if err != nil {
 		return nil, err
 	}
-	if task.Status != "READY" || remote.Status != "READY" || remote.ID != task.ImageServiceJobID || remote.OwnerID != owner || remote.ManifestHash != task.ManifestHash || remote.Operation != task.Operation || len(remote.OutputBlobID) != 64 || remote.OutputBlobID != task.OutputBlobID {
+	if task.Status != "READY" || remote.Status != "READY" || !verifyRemoteTaskIdentity(task, remote, owner) || isNonPublishableOutput(task, remote) || len(remote.OutputBlobID) != 64 || remote.OutputBlobID != task.OutputBlobID {
 		return nil, ErrImageSetInvalid
 	}
 	return remote, nil

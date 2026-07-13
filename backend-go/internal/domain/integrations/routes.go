@@ -26,6 +26,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approv
 	{
 		// collection-level (static)
 		group.GET("", h.List)
+		group.GET("/owner-fact-options", h.OwnerFactOptions)
 		group.POST("", h.Create)
 		group.POST("/publish-to-ozon", h.PublishToOzon)
 		group.POST("/write-back", h.WriteBack)
@@ -49,6 +50,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approv
 		group.GET("/:id/mode", h.GetMode)
 		group.PUT("/:id/mode", h.UpdateMode)
 		group.POST("/:id/sync", h.Sync)
+		group.POST("/:id/order-events", h.IngestOrderEvent)
 		group.GET("/:id/categories", h.ListCategories)
 		group.POST("/:id/categories", h.CreateCategory)
 		group.GET("/:id/attributes", h.ListAttributes)

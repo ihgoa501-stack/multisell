@@ -13,6 +13,7 @@
 | `tick-a7` | `A7` | `compliance_check` | 2h | 合规检测 |
 | `tick-a8` | `A8` | `sourcing_scan` | 1h | 选品扫描 |
 | `tick-a9` | `A9` | `batch_operations` | 2h | 批量运维扫描 |
+| `tick-audit-integrity` | `audit_integrity` | `verify_hash_chain` | time.Hour | 审计日志哈希链完整性检查 |
 | `tick-entropy` | `entropy` | `defend` | 6h | 熵防御周期 |
 | `tick-g0` | `G0` | `system_health` | 5m | 协调仲裁健康检查 |
 | `tick-g2` | `G2` | `warehouse_routing` | 1h | 仓储报关 |
@@ -43,6 +44,7 @@
 | `scheduler.tick.G3` | exact | Scheduled trigger for `G3` |
 | `scheduler.tick.M1` | exact | Scheduled trigger for `M1` |
 | `scheduler.tick.agentos` | exact | Scheduled trigger for `agentos` |
+| `scheduler.tick.audit_integrity` | exact | Scheduled trigger for `audit_integrity` |
 | `scheduler.tick.entropy` | exact | Scheduled trigger for `entropy` |
 | `scheduler.tick.orch` | exact | Scheduled trigger for `orch` |
 | `scheduler.tick.ozon_sync` | exact | Scheduled trigger for `ozon_sync` |
@@ -53,7 +55,6 @@
 | `supplychain.aftersale.returned` | exact | Supply chain event |
 | `supplychain.flywheel` | exact | Supply chain event |
 | `supplychain.flywheel` | exact | Supply chain event |
-| `supplychain.order.received` | exact | Supply chain event |
 | `supplychain.stock.critical` | exact | Supply chain event |
 
 ---

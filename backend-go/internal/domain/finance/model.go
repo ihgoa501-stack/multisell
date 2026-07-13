@@ -8,6 +8,7 @@ import (
 // FinanceAccount maps to "finance_account".
 type FinanceAccount struct {
 	ID          int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OwnerID     int64     `gorm:"column:owner_id;not null;index" json:"owner_id"`
 	Name        string    `gorm:"column:name;not null" json:"name"`
 	AccountType string    `gorm:"column:account_type;not null" json:"account_type"` // platform/payment/bank/cash
 	PlatformID  *int64    `gorm:"column:platform_id" json:"platform_id,omitempty"`
@@ -39,16 +40,16 @@ func (FinanceTransaction) TableName() string { return "finance_transaction" }
 
 // FinanceLedgerEntry maps to "finance_ledger_entry".
 type FinanceLedgerEntry struct {
-	ID         int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	OrderID    *int64    `gorm:"column:order_id;index" json:"order_id,omitempty"`
-	EntryType  string    `gorm:"column:entry_type;not null" json:"entry_type"` // revenue/product_cost/shipping_cost/platform_fee/payment_fee/refund/adjustment/other_fee
-	Amount     float64   `gorm:"column:amount;not null" json:"amount"`
-	Currency   string    `gorm:"column:currency;default:CNY" json:"currency"`
-	CostLayer  string    `gorm:"column:cost_layer;default:estimated" json:"cost_layer"` // estimated/snapshot/actual/allocated
-	SourceType string    `gorm:"column:source_type" json:"source_type"`
-	SourceID   *int64    `gorm:"column:source_id" json:"source_id,omitempty"`
-	Description string   `gorm:"column:description" json:"description"`
-	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	ID          int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OrderID     *int64    `gorm:"column:order_id;index" json:"order_id,omitempty"`
+	EntryType   string    `gorm:"column:entry_type;not null" json:"entry_type"` // revenue/product_cost/shipping_cost/platform_fee/payment_fee/refund/adjustment/other_fee
+	Amount      float64   `gorm:"column:amount;not null" json:"amount"`
+	Currency    string    `gorm:"column:currency;default:CNY" json:"currency"`
+	CostLayer   string    `gorm:"column:cost_layer;default:estimated" json:"cost_layer"` // estimated/snapshot/actual/allocated
+	SourceType  string    `gorm:"column:source_type" json:"source_type"`
+	SourceID    *int64    `gorm:"column:source_id" json:"source_id,omitempty"`
+	Description string    `gorm:"column:description" json:"description"`
+	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 
 func (FinanceLedgerEntry) TableName() string { return "finance_ledger_entry" }
@@ -57,22 +58,23 @@ func (FinanceLedgerEntry) TableName() string { return "finance_ledger_entry" }
 
 // CreateAccountInput is the payload for POST /finance/accounts.
 type CreateAccountInput struct {
-	Name        string  `json:"name" binding:"required"`
-	AccountType string  `json:"account_type" binding:"required"`
-	PlatformID  *int64  `json:"platform_id"`
-	Currency    string  `json:"currency"`
+	OwnerID     int64    `json:"-"`
+	Name        string   `json:"name" binding:"required"`
+	AccountType string   `json:"account_type" binding:"required"`
+	PlatformID  *int64   `json:"platform_id"`
+	Currency    string   `json:"currency"`
 	Balance     *float64 `json:"balance"`
-	Status      string  `json:"status"`
+	Status      string   `json:"status"`
 }
 
 // UpdateAccountInput allows partial updates.
 type UpdateAccountInput struct {
 	Name        *string  `json:"name"`
 	AccountType *string  `json:"account_type"`
-	PlatformID  *int64  `json:"platform_id"`
-	Currency    *string `json:"currency"`
+	PlatformID  *int64   `json:"platform_id"`
+	Currency    *string  `json:"currency"`
 	Balance     *float64 `json:"balance"`
-	Status      *string `json:"status"`
+	Status      *string  `json:"status"`
 }
 
 // AccountListFilter captures query parameters.

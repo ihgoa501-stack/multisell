@@ -117,6 +117,9 @@ type Detail struct {
 }
 type OwnerSummary struct {
 	ExperimentID        string     `json:"experiment_id"`
+	AuthorityScope      string     `json:"authority_scope"`
+	CausalStatus        string     `json:"causal_status"`
+	FeedbackLoopStatus  string     `json:"feedback_loop_status"`
 	Stage               string     `json:"stage"`
 	PassedGates         int64      `json:"passed_gates"`
 	Blockers            []string   `json:"blockers"`

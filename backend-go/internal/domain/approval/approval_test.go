@@ -2,6 +2,7 @@ package approval
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lingmirror/backend-go/internal/dbtest"
@@ -124,6 +125,33 @@ func TestService_List_Empty(t *testing.T) {
 	}
 	if items == nil {
 		t.Error("expected non-nil empty slice")
+	}
+}
+
+func TestService_OwnerScopedReadAndReview(t *testing.T) {
+	db := dbtest.NewDB(t, &ApprovalRequest{})
+	svc := NewService(db, dbtest.NewLogger(t), nil)
+	a, b := int64(7), int64(8)
+	r1, err := svc.Create(&CreateApprovalInput{ProductID: 11, RequestType: "finance", Requester: "owner-a", RequesterUserID: &a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Create(&CreateApprovalInput{ProductID: 22, RequestType: "finance", Requester: "owner-b", RequesterUserID: &b}); err != nil {
+		t.Fatal(err)
+	}
+	items, total, err := svc.ListForOwner(a, 1, 20, "", "")
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != r1.ID {
+		t.Fatalf("owner list leaked: total=%d items=%+v err=%v", total, items, err)
+	}
+	if _, err = svc.GetForOwner(b, r1.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-owner get must be hidden: %v", err)
+	}
+	if _, err = svc.ReviewForOwner(b, r1.ID, &ReviewApprovalInput{Action: "approve", Reviewer: "b", ReviewerUserID: &b}); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-owner review must be hidden: %v", err)
+	}
+	got, err := svc.GetForOwner(a, r1.ID)
+	if err != nil || got.Status != StatusPending {
+		t.Fatalf("cross-owner attempt changed approval: %+v %v", got, err)
 	}
 }
 
@@ -463,7 +491,6 @@ func TestService_Review_SyncsUnifiedAction_Rejected(t *testing.T) {
 		t.Errorf("unified_action status = %q, want %q", status, "rejected")
 	}
 }
-
 
 func TestService_Review_PublishesApprovalEvent(t *testing.T) {
 	db := dbtest.NewDB(t, &ApprovalRequest{})

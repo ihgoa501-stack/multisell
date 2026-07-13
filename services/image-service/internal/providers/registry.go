@@ -36,12 +36,12 @@ func (r *Registry) Register(operation string, executor jobs.Executor) error {
 	return nil
 }
 
-func (r *Registry) Execute(ctx context.Context, job core.Job) (string, *jobs.ExecutionError) {
+func (r *Registry) Execute(ctx context.Context, job core.Job) (jobs.ExecutionResult, *jobs.ExecutionError) {
 	r.mu.RLock()
 	executor := r.executors[job.Operation]
 	r.mu.RUnlock()
 	if executor == nil {
-		return "", &jobs.ExecutionError{Code: "PROVIDER_UNAVAILABLE", Err: errors.New("requested image provider is unavailable")}
+		return jobs.ExecutionResult{}, &jobs.ExecutionError{Code: "PROVIDER_UNAVAILABLE", Err: errors.New("requested image provider is unavailable")}
 	}
 	return executor.Execute(ctx, job)
 }

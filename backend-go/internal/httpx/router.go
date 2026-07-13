@@ -28,6 +28,8 @@ import (
 	"github.com/lingmirror/backend-go/internal/domain/allocation"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/brand"
+	"github.com/lingmirror/backend-go/internal/domain/businessdecision"
+	"github.com/lingmirror/backend-go/internal/domain/businessfeedback"
 	"github.com/lingmirror/backend-go/internal/domain/candidate"
 	"github.com/lingmirror/backend-go/internal/domain/category"
 	"github.com/lingmirror/backend-go/internal/domain/competitor"
@@ -101,7 +103,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/platform/scheduler"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge"
 	"github.com/lingmirror/backend-go/internal/platform/toolbridge/drivers"
-	"github.com/lingmirror/backend-go/internal/prismadapter"
 	"github.com/lingmirror/backend-go/internal/rbac"
 	"github.com/lingmirror/backend-go/internal/realtime"
 	"go.uber.org/zap"
@@ -639,38 +640,10 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	supplier.RegisterRoutes(protected, db, logger)
 	purchase.RegisterRoutes(protected, db, logger, bus)
 
-	// Supply chain event: purchase order received → auto-increment inventory.
-	// GUARDRAIL (mutation guard): audited via MutationGuard, registered as system.inventory.receive.
-	// Idempotency delegated to supply chain orchestrator via order_no.
-	bus.Subscribe("supplychain.order.received",
-		mutationGuard.Guard(eventbus.MutationInfo{
-			SystemAction: "system.inventory.receive",
-			Domain:       "inventory",
-			Description:  "采购入库确认后自动增加对应 SKU 的库存数量",
-		}, func(ctx context.Context, evt eventbus.Event) error {
-			payload := evt.Payload
-			invSvc := inventory.NewService(db, logger)
-			items, ok := payload["items"].([]interface{})
-			if !ok {
-				return nil
-			}
-			orderNo, _ := payload["order_no"].(string)
-			for _, item := range items {
-				m, ok := item.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				skuID := int64(m["sku_id"].(float64))
-				qty := int(m["qty"].(float64))
-				inv, err := invSvc.GetBySkuID(ctx, skuID)
-				if err != nil {
-					logger.Warn("supplychain: inventory not found for sku", zap.Int64("sku_id", skuID), zap.Error(err))
-					continue
-				}
-				_ = invSvc.UpdateStock(ctx, inv.ID, inv.Quantity+qty, "system", "采购入库: "+orderNo)
-			}
-			return nil
-		}))
+	// Legacy supplychain.order.received events are intentionally not consumed.
+	// They were derived from an internal status transition and could therefore
+	// manufacture stock. Purchase inventory now changes only in the transaction
+	// that persists an immutable external_observed receiving fact and ledger row.
 	// sourcing.recommend (A8) -> A2 listing_optimize for high-score products
 	bus.Subscribe("sourcing.recommend", func(ctx context.Context, evt eventbus.Event) error {
 		// Process recommendation through the handler (logging, etc.)
@@ -757,22 +730,16 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	listingRoutes := protected.Group("", middleware.RequirePermission(db, "listing.read"))
 	listing.RegisterRoutes(listingRoutes, db, logger, bus, approvalSvc)
 
-	// Legacy Prism execution is frozen while callers migrate to Product Images.
-	// Keep a typed nil for compatibility with historical services, but never
-	// construct the URL-fetching client or allow fail-open behavior.
-	var prismSvc prismadapter.PrismService
-	prismStrict := true
-	logger.Info("legacy Prism execution frozen; use Product Images")
 	approvalSvc = approval.NewService(db, logger, auditSvc).WithBus(bus)
 	approval.RegisterRoutes(protected, approvalSvc)
 	rbacSvc := rbac.NewService(db, logger)
-	loopSvc := loop.NewService(db, logger, prismSvc, prismStrict)
+	loopSvc := loop.NewService(db, logger)
 	// Build platform publish hook for listing task execution.
 	// After ExecuteTask completes, this pushes the product to the platform API.
 	// The shared factory resolves adapters, propagates execution mode, writes audit,
 	// and records external platform references.
 	publishHook := listingtask.NewPublishHook(db, auditSvc, logger)
-	listingtask.RegisterRoutes(listingRoutes, db, logger, prismSvc, prismStrict, approvalSvc, auditSvc, rbacSvc, loopSvc, publishHook)
+	listingTaskSvc := listingtask.RegisterRoutes(listingRoutes, db, logger, approvalSvc, auditSvc, rbacSvc, loopSvc, publishHook)
 
 	// Closed-loop: approval approved for listing_task → approve the listing task.
 	// The subscriber writes back approval_id, transitions listing_task to "approved",
@@ -790,67 +757,17 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 			}
 			entityID, ok := evt.Payload["entity_id"].(float64)
 			if !ok || int64(entityID) == 0 {
-				return nil
+				return fmt.Errorf("listing approval event missing entity_id")
 			}
 			approvalID, ok := evt.Payload["approval_id"].(float64)
-			if !ok {
-				return nil
+			if !ok || int64(approvalID) == 0 {
+				return fmt.Errorf("listing approval event missing approval_id")
 			}
 			reviewer, _ := evt.Payload["reviewer"].(string)
 			taskID := int64(entityID)
 			aid := int64(approvalID)
 
-			var task listingtask.ListingTask
-			if err := db.First(&task, taskID).Error; err != nil {
-				return fmt.Errorf("load listing task %d: %w", taskID, err)
-			}
-
-			sm := listingtask.NewListingTaskStateMachine()
-
-			err := db.Transaction(func(tx *gorm.DB) error {
-				if task.Status == "blocked" {
-					if !sm.CanTransition("blocked", "pending_approval") {
-						return fmt.Errorf("listing task %d: blocked -> pending_approval not allowed", taskID)
-					}
-					if err := tx.Model(&task).Update("status", "pending_approval").Error; err != nil {
-						return err
-					}
-					task.Status = "pending_approval"
-				}
-				if task.Status != "pending_approval" {
-					return nil
-				}
-				if !sm.CanTransition("pending_approval", "approved") {
-					return nil
-				}
-				return tx.Model(&task).Updates(map[string]interface{}{
-					"status":      "approved",
-					"approval_id": aid,
-				}).Error
-			})
-			if err != nil {
-				return err
-			}
-
-			auditSvc.LogStructured(&operationlog.StructuredLogInput{
-				Module:      "listing_task",
-				Action:      "listing_task.approval_approved",
-				ResourceID:  fmt.Sprintf("%d", taskID),
-				Operator:    reviewer,
-				Content:     fmt.Sprintf("listing_task_id=%d approval_id=%d status=approved", taskID, aid),
-				Result:      "approved",
-				TriggerType: "eventbus",
-				EntityType:  "listing_task",
-				EntityID:    taskID,
-				ApprovalID:  &aid,
-			})
-
-			_ = loopSvc.RecordExecutionResult(task.ProductID, taskID, true, "")
-
-			logger.Info("listing task approved via approval event",
-				zap.Int64("task_id", taskID),
-				zap.Int64("approval_id", aid))
-			return nil
+			return listingTaskSvc.ApplyOwnerApproval(taskID, aid, reviewer)
 		}))
 
 	candidate.RegisterRoutes(protected, db, logger)
@@ -859,11 +776,18 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	profit.RegisterRoutes(protected, db, logger)
 	experiment.RegisterRoutes(protected, db, logger)
 	demandcase.RegisterRoutes(protected, db, logger)
+	businessdecision.RegisterRoutes(protected, db)
+	registeredCommands := cmd.RegisteredTypes()
+	capabilityIDs := make([]string, 0, len(registeredCommands))
+	for _, commandType := range registeredCommands {
+		capabilityIDs = append(capabilityIDs, "command."+commandType+".v1")
+	}
+	businessfeedback.RegisterRoutes(protected, db, logger, cmd, approval.NewApprovalPolicyChecker(approvalSvc), capabilityIDs)
 	platformtruth.RegisterRoutes(protected)
 	xiaoq.RegisterRoutes(protected, db, logger)
 	evidenceHandler := profit.NewEvidenceHandler(db)
 	protected.GET("/profit/evidence-card/:productId", evidenceHandler.GetEvidenceCard)
-	loop.RegisterRoutes(protected, db, logger, prismSvc, prismStrict)
+	loop.RegisterRoutes(protected, db, logger)
 	mock.RegisterRoutes(protected, db, logger)
 	// Mock data must never appear automatically in a production environment.
 	if cfg.Server.Mode != gin.ReleaseMode {
@@ -923,7 +847,12 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		logger.Error("Image Service execution token signing disabled: secret must be at least 32 bytes")
 		executionTokenSecret = ""
 	}
-	productimage.RegisterRoutes(protected, db, logger, imageClient, executionTokenSecret)
+	releaseAttestationSecret := os.Getenv("IMAGE_RELEASE_ATTESTATION_SECRET")
+	releaseAttestationKeyID := os.Getenv("IMAGE_RELEASE_ATTESTATION_KEY_ID")
+	if releaseAttestationKeyID == "" {
+		releaseAttestationKeyID = "image-release-v1"
+	}
+	productimage.RegisterRoutes(protected, db, logger, imageClient, executionTokenSecret, releaseAttestationSecret, releaseAttestationKeyID)
 	importbatch.RegisterRoutes(protected, db, logger)
 	content.RegisterRoutes(protected, db, logger, aiOrch)
 	operationlog.RegisterRoutes(protected, db, logger)
@@ -941,7 +870,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 	// fallback map. No-op if DefaultEngine is nil (no YAML files loaded).
 	tools.SetSourcingEngine(logistics.DefaultEngine)
 	supplychain.RegisterRoutes(protected, db, logger, bus)
-	productanalysis.RegisterRoutesWithPrism(protected, db, logger, prismSvc)
+	productanalysis.RegisterRoutes(protected, db, logger)
 	trustscore.RegisterRoutes(protected, db, logger)
 	reportRoutes := protected.Group("", middleware.RequirePermission(db, "report.read"))
 	report.RegisterRoutes(reportRoutes, db, logger)

@@ -22,7 +22,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		group.GET("/profit/ranking", h.GetSKUProfitRanking)
 
 		// Static routes first to avoid conflict with /:id
-// Static routes first to avoid conflict with /:id
+		// Static routes first to avoid conflict with /:id
 		group.GET("/summary", h.Summary)
 		group.GET("/profit-summary", h.ProfitSummary)
 		group.GET("/ledger", h.ListLedger)
@@ -43,5 +43,11 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		// Transactions
 		group.GET("/transactions", h.ListTransactions)
 		group.POST("/transactions", h.CreateTransaction)
+
+		// Actual bank/payment observations and deterministic cash reconciliation.
+		group.GET("/cash-receipts", h.ListCashReceipts)
+		group.POST("/cash-receipts", h.CreateCashReceipt)
+		group.GET("/cash-reconciliations", h.ListCashReconciliations)
+		group.POST("/cash-reconciliations", h.CreateCashReconciliation)
 	}
 }

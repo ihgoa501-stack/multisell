@@ -56,6 +56,16 @@ func validateCase(c *ExperimentCase) error {
 	}
 	return nil
 }
+
+// requireTraceOnlyCase prevents the legacy experiment dossier from becoming an
+// authority for an operating decision or a feedback-loop completion claim.
+// Object links and terminal transaction facts are trace evidence only.
+func requireTraceOnlyCase(c *ExperimentCase) error {
+	if c.Stage == StageDecision || c.FinalDecision != "" || c.Status == StatusCompleted || c.Status == StatusStopped {
+		return errors.New("legacy experiment is trace-only and cannot record a final decision or completed feedback loop")
+	}
+	return nil
+}
 func (s *Service) Create(ctx context.Context, c *ExperimentCase) error {
 	if c.ExperimentID == "" {
 		c.ExperimentID = newID()
@@ -86,6 +96,9 @@ func (s *Service) Create(ctx context.Context, c *ExperimentCase) error {
 }
 func (s *Service) Update(ctx context.Context, id string, ownerID int64, c *ExperimentCase) error {
 	if err := validateCase(c); err != nil {
+		return err
+	}
+	if err := requireTraceOnlyCase(c); err != nil {
 		return err
 	}
 	var current ExperimentCase
@@ -243,6 +256,9 @@ func (s *Service) EvaluateGate(ctx context.Context, id string, ownerID int64, in
 	}
 	if !stages[in.Stage] || !results[in.Result] || in.GateCode == "" {
 		return nil, errors.New("invalid gate decision")
+	}
+	if in.Stage == StageDecision {
+		return nil, errors.New("legacy experiment is trace-only; decision gates cannot authorize or prove a feedback loop")
 	}
 	if in.Stage != c.Stage || canonicalGate[in.Stage] != in.GateCode {
 		return nil, errors.New("gate must match the current experiment stage")
@@ -420,7 +436,7 @@ func (s *Service) OwnerSummary(ctx context.Context, id string, ownerID int64) (*
 	if err != nil {
 		return nil, err
 	}
-	o := &OwnerSummary{ExperimentID: id, Stage: d.Case.Stage, FinalProfitStatus: d.Case.FinalProfitStatus, FinalRevenue: d.Case.FinalRevenue, FinalTotalCost: d.Case.FinalTotalCost, FinalProfitAmount: d.Case.FinalProfitAmount, ProfitCurrency: d.Case.ProfitCurrency, CashRecoveryStatus: d.Case.CashRecoveryStatus, CashRecoveredAmount: d.Case.CashRecoveredAmount, CashCurrency: d.Case.CashCurrency, CashRecoveredAt: d.Case.CashRecoveredAt, FinalDecision: d.Case.FinalDecision}
+	o := &OwnerSummary{ExperimentID: id, AuthorityScope: "trace_only", CausalStatus: "not_established", FeedbackLoopStatus: "not_authorized", Stage: d.Case.Stage, FinalProfitStatus: d.Case.FinalProfitStatus, FinalRevenue: d.Case.FinalRevenue, FinalTotalCost: d.Case.FinalTotalCost, FinalProfitAmount: d.Case.FinalProfitAmount, ProfitCurrency: d.Case.ProfitCurrency, CashRecoveryStatus: d.Case.CashRecoveryStatus, CashRecoveredAmount: d.Case.CashRecoveredAmount, CashCurrency: d.Case.CashCurrency, CashRecoveredAt: d.Case.CashRecoveredAt, FinalDecision: d.Case.FinalDecision}
 	latest := map[string]GateDecision{}
 	for _, g := range d.Gates {
 		latest[g.Stage] = g

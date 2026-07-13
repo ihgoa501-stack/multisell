@@ -44,7 +44,6 @@ backend-go/internal/
 ├── dbtest/          → 测试用内存 SQLite
 ├── migration/       → 迁移框架
 ├── realtime/        → WebSocket 实时 Hub
-├── prismadapter/    → Prism 图片服务客户端
 └── feedback/        → 内部反馈系统
 ```
 
@@ -492,6 +491,7 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | `/settlement/[id]` | 结算详情 | `settlement/[id]/page.tsx` |
 | `/decision` | 决策总览 | `decision/page.tsx` |
 | `/decision/prelisting` | 上架前决策 | `decision/prelisting/page.tsx` |
+| `/business-decisions/[id]` | Owner 经营决策案卷：冻结事实、AI 推断建议与不可变 Owner 决定 | `business-decisions/[id]/page.tsx` |
 | `/allocation` | 分配 | `allocation/page.tsx` |
 | `/allocation/cost` | 成本分摊 | `allocation/cost/page.tsx` |
 | `/reports` | 报表 | `reports/page.tsx` |
@@ -641,7 +641,6 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | 模块 | 位置 | 状态 |
 |------|------|------|
 | `content` | `internal/domain/content/` | 多语言内容本地化 |
-| `prismadapter` | `internal/prismadapter/` | Prism 外部生图服务客户端 |
 | `schemadrift` | `internal/schemadrift/` | Schema drift 检测（迁移安全网） |
 
 ---

@@ -9,6 +9,9 @@ Package: `backend-go/internal/domain/profit/`
 | Method | Path | Handler |
 |--------|------|--------|
 | `POST` | `/api/v1/profit/order/:orderId/calculate` | `h.CalculateOrderProfit` |
+| `POST` | `/api/v1/profit/order/:orderId/cost-allocations` | `h.AllocateOrderProductCost` |
+| `GET` | `/api/v1/profit/order/:orderId/final-versions` | `h.ListFinalOrderProfitVersions` |
+| `POST` | `/api/v1/profit/order/:orderId/finalize` | `h.FinalizeOrderProfit` |
 | `GET` | `/api/v1/profit/summaries` | `h.ListSummaries` |
 | `GET` | `/api/v1/profit/summary/:productId` | `h.Summary` |
 

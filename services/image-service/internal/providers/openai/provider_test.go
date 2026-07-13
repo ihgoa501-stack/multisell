@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -46,6 +47,16 @@ func stores(t *testing.T) (*blobstore.Store, string) {
 	return s, id
 }
 
+func repository(t *testing.T) core.Repository {
+	t.Helper()
+	r, err := core.OpenStore(filepath.Join(t.TempDir(), "jobs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	return r
+}
+
 func TestUnavailableWithoutAPIKey(t *testing.T) {
 	p, err := New(Config{})
 	if err != nil {
@@ -60,10 +71,20 @@ func TestUnavailableWithoutAPIKey(t *testing.T) {
 	}
 }
 
+func TestRejectsUnsafeBaseURL(t *testing.T) {
+	for _, raw := range []string{"http://evil.example", "https://api.openai.com@evil.example", "https://api.openai.com?next=evil"} {
+		if _, err := New(Config{BaseURL: raw}); err == nil {
+			t.Fatalf("accepted %q", raw)
+		}
+	}
+}
+
 func TestExecuteSendsOfficialMultipartContractAndStoresSanitizedOutput(t *testing.T) {
 	blobs, inputID := stores(t)
 	output := testPNG(t)
+	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/images/edits" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -100,20 +121,60 @@ func TestExecuteSendsOfficialMultipartContractAndStoresSanitizedOutput(t *testin
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]string{"b64_json": base64.StdEncoding.EncodeToString(output)}}})
 	}))
 	defer server.Close()
-	p, err := New(Config{APIKey: "secret", BaseURL: server.URL, Blobs: blobs, HTTPClient: server.Client(), MaxAttempts: 1})
+	p, err := New(Config{APIKey: "secret", BaseURL: server.URL, Blobs: blobs, Repository: repository(t), HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, executionErr := p.Execute(context.Background(), core.Job{Operation: Operation, IdempotencyKey: "job-idempotency", InputBlobID: inputID, Prompt: "put the unchanged product on a clean studio background", Width: 1024, Height: 1024})
+	result, executionErr := p.Execute(context.Background(), core.Job{ID: "job-success", Operation: Operation, IdempotencyKey: "job-idempotency", InputBlobID: inputID, Prompt: "put the unchanged product on a clean studio background", Width: 1024, Height: 1024})
 	if executionErr != nil {
 		t.Fatalf("execute: %+v", executionErr)
 	}
-	if _, err := blobs.GetMetadata(id); err != nil {
+	if _, err := blobs.GetMetadata(result.OutputID); err != nil {
 		t.Fatalf("stored output: %v", err)
+	}
+	if result.ProviderRequestID != "req_success" {
+		t.Fatalf("provider request id=%q", result.ProviderRequestID)
+	}
+	if _, replayErr := p.Execute(context.Background(), core.Job{ID: "job-success", Operation: Operation, IdempotencyKey: "job-idempotency", InputBlobID: inputID, Prompt: "put the unchanged product on a clean studio background", Width: 1024, Height: 1024}); replayErr == nil || replayErr.Code != "RECONCILE_REQUIRED" || calls.Load() != 1 {
+		t.Fatalf("duplicate paid submit was not blocked: err=%+v calls=%d", replayErr, calls.Load())
 	}
 }
 
-func TestRetriesOnly429And5xxAndPreservesRequestID(t *testing.T) {
+func TestBlobWriteFailureKeepsProviderRequestIDForReconciliation(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "blobs")
+	blobs, err := blobstore.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputID, err := blobs.Put(testPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := png.Encode(&output, image.NewRGBA(image.Rect(0, 0, 3, 3))); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("x-request-id", "req-write-failed")
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]string{"b64_json": base64.StdEncoding.EncodeToString(output.Bytes())}}})
+	}))
+	defer server.Close()
+	p, err := New(Config{APIKey: "secret", BaseURL: server.URL, Blobs: blobs, Repository: repository(t), HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	_, executionErr := p.Execute(context.Background(), core.Job{ID: "job-write-failed", Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024})
+	if executionErr == nil || executionErr.Code != "RECONCILE_REQUIRED" || executionErr.RequestID != "req-write-failed" {
+		t.Fatalf("execution error=%+v", executionErr)
+	}
+}
+
+func TestDoesNotRetryAmbiguousProviderResponse(t *testing.T) {
 	blobs, inputID := stores(t)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -126,11 +187,11 @@ func TestRetriesOnly429And5xxAndPreservesRequestID(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]string{"b64_json": base64.StdEncoding.EncodeToString(testPNG(t))}}})
 	}))
 	defer server.Close()
-	p, _ := New(Config{APIKey: "secret", BaseURL: server.URL, Blobs: blobs, HTTPClient: server.Client(), MaxAttempts: 2, RetryDelay: time.Millisecond})
-	if _, err := p.Execute(context.Background(), core.Job{Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024}); err != nil {
+	p, _ := New(Config{APIKey: "secret", BaseURL: server.URL, Blobs: blobs, Repository: repository(t), HTTPClient: server.Client()})
+	if _, err := p.Execute(context.Background(), core.Job{ID: "job-ambiguous", Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024}); err == nil || err.Code != "RECONCILE_REQUIRED" {
 		t.Fatalf("execute: %+v", err)
 	}
-	if calls.Load() != 2 {
+	if calls.Load() != 1 {
 		t.Fatalf("calls=%d", calls.Load())
 	}
 
@@ -141,8 +202,8 @@ func TestRetriesOnly429And5xxAndPreservesRequestID(t *testing.T) {
 		http.Error(w, `{"error":{"message":"bad prompt","type":"invalid_request_error","code":"invalid_prompt"}}`, http.StatusBadRequest)
 	}))
 	defer bad.Close()
-	p, _ = New(Config{APIKey: "secret", BaseURL: bad.URL, Blobs: blobs, HTTPClient: bad.Client(), MaxAttempts: 3})
-	_, got := p.Execute(context.Background(), core.Job{Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024})
+	p, _ = New(Config{APIKey: "secret", BaseURL: bad.URL, Blobs: blobs, Repository: repository(t), HTTPClient: bad.Client()})
+	_, got := p.Execute(context.Background(), core.Job{ID: "job-rejected", Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024})
 	if got == nil || got.Code != "PROVIDER_REJECTED" || got.RequestID != "req_bad" || got.Retryable {
 		t.Fatalf("unexpected error: %+v", got)
 	}
@@ -167,8 +228,8 @@ func TestRejectsOversizedMalformedAndEmptyResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := httptest.NewServer(tc.handler)
 			defer s.Close()
-			p, _ := New(Config{APIKey: "secret", BaseURL: s.URL, Blobs: blobs, HTTPClient: s.Client(), MaxAttempts: 1})
-			_, got := p.Execute(context.Background(), core.Job{Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024})
+			p, _ := New(Config{APIKey: "secret", BaseURL: s.URL, Blobs: blobs, Repository: repository(t), HTTPClient: s.Client()})
+			_, got := p.Execute(context.Background(), core.Job{ID: "job-" + tc.name, Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024})
 			if got == nil || got.Code != "OUTPUT_INVALID" {
 				t.Fatalf("unexpected error: %+v", got)
 			}
@@ -185,9 +246,9 @@ func TestTimeoutIsBoundedAndNotRetried(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
 	defer server.Close()
-	p, _ := New(Config{APIKey: "secret", BaseURL: server.URL, Blobs: blobs, HTTPClient: &http.Client{Timeout: 5 * time.Millisecond}, MaxAttempts: 3})
-	_, got := p.Execute(context.Background(), core.Job{Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024})
-	if got == nil || got.Code != "PROVIDER_NETWORK_ERROR" || got.Retryable {
+	p, _ := New(Config{APIKey: "secret", BaseURL: server.URL, Blobs: blobs, Repository: repository(t), HTTPClient: &http.Client{Timeout: 5 * time.Millisecond}})
+	_, got := p.Execute(context.Background(), core.Job{ID: "job-timeout", Operation: Operation, InputBlobID: inputID, Prompt: "edit", Width: 1024, Height: 1024})
+	if got == nil || got.Code != "RECONCILE_REQUIRED" || got.Retryable {
 		t.Fatalf("unexpected error: %+v", got)
 	}
 	if calls.Load() != 1 {

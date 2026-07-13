@@ -35,6 +35,7 @@ DB_PORT="${DB_PORT:-5432}"
 DB_USER="${DB_USER:-postgres}"
 DB_PASSWORD="${DB_PASSWORD:-postgres}"
 DB_NAME="${DB_NAME:-multisell}"
+RESTORE_REQUIRE_CHECKSUM="${RESTORE_REQUIRE_CHECKSUM:-true}"
 
 case "$DB_NAME" in
     ""|*[!A-Za-z0-9_]*) echo "[ERROR] DB_NAME must contain only letters, digits, and underscore."; exit 1 ;;
@@ -50,7 +51,16 @@ if [ ! -f "$BACKUP_FILE" ]; then
 fi
 
 CHECKSUM_FILE="${BACKUP_FILE}.sha256"
-if [ -f "$CHECKSUM_FILE" ]; then
+case "$RESTORE_REQUIRE_CHECKSUM" in
+    true|false) ;;
+    *) echo "[ERROR] RESTORE_REQUIRE_CHECKSUM must be true or false."; exit 1 ;;
+esac
+if [ "$RESTORE_REQUIRE_CHECKSUM" = "true" ] && [ ! -s "$CHECKSUM_FILE" ]; then
+    echo "[ERROR] Required backup checksum is missing: ${CHECKSUM_FILE}"
+    echo "        Only set RESTORE_REQUIRE_CHECKSUM=false after separately verifying a trusted legacy archive."
+    exit 1
+fi
+if [ -s "$CHECKSUM_FILE" ]; then
     echo "[INFO] Verifying SHA-256 checksum..."
     if command -v sha256sum >/dev/null 2>&1; then
         (cd "$(dirname "$BACKUP_FILE")" && sha256sum -c "$(basename "$CHECKSUM_FILE")")

@@ -3,15 +3,20 @@ package integrations
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
+	platformdomain "github.com/lingmirror/backend-go/internal/domain/platform"
+	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -58,6 +63,16 @@ func (m *mockAdapter) FetchRaw(_ context.Context, _ int64, _ string, _ interface
 	return nil, nil
 }
 
+type countingPublishAdapter struct {
+	mockAdapter
+	calls atomic.Int64
+}
+
+func (m *countingPublishAdapter) Publish(_ context.Context, _ *PublishInput) (*PublishResult, error) {
+	m.calls.Add(1)
+	return &PublishResult{PlatformProductID: "must-not-be-returned"}, nil
+}
+
 func setupRouter(svc *Service) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -65,6 +80,7 @@ func setupRouter(svc *Service) *gin.Engine {
 	g := r.Group("/api/v1")
 	g.GET("/platform-integrations", h.List)
 	g.POST("/platform-integrations", h.Create)
+	g.POST("/platform-integrations/publish-to-ozon", h.PublishToOzon)
 	g.GET("/platform-integrations/:id", h.Get)
 	g.PUT("/platform-integrations/:id", h.Update)
 	g.DELETE("/platform-integrations/:id", h.Delete)
@@ -1310,5 +1326,134 @@ func TestExecutionModeProduction_IsWriteAllowed(t *testing.T) {
 	}
 	if ExecutionModeSandbox.IsWriteAllowed() {
 		t.Error("IsWriteAllowed: expected false for sandbox")
+	}
+}
+
+func TestPublishToOzon_RealModesFailClosedBeforeAnyLookupOrAdapterCall(t *testing.T) {
+	db := dbtest.NewDB(t,
+		&PlatformIntegrationAccount{}, &PlatformCategoryMapping{}, &PlatformAttributeMapping{},
+		&platformdomain.Platform{}, &sku.Product{}, &sku.Sku{},
+	)
+	svc := NewService(db, zap.NewNop())
+	adapter := &countingPublishAdapter{}
+	const platformCode = "p0-ozon-release-gate"
+	RegisterAdapter(platformCode, adapter)
+	platform := platformdomain.Platform{Name: "P0 Ozon fixture", Code: platformCode, Status: 1}
+	if err := db.Create(&platform).Error; err != nil {
+		t.Fatal(err)
+	}
+	product := sku.Product{Name: "P0 fixture", CategoryID: 1}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&sku.Sku{ProductID: product.ID, Code: "P0-SKU", Stock: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	account := PlatformIntegrationAccount{PlatformID: platform.ID, AccountID: "p0", Status: "active"}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatal(err)
+	}
+	inputs := []struct {
+		name string
+		mode ExecutionMode
+		url  string
+	}{
+		{name: "production arbitrary HTTPS URL", mode: ExecutionModeProduction, url: "https://attacker.invalid/image.jpg"},
+		{name: "production sandbox-looking URL", mode: ExecutionModeProduction, url: "sandbox://pretend-approved/image.jpg"},
+		{name: "approval required with approval", mode: ExecutionModeApprovalRequired, url: "https://cdn.invalid/owner.jpg"},
+		{name: "unknown mode", mode: ExecutionMode(99), url: "https://cdn.invalid/unknown.jpg"},
+	}
+	for _, tt := range inputs {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := WithApprovalID(WithExecutionMode(context.Background(), tt.mode), 42)
+			got, err := svc.PublishToOzon(ctx, &PublishToOzonInput{
+				ProductID: product.ID, AccountID: account.ID, Price: 1, ImageURL: tt.url,
+			})
+			if !errors.Is(err, ErrImageReleaseAttestationRequired) {
+				t.Fatalf("error = %v, want %v", err, ErrImageReleaseAttestationRequired)
+			}
+			if got != nil {
+				t.Fatalf("result = %+v, want nil", got)
+			}
+		})
+	}
+	if calls := adapter.calls.Load(); calls != 0 {
+		t.Fatalf("adapter Publish calls = %d, want 0", calls)
+	}
+	got, err := svc.PublishToOzon(context.Background(), &PublishToOzonInput{
+		ProductID: product.ID, AccountID: account.ID, Price: 1, ImageURL: "https://cdn.invalid/implicit-mode.jpg",
+	})
+	if !errors.Is(err, ErrImageReleaseAttestationRequired) || got != nil {
+		t.Fatalf("implicit mode result=%+v error=%v, want fail-closed sentinel", got, err)
+	}
+	if calls := adapter.calls.Load(); calls != 0 {
+		t.Fatalf("adapter Publish calls after implicit mode = %d, want 0", calls)
+	}
+}
+
+func TestPublishToOzon_DryRunAndSandboxAreStateFreeMocks(t *testing.T) {
+	svc := newTestDB(t)
+	for _, mode := range []ExecutionMode{ExecutionModeDryRun, ExecutionModeSandbox} {
+		t.Run(mode.String(), func(t *testing.T) {
+			var before int64
+			if err := svc.db.Model(&PlatformIntegrationAccount{}).Count(&before).Error; err != nil {
+				t.Fatal(err)
+			}
+			got, err := svc.PublishToOzon(WithExecutionMode(context.Background(), mode), &PublishToOzonInput{
+				ProductID: 999, AccountID: 999, Price: 1, ImageURL: "https://attacker.invalid/image.jpg",
+			})
+			if err != nil {
+				t.Fatalf("PublishToOzon: %v", err)
+			}
+			if got == nil || got.PlatformProductID != mode.String()+"-simulated" || !strings.Contains(got.SyncMessage, "mock only") {
+				t.Fatalf("unexpected mock result: %+v", got)
+			}
+			var after int64
+			if err := svc.db.Model(&PlatformIntegrationAccount{}).Count(&after).Error; err != nil {
+				t.Fatal(err)
+			}
+			if after != before {
+				t.Fatalf("account rows changed: before=%d after=%d", before, after)
+			}
+		})
+	}
+}
+
+func TestPublishToOzonHTTP_ProductionAndApprovalRequiredReturn428(t *testing.T) {
+	for _, mode := range []ExecutionMode{ExecutionModeProduction, ExecutionModeApprovalRequired, ExecutionMode(99)} {
+		t.Run(mode.String(), func(t *testing.T) {
+			svc := newTestDB(t)
+			acct := PlatformIntegrationAccount{PlatformID: 1, AccountID: "test", ExecutionMode: int8(mode)}
+			if err := svc.db.Create(&acct).Error; err != nil {
+				t.Fatal(err)
+			}
+			var mutationCallbacks atomic.Int64
+			countMutation := func(*gorm.DB) { mutationCallbacks.Add(1) }
+			if err := svc.db.Callback().Create().Before("gorm:create").Register("test:count_publish_create", countMutation); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.db.Callback().Update().Before("gorm:update").Register("test:count_publish_update", countMutation); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.db.Callback().Delete().Before("gorm:delete").Register("test:count_publish_delete", countMutation); err != nil {
+				t.Fatal(err)
+			}
+			r := setupRouter(svc)
+			body := fmt.Sprintf(`{"product_id":123,"account_id":%d,"price":1,"image_url":"sandbox://task/escape.jpg"}`, acct.ID)
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/platform-integrations/publish-to-ozon", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusPreconditionRequired {
+				t.Fatalf("status=%d body=%s, want 428", w.Code, w.Body.String())
+			}
+			res := parseResult(t, w.Body.Bytes())
+			if res.Message != "IMAGE_RELEASE_ATTESTATION_REQUIRED" {
+				t.Fatalf("message=%q", res.Message)
+			}
+			if calls := mutationCallbacks.Load(); calls != 0 {
+				t.Fatalf("DB mutation callbacks = %d, want 0", calls)
+			}
+		})
 	}
 }

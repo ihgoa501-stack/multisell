@@ -1,323 +1,654 @@
-'use client';
-
-import { useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Statistic, message } from 'antd';
+"use client";
+import { useState } from "react";
 import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  DollarOutlined,
-  RollbackOutlined,
-} from '@ant-design/icons';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import apiClient from '@/lib/api-client';
-import CrudListPage, { fmtDate, fmtMoney } from '@/components/crud/CrudListPage';
-import ConfirmDialog from '@/components/ui/ConfirmDialog';
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  Tag,
+  Typography,
+  message,
+} from "antd";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import apiClient from "@/lib/api-client";
+import {
+  orderLabel,
+  useOwnerFactOptions,
+} from "@/features/owner-facts/useOwnerFactOptions";
+import { OwnerApprovalSelect } from "@/features/owner-facts/OwnerApprovalSelect";
 
-// ---------- Types ----------
-
-interface ModalActionState {
-  record: Record<string, unknown>;
-  action: 'approve' | 'reject';
-}
-
-interface DirectActionState {
-  record: Record<string, unknown>;
-  action: 'receive' | 'refund';
-  label: string;
-}
-
-// ---------- Action config per status ----------
-
-interface ActionConfig {
-  key: 'approve' | 'reject' | 'receive' | 'refund';
-  label: string;
-  icon: React.ReactNode;
-  type?: 'primary' | 'default';
-  danger?: boolean;
-  /** true = opens a modal form; false = direct call with confirm dialog */
-  modal: boolean;
-}
-
-const STATUS_ACTIONS: Record<string, ActionConfig[]> = {
-  pending: [
-    {
-      key: 'approve',
-      label: '审核通过',
-      icon: <CheckCircleOutlined />,
-      type: 'primary',
-      modal: true,
-    },
-    {
-      key: 'reject',
-      label: '审核拒绝',
-      icon: <CloseCircleOutlined />,
-      danger: true,
-      modal: true,
-    },
-  ],
-  approved: [
-    {
-      key: 'receive',
-      label: '确认收货',
-      icon: <RollbackOutlined />,
-      type: 'primary',
-      modal: false,
-    },
-  ],
-  received: [
-    {
-      key: 'refund',
-      label: '执行退款',
-      icon: <DollarOutlined />,
-      type: 'primary',
-      modal: false,
-    },
-  ],
-  rejected: [],
-  refunded: [],
+type Resolution = {
+  id: number;
+  order_id: number;
+  platform_account_id: number;
+  kind: string;
+  requested_minor: number;
+  currency: string;
+  reason: string;
+  request_source: string;
+  request_evidence_id: string;
+  request_observed_at: string;
+  status: string;
+  decision_reason?: string;
+  decided_by?: number;
+  decided_at?: string;
+  external_request_id?: string;
+  submitted_at?: string;
+  consequence_status: string;
+  created_at: string;
 };
-
-// ---------- Page ----------
+type Receipt = {
+  id: number;
+  outcome: string;
+  source_type: string;
+  evidence_id: string;
+  external_receipt_id: string;
+  observed_at: string;
+  actual_minor: number;
+  currency: string;
+  failure_code?: string;
+  receipt_payload: unknown;
+  receipt_sha256: string;
+  recorded_at: string;
+};
+type Detail = { case: Resolution; receipt?: Receipt };
+const cash = (minor: number, currency: string) =>
+  `${currency} ${(minor / 100).toFixed(2)} (${minor} minor)`;
+async function sha256(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+}
+function approvalExecution(values: Record<string, unknown>) {
+  const approvalId = Number(values.approval_id);
+  const idempotencyKey = String(values.idempotency_key ?? "").trim();
+  const body = { ...values };
+  delete body.approval_id;
+  return { body, execution: { approvalId, idempotencyKey } };
+}
 
 export default function AftersalesPage() {
-  const qc = useQueryClient();
-  const router = useRouter();
-
-  // ---------- Summary stats ----------
-
-  const { data: summary } = useQuery<Record<string, unknown>>({
-    queryKey: ['aftersales-summary'],
-    queryFn: async () => {
-      const res = await apiClient.get<Record<string, unknown>>('/v1/aftersales/summary');
-      return res.data ?? {};
-    },
-    refetchInterval: 30_000,
+  const facts = useOwnerFactOptions();
+  const [selected, setSelected] = useState<number>();
+  const detail = useQuery({
+    queryKey: ["aftersales-resolution", selected],
+    queryFn: async () =>
+      (await apiClient.get<Detail>(`/v1/aftersales/resolutions/${selected}`))
+        .data!,
+    enabled: !!selected,
   });
-
-  const byStatus = (summary?.by_status as Record<string, number>) || {};
-
-  // Modal action state (approve / reject)
-  const [modalAction, setModalAction] = useState<ModalActionState | null>(null);
-  const [form] = Form.useForm();
-
-  // Direct-action confirm dialog (receive / refund)
-  const [directAction, setDirectAction] = useState<DirectActionState | null>(null);
-
-  // ---------- Shared mutation for all workflow actions ----------
-
-  const actionMutation = useMutation({
-    mutationFn: async ({
-      id,
-      action,
-      values,
-    }: {
-      id: number;
-      action: string;
-      values: Record<string, unknown>;
-    }) => {
-      return apiClient.post(`/v1/aftersales/${id}/${action}`, values);
+  const refresh = () => detail.refetch();
+  const create = useMutation({
+    mutationFn: async (v: Record<string, unknown>) => {
+      const { body, execution } = approvalExecution(v);
+      body.target_id = v.order_id;
+      return (
+        await apiClient.postApproved<Resolution>(
+          "/v1/aftersales/resolutions",
+          body,
+          execution,
+        )
+      ).data!;
+    },
+    onSuccess: (r) => {
+      setSelected(r.id);
+      message.success("售后请求证据已保存，等待 Owner 决定");
+    },
+  });
+  const decide = useMutation({
+    mutationFn: async (v: Record<string, unknown>) => {
+      const { body, execution } = approvalExecution(v);
+      return (
+        await apiClient.postApproved(
+          `/v1/aftersales/resolutions/${selected}/decisions`,
+          body,
+          execution,
+        )
+      ).data;
     },
     onSuccess: () => {
-      message.success('操作成功');
-      setModalAction(null);
-      setDirectAction(null);
-      form.resetFields();
-      qc.invalidateQueries({ queryKey: ['crud', '/aftersales'] });
+      message.success("Owner 决定已保存");
+      refresh();
     },
-    onError: (e: Error) => message.error(`操作失败: ${e.message}`),
   });
-
-  // ---------- Handlers ----------
-
-  const handleAction = useCallback(
-    (record: Record<string, unknown>, config: ActionConfig) => {
-      if (config.modal) {
-        form.resetFields();
-        setModalAction({ record, action: config.key as 'approve' | 'reject' });
-      } else {
-        setDirectAction({
-          record,
-          action: config.key as 'receive' | 'refund',
-          label: config.label,
-        });
-      }
-    },
-    [form],
-  );
-
-  const handleModalOk = async () => {
-    if (!modalAction) return;
-    const values = await form.validateFields();
-    actionMutation.mutate({
-      id: modalAction.record.id as number,
-      action: modalAction.action,
-      values,
-    });
-  };
-
-  const handleConfirmDirect = () => {
-    if (!directAction) return;
-    actionMutation.mutate({
-      id: directAction.record.id as number,
-      action: directAction.action,
-      values: {},
-    });
-  };
-
-  const getModalTitle = () => {
-    if (!modalAction) return '';
-    const id = modalAction.record.id;
-    switch (modalAction.action) {
-      case 'approve':
-        return `审核通过 #${id}`;
-      case 'reject':
-        return `审核拒绝 #${id}`;
-    }
-  };
-
-  // ---------- Render row actions ----------
-
-  const renderRowActions = useCallback(
-    (record: Record<string, unknown>) => {
-      const status = record.status as string;
-      const actions = STATUS_ACTIONS[status] ?? [];
-      if (actions.length === 0) return null;
-
+  const execute = useMutation({
+    mutationFn: async (v: Record<string, unknown>) => {
+      const { body, execution } = approvalExecution(v);
       return (
-        <Space size="small">
-          {actions.map((act) => (
-            <Button
-              key={act.key}
-              size="small"
-              type={act.type ?? 'default'}
-              danger={act.danger}
-              icon={act.icon}
-              onClick={() => handleAction(record, act)}
-            >
-              {act.label}
-            </Button>
-          ))}
-        </Space>
-      );
+        await apiClient.postApproved(
+          `/v1/aftersales/resolutions/${selected}/executions`,
+          body,
+          execution,
+        )
+      ).data;
     },
-    [handleAction],
-  );
-
-  // ---------- Render ----------
-
+    onSuccess: () => {
+      message.success("外部请求提交凭证已登记");
+      refresh();
+    },
+  });
+  const receipt = useMutation({
+    mutationFn: async (v: Record<string, unknown>) => {
+      const raw = String(v.receipt_payload_json);
+      let receipt_payload;
+      try {
+        receipt_payload = JSON.parse(raw);
+      } catch {
+        throw new Error("终态回执必须是有效 JSON");
+      }
+      const canonical = JSON.stringify(receipt_payload);
+      const { body, execution } = approvalExecution(v);
+      return (
+        await apiClient.postApproved(
+          `/v1/aftersales/resolutions/${selected}/receipts`,
+          {
+            ...body,
+            receipt_payload_json: undefined,
+            receipt_payload,
+            receipt_sha256: await sha256(canonical),
+          },
+          execution,
+        )
+      ).data;
+    },
+    onSuccess: () => {
+      message.success("可信终态回执已不可变保存");
+      refresh();
+    },
+  });
+  const c = detail.data?.case;
   return (
-    <>
-      <Card size="small" style={{ margin: '0 0 16px' }}>
-        <Row gutter={24}>
-          <Col span={6}><Statistic title="售后单总数" value={summary?.total as number || 0} /></Col>
-          <Col span={6}><Statistic title="待审核" value={byStatus.pending || 0} valueStyle={{ color: '#faad14' }} /></Col>
-          <Col span={6}><Statistic title="已审核" value={byStatus.approved || 0} valueStyle={{ color: '#1677ff' }} /></Col>
-          <Col span={6}><Statistic title="累计退款" value={summary?.total_refunded as number || 0} prefix="¥" precision={2} valueStyle={{ color: '#cf1322' }} /></Col>
-        </Row>
-      </Card>
-      <CrudListPage
-        resource="/aftersales"
-        title="售后"
-        singular="售后单"
-        searchPlaceholder="搜索订单ID / SKU ID / 原因..."
-        columns={[
-          { title: 'ID', dataIndex: 'id', width: 70, render: (v: unknown, r: Record<string, unknown>) => <a onClick={() => router.push(`/aftersales/${r.id}`)}>{v as number}</a> },
-          { title: '订单ID', dataIndex: 'order_id', width: 100 },
-          { title: 'SKU ID', dataIndex: 'sku_id', width: 90 },
-          { title: '退货数量', dataIndex: 'return_quantity', width: 100 },
-          { title: '原因', dataIndex: 'reason', width: 200 },
-          {
-            title: '退款金额',
-            dataIndex: 'refund_amount',
-            width: 120,
-            render: fmtMoney,
-          },
-          { title: '状态', dataIndex: 'status', width: 110 },
-          {
-            title: '创建时间',
-            dataIndex: 'created_at',
-            width: 160,
-            render: fmtDate,
-          },
-        ]}
-        fields={[
-          { name: 'order_id', label: '订单ID', type: 'number', required: true },
-          { name: 'sku_id', label: 'SKU ID', type: 'number', required: true },
-          { name: 'return_quantity', label: '退货数量', type: 'number', initialValue: 1 },
-          { name: 'reason', label: '原因', type: 'textarea', required: true },
-          { name: 'refund_amount', label: '退款金额', type: 'number' },
-          { name: 'status', label: '状态', initialValue: 'pending' },
-        ]}
-        renderRowActions={renderRowActions}
+    <main className="p-4 md:p-5">
+      <Typography.Title level={1}>Owner 售后处置</Typography.Title>
+      <Alert
+        type="info"
+        showIcon
+        message="权威路径：请求证据 → Owner 决定 → 外部提交凭证 → 可信终态回执"
+        description="退款、退货和争议不会因手工点击直接完成。旧 /aftersales/:id/refund 与 disputes 自动决策入口属于 legacy disabled，不能写入本工作台的权威终态。"
       />
-
-      {/* Approve / Reject modal */}
-      <Modal
-        title={getModalTitle()}
-        open={!!modalAction}
-        onCancel={() => {
-          setModalAction(null);
-          form.resetFields();
-        }}
-        onOk={handleModalOk}
-        confirmLoading={actionMutation.isPending}
-        okText="确认"
-        cancelText="取消"
-        width={500}
-        destroyOnClose
-      >
-        <Form form={form} layout="vertical" preserve={false}>
-          {modalAction?.action === 'approve' && (
-            <>
-              <Form.Item
-                name="inspection_result"
-                label="验货结果"
-                rules={[{ required: true, message: '请输入验货结果' }]}
-              >
-                <Input.TextArea
-                  rows={4}
-                  placeholder="描述退货商品的检查结果..."
-                />
-              </Form.Item>
-              <Form.Item
-                name="refund_amount"
-                label="退款金额"
-                rules={[{ required: true, message: '请输入退款金额' }]}
-              >
-                <InputNumber
-                  style={{ width: '100%' }}
-                  min={0}
-                  precision={2}
-                  prefix="¥"
-                  placeholder="输入退款金额"
-                />
-              </Form.Item>
-            </>
-          )}
-          {modalAction?.action === 'reject' && (
+      <Card className="mt-4" title="创建售后处置案卷">
+        <Alert
+          className="mb-4"
+          type="warning"
+          showIcon
+          message="售后写入需要一次性审批"
+          description="审批必须绑定当前 Owner 和本次订单目标；每一步使用新的已批准审批与幂等键。"
+        />
+        <Form
+          layout="vertical"
+          initialValues={{
+            kind: "refund",
+            currency: "USD",
+            request_source: "buyer_request",
+            observed_at: new Date().toISOString(),
+          }}
+          onFinish={(v) => create.mutate(v)}
+        >
+          <Space wrap align="start">
             <Form.Item
-              name="rejection_reason"
-              label="拒绝原因"
-              rules={[{ required: true, message: '请输入拒绝原因' }]}
+              name="order_id"
+              label="权威订单"
+              rules={[{ required: true }]}
             >
-              <Input.TextArea rows={4} placeholder="描述拒绝的原因..." />
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={facts.isLoading}
+                style={{ width: 320 }}
+                options={(facts.data?.orders ?? []).map((o) => ({
+                  value: o.id,
+                  label: orderLabel(o),
+                }))}
+              />
             </Form.Item>
+            <Form.Item
+              name="platform_account_id"
+              label="平台账户"
+              rules={[{ required: true }]}
+            >
+              <Select
+                style={{ width: 260 }}
+                options={(facts.data?.orders ?? []).map((o) => ({
+                  value: o.account_id,
+                  label: `${o.platform_code} · #${o.account_id}`,
+                }))}
+              />
+            </Form.Item>
+            <Form.Item name="kind" label="处置类型">
+              <Select
+                style={{ width: 140 }}
+                options={[
+                  { value: "refund", label: "退款" },
+                  { value: "return", label: "退货" },
+                  { value: "dispute", label: "争议" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              name="requested_minor"
+              label="申请金额（minor）"
+              rules={[{ required: true }]}
+            >
+              <InputNumber min={1} />
+            </Form.Item>
+            <Form.Item
+              name="currency"
+              label="币种"
+              rules={[{ required: true, len: 3 }]}
+            >
+              <Input maxLength={3} />
+            </Form.Item>
+            <Form.Item name="request_source" label="请求来源">
+              <Select
+                style={{ width: 170 }}
+                options={[
+                  { value: "buyer_request", label: "买家请求" },
+                  { value: "platform_request", label: "平台请求" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              name="approval_id"
+              label="已批准审批 ID"
+              rules={[{ required: true }]}
+            >
+              <OwnerApprovalSelect />
+            </Form.Item>
+          </Space>
+          <Form.Item
+            name="reason"
+            label="请求原因"
+            rules={[{ required: true }]}
+          >
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item
+            name="request_evidence_id"
+            label="外部请求证据 ID"
+            rules={[{ required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="observed_at"
+            label="观察时间（ISO 8601）"
+            rules={[{ required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="idempotency_key"
+            label="幂等键"
+            rules={[{ required: true, min: 8 }]}
+          >
+            <Input />
+          </Form.Item>
+          {create.error && (
+            <Alert
+              className="mb-4"
+              type="error"
+              showIcon
+              message="案卷未创建"
+              description={create.error.message}
+            />
           )}
+          <Button type="primary" htmlType="submit" loading={create.isPending}>
+            保存请求事实
+          </Button>
         </Form>
-      </Modal>
-
-      {/* Direct action confirm dialog (receive / refund) */}
-      <ConfirmDialog
-        open={!!directAction}
-        title={directAction?.label ?? ''}
-        content={`确定要${directAction?.label ?? ''}吗？`}
-        okText="确认"
-        cancelText="取消"
-        confirmLoading={actionMutation.isPending}
-        onOk={handleConfirmDirect}
-        onCancel={() => setDirectAction(null)}
-      />
-    </>
+      </Card>
+      <Card
+        className="mt-4"
+        title="查验处置案卷"
+        extra={
+          <Space>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              style={{ width: 320 }}
+              value={selected}
+              aria-label="选择处置案卷"
+              options={(facts.data?.aftersales_cases ?? []).map((c) => ({
+                value: c.id,
+                label: `${c.kind} · 订单 #${c.order_id} · ${c.status} · #${c.id}`,
+              }))}
+              onChange={setSelected}
+            />
+            <Button disabled={!selected} onClick={refresh}>
+              读取
+            </Button>
+          </Space>
+        }
+      >
+        {detail.error ? (
+          <Alert
+            type="error"
+            showIcon
+            message="无法读取案卷"
+            description={detail.error.message}
+          />
+        ) : c ? (
+          <>
+            <Descriptions
+              bordered
+              size="small"
+              column={{ xs: 1, md: 2 }}
+              items={[
+                { key: "id", label: "案卷 ID", children: c.id },
+                {
+                  key: "order",
+                  label: "订单 / 平台账户",
+                  children: `${c.order_id} / ${c.platform_account_id}`,
+                },
+                {
+                  key: "status",
+                  label: "状态",
+                  children: <Tag>{c.status}</Tag>,
+                },
+                {
+                  key: "amount",
+                  label: "申请金额",
+                  children: cash(c.requested_minor, c.currency),
+                },
+                {
+                  key: "evidence",
+                  label: "请求证据",
+                  children: `${c.request_source} · ${c.request_evidence_id}`,
+                },
+                {
+                  key: "decision",
+                  label: "Owner 决定理由",
+                  children: c.decision_reason || "尚未决定",
+                },
+                {
+                  key: "execution",
+                  label: "外部请求 ID",
+                  children: c.external_request_id || "尚未提交",
+                },
+                {
+                  key: "consequence",
+                  label: "后续账务影响",
+                  children: <Tag>{c.consequence_status}</Tag>,
+                },
+              ]}
+            />
+            <Card size="small" className="mt-4" title="1. Owner 批准或拒绝">
+              <Form layout="inline" onFinish={(v) => decide.mutate(v)}>
+                <Form.Item
+                  name="decision"
+                  label="决定"
+                  rules={[{ required: true }]}
+                >
+                  <Select
+                    style={{ width: 130 }}
+                    options={[
+                      { value: "approved", label: "批准" },
+                      { value: "rejected", label: "拒绝" },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="reason"
+                  label="理由"
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item
+                  name="approval_id"
+                  label="已批准审批 ID"
+                  rules={[{ required: true }]}
+                >
+                  <OwnerApprovalSelect />
+                </Form.Item>
+                <Form.Item
+                  name="idempotency_key"
+                  label="幂等键"
+                  rules={[{ required: true, min: 8 }]}
+                >
+                  <Input />
+                </Form.Item>
+                <Button
+                  htmlType="submit"
+                  type="primary"
+                  disabled={c.status !== "requested"}
+                  loading={decide.isPending}
+                >
+                  保存 Owner 决定
+                </Button>
+              </Form>
+              {decide.error && (
+                <Alert
+                  className="mt-3"
+                  type="error"
+                  showIcon
+                  message="决定未保存"
+                  description={decide.error.message}
+                />
+              )}
+            </Card>
+            <Card size="small" className="mt-4" title="2. 登记外部请求提交">
+              <Form layout="inline" onFinish={(v) => execute.mutate(v)}>
+                <Form.Item
+                  name="external_request_id"
+                  label="平台请求 ID"
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item
+                  name="approval_id"
+                  label="已批准审批 ID"
+                  rules={[{ required: true }]}
+                >
+                  <OwnerApprovalSelect />
+                </Form.Item>
+                <Form.Item
+                  name="idempotency_key"
+                  label="幂等键"
+                  rules={[{ required: true, min: 8 }]}
+                >
+                  <Input />
+                </Form.Item>
+                <Button
+                  htmlType="submit"
+                  type="primary"
+                  disabled={c.status !== "approved"}
+                  loading={execute.isPending}
+                >
+                  登记已提交
+                </Button>
+              </Form>
+              {execute.error && (
+                <Alert
+                  className="mt-3"
+                  type="error"
+                  showIcon
+                  message="提交凭证未登记"
+                  description={execute.error.message}
+                />
+              )}
+            </Card>
+            <Card size="small" className="mt-4" title="3. 登记可信终态回执">
+              <Form
+                layout="vertical"
+                initialValues={{
+                  outcome: "succeeded",
+                  source_type: "platform_receipt",
+                  currency: c.currency,
+                  actual_minor: c.requested_minor,
+                  observed_at: new Date().toISOString(),
+                  receipt_payload_json: "{}",
+                }}
+                onFinish={(v) => receipt.mutate(v)}
+              >
+                <Space wrap align="start">
+                  <Form.Item name="outcome" label="结果">
+                    <Select
+                      style={{ width: 130 }}
+                      options={[
+                        { value: "succeeded", label: "成功" },
+                        { value: "failed", label: "失败" },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item name="source_type" label="可信来源">
+                    <Select
+                      style={{ width: 210 }}
+                      options={[
+                        { value: "platform_receipt", label: "平台回执" },
+                        {
+                          value: "controlled_reconciliation",
+                          label: "受控对账",
+                        },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="evidence_id"
+                    label="证据 ID"
+                    rules={[{ required: true }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="external_receipt_id"
+                    label="外部回执 ID"
+                    rules={[{ required: true }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="actual_minor"
+                    label="实际金额（minor）"
+                    rules={[{ required: true }]}
+                  >
+                    <InputNumber min={0} />
+                  </Form.Item>
+                  <Form.Item
+                    name="currency"
+                    label="币种"
+                    rules={[{ required: true }]}
+                  >
+                    <Input maxLength={3} />
+                  </Form.Item>
+                  <Form.Item
+                    name="approval_id"
+                    label="已批准审批 ID"
+                    rules={[{ required: true }]}
+                  >
+                    <OwnerApprovalSelect />
+                  </Form.Item>
+                </Space>
+                <Form.Item
+                  name="observed_at"
+                  label="观察时间（ISO 8601）"
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item
+                  name="idempotency_key"
+                  label="幂等键"
+                  rules={[{ required: true, min: 8 }]}
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item name="failure_code" label="失败代码（失败时必填）">
+                  <Input />
+                </Form.Item>
+                <Form.Item
+                  name="receipt_payload_json"
+                  label="原始终态回执 JSON（SHA-256 由浏览器按规范 JSON 计算）"
+                  rules={[{ required: true }]}
+                >
+                  <Input.TextArea rows={4} />
+                </Form.Item>
+                <Button
+                  htmlType="submit"
+                  type="primary"
+                  danger
+                  disabled={c.status !== "execution_submitted"}
+                  loading={receipt.isPending}
+                >
+                  保存不可变终态回执
+                </Button>
+              </Form>
+              {receipt.error && (
+                <Alert
+                  className="mt-3"
+                  type="error"
+                  showIcon
+                  message="终态未形成"
+                  description={receipt.error.message}
+                />
+              )}
+            </Card>
+            {detail.data?.receipt && (
+              <Card size="small" className="mt-4" title="不可变终态证据">
+                <Descriptions
+                  bordered
+                  size="small"
+                  column={{ xs: 1, md: 2 }}
+                  items={[
+                    {
+                      key: "outcome",
+                      label: "终态",
+                      children: <Tag>{detail.data.receipt.outcome}</Tag>,
+                    },
+                    {
+                      key: "amount",
+                      label: "实际金额",
+                      children: cash(
+                        detail.data.receipt.actual_minor,
+                        detail.data.receipt.currency,
+                      ),
+                    },
+                    {
+                      key: "source",
+                      label: "可信来源",
+                      children: detail.data.receipt.source_type,
+                    },
+                    {
+                      key: "evidence",
+                      label: "证据 / 外部回执",
+                      children: `${detail.data.receipt.evidence_id} / ${detail.data.receipt.external_receipt_id}`,
+                    },
+                    {
+                      key: "observed",
+                      label: "观察时间",
+                      children: detail.data.receipt.observed_at,
+                    },
+                    {
+                      key: "hash",
+                      label: "Payload SHA-256",
+                      children: (
+                        <Typography.Text copyable>
+                          {detail.data.receipt.receipt_sha256}
+                        </Typography.Text>
+                      ),
+                    },
+                  ]}
+                />
+              </Card>
+            )}
+          </>
+        ) : (
+          <Alert
+            type="warning"
+            showIcon
+            message="尚未选择处置案卷"
+            description="创建新案卷或输入已知案卷 ID；旧售后记录不会自动升级为权威处置事实。"
+          />
+        )}
+      </Card>
+    </main>
   );
 }

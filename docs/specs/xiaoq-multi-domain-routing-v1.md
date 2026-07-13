@@ -1,9 +1,11 @@
 # 小Q多领域消息与能力路由规范 v1
 
-> 状态：`planned`（设计稿，不代表代码已实现）
+> 状态：`superseded`（已被 [小Q Agent Runtime Architecture v1](../architecture/XIAOQ_AGENT_RUNTIME_V1.md) 取代，不得作为新实现依据）
 > 日期：2026-07-12
 > 范围：只读能力从 `demand_case` 扩展到 `experiment`、`sourcing1688`、`order` 等领域
 > 约束：保持现有 `/api/v1/xiao-q/messages` 客户端兼容；不绕过 Owner 隔离、RBAC、审批、审计和领域状态机
+
+> 取代原因：本文要求代码预先选择完整能力集合、模型只解释结果，因此仍是确定性工作流。新架构保留其 Target、Owner隔离和事实追踪规则，但改为服务端先过滤安全能力、模型在过滤集合中选择能力并根据真实结果继续循环。
 
 ## 1. 结论
 

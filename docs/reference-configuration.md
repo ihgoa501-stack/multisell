@@ -54,13 +54,6 @@ llm:
   provider: openai       # openai | anthropic | stub
   api_key: ""            # 通过 LLM_API_KEY 环境变量设置
 
-prism:
-  base_url: ""           # Prism 图片服务地址，如 http://prism:8080
-  api_key: ""
-  timeout: 30            # HTTP 超时秒数
-  enabled: false         # 是否启用 Prism
-  strict: true           # true=Prism 异常时阻塞发布；false=原图继续发布
-
 log:
   level: debug
   format: console        # console | json
@@ -98,11 +91,6 @@ schemadrift:
 | `LLM_API_KEY` | `llm.api_key` | string | LLM 提供商 API Key |
 | `LLM_PROVIDER` | `llm.provider` | string | `openai` / `anthropic` / `stub` |
 | `LLM_DAILY_BUDGET_USD` | `llm.daily_budget_usd` | float | 每日 LLM 预算上限（USD） |
-| `PRISM_BASE_URL` | `prism.base_url` | string | Prism 服务地址 |
-| `PRISM_API_KEY` | `prism.api_key` | string | Prism API Key |
-| `PRISM_ENABLED` | `prism.enabled` | bool | 启用 Prism |
-| `PRISM_STRICT` | `prism.strict` | bool | Prism 异常时是否阻塞 |
-| `PRISM_TIMEOUT` | `prism.timeout` | int | Prism HTTP 超时(秒) |
 | `LOG_LEVEL` | `log.level` | string | `debug` / `info` / `warn` / `error` |
 | `LOG_FORMAT` | `log.format` | string | `console` / `json` |
 

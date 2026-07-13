@@ -484,6 +484,57 @@ function extractSpecVariantsFromDOM(): SpecVariant[] {
     });
   }
 
+  // Current 1688 detail pages may expose complete SKU rows only as visible
+  // text (for example: "100 建议身高85-95CM ¥11.9 库存6469件").
+  // Read the deepest matching row so parent containers cannot duplicate it.
+  if (variants.length === 0) {
+    const rowPattern = /[¥￥]\s*\d+(?:\.\d+)?[\s\S]{0,80}(?:库存|可售|库存量)\s*[\d,]+/;
+    const rows = Array.from(document.querySelectorAll("body *"))
+      .filter(isTrustedPageNode)
+      .filter((node) => {
+        const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+        if (!text || text.length > 300 || !rowPattern.test(text)) return false;
+        return !Array.from(node.children).some((child) => rowPattern.test((child.textContent || "").replace(/\s+/g, " ").trim()));
+      });
+
+    let selectedSpec = "";
+    const selectedControls = Array.from(document.querySelectorAll(
+      "[aria-pressed='true'], [aria-selected='true'], [data-selected='true'], [class*='selected'], [class*='active']",
+    )).filter(isTrustedPageNode);
+    for (const control of selectedControls) {
+      const value = (control.textContent || "").replace(/\s+/g, " ").trim();
+      if (!value || value.length > 120 || /^[+\-0]$/.test(value)) continue;
+      let container: Element | null = control.parentElement;
+      for (let depth = 0; container && depth < 5; depth += 1, container = container.parentElement) {
+        const groupText = (container.textContent || "").replace(/\s+/g, " ").trim();
+        if (/^(颜色|款式|规格)[：:]?/.test(groupText) && groupText.length <= 600) {
+          selectedSpec = value;
+          break;
+        }
+      }
+      if (selectedSpec) break;
+    }
+
+    const hasUnboundColorDimension = !selectedSpec && Array.from(document.querySelectorAll("h1, h2, h3, h4, dt, label, span, div"))
+      .filter(isTrustedPageNode)
+      .some((node) => /^颜色[：:]?$/.test((node.textContent || "").replace(/\s+/g, " ").trim()));
+    if (!hasUnboundColorDimension) {
+      for (const row of rows) {
+        const text = (row.textContent || "").replace(/\s+/g, " ").trim();
+        const priceMatch = text.match(/[¥￥]\s*(\d+(?:\.\d+)?)/);
+        const stockMatch = text.match(/(?:库存|可售|库存量)\s*([\d,]+)/);
+        if (!priceMatch || priceMatch.index === undefined || !stockMatch) continue;
+        const rowSpec = text.slice(0, priceMatch.index).trim().replace(/[：:]$/, "");
+        const price = Number.parseFloat(priceMatch[1]);
+        const stock = Number.parseInt(stockMatch[1].replace(/,/g, ""), 10);
+        const spec = [selectedSpec, rowSpec].filter(Boolean).join(" / ");
+        if (spec && Number.isFinite(price) && Number.isFinite(stock) && !variants.some((variant) => variant.spec === spec)) {
+          variants.push({ spec, price, stock });
+        }
+      }
+    }
+  }
+
   // Modern 1688 detail pages render each specification dimension as a group
   // of buttons/divs rather than data-sku rows. Preserve the visible Cartesian
   // combinations instead of incorrectly reporting SKU=0.
@@ -861,6 +912,17 @@ function detectPageBlock(): PageBlockReason | null {
 
   const bodyText = (document.body?.innerText || document.body?.textContent || "").replace(/\s+/g, " ");
   const has = (selector: string): boolean => Boolean(document.querySelector(selector));
+  const hasVisible = (selector: string): boolean => Array.from(document.querySelectorAll(selector)).some((node) => {
+    if (node.closest("[hidden], [aria-hidden='true']")) return false;
+    for (let current: Element | null = node; current; current = current.parentElement) {
+      const style = current.getAttribute("style") || "";
+      if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style)) return false;
+    }
+    const checkVisibility = (node as HTMLElement & { checkVisibility?: (options?: object) => boolean }).checkVisibility;
+    return typeof checkVisibility === "function"
+      ? checkVisibility.call(node, { checkOpacity: true, checkVisibilityCSS: true })
+      : true;
+  });
 
   const riskSelector = has(
     "iframe[src*='captcha' i], iframe[src*='verify' i], [class*='captcha' i], [id*='captcha' i], " +
@@ -874,10 +936,11 @@ function detectPageBlock(): PageBlockReason | null {
     };
   }
 
-  const loginSelector = has(
+  const loginSelector = hasVisible(
     "iframe[src*='login' i], [data-page-state='login'], .login-dialog, .login-modal, [class*='login-mask' i]",
   );
-  if (loginSelector || /请先登录(?:1688)?|登录后查看|登录后可见|账号登录后/.test(bodyText)) {
+  const hasReadableProductContent = Boolean(extractTitleFromDOM()) && /[¥￥]\s*\d/.test(bodyText) && /规格|颜色|尺码|身高/.test(bodyText);
+  if (loginSelector || (!hasReadableProductContent && /请先登录(?:1688)?|登录后查看|登录后可见|账号登录后/.test(bodyText))) {
     return {
       code: "LOGIN_REQUIRED",
       happened: "当前1688页面要求登录，商品关键内容还不能读取。",

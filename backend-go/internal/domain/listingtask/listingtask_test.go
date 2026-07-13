@@ -1,7 +1,6 @@
 package listingtask
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -10,26 +9,18 @@ import (
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/dbtest"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
+	"github.com/lingmirror/backend-go/internal/domain/operationlog"
 	"github.com/lingmirror/backend-go/internal/domain/platform"
-	"github.com/lingmirror/backend-go/internal/domain/sku"
-	"github.com/lingmirror/backend-go/internal/prismadapter"
 )
 
 var errPublishHookFailed = errors.New("publish hook failed")
-
-type countingPrism struct{ calls int }
-
-func (p *countingPrism) Generate(context.Context, *prismadapter.GenerateRequest) (*prismadapter.GenerateResponse, error) {
-	p.calls++
-	return &prismadapter.GenerateResponse{}, nil
-}
 
 func int64Ptr(v int64) *int64 { return &v }
 
 func TestService_Task_CreateAndGetByID(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, err := svc.Create(&CreateTaskInput{
 		ProductID:          1,
@@ -66,7 +57,7 @@ func TestService_Task_CreateAndGetByID(t *testing.T) {
 func TestService_Task_Update(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10})
 	updated, err := svc.Update(task.ID, &UpdateTaskInput{
@@ -81,10 +72,46 @@ func TestService_Task_Update(t *testing.T) {
 	}
 }
 
+func TestService_ApplyOwnerApprovalCommitsStateAndAuditTogether(t *testing.T) {
+	db := dbtest.NewDB(t, &ListingTask{}, &operationlog.OperationLog{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, operationlog.NewService(db, dbtest.NewLogger(t)), nil)
+	task, err := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "pending_approval"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.ApplyOwnerApproval(task.ID, 91, "owner:7"); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := svc.GetByID(task.ID)
+	if err != nil || got.Status != "approved" || got.ApprovalID == nil || *got.ApprovalID != 91 {
+		t.Fatalf("approved task=%+v err=%v", got, err)
+	}
+	var count int64
+	if err = db.Model(&operationlog.OperationLog{}).Where("action=? AND entity_id=? AND result=?", "listing_task.approval_approved", task.ID, "approved").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("durable approval audit count=%d err=%v", count, err)
+	}
+}
+
+func TestService_ApplyOwnerApprovalRollsBackWithoutAuditStore(t *testing.T) {
+	db := dbtest.NewDB(t, &ListingTask{})
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
+	task, err := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "pending_approval"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.ApplyOwnerApproval(task.ID, 91, "owner:7"); err == nil {
+		t.Fatal("approval transition must fail when its audit cannot be stored")
+	}
+	got, _, err := svc.GetByID(task.ID)
+	if err != nil || got.Status != "pending_approval" {
+		t.Fatalf("state changed without audit: task=%+v err=%v", got, err)
+	}
+}
+
 func TestService_Task_List(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "blocked"})
 	svc.Create(&CreateTaskInput{ProductID: 2, PlatformID: 10, Status: "ready"})
@@ -113,7 +140,7 @@ func TestService_Task_List(t *testing.T) {
 func TestService_Task_Delete(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10})
 	if err := svc.Delete(task.ID); err != nil {
@@ -130,7 +157,7 @@ func TestService_Task_Execute(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	// Create task in blocked state
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "blocked"})
@@ -170,7 +197,7 @@ func TestService_Task_Execute(t *testing.T) {
 func TestService_Task_Execute_BlockedCannotExecute(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "blocked"})
 	_, err := svc.ExecuteTask(task.ID, "tester")
@@ -183,7 +210,7 @@ func TestService_Task_Execute_BlockedCannotExecute(t *testing.T) {
 func TestService_Task_Execute_PendingApprovalCannotExecute(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "pending_approval"})
 	_, err := svc.ExecuteTask(task.ID, "tester")
@@ -196,7 +223,7 @@ func TestService_Task_Execute_PendingApprovalCannotExecute(t *testing.T) {
 func TestService_Task_Execute_NoApprovalID(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "approved"})
 	_, err := svc.ExecuteTask(task.ID, "tester")
@@ -210,7 +237,7 @@ func TestService_Task_Execute_ApprovalNotApproved(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "approved"})
 
@@ -241,7 +268,7 @@ func TestService_Task_Execute_ApprovalNotApproved(t *testing.T) {
 func TestService_Task_Execute_ApprovalSvcNotInjected(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{
 		ProductID:  1,
@@ -259,7 +286,7 @@ func TestService_Task_Execute_ApprovalSvcNotInjected(t *testing.T) {
 func TestService_Task_Execute_AlreadyCompleted(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "completed"})
 	result, err := svc.ExecuteTask(task.ID, "tester")
@@ -275,7 +302,7 @@ func TestService_Task_Execute_AlreadyCompleted(t *testing.T) {
 func TestService_Task_Execute_AlreadyExecuting(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "executing"})
 	_, err := svc.ExecuteTask(task.ID, "tester")
@@ -288,7 +315,7 @@ func TestService_Task_Execute_AlreadyExecuting(t *testing.T) {
 func TestService_Task_RetryFailed(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "failed"})
 	errMsg := "timeout"
@@ -348,7 +375,7 @@ func TestService_StateMachine(t *testing.T) {
 func TestService_Task_Execute_FailedCannotExecute(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "failed"})
 	_, err := svc.ExecuteTask(task.ID, "tester")
@@ -361,7 +388,7 @@ func TestService_Task_Execute_FailedCannotExecute(t *testing.T) {
 func TestService_Task_Execute_RejectedCannotExecute(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "rejected"})
 	_, err := svc.ExecuteTask(task.ID, "tester")
@@ -374,7 +401,7 @@ func TestService_Task_Execute_RejectedCannotExecute(t *testing.T) {
 func TestService_ApprovalID_IsStored(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	apprID := int64Ptr(999)
 	task, _ := svc.Create(&CreateTaskInput{
@@ -403,7 +430,7 @@ func TestService_Task_Execute_ApprovalWrongEntityType(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "approved"})
 
@@ -434,7 +461,7 @@ func TestService_Task_Execute_ApprovalWrongEntityID(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10, Status: "approved"})
 
@@ -465,7 +492,7 @@ func TestService_Task_Execute_ApprovalWrongEntityID(t *testing.T) {
 func TestService_Item_CreateGetUpdateDelete(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10})
 
@@ -513,7 +540,7 @@ func TestService_Item_CreateGetUpdateDelete(t *testing.T) {
 func TestService_Item_ListItems(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{ProductID: 1, PlatformID: 10})
 	svc.CreateItem(&CreateTaskItemInput{TaskID: task.ID, ProductID: 1, PlatformID: 10})
@@ -533,7 +560,7 @@ func TestService_Item_ListItems(t *testing.T) {
 func TestService_ExecuteTaskBlocksWithoutApproval(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "blocked", CreatedBy: "A8"}
 	if err := db.Create(&task).Error; err != nil {
@@ -553,7 +580,7 @@ func TestService_ExecuteTaskAllowsApprovedBlockedTask(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "approved", CreatedBy: "A8"}
 	if err := db.Create(&task).Error; err != nil {
@@ -592,7 +619,7 @@ func TestService_ExecuteTask_PublishHookNil(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	task := ListingTask{ProductID: 10, PlatformID: 1, Status: "approved", CreatedBy: "tester"}
 	if err := db.Create(&task).Error; err != nil {
@@ -629,7 +656,7 @@ func TestService_ExecuteTask_MockDoesNotCallPublishHook(t *testing.T) {
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
 	var hookCalled bool
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 	svc.publishHook = func(taskID int64, mode ExecutionMode) error {
 		hookCalled = true
 		return nil
@@ -669,7 +696,7 @@ func TestService_ExecuteTask_MockIgnoresLegacyPublishHook(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 	svc.publishHook = func(taskID int64, mode ExecutionMode) error {
 		return errPublishHookFailed
 	}
@@ -723,7 +750,7 @@ func TestService_CreateFromSuggestion(t *testing.T) {
 	db.Exec("INSERT INTO candidate_product (id, title, purchase_price, target_sale_price, target_platform_id, destination_country) VALUES (1, 'Test Product', 10.0, 25.0, 1, 'US')")
 
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	task, err := svc.CreateFromSuggestion(1, "owner")
 	if err != nil {
@@ -760,7 +787,7 @@ func TestService_CreateFromSuggestion_NotFound(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	// Create table but insert no rows.
 	db.Exec("CREATE TABLE candidate_product (id INTEGER PRIMARY KEY, title TEXT, purchase_price REAL, target_sale_price REAL, target_platform_id INTEGER, destination_country TEXT)")
@@ -778,7 +805,7 @@ func TestService_CreateFromSuggestion_NoApprovalService(t *testing.T) {
 	db.Exec("CREATE TABLE candidate_product (id INTEGER PRIMARY KEY, title TEXT)")
 	db.Exec("INSERT INTO candidate_product (id, title) VALUES (1, 'Test')")
 
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	_, err := svc.CreateFromSuggestion(1, "owner")
 	if err == nil {
@@ -791,7 +818,7 @@ func TestService_CreateFromSuggestion_NoApprovalService(t *testing.T) {
 func TestService_ReviewTask_Published(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &platform.Platform{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	// Create platform record
 	db.Create(&platform.Platform{ID: 1, Name: "Ozon", Code: "ozon"})
@@ -840,7 +867,7 @@ func TestService_ReviewTask_Published(t *testing.T) {
 func TestService_ReviewTask_Failed(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{
 		ProductID:          10,
@@ -876,7 +903,7 @@ func TestService_ReviewTask_Failed(t *testing.T) {
 func TestService_ReviewTask_NotFound(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	_, err := svc.ReviewTask(99999)
 	if err == nil {
@@ -887,7 +914,7 @@ func TestService_ReviewTask_NotFound(t *testing.T) {
 func TestService_ReviewTask_WithActualProfit(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{})
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, nil, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), nil, nil, nil)
 
 	task, _ := svc.Create(&CreateTaskInput{
 		ProductID:          100,
@@ -931,7 +958,7 @@ func TestService_ExecuteTask_DryRunFromDecisionSnapshot(t *testing.T) {
 	t.Parallel()
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 
 	// Create a listing task with DecisionSnapshot containing mode=dry_run.
 	ds := json.RawMessage(`{"mode":"dry_run","completeness_score":90}`)
@@ -997,7 +1024,7 @@ func TestService_ExecuteTask_DefaultModeIsMock(t *testing.T) {
 	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
 	var publishCalled bool
-	svc := NewService(db, dbtest.NewLogger(t), nil, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 	svc.publishHook = func(taskID int64, mode ExecutionMode) error {
 		publishCalled = true
 		return nil
@@ -1040,19 +1067,14 @@ func TestService_ExecuteTask_DefaultModeIsMock(t *testing.T) {
 	}
 }
 
-func TestService_ExecuteTask_ProductionRequiresImageReleaseBeforePrismOrPublish(t *testing.T) {
-	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{}, &sku.Product{})
+func TestService_ExecuteTask_ProductionRequiresImageReleaseBeforePublish(t *testing.T) {
+	db := dbtest.NewDB(t, &ListingTask{}, &ListingTaskItem{}, &approval.ApprovalRequest{})
 	apprSvc := approval.NewService(db, dbtest.NewLogger(t), nil)
-	prism := &countingPrism{}
 	publishCalls := 0
-	svc := NewService(db, dbtest.NewLogger(t), prism, false, apprSvc, nil, nil)
+	svc := NewService(db, dbtest.NewLogger(t), apprSvc, nil, nil)
 	svc.publishHook = func(int64, ExecutionMode) error { publishCalls++; return nil }
 
-	product := sku.Product{Name: "unsafe legacy image", MainImage: "https://attacker.invalid/arbitrary.png"}
-	if err := db.Create(&product).Error; err != nil {
-		t.Fatal(err)
-	}
-	task := ListingTask{ProductID: product.ID, PlatformID: 1, Status: "approved", ExecutionMode: ExecutionModeProduction}
+	task := ListingTask{ProductID: 1, PlatformID: 1, Status: "approved", ExecutionMode: ExecutionModeProduction}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -1068,8 +1090,8 @@ func TestService_ExecuteTask_ProductionRequiresImageReleaseBeforePrismOrPublish(
 	if !errors.Is(err, ErrImageReleaseAttestationRequired) {
 		t.Fatalf("error = %v", err)
 	}
-	if prism.calls != 0 || publishCalls != 0 {
-		t.Fatalf("legacy external calls: prism=%d publish=%d", prism.calls, publishCalls)
+	if publishCalls != 0 {
+		t.Fatalf("publish calls = %d", publishCalls)
 	}
 	var unchanged ListingTask
 	if err := db.First(&unchanged, task.ID).Error; err != nil || unchanged.Status != "approved" {

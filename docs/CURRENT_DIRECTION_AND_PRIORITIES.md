@@ -1,14 +1,17 @@
 # LingMirror Current Direction and Priorities
 
-> Updated: 2026-07-12
+> Updated: 2026-07-13
 > Status: current execution guidance
-> Authority: [ADR-001：完整 Owner 自用跨境电商平台](decisions/ADR-001-owner-complete-commerce-platform.md)
+> Destination authority: [ADR-001：完整 Owner 自用跨境电商平台](decisions/ADR-001-owner-complete-commerce-platform.md)
+> Operating authority: [ADR-002：实践—认识项目运行方法](decisions/ADR-002-practice-cognition-operating-method.md)
 
 ## Current Direction
 
 凌镜唯一开发路径是建设 **只供 Owner 本人使用的完整 AI 跨境电商经营平台**。它完整支持市场研究、商品机会、货源与商品、渠道准备、订单与库存、履约与售后、结算与利润、现金和下一次经营行动。
 
 完整平台是目的地，按可独立验收的完整纵向单元推进。纵向单元是建设顺序，不是产品范围上限；不再以“小工具已经足够”为理由主动缩小平台，也不以“完整平台”为理由加入外部 SaaS、多租户、更多 Agent 或其他无关功能。
+
+项目按两类循环推进：系统建设、测试、部署和恢复形成工程认识；相关纵向流程达到安全可运行门槛后进行受控真实经营，外部结果形成经营认识，再进入下一次经营与建设。工程完成不能替代真实经营，真实结果也不能替代安全、恢复和审计。执行顺序见 [真实可运行系统完善计划](plan/REAL_OPERATION_READINESS_PLAN.md)。
 
 ## Platform Model
 
@@ -45,9 +48,9 @@
 
 当前只设置一个 P0：
 
-> 依据 ADR-001 形成完整平台目标领域架构与现有能力迁移图，将现有模块裁决为复用、改造、迁移、冻结或删除，并据此选择第一条完整纵向交付流程。
+> 执行 [真实可运行系统完善计划](plan/REAL_OPERATION_READINESS_PLAN.md)，从 P0-1“固定真实可运行基线”开始，按最早未通过门槛持续推进，直到完整 Owner 经营路径能够在正式受控环境运行、恢复、对账并进入下一次行动。
 
-这是一次性设计门，不是新的长期审计项目。交付必须直接产生可实施的领域边界、依赖顺序、第一纵向单元规格和验收路径；完成后进入建设。
+这不是长期重复审计。基线清单完成后必须直接进入最早的真实运行阻塞；不得同时扩张相邻功能，也不得用mock绕过外部条件。
 
 ## Completeness Standard
 
@@ -86,6 +89,7 @@
 - `actual`：仓库已有大量经营领域模块、前端页面、平台连接器和平台内核代码。
 - `actual`：现有 `experiment` 模型不构成经营反馈闭环，纠偏继续有效。
 - `policy`：完整 Owner 自用跨境电商平台现为唯一开发路径。
-- `planned`：符合 ADR-001 的目标领域架构、迁移图和第一完整纵向单元尚待形成。
-- `unknown`：现有全部代码中哪些能直接复用、哪些必须迁移或删除；不能依据模块数量推断完整度。
+- `policy`：ADR-002 已将系统建设认识与真实经营认识分开，并确定逐门槛推进的运行方法。
+- `planned`：真实可运行完善计划的 P0-1 基线清单和其后外部运行门槛尚待逐项完成。
+- `unknown`：每个现有入口在正式环境和真实外部平台中能否直接复用；不能依据模块数量推断完整度。
 - `unknown`：真实市场、平台权限、成交、最终利润和现金回收状态，必须由外部事实验证。

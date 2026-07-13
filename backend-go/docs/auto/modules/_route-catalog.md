@@ -1,76 +1,81 @@
 # Route Catalog (auto-generated)
 
-> Total modules: 65 | Total routes: 589
+> Total modules: 70 | Total routes: 751
 
 ## Overview
 
 | Module | Routes | Permission | Package |
 |--------|--------|------------|--------|
+| [`sourcing1688`](sourcing1688.md) | 79 | `—` | `domain/sourcing1688/` |
 | [`shipping`](shipping.md) | 39 | `shipping.read` | `domain/shipping/` |
+| [`productimage`](productimage.md) | 37 | `—` | `domain/productimage/` |
 | [`producthub`](producthub.md) | 30 | `product.read` | `domain/producthub/` |
+| [`aftersales`](aftersales.md) | 22 | `—` | `domain/aftersales/` |
+| [`finance`](finance.md) | 22 | `finance.read` | `domain/finance/` |
 | [`price`](price.md) | 20 | `finance.read` | `domain/price/` |
+| [`integrations`](integrations.md) | 20 | `—` | `domain/integrations/` |
 | [`workflow`](workflow.md) | 19 | `—` | `domain/workflow/` |
 | [`sku`](sku.md) | 18 | `product.read` | `domain/sku/` |
-| [`integrations`](integrations.md) | 18 | `—` | `domain/integrations/` |
-| [`finance`](finance.md) | 18 | `finance.read` | `domain/finance/` |
-| [`aftersales`](aftersales.md) | 17 | `—` | `domain/aftersales/` |
-| [`inventory`](inventory.md) | 17 | `inventory.read` | `domain/inventory/` |
 | [`listingtask`](listingtask.md) | 17 | `listing.read` | `domain/listingtask/` |
+| [`demandcase`](demandcase.md) | 17 | `—` | `domain/demandcase/` |
 | [`support`](support.md) | 17 | `—` | `domain/support/` |
-| [`listing`](listing.md) | 16 | `listing.read` | `domain/listing/` |
+| [`inventory`](inventory.md) | 17 | `inventory.read` | `domain/inventory/` |
 | [`imagegen`](imagegen.md) | 16 | `—` | `domain/imagegen/` |
 | [`supplier`](supplier.md) | 16 | `—` | `domain/supplier/` |
+| [`listing`](listing.md) | 16 | `listing.read` | `domain/listing/` |
+| [`purchase`](purchase.md) | 16 | `—` | `domain/purchase/` |
 | [`candidate`](candidate.md) | 14 | `—` | `domain/candidate/` |
 | [`allocation`](allocation.md) | 13 | `—` | `domain/allocation/` |
-| [`settlement`](settlement.md) | 11 | `settlement.read` | `domain/settlement/` |
+| [`supplychain`](supplychain.md) | 13 | `—` | `domain/supplychain/` |
+| [`settlement`](settlement.md) | 13 | `settlement.read` | `domain/settlement/` |
 | [`notification`](notification.md) | 11 | `—` | `domain/notification/` |
-| [`supplychain`](supplychain.md) | 11 | `—` | `domain/supplychain/` |
 | [`exceptions`](exceptions.md) | 10 | `—` | `domain/exceptions/` |
 | [`platform`](platform.md) | 10 | `—` | `domain/platform/` |
-| [`demandcase`](demandcase.md) | 9 | `—` | `domain/demandcase/` |
 | [`experiment`](experiment.md) | 9 | `—` | `domain/experiment/` |
-| [`orderimport`](orderimport.md) | 8 | `order.read` | `domain/orderimport/` |
-| [`competitor`](competitor.md) | 8 | `—` | `domain/competitor/` |
-| [`sourcing1688`](sourcing1688.md) | 8 | `—` | `domain/sourcing1688/` |
-| [`purchase`](purchase.md) | 8 | `—` | `domain/purchase/` |
 | [`decision`](decision.md) | 8 | `—` | `domain/decision/` |
-| [`trustscore`](trustscore.md) | 7 | `—` | `domain/trustscore/` |
+| [`competitor`](competitor.md) | 8 | `—` | `domain/competitor/` |
+| [`orderimport`](orderimport.md) | 8 | `order.read` | `domain/orderimport/` |
+| [`xiaoq`](xiaoq.md) | 8 | `—` | `domain/xiaoq/` |
 | [`importbatch`](importbatch.md) | 7 | `—` | `domain/importbatch/` |
-| [`agentrule`](agentrule.md) | 7 | `—` | `domain/agentrule/` |
 | [`report`](report.md) | 7 | `report.read` | `domain/report/` |
-| [`actionpolicy`](actionpolicy.md) | 7 | `—` | `domain/actionpolicy/` |
-| [`owner`](owner.md) | 7 | `—` | `domain/owner/` |
 | [`order`](order.md) | 7 | `order.read` | `domain/order/` |
+| [`actionpolicy`](actionpolicy.md) | 7 | `—` | `domain/actionpolicy/` |
 | [`consolidation`](consolidation.md) | 7 | `—` | `domain/consolidation/` |
+| [`trustscore`](trustscore.md) | 7 | `—` | `domain/trustscore/` |
+| [`agentrule`](agentrule.md) | 7 | `—` | `domain/agentrule/` |
+| [`owner`](owner.md) | 7 | `—` | `domain/owner/` |
 | [`dashboard`](dashboard.md) | 6 | `—` | `domain/dashboard/` |
-| [`platformfee`](platformfee.md) | 6 | `—` | `domain/platformfee/` |
-| [`category`](category.md) | 6 | `—` | `domain/category/` |
+| [`profit`](profit.md) | 6 | `—` | `domain/profit/` |
+| [`businessfeedback`](businessfeedback.md) | 6 | `—` | `domain/businessfeedback/` |
+| [`businessdecision`](businessdecision.md) | 6 | `—` | `domain/businessdecision/` |
 | [`tariff`](tariff.md) | 6 | `—` | `domain/tariff/` |
-| [`approval`](approval.md) | 6 | `—` | `domain/approval/` |
 | [`personalrule`](personalrule.md) | 6 | `—` | `domain/personalrule/` |
-| [`entropy`](entropy.md) | 5 | `—` | `domain/entropy/` |
-| [`orchestration`](orchestration.md) | 5 | `—` | `domain/orchestration/` |
-| [`compliance`](compliance.md) | 5 | `—` | `domain/compliance/` |
-| [`productanalysis`](productanalysis.md) | 5 | `—` | `domain/productanalysis/` |
-| [`brand`](brand.md) | 5 | `—` | `domain/brand/` |
-| [`metabolism`](metabolism.md) | 5 | `—` | `domain/metabolism/` |
+| [`category`](category.md) | 6 | `—` | `domain/category/` |
+| [`platformfee`](platformfee.md) | 6 | `—` | `domain/platformfee/` |
+| [`approval`](approval.md) | 6 | `—` | `domain/approval/` |
 | [`sourcing`](sourcing.md) | 5 | `—` | `domain/sourcing/` |
 | [`exchangerate`](exchangerate.md) | 5 | `—` | `domain/exchangerate/` |
 | [`agentlearning`](agentlearning.md) | 5 | `—` | `domain/agentlearning/` |
+| [`orchestration`](orchestration.md) | 5 | `—` | `domain/orchestration/` |
+| [`entropy`](entropy.md) | 5 | `—` | `domain/entropy/` |
+| [`brand`](brand.md) | 5 | `—` | `domain/brand/` |
+| [`compliance`](compliance.md) | 5 | `—` | `domain/compliance/` |
+| [`metabolism`](metabolism.md) | 5 | `—` | `domain/metabolism/` |
 | [`mock`](mock.md) | 4 | `—` | `domain/mock/` |
+| [`productanalysis`](productanalysis.md) | 4 | `—` | `domain/productanalysis/` |
 | [`evolution`](evolution.md) | 4 | `—` | `domain/evolution/` |
 | [`loop`](loop.md) | 3 | `—` | `domain/loop/` |
-| [`sentiment`](sentiment.md) | 3 | `—` | `domain/sentiment/` |
-| [`profit`](profit.md) | 3 | `—` | `domain/profit/` |
 | [`operationlog`](operationlog.md) | 3 | `—` | `domain/operationlog/` |
+| [`sentiment`](sentiment.md) | 3 | `—` | `domain/sentiment/` |
 | [`landedcost`](landedcost.md) | 3 | `—` | `domain/landedcost/` |
 | [`completeness`](completeness.md) | 3 | `—` | `domain/completeness/` |
-| [`settings`](settings.md) | 2 | `—` | `domain/settings/` |
-| [`search`](search.md) | 2 | `—` | `domain/search/` |
 | [`reliability`](reliability.md) | 2 | `—` | `domain/reliability/` |
 | [`content`](content.md) | 2 | `—` | `domain/content/` |
-| [`logistics`](logistics.md) | 1 | `—` | `domain/logistics/` |
+| [`settings`](settings.md) | 2 | `—` | `domain/settings/` |
+| [`search`](search.md) | 2 | `—` | `domain/search/` |
 | [`cost`](cost.md) | 1 | `—` | `domain/cost/` |
+| [`logistics`](logistics.md) | 1 | `—` | `domain/logistics/` |
+| [`platformtruth`](platformtruth.md) | 1 | `—` | `domain/platformtruth/` |
 
 ## actionpolicy
 
@@ -108,6 +113,11 @@
 | `POST` | `/api/v1/aftersales/disputes/:id/auto-decide` | `h.AutoDecideDispute` |
 | `POST` | `/api/v1/aftersales/disputes/:id/evaluate` | `h.EvaluateDispute` |
 | `PUT` | `/api/v1/aftersales/disputes/:id/status` | `h.UpdateDisputeStatus` |
+| `POST` | `/api/v1/aftersales/resolutions` | `h.CreateResolution` |
+| `GET` | `/api/v1/aftersales/resolutions/:id` | `h.GetResolution` |
+| `POST` | `/api/v1/aftersales/resolutions/:id/decisions` | `h.DecideResolution` |
+| `POST` | `/api/v1/aftersales/resolutions/:id/executions` | `h.SubmitResolution` |
+| `POST` | `/api/v1/aftersales/resolutions/:id/receipts` | `h.RecordResolutionReceipt` |
 | `GET` | `/api/v1/aftersales/summary` | `h.Summary` |
 
 ## agentlearning
@@ -180,6 +190,32 @@
 | `DELETE` | `/api/v1/brands/:id` | `h.Delete` |
 | `GET` | `/api/v1/brands/:id` | `h.Get` |
 | `PUT` | `/api/v1/brands/:id` | `h.Update` |
+
+## businessdecision
+
+**Prefix:** `/api/v1`
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `GET` | `/api/v1/business-decisions` | `h.List` |
+| `POST` | `/api/v1/business-decisions` | `h.Create` |
+| `GET` | `/api/v1/business-decisions/:id` | `h.Get` |
+| `POST` | `/api/v1/business-decisions/:id/ai-recommendations` | `h.Recommend` |
+| `POST` | `/api/v1/business-decisions/:id/owner-decisions` | `h.Decide` |
+| `GET` | `/api/v1/business-decisions/fact-options` | `h.FactOptions` |
+
+## businessfeedback
+
+**Prefix:** `/api/v1`
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `GET` | `/actions` | `h.List` |
+| `POST` | `/actions` | `h.CreateAction` |
+| `GET` | `/actions/:id` | `h.Get` |
+| `POST` | `/actions/:id/execute` | `h.Execute` |
+| `POST` | `/actions/:id/next-recommendations` | `h.Recommend` |
+| `POST` | `/actions/:id/observations` | `h.Observe` |
 
 ## candidate
 
@@ -324,8 +360,16 @@
 | `POST` | `/api/v1/demand-cases/:id/evaluate` | `h.Evaluate` |
 | `POST` | `/api/v1/demand-cases/:id/evidence` | `h.AddEvidence` |
 | `POST` | `/api/v1/demand-cases/:id/falsifications` | `h.AddFalsification` |
+| `GET` | `/api/v1/demand-cases/:id/owner-decision` | `h.LatestMarketDecision` |
+| `POST` | `/api/v1/demand-cases/:id/owner-decisions` | `h.DecideMarket` |
+| `GET` | `/api/v1/demand-cases/comparison` | `h.Compare` |
 | `POST` | `/api/v1/demand-cases/research/first-public-batch` | `h.RunFirstBatch` |
 | `POST` | `/api/v1/demand-cases/research/import` | `h.ImportResearch` |
+| `GET` | `/api/v1/product-opportunities` | `h.ListProductOpportunities` |
+| `POST` | `/api/v1/product-opportunities` | `h.CreateProductOpportunity` |
+| `GET` | `/api/v1/product-opportunities/:id` | `h.GetProductOpportunity` |
+| `POST` | `/api/v1/product-opportunities/:id/evaluate` | `h.EvaluateProductOpportunity` |
+| `POST` | `/api/v1/product-opportunities/:id/owner-decisions` | `h.DecideProductOpportunity` |
 
 ## entropy
 
@@ -408,6 +452,10 @@
 | `DELETE` | `/api/v1/finance/accounts/:id` | `h.DeleteAccount` |
 | `GET` | `/api/v1/finance/accounts/:id` | `h.GetAccount` |
 | `PUT` | `/api/v1/finance/accounts/:id` | `h.UpdateAccount` |
+| `GET` | `/api/v1/finance/cash-receipts` | `h.ListCashReceipts` |
+| `POST` | `/api/v1/finance/cash-receipts` | `h.CreateCashReceipt` |
+| `GET` | `/api/v1/finance/cash-reconciliations` | `h.ListCashReconciliations` |
+| `POST` | `/api/v1/finance/cash-reconciliations` | `h.CreateCashReconciliation` |
 | `GET` | `/api/v1/finance/ledger` | `h.ListLedger` |
 | `POST` | `/api/v1/finance/mock` | `h.Mock` |
 | `GET` | `/api/v1/finance/orders/:order_id/ledger` | `h.ListOrderLedger` |
@@ -476,10 +524,12 @@
 | `POST` | `/api/v1/platform-integrations/:id/categories` | `h.CreateCategory` |
 | `GET` | `/api/v1/platform-integrations/:id/mode` | `h.GetMode` |
 | `PUT` | `/api/v1/platform-integrations/:id/mode` | `h.UpdateMode` |
+| `POST` | `/api/v1/platform-integrations/:id/order-events` | `h.IngestOrderEvent` |
 | `GET` | `/api/v1/platform-integrations/:id/ozon-products` | `h.ListOzonProducts` |
 | `POST` | `/api/v1/platform-integrations/:id/sync` | `h.Sync` |
 | `POST` | `/api/v1/platform-integrations/:id/test` | `h.TestConnection` |
 | `POST` | `/api/v1/platform-integrations/mock/seed` | `` |
+| `GET` | `/api/v1/platform-integrations/owner-fact-options` | `h.OwnerFactOptions` |
 | `POST` | `/api/v1/platform-integrations/publish-to-ozon` | `h.PublishToOzon` |
 | `POST` | `/api/v1/platform-integrations/write-back` | `h.WriteBack` |
 | `POST` | `/api/v1/platform-integrations/write-back/:ref-id/retry` | `h.RetryWriteBack` |
@@ -742,6 +792,14 @@
 | `PUT` | `/api/v1/platform-fee/:id` | `h.Update` |
 | `POST` | `/api/v1/platform-fee/calculate` | `h.Calculate` |
 
+## platformtruth
+
+**Prefix:** `/api/v1`
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `GET` | `/api/v1/platform-truth` | `` |
+
 ## price
 
 **Permission:** `finance.read`
@@ -773,15 +831,14 @@
 
 ## productanalysis
 
-**Prefix:** ``
+**Prefix:** `/api/v1`
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/analyses` | `h.ListAnalyses` |
-| `GET` | `/analyses/:id` | `h.GetAnalysis` |
-| `POST` | `/analyses/:id/feedback` | `h.RecordFeedback` |
-| `POST` | `/analyze` | `h.Analyze` |
-| `POST` | `/trigger-prism` | `h.TriggerPrism` |
+| `GET` | `/api/v1/product-analysis/analyses` | `h.ListAnalyses` |
+| `GET` | `/api/v1/product-analysis/analyses/:id` | `h.GetAnalysis` |
+| `POST` | `/api/v1/product-analysis/analyses/:id/feedback` | `h.RecordFeedback` |
+| `POST` | `/api/v1/product-analysis/analyze` | `h.Analyze` |
 
 ## producthub
 
@@ -822,6 +879,50 @@
 | `POST` | `/api/v1/products/relations` | `h.CreateRelation` |
 | `DELETE` | `/api/v1/products/relations/:id` | `h.DeleteRelation` |
 
+## productimage
+
+**Prefix:** `/api/v1`
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `POST` | `/api/v1/product-images/assets` | `h.UploadAsset` |
+| `GET` | `/api/v1/product-images/budget-policies` | `budget.ListPolicies` |
+| `POST` | `/api/v1/product-images/budget-policies` | `budget.CreatePolicy` |
+| `GET` | `/api/v1/product-images/budget-reservations` | `budget.ListReservations` |
+| `POST` | `/api/v1/product-images/budget-reservations/:reservation_id/cancel` | `budget.Cancel` |
+| `POST` | `/api/v1/product-images/budget-reservations/:reservation_id/charges` | `budget.Reconcile` |
+| `POST` | `/api/v1/product-images/budget-reservations/:reservation_id/no-charge-reconciliations` | `budget.ReconcileNoCharge` |
+| `GET` | `/api/v1/product-images/capabilities` | `h.Capabilities` |
+| `POST` | `/api/v1/product-images/image-sets` | `imageSetHandler.Create` |
+| `GET` | `/api/v1/product-images/image-sets/:set_id` | `imageSetHandler.Get` |
+| `POST` | `/api/v1/product-images/image-sets/:set_id/decisions` | `release.DecideSet` |
+| `POST` | `/api/v1/product-images/image-sets/:set_id/freeze` | `imageSetHandler.Freeze` |
+| `GET` | `/api/v1/product-images/manual-imports` | `h.ListManualImports` |
+| `POST` | `/api/v1/product-images/manual-imports` | `h.CreateManualImport` |
+| `POST` | `/api/v1/product-images/mcp` | `mcpHandler.ServeHTTP` |
+| `GET` | `/api/v1/product-images/publish-attempts/:attempt_id` | `publish.Get` |
+| `POST` | `/api/v1/product-images/publish-attempts/:attempt_id/reconcile` | `publish.Reconcile` |
+| `GET` | `/api/v1/product-images/recipes/:recipe_key/summary` | `governance.RecipeSummary` |
+| `POST` | `/api/v1/product-images/release-attestations` | `release.Issue` |
+| `GET` | `/api/v1/product-images/release-attestations/:attestation_id` | `release.Get` |
+| `POST` | `/api/v1/product-images/release-attestations/:attestation_id/publish-attempts` | `publish.Execute` |
+| `GET` | `/api/v1/product-images/rights-grants` | `governance.ListRights` |
+| `POST` | `/api/v1/product-images/rights-grants` | `governance.CreateRights` |
+| `POST` | `/api/v1/product-images/rights-grants/:grant_id/revocations` | `governance.RevokeRights` |
+| `POST` | `/api/v1/product-images/rule-snapshots` | `release.CreateRule` |
+| `GET` | `/api/v1/product-images/tasks` | `h.ListTasks` |
+| `POST` | `/api/v1/product-images/tasks` | `h.CreateTask` |
+| `GET` | `/api/v1/product-images/tasks/:id` | `h.GetTask` |
+| `GET` | `/api/v1/product-images/tasks/:id/attempts` | `h.Attempts` |
+| `GET` | `/api/v1/product-images/tasks/:id/costs` | `governance.ListCosts` |
+| `POST` | `/api/v1/product-images/tasks/:id/costs` | `governance.CreateCost` |
+| `POST` | `/api/v1/product-images/tasks/:id/execution-approvals` | `h.ApproveExecution` |
+| `POST` | `/api/v1/product-images/tasks/:id/executions` | `h.Execute` |
+| `POST` | `/api/v1/product-images/tasks/:id/feedback` | `governance.CreateFeedback` |
+| `GET` | `/api/v1/product-images/tasks/:id/output/content` | `h.OutputContent` |
+| `GET` | `/api/v1/product-images/tasks/:id/reviews` | `governance.ListReviews` |
+| `POST` | `/api/v1/product-images/tasks/:id/reviews` | `governance.CreateReview` |
+
 ## profit
 
 **Prefix:** `/api/v1`
@@ -829,6 +930,9 @@
 | Method | Path | Handler |
 |--------|------|--------|
 | `POST` | `/api/v1/profit/order/:orderId/calculate` | `h.CalculateOrderProfit` |
+| `POST` | `/api/v1/profit/order/:orderId/cost-allocations` | `h.AllocateOrderProductCost` |
+| `GET` | `/api/v1/profit/order/:orderId/final-versions` | `h.ListFinalOrderProfitVersions` |
+| `POST` | `/api/v1/profit/order/:orderId/finalize` | `h.FinalizeOrderProfit` |
 | `GET` | `/api/v1/profit/summaries` | `h.ListSummaries` |
 | `GET` | `/api/v1/profit/summary/:productId` | `h.Summary` |
 
@@ -838,12 +942,20 @@
 
 | Method | Path | Handler |
 |--------|------|--------|
+| `GET` | `/api/v1/purchase/authorities` | `h.ListAuthorities` |
+| `POST` | `/api/v1/purchase/authorities` | `h.CreateAuthority` |
+| `GET` | `/api/v1/purchase/authorities/:id` | `h.GetAuthority` |
+| `POST` | `/api/v1/purchase/authorities/:id/external-submissions` | `h.RecordSubmission` |
+| `POST` | `/api/v1/purchase/authorities/:id/failure-receipts` | `h.RecordFailureReceipt` |
+| `POST` | `/api/v1/purchase/authorities/:id/order-receipts` | `h.RecordOrderReceipt` |
+| `POST` | `/api/v1/purchase/authorities/:id/owner-approval` | `h.ApproveAuthority` |
+| `POST` | `/api/v1/purchase/authorities/:id/receiving-events` | `h.RecordReceiving` |
 | `GET` | `/api/v1/purchase/orders` | `h.ListOrders` |
-| `POST` | `/api/v1/purchase/orders` | `h.CreateOrder` |
+| `POST` | `/api/v1/purchase/orders` | `h.LegacyWriteFrozen` |
 | `GET` | `/api/v1/purchase/orders/:id` | `h.GetOrder` |
-| `POST` | `/api/v1/purchase/orders/:id/approve` | `h.ApproveOrder` |
-| `POST` | `/api/v1/purchase/orders/:id/cancel` | `h.CancelOrder` |
-| `POST` | `/api/v1/purchase/orders/:id/receive` | `h.ReceiveOrder` |
+| `POST` | `/api/v1/purchase/orders/:id/approve` | `h.LegacyWriteFrozen` |
+| `POST` | `/api/v1/purchase/orders/:id/cancel` | `h.LegacyWriteFrozen` |
+| `POST` | `/api/v1/purchase/orders/:id/receive` | `h.LegacyWriteFrozen` |
 | `GET` | `/api/v1/purchase/suggestions` | `h.ListSuggestions` |
 | `POST` | `/api/v1/purchase/suggestions/generate` | `h.GenerateSuggestions` |
 
@@ -917,6 +1029,8 @@
 | `POST` | `/api/v1/settlement/:id/items` | `h.AddItem` |
 | `POST` | `/api/v1/settlement/:id/reconcile` | `h.Reconcile` |
 | `PUT` | `/api/v1/settlement/items/:item_id/reconciliation` | `h.UpdateItemReconciliation` |
+| `POST` | `/api/v1/settlement/platform-accounts/:id/events` | `h.IngestPlatformFact` |
+| `GET` | `/api/v1/settlement/platform-facts/:id` | `h.GetPlatformFact` |
 | `POST` | `/api/v1/settlement/recalculate` | `h.RecalculateAll` |
 | `GET` | `/api/v1/settlement/summary` | `h.Summary` |
 
@@ -1014,12 +1128,83 @@
 | Method | Path | Handler |
 |--------|------|--------|
 | `GET` | `/api/v1/sourcing-1688` | `h.List` |
-| `POST` | `/api/v1/sourcing-1688` | `h.Create` |
-| `DELETE` | `/api/v1/sourcing-1688/:id` | `h.Delete` |
 | `GET` | `/api/v1/sourcing-1688/:id` | `h.Get` |
-| `PUT` | `/api/v1/sourcing-1688/:id` | `h.Update` |
-| `POST` | `/api/v1/sourcing-1688/:id/import` | `h.Import` |
-| `POST` | `/api/v1/sourcing-1688/:id/reject` | `h.Reject` |
+| `GET` | `/api/v1/sourcing-1688/:id/acceptance-report` | `h.AcceptanceReport` |
+| `POST` | `/api/v1/sourcing-1688/:id/approvals/:approvalId/decision` | `h.DecideDraftApproval` |
+| `POST` | `/api/v1/sourcing-1688/:id/capture-failed` | `h.CaptureFailed` |
+| `GET` | `/api/v1/sourcing-1688/:id/collection-quality` | `h.CollectionQuality` |
+| `POST` | `/api/v1/sourcing-1688/:id/convert-to-draft` | `h.ConvertToDraft` |
+| `GET` | `/api/v1/sourcing-1688/:id/cost-versions` | `h.ListSourcingCostVersions` |
+| `POST` | `/api/v1/sourcing-1688/:id/cost-versions` | `h.CreateSourcingCostVersion` |
+| `GET` | `/api/v1/sourcing-1688/:id/draft` | `h.Draft` |
+| `PUT` | `/api/v1/sourcing-1688/:id/draft` | `h.UpdateDraft` |
+| `GET` | `/api/v1/sourcing-1688/:id/identity-history` | `h.IdentityHistory` |
+| `GET` | `/api/v1/sourcing-1688/:id/lifecycle` | `h.Lifecycle` |
+| `POST` | `/api/v1/sourcing-1688/:id/private-archive` | `h.ArchivePrivateCollection` |
+| `POST` | `/api/v1/sourcing-1688/:id/private-restore` | `h.RestorePrivateCollection` |
+| `PATCH` | `/api/v1/sourcing-1688/:id/private-workcopy` | `h.UpdatePrivateWorkcopy` |
+| `GET` | `/api/v1/sourcing-1688/:id/publish-requests` | `h.ListPublishRequests` |
+| `POST` | `/api/v1/sourcing-1688/:id/publish-requests` | `h.RequestPublish` |
+| `POST` | `/api/v1/sourcing-1688/:id/publish-requests/:attemptId/decision` | `h.DecidePublish` |
+| `POST` | `/api/v1/sourcing-1688/:id/publish-requests/:attemptId/execute` | `h.ExecutePublish` |
+| `POST` | `/api/v1/sourcing-1688/:id/publish-requests/:attemptId/reconcile` | `h.ReconcilePublish` |
+| `POST` | `/api/v1/sourcing-1688/:id/review` | `h.Review` |
+| `POST` | `/api/v1/sourcing-1688/:id/review-decision` | `h.ReviewDecision` |
+| `GET` | `/api/v1/sourcing-1688/:id/samples` | `h.ListSourcingSamples` |
+| `POST` | `/api/v1/sourcing-1688/:id/samples` | `h.CreateSourcingSample` |
+| `POST` | `/api/v1/sourcing-1688/:id/samples/:sampleId/transitions` | `h.TransitionSourcingSample` |
+| `GET` | `/api/v1/sourcing-1688/:id/snapshot` | `h.Snapshot` |
+| `POST` | `/api/v1/sourcing-1688/:id/submit-draft-approval` | `h.SubmitDraftApproval` |
+| `GET` | `/api/v1/sourcing-1688/:id/task-links` | `h.ListPrivateTaskLinks` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links` | `h.LinkPrivateTask` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/approvals/:approvalId/decision` | `h.DecideTaskDraftApproval` |
+| `GET` | `/api/v1/sourcing-1688/:id/task-links/:linkId/compliance-evidence` | `h.ListComplianceEvidence` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/compliance-evidence` | `h.CreateComplianceEvidence` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/compliance-evidence/:evidenceId/review` | `h.ReviewComplianceEvidence` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/compliance-evidence/:evidenceId/revoke` | `h.RevokeComplianceEvidence` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/convert-to-draft` | `h.ConvertTaskToDraft` |
+| `GET` | `/api/v1/sourcing-1688/:id/task-links/:linkId/draft` | `h.TaskDraft` |
+| `PUT` | `/api/v1/sourcing-1688/:id/task-links/:linkId/draft` | `h.UpdateTaskDraft` |
+| `GET` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets` | `h.ListMaterialAssets` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets` | `h.CreateMaterialAsset` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/archive` | `h.ArchiveMaterialAsset` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/mark-used` | `h.MarkMaterialUsed` |
+| `PATCH` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/order` | `h.ReorderMaterialAsset` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/renditions` | `h.AttachMaterialRendition` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/rights-evidence` | `h.AddMaterialRights` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/rights-evidence/:evidenceId/review` | `h.ReviewMaterialRights` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/rights-evidence/:evidenceId/revoke` | `h.RevokeMaterialRights` |
+| `GET` | `/api/v1/sourcing-1688/:id/task-links/:linkId/publish-requests` | `h.ListTaskPublishRequests` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/publish-requests` | `h.RequestTaskPublish` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/publish-requests/:attemptId/decision` | `h.DecideTaskPublish` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/publish-requests/:attemptId/execute` | `h.ExecuteTaskPublish` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/publish-requests/:attemptId/reconcile` | `h.ReconcileTaskPublish` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/publish-requests/:attemptId/terminal-observations` | `h.ObserveTaskPublishTerminal` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/sample-waiver` | `h.WaiveSourcingSample` |
+| `GET` | `/api/v1/sourcing-1688/:id/task-links/:linkId/sku-mappings` | `h.ListCanonicalSKUMappings` |
+| `GET` | `/api/v1/sourcing-1688/:id/task-links/:linkId/sku-workspace` | `h.SKUWorkspace` |
+| `POST` | `/api/v1/sourcing-1688/:id/task-links/:linkId/submit-draft-approval` | `h.SubmitTaskDraftApproval` |
+| `GET` | `/api/v1/sourcing-1688/:id/watch` | `h.GetWatch` |
+| `PUT` | `/api/v1/sourcing-1688/:id/watch` | `h.SetWatch` |
+| `GET` | `/api/v1/sourcing-1688/:id/watch/alerts` | `h.ListWatchAlerts` |
+| `GET` | `/api/v1/sourcing-1688/:id/watch/refresh-runs` | `h.ListWatchRuns` |
+| `POST` | `/api/v1/sourcing-1688/:id/watch/refresh-runs` | `h.CreateWatchRun` |
+| `GET` | `/api/v1/sourcing-1688/:id/watch/refresh-runs/:runId` | `h.GetWatchRun` |
+| `POST` | `/api/v1/sourcing-1688/:id/watch/refresh-runs/:runId/evaluate` | `h.EvaluateWatchRun` |
+| `POST` | `/api/v1/sourcing-1688/capture` | `h.Capture` |
+| `GET` | `/api/v1/sourcing-1688/capture-failures` | `h.ListCaptureFailures` |
+| `POST` | `/api/v1/sourcing-1688/capture-failures` | `h.RecordCaptureFailure` |
+| `POST` | `/api/v1/sourcing-1688/duplicates/:id/resolve` | `h.ResolveDuplicate` |
+| `GET` | `/api/v1/sourcing-1688/eligible-tasks` | `h.ListEligibleTasks` |
+| `POST` | `/api/v1/sourcing-1688/fetch` | `fetchHandler.Fetch` |
+| `POST` | `/api/v1/sourcing-1688/private-collections` | `h.CollectPrivate` |
+| `POST` | `/api/v1/sourcing-1688/private-collections` | `h.CollectPrivate` |
+| `GET` | `/api/v1/sourcing-1688/private-collections/failures` | `h.ListPrivateCaptureFailures` |
+| `POST` | `/api/v1/sourcing-1688/private-collections/failures` | `h.RecordPrivateCaptureFailure` |
+| `GET` | `/api/v1/sourcing-1688/private-collections/requests/:requestId` | `h.GetPrivateCollectionRequest` |
+| `GET` | `/api/v1/sourcing-1688/private-collections/requests/:requestId` | `h.GetPrivateCollectionRequest` |
+| `POST` | `/api/v1/sourcing-1688/processed-images` | `h.ProcessImage` |
+| `GET` | `/api/v1/sourcing-1688/processed-images/:id/content` | `h.ProcessedImageContent` |
 | `GET` | `/api/v1/sourcing-1688/summary` | `h.Summary` |
 
 ## supplier
@@ -1059,6 +1244,8 @@
 | `GET` | `/api/v1/supply-chain/tracking` | `th.List` |
 | `POST` | `/api/v1/supply-chain/tracking` | `th.Create` |
 | `GET` | `/api/v1/supply-chain/tracking/:id` | `th.Get` |
+| `GET` | `/api/v1/supply-chain/tracking/:id/carrier-events` | `th.ListCarrierEvents` |
+| `POST` | `/api/v1/supply-chain/tracking/:id/carrier-events` | `th.IngestCarrierEvent` |
 | `PUT` | `/api/v1/supply-chain/tracking/:id/status` | `th.UpdateStatus` |
 | `POST` | `/api/v1/supply-chain/tracking/:id/sync` | `th.SyncFromCarrier` |
 | `GET` | `/api/v1/supply-chain/tracking/flow/:flowId` | `th.GetByFlow` |
@@ -1139,3 +1326,18 @@
 | `GET` | `/api/v1/workflows/:id` | `h.GetWorkflow` |
 | `POST` | `/api/v1/workflows/runs/:id/approve` | `h.ApproveStep` |
 | `POST` | `/api/v1/workflows/runs/:id/reject` | `h.RejectStep` |
+
+## xiaoq
+
+**Prefix:** `/api/v1`
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `GET` | `/api/v1/xiao-q/capabilities` | `` |
+| `GET` | `/api/v1/xiao-q/capabilities` | `h.Capabilities` |
+| `GET` | `/api/v1/xiao-q/identity` | `h.Identity` |
+| `GET` | `/api/v1/xiao-q/identity` | `h.Identity` |
+| `POST` | `/api/v1/xiao-q/messages` | `` |
+| `POST` | `/api/v1/xiao-q/messages` | `h.Message` |
+| `GET` | `/api/v1/xiao-q/traces/:trace_id` | `h.Trace` |
+| `GET` | `/api/v1/xiao-q/traces/:trace_id` | `h.Trace` |

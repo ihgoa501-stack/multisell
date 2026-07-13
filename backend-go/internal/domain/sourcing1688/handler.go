@@ -218,6 +218,8 @@ func workflowError(c *gin.Context, err error) {
 		response.Error(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrInvalidWorkflow):
 		response.Error(c, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrImageReleaseAttestationRequired):
+		response.Error(c, http.StatusPreconditionRequired, err.Error())
 	case errors.Is(err, ErrWorkflowGate):
 		response.Error(c, http.StatusConflict, err.Error())
 	case errors.Is(err, ErrInvalidLifecycleTransition):
@@ -263,6 +265,244 @@ func (h *Handler) ListComplianceEvidence(c *gin.Context) {
 		return
 	}
 	response.Success(c, rows)
+}
+
+func (h *Handler) ListCanonicalSKUMappings(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, _, ok := parseTaskAndEvidenceIDs(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	rows, err := h.service.ListCanonicalSKUMappings(ownerID, id, linkID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, rows)
+}
+
+func (h *Handler) SKUWorkspace(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	linkID, _, ok := parseTaskAndEvidenceIDs(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	workspace, err := h.service.GetSKUWorkspace(ownerID, id, linkID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, workspace)
+}
+
+func parseMaterialIDs(c *gin.Context) (int64, int64, bool) {
+	assetID, err := strconv.ParseInt(c.Param("assetId"), 10, 64)
+	if err != nil || assetID <= 0 {
+		response.Error(c, http.StatusBadRequest, "invalid material asset id")
+		return 0, 0, false
+	}
+	evidenceID := int64(0)
+	if raw := c.Param("evidenceId"); raw != "" {
+		evidenceID, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || evidenceID <= 0 {
+			response.Error(c, http.StatusBadRequest, "invalid material rights evidence id")
+			return 0, 0, false
+		}
+	}
+	return assetID, evidenceID, true
+}
+
+func (h *Handler) materialContext(c *gin.Context) (int64, int64, int64, bool) {
+	id, ok := parseID(c)
+	if !ok {
+		return 0, 0, 0, false
+	}
+	linkID, _, ok := parseTaskAndEvidenceIDs(c)
+	if !ok {
+		return 0, 0, 0, false
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	return ownerID, id, linkID, ok
+}
+func (h *Handler) ListMaterialAssets(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	rows, err := h.service.ListMaterialAssets(owner, source, link)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, rows)
+}
+func (h *Handler) CreateMaterialAsset(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	var in CreateMaterialAssetInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.CreateMaterialAsset(owner, source, link, in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+func (h *Handler) ReorderMaterialAsset(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	asset, _, ok := parseMaterialIDs(c)
+	if !ok {
+		return
+	}
+	var in MaterialOrderInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.ReorderMaterialAsset(owner, source, link, asset, in.Ordinal)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+func (h *Handler) ArchiveMaterialAsset(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	asset, _, ok := parseMaterialIDs(c)
+	if !ok {
+		return
+	}
+	row, err := h.service.ArchiveMaterialAsset(owner, source, link, asset)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+func (h *Handler) MarkMaterialUsed(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	asset, _, ok := parseMaterialIDs(c)
+	if !ok {
+		return
+	}
+	row, err := h.service.MarkMaterialUsed(owner, source, link, asset)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+func (h *Handler) AddMaterialRights(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	asset, _, ok := parseMaterialIDs(c)
+	if !ok {
+		return
+	}
+	var in CreateMaterialRightsInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.AddMaterialRights(owner, source, link, asset, in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+func (h *Handler) ReviewMaterialRights(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	asset, evidence, ok := parseMaterialIDs(c)
+	if !ok {
+		return
+	}
+	var in ReviewMaterialRightsInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.ReviewMaterialRights(owner, source, link, asset, evidence, in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+func (h *Handler) RevokeMaterialRights(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	asset, evidence, ok := parseMaterialIDs(c)
+	if !ok {
+		return
+	}
+	var in MaterialReviewNoteInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.RevokeMaterialRights(owner, source, link, asset, evidence, in.ReviewNote)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+func (h *Handler) AttachMaterialRendition(c *gin.Context) {
+	owner, source, link, ok := h.materialContext(c)
+	if !ok {
+		return
+	}
+	asset, _, ok := parseMaterialIDs(c)
+	if !ok {
+		return
+	}
+	var in MaterialRenditionInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.AttachMaterialRendition(owner, source, link, asset, in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
 }
 
 func (h *Handler) CreateComplianceEvidence(c *gin.Context) {
@@ -865,6 +1105,25 @@ func (h *Handler) Snapshot(c *gin.Context) {
 	response.Success(c, snapshot)
 }
 
+// CollectionQuality exposes a safe, derived view of all immutable browser
+// observations for one Owner source. Raw payloads are never returned.
+func (h *Handler) CollectionQuality(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := requireWorkflowActor(c)
+	if !ok {
+		return
+	}
+	quality, err := h.service.GetCollectionQuality(id, ownerID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, quality)
+}
+
 func (h *Handler) Draft(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
@@ -879,6 +1138,150 @@ func (h *Handler) Draft(c *gin.Context) {
 		return
 	}
 	response.Success(c, draft)
+}
+
+func (h *Handler) GetWatch(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	row, err := h.service.GetSourcingWatch(ownerID, id)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+
+func (h *Handler) SetWatch(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	var in SetSourcingWatchInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.SetSourcingWatch(ownerID, id, in.Enabled)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+
+func (h *Handler) CreateWatchRun(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	var in CreateSourcingWatchRunInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.CreateSourcingWatchRun(ownerID, id, in.RequestID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+
+func (h *Handler) GetWatchRun(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	runID, err := strconv.ParseInt(c.Param("runId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	row, err := h.service.GetSourcingWatchRun(ownerID, id, runID)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+
+func (h *Handler) ListWatchRuns(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	rows, err := h.service.ListSourcingWatchRuns(ownerID, id)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, rows)
+}
+
+func (h *Handler) EvaluateWatchRun(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	runID, err := strconv.ParseInt(c.Param("runId"), 10, 64)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	var in EvaluateSourcingWatchRunInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	row, err := h.service.EvaluateSourcingWatchRun(ownerID, id, runID, in)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, row)
+}
+
+func (h *Handler) ListWatchAlerts(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID, ok := h.requireSourceOwner(c, id)
+	if !ok {
+		return
+	}
+	rows, err := h.service.ListSourcingWatchAlerts(ownerID, id)
+	if err != nil {
+		workflowError(c, err)
+		return
+	}
+	response.Success(c, rows)
 }
 
 func (h *Handler) IdentityHistory(c *gin.Context) {

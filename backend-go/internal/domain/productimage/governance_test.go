@@ -76,6 +76,9 @@ func TestFiveAxisReviewRejectsActualAndRequiresEveryExplicitStatus(t *testing.T)
 	if review.ProductAuthenticity != ReviewPassed {
 		t.Fatalf("review=%+v", review)
 	}
+	if string(review.ReasonCodes) != "[]" || string(review.ErrorRegions) != "[]" {
+		t.Fatalf("five-axis review must persist non-null feedback arrays: %+v", review)
+	}
 	in.IdempotencyKey = "review-2"
 	in.EvidenceTruth = "actual"
 	if _, err := s.CreateFiveAxisReview(context.Background(), 42, task.ID, in); !errors.Is(err, ErrInvalidInput) {

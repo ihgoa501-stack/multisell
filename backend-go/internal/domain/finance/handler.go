@@ -86,6 +86,10 @@ func (h *Handler) CreateAccount(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	owner := common.UserIDFromCtx(c)
+	if owner != nil && *owner > 0 {
+		in.OwnerID = *owner
+	}
 	a, err := h.service.CreateAccount(&in)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error())
@@ -268,7 +272,6 @@ func (h *Handler) OrderProfit(c *gin.Context) {
 	}
 	response.Success(c, p)
 }
-
 
 // ---------- Profit Calculation ----------
 

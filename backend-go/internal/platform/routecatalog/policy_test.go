@@ -66,8 +66,8 @@ func TestMutationPolicyHasCurrentFullInventory(t *testing.T) {
 	// This number is not the security gate by itself; the source cross-check in
 	// check_audit_coverage.sh catches additions, removals and path changes. It
 	// makes accidental parser or embedded-file truncation immediately visible.
-	if got := len(MutationPolicies()); got != 428 {
-		t.Fatalf("expected 428 explicitly classified mutations, got %d", got)
+	if got := len(MutationPolicies()); got != 474 {
+		t.Fatalf("expected 474 explicitly classified mutations, got %d", got)
 	}
 }
 
@@ -75,6 +75,33 @@ func TestAllDeletesAreHighRisk(t *testing.T) {
 	for _, policy := range MutationPolicies() {
 		if policy.Method == "DELETE" && policy.Class != MutationHigh {
 			t.Errorf("destructive DELETE is not high risk: %s", policy.Path)
+		}
+	}
+}
+
+func TestSourcingMaterialMutationsHaveReviewedStandardRisk(t *testing.T) {
+	// These mutations only organize Owner-private evidence or record an internal
+	// eligibility fact. They perform no external write, purchase, publication,
+	// credential change, deletion, or autonomous action. Domain gates still
+	// enforce Owner/task isolation, immutable source hashes, approved rights and
+	// controlled renditions. Real publication remains separately high-risk.
+	paths := []struct{ method, path string }{
+		{"POST", "/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets"},
+		{"PATCH", "/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/order"},
+		{"POST", "/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/archive"},
+		{"POST", "/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/mark-used"},
+		{"POST", "/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/rights-evidence"},
+		{"POST", "/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/rights-evidence/:evidenceId/review"},
+		{"POST", "/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/rights-evidence/:evidenceId/revoke"},
+		{"POST", "/api/v1/sourcing-1688/:id/task-links/:linkId/material-assets/:assetId/renditions"},
+	}
+	for _, route := range paths {
+		policy, ok := ResolveMutationPolicy(route.method, route.path)
+		if !ok || policy.Class != MutationStandard {
+			t.Errorf("material route %s %s policy=%+v found=%v", route.method, route.path, policy, ok)
+		}
+		if _, high := ValidateRoute(route.method, route.path); high {
+			t.Errorf("internal material organization unexpectedly requires external-action approval: %s %s", route.method, route.path)
 		}
 	}
 }

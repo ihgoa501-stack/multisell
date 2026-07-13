@@ -4,9 +4,9 @@
 
 范围：生产 Compose/Caddy、唯一部署 runbook、健康与就绪、备份、恢复、迁移验证、回滚、监控告警及相关脚本。
 
-结论：仓库已经具备比普通早期项目更完整的运维基础：生产端口边界、release 配置、不可变异地备份要求、恢复验证、迁移全生命周期、回滚前备份、health/readiness 和失败通知都有实现与契约测试。但本次只验证了静态/契约层，没有实际完成一次全新服务器部署、真实备份恢复和失败回滚演练，因此只能评为 **工程基础中上，灾难恢复能力尚未被本次真实证明**。
+结论：仓库已经具备比普通早期项目更完整的运维基础：生产端口边界、release 配置、不可变异地备份要求、恢复验证、迁移全生命周期、回滚前备份、health/readiness 和失败通知都有实现与契约测试。同日后续已用本机当前数据库完成一次隔离备份恢复，但没有实际完成全新服务器部署、生产备份恢复、失败回滚或告警送达演练，因此只能评为 **工程基础中上，本机恢复链已验证，生产灾难恢复能力仍未被证明**。
 
-本次实际通过：backup contract、audit checkpoint contract、ops failure webhook contract、rollback safety contract、production compose boundary、private compose boundary，共 6 个脚本验证。没有执行真实数据库 DROP/restore、生产 SSH、外部 S3 或真实回滚。
+初次审计实际通过：backup contract、audit checkpoint contract、ops failure webhook contract、rollback safety contract、production compose boundary、private compose boundary，共 6 个脚本验证。同日 Unit 8 补充验证见文末；没有执行生产 SSH、外部 S3 或真实回滚。
 
 ## 什么叫开发得好 / 不好
 
@@ -39,9 +39,9 @@
 
 ## 关键发现
 
-### P1：恢复能力在本次仍只有“有脚本”，没有实际恢复证据
+### P1：生产恢复能力仍没有生产演练证据
 
-契约测试不能证明当前真实备份能恢复、当前 PostgreSQL 版本兼容、所有迁移/扩展/权限完整、恢复耗时满足 Owner 可接受范围。本次没有获得真实 backup archive 或隔离 PostgreSQL 演练授权，因此状态为 `unknown`。
+契约测试不能证明生产备份能恢复、生产 PostgreSQL 版本兼容、所有迁移/扩展/权限完整、恢复耗时满足 Owner 可接受范围。同日后续已验证本机当前数据库备份，但生产状态仍为 `unknown`。
 
 验证：使用最新真实备份执行 `verify_backup_restore.sh`，记录文件哈希、开始/完成时间、表数量、关键行数抽样和应用 readiness；演练结果形成带日期记录。
 
@@ -63,9 +63,21 @@
 
 修复：标记 deprecated 并从文档入口移除，或改成显式 URL/凭据环境变量且默认拒绝运行；删除需要 Owner 单独授权，本轮不处理。
 
-### P2：备份保留清理发生在异地上传前
+### P2：备份保留清理发生在异地上传前（已修复）
 
-`backup.sh` 创建并校验新本地备份后，先删除超过 retention 的旧备份，再上传 S3。新备份仍在本地，所以不是立即数据丢失；但异地上传若失败，旧本地恢复点已经被清理。更稳健顺序是先完成必需异地上传和远端验证，再执行本地 retention 清理。证据：`scripts/backup.sh` 的 cleanup 段位于 S3 upload 之前。
+`backup.sh` 原先在异地上传前清理旧恢复点。同日后续已把 retention 移到必需异地上传及远端校验成功之后；上传失败会保留旧本地恢复点。`scripts/tests/test_backup.sh` 回归通过。
+
+## Unit 8 同日补充工程核验（2026-07-12 22:55 CST）
+
+| 声明 | 证据等级 |
+|---|---|
+| production/private/IP 三套 Compose 强制验证器已接入图片服务所需密钥与数据库连接，能够重新渲染；production 额外验证 image-service 不发布端口、使用 production + PostgreSQL 持久 Job Store，并核对共享密钥接线 | `implemented / automated_verified`：三个验证脚本通过 |
+| Prometheus、Grafana 只绑定 loopback，Alertmanager 不发布主机端口，backend metrics 开启，三项监控服务均有 healthcheck | `implemented / automated_verified`：新增 `verify_monitoring_compose.sh` 并通过 |
+| 当前本机 `multisell` 可生成约 12 MB custom-format 备份并在一次性隔离数据库恢复；恢复后发现 107 张 public 表，`user / operation_log / schema_migrations` 存在，验证库自动删除 | `manually_verified`（本机隔离 PostgreSQL）；不代表生产备份或生产 RTO |
+| 隔离恢复和破坏性恢复默认要求相邻 `.sha256`；缺失时失败关闭，历史可信归档必须先独立核验再显式 override | `implemented / automated_verified`：真实本机备份的 checksum + 隔离恢复通过 |
+| 异地上传失败时不再先删除旧本地恢复点；retention 只在远端上传及 Object Lock 元数据检查成功后执行 | `implemented / automated_verified`：backup contract 通过 |
+| rollback safety contract | `automated_verified` |
+| Prometheus/Alertmanager 配置语义、真实告警 firing→resolved 到 Owner、外部 S3 Versioning/Object Lock、正式服务器端口及 SSH、生产部署/恢复/回滚 | `unknown / not_verified`：本机 Docker daemon 未运行，且本任务按授权未触碰外部生产环境 |
 
 ### P2：容量、RPO/RTO 和告警送达没有本次运行证据
 

@@ -40,6 +40,30 @@ type Client struct {
 	maxResponseBytes int64
 }
 
+// ProcessorAvailable reports only capabilities proven by this client build.
+// External providers remain unavailable until the private processors endpoint
+// and its verified configuration contract are implemented.
+func (c *Client) ProcessorAvailable(code string) bool {
+	return c != nil && strings.TrimSpace(code) == "deterministic"
+}
+
+// ListProcessors reads the Image Service's current, authenticated capability
+// state. Callers must use this result for external processors; the static
+// ProcessorAvailable method deliberately never advertises one.
+func (c *Client) ListProcessors(ctx context.Context) ([]ProcessorCapability, error) {
+	if c == nil {
+		return nil, errors.New("imageservice: client is not configured")
+	}
+	var out ProcessorCapabilityList
+	if err := c.do(ctx, http.MethodGet, "/internal/v1/processors", "", nil, &out); err != nil {
+		return nil, err
+	}
+	if out.Items == nil {
+		out.Items = []ProcessorCapability{}
+	}
+	return out.Items, nil
+}
+
 // New constructs a private Image Service client.
 func New(cfg Config) (*Client, error) {
 	base, err := url.Parse(strings.TrimSpace(cfg.BaseURL))
@@ -137,6 +161,21 @@ func (c *Client) EnqueueAuthorizedExecution(ctx context.Context, id, idempotency
 		return nil, errors.New("imageservice: execution token is required")
 	}
 	return c.enqueueExecution(ctx, id, idempotencyKey, token)
+}
+
+func (c *Client) QuiesceJob(ctx context.Context, id string, in QuiesceJobRequest) (*Job, error) {
+	path, err := resourcePath(id, "/quiesce")
+	if err != nil {
+		return nil, err
+	}
+	var out Job
+	if err := c.doJSON(ctx, http.MethodPost, path, in, &out); err != nil {
+		return nil, err
+	}
+	if out.ID != id || out.OwnerID != in.OwnerID || out.LingMirrorTaskID != in.LingMirrorTaskID || out.LingMirrorTaskVersion != in.LingMirrorTaskVersion || out.ManifestHash != in.ManifestHash {
+		return nil, &ProtocolError{Message: "quiesce response changed job identity"}
+	}
+	return &out, nil
 }
 
 func (c *Client) enqueueExecution(ctx context.Context, id, idempotencyKey, token string) (*Attempt, error) {

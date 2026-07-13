@@ -5,6 +5,10 @@ OUT=$(mktemp)
 trap 'rm -f "$OUT"' EXIT HUP INT TERM
 env DB_USER=x DB_PASSWORD=render_password_123456789 DB_NAME=x \
   JWT_SECRET=render_jwt_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_SHARED_SECRET=render_only_image_shared_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_EXECUTION_TOKEN_SECRET=render_only_image_execution_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_RELEASE_ATTESTATION_SECRET=render_only_image_attestation_secret_abcdefghijklmnopqrstuvwxyz \
+  IMAGE_SERVICE_DATABASE_URL=postgresql://x:render_password_123456789@db:5432/x?sslmode=disable \
   AUDIT_CHECKPOINT_KEY=render_audit_key_abcdefghijklmnopqrstuvwxyz \
   DOMAIN=unused.invalid PUBLIC_IP=118.196.42.156 \
   docker compose --profile manual \

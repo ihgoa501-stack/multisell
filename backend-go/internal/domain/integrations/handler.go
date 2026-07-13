@@ -12,6 +12,47 @@ import (
 	"gorm.io/gorm"
 )
 
+func (h *Handler) OwnerFactOptions(c *gin.Context) {
+	owner := common.UserIDFromCtx(c)
+	if owner == nil || *owner <= 0 {
+		response.Error(c, http.StatusUnauthorized, "Owner authentication required")
+		return
+	}
+	out, err := h.service.ListOwnerFactOptions(c.Request.Context(), *owner)
+	if err != nil {
+		response.InternalError(c, err)
+		return
+	}
+	response.Success(c, out)
+}
+
+// IngestOrderEvent accepts the normalized output of an authenticated platform
+// connector. It is the only HTTP path allowed to create order and inventory
+// facts; generic webhooks remain raw evidence until an account can be resolved.
+func (h *Handler) IngestOrderEvent(c *gin.Context) {
+	accountID, ok := parseID(c)
+	if !ok {
+		return
+	}
+	owner := common.UserIDFromCtx(c)
+	if owner == nil || *owner <= 0 {
+		response.Error(c, http.StatusUnauthorized, "Owner authentication required")
+		return
+	}
+	var in IngestExternalOrderInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.OwnerID, in.AccountID = *owner, accountID
+	result, err := h.service.IngestExternalOrder(c.Request.Context(), in)
+	if err != nil {
+		response.Error(c, http.StatusConflict, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
 // Handler handles integrations HTTP requests.
 type Handler struct {
 	service     *Service
@@ -255,7 +296,7 @@ func (h *Handler) ListOzonProducts(c *gin.Context) {
 
 // PublishToOzon POST /platform-integrations/publish-to-ozon
 // @Summary      Publish to Ozon
-// @Description  Publish a product listing to the Ozon platform
+// @Description  Legacy URL publisher. Dry-run/sandbox return a state-free mock; all real writes require the controlled image release path.
 // @Tags         integrations
 // @Accept       json
 // @Produce      json
@@ -289,6 +330,10 @@ func (h *Handler) PublishToOzon(c *gin.Context) {
 	}
 	result, err := h.service.PublishToOzon(ctx, &in)
 	if err != nil {
+		if errors.Is(err, ErrImageReleaseAttestationRequired) {
+			response.Error(c, http.StatusPreconditionRequired, ErrImageReleaseAttestationRequired.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

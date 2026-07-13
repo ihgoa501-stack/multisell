@@ -35,6 +35,19 @@ var (
 	})
 )
 
+const maxLLMResponseBytes = 4 << 20
+
+func readLLMResponse(body io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(body, maxLLMResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxLLMResponseBytes {
+		return nil, errors.New("LLM response exceeds size limit")
+	}
+	return b, nil
+}
+
 // LLMProvider is the abstract interface for language model backends.
 type LLMProvider interface {
 	// Chat sends a completion request and returns the model's text answer
@@ -55,29 +68,50 @@ type LLMRequest struct {
 	Temperature float64                `json:"temperature,omitempty"`
 	MaxTokens   int                    `json:"max_tokens,omitempty"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Tools       []LLMTool              `json:"tools,omitempty"`
 }
 
 // LLMMessage is a single chat message.
 type LLMMessage struct {
-	Role    string `json:"role"` // system | user | assistant | tool
-	Content string `json:"content"`
+	Role       string        `json:"role"` // system | user | assistant | tool
+	Content    string        `json:"content"`
+	ToolCalls  []LLMToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
+	Name       string        `json:"name,omitempty"`
+}
+
+// LLMTool is a provider-neutral, model-visible function definition.
+type LLMTool struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Parameters  map[string]interface{} `json:"parameters"`
+	Strict      bool                   `json:"strict,omitempty"`
+}
+
+// LLMToolCall is a structured tool request emitted by a model. Arguments stay
+// raw until the owning capability catalog validates them fail-closed.
+type LLMToolCall struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
 }
 
 // LLMResponse is the full completion response.
 type LLMResponse struct {
-	Answer      string  `json:"answer"`
-	Model       string  `json:"model"`
-	TokensIn    int     `json:"tokens_in"`
-	TokensOut   int     `json:"tokens_out"`
-	LatencyMs   int     `json:"latency_ms"`
-	FinishReason string `json:"finish_reason,omitempty"`
+	Answer       string        `json:"answer"`
+	Model        string        `json:"model"`
+	TokensIn     int           `json:"tokens_in"`
+	TokensOut    int           `json:"tokens_out"`
+	LatencyMs    int           `json:"latency_ms"`
+	FinishReason string        `json:"finish_reason,omitempty"`
+	ToolCalls    []LLMToolCall `json:"tool_calls,omitempty"`
 }
 
 // LLMChunk is one streamed token.
 type LLMChunk struct {
-	Text  string
-	Err   error
-	Done  bool
+	Text string
+	Err  error
+	Done bool
 }
 
 // NewLLMProvider constructs the provider named by LLM_PROVIDER env var.
@@ -214,19 +248,31 @@ func (p *openAICompatible) Chat(ctx context.Context, req *LLMRequest) (*LLMRespo
 		return nil, err
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := readLLMResponse(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("LLM %s returned %d: %s", p.name, resp.StatusCode, truncate(string(respBody), 300))
 	}
 
 	var parsed struct {
 		Choices []struct {
-			Message      LLMMessage `json:"message"`
-			FinishReason string     `json:"finish_reason"`
+			Message struct {
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
+			PromptTokens        int `json:"prompt_tokens"`
+			CompletionTokens    int `json:"completion_tokens"`
 			PromptTokensDetails *struct {
 				CachedTokens int `json:"cached_tokens"`
 			} `json:"prompt_tokens_details,omitempty"`
@@ -248,6 +294,10 @@ func (p *openAICompatible) Chat(ctx context.Context, req *LLMRequest) (*LLMRespo
 	} else {
 		llmCacheMissTokens.Add(float64(pt))
 	}
+	toolCalls := make([]LLMToolCall, 0, len(parsed.Choices[0].Message.ToolCalls))
+	for _, call := range parsed.Choices[0].Message.ToolCalls {
+		toolCalls = append(toolCalls, LLMToolCall{ID: call.ID, Name: call.Function.Name, Arguments: json.RawMessage(call.Function.Arguments)})
+	}
 	return &LLMResponse{
 		Answer:       parsed.Choices[0].Message.Content,
 		Model:        parsed.Model,
@@ -255,6 +305,7 @@ func (p *openAICompatible) Chat(ctx context.Context, req *LLMRequest) (*LLMRespo
 		TokensOut:    parsed.Usage.CompletionTokens,
 		LatencyMs:    int(time.Since(start).Milliseconds()),
 		FinishReason: parsed.Choices[0].FinishReason,
+		ToolCalls:    toolCalls,
 	}, nil
 }
 
@@ -284,7 +335,10 @@ func (p *openAICompatible) ChatStream(ctx context.Context, req *LLMRequest) (<-c
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
-		errBody, _ := io.ReadAll(resp.Body)
+		errBody, readErr := readLLMResponse(resp.Body)
+		if readErr != nil {
+			return nil, readErr
+		}
 		return nil, fmt.Errorf("LLM stream returned %d: %s", resp.StatusCode, truncate(string(errBody), 300))
 	}
 
@@ -351,12 +405,26 @@ func (p *openAICompatible) ChatStream(ctx context.Context, req *LLMRequest) (<-c
 }
 
 func (p *openAICompatible) buildPayload(req *LLMRequest, stream bool) map[string]interface{} {
-	msgs := make([]map[string]string, 0, len(req.Messages)+1)
+	msgs := make([]map[string]interface{}, 0, len(req.Messages)+1)
 	if req.System != "" {
-		msgs = append(msgs, map[string]string{"role": "system", "content": req.System})
+		msgs = append(msgs, map[string]interface{}{"role": "system", "content": req.System})
 	}
 	for _, m := range req.Messages {
-		msgs = append(msgs, map[string]string{"role": m.Role, "content": m.Content})
+		message := map[string]interface{}{"role": m.Role, "content": m.Content}
+		if m.ToolCallID != "" {
+			message["tool_call_id"] = m.ToolCallID
+		}
+		if m.Name != "" {
+			message["name"] = m.Name
+		}
+		if len(m.ToolCalls) > 0 {
+			calls := make([]map[string]interface{}, 0, len(m.ToolCalls))
+			for _, call := range m.ToolCalls {
+				calls = append(calls, map[string]interface{}{"id": call.ID, "type": "function", "function": map[string]interface{}{"name": call.Name, "arguments": string(call.Arguments)}})
+			}
+			message["tool_calls"] = calls
+		}
+		msgs = append(msgs, message)
 	}
 	payload := map[string]interface{}{
 		"model":    req.Model,
@@ -368,6 +436,14 @@ func (p *openAICompatible) buildPayload(req *LLMRequest, stream bool) map[string
 	if req.MaxTokens > 0 {
 		payload["max_tokens"] = req.MaxTokens
 	}
+	if len(req.Tools) > 0 {
+		tools := make([]map[string]interface{}, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			tools = append(tools, map[string]interface{}{"type": "function", "function": map[string]interface{}{"name": tool.Name, "description": tool.Description, "parameters": tool.Parameters, "strict": tool.Strict}})
+		}
+		payload["tools"] = tools
+		payload["tool_choice"] = "auto"
+	}
 	if stream {
 		payload["stream"] = true
 	}
@@ -377,10 +453,11 @@ func (p *openAICompatible) buildPayload(req *LLMRequest, stream bool) map[string
 // ---------- Anthropic provider (Messages API) ----------
 
 type anthropicProvider struct {
-	apiKey string
-	model  string
-	http   *http.Client
-	logger *zap.Logger
+	apiKey  string
+	baseURL string
+	model   string
+	http    *http.Client
+	logger  *zap.Logger
 }
 
 func newAnthropic(logger *zap.Logger) *anthropicProvider {
@@ -389,10 +466,11 @@ func newAnthropic(logger *zap.Logger) *anthropicProvider {
 		model = "claude-3-5-sonnet-20241022"
 	}
 	return &anthropicProvider{
-		apiKey: os.Getenv("LLM_API_KEY"),
-		model:  model,
-		http:   &http.Client{Timeout: 60 * time.Second},
-		logger: logger,
+		apiKey:  os.Getenv("LLM_API_KEY"),
+		baseURL: "https://api.anthropic.com/v1",
+		model:   model,
+		http:    &http.Client{Timeout: 60 * time.Second},
+		logger:  logger,
 	}
 }
 
@@ -406,10 +484,7 @@ func (p *anthropicProvider) Chat(ctx context.Context, req *LLMRequest) (*LLMResp
 		req.Model = p.model
 	}
 	start := time.Now()
-	msgs := make([]map[string]string, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		msgs = append(msgs, map[string]string{"role": m.Role, "content": m.Content})
-	}
+	msgs := buildAnthropicMessages(req.Messages)
 	payload := map[string]interface{}{
 		"model":      req.Model,
 		"max_tokens": req.MaxTokens,
@@ -418,8 +493,15 @@ func (p *anthropicProvider) Chat(ctx context.Context, req *LLMRequest) (*LLMResp
 	if req.System != "" {
 		payload["system"] = req.System
 	}
+	if len(req.Tools) > 0 {
+		tools := make([]map[string]interface{}, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			tools = append(tools, map[string]interface{}{"name": tool.Name, "description": tool.Description, "input_schema": tool.Parameters})
+		}
+		payload["tools"] = tools
+	}
 	body, _ := json.Marshal(payload)
-	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
+	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/messages", bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", p.apiKey)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
@@ -429,28 +511,42 @@ func (p *anthropicProvider) Chat(ctx context.Context, req *LLMRequest) (*LLMResp
 		return nil, err
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := readLLMResponse(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Anthropic returned %d: %s", resp.StatusCode, truncate(string(respBody), 300))
 	}
 	var parsed struct {
 		Content []struct {
-			Text string `json:"text"`
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
 		} `json:"content"`
 		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-			CacheReadInputTokens    int `json:"cache_read_input_tokens,omitempty"`
+			InputTokens              int `json:"input_tokens"`
+			OutputTokens             int `json:"output_tokens"`
+			CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 			CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
 		} `json:"usage"`
-		Model string `json:"model"`
+		Model      string `json:"model"`
+		StopReason string `json:"stop_reason"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, err
 	}
-	answer := ""
-	if len(parsed.Content) > 0 {
-		answer = parsed.Content[0].Text
+	var answer strings.Builder
+	toolCalls := make([]LLMToolCall, 0)
+	for _, block := range parsed.Content {
+		switch block.Type {
+		case "text":
+			answer.WriteString(block.Text)
+		case "tool_use":
+			toolCalls = append(toolCalls, LLMToolCall{ID: block.ID, Name: block.Name, Arguments: block.Input})
+		}
 	}
 
 	// Track cache token counters.
@@ -465,12 +561,48 @@ func (p *anthropicProvider) Chat(ctx context.Context, req *LLMRequest) (*LLMResp
 		llmCacheCreationTokens.Add(float64(parsed.Usage.CacheCreationInputTokens))
 	}
 	return &LLMResponse{
-		Answer:    answer,
-		Model:     parsed.Model,
-		TokensIn:  parsed.Usage.InputTokens,
-		TokensOut: parsed.Usage.OutputTokens,
-		LatencyMs: int(time.Since(start).Milliseconds()),
+		Answer:       answer.String(),
+		Model:        parsed.Model,
+		TokensIn:     parsed.Usage.InputTokens,
+		TokensOut:    parsed.Usage.OutputTokens,
+		LatencyMs:    int(time.Since(start).Milliseconds()),
+		FinishReason: parsed.StopReason,
+		ToolCalls:    toolCalls,
 	}, nil
+}
+
+func buildAnthropicMessages(messages []LLMMessage) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(messages))
+	for _, message := range messages {
+		if message.Role == "tool" {
+			block := map[string]interface{}{"type": "tool_result", "tool_use_id": message.ToolCallID, "content": message.Content}
+			if len(out) > 0 && out[len(out)-1]["role"] == "user" {
+				if blocks, ok := out[len(out)-1]["content"].([]map[string]interface{}); ok {
+					out[len(out)-1]["content"] = append(blocks, block)
+					continue
+				}
+			}
+			out = append(out, map[string]interface{}{"role": "user", "content": []map[string]interface{}{block}})
+			continue
+		}
+		if len(message.ToolCalls) > 0 {
+			blocks := make([]map[string]interface{}, 0, len(message.ToolCalls)+1)
+			if message.Content != "" {
+				blocks = append(blocks, map[string]interface{}{"type": "text", "text": message.Content})
+			}
+			for _, call := range message.ToolCalls {
+				var input interface{}
+				if err := json.Unmarshal(call.Arguments, &input); err != nil {
+					input = map[string]interface{}{}
+				}
+				blocks = append(blocks, map[string]interface{}{"type": "tool_use", "id": call.ID, "name": call.Name, "input": input})
+			}
+			out = append(out, map[string]interface{}{"role": "assistant", "content": blocks})
+			continue
+		}
+		out = append(out, map[string]interface{}{"role": message.Role, "content": message.Content})
+	}
+	return out
 }
 
 func (p *anthropicProvider) ChatStream(ctx context.Context, req *LLMRequest) (<-chan LLMChunk, error) {

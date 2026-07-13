@@ -1,52 +1,37 @@
 'use client';
 
-import CrudListPage, { fmtDate, fmtMoney } from '@/components/crud/CrudListPage';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Alert, Button, Card, Descriptions, Drawer, Form, Input, InputNumber, Modal, Space, Table, Tag, Typography, message } from 'antd';
+import PageContainer from '@/components/ui/PageContainer';
+import apiClient from '@/lib/api-client';
 
-const statusOptions = [
-  { label: '草稿', value: 'draft' },
-  { label: '待审批', value: 'pending' },
-  { label: '已审批', value: 'approved' },
-  { label: '部分到货', value: 'partial' },
-  { label: '已完成', value: 'completed' },
-];
+type Purchase = { id:number; supplier_id:number; sku_mapping_id:number; cost_version_id:number; inventory_id:number; internal_sku_id:number; quantity:number; received_quantity:number; unit_amount_minor:number; total_amount_minor:number; currency:string; status:string; request_sha256:string; owner_decision_id?:number; created_at:string };
+type Fact = { id:number; event_type:string; external_event_id:string; external_order_id:string; received_quantity:number; payload_sha256:string; observed_at:string };
+type Ledger = { id:number; quantity:number; before_quantity:number; after_quantity:number; external_fact_id:number };
+type Detail = { purchase:Purchase; external_facts:Fact[]; inventory_ledger:Ledger[] };
 
-const statusMap: Record<string, string> = {};
-for (const s of statusOptions) {
-  statusMap[s.value] = s.label;
-}
+const labels:Record<string,string>={requested:'待 Owner 决定',owner_approved:'已批准，待外部提交',external_submitted:'已提交，待供应商回执',ordered:'供应商已下单',failed:'外部下单失败',partially_received:'部分收货',fully_received:'全部收货'};
+const nextAction:Record<string,{label:string;path:string;type:string}>={owner_approved:{label:'记录外部提交回执',path:'external-submissions',type:'submitted'},external_submitted:{label:'记录供应商已下单',path:'order-receipts',type:'ordered'},ordered:{label:'记录真实收货',path:'receiving-events',type:'received'},partially_received:{label:'继续记录收货',path:'receiving-events',type:'received'}};
 
-export default function PurchasePage() {
-  return (
-    <CrudListPage
-      resource="/purchase"
-      title="采购订单"
-      singular="采购订单"
-      searchPlaceholder="搜索订单号 / 供应商..."
-      columns={[
-        { title: 'ID', dataIndex: 'id', width: 70 },
-        { title: '订单号', dataIndex: 'order_no', width: 180 },
-        { title: '供应商', dataIndex: 'supplier', width: 160 },
-        { title: '总金额', dataIndex: 'total_amount', width: 120, render: fmtMoney },
-        {
-          title: '状态',
-          dataIndex: 'status',
-          width: 120,
-          render: (v: unknown) => statusMap[String(v)] ?? String(v),
-        },
-        { title: '创建时间', dataIndex: 'created_at', width: 160, render: fmtDate },
-      ]}
-      fields={[
-        { name: 'order_no', label: '订单号', required: true },
-        { name: 'supplier', label: '供应商', required: true },
-        { name: 'total_amount', label: '总金额', type: 'number', required: true },
-        {
-          name: 'status',
-          label: '状态',
-          type: 'select',
-          options: statusOptions,
-          initialValue: 'draft',
-        },
-      ]}
-    />
-  );
+export default function PurchasePage(){
+ const qc=useQueryClient(); const [createOpen,setCreateOpen]=useState(false); const [selected,setSelected]=useState<number>(); const [action,setAction]=useState<{path:string;type:string;label:string}>(); const [approveOpen,setApproveOpen]=useState(false); const [createForm]=Form.useForm(); const [actionForm]=Form.useForm(); const [approveForm]=Form.useForm();
+ const list=useQuery({queryKey:['purchase-authorities'],queryFn:async()=> (await apiClient.get<Purchase[]>('/v1/purchase/authorities')).data??[]});
+ const detail=useQuery({queryKey:['purchase-authority',selected],enabled:!!selected,queryFn:async()=> (await apiClient.get<Detail>(`/v1/purchase/authorities/${selected}`)).data!});
+ const refresh=async()=>{await qc.invalidateQueries({queryKey:['purchase-authorities']});if(selected)await qc.invalidateQueries({queryKey:['purchase-authority',selected]})};
+ const create=useMutation({mutationFn:(v:Record<string,number|string>)=>apiClient.post<Purchase>('/v1/purchase/authorities',v),onSuccess:async(r)=>{message.success('采购请求已冻结；下一步由 Owner 建立经营决定');setCreateOpen(false);createForm.resetFields();setSelected(r.data?.id);await refresh()},onError:(e:Error)=>message.error(e.message)});
+ const approve=useMutation({mutationFn:async(v:{reason:string;idempotency_key:string})=>{if(!p)throw new Error('采购请求尚未加载');const created=await apiClient.post<{id:number;manifest_sha256:string}>('/v1/business-decisions',{question:`是否执行采购 #${p.id}`,target:`按冻结金额 ${p.total_amount_minor} minor ${p.currency} 采购 ${p.quantity} 件`,object_type:'purchase_authority',object_id:p.id,unknowns:['供应商最终接受、运输和实收仍需外部回执'],idempotency_key:`${v.idempotency_key}-case`});if(!created.data)throw new Error('经营决定案卷创建失败');const decided=await apiClient.post<{id:number}>(`/v1/business-decisions/${created.data.id}/owner-decisions`,{decision:'selected',capability_id:'purchase.authority.execute',command_type:'purchase.submit',target_type:'purchase_authority',target_id:String(p.id),input_sha256:p.request_sha256,reason:v.reason,manifest_sha256:created.data.manifest_sha256,idempotency_key:`${v.idempotency_key}-decision`});if(!decided.data)throw new Error('Owner 决定保存失败');return apiClient.post<Purchase>(`/v1/purchase/authorities/${selected}/owner-approval`,{owner_decision_id:decided.data.id})},onSuccess:async()=>{message.success('Owner 精确决定已保存并核验');setApproveOpen(false);approveForm.resetFields();await refresh()},onError:(e:Error)=>message.error(e.message)});
+ const record=useMutation({mutationFn:(v:Record<string,unknown>)=>apiClient.post<Detail>(`/v1/purchase/authorities/${selected}/${action?.path}`,{...v,raw_payload:JSON.parse(String(v.raw_payload)),observed_at:new Date(String(v.observed_at)).toISOString()}),onSuccess:async()=>{message.success('外部回执已保存并由服务端计算 SHA-256');setAction(undefined);actionForm.resetFields();await refresh()},onError:(e:Error)=>message.error(e.message)});
+ const rows=list.data??[]; const columns=useMemo(()=>[
+  {title:'采购',dataIndex:'id',render:(v:number)=><Button type="link" onClick={()=>setSelected(v)}>#{v}</Button>},{title:'权威对象',render:(_:unknown,r:Purchase)=><span>供应商 #{r.supplier_id} / SKU #{r.internal_sku_id}</span>},{title:'金额',render:(_:unknown,r:Purchase)=>`${(r.total_amount_minor/100).toFixed(2)} ${r.currency}`},{title:'收货',render:(_:unknown,r:Purchase)=>`${r.received_quantity}/${r.quantity}`},{title:'状态',dataIndex:'status',render:(v:string)=><Tag>{labels[v]??v}</Tag>}
+ ],[]);
+ const p=detail.data?.purchase;
+ return <PageContainer title="采购与补货" subtitle="只有绑定 Owner 精确决定和外部回执的采购事实；内部状态不能冒充已下单或已收货。" loading={list.isLoading} error={list.isError} errorMsg={(list.error as Error|undefined)?.message} onRetry={()=>void list.refetch()} extra={<Button type="primary" onClick={()=>setCreateOpen(true)}>新建采购请求</Button>}>
+  <Alert type="info" showIcon message="流程：冻结请求 → 经营决定页面形成 selected 精确决定 → 外部提交回执 → 供应商 ordered/failed 回执 → 真实收货回执与库存账本" />
+  <Table rowKey="id" dataSource={rows} columns={columns} pagination={false} style={{marginTop:16}} />
+  <Modal title="冻结采购请求" open={createOpen} onCancel={()=>setCreateOpen(false)} onOk={()=>createForm.submit()} confirmLoading={create.isPending}><Form form={createForm} layout="vertical" onFinish={v=>create.mutate(v)}><Form.Item name="supplier_id" label="权威供应商 ID" rules={[{required:true}]}><InputNumber min={1}/></Form.Item><Form.Item name="sku_mapping_id" label="Canonical SKU Mapping ID" rules={[{required:true}]}><InputNumber min={1}/></Form.Item><Form.Item name="cost_version_id" label="精确成本版本 ID" rules={[{required:true}]}><InputNumber min={1}/></Form.Item><Form.Item name="inventory_id" label="目标库存 ID" rules={[{required:true}]}><InputNumber min={1}/></Form.Item><Form.Item name="quantity" label="采购数量" rules={[{required:true}]}><InputNumber min={1}/></Form.Item><Form.Item name="idempotency_key" label="幂等键" rules={[{required:true,min:8}]}><Input/></Form.Item></Form></Modal>
+  <Drawer width={680} title={p?`采购 #${p.id}`:'采购详情'} open={!!selected} onClose={()=>setSelected(undefined)}>{p&&<><Descriptions bordered size="small" column={2}><Descriptions.Item label="状态">{labels[p.status]??p.status}</Descriptions.Item><Descriptions.Item label="数量">{p.received_quantity}/{p.quantity}</Descriptions.Item><Descriptions.Item label="单价">{p.unit_amount_minor} minor {p.currency}</Descriptions.Item><Descriptions.Item label="总额">{p.total_amount_minor} minor {p.currency}</Descriptions.Item><Descriptions.Item label="请求 SHA" span={2}><Typography.Text copyable code>{p.request_sha256}</Typography.Text></Descriptions.Item></Descriptions><Space style={{margin:'16px 0'}}>{p.status==='requested'&&<Button type="primary" onClick={()=>setApproveOpen(true)}>绑定 selected Owner 决定</Button>}{nextAction[p.status]&&<Button type="primary" onClick={()=>setAction(nextAction[p.status])}>{nextAction[p.status].label}</Button>}{p.status==='external_submitted'&&<Button danger onClick={()=>setAction({label:'记录外部失败回执',path:'failure-receipts',type:'failed'})}>记录失败</Button>}</Space><Card title="不可变外部事实" size="small"><Table rowKey="id" pagination={false} dataSource={detail.data?.external_facts??[]} columns={[{title:'类型',dataIndex:'event_type'},{title:'外部事件',dataIndex:'external_event_id'},{title:'外部订单',dataIndex:'external_order_id'},{title:'收货数',dataIndex:'received_quantity'},{title:'SHA-256',dataIndex:'payload_sha256',ellipsis:true}]}/></Card><Card title="库存收货账本" size="small" style={{marginTop:12}}><Table rowKey="id" pagination={false} dataSource={detail.data?.inventory_ledger??[]} columns={[{title:'外部事实',dataIndex:'external_fact_id'},{title:'数量',dataIndex:'quantity'},{title:'变更前',dataIndex:'before_quantity'},{title:'变更后',dataIndex:'after_quantity'}]}/></Card></>}</Drawer>
+  <Modal title="Owner 批准本次采购" open={approveOpen} onCancel={()=>setApproveOpen(false)} onOk={()=>approveForm.submit()} confirmLoading={approve.isPending} okText="不可变保存决定并批准"><Alert type="warning" showIcon message="这会先保存绑定当前采购 ID 与请求 SHA 的 selected Owner 决定，再批准进入外部提交阶段；不会自动向供应商下单。"/><Form form={approveForm} layout="vertical" onFinish={v=>approve.mutate(v)} style={{marginTop:12}}><Form.Item name="reason" label="Owner 批准理由" rules={[{required:true,min:4}]}><Input.TextArea rows={3}/></Form.Item><Form.Item name="idempotency_key" label="本次决定幂等键" rules={[{required:true,min:8}]}><Input/></Form.Item></Form></Modal>
+  <Modal title={action?.label} open={!!action} onCancel={()=>setAction(undefined)} onOk={()=>actionForm.submit()} confirmLoading={record.isPending}><Form form={actionForm} layout="vertical" onFinish={v=>record.mutate(v)}><Form.Item name="external_event_id" label="外部事件 ID" rules={[{required:true}]}><Input/></Form.Item><Form.Item name="external_order_id" label="供应商/平台订单 ID" rules={[{required:true}]}><Input/></Form.Item>{action?.type==='received'&&<Form.Item name="received_quantity" label="本次真实收货数量" rules={[{required:true}]}><InputNumber min={1}/></Form.Item>}<Form.Item name="observed_at" label="外部观察时间" rules={[{required:true}]}><Input type="datetime-local"/></Form.Item><Form.Item name="raw_payload" label="脱敏原始回执 JSON" rules={[{required:true}]}><Input.TextArea rows={5}/></Form.Item></Form></Modal>
+ </PageContainer>
 }

@@ -99,9 +99,41 @@ describe('XiaoQ components', () => {
     expect(screen.getByText('订单、结算与最终利润证据')).toBeInTheDocument();
     expect(screen.getAllByText('未知').length).toBeGreaterThan(0);
     expect(screen.getByText('订单履约记录')).toBeInTheDocument();
-    expect(screen.getByText('经营闭环仍然未知')).toBeInTheDocument();
+    expect(screen.getByText('仍未核验的经营事实')).toBeInTheDocument();
     expect(screen.getByText('退货/争议观察期是否结束未知')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '经营实验' })).toHaveAttribute('href', '/experiments?experiment_id=EXP-CLOSE-1');
     expect(screen.queryByRole('button', { name: /批准|执行|发货|退款|收款/ })).not.toBeInTheDocument();
+  });
+
+  it('separates operating unknowns from blockers and deep-links to facts', () => {
+    render(<XiaoQAnswerCard response={{
+      trace_id: 'trace-order', agent_id: 'xiao_q', target_type: 'operating_facts', order_id: 81,
+      answer: '订单已摄取，现金尚未对账。', truth_status: 'inferred', mode: 'read_only_v1',
+      evidence: [{ title: '平台订单快照', truth_status: 'actual', summary: '来源已冻结' }],
+      unknowns: ['真实承运商签收尚未取得'],
+      blockers: ['现金到账金额与结算应收不一致'],
+      links: [{ label: '查看权威订单', href: '/orders/81' }],
+    }} />);
+
+    expect(screen.getByText('订单经营事实')).toBeInTheDocument();
+    expect(screen.getByText('仍未核验的经营事实')).toBeInTheDocument();
+    expect(screen.getByText('当前阻断原因')).toBeInTheDocument();
+    expect(screen.getByText('现金到账金额与结算应收不一致')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '查看权威订单' })).toHaveAttribute('href', '/orders/81');
+  });
+
+  it('labels a business recommendation as inferred and never as an Owner decision', () => {
+    render(<XiaoQAnswerCard response={{
+      trace_id: 'trace-decision', agent_id: 'xiao_q', target_type: 'business_decision', decision_case_id: 9,
+      answer: '建议暂停并补充现金凭证。', truth_status: 'inferred', mode: 'suggestion',
+      evidence: [{ title: '经营事实快照', truth_status: 'actual', summary: 'manifest已冻结' }],
+      unknowns: ['退款观察窗口是否结束'], blockers: [],
+      links: [{ label: '查看权威决策案卷', href: '/business-decisions/9' }],
+    }} />);
+
+    expect(screen.getByText('AI 建议不是 Owner 决定')).toBeInTheDocument();
+    expect(screen.getAllByText('推断').length).toBeGreaterThan(0);
+    expect(screen.getByText(/只有你在权威经营决策页面明确提交的决定/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /批准|执行/ })).not.toBeInTheDocument();
   });
 });

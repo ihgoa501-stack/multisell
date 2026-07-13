@@ -171,3 +171,52 @@ Owner 明确确认：凌镜的开发目标不是一个小工具、单一行动�
 | 后端全量 121 包 3207 个测试、Go build、相关 vet、407 条 mutation 路由安全清单 | `automated_verified` |
 | 前端候选比较测试、定向 ESLint 与 95 页面 Next.js 生产构建 | `automated_verified` |
 | 真实市场选择、真实商品机会、真实渠道权限、消费者付款及利润 | `unknown`；本次没有连接外部经营事实 |
+# 2026-07-12 补充：第 4 纵向单元工程核验
+
+- `implemented / automated_verified`：平台订单不可变摄取、Owner/account/SKU 权威校验、订单行归一、库存预占/扣减/释放 ledger 已实现。
+- `implemented / automated_verified`：Owner 隔离承运商事件及真实签收投影门禁已实现；人工或 mock 状态不能形成 `actual_delivery`。
+- `implemented / automated_verified`：售后请求、Owner 决定、外部执行及可信终局回执已分离；旧 HTTP 直接退款旁路已冻结。
+- `automated_verified`：全量 Go 测试 3307 项通过；vet/build 通过；438 个 mutation 路由完成显式安全分类；124 对 PostgreSQL 迁移全量往返至版本 130。
+- `unknown`：尚无真实平台订单、真实库存动作、真实承运商签收或真实退款回执；以上工程完成不能证明真实经营结果发生。
+# 2026-07-12 补充：第 5 纵向单元工程核验
+
+- `implemented / automated_verified`：Owner/account/order 绑定的不可变平台结算、行级 minor-unit 金额和服务端原始载荷哈希已实现。
+- `implemented / automated_verified`：订单最终利润只读取外部结算、全 actual 精确成本、履约费用和售后终局回执，并以不可变版本保存。
+- `implemented / automated_verified`：银行/支付到账与结算应收分离；只有同对象同币种的完整金额匹配才能 `reconciled`。
+- `automated_verified`：全量 Go 测试 3341 项通过；vet/build 通过；443 个 mutation 路由完成显式安全分类；128 对 PostgreSQL 迁移全量往返至版本 136。
+- `unknown`：没有真实平台结算、真实最终利润或真实现金回收事实。
+
+## 2026-07-13补充：1688采集、质量、监控、素材与精确成本
+
+- `implemented / automated_verified`：1688首页/搜索页当前可见商品采集、详情页采集、拖动浮层、设备配对、逐项批量结果、停止、重复观察和结果对账已进入插件；插件50项测试通过。
+- `implemented / automated_verified`：采集质量中心、列表/详情来源分层、SKU矩阵诊断、货源关注与新观察提醒、任务级素材资产/权利版本、精确成本收入/贡献利润及草稿审批成本哈希冻结已接通前后端。
+- `automated_verified`：当前后端全量Go测试通过；Next.js 96页生产构建通过；473个mutation全部显式分类；141对PostgreSQL迁移完成全上行、最新回退/上行、全回退和再次全上行至150。迁移149另用已有成本版本验证升级成功。
+- `implemented / fail_closed`：视频没有受控处理器，固定阻止进入草稿；货源刷新只接受刷新任务创建后的Owner浏览器新快照；素材只接受最新、未过期且覆盖目标国家/渠道的Owner批准权利证据。
+- `unknown`：浏览器安全策略禁止Agent读取真实1688标签页，本次没有完成真实首页列表批次、真实详情字段、重复、停止、断网恢复及完整受控草稿人工验收；真实供应商、成交价、库存、图片权利和渠道结果仍不得宣称成立。
+# 2026-07-12 补充：第 6 纵向单元工程核验
+
+- `implemented / automated_verified`：权威事实快照、AI建议、Owner不可变决定、exact-action授权、DispatchSafe执行、同对象结果观察和下一轮推断建议已分层实现。
+- `implemented / automated_verified`：旧 `experiment` 的决策终态、final decision 和反馈闭环声明已失败关闭，页面与小Q合同改为 trace-only。
+- `automated_verified`：后端3350项测试通过；131对PostgreSQL迁移全量往返至140；452个mutation显式分类。前端首轮161项通过、8项统一超时，失败文件单worker重跑15项全部通过。
+- `unknown / not_established`：没有真实行动和后续经营结果，不能声明因果或反馈闭环已经在真实经营中成立。
+# 2026-07-12 补充：第 7 纵向单元工程核验
+
+- `implemented / automated_verified`：小Q已按 Owner + exact order_id 读取 Unit 4—6 权威事实，屏蔽 PII/raw payload，并对多订单现金返回 blocker。
+- `implemented / automated_verified`：小Q可读取经营决定案卷并保存 manifest-bound inferred 建议，但不能形成Owner决定或执行Command；businessfeedback保持deferred。
+- `automated_verified`：后端3357项测试通过；小Q/经营决定前端28项通过；455个mutation显式分类；文档引用242个、缺失0。
+- `unknown`：尚无真实Owner通过小Q完成的经营使用记录，不能声称真实自用效果已经验证。
+
+# 2026-07-12 补充：交易经营单元采购/补货权威链
+
+- `implemented / automated_verified`：Owner隔离的采购请求、exact经营决定批准、外部提交/下单/失败回执、部分/全部收货及库存receipt ledger已形成权威链；金额为minor unit + currency。
+- `implemented / automated_verified`：旧浮点采购写入口和内部收货事件库存旁路已失败关闭；采购与收货不能由内部状态冒充。
+- `implemented / automated_verified`：Owner `/purchase` 权威流程页面已接线，含不可变 exact selected Owner决定但不自动下单；3项聚焦测试和95页面Next生产构建通过。
+- `automated_verified`：聚焦测试54项、后端全量122包3365项测试及Go vet/build、461条mutation显式分类、133对PostgreSQL迁移全量往返至142。
+- `unknown`：没有真实供应商采购与收货事实，不能声称真实补货已经完成。
+
+# 2026-07-12 补充：Owner 权威路由 RBAC 合同
+
+- `implemented / automated_verified`：采购、经营行动反馈和售后处置新权威路由分别要求 `purchase.owner / business_feedback.owner / aftersales.owner`，同时保留领域 Owner 行隔离。
+- `implemented / automated_verified`：权限迁移只授权启用的 `owner/admin` 角色；跨角色测试证明 `ops/viewer` 返回403，Owner/admin允许通过权限中间件；实际三个领域路由测试证明ops被拒绝而Owner进入处理器。
+- `automated_verified`：权限与实际路由聚焦测试227项通过；135对PostgreSQL迁移完成全量往返至144。
+- `policy / implemented`：小Q仍通过登记Capability调用领域Service，不借用Owner HTTP权限；本次没有扩大其执行权限。

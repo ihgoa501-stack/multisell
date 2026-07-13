@@ -1,0 +1,9 @@
+DROP TRIGGER IF EXISTS trg_order_final_profit_version_immutable ON order_final_profit_version;
+DROP TRIGGER IF EXISTS trg_order_product_cost_allocation_immutable ON order_product_cost_allocation;
+DROP TRIGGER IF EXISTS trg_order_final_profit_authority ON order_final_profit_version;
+DROP TRIGGER IF EXISTS trg_order_product_cost_allocation_authority ON order_product_cost_allocation;
+DROP FUNCTION IF EXISTS reject_order_profit_authority_mutation();
+DROP FUNCTION IF EXISTS enforce_order_final_profit_authority();
+DROP FUNCTION IF EXISTS enforce_order_product_cost_allocation_authority();
+DROP TABLE IF EXISTS order_final_profit_version;
+DROP TABLE IF EXISTS order_product_cost_allocation;

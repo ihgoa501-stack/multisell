@@ -1,13 +1,32 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Descriptions, Table, Tabs, Tag, Button, Modal, Form, Select, message, Space, Typography } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import apiClient from '@/lib/api-client';
-import { getCurrentOperator } from '@/lib/user';
-import PageContainer from '@/components/ui/PageContainer';
-import type { Result, PageResult } from '@/types/api';
+import { useState } from "react";
+import {
+  Descriptions,
+  Table,
+  Tabs,
+  Tag,
+  Button,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  message,
+  Space,
+  Typography,
+} from "antd";
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ClockCircleOutlined,
+} from "@ant-design/icons";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "@/lib/api-client";
+import { getCurrentOperator } from "@/lib/user";
+import PageContainer from "@/components/ui/PageContainer";
+import type { Result, PageResult } from "@/types/api";
+import { useOwnerFactOptions } from "@/features/owner-facts/useOwnerFactOptions";
 
 const { Text } = Typography;
 
@@ -40,26 +59,26 @@ interface ApprovalStats {
 }
 
 const REQUEST_TYPE_MAP: Record<string, string> = {
-  publish: '上架',
-  price_change: '改价',
-  delist: '下架',
-  content_update: '内容更新',
+  publish: "上架",
+  price_change: "改价",
+  delist: "下架",
+  content_update: "内容更新",
 };
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  pending: { label: '待审批', color: 'orange' },
-  approved: { label: '已通过', color: 'green' },
-  rejected: { label: '已驳回', color: 'red' },
+  pending: { label: "待审批", color: "orange" },
+  approved: { label: "已通过", color: "green" },
+  rejected: { label: "已驳回", color: "red" },
 };
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr);
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+  return d.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -74,34 +93,51 @@ function fmtStatus(s: string) {
 }
 
 export default function ApprovalPage() {
+  const facts = useOwnerFactOptions();
   const queryClient = useQueryClient();
-  const [tabKey, setTabKey] = useState('pending');
+  const [tabKey, setTabKey] = useState("pending");
   const [page, setPage] = useState(1);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<ApprovalRequest | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [selectedRequest, setSelectedRequest] =
+    useState<ApprovalRequest | null>(null);
   const [form] = Form.useForm();
+  const [createForm] = Form.useForm();
 
-  const statusFilter = tabKey === 'all' ? '' : tabKey === 'pending' ? 'pending' : 'approved,rejected';
-  const queryKey = ['approval', tabKey, page];
+  const statusFilter =
+    tabKey === "all"
+      ? ""
+      : tabKey === "pending"
+        ? "pending"
+        : "approved,rejected";
+  const queryKey = ["approval", tabKey, page];
 
   const { data, isLoading } = useQuery<PageResult<ApprovalRequest>>({
     queryKey,
     queryFn: () =>
-      apiClient.getPage('/v1/approval', {
+      apiClient.getPage("/v1/approval", {
         page: String(page),
-        size: '20',
+        size: "20",
         ...(statusFilter ? { status: statusFilter } : {}),
       }),
   });
 
   const { data: statsData } = useQuery<Result<ApprovalStats>>({
-    queryKey: ['approval-stats'],
-    queryFn: () => apiClient.get('/v1/approval/stats'),
+    queryKey: ["approval-stats"],
+    queryFn: () => apiClient.get("/v1/approval/stats"),
     refetchInterval: 30000,
   });
 
   const reviewMutation = useMutation({
-    mutationFn: async ({ id, action, reviewNote }: { id: number; action: string; reviewNote: string }) => {
+    mutationFn: async ({
+      id,
+      action,
+      reviewNote,
+    }: {
+      id: number;
+      action: string;
+      reviewNote: string;
+    }) => {
       return apiClient.put(`/v1/approval/${id}/review`, {
         action,
         reviewer: getCurrentOperator(),
@@ -109,19 +145,33 @@ export default function ApprovalPage() {
       });
     },
     onSuccess: () => {
-      message.success('审批完成');
+      message.success("审批完成");
       setReviewModalOpen(false);
       setSelectedRequest(null);
       form.resetFields();
-      queryClient.invalidateQueries({ queryKey: ['approval'] });
-      queryClient.invalidateQueries({ queryKey: ['approval-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['owner-risk-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['owner-suggestions'] });
-      queryClient.invalidateQueries({ queryKey: ['owner-pending-approvals'] });
+      queryClient.invalidateQueries({ queryKey: ["approval"] });
+      queryClient.invalidateQueries({ queryKey: ["approval-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["owner-risk-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["owner-suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["owner-pending-approvals"] });
     },
     onError: (err: Error) => {
       message.error(`审批失败: ${err.message}`);
     },
+  });
+  const createMutation = useMutation({
+    mutationFn: (values: Record<string, unknown>) =>
+      apiClient.post<ApprovalRequest>("/v1/approval", values),
+    onSuccess: (result) => {
+      message.success(
+        `审批请求 #${result.data?.id ?? ""} 已创建；请在待审批中完成审核后使用该 ID`,
+      );
+      setCreateModalOpen(false);
+      createForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: ["approval"] });
+      queryClient.invalidateQueries({ queryKey: ["approval-stats"] });
+    },
+    onError: (err: Error) => message.error(`审批请求未创建: ${err.message}`),
   });
 
   const handleReview = (record: ApprovalRequest) => {
@@ -131,46 +181,46 @@ export default function ApprovalPage() {
 
   const handleReviewSubmit = (action: string) => {
     if (!selectedRequest) return;
-    const reviewNote = form.getFieldValue('review_note') || '';
+    const reviewNote = form.getFieldValue("review_note") || "";
     reviewMutation.mutate({ id: selectedRequest.id, action, reviewNote });
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 70 },
-    { title: '商品ID', dataIndex: 'product_id', width: 90 },
-    { title: '类型', dataIndex: 'request_type', width: 100, render: fmtType },
-    { title: '状态', dataIndex: 'status', width: 90, render: fmtStatus },
-    { title: '发起人', dataIndex: 'requester', width: 100 },
-    { title: '原因', dataIndex: 'reason', ellipsis: true },
+    { title: "ID", dataIndex: "id", width: 70 },
+    { title: "商品ID", dataIndex: "product_id", width: 90 },
+    { title: "类型", dataIndex: "request_type", width: 100, render: fmtType },
+    { title: "状态", dataIndex: "status", width: 90, render: fmtStatus },
+    { title: "发起人", dataIndex: "requester", width: 100 },
+    { title: "原因", dataIndex: "reason", ellipsis: true },
     {
-      title: '旧值',
-      dataIndex: 'old_value',
+      title: "旧值",
+      dataIndex: "old_value",
       width: 120,
       ellipsis: true,
-      render: (v: string) => v || '-',
+      render: (v: string) => v || "-",
     },
     {
-      title: '新值',
-      dataIndex: 'new_value',
+      title: "新值",
+      dataIndex: "new_value",
       width: 120,
       ellipsis: true,
-      render: (v: string) => v || '-',
+      render: (v: string) => v || "-",
     },
     {
-      title: '创建时间',
-      dataIndex: 'created_at',
+      title: "创建时间",
+      dataIndex: "created_at",
       width: 160,
       render: formatDate,
     },
     {
-      title: '操作',
-      key: 'action',
+      title: "操作",
+      key: "action",
       width: 100,
       render: (_: unknown, record: ApprovalRequest) => {
-        if (record.status !== 'pending') {
+        if (record.status !== "pending") {
           return (
             <Text type="secondary">
-              {record.status === 'approved' ? '已通过' : '已驳回'}
+              {record.status === "approved" ? "已通过" : "已驳回"}
             </Text>
           );
         }
@@ -190,20 +240,21 @@ export default function ApprovalPage() {
 
   const tabItems = [
     {
-      key: 'pending',
+      key: "pending",
       label: (
         <span>
           <ClockCircleOutlined /> 待审批
-          {statsData?.data?.pending_count != null && statsData.data.pending_count > 0 && (
-            <Tag color="orange" style={{ marginLeft: 4 }}>
-              {statsData.data.pending_count}
-            </Tag>
-          )}
+          {statsData?.data?.pending_count != null &&
+            statsData.data.pending_count > 0 && (
+              <Tag color="orange" style={{ marginLeft: 4 }}>
+                {statsData.data.pending_count}
+              </Tag>
+            )}
         </span>
       ),
     },
     {
-      key: 'approved',
+      key: "approved",
       label: (
         <span>
           <CheckCircleOutlined /> 已审批
@@ -211,14 +262,28 @@ export default function ApprovalPage() {
       ),
     },
     {
-      key: 'all',
+      key: "all",
       label: <span>全部</span>,
     },
   ];
 
   return (
-    <PageContainer title="审批工作台">
-      <Tabs activeKey={tabKey} onChange={(k) => { setTabKey(k); setPage(1); }} items={tabItems} />
+    <PageContainer
+      title="审批工作台"
+      extra={
+        <Button type="primary" onClick={() => setCreateModalOpen(true)}>
+          申请一次性审批
+        </Button>
+      }
+    >
+      <Tabs
+        activeKey={tabKey}
+        onChange={(k) => {
+          setTabKey(k);
+          setPage(1);
+        }}
+        items={tabItems}
+      />
 
       <Table
         dataSource={data?.data || []}
@@ -237,7 +302,104 @@ export default function ApprovalPage() {
       />
 
       <Modal
-        title={`审批请求 #${selectedRequest?.id || ''}`}
+        title="申请一次性高风险审批"
+        open={createModalOpen}
+        onCancel={() => setCreateModalOpen(false)}
+        onOk={() => createForm.submit()}
+        confirmLoading={createMutation.isPending}
+      >
+        <Form
+          form={createForm}
+          layout="vertical"
+          onFinish={(values) => createMutation.mutate(values)}
+          initialValues={{ request_type: "agent_action", risk_level: "high" }}
+        >
+          <Form.Item
+            name="request_type"
+            label="动作审批类型"
+            rules={[{ required: true }]}
+          >
+            <Select
+              options={[
+                {
+                  value: "agent_action",
+                  label: "Owner 经营决定 / Agent action",
+                },
+                { value: "refund", label: "售后 / 退款" },
+                { value: "finance", label: "现金与结算对账" },
+                { value: "publish", label: "发布" },
+                { value: "destructive_data_change", label: "其他破坏性变更" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="product_id" hidden rules={[{ required: true }]}>
+            <InputNumber />
+          </Form.Item>
+          <Form.Item
+            name="target_type"
+            label="精确目标类型"
+            rules={[{ required: true }]}
+          >
+            <Select
+              options={[
+                { value: "aftersale", label: "售后处置（订单或案卷）" },
+                { value: "finance", label: "现金对账（到账事实）" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item noStyle dependencies={["target_type"]}>
+            {({ getFieldValue }) => (
+              <Form.Item
+                name="target_id"
+                label="精确目标"
+                rules={[{ required: true }]}
+              >
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  options={
+                    getFieldValue("target_type") === "finance"
+                      ? (facts.data?.cash_receipts ?? []).map((c) => ({
+                          value: c.id,
+                          label: `到账 ${c.external_receipt_id} · ${c.amount_minor} ${c.currency}`,
+                        }))
+                      : [
+                          ...(facts.data?.orders ?? []).map((o) => ({
+                            value: o.id,
+                            label: `订单 ${o.external_order_id} · ${o.platform_code}`,
+                          })),
+                          ...(facts.data?.aftersales_cases ?? []).map((c) => ({
+                            value: c.id,
+                            label: `售后案卷 #${c.id} · 订单 #${c.order_id} · ${c.status}`,
+                          })),
+                        ]
+                  }
+                  onChange={(id) => createForm.setFieldValue("product_id", id)}
+                />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="申请理由"
+            rules={[{ required: true, whitespace: true }]}
+          >
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item
+            name="risk_level"
+            label="风险等级"
+            rules={[{ required: true }]}
+          >
+            <Select
+              options={["high", "critical"].map((value) => ({ value }))}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`审批请求 #${selectedRequest?.id || ""}`}
         open={reviewModalOpen}
         onCancel={() => {
           setReviewModalOpen(false);
@@ -250,7 +412,7 @@ export default function ApprovalPage() {
               danger
               icon={<CloseCircleOutlined />}
               loading={reviewMutation.isPending}
-              onClick={() => handleReviewSubmit('reject')}
+              onClick={() => handleReviewSubmit("reject")}
             >
               拒绝，保持阻塞
             </Button>
@@ -258,8 +420,8 @@ export default function ApprovalPage() {
               type="primary"
               icon={<CheckCircleOutlined />}
               loading={reviewMutation.isPending}
-              onClick={() => handleReviewSubmit('approve')}
-              style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+              onClick={() => handleReviewSubmit("approve")}
+              style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
             >
               批准，允许执行任务
             </Button>
@@ -269,22 +431,38 @@ export default function ApprovalPage() {
         {selectedRequest && (
           <div style={{ marginBottom: 16 }}>
             <Descriptions bordered size="small" column={1}>
-              <Descriptions.Item label="业务动作">{fmtType(selectedRequest.request_type)}</Descriptions.Item>
+              <Descriptions.Item label="业务动作">
+                {fmtType(selectedRequest.request_type)}
+              </Descriptions.Item>
               <Descriptions.Item label="风险等级">
-                <Tag color={selectedRequest.risk_level === 'high' ? 'red' : selectedRequest.risk_level === 'medium' ? 'orange' : 'green'}>
-                  {selectedRequest.risk_level || '未标记'}
+                <Tag
+                  color={
+                    selectedRequest.risk_level === "high"
+                      ? "red"
+                      : selectedRequest.risk_level === "medium"
+                        ? "orange"
+                        : "green"
+                  }
+                >
+                  {selectedRequest.risk_level || "未标记"}
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="目标对象">
-                {selectedRequest.target_type || '-'} #{selectedRequest.target_id || '-'}
+                {selectedRequest.target_type || "-"} #
+                {selectedRequest.target_id || "-"}
               </Descriptions.Item>
-              <Descriptions.Item label="发起人">{selectedRequest.requester}</Descriptions.Item>
-              <Descriptions.Item label="Agent 理由">{selectedRequest.reason || '无'}</Descriptions.Item>
+              <Descriptions.Item label="发起人">
+                {selectedRequest.requester}
+              </Descriptions.Item>
+              <Descriptions.Item label="Agent 理由">
+                {selectedRequest.reason || "无"}
+              </Descriptions.Item>
               <Descriptions.Item label="批准后会发生什么">
                 系统允许对应刊登任务进入执行流程；审批本身不会直接改价、改库存、改订单或发布到真实平台。
               </Descriptions.Item>
               <Descriptions.Item label="不批准会怎样">
-                刊登任务保持阻塞，Owner 可回到候选商品或任务详情补充信息后重新评估。
+                刊登任务保持阻塞，Owner
+                可回到候选商品或任务详情补充信息后重新评估。
               </Descriptions.Item>
             </Descriptions>
           </div>
@@ -296,11 +474,13 @@ export default function ApprovalPage() {
               placeholder="选择或输入审批备注"
               maxCount={1}
               options={[
-                { label: '已确认，同意', value: '已确认，同意' },
-                { label: '需要更多信息', value: '需要更多信息' },
-                { label: '不符合要求', value: '不符合要求' },
+                { label: "已确认，同意", value: "已确认，同意" },
+                { label: "需要更多信息", value: "需要更多信息" },
+                { label: "不符合要求", value: "不符合要求" },
               ]}
-              onChange={(v: string[]) => form.setFieldsValue({ review_note: v[0] || '' })}
+              onChange={(v: string[]) =>
+                form.setFieldsValue({ review_note: v[0] || "" })
+              }
             />
           </Form.Item>
         </Form>

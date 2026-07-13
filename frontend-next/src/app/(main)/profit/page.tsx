@@ -1,255 +1,256 @@
-'use client';
-
-import { useMemo, useState } from 'react';
-import { Card, Col, Row, Statistic, Table, Tag, Select, DatePicker, Input, Empty } from 'antd';
-import { useQuery } from '@tanstack/react-query';
-import dayjs from 'dayjs';
-import apiClient from '@/lib/api-client';
-
-interface ProfitSummary {
+"use client";
+import { useState } from "react";
+import {
+  Alert,
+  Button,
+  Card,
+  Form,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from "antd";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import apiClient from "@/lib/api-client";
+import {
+  orderLabel,
+  useOwnerFactOptions,
+} from "@/features/owner-facts/useOwnerFactOptions";
+type Version = {
   id: number;
-  product_id: number;
-  purchase_cost: number;
-  shipping_cost: number;
-  platform_fee: number;
-  tariff_cost: number;
-  other_cost: number;
-  total_cost: number;
-  target_revenue: number;
-  estimated_profit: number;
-  profit_margin: number;
-  status: string;
+  version: number;
   currency: string;
-  calculated_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
-const statusLabels: Record<string, { color: string; label: string }> = {
-  profitable: { color: 'green', label: '盈利' },
-  marginal: { color: 'orange', label: '微利' },
-  unprofitable: { color: 'red', label: '亏损' },
+  revenue_minor: number;
+  product_cost_minor: number;
+  settlement_fee_minor: number;
+  fulfillment_fee_minor: number;
+  refund_minor: number;
+  total_cost_minor: number;
+  profit_minor: number;
+  source_manifest_sha256: string;
+  finalized_at: string;
 };
-
+type VersionWire = Partial<Version> & {
+  ID?: number;
+  Version?: number;
+  Currency?: string;
+  RevenueMinor?: number;
+  ProductCostMinor?: number;
+  SettlementFeeMinor?: number;
+  FulfillmentFeeMinor?: number;
+  RefundMinor?: number;
+  TotalCostMinor?: number;
+  ProfitMinor?: number;
+  SourceManifestSHA256?: string;
+  FinalizedAt?: string;
+};
+export const normalizeFinalProfitVersion = (v: VersionWire): Version => ({
+  id: v.id ?? v.ID ?? 0,
+  version: v.version ?? v.Version ?? 0,
+  currency: v.currency ?? v.Currency ?? "",
+  revenue_minor: v.revenue_minor ?? v.RevenueMinor ?? 0,
+  product_cost_minor: v.product_cost_minor ?? v.ProductCostMinor ?? 0,
+  settlement_fee_minor: v.settlement_fee_minor ?? v.SettlementFeeMinor ?? 0,
+  fulfillment_fee_minor: v.fulfillment_fee_minor ?? v.FulfillmentFeeMinor ?? 0,
+  refund_minor: v.refund_minor ?? v.RefundMinor ?? 0,
+  total_cost_minor: v.total_cost_minor ?? v.TotalCostMinor ?? 0,
+  profit_minor: v.profit_minor ?? v.ProfitMinor ?? 0,
+  source_manifest_sha256:
+    v.source_manifest_sha256 ?? v.SourceManifestSHA256 ?? "",
+  finalized_at: v.finalized_at ?? v.FinalizedAt ?? "",
+});
+const amount = (n: number, c: string) => `${c} ${(n / 100).toFixed(2)}`;
 export default function ProfitPage() {
-  const [page, setPage] = useState(1);
-  const [size, setSize] = useState(20);
-  const [status, setStatus] = useState<string>('');
-  const [dateRange, setDateRange] = useState<[unknown, unknown] | null>(null);
-  const [search, setSearch] = useState('');
-
-  const queryParams = useMemo(() => {
-    const params: Record<string, string> = { page: String(page), size: String(size) };
-    if (status) params.status = status;
-    if (dateRange?.[0]) {
-      params.start_date = dayjs(dateRange[0] as dayjs.Dayjs).format('YYYY-MM-DD');
-    }
-    if (dateRange?.[1]) {
-      params.end_date = dayjs(dateRange[1] as dayjs.Dayjs).format('YYYY-MM-DD');
-    }
-    if (search) params.search = search;
-    return params;
-  }, [page, size, status, dateRange, search]);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['profit-summaries', queryParams],
-    queryFn: () => apiClient.getPage<ProfitSummary>('/v1/profit/summaries', queryParams),
+  const facts = useOwnerFactOptions();
+  const [orderId, setOrderId] = useState<number>();
+  const versions = useQuery({
+    queryKey: ["final-profit-versions", orderId],
+    queryFn: async () =>
+      (
+        (
+          await apiClient.get<VersionWire[]>(
+            `/v1/profit/order/${orderId}/final-versions`,
+          )
+        ).data ?? []
+      ).map(normalizeFinalProfitVersion),
+    enabled: !!orderId,
   });
-
-  const items = data?.data || [];
-  const total = data?.total || 0;
-
-  const avgMargin =
-    items.length > 0
-      ? items.reduce((s, i) => s + i.profit_margin, 0) / items.length
-      : 0;
-  const unprofitableCount = items.filter((i) => i.status === 'unprofitable').length;
-
-  const columns = [
-    { title: 'SKU', dataIndex: 'product_id', width: 100 },
-    {
-      title: '采购成本',
-      dataIndex: 'purchase_cost',
-      width: 100,
-      render: (v: number) => `¥${(v ?? 0).toFixed(2)}`,
-      sorter: (a: ProfitSummary, b: ProfitSummary) => a.purchase_cost - b.purchase_cost,
+  const allocate = useMutation({
+    mutationFn: async (v: {
+      order_item_id: number;
+      sourcing_cost_version_id: number;
+    }) =>
+      (await apiClient.post(`/v1/profit/order/${orderId}/cost-allocations`, v))
+        .data,
+    onSuccess: () => message.success("精确成本版本已冻结到订单行"),
+  });
+  const finalize = useMutation({
+    mutationFn: async () =>
+      (await apiClient.post<Version>(`/v1/profit/order/${orderId}/finalize`))
+        .data,
+    onSuccess: () => {
+      message.success("已生成新的不可变最终利润版本");
+      versions.refetch();
     },
-    {
-      title: '物流成本',
-      dataIndex: 'shipping_cost',
-      width: 100,
-      render: (v: number) => `¥${(v ?? 0).toFixed(2)}`,
-    },
-    {
-      title: '平台费用',
-      dataIndex: 'platform_fee',
-      width: 100,
-      render: (v: number) => `¥${(v ?? 0).toFixed(2)}`,
-    },
-    {
-      title: '关税',
-      dataIndex: 'tariff_cost',
-      width: 80,
-      render: (v: number) => `¥${(v ?? 0).toFixed(2)}`,
-    },
-    {
-      title: '其他成本',
-      dataIndex: 'other_cost',
-      width: 80,
-      render: (v: number) => `¥${(v ?? 0).toFixed(2)}`,
-    },
-    {
-      title: '总成本',
-      dataIndex: 'total_cost',
-      width: 100,
-      render: (v: number) => `¥${(v ?? 0).toFixed(2)}`,
-    },
-    {
-      title: '售价',
-      dataIndex: 'target_revenue',
-      width: 100,
-      render: (v: number) => `¥${(v ?? 0).toFixed(2)}`,
-    },
-    {
-      title: '预估利润',
-      dataIndex: 'estimated_profit',
-      width: 110,
-      render: (v: number) => {
-        const val = v ?? 0;
-        return (
-          <span style={{ color: val >= 0 ? '#52c41a' : '#ff4d4f', fontWeight: 600 }}>
-            ¥{val.toFixed(2)}
-          </span>
-        );
-      },
-      sorter: (a: ProfitSummary, b: ProfitSummary) => a.estimated_profit - b.estimated_profit,
-    },
-    {
-      title: '利润率',
-      dataIndex: 'profit_margin',
-      width: 90,
-      render: (v: number) => {
-        const val = v ?? 0;
-        let color = '#52c41a';
-        if (val < 0) color = '#ff4d4f';
-        else if (val < 15) color = '#faad14';
-        return (
-          <span style={{ color, fontWeight: 600 }}>{val.toFixed(1)}%</span>
-        );
-      },
-      sorter: (a: ProfitSummary, b: ProfitSummary) => a.profit_margin - b.profit_margin,
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      width: 80,
-      render: (v: string) => {
-        const s = statusLabels[v] ?? { color: 'default', label: v };
-        return <Tag color={s.color}>{s.label}</Tag>;
-      },
-    },
-  ];
-
+  });
   return (
-    <div style={{ padding: '16px 20px', minHeight: '100%' }}>
-      <h1
-        style={{
-          fontFamily: 'var(--ds)',
-          fontWeight: 700,
-          fontSize: 'var(--text-h1)',
-          color: 'var(--t1)',
-          marginBottom: 16,
-        }}
-      >
-        利润真相
-      </h1>
-
-      {/* Filter bar */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col>
-          <Select
-            allowClear
-            placeholder="状态"
-            style={{ width: 140 }}
-            value={status || undefined}
-            onChange={(v) => {
-              setStatus(v || '');
-              setPage(1);
-            }}
-            options={[
-              { label: '全部', value: '' },
-              { label: '盈利', value: 'profitable' },
-              { label: '微利', value: 'marginal' },
-              { label: '亏损', value: 'unprofitable' },
-            ]}
-          />
-        </Col>
-        <Col>
-          <DatePicker.RangePicker
-            onChange={(dates) => {
-              setDateRange(dates as [unknown, unknown] | null);
-              setPage(1);
-            }}
-          />
-        </Col>
-        <Col>
-          <Input.Search
-            placeholder="搜索商品..."
-            allowClear
-            onSearch={(v) => {
-              setSearch(v);
-              setPage(1);
-            }}
-            style={{ width: 200 }}
-          />
-        </Col>
-      </Row>
-
-      {/* Summary stats */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={8}>
-          <Card>
-            <Statistic title="总商品数" value={total} />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card>
-            <Statistic title="平均利润率" value={avgMargin} precision={1} suffix="%" />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title="亏损商品数"
-              value={unprofitableCount}
-              valueStyle={{ color: unprofitableCount > 0 ? '#ff4d4f' : undefined }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Table */}
-      <Table
-        rowKey="id"
-        loading={isLoading}
-        dataSource={items}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        columns={columns as any}
-        scroll={{ x: 'max-content' }}
-        locale={{ emptyText: <Empty description="暂无利润数据" /> }}
-        pagination={{
-          current: data?.page ?? page,
-          pageSize: data?.size ?? size,
-          total: data?.total ?? 0,
-          showSizeChanger: true,
-          pageSizeOptions: [10, 20, 50],
-          showTotal: (t) => `共 ${t} 条`,
-          onChange: (p, s) => {
-            setPage(p);
-            setSize(s);
-          },
-        }}
+    <main className="p-4 md:p-5">
+      <Typography.Title level={1}>订单最终利润</Typography.Title>
+      <Alert
+        type="info"
+        showIcon
+        message="权威利润只来自同一订单的可信事实"
+        description="必须先绑定每个订单行的 actual 成本版本，再由平台结算、履约费用和售后终局共同复算。旧商品利润汇总是 legacy 浮点估算，不是最终利润。"
       />
-    </div>
+      <Card className="mt-4" title="选择订单">
+        <Space wrap>
+          <Select
+            showSearch
+            optionFilterProp="label"
+            aria-label="选择权威订单"
+            style={{ width: 360 }}
+            value={orderId}
+            options={(facts.data?.orders ?? []).map((o) => ({
+              value: o.id,
+              label: orderLabel(o),
+            }))}
+            onChange={setOrderId}
+          />
+          <Button onClick={() => versions.refetch()} disabled={!orderId}>
+            读取版本
+          </Button>
+        </Space>
+      </Card>
+      <Card className="mt-4" title="冻结订单行成本">
+        <Form layout="inline" onFinish={(v) => allocate.mutate(v)}>
+          <Form.Item
+            name="order_item_id"
+            label="订单行"
+            rules={[{ required: true }]}
+          >
+            <Select
+              style={{ width: 300 }}
+              options={(facts.data?.order_items ?? [])
+                .filter((i) => i.order_id === orderId)
+                .map((i) => ({
+                  value: i.id,
+                  label: `${i.product_name} · ${i.sku_code || `SKU #${i.sku_id}`} · ×${i.quantity}`,
+                }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="sourcing_cost_version_id"
+            label="actual 成本版本"
+            rules={[{ required: true }]}
+          >
+            <Select
+              style={{ width: 300 }}
+              options={(facts.data?.cost_versions ?? []).map((v) => ({
+                value: v.id,
+                label: `SKU #${v.internal_sku_id} · v${v.version} · ${v.total_minor} ${v.currency}`,
+              }))}
+            />
+          </Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            disabled={!orderId}
+            loading={allocate.isPending}
+          >
+            绑定精确成本
+          </Button>
+        </Form>
+        {allocate.error && (
+          <Alert
+            className="mt-4"
+            type="error"
+            showIcon
+            message="成本未绑定"
+            description={allocate.error.message}
+          />
+        )}
+      </Card>
+      <Card
+        className="mt-4"
+        title="复算并冻结最终利润"
+        extra={
+          <Button
+            type="primary"
+            danger
+            disabled={!orderId}
+            loading={finalize.isPending}
+            onClick={() => finalize.mutate()}
+          >
+            生成新版本
+          </Button>
+        }
+      >
+        {finalize.error && (
+          <Alert
+            type="warning"
+            showIcon
+            message="当前不能形成最终利润"
+            description={finalize.error.message}
+          />
+        )}
+        <Table
+          className="mt-4"
+          rowKey="id"
+          loading={versions.isLoading}
+          locale={{
+            emptyText: "尚无最终利润版本；缺少任一权威事实时系统会阻断。",
+          }}
+          dataSource={versions.data ?? []}
+          columns={[
+            { title: "版本", dataIndex: "version" },
+            {
+              title: "收入",
+              render: (_, r) => amount(r.revenue_minor, r.currency),
+            },
+            {
+              title: "商品成本",
+              render: (_, r) => amount(r.product_cost_minor, r.currency),
+            },
+            {
+              title: "平台/履约/退款",
+              render: (_, r) =>
+                amount(
+                  r.settlement_fee_minor +
+                    r.fulfillment_fee_minor +
+                    r.refund_minor,
+                  r.currency,
+                ),
+            },
+            {
+              title: "最终利润",
+              render: (_, r) => (
+                <Tag
+                  color={
+                    r.profit_minor > 0
+                      ? "success"
+                      : r.profit_minor < 0
+                        ? "error"
+                        : "default"
+                  }
+                >
+                  {amount(r.profit_minor, r.currency)}
+                </Tag>
+              ),
+            },
+            {
+              title: "来源 manifest",
+              render: (_, r) => (
+                <Typography.Text copyable ellipsis style={{ maxWidth: 180 }}>
+                  {r.source_manifest_sha256}
+                </Typography.Text>
+              ),
+            },
+            { title: "冻结时间", dataIndex: "finalized_at" },
+          ]}
+        />
+      </Card>
+    </main>
   );
 }

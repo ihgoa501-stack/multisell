@@ -291,6 +291,7 @@ cd /opt/multisell
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /tmp/lingmirror-compose-rendered.yml
 ./scripts/verify_prod_compose.sh
+./scripts/verify_monitoring_compose.sh
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 ```
@@ -335,6 +336,8 @@ pg_restore -l /Users/lc/Backups/lingmirror/multisell-pre-recovery-20260711-16281
 ```bash
 ./scripts/verify_backup_restore.sh /path/to/multisell_YYYY-MM-DD_HHMMSS.dump
 ```
+
+该验证器要求同目录存在脚本生成的 `.dump.sha256`。`restore.sh` 同样默认拒绝缺少校验文件的恢复；只有已按本节单独核验过 SHA-256 的历史可信归档，才可显式设置 `RESTORE_REQUIRE_CHECKSUM=false`。
 
 校验值不匹配或 `pg_restore -l` 失败时立即停止。
 

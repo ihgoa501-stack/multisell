@@ -229,6 +229,3 @@ output: pending_checks
 - `backend-go/internal/domain/imagegen/`
 - `backend-go/internal/prismadapter/`
 - `backend-go/migrations/000097_sourcing_draft_content_approval.up.sql`
-- `docs/research/project-truth-audit-2026-07-12.md`
-- `docs/research/project-truth-audit-2026-07-11.md`
-- `docs/SELF_USE_OPERATING_DIRECTION.md`

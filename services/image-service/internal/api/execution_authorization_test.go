@@ -49,14 +49,14 @@ func TestPaidExecutionAuthorizationRejectsEveryTargetMismatchBeforeEnqueue(t *te
 	dir := t.TempDir()
 	store, _ := core.OpenStore(filepath.Join(dir, "jobs.json"))
 	blobs, _ := blobstore.New(filepath.Join(dir, "blobs"))
-	job, _, err := store.Create(core.CreateJob{OwnerID: 7, LingMirrorTaskID: "42", LingMirrorTaskVersion: 3, IdempotencyKey: "paid-job", ManifestHash: strings.Repeat("a", 64), Operation: "OPENAI_IMAGE_EDIT", Processor: "openai", InputBlobID: strings.Repeat("b", 64), Width: 1024, Height: 1024, Format: "png"})
+	job, _, err := store.Create(core.CreateJob{OwnerID: 7, LingMirrorTaskID: "42", LingMirrorTaskVersion: 3, IdempotencyKey: "paid-job", ManifestHash: strings.Repeat("a", 64), Operation: "OPENAI_IMAGE_EDIT", Processor: "openai", InputBlobID: strings.Repeat("b", 64), Width: 1024, Height: 1024, Format: "png", MaxCost: "1.25", Currency: "USD", Region: "us", ProviderEnvironment: "production"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(New("secret", store, blobs, testExecutionKey).Handler())
 	defer srv.Close()
 	now := time.Now().UTC()
-	base := executionauth.Claims{ApprovalExecutionID: "approval-1", TaskID: "42", TaskVersion: 3, OwnerID: 7, JobID: job.ID, ManifestHash: job.ManifestHash, Operation: job.Operation, Processor: job.Processor, MaxCost: "1.25", Currency: "USD", Nonce: "nonce-valid", IssuedAt: now.Unix(), NotBefore: now.Add(-time.Second).Unix(), ExpiresAt: now.Add(time.Minute).Unix(), Audience: executionauth.Audience}
+	base := executionauth.Claims{ApprovalExecutionID: "approval-1", TaskID: "42", TaskVersion: 3, OwnerID: 7, JobID: job.ID, ManifestHash: job.ManifestHash, Operation: job.Operation, Processor: job.Processor, MaxCost: "1.25", Currency: "USD", Region: "us", ProviderEnvironment: "production", ExecutionRightsSnapshotID: 11, RightsGrantID: 12, RightsGrantVersion: 1, RightsEvidenceSHA256: strings.Repeat("e", 64), Nonce: "nonce-valid", IssuedAt: now.Unix(), NotBefore: now.Add(-time.Second).Unix(), ExpiresAt: now.Add(time.Minute).Unix(), Audience: executionauth.Audience}
 	cases := map[string]func(*executionauth.Claims){
 		"wrong audience": func(c *executionauth.Claims) { c.Audience = "other" },
 		"expired": func(c *executionauth.Claims) {
@@ -64,15 +64,22 @@ func TestPaidExecutionAuthorizationRejectsEveryTargetMismatchBeforeEnqueue(t *te
 			c.NotBefore = c.IssuedAt
 			c.ExpiresAt = now.Add(-time.Second).Unix()
 		},
-		"wrong job":       func(c *executionauth.Claims) { c.JobID = "wrong" },
-		"wrong task":      func(c *executionauth.Claims) { c.TaskID = "43" },
-		"wrong version":   func(c *executionauth.Claims) { c.TaskVersion = 4 },
-		"wrong owner":     func(c *executionauth.Claims) { c.OwnerID = 8 },
-		"wrong manifest":  func(c *executionauth.Claims) { c.ManifestHash = strings.Repeat("c", 64) },
-		"wrong operation": func(c *executionauth.Claims) { c.Operation = "OTHER" },
-		"wrong processor": func(c *executionauth.Claims) { c.Processor = "adobe" },
-		"zero max cost":   func(c *executionauth.Claims) { c.MaxCost = "0" },
-		"wrong currency":  func(c *executionauth.Claims) { c.Currency = "usd" },
+		"wrong job":               func(c *executionauth.Claims) { c.JobID = "wrong" },
+		"wrong task":              func(c *executionauth.Claims) { c.TaskID = "43" },
+		"wrong version":           func(c *executionauth.Claims) { c.TaskVersion = 4 },
+		"wrong owner":             func(c *executionauth.Claims) { c.OwnerID = 8 },
+		"wrong manifest":          func(c *executionauth.Claims) { c.ManifestHash = strings.Repeat("c", 64) },
+		"wrong operation":         func(c *executionauth.Claims) { c.Operation = "OTHER" },
+		"wrong processor":         func(c *executionauth.Claims) { c.Processor = "adobe" },
+		"negative max cost":       func(c *executionauth.Claims) { c.MaxCost = "-1" },
+		"wrong currency":          func(c *executionauth.Claims) { c.Currency = "usd" },
+		"wrong region":            func(c *executionauth.Claims) { c.Region = "eu" },
+		"mixed sandbox flag":      func(c *executionauth.Claims) { c.Sandbox = true },
+		"mixed watermarked flag":  func(c *executionauth.Claims) { c.Watermarked = true },
+		"mixed publish flag":      func(c *executionauth.Claims) { c.NonPublishable = true },
+		"missing rights snapshot": func(c *executionauth.Claims) { c.ExecutionRightsSnapshotID = 0 },
+		"missing rights grant":    func(c *executionauth.Claims) { c.RightsGrantID = 0 },
+		"bad rights evidence":     func(c *executionauth.Claims) { c.RightsEvidenceSHA256 = "bad" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -106,9 +113,9 @@ func TestPaidExecutionAuthorizationIsPersistedAndConsumedExactlyOnce(t *testing.
 	path := filepath.Join(dir, "jobs.json")
 	store, _ := core.OpenStore(path)
 	blobs, _ := blobstore.New(filepath.Join(dir, "blobs"))
-	job, _, _ := store.Create(core.CreateJob{OwnerID: 7, LingMirrorTaskID: "42", LingMirrorTaskVersion: 3, IdempotencyKey: "paid-job", ManifestHash: strings.Repeat("a", 64), Operation: "OPENAI_IMAGE_EDIT", Processor: "openai", InputBlobID: strings.Repeat("b", 64), Width: 1024, Height: 1024, Format: "png"})
+	job, _, _ := store.Create(core.CreateJob{OwnerID: 7, LingMirrorTaskID: "42", LingMirrorTaskVersion: 3, IdempotencyKey: "paid-job", ManifestHash: strings.Repeat("a", 64), Operation: "OPENAI_IMAGE_EDIT", Processor: "openai", InputBlobID: strings.Repeat("b", 64), Width: 1024, Height: 1024, Format: "png", MaxCost: "1.25", Currency: "USD", Region: "us", ProviderEnvironment: "production"})
 	now := time.Now().UTC()
-	claims := executionauth.Claims{ApprovalExecutionID: "approval-1", TaskID: "42", TaskVersion: 3, OwnerID: 7, JobID: job.ID, ManifestHash: job.ManifestHash, Operation: job.Operation, Processor: job.Processor, MaxCost: "1.25", Currency: "USD", Nonce: "single-use-nonce", IssuedAt: now.Unix(), NotBefore: now.Add(-time.Second).Unix(), ExpiresAt: now.Add(time.Minute).Unix(), Audience: executionauth.Audience}
+	claims := executionauth.Claims{ApprovalExecutionID: "approval-1", TaskID: "42", TaskVersion: 3, OwnerID: 7, JobID: job.ID, ManifestHash: job.ManifestHash, Operation: job.Operation, Processor: job.Processor, MaxCost: "1.25", Currency: "USD", Region: "us", ProviderEnvironment: "production", ExecutionRightsSnapshotID: 11, RightsGrantID: 12, RightsGrantVersion: 1, RightsEvidenceSHA256: strings.Repeat("e", 64), Nonce: "single-use-nonce", IssuedAt: now.Unix(), NotBefore: now.Add(-time.Second).Unix(), ExpiresAt: now.Add(time.Minute).Unix(), Audience: executionauth.Audience}
 	token := signTestClaims(t, claims)
 	srv := httptest.NewServer(New("secret", store, blobs, testExecutionKey).Handler())
 	postExecution(t, srv.URL, job.ID, token, http.StatusAccepted)
@@ -127,6 +134,24 @@ func TestPaidExecutionAuthorizationIsPersistedAndConsumedExactlyOnce(t *testing.
 	if got := len(reopened.ListAttempts(job.ID)); got != 1 {
 		t.Fatalf("replay after restart created attempt: %d", got)
 	}
+}
+
+func TestSandboxExecutionAuthorizationRequiresZeroCostAndAllRestrictions(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := core.OpenStore(filepath.Join(dir, "jobs.json"))
+	blobs, _ := blobstore.New(filepath.Join(dir, "blobs"))
+	job, _, err := store.Create(core.CreateJob{OwnerID: 7, LingMirrorTaskID: "42", LingMirrorTaskVersion: 3, IdempotencyKey: "sandbox-job", ManifestHash: strings.Repeat("a", 64), Operation: "PHOTOROOM_WHITE_BACKGROUND_SANDBOX", Processor: "photoroom", InputBlobID: strings.Repeat("b", 64), Width: 1024, Height: 1024, Format: "png", MaxCost: "0", Currency: "USD", Region: "us", ProviderEnvironment: "sandbox", Sandbox: true, Watermarked: true, NonPublishable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	claims := executionauth.Claims{ApprovalExecutionID: "approval-sandbox", TaskID: "42", TaskVersion: 3, OwnerID: 7, JobID: job.ID, ManifestHash: job.ManifestHash, Operation: job.Operation, Processor: job.Processor, MaxCost: "1", Currency: "USD", Region: "us", ProviderEnvironment: "sandbox", Sandbox: true, Watermarked: true, NonPublishable: true, ExecutionRightsSnapshotID: 11, RightsGrantID: 12, RightsGrantVersion: 1, RightsEvidenceSHA256: strings.Repeat("e", 64), Nonce: "sandbox-nonce-invalid", IssuedAt: now.Unix(), NotBefore: now.Add(-time.Second).Unix(), ExpiresAt: now.Add(time.Minute).Unix(), Audience: executionauth.Audience}
+	srv := httptest.NewServer(New("secret", store, blobs, testExecutionKey).Handler())
+	defer srv.Close()
+	postExecution(t, srv.URL, job.ID, signTestClaims(t, claims), http.StatusForbidden)
+	claims.MaxCost = "0"
+	claims.Nonce = "sandbox-nonce-valid"
+	postExecution(t, srv.URL, job.ID, signTestClaims(t, claims), http.StatusAccepted)
 }
 
 func postExecution(t *testing.T, base, jobID, token string, want int) {

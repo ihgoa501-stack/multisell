@@ -37,6 +37,22 @@ type SourcingSKUMapping struct {
 
 func (SourcingSKUMapping) TableName() string { return "sourcing_sku_mapping" }
 
+// ListCanonicalSKUMappings returns only mappings frozen for the exact
+// Owner/source/task authority. It is the read seam used by the Owner UI; IDs
+// must never be guessed or copied from another sourcing task.
+func (s *Service) ListCanonicalSKUMappings(ownerID, sourceID, taskLinkID int64) ([]SourcingSKUMapping, error) {
+	if ownerID <= 0 || sourceID <= 0 || taskLinkID <= 0 {
+		return nil, ErrInvalidWorkflow
+	}
+	if _, err := requireTaskSourcingAuthority(s.db, sourceID, ownerID, taskLinkID); err != nil {
+		return nil, err
+	}
+	var rows []SourcingSKUMapping
+	err := s.db.Where("owner_id = ? AND sourcing_product_id = ? AND task_link_id = ?", ownerID, sourceID, taskLinkID).
+		Order("version DESC, supplier_sku ASC").Find(&rows).Error
+	return rows, err
+}
+
 type CanonicalSKUMappingItem struct {
 	SupplierSKU   string
 	InternalSKUID int64

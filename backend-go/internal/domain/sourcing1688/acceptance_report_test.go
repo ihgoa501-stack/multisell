@@ -106,9 +106,13 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 		for _, costType := range requiredCostTypes {
 			lines = append(lines, CreateSourcingCostLineInput{CostType: costType, AmountMinor: 100, Currency: "RUB", NormalizedAmountMinor: 100, TruthStatus: "actual", SourceURI: "evidence://cost/" + costType, ObservedAt: now})
 		}
-		if _, err := svc.CreateSourcingCostVersion(42, source.ID, &CreateSourcingCostVersionInput{TaskLinkID: task.ID, SourceSnapshotID: *source.SnapshotID, SKUMappingID: mapping.ID, TargetCurrency: "RUB", Lines: lines}); err != nil {
+		if _, err := svc.CreateSourcingCostVersion(42, source.ID, &CreateSourcingCostVersionInput{TaskLinkID: task.ID, SourceSnapshotID: *source.SnapshotID, SKUMappingID: mapping.ID, TargetCurrency: "RUB", RevenueMinor: 2000, PricingBasis: "owner_confirmed_listing_price", QuantityTierMin: 1, PurchaseLineOwnerConfirmed: true, Lines: lines}); err != nil {
 			t.Fatalf("CreateSourcingCostVersion: %v", err)
 		}
+	}
+	var costVersion SourcingCostVersion
+	if err := db.Where("owner_id = ? AND task_link_id = ?", int64(42), task.ID).Order("id DESC").First(&costVersion).Error; err != nil {
+		t.Fatalf("load exact cost version: %v", err)
 	}
 	var converted Sourcing1688Product
 	if err := db.First(&converted, source.ID).Error; err != nil || converted.ProductID == nil {
@@ -123,7 +127,7 @@ func newAcceptanceTestService(t *testing.T) (*Service, *gorm.DB, int64) {
 			t.Fatalf("ReviewComplianceEvidence: %v", err)
 		}
 	}
-	submitted, err := svc.SubmitDraftApproval(source.ID, &DraftApprovalSubmissionInput{RequesterID: 42, Reason: "批准内部草稿"})
+	submitted, err := svc.SubmitDraftApproval(source.ID, &DraftApprovalSubmissionInput{RequesterID: 42, CostVersionID: costVersion.ID, Reason: "批准内部草稿"})
 	if err != nil {
 		t.Fatalf("SubmitDraftApproval: %v", err)
 	}

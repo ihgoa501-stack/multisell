@@ -4,9 +4,11 @@ export type XiaoQTruthStatus =
   | 'estimated'
   | 'inferred'
   | 'unknown'
-  | 'mock';
+  | 'mock'
+  | 'external_observed'
+  | 'reconciled';
 
-export type XiaoQMode = 'read_only' | 'read_only_v1' | 'suggestion';
+export type XiaoQMode = 'read_only' | 'read_only_v1' | 'read_only_v2' | 'agent_runtime_v1' | 'suggestion' | 'decision_support_v1';
 
 export interface XiaoQIdentity {
   agent_id: string;
@@ -73,17 +75,26 @@ export interface XiaoQSourcing1688MessageRequest {
   source_id: number;
 }
 
-export interface XiaoQBusinessClosureMessageRequest {
+export interface XiaoQOperatingFactsMessageRequest {
   message: string;
-  target_type: 'business_closure';
-  experiment_id: string;
+  target_type: 'operating_facts';
+  order_id: number;
+}
+
+export interface XiaoQBusinessDecisionMessageRequest {
+  message: string;
+  target_type: 'business_decision';
+  decision_case_id: number;
+  create_recommendation?: boolean;
+  idempotency_key?: string;
 }
 
 export type XiaoQMessageRequest =
   | XiaoQDemandCaseMessageRequest
   | XiaoQExperimentMessageRequest
   | XiaoQSourcing1688MessageRequest
-  | XiaoQBusinessClosureMessageRequest;
+  | XiaoQOperatingFactsMessageRequest
+  | XiaoQBusinessDecisionMessageRequest;
 
 export interface XiaoQMessageResponse {
   trace_id: string;
@@ -91,14 +102,18 @@ export interface XiaoQMessageResponse {
   answer: string;
   truth_status: XiaoQTruthStatus;
   mode: XiaoQMode;
-  target_type?: 'demand_case' | 'experiment' | 'sourcing_1688' | 'business_closure';
+  target_type?: 'demand_case' | 'experiment' | 'sourcing_1688' | 'business_closure' | 'operating_facts' | 'business_decision';
   demand_case_id?: number;
   experiment_id?: string;
   source_id?: number;
+  order_id?: number;
+  decision_case_id?: number;
+  recommendation_id?: number;
   trusted?: boolean;
   case_summary?: string;
   evidence: XiaoQEvidence[];
   unknowns: string[];
+  blockers?: string[];
   links: XiaoQLink[];
   provenance?: XiaoQProvenance | XiaoQProvenance[];
 }

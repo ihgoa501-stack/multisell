@@ -182,7 +182,7 @@ func (s *Service) SyncStatus(id int64, newStatus, syncMessage string) (*ProductL
 // ---------- Listing publish chain ----------
 
 // PublishProduct is a frozen legacy entrypoint. It deliberately does not create
-// a listing, task, Prism request, or platform request.
+// a listing, task, image execution request, or platform request.
 func (s *Service) PublishProduct(productID, platformID int64, in *PublishProductInput) (*ProductListing, error) {
 	return nil, listingtask.ErrImageReleaseAttestationRequired
 }

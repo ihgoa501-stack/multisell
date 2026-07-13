@@ -8,21 +8,7 @@ const { Text, Paragraph } = Typography;
 export default function AgentUpgradesPage() {
   return (
     <PageContainer title="Agent 升级" subtitle="P3: 智能体升级 (#193-196)">
-      <Collapse defaultActiveKey={['prism', 'adpilot', 'listing', 'support']} items={[
-        {
-          key: 'prism',
-          label: <span>Prism 商品图生成 <Tag>历史能力</Tag></span>,
-          children: (
-            <Card size="small">
-              <Descriptions column={1} size="small" bordered>
-                <Descriptions.Item label="状态"><Tag color="orange">已停止入口，迁移中</Tag></Descriptions.Item>
-                <Descriptions.Item label="原因">旧入口接受任意图片 URL，已停止注册，避免服务器代抓取造成安全风险。</Descriptions.Item>
-                <Descriptions.Item label="替代入口">商品图片工作室 /product-images</Descriptions.Item>
-                <Descriptions.Item label="边界">历史记录保留只读；新任务统一由 Image Service 处理，图片处理结果不会自动批准或发布。</Descriptions.Item>
-              </Descriptions>
-            </Card>
-          ),
-        },
+      <Collapse defaultActiveKey={['adpilot', 'listing', 'support']} items={[
         {
           key: 'adpilot',
           label: <span>Ad Pilot Agent (A3) <Tag color="blue">#194</Tag></span>,

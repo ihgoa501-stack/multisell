@@ -2,16 +2,16 @@
 
 Package: `backend-go/internal/domain/productanalysis/`
 
+**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/analyses` | `h.ListAnalyses` |
-| `GET` | `/analyses/:id` | `h.GetAnalysis` |
-| `POST` | `/analyses/:id/feedback` | `h.RecordFeedback` |
-| `POST` | `/analyze` | `h.Analyze` |
-| `POST` | `/trigger-prism` | `h.TriggerPrism` |
+| `GET` | `/api/v1/product-analysis/analyses` | `h.ListAnalyses` |
+| `GET` | `/api/v1/product-analysis/analyses/:id` | `h.GetAnalysis` |
+| `POST` | `/api/v1/product-analysis/analyses/:id/feedback` | `h.RecordFeedback` |
+| `POST` | `/api/v1/product-analysis/analyze` | `h.Analyze` |
 
 ## Models
 

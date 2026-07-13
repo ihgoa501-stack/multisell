@@ -10,6 +10,8 @@ import { DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, PlusOutlined, R
 import PageContainer from '@/components/ui/PageContainer';
 import apiClient from '@/lib/api-client';
 import { getToken } from '@/lib/auth';
+import SourcingAuthorityWorkspace from '@/features/sourcing1688/SourcingAuthorityWorkspace';
+import SourceWatchWorkspace from '@/features/sourcing1688/SourceWatchWorkspace';
 
 const { Text, Paragraph } = Typography;
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
@@ -43,6 +45,83 @@ type SourceRecord = {
 	created_at: string;
 	updated_at: string;
 };
+
+type CollectionPageKind = 'list_lead' | 'detail_observation' | 'controlled_fetch';
+type QualityFieldObservation = {
+	field: string;
+	status: 'observed' | 'unknown' | 'parse_failed' | 'no_sku';
+	value_summary?: unknown;
+	source: { page_kind: CollectionPageKind; snapshot_id: number; observed_at: string; parser: string };
+};
+type QualityObservation = {
+	snapshot_id: number;
+	page_kind: CollectionPageKind;
+	observed_at: string;
+	parser: string;
+	fields: Record<string, QualityFieldObservation>;
+};
+type CollectionQuality = {
+	sourcing_product_id: number;
+	source_url: string;
+	observations: QualityObservation[];
+	latest_list_observation?: QualityObservation;
+	latest_detail_observation?: QualityObservation;
+	latest_controlled_observation?: QualityObservation;
+	best_fields: Record<string, QualityFieldObservation>;
+	conflicts: Array<{ field: string; values: QualityFieldObservation[]; message: string }>;
+	missing: string[];
+	recapture_action: { kind: 'none' | 'open_detail_page' | 'retry_detail_collection'; url: string; reason: string };
+};
+type PreciseCostVersion = { version: { id: number; task_link_id: number; version: number; contribution_profit_minor: number; target_currency: string; content_hash: string } };
+
+const pageKindMeta: Record<CollectionPageKind, { label: string; color: string }> = {
+	list_lead: { label: '列表线索', color: 'default' },
+	detail_observation: { label: '详情观察', color: 'blue' },
+	controlled_fetch: { label: '受控详情', color: 'purple' },
+};
+
+export function safe1688DetailURL(value?: string) {
+	try {
+		const url = new URL(value ?? '');
+		return url.protocol === 'https:' && url.hostname === 'detail.1688.com' && /^\/offer\/\d+\.html$/i.test(url.pathname)
+			? url.toString()
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+export function collectionQualityRows(quality?: CollectionQuality) {
+	if (!quality) return [];
+	const fields = Array.from(new Set([
+		...Object.keys(collectionFieldLabels),
+		...Object.keys(quality.latest_list_observation?.fields ?? {}),
+		...Object.keys(quality.latest_detail_observation?.fields ?? {}),
+		...Object.keys(quality.best_fields ?? {}),
+		...(quality.missing ?? []),
+	]));
+	return fields.map((field) => ({
+		field,
+		label: collectionFieldLabels[field] ?? field,
+		list: quality.latest_list_observation?.fields?.[field],
+		detail: quality.latest_detail_observation?.fields?.[field],
+		best: quality.best_fields?.[field],
+		conflict: quality.conflicts?.find((item) => item.field === field),
+		missing: quality.missing?.includes(field) || !quality.best_fields?.[field],
+	}));
+}
+
+function qualityValue(item?: QualityFieldObservation) {
+	if (!item) return <Text type="secondary">未观察</Text>;
+	if (item.status !== 'observed' && item.status !== 'no_sku') {
+		return <Tag color={item.status === 'parse_failed' ? 'red' : 'default'}>{item.status === 'parse_failed' ? '解析失败' : '未知'}</Tag>;
+	}
+	const value = item.status === 'no_sku' ? '页面明确无 SKU' : item.value_summary;
+	return <Space orientation="vertical" size={0}>
+		<Text>{typeof value === 'string' || typeof value === 'number' ? String(value) : JSON.stringify(value ?? '已取得')}</Text>
+		<Text type="secondary">快照 #{item.source.snapshot_id} · {new Date(item.source.observed_at).toLocaleString('zh-CN')}</Text>
+	</Space>;
+}
 
 type EligibleTask = {
   experiment_id: string;
@@ -212,12 +291,12 @@ const statusColor: Record<string, string> = {
 };
 
 const collectionFieldLabels: Record<string, string> = {
-	title: '标题', price: '价格', moq: '起订量', supplier: '供应商身份', images: '主图', sku: 'SKU',
+	title: '标题', price: '价格', moq: '起订量', supplier: '供应商身份', images: '主图', sku: 'SKU', attributes: '商品属性',
 };
 
 export function collectionCompleteness(fieldStatuses?: Record<string, string>) {
-	const statuses = fieldStatuses ?? {};
-	const fields = Object.keys(collectionFieldLabels);
+		const statuses = fieldStatuses ?? {};
+		const fields = ['title', 'price', 'moq', 'supplier', 'images', 'sku'];
 	const complete = fields.filter((field) => statuses[field] === 'observed' || (field === 'sku' && statuses[field] === 'no_sku'));
 	const missing = fields.filter((field) => !complete.includes(field)).map((field) => ({
 		field,
@@ -623,9 +702,10 @@ type TaskLinkCardProps = {
   onDecideApproval?: (link: TaskLink) => void;
   onPublish?: (link: TaskLink) => void;
   onSamples?: (link: TaskLink) => void;
+  onAuthority?: (link: TaskLink) => void;
 };
 
-function TaskLinkCard({ link, onDraft, onSubmitApproval, onDecideApproval, onPublish, onSamples }: TaskLinkCardProps) {
+function TaskLinkCard({ link, onDraft, onSubmitApproval, onDecideApproval, onPublish, onSamples, onAuthority }: TaskLinkCardProps) {
   const meta = taskLinkStatus(link);
   const actions = taskLinkAvailableActions(link);
   return (
@@ -658,6 +738,7 @@ function TaskLinkCard({ link, onDraft, onSubmitApproval, onDecideApproval, onPub
       <Divider style={{ margin: '12px 0' }} />
       <Space wrap>
         {onSamples && <Button size="small" onClick={() => onSamples(link)}>样品事实链</Button>}
+        {onAuthority && <Button size="small" onClick={() => onAuthority(link)}>精确成本 / 合规</Button>}
         {actions.convert && onDraft && <Button size="small" type="primary" onClick={() => onDraft(link)}>为此任务转草稿</Button>}
         {actions.edit && onDraft && <Button size="small" onClick={() => onDraft(link)}>编辑此任务草稿</Button>}
         {actions.submitApproval && onSubmitApproval && <Button size="small" onClick={() => onSubmitApproval(link)}>提交此任务审批</Button>}
@@ -667,6 +748,22 @@ function TaskLinkCard({ link, onDraft, onSubmitApproval, onDecideApproval, onPub
       </Space>
     </Card>
   );
+}
+
+function latestQualityObservation(quality?: CollectionQuality) {
+	return [...(quality?.observations ?? [])].sort((a, b) => Date.parse(b.observed_at) - Date.parse(a.observed_at))[0];
+}
+
+function QualitySummaryCell({ record, onOpen }: { record: SourceRecord; onOpen: () => void }) {
+	const completeness = collectionCompleteness(record.field_statuses);
+	return <Space orientation="vertical" size={2}>
+		<Space wrap size={[4, 4]}>
+			<Tag color={completeness.isComplete ? 'green' : 'gold'}>{completeness.isComplete ? '关键字段已取得' : `${completeness.complete}/${completeness.total} 已取得`}</Tag>
+			{(record.observation_count ?? 0) > 1 && <Tag color="blue">{record.observation_count} 次历史观察</Tag>}
+		</Space>
+		<Text type="secondary">详情质量与历史变化按需读取</Text>
+		<Button size="small" onClick={onOpen}>查看质量</Button>
+	</Space>;
 }
 
 export default function Sourcing1688Page() {
@@ -680,6 +777,7 @@ export default function Sourcing1688Page() {
 	const [editingPrivate, setEditingPrivate] = useState<SourceRecord | null>(null);
   const [taskLinksTarget, setTaskLinksTarget] = useState<SourceRecord | null>(null);
   const [samplesTarget, setSamplesTarget] = useState<{ source: SourceRecord; link: TaskLink } | null>(null);
+  const [authorityTarget, setAuthorityTarget] = useState<{ source: SourceRecord; link: TaskLink } | null>(null);
   const [sampleTransitionTarget, setSampleTransitionTarget] = useState<{ detail: SampleDetail; toStatus: SampleStatus } | null>(null);
   const [converting, setConverting] = useState<SourceRecord | null>(null);
   const [convertingTaskLink, setConvertingTaskLink] = useState<TaskLink | null>(null);
@@ -694,6 +792,8 @@ export default function Sourcing1688Page() {
   const [processedImagePreviewURL, setProcessedImagePreviewURL] = useState<string | null>(null);
   const [processedImagePreviewError, setProcessedImagePreviewError] = useState<string | null>(null);
   const [identityHistory, setIdentityHistory] = useState<{ sourceId: number; data: IdentityHistory } | null>(null);
+	const [qualityTarget, setQualityTarget] = useState<SourceRecord | null>(null);
+	const [watchTarget, setWatchTarget] = useState<SourceRecord | null>(null);
   const [acceptanceReport, setAcceptanceReport] = useState<AcceptanceReport | null>(null);
   const [publishTarget, setPublishTarget] = useState<SourceRecord | null>(null);
   const [publishTaskLink, setPublishTaskLink] = useState<TaskLink | null>(null);
@@ -737,6 +837,18 @@ export default function Sourcing1688Page() {
     enabled: !!taskLinksTarget,
     queryFn: () => apiClient.get<TaskLink[]>(`/v1/sourcing-1688/${taskLinksTarget!.id}/task-links`),
   });
+
+	const collectionQuality = useQuery({
+		queryKey: ['sourcing-1688-collection-quality', qualityTarget?.id],
+		enabled: !!qualityTarget,
+		queryFn: () => apiClient.get<CollectionQuality>(`/v1/sourcing-1688/${qualityTarget!.id}/collection-quality`),
+	});
+	const approvalCosts = useQuery({
+		queryKey: ['sourcing-cost-versions', approvalTarget?.id],
+		enabled: !!approvalTarget,
+		queryFn: () => apiClient.get<PreciseCostVersion[]>(`/v1/sourcing-1688/${approvalTarget!.id}/cost-versions`),
+	});
+	const approvalCostOptions = (approvalCosts.data?.data ?? []).filter((item) => !approvalTaskLink || item.version.task_link_id === approvalTaskLink.id);
 
   const samples = useQuery({
     queryKey: ['sourcing-1688-samples', samplesTarget?.source.id],
@@ -884,10 +996,10 @@ export default function Sourcing1688Page() {
     onError: (e: Error) => message.error(`淘汰失败：${e.message}`),
   });
 
-  const submitApproval = useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason: string }) => apiClient.post(approvalTaskLink
-      ? taskWorkflowPath(id, approvalTaskLink.id, 'submit-draft-approval')
-      : `/v1/sourcing-1688/${id}/submit-draft-approval`, { reason }),
+	  const submitApproval = useMutation({
+	    mutationFn: ({ id, reason, cost_version_id }: { id: number; reason: string; cost_version_id: number }) => apiClient.post(approvalTaskLink
+	      ? taskWorkflowPath(id, approvalTaskLink.id, 'submit-draft-approval')
+	      : `/v1/sourcing-1688/${id}/submit-draft-approval`, { reason, cost_version_id }),
     onSuccess: () => {
       message.success('草稿已提交 Owner 审批，仍未发布');
       const sourceID = approvalTarget?.id;
@@ -995,9 +1107,15 @@ export default function Sourcing1688Page() {
   });
 
   const executePublish = useMutation({
-    mutationFn: () => apiClient.post<PublishAttempt>(publishTaskLink
-      ? taskWorkflowPath(publishTarget!.id, publishTaskLink.id, `publish-requests/${publishExecuteTarget!.id}/execute`)
-      : `/v1/sourcing-1688/${publishTarget?.id}/publish-requests/${publishExecuteTarget?.id}/execute`, {}),
+    mutationFn: () => {
+      if (!publishExecuteTarget?.approval_id) throw new Error('发布请求缺少已批准的一次性审批记录');
+      return apiClient.postApproved<PublishAttempt>(publishTaskLink
+        ? taskWorkflowPath(publishTarget!.id, publishTaskLink.id, `publish-requests/${publishExecuteTarget.id}/execute`)
+        : `/v1/sourcing-1688/${publishTarget?.id}/publish-requests/${publishExecuteTarget.id}/execute`, {}, {
+        approvalId: publishExecuteTarget.approval_id,
+        idempotencyKey: publishExecuteTarget.idempotency_key,
+      });
+    },
     onSuccess: () => {
       message.warning('平台调用已结束；请根据最新状态判断，submitted 仍不代表真实上线');
       setPublishExecuteTarget(null);
@@ -1147,6 +1265,9 @@ export default function Sourcing1688Page() {
       sampleRequestForm.setFieldsValue({ quantity: 1 });
       setSamplesTarget({ source: taskLinksTarget, link: selected });
     }}
+    onAuthority={(selected) => {
+      if (taskLinksTarget) setAuthorityTarget({ source: taskLinksTarget, link: selected });
+    }}
   />;
   const canCreatePublishRequest = publishAttempts.isSuccess && !attempts.some((attempt) => !['rejected', 'failed'].includes(attempt.status));
   return (
@@ -1180,6 +1301,7 @@ export default function Sourcing1688Page() {
 	            { title: '任务关联', width: 220, render: (_, r) => (r.task_link_count ?? (r.experiment_id ? 1 : 0)) > 0 ? <><Tag color="blue">已关联 {r.task_link_count ?? 1} 个任务</Tag>{r.experiment_id && <><br /><Text type="secondary">主工作流：{r.experiment_id}</Text></>}<br /><Text type="secondary">点击查看每个任务的状态</Text></> : <><Tag>尚未关联任务</Tag><br /><Text type="secondary">私人收藏，不代表商品机会</Text></> },
 	            { title: '采购信息', width: 130, render: (_, r) => <><Text>{r.field_statuses?.price === 'observed' && r.price != null ? `¥${r.price}` : '价格未取得'}</Text><br /><Text type="secondary">{r.field_statuses?.moq === 'observed' ? `MOQ ${r.moq}` : '起订量未取得'}</Text></> },
 	            { title: '采集完整度', width: 250, render: (_, r) => { const completeness = collectionCompleteness(r.field_statuses); return <Space orientation="vertical" size={2}><Tag color={completeness.isComplete ? 'green' : 'gold'}>{completeness.isComplete ? '关键字段已取得' : `已取得 ${completeness.complete}/${completeness.total}`}</Tag>{completeness.missing.length > 0 && <Space wrap size={[4, 4]}>{completeness.missing.map((item) => <Tag key={item.field} color={item.status === 'parse_failed' ? 'red' : 'default'}>{item.label}：{item.status === 'parse_failed' ? '解析失败' : '未取得'}</Tag>)}</Space>}</Space>; } },
+	            { title: '线索 / 最近观察 / 冲突', width: 245, render: (_, r) => <QualitySummaryCell record={r} onOpen={() => setQualityTarget(r)} /> },
 	            { title: '状态 / 重复', width: 180, render: (_, r) => { const state = r.lifecycle_status || r.status; const observations = r.observation_count ?? (r.snapshot_id ? 1 : 0); return <><Tag color={statusColor[state] || statusColor[r.status]}>{statusLabel[state] || state}</Tag><br />{observations > 1 ? <Tag color="orange">{observations} 次观察</Tag> : <Text type="secondary">暂无重复观察</Text>}<br /><Text type="secondary">采集于 {r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '未知'}</Text></>; } },
             { title: '追溯', width: 130, render: (_, r) => <><Text>采集 #{r.id}</Text><br /><Text type="secondary">产品 #{r.product_id ?? '未创建'}</Text></> },
             { title: '操作', fixed: 'right', width: 240, render: (_, r) => <Space wrap>
@@ -1198,6 +1320,7 @@ export default function Sourcing1688Page() {
 	              </Button>}
               <Button size="small" disabled={!r.snapshot_id} onClick={() => void loadEvidence(r)}>查看证据</Button>
               <Button size="small" disabled={!r.snapshot_id} onClick={() => void loadIdentityHistory(r)}>变化/同款</Button>
+              <Button size="small" disabled={!r.snapshot_id} onClick={() => setWatchTarget(r)}>货源关注</Button>
               <Button size="small" onClick={() => void loadAcceptanceReport(r)}>15项验收</Button>
               <Button size="small" disabled={!r.snapshot_id || !['collected', 'pending_review'].includes(r.status)} onClick={() => { setReviewing(r); reviewForm.setFieldsValue({ notes: '' }); }}>Owner 复核</Button>
               <Button size="small" type="primary" disabled={!r.reviewed_at || !['ready_for_product', 'editing'].includes(r.lifecycle_status || '')} onClick={() => void openDraftEditor(r)}>{r.product_id ? '编辑主任务草稿（兼容）' : '主任务转草稿（兼容）'}</Button>
@@ -1249,6 +1372,20 @@ export default function Sourcing1688Page() {
 	        {(taskLinksTarget?.lifecycle_status || taskLinksTarget?.status) !== 'archived' && <Button type="primary" onClick={() => { if (taskLinksTarget) { setLinkingTask(taskLinksTarget); taskLinkForm.resetFields(); } }}>
 	          再关联一个任务
 	        </Button>}
+      </Drawer>
+
+      <Drawer
+        title={`精确成本与合规 · 货源 #${authorityTarget?.source.id ?? ''} / 任务 #${authorityTarget?.link.id ?? ''}`}
+        open={!!authorityTarget}
+        width={1120}
+        onClose={() => setAuthorityTarget(null)}
+      >
+        {authorityTarget && <SourcingAuthorityWorkspace
+          sourceID={authorityTarget.source.id}
+          taskLinkID={authorityTarget.link.id}
+          snapshotID={authorityTarget.source.snapshot_id}
+          productID={authorityTarget.source.product_id}
+        />}
       </Drawer>
 
       <Drawer
@@ -1447,10 +1584,18 @@ export default function Sourcing1688Page() {
         <Form form={reviewForm} layout="vertical"><Form.Item name="notes" label="复核说明" rules={[{ required: true }]}><Input.TextArea rows={4} placeholder="写明核对项、疑点和结论" /></Form.Item></Form>
       </Modal>
 
-      <Modal title={approvalTaskLink ? `提交任务草稿审批 · ${approvalTaskLink.label || approvalTaskLink.experiment_id}` : '提交主任务草稿审批（兼容入口）'} open={!!approvalTarget} onCancel={() => { setApprovalTarget(null); setApprovalTaskLink(null); }} footer={null}>
-        {approvalTaskLink && <Alert type="info" showIcon title={`仅操作任务关联 #${approvalTaskLink.id}`} description={`草稿 #${approvalTaskLink.draft_id ?? '未知'}；不会提交其他任务的草稿。`} style={{ marginBottom: 12 }} />}
-        <Form layout="vertical" onFinish={(v) => approvalTarget && submitApproval.mutate({ id: approvalTarget.id, reason: v.reason })}><Form.Item name="reason" label="提交理由" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item><Button htmlType="submit" type="primary" loading={submitApproval.isPending}>提交 Owner 审批（不发布）</Button></Form>
-      </Modal>
+	      <Modal title={approvalTaskLink ? `提交任务草稿审批 · ${approvalTaskLink.label || approvalTaskLink.experiment_id}` : '提交主任务草稿审批（兼容入口）'} open={!!approvalTarget} onCancel={() => { setApprovalTarget(null); setApprovalTaskLink(null); }} footer={null}>
+	        {approvalTaskLink && <Alert type="info" showIcon title={`仅操作任务关联 #${approvalTaskLink.id}`} description={`草稿 #${approvalTaskLink.draft_id ?? '未知'}；不会提交其他任务的草稿。`} style={{ marginBottom: 12 }} />}
+	        <Form layout="vertical" onFinish={(v) => approvalTarget && submitApproval.mutate({ id: approvalTarget.id, reason: v.reason, cost_version_id: v.cost_version_id })}>
+	          <Form.Item name="cost_version_id" label="本次审批冻结的精确成本版本" rules={[{ required: true, message: '必须明确选择一个精确成本版本' }]}>
+	            <Select loading={approvalCosts.isLoading} placeholder="选择 exact task 的不可变成本版本" options={approvalCostOptions.map((item) => ({ value: item.version.id, label: `v${item.version.version} · #${item.version.id} · 利润 ${item.version.contribution_profit_minor} ${item.version.target_currency}` }))} />
+	          </Form.Item>
+	          {approvalCosts.isError && <Alert type="error" showIcon title="精确成本版本读取失败" description={(approvalCosts.error as Error).message} style={{ marginBottom: 12 }} />}
+	          {!approvalCosts.isLoading && !approvalCosts.isError && approvalCostOptions.length === 0 && <Alert type="warning" showIcon title="没有可冻结的精确成本版本" description="请先在“精确成本 / 合规”中保存版本；审批不会自动选择 latest。" style={{ marginBottom: 12 }} />}
+	          <Form.Item name="reason" label="提交理由" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item>
+	          <Button htmlType="submit" type="primary" disabled={approvalCostOptions.length === 0} loading={submitApproval.isPending}>提交 Owner 审批（不发布）</Button>
+	        </Form>
+	      </Modal>
 
       <Modal title={decisionTaskLink ? `Owner 审批任务草稿 · ${decisionTaskLink.label || decisionTaskLink.experiment_id}` : 'Owner 审批主任务草稿（兼容入口）'} open={!!decisionTarget} onCancel={() => { setDecisionTarget(null); setDecisionTaskLink(null); }} footer={null}>
         {decisionTaskLink && <Alert type="warning" showIcon title={`仅审批任务关联 #${decisionTaskLink.id}`} description={`草稿 #${decisionTaskLink.draft_id ?? '未知'}；批准不会发布，也不会影响其他任务。`} style={{ marginBottom: 12 }} />}
@@ -1738,6 +1883,7 @@ export default function Sourcing1688Page() {
         />
         <Descriptions bordered size="small" column={1}>
           <Descriptions.Item label="平台账号">#{publishExecuteTarget?.platform_account_id}</Descriptions.Item>
+          <Descriptions.Item label="一次性审批 ID">#{publishExecuteTarget?.approval_id ?? '缺失（禁止执行）'}</Descriptions.Item>
           <Descriptions.Item label="幂等键"><Text copyable>{publishExecuteTarget?.idempotency_key}</Text></Descriptions.Item>
           <Descriptions.Item label="冻结请求 SHA"><Text copyable>{publishExecuteTarget?.request_sha256}</Text></Descriptions.Item>
         </Descriptions>
@@ -1746,7 +1892,7 @@ export default function Sourcing1688Page() {
           <Form.Item name="confirmed" valuePropName="checked" rules={[{ validator: (_, value) => value ? Promise.resolve() : Promise.reject(new Error('必须明确确认外部写风险')) }]}>
             <Checkbox>我已核对独立审批和冻结请求，确认现在执行真实平台发布</Checkbox>
           </Form.Item>
-          <Button danger type="primary" htmlType="submit" loading={executePublish.isPending}>确认执行外部发布</Button>
+          <Button danger type="primary" htmlType="submit" disabled={!publishExecuteTarget?.approval_id} loading={executePublish.isPending}>确认执行外部发布</Button>
         </Form>
       </Modal>
 
@@ -1785,6 +1931,56 @@ export default function Sourcing1688Page() {
         <Button icon={<EyeOutlined />} disabled>仅预览；发布必须从列表“发布安全”进入</Button>
       </Drawer>
 
+      <Drawer
+		title={`采集质量中心 · 收藏 #${qualityTarget?.id ?? ''}`}
+		open={!!qualityTarget}
+		size={980}
+		onClose={() => setQualityTarget(null)}
+		extra={<Button icon={<ReloadOutlined />} loading={collectionQuality.isFetching} onClick={async () => {
+			await Promise.all([collectionQuality.refetch(), list.refetch()]);
+		}}>刷新新观察</Button>}
+	  >
+		{collectionQuality.isLoading && <Text type="secondary">正在汇总列表与详情观察…</Text>}
+		{collectionQuality.isError && <Alert type="error" showIcon title="采集质量读取失败" description={(collectionQuality.error as Error).message} action={<Button size="small" onClick={() => void collectionQuality.refetch()}>重试</Button>} />}
+		{collectionQuality.data?.data && (() => {
+			const quality = collectionQuality.data.data;
+			const latest = latestQualityObservation(quality);
+			const detailURL = safe1688DetailURL(quality.recapture_action?.url || quality.source_url);
+			return <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+				<Alert
+					type={quality.conflicts.length > 0 ? 'warning' : quality.missing.length > 0 ? 'info' : 'success'}
+					showIcon
+						title={quality.conflicts.length > 0 ? `${quality.conflicts.length} 个字段存在历史变化` : quality.missing.length > 0 ? `${quality.missing.length} 个关键字段仍缺失` : '关键字段已有可追溯观察'}
+					description={`共 ${quality.observations.length} 次观察；最近一次 ${latest ? `${pageKindMeta[latest.page_kind].label} · ${new Date(latest.observed_at).toLocaleString('zh-CN')}` : '未知'}。最佳值只是当前可用页面声明，不代表供应商事实已核验。`}
+				/>
+				{!quality.latest_detail_observation && <Alert
+					type="warning"
+					showIcon
+					title="当前只有列表线索，缺少详情观察"
+					description={quality.recapture_action?.reason || '请打开真实1688商品详情页，用凌镜插件补采价格、MOQ、供应商和SKU。'}
+						action={detailURL ? <Button type="primary" href={detailURL} target="_blank" rel="noopener noreferrer">打开1688详情补采</Button> : <Button disabled>详情链接不安全或缺失</Button>}
+				/>}
+				<Table
+					rowKey="field"
+					pagination={false}
+					dataSource={collectionQualityRows(quality)}
+					columns={[
+						{ title: '字段', dataIndex: 'label', width: 110 },
+						{ title: '列表观察', dataIndex: 'list', render: qualityValue },
+						{ title: '详情观察', dataIndex: 'detail', render: qualityValue },
+						{ title: '当前最佳值', dataIndex: 'best', render: qualityValue },
+							{ title: '质量判断', width: 190, render: (_, row) => row.conflict ? <Space orientation="vertical" size={2}><Tag color="blue">历史变化</Tag><Text type="secondary">请核对变化时间与来源</Text></Space> : row.missing ? <Tag color="gold">缺失</Tag> : <Tag color="green">可追溯</Tag> },
+					]}
+				/>
+				{quality.conflicts.length > 0 && <Collapse items={quality.conflicts.map((conflict) => ({
+					key: conflict.field,
+					label: `${collectionFieldLabels[conflict.field] ?? conflict.field} · 历史观察值不同`,
+					children: <Space orientation="vertical">{conflict.values.map((value, index) => <Card key={`${value.source.snapshot_id}-${index}`} size="small">{qualityValue(value)}</Card>)}</Space>,
+				}))} />}
+			</Space>;
+		})()}
+	  </Drawer>
+
       <Drawer title="不可变采集证据" open={!!evidence} size={720} onClose={() => setEvidence(null)}>
         {evidence && <Descriptions bordered column={1} size="small">
           <Descriptions.Item label="原链接"><a href={evidence.source_url} target="_blank" rel="noreferrer">{evidence.source_url}</a></Descriptions.Item>
@@ -1802,6 +1998,7 @@ export default function Sourcing1688Page() {
         <Divider />
         <Paragraph copyable style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify({ snapshots: identityHistory?.data.snapshots, changes: identityHistory?.data.changes }, null, 2)}</Paragraph>
       </Drawer>
+      {watchTarget && <SourceWatchWorkspace sourceID={watchTarget.id} sourceURL={watchTarget.source_url} open={!!watchTarget} onClose={() => setWatchTarget(null)} />}
 
       <Drawer
         title={`真实商品 15 项验收 · 采集 #${acceptanceReport?.sourcing_product_id ?? ''}`}

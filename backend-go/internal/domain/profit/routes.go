@@ -18,5 +18,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		r.GET("/summaries", h.ListSummaries)
 		r.GET("/summary/:productId", h.Summary)
 		r.POST("/order/:orderId/calculate", h.CalculateOrderProfit)
+		r.POST("/order/:orderId/cost-allocations", h.AllocateOrderProductCost)
+		r.POST("/order/:orderId/finalize", h.FinalizeOrderProfit)
+		r.GET("/order/:orderId/final-versions", h.ListFinalOrderProfitVersions)
 	}
 }

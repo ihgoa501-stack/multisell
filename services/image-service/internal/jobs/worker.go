@@ -18,6 +18,11 @@ type ExecutionError struct {
 	Retryable bool
 }
 
+type ExecutionResult struct {
+	OutputID          string
+	ProviderRequestID string
+}
+
 func (e *ExecutionError) Error() string {
 	if e == nil || e.Err == nil {
 		return "image execution failed"
@@ -26,7 +31,7 @@ func (e *ExecutionError) Error() string {
 }
 
 type Executor interface {
-	Execute(context.Context, core.Job) (string, *ExecutionError)
+	Execute(context.Context, core.Job) (ExecutionResult, *ExecutionError)
 }
 
 type DeterministicExecutor struct{ blobs *blobstore.Store }
@@ -35,26 +40,26 @@ func NewDeterministicExecutor(blobs *blobstore.Store) *DeterministicExecutor {
 	return &DeterministicExecutor{blobs: blobs}
 }
 
-func (e *DeterministicExecutor) Execute(ctx context.Context, job core.Job) (string, *ExecutionError) {
+func (e *DeterministicExecutor) Execute(ctx context.Context, job core.Job) (ExecutionResult, *ExecutionError) {
 	if err := ctx.Err(); err != nil {
-		return "", &ExecutionError{Code: "EXECUTION_CANCELLED", Err: err}
+		return ExecutionResult{}, &ExecutionError{Code: "EXECUTION_CANCELLED", Err: err}
 	}
 	input, err := e.blobs.Get(job.InputBlobID)
 	if err != nil {
-		return "", &ExecutionError{Code: "INPUT_BLOB_INVALID", Err: err}
+		return ExecutionResult{}, &ExecutionError{Code: "INPUT_BLOB_INVALID", Err: err}
 	}
 	output, err := processor.Process(input, job.Width, job.Height, job.Format)
 	if err != nil {
-		return "", &ExecutionError{Code: "PROCESSING_FAILED", Err: err}
+		return ExecutionResult{}, &ExecutionError{Code: "PROCESSING_FAILED", Err: err}
 	}
 	if err := ctx.Err(); err != nil {
-		return "", &ExecutionError{Code: "EXECUTION_CANCELLED", Err: err}
+		return ExecutionResult{}, &ExecutionError{Code: "EXECUTION_CANCELLED", Err: err}
 	}
 	id, err := e.blobs.Put(output)
 	if err != nil {
-		return "", &ExecutionError{Code: "STORE_ERROR", Err: err}
+		return ExecutionResult{}, &ExecutionError{Code: "STORE_ERROR", Err: err}
 	}
-	return id, nil
+	return ExecutionResult{OutputID: id}, nil
 }
 
 type Worker struct {
@@ -104,6 +109,10 @@ func (w *Worker) RunOne(ctx context.Context) (handled bool, err error) {
 		_, err = w.store.CompleteAttempt(attempt.ID, w.id, core.AttemptFailed, job.ErrorCode)
 		return true, err
 	}
+	if job.Status == core.JobReconcileRequired {
+		_, err = w.store.CompleteAttempt(attempt.ID, w.id, core.AttemptReconcileRequired, job.ErrorCode)
+		return true, err
+	}
 	if job.Status == core.JobQueued {
 		job, err = w.store.Transition(job.ID, core.JobQueued, core.JobRunning, "", "")
 		if err != nil {
@@ -118,7 +127,7 @@ func (w *Worker) RunOne(ctx context.Context) (handled bool, err error) {
 	heartbeatDone := make(chan struct{})
 	heartbeatErr := make(chan error, 1)
 	go w.heartbeat(execCtx, attempt.ID, heartbeatDone, heartbeatErr, cancel)
-	outputID, executionErr := w.executor.Execute(execCtx, *job)
+	result, executionErr := w.executor.Execute(execCtx, *job)
 	cancel()
 	<-heartbeatDone
 	select {
@@ -128,16 +137,14 @@ func (w *Worker) RunOne(ctx context.Context) (handled bool, err error) {
 	}
 
 	if executionErr != nil {
-		if _, transitionErr := w.store.Transition(job.ID, core.JobRunning, core.JobFailed, "", executionErr.Code); transitionErr != nil {
-			return true, fmt.Errorf("fail job: %w", transitionErr)
+		jobStatus, attemptStatus := core.JobFailed, core.AttemptFailed
+		if executionErr.Code == "RECONCILE_REQUIRED" {
+			jobStatus, attemptStatus = core.JobReconcileRequired, core.AttemptReconcileRequired
 		}
-		_, err = w.store.CompleteAttempt(attempt.ID, w.id, core.AttemptFailed, executionErr.Code)
+		_, _, err = w.store.FinalizeAttempt(core.AttemptFinalization{JobID: job.ID, FromJobStatus: core.JobRunning, ToJobStatus: jobStatus, ErrorCode: executionErr.Code, AttemptID: attempt.ID, LeaseOwner: w.id, AttemptStatus: attemptStatus, ProviderRequestID: executionErr.RequestID})
 		return true, err
 	}
-	if _, err = w.store.Transition(job.ID, core.JobRunning, core.JobReady, outputID, ""); err != nil {
-		return true, fmt.Errorf("complete job: %w", err)
-	}
-	_, err = w.store.CompleteAttempt(attempt.ID, w.id, core.AttemptSucceeded, "")
+	_, _, err = w.store.FinalizeAttempt(core.AttemptFinalization{JobID: job.ID, FromJobStatus: core.JobRunning, ToJobStatus: core.JobReady, OutputBlobID: result.OutputID, AttemptID: attempt.ID, LeaseOwner: w.id, AttemptStatus: core.AttemptSucceeded, ProviderRequestID: result.ProviderRequestID})
 	return true, err
 }
 

@@ -32,6 +32,8 @@ func TestClientWorkflowAndAuthentication(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
+		case "GET /internal/v1/processors":
+			_ = json.NewEncoder(w).Encode(ProcessorCapabilityList{Items: []ProcessorCapability{{Code: "photoroom", Available: true, Operations: []string{"PHOTOROOM_REMOVE_BACKGROUND_SANDBOX"}, SafetyLevel: "sandbox_only", ProviderEnvironment: "sandbox", Region: "us", Watermarked: true, NonPublishable: true, QuotaAvailable: true, QuotaRemaining: 1}}})
 		case "POST /internal/v1/blobs":
 			if r.Header.Get("Content-Type") != "image/png" {
 				t.Fatalf("blob content type = %q", r.Header.Get("Content-Type"))
@@ -81,6 +83,10 @@ func TestClientWorkflowAndAuthentication(t *testing.T) {
 	created, err := client.CreateJob(ctx, CreateJobRequest{OwnerID: 7})
 	if err != nil || created.ID != job.ID {
 		t.Fatalf("CreateJob = %#v, %v", created, err)
+	}
+	processors, err := client.ListProcessors(ctx)
+	if err != nil || len(processors) != 1 || processors[0].Code != "photoroom" || !processors[0].Available || processors[0].SafetyLevel != "sandbox_only" || processors[0].ProviderEnvironment != "sandbox" || processors[0].Region != "us" || !processors[0].Watermarked || !processors[0].NonPublishable || !processors[0].QuotaAvailable || processors[0].QuotaRemaining != 1 {
+		t.Fatalf("ListProcessors=%+v err=%v", processors, err)
 	}
 	got, err := client.GetJob(ctx, job.ID)
 	if err != nil || got.Status != "QUEUED" {
@@ -201,6 +207,9 @@ func TestConfigAndInputValidation(t *testing.T) {
 	client := newTestClient(t, "http://example.test", 1024, &http.Client{Timeout: time.Hour})
 	if client.httpClient.Timeout != defaultTimeout {
 		t.Fatalf("timeout = %v", client.httpClient.Timeout)
+	}
+	if !client.ProcessorAvailable("deterministic") || client.ProcessorAvailable("openai") {
+		t.Fatal("client advertised an unverified external processor")
 	}
 	if _, err := client.GetJob(context.Background(), ""); err == nil {
 		t.Fatal("accepted empty job id")

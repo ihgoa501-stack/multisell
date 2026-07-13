@@ -1,5 +1,5 @@
 import apiClient from '@/lib/api-client';
-import type { CreateCostEntryInput, CreateProductImageJobInput, CreateProductImageSetInput, CreateRightsGrantInput, FiveAxisReviewInput, ImageProcessorCapability, ProductImageAsset, ProductImageCostEntry, ProductImageJob, ProductImageReview, ProductImageRightsGrant, ProductImageSet } from './types';
+import type { CandidateFeedback, CandidateFeedbackInput, CreateCostEntryInput, CreateImageBudgetPolicyInput, CreateImageRuleSnapshotInput, CreateManualImportInput, CreateProductImageJobInput, CreateProductImageSetInput, CreateRightsGrantInput, DecideImageSetInput, FiveAxisReviewInput, ImageBudgetCharge, ImageBudgetPolicy, ImageBudgetReservation, ImageProcessorCapability, ImageReleaseAttestation, ImageRuleSnapshot, ImageSetDecision, IssueImageReleaseAttestationInput, ProductImageAsset, ProductImageCostEntry, ProductImageJob, ProductImageManualImport, ProductImageReview, ProductImageRightsGrant, ProductImageSet, RecipeSummary, ReconcileImageBudgetChargeInput, ReconcileImageBudgetNoChargeInput, SKUOption } from './types';
 
 const ROOT = '/v1/product-images';
 
@@ -22,12 +22,32 @@ export async function listImageJobs(): Promise<ProductImageJob[]> {
   } : job);
 }
 
+export async function listSKUOptions(): Promise<SKUOption[]> {
+  const result = await apiClient.getPage<SKUOption>('/v1/skus', { page: '1', size: '100' });
+  return result.data ?? [];
+}
+
 export async function uploadSourceImage(file: File): Promise<ProductImageAsset> {
   const form = new FormData();
   form.append('file', file);
   const result = await apiClient.upload<ProductImageAsset>(`${ROOT}/assets`, form);
   if (!result.data) throw new Error('图片上传成功但服务器没有返回资产');
   return result.data;
+}
+
+export async function createManualImport(input: CreateManualImportInput): Promise<ProductImageManualImport> {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined) form.append(key, value instanceof File ? value : String(value));
+  }
+  const result = await apiClient.upload<ProductImageManualImport>(`${ROOT}/manual-imports`, form);
+  if (!result.data) throw new Error('外部编辑结果已上传但服务器没有返回溯源记录');
+  return result.data;
+}
+
+export async function listManualImports(): Promise<ProductImageManualImport[]> {
+  const result = await apiClient.getPage<ProductImageManualImport>(`${ROOT}/manual-imports`);
+  return result.data ?? [];
 }
 
 export async function createImageJob(input: CreateProductImageJobInput): Promise<ProductImageJob> {
@@ -40,6 +60,17 @@ export async function executeImageJob(id: number): Promise<unknown> {
   const idempotencyKey = newImageIdempotencyKey(`product-image-execute-${id}`);
   const result = await apiClient.post<unknown>(`${ROOT}/tasks/${encodeURIComponent(id)}/executions`, { idempotency_key: idempotencyKey });
   if (!result.data) throw new Error('任务已提交但服务器没有返回状态');
+  return result.data;
+}
+
+export async function approveImageExecution(job: ProductImageJob): Promise<unknown> {
+  const result = await apiClient.post<unknown>(`${ROOT}/tasks/${encodeURIComponent(job.id)}/execution-approvals`, {
+    processor: job.processor,
+    max_cost: job.max_cost,
+    currency: job.currency,
+    expected_version: job.version ?? 1,
+  });
+  if (!result.data) throw new Error('执行审批已创建但服务器没有返回记录');
   return result.data;
 }
 
@@ -71,8 +102,78 @@ export async function createFiveAxisReview(taskId: number, input: FiveAxisReview
   return result.data;
 }
 
+export async function createCandidateFeedback(taskId: number, input: CandidateFeedbackInput): Promise<CandidateFeedback> {
+  const result = await apiClient.post<CandidateFeedback>(`${ROOT}/tasks/${encodeURIComponent(taskId)}/feedback`, input);
+  if (!result.data) throw new Error('候选反馈已提交但服务器没有返回记录');
+  return result.data;
+}
+
+export async function getRecipeSummary(recipeKey: string): Promise<RecipeSummary> {
+  const result = await apiClient.get<RecipeSummary>(`${ROOT}/recipes/${encodeURIComponent(recipeKey)}/summary`);
+  if (!result.data) throw new Error('作图配方统计接口没有返回数据');
+  return result.data;
+}
+
 export async function createCostEntry(taskId: number, input: CreateCostEntryInput): Promise<ProductImageCostEntry> {
   const result = await apiClient.post<ProductImageCostEntry>(`${ROOT}/tasks/${encodeURIComponent(taskId)}/costs`, input);
   if (!result.data) throw new Error('成本记录已提交但服务器没有返回记录');
+  return result.data;
+}
+
+export async function createImageRuleSnapshot(input: CreateImageRuleSnapshotInput): Promise<ImageRuleSnapshot> {
+  const result = await apiClient.post<ImageRuleSnapshot>(`${ROOT}/rule-snapshots`, input);
+  if (!result.data) throw new Error('渠道规则快照已提交但服务器没有返回记录');
+  return result.data;
+}
+
+export async function decideImageSet(setId: number, input: DecideImageSetInput): Promise<ImageSetDecision> {
+  const result = await apiClient.post<ImageSetDecision>(`${ROOT}/image-sets/${encodeURIComponent(setId)}/decisions`, input);
+  if (!result.data) throw new Error('图片集合决定已提交但服务器没有返回记录');
+  return result.data;
+}
+
+export async function issueImageReleaseAttestation(input: IssueImageReleaseAttestationInput): Promise<ImageReleaseAttestation> {
+  const result = await apiClient.post<ImageReleaseAttestation>(`${ROOT}/release-attestations`, input);
+  if (!result.data) throw new Error('发布证明签发请求成功但服务器没有返回证明');
+  return result.data;
+}
+
+export async function getImageReleaseAttestation(id: number): Promise<ImageReleaseAttestation> {
+  const result = await apiClient.get<ImageReleaseAttestation>(`${ROOT}/release-attestations/${encodeURIComponent(id)}`);
+  if (!result.data) throw new Error('发布证明接口没有返回记录');
+  return result.data;
+}
+
+export async function createImageBudgetPolicy(input: CreateImageBudgetPolicyInput): Promise<ImageBudgetPolicy> {
+  const result = await apiClient.post<ImageBudgetPolicy>(`${ROOT}/budget-policies`, input);
+  if (!result.data) throw new Error('预算政策已提交但服务器没有返回记录');
+  return result.data;
+}
+
+export async function listImageBudgetPolicies(): Promise<ImageBudgetPolicy[]> {
+  const result = await apiClient.get<ImageBudgetPolicy[]>(`${ROOT}/budget-policies`);
+  return result.data ?? [];
+}
+
+export async function listImageBudgetReservations(): Promise<ImageBudgetReservation[]> {
+  const result = await apiClient.get<ImageBudgetReservation[]>(`${ROOT}/budget-reservations`);
+  return result.data ?? [];
+}
+
+export async function cancelImageBudgetReservation(id: number, reason: string): Promise<ImageBudgetReservation> {
+  const result = await apiClient.post<ImageBudgetReservation>(`${ROOT}/budget-reservations/${encodeURIComponent(id)}/cancel`, { reason });
+  if (!result.data) throw new Error('预算预占取消成功但服务器没有返回记录');
+  return result.data;
+}
+
+export async function reconcileImageBudgetCharge(id: number, input: ReconcileImageBudgetChargeInput): Promise<ImageBudgetCharge> {
+  const result = await apiClient.post<ImageBudgetCharge>(`${ROOT}/budget-reservations/${encodeURIComponent(id)}/charges`, input);
+  if (!result.data) throw new Error('外部账单对账成功但服务器没有返回记录');
+  return result.data;
+}
+
+export async function reconcileImageBudgetNoCharge(id: number, input: ReconcileImageBudgetNoChargeInput): Promise<ImageBudgetCharge> {
+  const result = await apiClient.post<ImageBudgetCharge>(`${ROOT}/budget-reservations/${encodeURIComponent(id)}/no-charge-reconciliations`, input);
+  if (!result.data) throw new Error('未扣费对账成功但服务器没有返回记录');
   return result.data;
 }

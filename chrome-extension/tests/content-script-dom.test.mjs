@@ -11,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const extensionRoot = resolve(here, '..');
 const compiledScript = await readFile(resolve(extensionRoot, 'build/content-script.js'), 'utf8');
 
-async function loadFixture(name, url, messageResponder, storageValues = {}) {
+async function loadFixture(name, url, messageResponder, storageValues = {}, beforeExtract) {
   const html = await readFile(resolve(here, 'fixtures', name), 'utf8');
   const { window } = parseHTML(html);
   const sentMessages = [];
@@ -52,6 +52,7 @@ async function loadFixture(name, url, messageResponder, storageValues = {}) {
     HTMLButtonElement: window.HTMLButtonElement,
   });
   vm.runInContext(compiledScript, context, { filename: 'content-script.js' });
+  beforeExtract?.(window.document);
   let data;
   try {
     data = vm.runInContext('extractPageData()', context);
@@ -144,6 +145,37 @@ test('modern tiered detail ignores reference price, uses first quantity as MOQ, 
   assert.equal(result.payload.saved, false);
   assert.match(result.payload.message, /禁止确认保存/);
   assert.equal(loaded.document.body.textContent.includes('确认保存'), false);
+});
+
+test('visible modern SKU rows bind selected specification, price and stock', async () => {
+  const loaded = await loadFixture(
+    '1688-detail-visible-sku-rows.html',
+    'https://detail.1688.com/offer/904602290153.html',
+  );
+
+  assert.deepEqual(JSON.parse(JSON.stringify(loaded.data.spec_variants)), [
+    { spec: '咖啡色 / 100 建议身高85-95CM', price: 11.9, stock: 6469 },
+    { spec: '咖啡色 / 90 建议身高75-85CM', price: 11.9, stock: 6469 },
+    { spec: '咖啡色 / 110 建议身高95-105CM', price: 11.9, stock: 6469 },
+  ]);
+  assert.equal(loaded.data.field_statuses.sku, 'observed');
+  const result = await loaded.collect();
+  assert.equal(result.payload.code, 'PREVIEW_REQUIRED');
+  assert.equal(Array.from(loaded.document.querySelectorAll('button')).some((button) => button.textContent === '确认保存'), true);
+});
+
+test('visible SKU rows stay blocked when a color dimension has no bound selection', async () => {
+  const loaded = await loadFixture(
+    '1688-detail-visible-sku-rows.html',
+    'https://detail.1688.com/offer/904602290153.html',
+    undefined,
+    {},
+    (document) => document.querySelector('[aria-pressed="true"]').setAttribute('aria-pressed', 'false'),
+  );
+
+  assert.equal(loaded.data.field_statuses.sku, 'parse_failed');
+  const result = await loaded.collect();
+  assert.match(result.payload.message, /规格\/SKU读取不可靠/);
 });
 
 test('loading the content script installs local UI and listener but never uploads automatically', async () => {

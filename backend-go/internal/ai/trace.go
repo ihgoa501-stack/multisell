@@ -125,6 +125,9 @@ func (w *TraceWriter) Complete(traceID string, in *CompleteTraceInput) (*AITrace
 	if in.TokenCount > 0 {
 		updates["token_count"] = in.TokenCount
 	}
+	if in.ModelName != "" {
+		updates["model_name"] = in.ModelName
+	}
 	if err := w.db.Model(&t).Updates(updates).Error; err != nil {
 		return nil, err
 	}

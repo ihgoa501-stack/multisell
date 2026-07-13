@@ -162,3 +162,91 @@ func TestPostgresNonceConsumptionAndLeaseTakeover(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPostgresMultiInstanceProviderSubmitAndOneShotCanaryAreAtomic(t *testing.T) {
+	s1 := integrationStore(t)
+	url := os.Getenv("IMAGE_SERVICE_TEST_DATABASE_URL")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s2, err := Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	provider := "photoroom"
+	submitInput := createInput(unique("submit-job-"), "DETERMINISTIC_RESIZE")
+	cleanupOwner(t, s1, submitInput.OwnerID)
+	submitJob, _, err := s1.Create(submitInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID := submitJob.ID
+	defer func() {
+		_, _ = s1.db.Exec(`DELETE FROM image_provider_submits WHERE provider=$1`, provider)
+		_, _ = s1.db.Exec(`DELETE FROM image_provider_canary_claims WHERE provider=$1`, provider)
+	}()
+	const callers = 64
+	var wg sync.WaitGroup
+	wins := make(chan bool, callers)
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			store := s1
+			if i%2 == 1 {
+				store = s2
+			}
+			won, e := store.ClaimProviderSubmit(jobID, provider)
+			wins <- won
+			errs <- e
+		}(i)
+	}
+	wg.Wait()
+	close(wins)
+	close(errs)
+	count := 0
+	for won := range wins {
+		if won {
+			count++
+		}
+	}
+	for e := range errs {
+		if e != nil {
+			t.Fatal(e)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("submit claims won=%d", count)
+	}
+
+	in1 := createInput(unique("canary-job-"), "PHOTOROOM_WHITE_BACKGROUND_SANDBOX")
+	in1.Processor = provider
+	in2 := createInput(unique("canary-job-"), "PHOTOROOM_WHITE_BACKGROUND_SANDBOX")
+	in2.Processor = provider
+	cleanupOwner(t, s1, in1.OwnerID)
+	cleanupOwner(t, s1, in2.OwnerID)
+	j1, _, _ := s1.Create(in1)
+	j2, _, _ := s1.Create(in2)
+	type result struct{ err error }
+	out := make(chan result, 2)
+	go func() {
+		_, e := s1.EnqueueAuthorizedAttempt(j1.ID, unique("attempt-"), unique("nonce-"), provider)
+		out <- result{e}
+	}()
+	go func() {
+		_, e := s2.EnqueueAuthorizedAttempt(j2.ID, unique("attempt-"), unique("nonce-"), provider)
+		out <- result{e}
+	}()
+	r1, r2 := <-out, <-out
+	if (r1.err == nil) == (r2.err == nil) {
+		t.Fatalf("expected exactly one canary winner: %v / %v", r1.err, r2.err)
+	}
+	loser := r1.err
+	if loser == nil {
+		loser = r2.err
+	}
+	if !errors.Is(loser, core.ErrCanaryQuotaExceeded) {
+		t.Fatalf("loser=%v", loser)
+	}
+}

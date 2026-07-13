@@ -1,5 +1,9 @@
 # AI Product Image Generation - Competitive Landscape (2026-06)
 
+> Status: `superseded_for_current_scope`. This historical market scan contains provider positioning and unverified market estimates. It must not be used to justify the current development queue. The current Owner decision and primary-source scope research are recorded in [AI 商品图片系统的长期价值、提示词资产与建设边界](ai-product-image-system-value-and-scope-2026-07-13.md) and the active specification is [商品视觉生产与学习系统开发规格](../features/multi-provider-product-image-system.md).
+
+> Current sequence correction (2026-07-13): the next step is not an immediate multi-SKU experiment. LingMirror must first complete and Owner-verify one usable exact-SKU scene-image production loop; only then may it run the three-SKU comparison. Market trend or provider availability cannot skip this prerequisite.
+
 > Research date: 2026-06-27
 > Purpose: Inform Prism Agent-Native Image Engine strategy and product positioning
 

@@ -44,8 +44,9 @@ type SourceReviewDecisionInput struct {
 }
 
 type DraftApprovalSubmissionInput struct {
-	RequesterID int64  `json:"requester_id"`
-	Reason      string `json:"reason" binding:"required"`
+	RequesterID   int64  `json:"requester_id"`
+	Reason        string `json:"reason" binding:"required"`
+	CostVersionID int64  `json:"cost_version_id"`
 }
 
 type DraftApprovalDecisionInput struct {

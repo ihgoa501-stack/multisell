@@ -3,6 +3,7 @@ package supplychain
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -18,6 +19,7 @@ const DefaultSize = 20
 // SupplyChainTracking maps to the PostgreSQL "supply_chain_tracking" table.
 type SupplyChainTracking struct {
 	ID                string           `gorm:"column:id;primaryKey;type:uuid;default:gen_random_uuid()" json:"id"`
+	OwnerID           int64            `gorm:"column:owner_id;index;default:null" json:"owner_id"`
 	FlowID            string           `gorm:"column:flow_id;type:uuid;index:idx_tracking_flow_id" json:"flow_id"`
 	OrderID           string           `gorm:"column:order_id;type:varchar(100);index:idx_tracking_order_id" json:"order_id"`
 	CarrierCode       string           `gorm:"column:carrier_code;type:varchar(50);index:idx_tracking_carrier_code" json:"carrier_code"`
@@ -91,8 +93,42 @@ type UpdateTrackingRequest struct {
 	ActualDelivery    *time.Time `json:"actual_delivery,omitempty"`
 }
 
+// CarrierEvent is an immutable observation received from a real carrier or
+// channel. It is deliberately separate from operator-entered status history:
+// only this evidence may project an externally observed delivery time.
+type CarrierEvent struct {
+	ID              int64           `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OwnerID         int64           `gorm:"column:owner_id;index" json:"owner_id"`
+	TrackingID      string          `gorm:"column:tracking_id;type:uuid;index" json:"tracking_id"`
+	SourceSystem    string          `gorm:"column:source_system;type:varchar(80)" json:"source_system"`
+	ExternalEventID string          `gorm:"column:external_event_id;type:varchar(200)" json:"external_event_id"`
+	Status          string          `gorm:"column:status;type:varchar(30)" json:"status"`
+	OccurredAt      time.Time       `gorm:"column:occurred_at" json:"occurred_at"`
+	ObservedAt      time.Time       `gorm:"column:observed_at" json:"observed_at"`
+	Location        string          `gorm:"column:location;type:varchar(300)" json:"location,omitempty"`
+	Message         string          `gorm:"column:message;type:text" json:"message,omitempty"`
+	RawPayload      json.RawMessage `gorm:"column:raw_payload;type:jsonb" json:"-"`
+	PayloadSHA256   string          `gorm:"column:payload_sha256;type:char(64)" json:"payload_sha256"`
+	TruthStatus     string          `gorm:"column:truth_status;type:varchar(30)" json:"truth_status"`
+	CreatedAt       time.Time       `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+}
+
+func (CarrierEvent) TableName() string { return "supply_chain_carrier_event" }
+
+type IngestCarrierEventRequest struct {
+	SourceSystem    string          `json:"source_system" binding:"required"`
+	ExternalEventID string          `json:"external_event_id" binding:"required"`
+	Status          string          `json:"status" binding:"required"`
+	OccurredAt      time.Time       `json:"occurred_at" binding:"required"`
+	ObservedAt      time.Time       `json:"observed_at" binding:"required"`
+	Location        string          `json:"location"`
+	Message         string          `json:"message"`
+	RawPayload      json.RawMessage `json:"raw_payload" binding:"required"`
+}
+
 // ListTrackingRequest is the query for listing tracking records.
 type ListTrackingRequest struct {
+	OwnerID     int64  `form:"-"`
 	Page        int    `form:"page"`
 	Size        int    `form:"size"`
 	FlowID      string `form:"flow_id"`
@@ -114,6 +150,10 @@ func NewTrackingService(db *gorm.DB, logger *zap.Logger) *TrackingService {
 
 // Create inserts a new tracking record.
 func (s *TrackingService) Create(ctx context.Context, req *CreateTrackingRequest) (*SupplyChainTracking, error) {
+	return s.create(ctx, 0, req)
+}
+
+func (s *TrackingService) create(ctx context.Context, ownerID int64, req *CreateTrackingRequest) (*SupplyChainTracking, error) {
 	status := req.Status
 	if status == "" {
 		status = "pending"
@@ -123,6 +163,7 @@ func (s *TrackingService) Create(ctx context.Context, req *CreateTrackingRequest
 	}
 
 	tracking := SupplyChainTracking{
+		OwnerID:           ownerID,
 		FlowID:            req.FlowID,
 		OrderID:           req.OrderID,
 		CarrierCode:       req.CarrierCode,
@@ -164,6 +205,9 @@ func (s *TrackingService) GetByID(ctx context.Context, id string) (*SupplyChainT
 func (s *TrackingService) UpdateStatus(ctx context.Context, id string, req *UpdateTrackingRequest) (*SupplyChainTracking, error) {
 	if !isTrackingStatusValid(req.Status) {
 		return nil, ErrInvalidTrackingStatus(req.Status)
+	}
+	if req.ActualDelivery != nil {
+		return nil, fmt.Errorf("actual_delivery requires immutable external carrier evidence")
 	}
 
 	var t SupplyChainTracking
@@ -258,12 +302,28 @@ func (s *TrackingService) GetByFlowID(ctx context.Context, flowID string) ([]Sup
 	return items, nil
 }
 
+func (s *TrackingService) GetByFlowIDForOwner(ctx context.Context, ownerID int64, flowID string) ([]SupplyChainTracking, error) {
+	var items []SupplyChainTracking
+	err := s.db.WithContext(ctx).Where("owner_id = ? AND flow_id = ?", ownerID, flowID).Order("created_at DESC").Find(&items).Error
+	return items, err
+}
+
+func (s *TrackingService) UpdateStatusForOwner(ctx context.Context, ownerID int64, id string, req *UpdateTrackingRequest) (*SupplyChainTracking, error) {
+	if _, err := s.GetByIDForOwner(ctx, ownerID, id); err != nil {
+		return nil, err
+	}
+	return s.UpdateStatus(ctx, id, req)
+}
+
 // List returns a paginated list of tracking records with optional filters.
 func (s *TrackingService) List(ctx context.Context, req *ListTrackingRequest) ([]SupplyChainTracking, int64, error) {
 	var items []SupplyChainTracking
 	var total int64
 
 	q := s.db.WithContext(ctx).Model(&SupplyChainTracking{})
+	if req.OwnerID > 0 {
+		q = q.Where("owner_id = ?", req.OwnerID)
+	}
 	if req.FlowID != "" {
 		q = q.Where("flow_id = ?", req.FlowID)
 	}

@@ -13,7 +13,14 @@ CREATE TABLE IF NOT EXISTS image_jobs (
     width integer NOT NULL CHECK (width BETWEEN 1 AND 4000),
     height integer NOT NULL CHECK (height BETWEEN 1 AND 4000),
     format text NOT NULL CHECK (format IN ('png', 'jpeg')),
-    status text NOT NULL CHECK (status IN ('QUEUED', 'RUNNING', 'READY', 'FAILED')),
+    max_cost text NOT NULL DEFAULT '',
+    currency text NOT NULL DEFAULT '',
+    region text NOT NULL DEFAULT '',
+    provider_environment text NOT NULL DEFAULT '',
+    sandbox boolean NOT NULL DEFAULT false,
+    watermarked boolean NOT NULL DEFAULT false,
+    non_publishable boolean NOT NULL DEFAULT false,
+    status text NOT NULL CHECK (status IN ('QUEUED', 'RUNNING', 'READY', 'FAILED', 'RECONCILE_REQUIRED')),
     error_code text NOT NULL DEFAULT '',
     version bigint NOT NULL CHECK (version > 0),
     created_at timestamptz NOT NULL,
@@ -26,10 +33,11 @@ CREATE TABLE IF NOT EXISTS image_attempts (
     job_id text NOT NULL REFERENCES image_jobs(id) ON DELETE RESTRICT,
     idempotency_key text NOT NULL UNIQUE CHECK (length(idempotency_key) BETWEEN 1 AND 256),
     number integer NOT NULL CHECK (number > 0),
-    status text NOT NULL CHECK (status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED')),
+    status text NOT NULL CHECK (status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'RECONCILE_REQUIRED')),
     lease_owner text NOT NULL DEFAULT '',
     lease_until timestamptz,
     error_code text NOT NULL DEFAULT '',
+    provider_request_id text NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL,
     started_at timestamptz,
     completed_at timestamptz,
@@ -37,6 +45,21 @@ CREATE TABLE IF NOT EXISTS image_attempts (
     CHECK ((status = 'RUNNING' AND lease_owner <> '' AND lease_until IS NOT NULL)
         OR (status <> 'RUNNING' AND lease_owner = '' AND lease_until IS NULL))
 );
+
+ALTER TABLE image_jobs ADD COLUMN IF NOT EXISTS max_cost text NOT NULL DEFAULT '';
+ALTER TABLE image_jobs ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT '';
+ALTER TABLE image_jobs ADD COLUMN IF NOT EXISTS region text NOT NULL DEFAULT '';
+ALTER TABLE image_jobs ADD COLUMN IF NOT EXISTS provider_environment text NOT NULL DEFAULT '';
+ALTER TABLE image_jobs ADD COLUMN IF NOT EXISTS sandbox boolean NOT NULL DEFAULT false;
+ALTER TABLE image_jobs ADD COLUMN IF NOT EXISTS watermarked boolean NOT NULL DEFAULT false;
+ALTER TABLE image_jobs ADD COLUMN IF NOT EXISTS non_publishable boolean NOT NULL DEFAULT false;
+ALTER TABLE image_attempts ADD COLUMN IF NOT EXISTS provider_request_id text NOT NULL DEFAULT '';
+DO $$ BEGIN
+    ALTER TABLE image_jobs DROP CONSTRAINT IF EXISTS image_jobs_status_check;
+    ALTER TABLE image_jobs ADD CONSTRAINT image_jobs_status_check CHECK (status IN ('QUEUED','RUNNING','READY','FAILED','RECONCILE_REQUIRED'));
+    ALTER TABLE image_attempts DROP CONSTRAINT IF EXISTS image_attempts_status_check;
+    ALTER TABLE image_attempts ADD CONSTRAINT image_attempts_status_check CHECK (status IN ('QUEUED','RUNNING','SUCCEEDED','FAILED','RECONCILE_REQUIRED'));
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS image_attempts_one_active_per_job
     ON image_attempts(job_id) WHERE status IN ('QUEUED', 'RUNNING');
@@ -47,4 +70,15 @@ CREATE TABLE IF NOT EXISTS image_consumed_nonces (
     nonce text PRIMARY KEY CHECK (length(nonce) BETWEEN 1 AND 512),
     attempt_id text NOT NULL UNIQUE REFERENCES image_attempts(id) ON DELETE RESTRICT,
     consumed_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS image_provider_submits (
+    provider text NOT NULL,
+    job_id text NOT NULL REFERENCES image_jobs(id) ON DELETE RESTRICT,
+    claimed_at timestamptz NOT NULL,
+    PRIMARY KEY(provider, job_id)
+);
+CREATE TABLE IF NOT EXISTS image_provider_canary_claims (
+    provider text PRIMARY KEY,
+    attempt_id text NOT NULL UNIQUE REFERENCES image_attempts(id) ON DELETE RESTRICT,
+    claimed_at timestamptz NOT NULL
 );

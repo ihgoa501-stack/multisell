@@ -25,7 +25,6 @@ type Config struct {
 	Sentry        SentryConfig      `mapstructure:"sentry"`
 	LLM           LLMConfig         `mapstructure:"llm"`
 	SchemaDrift   SchemaDriftConfig `mapstructure:"schemadrift"`
-	Prism         PrismConfig       `mapstructure:"prism"`
 	EncryptionKey string            `mapstructure:"encryption_key"`
 }
 
@@ -138,15 +137,6 @@ type SentryConfig struct {
 	DSN string `mapstructure:"dsn"`
 }
 
-// PrismConfig holds Prism image generation engine settings.
-type PrismConfig struct {
-	BaseURL string `mapstructure:"base_url"`
-	APIKey  string `mapstructure:"api_key"`
-	Timeout int    `mapstructure:"timeout"` // seconds
-	Enabled bool   `mapstructure:"enabled"`
-	Strict  bool   `mapstructure:"strict"` // block on service error vs warn+continue
-}
-
 // DSN returns the PostgreSQL connection string.
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf(
@@ -208,12 +198,6 @@ func Load() (*Config, error) {
 	v.BindEnv("llm.api_key", "LLM_API_KEY")
 	v.BindEnv("llm.daily_budget_usd", "LLM_DAILY_BUDGET_USD")
 	v.BindEnv("encryption_key", "ENCRYPTION_KEY")
-	v.BindEnv("prism.base_url", "PRISM_BASE_URL")
-	v.BindEnv("prism.api_key", "PRISM_API_KEY")
-	v.BindEnv("prism.timeout", "PRISM_TIMEOUT")
-	v.BindEnv("prism.enabled", "PRISM_ENABLED")
-	v.BindEnv("prism.strict", "PRISM_STRICT")
-
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("read config: %w", err)
@@ -301,9 +285,6 @@ func (c *Config) Validate() error {
 	}
 	if c.LLM.DailyBudgetUSD < 0 {
 		return fmt.Errorf("llm.daily_budget_usd cannot be negative")
-	}
-	if c.Prism.Timeout <= 0 {
-		return fmt.Errorf("prism.timeout must be positive")
 	}
 	if c.Server.Mode == "release" {
 		if c.JWT.Secret == defaultDevelopmentJWTSecret || len(c.JWT.Secret) < 32 {

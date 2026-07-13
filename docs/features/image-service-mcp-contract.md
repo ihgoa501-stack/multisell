@@ -112,7 +112,7 @@ Transport：远程使用 Streamable HTTP；本地开发可使用 stdio。工具�
 
 - `lingmirror_image_list_capabilities`：只读、分页；
 - `lingmirror_image_estimate`：只读估算，不形成批准；
-- `lingmirror_image_submit_approved_task`：接收 LingMirror 签发的执行令牌，不接收任意 Provider key；
+- `lingmirror_image_submit_approved_task`：只接收 LingMirror 内部 task ID 与幂等键；后端自行查找目标绑定批准并签发执行令牌，不接收任意 Provider key；
 - `lingmirror_image_get_task`：只读状态；
 - `lingmirror_image_list_outputs`：只读元数据和受控引用；
 - `lingmirror_image_reconcile_task`：有外部读取，不创建新付费意图。
@@ -120,6 +120,25 @@ Transport：远程使用 Streamable HTTP；本地开发可使用 stdio。工具�
 工具 annotations 明确 `readOnlyHint/destructiveHint/idempotentHint/openWorldHint`。错误必须告诉 Agent下一步是等待、请求 Owner批准、重新核验权利还是人工对账。MCP不暴露任意 URL抓取、任意文件系统、Provider凭据、发布、Owner审批或“标记合规”工具。
 
 小Q不直接连接 Image Service 的生产 MCP；它调用 LingMirror 注册 Capability，由后端检查Owner scope和经营闸门，再转发受控请求。MCP handler与HTTP handler调用同一个 Application Service，禁止复制业务逻辑。
+
+### 8.1 当前生产工具冻结合同
+
+生产入口为 JWT 保护的 `POST /api/v1/product-images/mcp`。所有工具从认证上下文取得 Owner，输入 schema 均为 `additionalProperties: false`；客户端不能传 `owner_id`、执行令牌、Provider key、URL 或文件路径。
+
+| 工具 | 输入 | 行为 | annotations (`readOnly/destructive/idempotent/openWorld`) |
+|---|---|---|---|
+| `lingmirror_image_list_capabilities` | `page/page_size`，默认 1/20，最大 100 | 分页返回明确 `available/unavailable`；不根据名称推断可用 | `true/false/true/false` |
+| `lingmirror_image_estimate` | `task_id` | deterministic 返回精确 `0 USD`；未配置外部 Provider 返回 `unavailable`；绝不创建批准、预算预占、attempt 或付费意图 | `true/false/true/false` |
+| `lingmirror_image_get_task` | `task_id` | 返回 Owner 隔离的 LingMirror task 状态 | `true/false/true/false` |
+| `lingmirror_image_list_outputs` | `task_id/page/page_size` | 只返回 SHA-256 与 `/api/v1/product-images/tasks/{id}/output/content` 受控引用，不返回任意 URL | `true/false/true/false` |
+| `lingmirror_image_reconcile_task` | `task_id` | 只对账既有 Provider 意图；当前 deterministic 明确 `RECONCILE_NOT_SUPPORTED`，未配置外部 Provider 明确 `PROVIDER_UNAVAILABLE`，两者均不创建付费意图 | `false/false/true/true` |
+| `lingmirror_image_submit_approved_task` | `task_id/idempotency_key` | deterministic 幂等提交；付费 task 由同一领域 Service 查找有效 Owner 批准与成本记录，服务端即时签 token 后仅通过私有 HTTP 发送 | `false/true/true/true` |
+
+MCP 请求、响应、`structuredContent`、文本内容和工具 schema 均不得出现执行 token。JSON-RPC request 没有 `id` 时视为 notification：只读工具可执行并返回 HTTP 204 空响应；会消费批准或创建 attempt 的 mutation notification 必须在写入前拒绝并同样返回 204。显式 `id: null` 仍返回 JSON-RPC response。
+
+工具级封闭错误统一包含 `error_code/message/next_action/retryable`。下一步只能是等待并重读、请求 Owner 对精确版本批准、修正参数、配置并验证 Provider，或人工对账；错误不得建议新建付费意图来绕过不确定状态。JSON-RPC 协议错误继续使用标准 `-32600/-32601/-32602/-32603`。
+
+当前 route catalog 将混合读写的 MCP transport 登记为 `standard`，因为同一路径承载只读工具，不能在 HTTP 中间件层统一要求写审批；真正的付费 mutation 继续在 `Service.Execute` 内消费目标绑定批准、成本记录和一次性服务端令牌，MCP handler 不复制该门禁。
 
 ## 9. 回调与对账
 
@@ -220,6 +239,8 @@ Image Service 正式覆盖旧 Prism，不作为两个长期并存项目。该裁
 | `prismadapter` | 薄 HTTP generate client，返回 URL 与简化 compliance report | 由标准 Processor adapter/Runner 取代 |
 | `productanalysis/trigger-prism` | 可直接触发外部 Prism | 迁移到 LingMirror productimage 任务与审批 |
 | `listingtask` Prism gate | 发布前调用 Prism，并把简化报告写入 published data | 由 image release attestation 强制门禁取代 |
+
+旧 `POST /listings/:id/publish`、`POST /listing/products/:product_id/publish/:platform_id`、`POST /listing/listing-tasks/:task_id/publish` 以及 `listingtask.PublishHook` 已失败关闭。即使配置 Prism 或商品主图包含任意 URL，也不会调用 Prism 或平台 adapter；调用方必须改用受控发布 attempt。
 | `loop` Prism 依赖 | 历史工作流依赖 | 迁移或冻结，不进入新图片执行链 |
 | `PRISM_*` 配置 | 旧外部服务配置 | 过渡期兼容，最终由 Image Service provider config 取代 |
 

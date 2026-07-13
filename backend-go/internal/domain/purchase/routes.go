@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -21,10 +22,22 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, events
 		// Order routes
 		group.GET("/orders", h.ListOrders)
 		group.GET("/orders/:id", h.GetOrder)
-		group.POST("/orders", h.CreateOrder)
-		group.POST("/orders/:id/approve", h.ApproveOrder)
-		group.POST("/orders/:id/receive", h.ReceiveOrder)
-		group.POST("/orders/:id/cancel", h.CancelOrder)
+		// Legacy order writes used float amounts and internal status as external
+		// truth. Keep the paths fail-closed so old clients cannot silently write.
+		group.POST("/orders", h.LegacyWriteFrozen)
+		group.POST("/orders/:id/approve", h.LegacyWriteFrozen)
+		group.POST("/orders/:id/receive", h.LegacyWriteFrozen)
+		group.POST("/orders/:id/cancel", h.LegacyWriteFrozen)
+
+		authority := group.Group("/authorities", middleware.RequirePermission(db, "purchase.owner"))
+		authority.POST("", h.CreateAuthority)
+		authority.GET("", h.ListAuthorities)
+		authority.GET("/:id", h.GetAuthority)
+		authority.POST("/:id/owner-approval", h.ApproveAuthority)
+		authority.POST("/:id/external-submissions", h.RecordSubmission)
+		authority.POST("/:id/order-receipts", h.RecordOrderReceipt)
+		authority.POST("/:id/failure-receipts", h.RecordFailureReceipt)
+		authority.POST("/:id/receiving-events", h.RecordReceiving)
 
 		// Suggestion routes
 		group.GET("/suggestions", h.ListSuggestions)

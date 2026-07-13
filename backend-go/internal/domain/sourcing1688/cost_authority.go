@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var preciseCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,8}$`)
@@ -20,20 +22,26 @@ var preciseCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,8}$`)
 // exact task, opportunity approval, source observation and canonical SKU.
 // Money is persisted as integer minor units; float values are never authority.
 type SourcingCostVersion struct {
-	ID                    int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	OwnerID               int64     `gorm:"column:owner_id;not null" json:"owner_id"`
-	SourcingProductID     int64     `gorm:"column:sourcing_product_id;not null" json:"sourcing_product_id"`
-	TaskLinkID            int64     `gorm:"column:task_link_id;not null" json:"task_link_id"`
-	ProductOpportunityID  int64     `gorm:"column:product_opportunity_id;not null" json:"product_opportunity_id"`
-	OpportunityDecisionID int64     `gorm:"column:opportunity_decision_id;not null" json:"opportunity_decision_id"`
-	SourceSnapshotID      int64     `gorm:"column:source_snapshot_id;not null" json:"source_snapshot_id"`
-	SKUMappingID          int64     `gorm:"column:sku_mapping_id;not null" json:"sku_mapping_id"`
-	Version               int64     `gorm:"column:version;not null" json:"version"`
-	TargetCurrency        string    `gorm:"column:target_currency;not null" json:"target_currency"`
-	TotalMinor            int64     `gorm:"column:total_minor;not null" json:"total_minor"`
-	ContentHash           string    `gorm:"column:content_hash;not null" json:"content_hash"`
-	CreatedBy             int64     `gorm:"column:created_by;not null" json:"created_by"`
-	CreatedAt             time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	ID                         int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	OwnerID                    int64     `gorm:"column:owner_id;not null" json:"owner_id"`
+	SourcingProductID          int64     `gorm:"column:sourcing_product_id;not null" json:"sourcing_product_id"`
+	TaskLinkID                 int64     `gorm:"column:task_link_id;not null" json:"task_link_id"`
+	ProductOpportunityID       int64     `gorm:"column:product_opportunity_id;not null" json:"product_opportunity_id"`
+	OpportunityDecisionID      int64     `gorm:"column:opportunity_decision_id;not null" json:"opportunity_decision_id"`
+	SourceSnapshotID           int64     `gorm:"column:source_snapshot_id;not null" json:"source_snapshot_id"`
+	SKUMappingID               int64     `gorm:"column:sku_mapping_id;not null" json:"sku_mapping_id"`
+	Version                    int64     `gorm:"column:version;not null" json:"version"`
+	TargetCurrency             string    `gorm:"column:target_currency;not null" json:"target_currency"`
+	TotalMinor                 int64     `gorm:"column:total_minor;not null" json:"total_minor"`
+	RevenueMinor               int64     `gorm:"column:revenue_minor;not null" json:"revenue_minor"`
+	ContributionProfitMinor    int64     `gorm:"column:contribution_profit_minor;not null" json:"contribution_profit_minor"`
+	PricingBasis               string    `gorm:"column:pricing_basis;not null" json:"pricing_basis"`
+	QuantityTierMin            int64     `gorm:"column:quantity_tier_min;not null" json:"quantity_tier_min"`
+	QuantityTierMax            *int64    `gorm:"column:quantity_tier_max" json:"quantity_tier_max,omitempty"`
+	PurchaseLineOwnerConfirmed bool      `gorm:"column:purchase_line_owner_confirmed;not null" json:"purchase_line_owner_confirmed"`
+	ContentHash                string    `gorm:"column:content_hash;not null" json:"content_hash"`
+	CreatedBy                  int64     `gorm:"column:created_by;not null" json:"created_by"`
+	CreatedAt                  time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 }
 
 func (SourcingCostVersion) TableName() string { return "sourcing_cost_version" }
@@ -70,11 +78,16 @@ type CreateSourcingCostLineInput struct {
 }
 
 type CreateSourcingCostVersionInput struct {
-	TaskLinkID       int64                         `json:"task_link_id" binding:"required"`
-	SourceSnapshotID int64                         `json:"source_snapshot_id" binding:"required"`
-	SKUMappingID     int64                         `json:"sku_mapping_id" binding:"required"`
-	TargetCurrency   string                        `json:"target_currency" binding:"required"`
-	Lines            []CreateSourcingCostLineInput `json:"lines" binding:"required"`
+	TaskLinkID                 int64                         `json:"task_link_id" binding:"required"`
+	SourceSnapshotID           int64                         `json:"source_snapshot_id" binding:"required"`
+	SKUMappingID               int64                         `json:"sku_mapping_id" binding:"required"`
+	TargetCurrency             string                        `json:"target_currency" binding:"required"`
+	RevenueMinor               int64                         `json:"revenue_minor"`
+	PricingBasis               string                        `json:"pricing_basis" binding:"required"`
+	QuantityTierMin            int64                         `json:"quantity_tier_min" binding:"required"`
+	QuantityTierMax            *int64                        `json:"quantity_tier_max"`
+	PurchaseLineOwnerConfirmed bool                          `json:"purchase_line_owner_confirmed"`
+	Lines                      []CreateSourcingCostLineInput `json:"lines" binding:"required"`
 }
 
 type SourcingCostVersionDetail struct {
@@ -87,7 +100,8 @@ func validatePreciseCostInput(in *CreateSourcingCostVersionInput) ([]CreateSourc
 		return nil, 0, ErrInvalidWorkflow
 	}
 	target := strings.ToUpper(strings.TrimSpace(in.TargetCurrency))
-	if !preciseCurrencyPattern.MatchString(target) || len(in.Lines) != len(requiredCostTypes) {
+	in.PricingBasis = strings.TrimSpace(in.PricingBasis)
+	if !preciseCurrencyPattern.MatchString(target) || len(in.Lines) != len(requiredCostTypes) || in.RevenueMinor < 0 || in.PricingBasis != "owner_confirmed_listing_price" || in.QuantityTierMin <= 0 || (in.QuantityTierMax != nil && *in.QuantityTierMax < in.QuantityTierMin) || !in.PurchaseLineOwnerConfirmed {
 		return nil, 0, fmt.Errorf("%w: target currency and complete 10-line cost set are required", ErrInvalidWorkflow)
 	}
 	allowed, seen := map[string]bool{}, map[string]bool{}
@@ -187,10 +201,36 @@ func (s *Service) CreateSourcingCostVersion(ownerID, sourceID int64, in *CreateS
 		if err := tx.Model(&SourcingCostVersion{}).Where("owner_id = ? AND task_link_id = ? AND sku_mapping_id = ?", ownerID, link.ID, mapping.ID).Select("COALESCE(MAX(version), 0)").Scan(&latest).Error; err != nil {
 			return err
 		}
-		row := SourcingCostVersion{OwnerID: ownerID, SourcingProductID: sourceID, TaskLinkID: link.ID, ProductOpportunityID: *link.ProductOpportunityID, OpportunityDecisionID: *link.OpportunityDecisionID, SourceSnapshotID: in.SourceSnapshotID, SKUMappingID: mapping.ID, Version: latest + 1, TargetCurrency: in.TargetCurrency, TotalMinor: total, CreatedBy: ownerID}
+		row := SourcingCostVersion{OwnerID: ownerID, SourcingProductID: sourceID, TaskLinkID: link.ID, ProductOpportunityID: *link.ProductOpportunityID, OpportunityDecisionID: *link.OpportunityDecisionID, SourceSnapshotID: in.SourceSnapshotID, SKUMappingID: mapping.ID, Version: latest + 1, TargetCurrency: in.TargetCurrency, TotalMinor: total, RevenueMinor: in.RevenueMinor, ContributionProfitMinor: in.RevenueMinor - total, PricingBasis: in.PricingBasis, QuantityTierMin: in.QuantityTierMin, QuantityTierMax: in.QuantityTierMax, PurchaseLineOwnerConfirmed: in.PurchaseLineOwnerConfirmed, CreatedBy: ownerID}
 		row.ContentHash = preciseCostHash(row, lines)
-		if err := tx.Create(&row).Error; err != nil {
+		var existing SourcingCostVersion
+		if err := tx.Where("owner_id = ? AND task_link_id = ? AND content_hash = ?", ownerID, link.ID, row.ContentHash).First(&existing).Error; err == nil {
+			var existingLines []SourcingCostLine
+			if err := tx.Where("cost_version_id = ?", existing.ID).Order("cost_type").Find(&existingLines).Error; err != nil {
+				return err
+			}
+			out = SourcingCostVersionDetail{Version: existing, Lines: existingLines}
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+		if created.Error != nil {
+			return created.Error
+		}
+		if created.RowsAffected == 0 {
+			if err := tx.Where("owner_id = ? AND task_link_id = ? AND content_hash = ?", ownerID, link.ID, row.ContentHash).First(&row).Error; err != nil {
+				return fmt.Errorf("%w: concurrent cost version conflict; reload and retry", ErrWorkflowGate)
+			}
+			var existingLines []SourcingCostLine
+			if err := tx.Where("cost_version_id = ?", row.ID).Order("cost_type").Find(&existingLines).Error; err != nil {
+				return err
+			}
+			out = SourcingCostVersionDetail{Version: row, Lines: existingLines}
+			return nil
+		}
+		if row.ID <= 0 {
+			return fmt.Errorf("%w: cost version insert did not return identity", ErrWorkflowGate)
 		}
 		persisted := make([]SourcingCostLine, 0, len(lines))
 		for _, line := range lines {
@@ -207,11 +247,14 @@ func (s *Service) CreateSourcingCostVersion(ownerID, sourceID int64, in *CreateS
 
 func preciseCostHash(row SourcingCostVersion, lines []CreateSourcingCostLineInput) string {
 	payload, _ := json.Marshal(struct {
-		OwnerID, SourceID, TaskID, OpportunityID, DecisionID, SnapshotID, SKUID, Version int64
-		Currency                                                                         string
-		Total                                                                            int64
-		Lines                                                                            []CreateSourcingCostLineInput
-	}{row.OwnerID, row.SourcingProductID, row.TaskLinkID, row.ProductOpportunityID, row.OpportunityDecisionID, row.SourceSnapshotID, row.SKUMappingID, row.Version, row.TargetCurrency, row.TotalMinor, lines})
+		OwnerID, SourceID, TaskID, OpportunityID, DecisionID, SnapshotID, SKUID int64
+		Currency                                                                string
+		Total, Revenue, ContributionProfit, QuantityTierMin                     int64
+		QuantityTierMax                                                         *int64
+		PricingBasis                                                            string
+		PurchaseLineOwnerConfirmed                                              bool
+		Lines                                                                   []CreateSourcingCostLineInput
+	}{row.OwnerID, row.SourcingProductID, row.TaskLinkID, row.ProductOpportunityID, row.OpportunityDecisionID, row.SourceSnapshotID, row.SKUMappingID, row.TargetCurrency, row.TotalMinor, row.RevenueMinor, row.ContributionProfitMinor, row.QuantityTierMin, row.QuantityTierMax, row.PricingBasis, row.PurchaseLineOwnerConfirmed, lines})
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
 }
@@ -233,4 +276,29 @@ func (s *Service) ListSourcingCostVersions(ownerID, sourceID int64) ([]SourcingC
 		out = append(out, SourcingCostVersionDetail{Version: version, Lines: lines})
 	}
 	return out, nil
+}
+
+// freezeDraftCostVersion selects the exact immutable cost version explicitly
+// chosen by the Owner while the draft row is locked.
+func freezeDraftCostVersion(tx *gorm.DB, draft *draftRow, ownerID, taskLinkID, requestedID int64) error {
+	if requestedID == 0 && !tx.Migrator().HasTable(&SourcingCostVersion{}) {
+		return nil // compatibility for isolated pre-000149 fixtures only
+	}
+	if requestedID <= 0 {
+		return fmt.Errorf("%w: exact precise cost version must be selected", ErrWorkflowGate)
+	}
+	var version SourcingCostVersion
+	q := tx.Where("owner_id = ? AND sourcing_product_id = ? AND task_link_id = ?", ownerID, draft.SourcingProductID, taskLinkID)
+	q = q.Where("id = ?", requestedID)
+	if err := q.First(&version).Error; err != nil {
+		return fmt.Errorf("%w: exact precise cost version is required", ErrWorkflowGate)
+	}
+	if len(version.ContentHash) != 64 {
+		return fmt.Errorf("%w: precise cost content hash is invalid", ErrWorkflowGate)
+	}
+	if err := tx.Model(draft).Updates(map[string]any{"cost_version_id": version.ID, "cost_version_content_hash": version.ContentHash}).Error; err != nil {
+		return err
+	}
+	draft.CostVersionID, draft.CostVersionContentHash = &version.ID, version.ContentHash
+	return nil
 }

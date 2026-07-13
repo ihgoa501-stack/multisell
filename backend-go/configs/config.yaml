@@ -54,13 +54,6 @@ llm:
   provider: openai           # openai | anthropic | stub
   api_key: ""                # set via LLM_API_KEY env var
 
-prism:
-  base_url: ""               # Prism 服务地址, 如 http://prism:8080
-  api_key: ""                # Prism API key
-  timeout: 30                # HTTP 超时秒数
-  enabled: false             # 是否启用 Prism 图片合规
-  strict: true               # Prism 服务异常时: true=阻塞, false=警告后继续用原图发布
-
 log:
   level: debug
   format: console  # console | json

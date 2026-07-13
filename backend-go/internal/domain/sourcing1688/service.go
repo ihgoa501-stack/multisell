@@ -5,23 +5,19 @@ import (
 	"fmt"
 
 	"github.com/lingmirror/backend-go/internal/common"
-	"github.com/lingmirror/backend-go/internal/domain/integrations"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // Service provides sourcing1688 business logic.
 type Service struct {
-	db               *gorm.DB
-	logger           *zap.Logger
-	resolvePublisher publishAdapterResolver
+	db     *gorm.DB
+	logger *zap.Logger
 }
 
 // NewService creates a new sourcing1688 service.
 func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger, resolvePublisher: func(code string) (publishAdapter, bool) {
-		return integrations.GetAdapter(code)
-	}}
+	return &Service{db: db, logger: logger}
 }
 
 func (s *Service) RequireSourceOwner(id, ownerID int64) error {

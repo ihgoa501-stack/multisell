@@ -243,7 +243,7 @@
 |--------|------|--------|---------|-------------|
 | GET | `/api/v1/platform-integrations` | ✅ | h.List | — |
 | POST | `/api/v1/platform-integrations` | ✅ | h.Create | — |
-| POST | `/api/v1/platform-integrations/publish-to-ozon` | ✅ | h.PublishToOzon | — |
+| POST | `/api/v1/platform-integrations/publish-to-ozon` | ✅ | h.PublishToOzon | 旧 URL 入口；仅 dry-run/sandbox mock，真实写返回 428 |
 | GET | `/api/v1/platform-integrations/:id` | ✅ | h.Get | — |
 | PUT | `/api/v1/platform-integrations/:id` | ✅ | h.Update | — |
 | DELETE | `/api/v1/platform-integrations/:id` | ✅ | h.Delete | — |
@@ -1165,7 +1165,6 @@ Product Hub is registered under the product.read permission group. It includes M
 |--------|-------|
 | **Metabolism (M1)** | `NewService` called with `nil, nil` for `ScoringAdapter` and `SemanticScorer`. Scoring and entity semantic analysis are not wired. Scheduler tick `M1` is registered and runs, but scoring logic is a no-op. |
 | **Feedback** | AI classifier (`classifyFn`) and AgentOS triage (`actionCreator`) passed as `nil`. These features are not currently wired. |
-| **Prism** | Prism client is config-gated (`cfg.Prism.Enabled`). Disabled by default — `prismSvc` is `nil` when disabled, making listing task image generation unavailable. |
 | **A9 Scheduler** | `scheduler.tick.A9` subscriber is a no-op (`return nil`). A9 is API-driven only. |
 | **RBAC Public Routes** | `RegisterPublicRoutes` (for `GET /rbac/current/permissions`) is defined but not called in `router.go`. The route may be inaccessible without the `rbac.manage` permission. |
 
@@ -1203,7 +1202,7 @@ These agents run as event bus subscriptions on cron ticks, not as REST API calls
 | **Modules with routes** | 71 |
 | **Modules with full CRUD (handler + service)** | 63 of 71 |
 | **Modules with stub/unproven wiring** | 2 (metabolism, feedback) |
-| **Config-gated modules** | 1 (Prism) |
+| **Config-gated modules** | 0 |
 | **Scheduler-driven agents (no HTTP)** | 15 |
 | **Frontend-referenced endpoints** | ~80+ |
 | **Frontend calls with no backend route** | 0 |

@@ -1,0 +1,121 @@
+# Module: `businessfeedback`
+
+Package: `backend-go/internal/domain/businessfeedback/`
+
+**Base mount prefix:** `/api/v1`
+
+## API Routes
+
+| Method | Path | Handler |
+|--------|------|--------|
+| `GET` | `/actions` | `h.List` |
+| `POST` | `/actions` | `h.CreateAction` |
+| `GET` | `/actions/:id` | `h.Get` |
+| `POST` | `/actions/:id/execute` | `h.Execute` |
+| `POST` | `/actions/:id/next-recommendations` | `h.Recommend` |
+| `POST` | `/actions/:id/observations` | `h.Observe` |
+
+## Models
+
+### `ControlledAction`
+**DB table:** `business_controlled_action`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `—` |  |
+| `OwnerID` | `int64` | `owner_id` | `—` |  |
+| `OwnerDecisionID` | `int64` | `owner_decision_id` | `—` |  |
+| `ApprovalID` | `int64` | `approval_id` | `—` |  |
+| `CapabilityID` | `string` | `capability_id` | `—` |  |
+| `CommandType` | `string` | `command_type` | `—` |  |
+| `TargetType` | `string` | `target_type` | `—` |  |
+| `TargetID` | `string` | `target_id` | `—` |  |
+| `IdempotencyKey` | `string` | `idempotency_key` | `—` |  |
+| `InputPayload` | `json.RawMessage` | `input_payload` | `—` |  |
+| `InputSHA256` | `string` | `input_sha256` | `—` |  |
+| `Status` | `string` | `status` | `—` |  |
+| `CommandBusinessID` | `string` | `command_business_id,omitempty` | `—` |  |
+| `FailureMessage` | `string` | `failure_message,omitempty` | `—` |  |
+| `ExecutedAt` | `*time.Time` | `executed_at,omitempty` | `—` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+
+### `ActionObservation`
+**DB table:** `business_action_observation`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `—` |  |
+| `OwnerID` | `int64` | `owner_id` | `—` |  |
+| `ControlledActionID` | `int64` | `controlled_action_id` | `—` |  |
+| `SourceObjectID` | `int64` | `source_object_id` | `—` |  |
+| `EvidenceKind` | `string` | `evidence_kind` | `—` |  |
+| `TruthStatus` | `string` | `truth_status` | `—` |  |
+| `SourceObjectType` | `string` | `source_object_type` | `—` |  |
+| `SourceManifestSHA256` | `string` | `source_manifest_sha256` | `—` |  |
+| `ObservedAt` | `time.Time` | `observed_at` | `—` |  |
+| `TargetMetric` | `string` | `target_metric` | `—` |  |
+| `TargetValue` | `string` | `target_value` | `—` |  |
+| `ActualValue` | `string` | `actual_value` | `—` |  |
+| `ComparisonNote` | `string` | `comparison_note` | `—` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+
+### `NextActionRecommendation`
+**DB table:** `business_next_action_recommendation`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `ID` | `int64` | `id` | `—` |  |
+| `OwnerID` | `int64` | `owner_id` | `—` |  |
+| `ControlledActionID` | `int64` | `controlled_action_id` | `—` |  |
+| `RecommendationText` | `string` | `recommendation_text` | `—` |  |
+| `Rationale` | `string` | `rationale` | `—` |  |
+| `TruthStatus` | `string` | `truth_status` | `—` |  |
+| `Status` | `string` | `status` | `—` |  |
+| `CreatedAt` | `time.Time` | `created_at` | `—` |  |
+
+### `CreateActionInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `OwnerDecisionID` | `int64` | `owner_decision_id` | `—` |  |
+| `CapabilityID` | `string` | `capability_id` | `—` |  |
+| `CommandType` | `string` | `command_type` | `—` |  |
+| `TargetType` | `string` | `target_type` | `—` |  |
+| `TargetID` | `string` | `target_id` | `—` |  |
+| `ApprovalID` | `int64` | `approval_id` | `—` |  |
+| `IdempotencyKey` | `string` | `idempotency_key` | `—` |  |
+| `InputPayload` | `json.RawMessage` | `input_payload` | `—` |  |
+
+### `CreateObservationInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `EvidenceKind` | `string` | `evidence_kind` | `—` |  |
+| `SourceObjectType` | `string` | `source_object_type` | `—` |  |
+| `SourceObjectID` | `int64` | `source_object_id` | `—` |  |
+| `TargetMetric` | `string` | `target_metric` | `—` |  |
+| `TargetValue` | `string` | `target_value` | `—` |  |
+| `ActualValue` | `string` | `actual_value` | `—` |  |
+| `ComparisonNote` | `string` | `comparison_note` | `—` |  |
+
+### `CreateRecommendationInput`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `RecommendationText` | `string` | `recommendation_text` | `—` |  |
+| `Rationale` | `string` | `rationale` | `—` |  |
+
+### `ActionDetail`
+**DB table:** `—`
+
+| Field | Type | JSON | Column | Constraints |
+|-------|------|------|--------|-------------|
+| `Action` | `ControlledAction` | `action` | `—` |  |
+| `Observations` | `[]ActionObservation` | `observations` | `—` |  |
+| `NextRecommendations` | `[]NextActionRecommendation` | `next_recommendations` | `—` |  |
+
+---
+_Auto-generated by `docgen`. Do not edit manually._

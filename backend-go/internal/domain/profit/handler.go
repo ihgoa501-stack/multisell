@@ -69,3 +69,57 @@ func (h *Handler) CalculateOrderProfit(c *gin.Context) {
 	}
 	response.Success(c, result)
 }
+
+func finalAuthorityParams(c *gin.Context) (int64, int64, bool) {
+	ownerID := common.UserIDFromCtx(c)
+	orderID, err := strconv.ParseInt(c.Param("orderId"), 10, 64)
+	if ownerID == nil || *ownerID <= 0 || err != nil || orderID <= 0 {
+		response.Error(c, http.StatusBadRequest, "valid Owner and orderId are required")
+		return 0, 0, false
+	}
+	return *ownerID, orderID, true
+}
+
+func (h *Handler) AllocateOrderProductCost(c *gin.Context) {
+	ownerID, orderID, ok := finalAuthorityParams(c)
+	if !ok {
+		return
+	}
+	var in AllocateOrderProductCostInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, "valid exact cost allocation is required")
+		return
+	}
+	out, err := h.service.AllocateOrderProductCost(c.Request.Context(), ownerID, orderID, in)
+	if err != nil {
+		response.Error(c, http.StatusConflict, err.Error())
+		return
+	}
+	response.Success(c, out)
+}
+
+func (h *Handler) FinalizeOrderProfit(c *gin.Context) {
+	ownerID, orderID, ok := finalAuthorityParams(c)
+	if !ok {
+		return
+	}
+	out, err := h.service.FinalizeOrderProfit(c.Request.Context(), ownerID, orderID)
+	if err != nil {
+		response.Error(c, http.StatusConflict, err.Error())
+		return
+	}
+	response.Success(c, out)
+}
+
+func (h *Handler) ListFinalOrderProfitVersions(c *gin.Context) {
+	ownerID, orderID, ok := finalAuthorityParams(c)
+	if !ok {
+		return
+	}
+	out, err := h.service.ListFinalOrderProfitVersions(c.Request.Context(), ownerID, orderID)
+	if err != nil {
+		response.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	response.Success(c, out)
+}

@@ -96,10 +96,6 @@ echo "[OK] Backup created successfully:"
 echo "    Path: ${BACKUP_FILE}"
 echo "    Size: ${BACKUP_SIZE_HUMAN}"
 
-# ---- 清理旧备份 --------------------------------------------------------------
-echo "[INFO] Cleaning backups older than ${RETENTION_DAYS} days in ${BACKUP_DIR}..."
-find "$BACKUP_DIR" \( -name "${DB_NAME}_*.dump" -o -name "${DB_NAME}_*.dump.sha256" \) -type f -mtime "+${RETENTION_DAYS}" -print -delete
-
 # ---- S3 上传（可选） ----------------------------------------------------------
 if [ -n "$BACKUP_S3_BUCKET" ]; then
     if [ "$BACKUP_REQUIRE_IMMUTABLE_OFFSITE" = "true" ]; then
@@ -139,5 +135,11 @@ if [ -n "$BACKUP_S3_BUCKET" ]; then
     done
     echo "[OK] Encrypted S3 upload and remote existence checks complete."
 fi
+
+# Retention runs only after every required offsite upload and remote
+# verification succeeds. A failed upload must preserve older local recovery
+# points for the operator.
+echo "[INFO] Cleaning backups older than ${RETENTION_DAYS} days in ${BACKUP_DIR}..."
+find "$BACKUP_DIR" \( -name "${DB_NAME}_*.dump" -o -name "${DB_NAME}_*.dump.sha256" \) -type f -mtime "+${RETENTION_DAYS}" -print -delete
 
 exit 0

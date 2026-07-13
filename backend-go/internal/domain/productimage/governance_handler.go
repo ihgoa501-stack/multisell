@@ -114,6 +114,39 @@ func (h *GovernanceHandler) ListReviews(c *gin.Context) {
 	}
 	response.Paginated(c, items, total, page, size)
 }
+func (h *GovernanceHandler) CreateFeedback(c *gin.Context) {
+	owner, ok := ownerID(c)
+	if !ok {
+		return
+	}
+	id, ok := taskID(c)
+	if !ok {
+		return
+	}
+	var in CandidateFeedbackInput
+	if c.ShouldBindJSON(&in) != nil {
+		problem(c, 422, "VALIDATION_ERROR", "invalid candidate feedback")
+		return
+	}
+	item, err := h.service.CreateCandidateFeedback(c.Request.Context(), owner, id, in)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(201, response.Result{Code: 0, Message: "ok", Data: item})
+}
+func (h *GovernanceHandler) RecipeSummary(c *gin.Context) {
+	owner, ok := ownerID(c)
+	if !ok {
+		return
+	}
+	item, err := h.service.RecipeSummary(c.Request.Context(), owner, c.Param("recipe_key"))
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	response.Success(c, item)
+}
 func (h *GovernanceHandler) CreateCost(c *gin.Context) {
 	owner, ok := ownerID(c)
 	if !ok {

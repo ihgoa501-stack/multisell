@@ -11,7 +11,6 @@ import (
 	"github.com/lingmirror/backend-go/internal/common"
 	"github.com/lingmirror/backend-go/internal/domain/approval"
 	"github.com/lingmirror/backend-go/internal/domain/integrations/aimapper"
-	"github.com/lingmirror/backend-go/internal/domain/sku"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -314,73 +313,35 @@ type PublishToOzonInput struct {
 	ApprovalID   *int64  `json:"approval_id,omitempty"`
 }
 
+// ErrImageReleaseAttestationRequired permanently closes the legacy URL-based
+// Ozon publisher for real writes. Production publication must use the
+// productimage controlled byte publisher, which consumes a release
+// attestation and does not trust caller-supplied image URLs.
+var ErrImageReleaseAttestationRequired = errors.New("IMAGE_RELEASE_ATTESTATION_REQUIRED")
+
 // PublishToOzon publishes a local product to the Ozon platform.
 func (s *Service) PublishToOzon(ctx context.Context, in *PublishToOzonInput) (*PublishResult, error) {
-	// Check execution mode — guard production writes.
-	if result, err := s.checkWriteMode(ctx, "publish_ozon", in); err != nil {
-		return nil, err
-	} else if result != nil {
-		return result, nil // dry-run: returned mock result
+	// This legacy endpoint accepts an arbitrary image_url and therefore can
+	// never perform an external write. Keep dry-run/sandbox useful as explicit,
+	// state-free mocks; every other/unknown mode fails before DB or adapter use.
+	mode, explicitlySet := ctx.Value(modeCtxKey{}).(ExecutionMode)
+	if !explicitlySet {
+		return nil, ErrImageReleaseAttestationRequired
 	}
-
-	var prod sku.Product
-	if err := s.db.WithContext(ctx).First(&prod, in.ProductID).Error; err != nil {
-		return nil, fmt.Errorf("publish to ozon: product %d not found", in.ProductID)
+	switch mode {
+	case ExecutionModeDryRun, ExecutionModeSandbox:
+		s.logger.Info("mock: skipping legacy Ozon platform write",
+			zap.String("operation", "publish_ozon"),
+			zap.String("execution_mode", mode.String()),
+		)
+		return &PublishResult{
+			PlatformProductID: mode.String() + "-simulated",
+			PlatformURL:       mode.String() + "://simulated",
+			SyncMessage:       mode.String() + ": mock only; no platform call or state change was made",
+		}, nil
+	default:
+		return nil, ErrImageReleaseAttestationRequired
 	}
-	type skuRow struct {
-		ID   int64
-		Code string
-	}
-	var skus []skuRow
-	if err := s.db.Table("sku").Where("product_id = ?", in.ProductID).Find(&skus).Error; err != nil {
-		return nil, fmt.Errorf("publish to ozon: list skus: %w", err)
-	}
-	if len(skus) == 0 {
-		return nil, fmt.Errorf("publish to ozon: product %d has no SKUs", in.ProductID)
-	}
-	var acct PlatformIntegrationAccount
-	if err := s.db.WithContext(ctx).First(&acct, in.AccountID).Error; err != nil {
-		return nil, fmt.Errorf("publish to ozon: account %d not found", in.AccountID)
-	}
-	var plat struct{ Code string }
-	if err := s.db.Table("platform").Select("code").Where("id = ?", acct.PlatformID).Scan(&plat).Error; err != nil {
-		return nil, fmt.Errorf("publish to ozon: platform lookup: %w", err)
-	}
-	adapter, ok := GetAdapter(plat.Code)
-	if !ok {
-		return nil, fmt.Errorf("publish to ozon: no adapter for platform %s", plat.Code)
-	}
-	prices := make(map[int64]string)
-	inventories := make(map[int64]int)
-	publishSKUs := make([]PublishSKU, 0, len(skus))
-	for _, sk := range skus {
-		publishSKUs = append(publishSKUs, PublishSKU{SkuID: sk.ID, SkuCode: sk.Code})
-		prices[sk.ID] = fmt.Sprintf("%.2f", in.Price)
-		var stock int64
-		s.db.Table("sku").Select("stock").Where("id = ?", sk.ID).Scan(&stock)
-		inventories[sk.ID] = int(stock)
-	}
-	pkgH, _ := prod.PackageHeightCm.Float64()
-	pkgW, _ := prod.PackageWidthCm.Float64()
-	pkgL, _ := prod.PackageLengthCm.Float64()
-	pkgWt, _ := prod.PackageWeightKg.Float64()
-
-	return adapter.Publish(ctx, &PublishInput{
-		ProductID:     prod.ID,
-		PlatformID:    acct.PlatformID,
-		AccountID:     in.AccountID,
-		ProductName:   prod.Name,
-		Description:   prod.Description,
-		CategoryID:    prod.CategoryID,
-		SKUs:          publishSKUs,
-		Prices:        prices,
-		Inventories:   inventories,
-		PackageHeight: pkgH,
-		PackageWidth:  pkgW,
-		PackageLength: pkgL,
-		PackageWeight: pkgWt,
-		MainImage:     in.ImageURL,
-	})
 }
 
 // checkWriteMode guards write operations based on the execution mode from context.

@@ -13,7 +13,7 @@
 
 `actual`：它们并非同一可执行契约。MultiSell 旧客户端调用同步 `POST /api/v1/generate`，而独立 Prism 提供异步 `POST /v1/generate` + `GET /v1/jobs/:id`。Prism 的 Job 只在进程内存中，重启即丢失。
 
-`planned`：`services/image-service/` 是 Prism 的继任执行服务；凌镜 `productimage` 保留 Owner、商品、权利、审批、渠道和 Listing 经营状态。本盘点不证明迁移已完成，也不允许删除旧代码或数据。
+`actual`：`services/image-service/` 已接替 MultiSell 的图片执行边界；凌镜 `productimage` 保留 Owner、商品、权利、审批、渠道和 Listing 经营状态。MultiSell 旧运行客户端及注入已移除，但历史数据迁移与真实外部 Provider 验收仍未完成。
 
 ## 2. 处置语义
 
@@ -28,18 +28,18 @@
 
 | 类别 | 当前文件/对象 | 当前事实 | 处置 | 迁移验收点 |
 |---|---|---|---|---|
-| 配置 | `backend-go/configs/config.yaml`, `backend-go/internal/config/config.go`, `backend-go/internal/config/config_test.go` | `PRISM_BASE_URL/API_KEY/TIMEOUT/ENABLED/STRICT` | `rewrite` | 改为 Image Service 私有地址/凭据；生产不允许失败后继续发布 |
-| 旧客户端 | `backend-go/internal/prismadapter/client.go`, `backend-go/internal/prismadapter/types.go`, `backend-go/internal/prismadapter/client_test.go` | 同步单调用，路径与独立 Prism 不匹配 | `superseded` | 所有调用方切到 `imageservice`/`productimage`，异步状态可对账 |
-| 组装 | `backend-go/internal/httpx/router.go` | 历史上初始化 Prism 并注入 loop/listingtask/productanalysis | `rewrite` | 已强制注入 `nil + strict`，不再构造旧客户端；后续移除兼容参数 |
-| Product Analysis | `backend-go/internal/domain/productanalysis/routes.go`, `backend-go/internal/domain/productanalysis/routes_test.go`, `backend-go/internal/domain/productanalysis/handler.go` | 旧 `POST /api/v1/product-analysis/trigger-prism` 曾直接触发外部生成 | `superseded` | 路由已因任意 URL 抓取风险停止注册；回归测试锁定 404/零调用，handler 仅待后续死代码清理 |
+| 配置 | `backend-go/configs/config.yaml`, `backend-go/internal/config/config.go`, `backend-go/internal/config/config_test.go` | 旧 `PRISM_*` 运行配置已移除 | `superseded` | Image Service 使用自身私有地址/凭据；不存在失败后原图继续发布开关 |
+| 旧客户端 | `backend-go/internal/prismadapter/` | 旧同步客户端已零引用并从工作树移除 | `superseded` | 运行调用方已切到 `imageservice`/`productimage` |
+| 组装 | `backend-go/internal/httpx/router.go` | 不再定义 typed nil、strict 兼容开关或注入 Prism | `superseded` | loop/listingtask/productanalysis 构造器已移除兼容参数 |
+| Product Analysis | `backend-go/internal/domain/productanalysis/routes.go`, `backend-go/internal/domain/productanalysis/routes_test.go`, `backend-go/internal/domain/productanalysis/handler.go` | 旧 `POST /api/v1/product-analysis/trigger-prism` 及死 handler 已移除 | `superseded` | 回归测试锁定 404 |
 | 路由治理 | `backend-go/internal/platform/routecatalog/policy.go`, `backend-go/internal/platform/routecatalog/mutation_policy.tsv` | 登记 `trigger-prism` 写路由 | `rewrite` | 新 `/api/v1/product-images` 写路由入目录与审计，旧路由退出 |
-| Listing 输入 | `backend-go/internal/domain/listing/model.go`, `backend-go/internal/domain/listing/service.go` | 把 `prism_enabled/options` 嵌入 `published_data` | `rewrite` | Listing 引用已批准的 image set/release attestation，不自己发起作图 |
-| 发布链 | `backend-go/internal/domain/listingtask/routes.go`, `backend-go/internal/domain/listingtask/service.go` | 历史代码支持发布前同步 Prism；`strict=false` 曾可失败继续 | `rewrite` | 路由装配已冻结运行外呼；仍需改为只校验最终字节哈希绑定的放行凭证并清理死代码 |
-| Loop 注入 | `backend-go/internal/domain/loop/routes.go`, `backend-go/internal/domain/loop/service.go` | 为 listingtask 透传 Prism 依赖 | `superseded` | 路由装配已注入 nil；后续移除透传参数和死代码 |
+| Listing 输入 | `backend-go/internal/domain/listing/model.go`, `backend-go/internal/domain/listing/service.go` | `prism_enabled/options` 旧输入已移除 | `superseded` | Listing 不再接收启用旧作图运行时的参数 |
+| 发布链 | `backend-go/internal/domain/listingtask/routes.go`, `backend-go/internal/domain/listingtask/service.go`, `backend-go/internal/domain/listingtask/listingtask_test.go` | 同步 Prism 检查、结果写入和 fail-open 分支已移除 | `superseded` | 生产入口缺少图片放行凭证时在平台调用前失败关闭 |
+| Loop 注入 | `backend-go/internal/domain/loop/routes.go`, `backend-go/internal/domain/loop/service.go` | Prism 依赖与透传参数已移除 | `superseded` | loop 只构造无 Prism 依赖的 listingtask service |
 | 内嵌确定性处理 | `backend-go/internal/domain/imagegen/prism.go`, `backend-go/internal/domain/imagegen/prism_test.go` | 尺寸、白底、水印、缓存及测试 | `reuse` | 迁移算法意图和对应回归用例到 Image Service；哈希与输出契约重新定义 |
 | 旧 imagegen CRUD | `backend-go/internal/domain/imagegen/model.go`, `backend-go/internal/domain/imagegen/service.go`, `backend-go/internal/domain/imagegen/handler.go`, `backend-go/internal/domain/imagegen/routes.go`, `backend-go/internal/domain/imagegen/imagegen_test.go` | `/api/v1/image-gen`；生成记录、画布、提示词模板 | `rewrite` | 数据逐项映射至 asset/task/review/image set；将 Owner 隔离和 CRUD 回归用例映射到新契约；不把 CRUD 存在当作执行成功 |
 | 表 | `product_image_gen`, `product_canvases`, `prompt_template` | 在 `backend-go/migrations/000001_init_schema.up.sql` 定义；Prism 本身无持久化表 | `rewrite` | 迁移前统计数量、所有者、URL/字节可读性；双读核对后才停止旧写 |
-| 前端 | `frontend-next/src/app/(main)/agent-upgrades/page.tsx` | 声称 Prism 已配置并展示 `trigger-prism` | `superseded` | 由凌镜 `/product-images` Owner 页面取代；未实际配置时显示不可用，不做完成声明 |
+| 前端 | `frontend-next/src/app/(main)/agent-upgrades/page.tsx` | 旧 Prism 展示卡已移除 | `superseded` | Owner 统一使用 `/product-images` |
 
 ## 4. 独立 Prism 仓库盘点
 

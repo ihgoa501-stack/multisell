@@ -16,6 +16,8 @@ Package: `backend-go/internal/domain/supplychain/`
 | `GET` | `/api/v1/supply-chain/tracking` | `th.List` |
 | `POST` | `/api/v1/supply-chain/tracking` | `th.Create` |
 | `GET` | `/api/v1/supply-chain/tracking/:id` | `th.Get` |
+| `GET` | `/api/v1/supply-chain/tracking/:id/carrier-events` | `th.ListCarrierEvents` |
+| `POST` | `/api/v1/supply-chain/tracking/:id/carrier-events` | `th.IngestCarrierEvent` |
 | `PUT` | `/api/v1/supply-chain/tracking/:id/status` | `th.UpdateStatus` |
 | `POST` | `/api/v1/supply-chain/tracking/:id/sync` | `th.SyncFromCarrier` |
 | `GET` | `/api/v1/supply-chain/tracking/flow/:flowId` | `th.GetByFlow` |

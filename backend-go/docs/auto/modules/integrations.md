@@ -19,10 +19,12 @@ Package: `backend-go/internal/domain/integrations/`
 | `POST` | `/api/v1/platform-integrations/:id/categories` | `h.CreateCategory` |
 | `GET` | `/api/v1/platform-integrations/:id/mode` | `h.GetMode` |
 | `PUT` | `/api/v1/platform-integrations/:id/mode` | `h.UpdateMode` |
+| `POST` | `/api/v1/platform-integrations/:id/order-events` | `h.IngestOrderEvent` |
 | `GET` | `/api/v1/platform-integrations/:id/ozon-products` | `h.ListOzonProducts` |
 | `POST` | `/api/v1/platform-integrations/:id/sync` | `h.Sync` |
 | `POST` | `/api/v1/platform-integrations/:id/test` | `h.TestConnection` |
 | `POST` | `/api/v1/platform-integrations/mock/seed` | `` |
+| `GET` | `/api/v1/platform-integrations/owner-fact-options` | `h.OwnerFactOptions` |
 | `POST` | `/api/v1/platform-integrations/publish-to-ozon` | `h.PublishToOzon` |
 | `POST` | `/api/v1/platform-integrations/write-back` | `h.WriteBack` |
 | `POST` | `/api/v1/platform-integrations/write-back/:ref-id/retry` | `h.RetryWriteBack` |

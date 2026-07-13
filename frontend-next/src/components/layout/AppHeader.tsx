@@ -62,7 +62,7 @@ export default function AppHeader() {
           background: 'var(--c4)',
           display: 'inline-block',
         }} />
-        3 Agents Online
+        Agent 状态未核验
       </span>
 
       <div style={{ flex: 1 }} />

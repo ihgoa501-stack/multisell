@@ -221,11 +221,23 @@ func (s *Service) submitDraftApprovalProductLegacy(id int64, in *DraftApprovalSu
 		if listing.Status != "draft" {
 			return fmt.Errorf("%w: only an internal draft may be submitted", ErrWorkflowGate)
 		}
+		taskLinkID := int64(0)
+		if draft.TaskLinkID != nil {
+			taskLinkID = *draft.TaskLinkID
+		}
+		if taskLinkID > 0 {
+			if err := requireDraftMaterialsReady(tx, in.RequesterID, id, taskLinkID); err != nil {
+				return err
+			}
+			if err := freezeDraftCostVersion(tx, &draft, in.RequesterID, taskLinkID, in.CostVersionID); err != nil {
+				return err
+			}
+		}
 		contentHash, err := calculateDraftContentSHA256Locked(tx, &draft)
 		if err != nil {
 			return err
 		}
-		frozenValue, err := marshalDraftApprovalNewValue(contentHash)
+		frozenValue, err := marshalDraftApprovalNewValue(contentHash, &draft)
 		if err != nil {
 			return err
 		}

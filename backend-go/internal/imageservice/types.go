@@ -14,10 +14,18 @@ type CreateJobRequest struct {
 	ManifestHash          string `json:"manifest_hash"`
 	Operation             string `json:"operation"`
 	Processor             string `json:"processor,omitempty"`
+	Prompt                string `json:"prompt,omitempty"`
 	InputBlobID           string `json:"input_blob_id"`
 	Width                 int    `json:"width"`
 	Height                int    `json:"height"`
 	Format                string `json:"format"`
+	MaxCost               string `json:"max_cost,omitempty"`
+	Currency              string `json:"currency,omitempty"`
+	Region                string `json:"region,omitempty"`
+	ProviderEnvironment   string `json:"provider_environment,omitempty"`
+	Sandbox               bool   `json:"sandbox"`
+	Watermarked           bool   `json:"watermarked"`
+	NonPublishable        bool   `json:"non_publishable"`
 }
 
 type Job struct {
@@ -29,11 +37,19 @@ type Job struct {
 	ManifestHash          string    `json:"manifest_hash"`
 	Operation             string    `json:"operation"`
 	Processor             string    `json:"processor,omitempty"`
+	Prompt                string    `json:"prompt,omitempty"`
 	InputBlobID           string    `json:"input_blob_id"`
 	OutputBlobID          string    `json:"output_blob_id,omitempty"`
 	Width                 int       `json:"width"`
 	Height                int       `json:"height"`
 	Format                string    `json:"format"`
+	MaxCost               string    `json:"max_cost,omitempty"`
+	Currency              string    `json:"currency,omitempty"`
+	Region                string    `json:"region,omitempty"`
+	ProviderEnvironment   string    `json:"provider_environment,omitempty"`
+	Sandbox               bool      `json:"sandbox"`
+	Watermarked           bool      `json:"watermarked"`
+	NonPublishable        bool      `json:"non_publishable"`
 	Status                string    `json:"status"`
 	ErrorCode             string    `json:"error_code,omitempty"`
 	Version               int64     `json:"version"`
@@ -42,22 +58,30 @@ type Job struct {
 }
 
 type Attempt struct {
-	ID             string     `json:"id"`
-	JobID          string     `json:"job_id"`
-	IdempotencyKey string     `json:"idempotency_key"`
-	Number         int        `json:"number"`
-	Status         string     `json:"status"`
-	LeaseOwner     string     `json:"lease_owner,omitempty"`
-	LeaseUntil     *time.Time `json:"lease_until,omitempty"`
-	ErrorCode      string     `json:"error_code,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	StartedAt      *time.Time `json:"started_at,omitempty"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	ID                string     `json:"id"`
+	JobID             string     `json:"job_id"`
+	IdempotencyKey    string     `json:"idempotency_key"`
+	Number            int        `json:"number"`
+	Status            string     `json:"status"`
+	LeaseOwner        string     `json:"lease_owner,omitempty"`
+	LeaseUntil        *time.Time `json:"lease_until,omitempty"`
+	ErrorCode         string     `json:"error_code,omitempty"`
+	ProviderRequestID string     `json:"provider_request_id,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	CompletedAt       *time.Time `json:"completed_at,omitempty"`
 }
 
 type EnqueueExecutionRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	ExecutionToken string `json:"execution_token,omitempty"`
+}
+
+type QuiesceJobRequest struct {
+	OwnerID               int64  `json:"owner_id"`
+	LingMirrorTaskID      string `json:"lingmirror_task_id"`
+	LingMirrorTaskVersion int64  `json:"lingmirror_task_version"`
+	ManifestHash          string `json:"manifest_hash"`
 }
 
 type AttemptList struct {
@@ -66,6 +90,23 @@ type AttemptList struct {
 
 type PutBlobResponse struct {
 	BlobID string `json:"blob_id"`
+}
+
+type ProcessorCapability struct {
+	Code                string   `json:"code"`
+	Available           bool     `json:"available"`
+	Operations          []string `json:"operations"`
+	SafetyLevel         string   `json:"safety_level"`
+	ProviderEnvironment string   `json:"provider_environment,omitempty"`
+	Region              string   `json:"region,omitempty"`
+	Watermarked         bool     `json:"watermarked"`
+	NonPublishable      bool     `json:"non_publishable"`
+	QuotaAvailable      bool     `json:"quota_available,omitempty"`
+	QuotaRemaining      int64    `json:"quota_remaining,omitempty"`
+}
+
+type ProcessorCapabilityList struct {
+	Items []ProcessorCapability `json:"items"`
 }
 
 type errorEnvelope struct {

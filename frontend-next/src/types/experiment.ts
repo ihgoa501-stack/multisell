@@ -70,6 +70,9 @@ export interface ExperimentDetail {
 
 export interface ExperimentOwnerSummary {
   experiment_id: string;
+  authority_scope: 'trace_only';
+  causal_status: 'not_established';
+  feedback_loop_status: 'not_authorized';
   stage: ExperimentStage;
   passed_gates: number;
   blockers: string[];

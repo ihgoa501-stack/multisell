@@ -1,0 +1,9 @@
+DROP TRIGGER IF EXISTS trg_platform_settlement_fact_line_immutable ON platform_settlement_fact_line;
+DROP TRIGGER IF EXISTS trg_platform_settlement_ingest_immutable ON platform_settlement_ingest;
+DROP TRIGGER IF EXISTS trg_platform_settlement_fact_line_authority ON platform_settlement_fact_line;
+DROP FUNCTION IF EXISTS validate_platform_settlement_fact_line_authority();
+DROP TRIGGER IF EXISTS trg_platform_settlement_ingest_authority ON platform_settlement_ingest;
+DROP FUNCTION IF EXISTS validate_platform_settlement_ingest_authority();
+DROP FUNCTION IF EXISTS prevent_platform_settlement_fact_mutation();
+DROP TABLE IF EXISTS platform_settlement_fact_line;
+DROP TABLE IF EXISTS platform_settlement_ingest;

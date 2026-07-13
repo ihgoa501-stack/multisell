@@ -229,10 +229,10 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 				cause = errors.New(result.ErrorMessage)
 			}
 			if err := policy.FailFor(persistCtx, *action.ApprovalID, action.IdempotencyKey, cause); err != nil {
-				return nil, fmt.Errorf("command: persist failed approval execution: %w", err)
+				return nil, fmt.Errorf("%w: persist failed approval execution: %v", ErrOutcomeUnknown, err)
 			}
 		} else if err := policy.CompleteFor(persistCtx, *action.ApprovalID, action.IdempotencyKey); err != nil {
-			return nil, fmt.Errorf("command executed but approval consumption persistence failed: %w", err)
+			return nil, fmt.Errorf("%w: approval completion persistence failed: %v", ErrOutcomeUnknown, err)
 		}
 	}
 	if action.Mode == ModeProduction && action.IdempotencyKey != "" && d.idempotency != nil {
@@ -242,10 +242,10 @@ func (d *Dispatcher) DispatchSafe(ctx context.Context, action AgentAction, polic
 				cause = errors.New(result.ErrorMessage)
 			}
 			if err := d.idempotency.Fail(ctx, action, cause); err != nil {
-				return nil, fmt.Errorf("command: persist idempotent failure: %w", err)
+				return nil, fmt.Errorf("%w: persist idempotent failure: %v", ErrOutcomeUnknown, err)
 			}
 		} else if err := d.idempotency.Complete(ctx, action, result); err != nil {
-			return nil, fmt.Errorf("command executed but idempotent result persistence failed: %w", err)
+			return nil, fmt.Errorf("%w: idempotent result persistence failed: %v", ErrOutcomeUnknown, err)
 		}
 	}
 
@@ -282,6 +282,10 @@ var ErrApprovalRequired = actioncatalog.ErrApprovalRequired
 // ErrActionBlocked is returned when an action is rejected by the catalog
 // gate (e.g. L4 blocked actions attempted in any mode).
 var ErrActionBlocked = actioncatalog.ErrAutonomousBlocked
+
+// ErrOutcomeUnknown means dispatch reached the command handler but its durable
+// completion record could not prove the external outcome.
+var ErrOutcomeUnknown = errors.New("command outcome requires reconciliation")
 
 // RegisteredTypes returns a list of all registered action types.
 func (d *Dispatcher) RegisteredTypes() []string {

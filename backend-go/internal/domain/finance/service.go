@@ -69,6 +69,7 @@ func (s *Service) GetAccount(id int64) (*FinanceAccount, error) {
 // CreateAccount inserts a new account.
 func (s *Service) CreateAccount(in *CreateAccountInput) (*FinanceAccount, error) {
 	a := FinanceAccount{
+		OwnerID:     in.OwnerID,
 		Name:        in.Name,
 		AccountType: in.AccountType,
 		PlatformID:  in.PlatformID,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, DatePicker, Descriptions, Empty, Select, Spin, Statistic, Table, Tabs } from 'antd';
+import { Alert, Card, DatePicker, Descriptions, Empty, Select, Spin, Statistic, Table, Tabs } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import apiClient from '@/lib/api-client';
@@ -12,9 +12,7 @@ type TabKey = 'sales' | 'profit' | 'inventory' | 'settlement' | 'platform-fee' |
 
 const TABS: { key: TabKey; label: string; path: string; hasRange: boolean }[] = [
   { key: 'sales', label: '销售报表', path: '/v1/report/sales', hasRange: true },
-  { key: 'profit', label: '利润报表', path: '/v1/report/profit', hasRange: true },
   { key: 'inventory', label: '库存报表', path: '/v1/report/inventory', hasRange: false },
-  { key: 'settlement', label: '结算报表', path: '/v1/report/settlement', hasRange: true },
   { key: 'platform-fee', label: '平台费用', path: '/v1/report/platform-fee', hasRange: true },
   { key: 'daily', label: '日报', path: '/v1/report/daily', hasRange: false },
   { key: 'weekly', label: '周报', path: '/v1/report/weekly', hasRange: false },
@@ -55,7 +53,6 @@ interface DailyReport {
   date: string;
   sales: number;
   orders: number;
-  profit: number;
   new_listings: number;
   anomalies: number;
   approvals: number;
@@ -68,7 +65,6 @@ interface WeeklyReport {
   week_end: string;
   daily_reports: DailyReport[];
   sales_total: number;
-  profit_total: number;
   orders_total: number;
   anomalies_total: number;
 }
@@ -92,7 +88,6 @@ const WEEKLY_DAILY_COLUMNS = [
   { title: '日期', dataIndex: 'date', key: 'date' },
   { title: '销售额', dataIndex: 'sales', key: 'sales', render: (v: number) => formatCurrency(v) },
   { title: '订单数', dataIndex: 'orders', key: 'orders' },
-  { title: '利润', dataIndex: 'profit', key: 'profit', render: (v: number) => formatCurrency(v) },
   { title: '上新数', dataIndex: 'new_listings', key: 'new_listings' },
   { title: '异常', dataIndex: 'anomalies', key: 'anomalies' },
   { title: '审批数', dataIndex: 'approvals', key: 'approvals' },
@@ -197,6 +192,14 @@ export default function ReportsPage() {
   return (
     <div style={{ padding: '16px 20px', background: 'var(--bg)', minHeight: '100%' }}>
       <h1 style={{ fontFamily: 'var(--ds)', fontWeight: 700, fontSize: 'var(--text-h1)', color: 'var(--t1)' }}>报表</h1>
+
+      <Alert
+		type="warning"
+		showIcon
+		message="此页不是最终利润或现金对账依据"
+		description="历史聚合只用于趋势参考。订单终局请使用小Q的“订单经营事实”以及权威利润、结算和财务页面。"
+		style={{ marginBottom: 16 }}
+	  />
 
       <Tabs
         activeKey={activeTab}
@@ -318,8 +321,6 @@ export default function ReportsPage() {
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
               <Statistic title="销售额" value={dailyData.sales} prefix="¥" precision={2} />
               <Statistic title="订单数" value={dailyData.orders} />
-              <Statistic title="利润" value={dailyData.profit} prefix="¥" precision={2}
-                valueStyle={{ color: dailyData.profit >= 0 ? '#3f8600' : '#cf1322' }} />
               <Statistic title="上新数" value={dailyData.new_listings} />
               <Statistic title="异常" value={dailyData.anomalies}
                 valueStyle={{ color: dailyData.anomalies > 0 ? '#cf1322' : undefined }} />
@@ -347,8 +348,6 @@ export default function ReportsPage() {
             <Card title={`周报 ${weeklyData.week_start} ~ ${weeklyData.week_end}`} style={{ marginBottom: 16, background: 'var(--s1)', border: '1px solid var(--bd)', borderRadius: 8 }}>
               <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                 <Statistic title="销售总额" value={weeklyData.sales_total} prefix="¥" precision={2} />
-                <Statistic title="利润总额" value={weeklyData.profit_total} prefix="¥" precision={2}
-                  valueStyle={{ color: weeklyData.profit_total >= 0 ? '#3f8600' : '#cf1322' }} />
                 <Statistic title="订单总数" value={weeklyData.orders_total} />
                 <Statistic title="异常总数" value={weeklyData.anomalies_total}
                   valueStyle={{ color: weeklyData.anomalies_total > 0 ? '#cf1322' : undefined }} />

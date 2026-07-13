@@ -12,13 +12,17 @@ import (
 )
 
 type draftApprovalNewValue struct {
-	ContentSHA256 string `json:"content_sha256"`
+	ContentSHA256          string `json:"content_sha256"`
+	CostVersionID          int64  `json:"cost_version_id,omitempty"`
+	CostVersionContentHash string `json:"cost_version_content_hash,omitempty"`
 }
 
 type canonicalDraftContent struct {
 	Draft struct {
 		ID, SourcingProductID, SnapshotID, ProductID, ListingID, DemandCaseID int64
 		ExperimentID                                                          string
+		CostVersionID                                                         *int64
+		CostVersionContentHash                                                string
 	}
 	Product productRow
 	Listing listingRow
@@ -50,6 +54,8 @@ func calculateDraftContentSHA256WithLock(tx *gorm.DB, draft *draftRow, lock bool
 	content.Draft.ListingID = draft.ListingID
 	content.Draft.DemandCaseID = draft.DemandCaseID
 	content.Draft.ExperimentID = draft.ExperimentID
+	content.Draft.CostVersionID = draft.CostVersionID
+	content.Draft.CostVersionContentHash = draft.CostVersionContentHash
 	query := func() *gorm.DB {
 		if lock {
 			return tx.Clauses(clause.Locking{Strength: "UPDATE"})
@@ -82,8 +88,12 @@ func calculateDraftContentSHA256WithLock(tx *gorm.DB, draft *draftRow, lock bool
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func marshalDraftApprovalNewValue(hash string) (string, error) {
-	payload, err := json.Marshal(draftApprovalNewValue{ContentSHA256: hash})
+func marshalDraftApprovalNewValue(hash string, draft ...*draftRow) (string, error) {
+	value := draftApprovalNewValue{ContentSHA256: hash}
+	if len(draft) > 0 && draft[0] != nil && draft[0].CostVersionID != nil {
+		value.CostVersionID, value.CostVersionContentHash = *draft[0].CostVersionID, draft[0].CostVersionContentHash
+	}
+	payload, err := json.Marshal(value)
 	return string(payload), err
 }
 
@@ -99,6 +109,9 @@ func approvalContentHash(req *approval.ApprovalRequest) string {
 }
 
 func validateDraftApprovalContent(tx *gorm.DB, draft *draftRow, req *approval.ApprovalRequest) error {
+	if err := validateFrozenDraftCost(tx, draft, req); err != nil {
+		return err
+	}
 	current, err := calculateDraftContentSHA256(tx, draft)
 	if err != nil {
 		return err
@@ -111,6 +124,9 @@ func validateDraftApprovalContent(tx *gorm.DB, draft *draftRow, req *approval.Ap
 }
 
 func validateDraftApprovalContentLocked(tx *gorm.DB, draft *draftRow, req *approval.ApprovalRequest) error {
+	if err := validateFrozenDraftCost(tx, draft, req); err != nil {
+		return err
+	}
 	current, err := calculateDraftContentSHA256Locked(tx, draft)
 	if err != nil {
 		return err
@@ -120,4 +136,26 @@ func validateDraftApprovalContentLocked(tx *gorm.DB, draft *draftRow, req *appro
 		return fmt.Errorf("%w: draft content changed after approval submission", ErrWorkflowGate)
 	}
 	return nil
+}
+
+func validateFrozenDraftCost(tx *gorm.DB, draft *draftRow, req *approval.ApprovalRequest) error {
+	if draft.CostVersionID == nil {
+		return nil
+	} // compatibility for drafts created before migration 000149
+	var version SourcingCostVersion
+	if err := tx.Where("id = ? AND sourcing_product_id = ? AND task_link_id = ?", *draft.CostVersionID, draft.SourcingProductID, draftTaskLinkID(draft)).First(&version).Error; err != nil {
+		return fmt.Errorf("%w: frozen precise cost version is missing", ErrWorkflowGate)
+	}
+	var value draftApprovalNewValue
+	if req == nil || json.Unmarshal([]byte(req.NewValue), &value) != nil || value.CostVersionID != version.ID || value.CostVersionContentHash != version.ContentHash || draft.CostVersionContentHash != version.ContentHash {
+		return fmt.Errorf("%w: precise cost version changed after approval submission", ErrWorkflowGate)
+	}
+	return nil
+}
+
+func draftTaskLinkID(draft *draftRow) int64 {
+	if draft != nil && draft.TaskLinkID != nil {
+		return *draft.TaskLinkID
+	}
+	return 0
 }

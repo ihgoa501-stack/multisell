@@ -423,3 +423,34 @@ END $$;`
 		t.Fatalf("procedure body produced fake tables: %+v", tables)
 	}
 }
+
+func TestParseColumnRenames(t *testing.T) {
+	renames := parseColumnRenames(`
+		ALTER TABLE spc_control_limit RENAME COLUMN metric_name TO metric;
+		ALTER TABLE IF EXISTS "sample" RENAME COLUMN "old_name" TO "new_name";
+	`)
+	if len(renames) != 2 {
+		t.Fatalf("renames=%+v", renames)
+	}
+	if renames[0] != (columnRename{table: "spc_control_limit", from: "metric_name", to: "metric"}) {
+		t.Fatalf("first rename=%+v", renames[0])
+	}
+	if renames[1] != (columnRename{table: "sample", from: "old_name", to: "new_name"}) {
+		t.Fatalf("second rename=%+v", renames[1])
+	}
+}
+
+func TestParseColumnTypeChangesAndMultiwordCreateTypes(t *testing.T) {
+	tables, err := parseSQL(`CREATE TABLE sample (created_at TIMESTAMP WITH TIME ZONE NOT NULL, score DOUBLE PRECISION);`)
+	if err != nil || len(tables) != 1 || tables[0].Columns[0].Type != "timestamp with time zone" || tables[0].Columns[1].Type != "double precision" {
+		t.Fatalf("tables=%+v err=%v", tables, err)
+	}
+	changes := parseColumnTypeChanges(`
+		ALTER TABLE unrelated ADD COLUMN note TEXT;
+		-- Preserve exact source bytes.
+		ALTER TABLE sample ALTER COLUMN payload TYPE BYTEA USING payload::text::bytea;
+	`)
+	if len(changes) != 1 || changes[0] != (columnTypeChange{table: "sample", column: "payload", sqlType: "bytea"}) {
+		t.Fatalf("changes=%+v", changes)
+	}
+}

@@ -5,5 +5,8 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # Docker Compose merge tags are valid Compose syntax but are not part of
+        # generic YAML. Dedicated compose verification scripts cover these files.
+        exclude: ^docker-compose\.(prod|ip|private)\.yml$
       - id: check-added-large-files
         args: ["--maxkb=500"]

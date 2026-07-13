@@ -24,6 +24,11 @@ Package: `backend-go/internal/domain/aftersales/`
 | `POST` | `/api/v1/aftersales/disputes/:id/auto-decide` | `h.AutoDecideDispute` |
 | `POST` | `/api/v1/aftersales/disputes/:id/evaluate` | `h.EvaluateDispute` |
 | `PUT` | `/api/v1/aftersales/disputes/:id/status` | `h.UpdateDisputeStatus` |
+| `POST` | `/api/v1/aftersales/resolutions` | `h.CreateResolution` |
+| `GET` | `/api/v1/aftersales/resolutions/:id` | `h.GetResolution` |
+| `POST` | `/api/v1/aftersales/resolutions/:id/decisions` | `h.DecideResolution` |
+| `POST` | `/api/v1/aftersales/resolutions/:id/executions` | `h.SubmitResolution` |
+| `POST` | `/api/v1/aftersales/resolutions/:id/receipts` | `h.RecordResolutionReceipt` |
 | `GET` | `/api/v1/aftersales/summary` | `h.Summary` |
 
 ## Models

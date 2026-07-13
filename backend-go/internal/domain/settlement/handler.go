@@ -21,6 +21,54 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+// IngestPlatformFact accepts only an Owner-bound normalized connector event.
+func (h *Handler) IngestPlatformFact(c *gin.Context) {
+	accountID, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID := common.UserIDFromCtx(c)
+	if ownerID == nil || *ownerID <= 0 {
+		response.Error(c, http.StatusUnauthorized, "Owner authentication required")
+		return
+	}
+	var in IngestPlatformSettlementInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	in.OwnerID, in.AccountID = *ownerID, accountID
+	result, err := h.service.IngestPlatformSettlement(c.Request.Context(), in)
+	if err != nil {
+		response.Error(c, http.StatusConflict, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// GetPlatformFact returns one immutable fact scoped to the authenticated Owner.
+func (h *Handler) GetPlatformFact(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	ownerID := common.UserIDFromCtx(c)
+	if ownerID == nil || *ownerID <= 0 {
+		response.Error(c, http.StatusUnauthorized, "Owner authentication required")
+		return
+	}
+	detail, err := h.service.GetPlatformSettlementFact(c.Request.Context(), *ownerID, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, "platform settlement fact not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, detail)
+}
+
 func parseID(c *gin.Context) (int64, bool) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

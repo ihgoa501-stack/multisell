@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -135,7 +137,10 @@ func (s *Service) RevokeRightsGrant(ctx context.Context, ownerID, id int64, in R
 	var grant RightsGrant
 	hash := requestHash(in)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("id = ? AND owner_id = ?", id, ownerID).First(&grant).Error; err != nil {
+		// Execution claims lock this same grant row. Whichever transaction obtains
+		// the lock first defines the observable order: revoke-first blocks the call;
+		// execution-first freezes an immutable authorization snapshot.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", id, ownerID).First(&grant).Error; err != nil {
 			return err
 		}
 		if grant.RevokedAt != nil {
@@ -210,8 +215,8 @@ func (s *Service) CreateFiveAxisReview(ctx context.Context, ownerID, taskID int6
 		return nil, err
 	}
 	now := time.Now().UTC()
-	review := &Review{OwnerID: ownerID, TaskID: taskID, Decision: "five_axis_review", Truth: TruthUnknown, Notes: strings.TrimSpace(in.Notes), AssetSHA: in.AssetSHA, Purpose: in.Purpose, Channel: in.Channel, ProductAuthenticity: statuses[0], RightsStatus: statuses[1], ChannelRules: statuses[2], ClaimsScene: statuses[3], TechnicalVisual: statuses[4], EvidenceSHA: in.EvidenceSHA, EvidenceTruth: in.EvidenceTruth, IdempotencyKey: in.IdempotencyKey, RequestHash: hash, ExpectedTaskVersion: in.ExpectedVersion, VerifiedAt: &now}
-	if err := s.db.WithContext(ctx).Create(review).Error; err != nil {
+	review := &Review{OwnerID: ownerID, TaskID: taskID, Decision: "five_axis_review", Truth: TruthUnknown, Notes: strings.TrimSpace(in.Notes), AssetSHA: in.AssetSHA, Purpose: in.Purpose, Channel: in.Channel, ProductAuthenticity: statuses[0], RightsStatus: statuses[1], ChannelRules: statuses[2], ClaimsScene: statuses[3], TechnicalVisual: statuses[4], EvidenceSHA: in.EvidenceSHA, EvidenceTruth: in.EvidenceTruth, ReasonCodes: json.RawMessage(`[]`), ErrorRegions: json.RawMessage(`[]`), IdempotencyKey: in.IdempotencyKey, RequestHash: hash, ExpectedTaskVersion: in.ExpectedVersion, VerifiedAt: &now}
+	if err := s.db.WithContext(ctx).Omit("Outcome").Create(review).Error; err != nil {
 		return nil, err
 	}
 	return review, nil
@@ -227,6 +232,138 @@ func (s *Service) ListReviews(ctx context.Context, ownerID, taskID int64, page, 
 	var out []Review
 	err := q.Order("id DESC").Offset((page - 1) * size).Limit(size).Find(&out).Error
 	return out, total, err
+}
+
+var feedbackReasonCodes = map[string]struct{}{
+	"product_structure": {}, "color": {}, "text_logo": {}, "quantity_accessories": {},
+	"scene": {}, "visual_quality": {}, "other": {},
+}
+
+func (s *Service) CreateCandidateFeedback(ctx context.Context, ownerID, taskID int64, in CandidateFeedbackInput) (*Review, error) {
+	in.Outcome, in.AssetSHA, in.IdempotencyKey = cleanScope(in.Outcome), cleanScope(in.AssetSHA), strings.TrimSpace(in.IdempotencyKey)
+	in.Notes, in.ReworkInstruction = strings.TrimSpace(in.Notes), strings.TrimSpace(in.ReworkInstruction)
+	if ownerID <= 0 || taskID <= 0 || (in.Outcome != "selected" && in.Outcome != "rejected" && in.Outcome != "rework_requested") || !sha256Pattern.MatchString(in.AssetSHA) || in.IdempotencyKey == "" || in.ExpectedVersion <= 0 || in.ReviewSeconds < 0 || in.ReviewSeconds > 86400 || len(in.Notes) > 4000 || len(in.ReworkInstruction) > 4000 || len(in.ReasonCodes) > 10 {
+		return nil, ErrInvalidInput
+	}
+	for i := range in.ReasonCodes {
+		in.ReasonCodes[i] = cleanScope(in.ReasonCodes[i])
+		if _, ok := feedbackReasonCodes[in.ReasonCodes[i]]; !ok {
+			return nil, ErrInvalidInput
+		}
+	}
+	if in.Outcome != "selected" && len(in.ReasonCodes) == 0 {
+		return nil, ErrInvalidInput
+	}
+	if in.Outcome == "rework_requested" && in.ReworkInstruction == "" {
+		return nil, ErrInvalidInput
+	}
+	if len(in.ErrorRegions) == 0 {
+		in.ErrorRegions = json.RawMessage(`[]`)
+	}
+	var regions []map[string]any
+	if len(in.ErrorRegions) > 16<<10 || json.Unmarshal(in.ErrorRegions, &regions) != nil || len(regions) > 20 {
+		return nil, ErrInvalidInput
+	}
+	var task Task
+	if err := s.db.WithContext(ctx).Where("id = ? AND owner_id = ?", taskID, ownerID).First(&task).Error; err != nil {
+		return nil, err
+	}
+	if task.Version != in.ExpectedVersion || task.OutputBlobID == "" || task.OutputBlobID != in.AssetSHA {
+		return nil, &ConflictError{Code: "VERSION_CONFLICT"}
+	}
+	if in.Outcome == "selected" {
+		if isNonPublishableOutput(&task, nil) {
+			return nil, &ConflictError{Code: "NON_PUBLISHABLE_OUTPUT"}
+		}
+		var gate Review
+		if err := s.db.WithContext(ctx).Where("owner_id = ? AND task_id = ? AND decision = ? AND asset_sha = ?", ownerID, taskID, "five_axis_review", in.AssetSHA).Order("id DESC").First(&gate).Error; err != nil || gate.ProductAuthenticity != ReviewPassed || gate.RightsStatus != ReviewPassed || gate.ChannelRules != ReviewPassed || gate.ClaimsScene != ReviewPassed || gate.TechnicalVisual != ReviewPassed {
+			return nil, ErrGateBlocked
+		}
+	}
+	reasonBytes, _ := json.Marshal(in.ReasonCodes)
+	hash := requestHash(in)
+	var existing Review
+	if err := s.db.WithContext(ctx).Where("owner_id = ? AND idempotency_key = ?", ownerID, in.IdempotencyKey).First(&existing).Error; err == nil {
+		if existing.RequestHash != hash {
+			return nil, &ConflictError{Code: "IDEMPOTENCY_CONFLICT"}
+		}
+		return &existing, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	review := &Review{OwnerID: ownerID, TaskID: taskID, Decision: "candidate_feedback", Outcome: in.Outcome, Truth: TruthUnknown, Notes: in.Notes, AssetSHA: in.AssetSHA, ReasonCodes: reasonBytes, ErrorRegions: in.ErrorRegions, ReworkInstruction: in.ReworkInstruction, ReviewSeconds: in.ReviewSeconds, IdempotencyKey: in.IdempotencyKey, RequestHash: hash, ExpectedTaskVersion: in.ExpectedVersion, VerifiedAt: &now}
+	if err := s.db.WithContext(ctx).Create(review).Error; err != nil {
+		return nil, err
+	}
+	return review, nil
+}
+
+func (s *Service) RecipeSummary(ctx context.Context, ownerID int64, recipeKey string) (*RecipeSummary, error) {
+	recipeKey = strings.TrimSpace(recipeKey)
+	if ownerID <= 0 || recipeKey == "" || len(recipeKey) > 100 {
+		return nil, ErrInvalidInput
+	}
+	var tasks []Task
+	if err := s.db.WithContext(ctx).Where("owner_id = ? AND recipe_key = ?", ownerID, recipeKey).Order("id ASC").Find(&tasks).Error; err != nil {
+		return nil, err
+	}
+	if len(tasks) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	summary := &RecipeSummary{RecipeKey: recipeKey, SKUID: tasks[0].SKUID, Purpose: tasks[0].Purpose, Channel: tasks[0].Channel, Currency: ""}
+	taskIDs := make([]int64, 0, len(tasks))
+	for _, task := range tasks {
+		taskIDs = append(taskIDs, task.ID)
+		if task.OutputBlobID != "" {
+			summary.Candidates++
+		}
+		if task.RecipeVersion > summary.LatestRecipeVersion {
+			summary.LatestRecipeVersion = task.RecipeVersion
+		}
+		if task.CandidateRound-1 > summary.ReworkRounds {
+			summary.ReworkRounds = task.CandidateRound - 1
+		}
+		if task.UpdatedAt.After(task.CreatedAt) {
+			summary.ProductionSeconds += int64(task.UpdatedAt.Sub(task.CreatedAt).Seconds())
+		}
+	}
+	var feedback []Review
+	if err := s.db.WithContext(ctx).Where("owner_id = ? AND task_id IN ? AND decision = ?", ownerID, taskIDs, "candidate_feedback").Order("id ASC").Find(&feedback).Error; err != nil {
+		return nil, err
+	}
+	for _, item := range feedback {
+		summary.ReviewSeconds += int64(item.ReviewSeconds)
+		switch item.Outcome {
+		case "selected":
+			summary.Selected++
+		case "rejected":
+			summary.Rejected++
+		case "rework_requested":
+			summary.ReworkRequested++
+		}
+	}
+	if summary.Candidates > 0 {
+		summary.AcceptanceRate = float64(summary.Selected) / float64(summary.Candidates)
+	}
+	total := decimal.Zero
+	var costs []CostEntry
+	if err := s.db.WithContext(ctx).Where("owner_id = ? AND task_id IN ? AND kind = ?", ownerID, taskIDs, "actual").Find(&costs).Error; err != nil {
+		return nil, err
+	}
+	for _, item := range costs {
+		if summary.Currency == "" {
+			summary.Currency = item.Currency
+		}
+		if item.Currency == summary.Currency {
+			amount, err := decimal.NewFromString(item.Amount)
+			if err == nil {
+				total = total.Add(amount)
+			}
+		}
+	}
+	summary.ActualCost = total.StringFixed(4)
+	return summary, nil
 }
 
 func (s *Service) CreateCostEntry(ctx context.Context, ownerID, taskID int64, in CostEntryInput) (*CostEntry, error) {
