@@ -102,8 +102,9 @@ test('list collector has isolated selection UI and both Owner batch actions', ()
   assert.ok(host?.shadowRoot, 'panel must be isolated in a shadow root');
   const labels = Array.from(host.shadowRoot.querySelectorAll('button')).map((button) => button.textContent);
   assert.ok(labels.includes('采集选中'));
-  assert.ok(labels.includes('采集本页'));
+  assert.ok(labels.includes('采集本页当前可见'));
   assert.ok(labels.includes('停止批量'));
+  assert.match(host.shadowRoot.innerHTML, /只处理当前已加载且可见的商品，不自动翻页/);
   for (const card of loaded.document.querySelectorAll('.offer-item')) {
     const selectorHost = card.querySelector('[data-lingmirror-offer-selector]');
     assert.ok(selectorHost?.shadowRoot, 'card selector must be isolated from marketplace/ERP CSS');
@@ -122,6 +123,19 @@ test('collect current page submits every currently visible offer without a fixed
   assert.match(panelText, /商品3002：已保存/);
 });
 
+test('page action confirms the exact visible count before submitting', async () => {
+  const loaded = loadList(productCard('3051') + productCard('3052'));
+  const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
+  const collectPage = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '采集本页当前可见');
+  collectPage.click();
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 0);
+  assert.match(panel.innerHTML, /即将采集 2 个本页当前可见商品；不自动翻页/);
+  const confirm = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '确认采集 2 个');
+  confirm.click();
+  while (vm.runInContext('collectingBatch', loaded.context)) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 2);
+});
+
 test('selection action submits only checked items and batch results preserve each failure independently', async () => {
   let call = 0;
   const loaded = loadList(productCard('3101') + productCard('3102'), async (message) => {
@@ -135,10 +149,43 @@ test('selection action submits only checked items and batch results preserve eac
   const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
   const collectSelected = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '采集选中');
   collectSelected.click();
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 0);
+  assert.match(panel.innerHTML, /即将采集 2 个已选商品/);
+  Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '确认采集 2 个').click();
   while (vm.runInContext('collectingBatch', loaded.context)) await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 2);
   assert.match(panel.innerHTML, /商品3101：服务器确认未保存/);
   assert.match(panel.innerHTML, /商品3102：已保存 #22/);
+});
+
+test('a confirmed not-saved item can be retried without retrying the whole batch', async () => {
+  let call = 0;
+  const loaded = loadList(productCard('3151'), async (message) => {
+    call += 1;
+    if (call === 1) return { type: 'private_collection_result', requestId: message.requestId,
+      payload: { status: 'not_saved', saved: false, code: 'NOT_SAVED', message: '服务器确认未保存' } };
+    return { type: 'private_collection_result', requestId: message.requestId,
+      payload: { status: 'saved', recordId: 31, snapshotId: 31, idempotentReplay: false, newObservation: true } };
+  });
+  await vm.runInContext('collectOffers(extractVisibleOffers())', loaded.context);
+  const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
+  const retry = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '重试此项');
+  assert.ok(retry);
+  retry.click();
+  while (!panel.innerHTML.includes('商品3151：已保存 #31')) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 2);
+  assert.match(panel.innerHTML, /商品3151：已保存 #31/);
+});
+
+test('an uncertain result does not offer a blind retry', async () => {
+  const loaded = loadList(productCard('3152'), async (message) => ({
+    type: 'private_collection_result', requestId: message.requestId,
+    payload: { status: 'reconcile_required', saved: false, code: 'RECONCILE_REQUIRED', message: '结果待确认，请勿重复点击' },
+  }));
+  await vm.runInContext('collectOffers(extractVisibleOffers())', loaded.context);
+  const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
+  assert.match(panel.innerHTML, /结果待确认，请勿重复点击/);
+  assert.equal(Array.from(panel.querySelectorAll('button')).some((button) => button.textContent === '重试此项'), false);
 });
 
 test('visible extraction has no hard-coded product count', () => {
