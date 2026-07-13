@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
 # 凌镜 LingMirror — 回滚脚本
-# 用法: DOMAIN=example.com ./scripts/rollback.sh --target <commit-or-tag> [--revert-migration]
+# 用法: DOMAIN=example.com ./scripts/rollback.sh --target <commit-or-tag>
 # =============================================================================
 set -euo pipefail
 
 DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 COMPOSE_FILES="-f docker-compose.yml -f docker-compose.prod.yml"
-REVERT_MIGRATION=false
 TARGET=""
 
 while [[ $# -gt 0 ]]; do
@@ -18,8 +17,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --revert-migration)
-            REVERT_MIGRATION=true
-            shift
+            echo "--revert-migration 已禁用：应用回滚必须保留数据库 migration 152；数据库恢复需要 Owner 批准并使用异地不可变备份整库恢复" >&2
+            exit 2
             ;;
         *)
             echo "unknown argument: $1" >&2
@@ -78,22 +77,18 @@ ok "  代码已回滚到 $(git rev-parse --short HEAD)"
 
 # ---- Step 3: 在触碰数据库前完成目标镜像构建 ------------------------------
 info "Step 3/5: 构建目标版本 ..."
-docker compose $COMPOSE_FILES build backend frontend
+docker compose $COMPOSE_FILES build backend frontend image-service image-service-migrate
 ok "  构建完成"
 
-# ---- Step 4: 回滚数据库（可选）-------------------------------------------
-if [[ "$REVERT_MIGRATION" == "true" ]]; then
-    info "Step 4/5: 停止后端写入并回滚一个数据库迁移 ..."
-    docker compose $COMPOSE_FILES stop backend
-    docker compose $COMPOSE_FILES run --rm migrate down 1
-    ok "  数据库已回滚一个版本"
-else
-    info "Step 4/5: 跳过数据库回滚（加 --revert-migration 可回滚数据库）"
-fi
+# ---- Step 4: 停止写入并验证图片服务数据库 -------------------------------
+info "Step 4/5: 停止应用写入；保留主数据库 migration 152 ..."
+docker compose $COMPOSE_FILES stop backend image-service
+docker compose $COMPOSE_FILES run --rm image-service-migrate
+ok "  图片服务目标版本向上迁移完成；主数据库未执行 down/revert"
 
 # ---- Step 5: 重启 ---------------------------------------------------------
 info "Step 5/5: 启动目标版本 ..."
-docker compose $COMPOSE_FILES up -d --no-deps backend frontend caddy
+docker compose $COMPOSE_FILES up -d --no-deps image-service backend frontend caddy
 
 # ---- 验证 ----------------------------------------------------------------
 # Backend port 8080 is intentionally not published in production. Verify both
