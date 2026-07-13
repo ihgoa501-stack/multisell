@@ -20,9 +20,13 @@ func CORS(cfg *config.Config) gin.HandlerFunc {
 		allowOrigin := "*"
 		if len(allowedOrigins) > 0 && allowedOrigins[0] != "*" {
 			allowOrigin = matchOrigin(origin, allowedOrigins)
+			if allowOrigin == "" && isExtensionCORSPath(c.Request.URL.Path) {
+				if _, ok := ChromeExtensionIDFromOrigin(origin); ok {
+					allowOrigin = origin
+				}
+			}
 			if allowOrigin == "" {
-				// Origin not allowed — reject
-				c.AbortWithStatus(http.StatusForbidden)
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": http.StatusForbidden, "message": "该来源不能访问此接口"})
 				return
 			}
 		}
@@ -44,6 +48,36 @@ func CORS(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		c.Next()
+	}
+}
+
+// ChromeExtensionIDFromOrigin returns the installed extension ID from a
+// browser Origin. Chrome IDs are exactly 32 lower-case characters from a-p.
+func ChromeExtensionIDFromOrigin(origin string) (string, bool) {
+	const prefix = "chrome-extension://"
+	if !strings.HasPrefix(origin, prefix) {
+		return "", false
+	}
+	id := strings.TrimPrefix(origin, prefix)
+	if len(id) != 32 {
+		return "", false
+	}
+	for _, ch := range id {
+		if ch < 'a' || ch > 'p' {
+			return "", false
+		}
+	}
+	return id, true
+}
+
+func isExtensionCORSPath(path string) bool {
+	switch path {
+	case "/api/v1/auth/extension-pairings/claim",
+		"/api/v1/auth/extension-pairings/exchange",
+		"/api/v1/auth/extension-devices/refresh":
+		return true
+	default:
+		return strings.HasPrefix(path, "/api/v1/extension/")
 	}
 }
 

@@ -15,6 +15,11 @@ import (
 // the requested scope. Normal web access and refresh tokens are rejected.
 func ExtensionAuth(cfg *config.Config, db *gorm.DB, requiredScope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		extensionID, ok := ChromeExtensionIDFromOrigin(c.GetHeader("Origin"))
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": 403, "message": "插件来源无效"})
+			return
+		}
 		parts := strings.SplitN(c.GetHeader("Authorization"), " ", 2)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "插件尚未配对或凭证已失效"})
@@ -81,8 +86,8 @@ func ExtensionAuth(cfg *config.Config, db *gorm.DB, requiredScope string) gin.Ha
 		}
 		var active int64
 		err = db.Raw(`SELECT COUNT(*) FROM extension_device ed JOIN "user" u ON u.id = ed.user_id
-			WHERE ed.device_id = ? AND ed.user_id = ? AND ed.environment = ? AND ed.scope = ? AND ed.revoked_at IS NULL AND u.status = 1 AND u.role IN ('owner','admin')`,
-			deviceID, int64(uidFloat), environment, requiredScope).Scan(&active).Error
+			WHERE ed.device_id = ? AND ed.user_id = ? AND ed.extension_id = ? AND ed.environment = ? AND ed.scope = ? AND ed.revoked_at IS NULL AND u.status = 1 AND u.role IN ('owner','admin')`,
+			deviceID, int64(uidFloat), extensionID, environment, requiredScope).Scan(&active).Error
 		if err != nil || active != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "此浏览器连接已撤销或Owner账号不可用"})
 			return

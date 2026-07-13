@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lingmirror/backend-go/internal/config"
+	"github.com/lingmirror/backend-go/internal/httpx/middleware"
 	"github.com/lingmirror/backend-go/internal/response"
 	"go.uber.org/zap"
 )
@@ -248,6 +249,11 @@ func (h *Handler) ClaimExtensionPairing(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "浏览器身份不完整")
 		return
 	}
+	extensionID, ok := middleware.ChromeExtensionIDFromOrigin(c.GetHeader("Origin"))
+	if !ok || extensionID != req.ExtensionID {
+		response.Error(c, http.StatusForbidden, "插件来源与浏览器身份不一致")
+		return
+	}
 	if err := h.service.ClaimExtensionPairing(req.Nonce, req.ClaimSecret, req.DeviceID, req.ExtensionID, req.Environment, req.BrowserLabel); err != nil {
 		response.Error(c, http.StatusConflict, err.Error())
 		return
@@ -298,7 +304,12 @@ func (h *Handler) ExchangeExtensionPairing(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "配对凭据不完整")
 		return
 	}
-	result, err := h.service.ExchangeExtensionPairing(req.Nonce, req.ClaimSecret)
+	extensionID, ok := middleware.ChromeExtensionIDFromOrigin(c.GetHeader("Origin"))
+	if !ok {
+		response.Error(c, http.StatusForbidden, "插件来源无效")
+		return
+	}
+	result, err := h.service.ExchangeExtensionPairing(req.Nonce, req.ClaimSecret, extensionID)
 	if err != nil {
 		response.Error(c, http.StatusUnauthorized, err.Error())
 		return
@@ -312,7 +323,12 @@ func (h *Handler) RefreshExtensionDevice(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "设备凭据不完整")
 		return
 	}
-	result, err := h.service.RefreshExtensionDevice(req.DeviceID, req.DeviceSecret, req.Environment)
+	extensionID, ok := middleware.ChromeExtensionIDFromOrigin(c.GetHeader("Origin"))
+	if !ok {
+		response.Error(c, http.StatusForbidden, "插件来源无效")
+		return
+	}
+	result, err := h.service.RefreshExtensionDevice(req.DeviceID, req.DeviceSecret, req.Environment, extensionID)
 	if err != nil {
 		response.Error(c, http.StatusUnauthorized, err.Error())
 		return

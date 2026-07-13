@@ -25,6 +25,11 @@ import (
 // don't share state.
 var testDBCounter atomic.Int64
 
+const (
+	testExtensionID      = "abcdefghijklmnopabcdefghijklmnop"
+	otherTestExtensionID = "ponmlkjihgfedcbaponmlkjihgfedcba"
+)
+
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	n := testDBCounter.Add(1)
@@ -52,10 +57,10 @@ func TestExtensionPairingRequiresOwnerConfirmationAndSupportsRevocation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.ClaimExtensionPairing(created.Nonce, "claim-secret", "device-1", "extension-1", "development", "Chrome on test Mac"); err != nil {
+	if err := svc.ClaimExtensionPairing(created.Nonce, "claim-secret", "device-1", testExtensionID, "development", "Chrome on test Mac"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ExchangeExtensionPairing(created.Nonce, "claim-secret"); err == nil {
+	if _, err := svc.ExchangeExtensionPairing(created.Nonce, "claim-secret", testExtensionID); err == nil {
 		t.Fatal("unconfirmed browser received credentials")
 	}
 	pending, err := svc.GetExtensionPairing(user.ID, created.PairingID)
@@ -65,7 +70,10 @@ func TestExtensionPairingRequiresOwnerConfirmationAndSupportsRevocation(t *testi
 	if err := svc.ConfirmExtensionPairing(user.ID, created.PairingID); err != nil {
 		t.Fatal(err)
 	}
-	credential, err := svc.ExchangeExtensionPairing(created.Nonce, "claim-secret")
+	if _, err := svc.ExchangeExtensionPairing(created.Nonce, "claim-secret", otherTestExtensionID); err == nil {
+		t.Fatal("different extension origin exchanged pairing")
+	}
+	credential, err := svc.ExchangeExtensionPairing(created.Nonce, "claim-secret", testExtensionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,13 +85,16 @@ func TestExtensionPairingRequiresOwnerConfirmationAndSupportsRevocation(t *testi
 	if err != nil || !token.Valid || claims.Type != "extension_access" || claims.UserID != user.ID || claims.DeviceID != credential.DeviceID || credential.DeviceID == "device-1" {
 		t.Fatalf("claims=%#v err=%v", claims, err)
 	}
-	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development"); err != nil {
+	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development", otherTestExtensionID); err == nil {
+		t.Fatal("different extension origin refreshed device")
+	}
+	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development", testExtensionID); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&User{}).Where("id = ?", user.ID).Update("role", "operator").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development"); err == nil {
+	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development", testExtensionID); err == nil {
 		t.Fatal("demoted Owner refreshed extension token")
 	}
 	if err := db.Model(&User{}).Where("id = ?", user.ID).Update("role", "owner").Error; err != nil {
@@ -92,7 +103,7 @@ func TestExtensionPairingRequiresOwnerConfirmationAndSupportsRevocation(t *testi
 	if err := svc.RevokeExtensionDevice(user.ID, credential.DeviceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development"); err == nil {
+	if _, err := svc.RefreshExtensionDevice(credential.DeviceID, credential.DeviceSecret, "development", testExtensionID); err == nil {
 		t.Fatal("revoked device refreshed")
 	}
 }
@@ -147,8 +158,24 @@ func TestExtensionPairingRejectsEnvironmentAndClaimMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.ClaimExtensionPairing(created.Nonce, "claim", "device", "extension", "development", "Chrome"); err == nil {
+	if err := svc.ClaimExtensionPairing(created.Nonce, "claim", "device", testExtensionID, "development", "Chrome"); err == nil {
 		t.Fatal("cross-environment claim accepted")
+	}
+}
+
+func TestClaimExtensionPairingRejectsOriginBodyMismatchAsJSON(t *testing.T) {
+	db := newTestDB(t)
+	h := NewHandler(NewService(db, testConfig(), testLogger()), testConfig(), testLogger())
+	r := gin.New()
+	r.POST("/api/v1/auth/extension-pairings/claim", h.ClaimExtensionPairing)
+	body := fmt.Sprintf(`{"nonce":"n","claim_secret":"s","device_id":"d","extension_id":%q,"environment":"development","browser_label":"Chrome"}`, otherTestExtensionID)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/extension-pairings/claim", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "chrome-extension://"+testExtensionID)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("status=%d content-type=%q body=%s", w.Code, w.Header().Get("Content-Type"), w.Body.String())
 	}
 }
 

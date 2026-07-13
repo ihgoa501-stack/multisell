@@ -178,7 +178,7 @@ func (s *Service) signExtensionAccess(device *ExtensionDevice) (string, time.Tim
 	return signed, expires, err
 }
 
-func (s *Service) ExchangeExtensionPairing(nonce, claimSecret string) (*DeviceCredential, error) {
+func (s *Service) ExchangeExtensionPairing(nonce, claimSecret, extensionID string) (*DeviceCredential, error) {
 	var credential DeviceCredential
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var row ExtensionPairing
@@ -187,6 +187,9 @@ func (s *Service) ExchangeExtensionPairing(nonce, claimSecret string) (*DeviceCr
 		}
 		if row.Status != "confirmed" || row.ClaimSecretHash != secretHash(claimSecret) || !row.ExpiresAt.After(time.Now().UTC()) {
 			return errors.New("pairing not confirmed or expired")
+		}
+		if row.ExtensionID != strings.TrimSpace(extensionID) {
+			return errors.New("extension origin does not match pairing")
 		}
 		if row.Environment != s.cfg.Server.EffectiveDeploymentEnvironment() {
 			return errors.New("pairing belongs to a different deployment environment")
@@ -230,7 +233,7 @@ func (s *Service) ExchangeExtensionPairing(nonce, claimSecret string) (*DeviceCr
 	return &credential, err
 }
 
-func (s *Service) RefreshExtensionDevice(deviceID, deviceSecret, environment string) (*DeviceCredential, error) {
+func (s *Service) RefreshExtensionDevice(deviceID, deviceSecret, environment, extensionID string) (*DeviceCredential, error) {
 	if environment != s.cfg.Server.EffectiveDeploymentEnvironment() {
 		return nil, errors.New("device belongs to a different deployment environment")
 	}
@@ -240,6 +243,9 @@ func (s *Service) RefreshExtensionDevice(deviceID, deviceSecret, environment str
 	}
 	if device.SecretHash != secretHash(deviceSecret) {
 		return nil, errors.New("device credential is invalid or revoked")
+	}
+	if device.ExtensionID != strings.TrimSpace(extensionID) {
+		return nil, errors.New("extension origin does not match device")
 	}
 	var user User
 	if err := s.db.First(&user, device.UserID).Error; err != nil || user.Status != 1 || (user.Role != "owner" && user.Role != "admin") {

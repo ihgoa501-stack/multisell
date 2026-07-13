@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getJWT, getLoginUrl } from '../build/shared/auth.js';
+import { getJWT, getLoginUrl, getServerUrlFromPairingOrigin } from '../build/shared/auth.js';
 
 function unsignedToken(payload) {
   return `e30.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.sig`;
@@ -26,6 +26,13 @@ test('current owner IP login targets its paired settings page', () => {
     getLoginUrl('wss://118.196.42.156'),
     'https://118.196.42.156/settings/plugin',
   );
+});
+
+test('trusted settings origins select their matching backend without manual setup', () => {
+  assert.equal(getServerUrlFromPairingOrigin('https://118.196.42.156'), 'wss://118.196.42.156');
+  assert.equal(getServerUrlFromPairingOrigin('http://localhost:3000'), 'ws://localhost:8080');
+  assert.throws(() => getServerUrlFromPairingOrigin('https://evil.example'), /不是受信/);
+  assert.throws(() => getServerUrlFromPairingOrigin('https://118.196.42.156.evil.example'), /不是受信/);
 });
 
 test('expired session access token is refreshed from the paired device instead of appearing connected', async () => {
