@@ -28,7 +28,7 @@ describe('XiaoQ owner-scoped trace page', () => {
           final_output: { answer: '当前仍为证据不足。', truth_status: 'inferred' },
         },
         events: [
-          { seq: 1, event_type: 'tool_requested', content: 'demand_case_read', payload: { model_note: '先读取案件。' } },
+          { seq: 1, event_type: 'tool_requested', content: 'demand_case_read', payload: { public_reason: '先读取案件。' } },
           { seq: 2, event_type: 'capability_call', content: 'demand_case.read', payload: { status: 'succeeded' } },
         ],
         evidence: [{ id: 1, source_type: 'demand_evidence', source_id: '9', title: '公开来源线索', summary: 'quoted' }],

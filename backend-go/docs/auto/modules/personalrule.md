@@ -2,18 +2,17 @@
 
 Package: `backend-go/internal/domain/personalrule/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/agents/rules` | `h.ListRules` |
-| `POST` | `/api/v1/agents/rules` | `h.CreateRule` |
-| `DELETE` | `/api/v1/agents/rules/:id` | `h.DeleteRule` |
-| `GET` | `/api/v1/agents/rules/:id` | `h.GetRule` |
-| `PUT` | `/api/v1/agents/rules/:id` | `h.UpdateRule` |
-| `POST` | `/api/v1/agents/rules/apply` | `h.ApplyRules` |
+| `GET` | `` | `h.ListRules` |
+| `POST` | `` | `h.CreateRule` |
+| `DELETE` | `/:id` | `h.DeleteRule` |
+| `GET` | `/:id` | `h.GetRule` |
+| `PUT` | `/:id` | `h.UpdateRule` |
+| `POST` | `/apply` | `h.ApplyRules` |
 
 ## Models
 

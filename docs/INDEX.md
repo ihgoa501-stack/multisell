@@ -15,13 +15,13 @@
 |------|------|
 | [入门教程](tutorial-getting-started.md) | 🆕 从零搭建开发环境到创建第一个商品——新人首选 |
 | [端到端教程](tutorial-first-workflow.md) | ⛔ 历史教程；“业务闭环”命名已过时，只能用于了解旧工程流程 |
-| [API 快速参考](reference-api-quick.md) | 🆕 路由、认证、响应格式、中间件栈速查 |
-| [完整 API 参考](reference-api-complete.md) | Gin 基线配置的 687 条 HTTP 路由（含 683 条 `/api/v1`）及条件路由 |
+| [API 快速参考](reference-api-quick.md) | 当前核心路由、认证、响应格式和中间件栈速查 |
+| [完整 API 参考](reference-api-complete.md) | ⛔ 2026-07-12 历史运行时快照；当前 Agent 路由以小Q契约和 Router 测试为准 |
 | [完整经营闭环与系统边界](research/commerce-loop-system-boundaries.md) | ⛔ 历史研究；其“完整经营闭环”定义已被 2026-07-12 纠偏，不得作为当前工程闭环定义 |
 | [模块目录](reference-module-catalog.md) | 🆕 全部 60+ 后端领域模块一览 |
 | [配置参考](reference-configuration.md) | 🆕 config.yaml + 环境变量完整说明 |
-| [Agent Pipeline 解释](explanation-agent-pipeline.md) | 🆕 Agent 间如何通过 EventBus 通信和协作 |
-| [AI & Agent 系统参考](reference-ai-agent-system.md) | 🆕 LLM 编排、Agent 注册表、AgentOS 控制台、Trace 系统 |
+| [Agent Pipeline 解释](explanation-agent-pipeline.md) | ⛔ 已退役 A/G EventBus Pipeline 的历史说明 |
+| [AI & Agent 系统参考](reference-ai-agent-system.md) | 历史参考：旧Agent注册表、AgentOS与Trace；运行边界以小Q架构为准 |
 
 ## 🛠️ 操作指南 (How-to)
 
@@ -29,7 +29,7 @@
 |------|------|
 | [添加新领域模块](howto-add-domain-module.md) | 🆕 添加完整 CRUD 模块 step-by-step |
 | [配置平台集成](howto-platform-integrations.md) | 🆕 接入 Ozon / Shopee API |
-| [创建自定义 Agent 规则](howto-agent-rules.md) | 🆕 控制 Agent 决策边界和触发条件 |
+| [创建自定义 Agent 规则](howto-agent-rules.md) | ⛔ 已退役旧 Agent 规则运行面的历史说明 |
 | [运行测试与验证](howto-test-and-verify.md) | 🆕 Go 测试、前端测试、E2E |
 | [Owner 与 AI 统一部署测试手册](ops/OWNER_AND_AI_DEPLOYMENT_RUNBOOK.md) | ⭐ 服务器初始化、部署、恢复、测试、回滚与交付的唯一运行手册 |
 | [使用 WebSocket 流式更新](howto-websocket.md) | 🆕 连接 /ws 端点接收实时数据 |
@@ -52,6 +52,7 @@
 | [当前方向与优先级](CURRENT_DIRECTION_AND_PRIORITIES.md) | 🆕 当前执行口径：产品方向、AgentOS 安全优先级、文档清理规则 |
 | [真实可运行系统完善计划](plan/REAL_OPERATION_READINESS_PLAN.md) | ⭐ 当前唯一执行计划：从工程基线、正式环境到真实经营、对账和下一轮行动 |
 | [真实经营就绪基线 2026-07-13](research/real-operation-readiness-baseline-2026-07-13.md) | P0-1 结果：完整经营路径的权威入口、证据等级、现场阻塞和下一验收动作 |
+| [正式运行底座检查点 2026-07-13](research/production-readiness-checkpoint-2026-07-13.md) | P0-2 现场证据：备份恢复与 111→151 隔离迁移已通过，异地不可变备份和告警仍阻塞 |
 | [设计系统](DESIGN.md) | 🆕 UI 设计规范：色彩、字体、间距、动画、组件风格、无障碍 |
 | [项目状态](PROJECT_STATUS.md) | 当前版本、验证状态、更新历史 |
 | [AI 无人公司长远战略愿景](LONG_TERM_VISION_AND_STRATEGY.md) | 🆕 系统终极形态：“全自动驾驶”无人公司操作系统的四道门槛与落地路线图 |
@@ -93,8 +94,8 @@
 | [类目选择研究](../deliverables/research/category-selection-method.md) | 类目硬淘汰、七维筛选、评分与反例 |
 | [产品选择研究](../deliverables/research/product-selection-method.md) | 需求、竞品、供应商、成本、合规与真实商品机会定义 |
 | [双产品十星架构设计](designs/dual-product-cathedral.md) | ⛔ 2026-07-11 已冻结的历史决策，不得作为当前开发指令 |
-| [AI-Native AgentOS 长期愿景与架构方向](AI_NATIVE_DEVELOPMENT_PLAN.md) | 🆕 面向多领域可信自进化 AgentOS 的长期愿景；不覆盖当前执行优先级 |
-| [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 🆕 将长期愿景拆成底层、上层、AIOS 和验证门禁的可执行规划 |
+| [AI-Native AgentOS 长期愿景与架构方向](AI_NATIVE_DEVELOPMENT_PLAN.md) | 冻结历史愿景；不得作为当前多Agent开发指令 |
+| [AI-Native AgentOS 执行路径规格](specs/2026-07-09-ai-native-agentos-execution-path.md) | 冻结历史规格；当前只执行小Q单Agent架构 |
 | [AI 基础建设总规划：小Q与 Evidence Workshop](../tasks/plan.md) | 小Q作为唯一 Owner Agent 的长期目标、能力目录、安全边界、阶段门禁、预算与停止条件 |
 | [小Q与 Evidence Workshop 执行清单](../tasks/todo.md) | 小Q对话、Capability 接入和经营闭环的垂直任务；每阶段需 Owner 单独批准 |
 | [本地运行验收事实审计 2026-07-13](research/project-truth-audit-2026-07-13.md) | PostgreSQL 145、跨层浏览器验收、Schema Drift 与图片服务契约的最新本地证据 |
@@ -214,7 +215,7 @@
 | [状态模拟器与网络阻回拦截](guides/ai-native-mocking-guide.md) | 🆕 Stateful Mock DB 设计与 Fail-Safe 网络防火墙拦截规则 |
 | [AI 研发死循环监控与熔断](guides/ai-native-loop-prevention-guide.md) | 🆕 归一化报错哈希、Ping-Pong 震荡与 Stagnation 熔断算法 |
 
-| [API 清单](api-inventory.md) | 🆕 全部 71+ 后端模块 API 路由、方法、参数清单 |
+| [API 清单](api-inventory.md) | ⛔ 2026-07-03 历史 API 快照，仅兼容旧链接 |
 | [Swagger API 文档](http://localhost:8080/swagger/index.html) | 🆕 交互式 OpenAPI 文档 — `GET /swagger/index.html` |
 
 
@@ -283,6 +284,7 @@
 - [AI 商品图片系统工程验证记录（2026-07-12）](research/ai-image-system-engineering-verification-2026-07-12.md) — 当前代码、自动验证与未完成边界
 - [AI 商品图片 Provider 官方合同核验（2026-07-12）](research/ai-image-provider-contract-verification-2026-07-12.md) — Photoroom、Adobe、OpenAI 官方合同矩阵与 sandbox/生产门禁
 - [Photoroom Sandbox 单次 Canary 运行手册](ops/PHOTOROOM_SANDBOX_CANARY_RUNBOOK.md) — Owner 凭据、权利、一次配额、停止条件与结果裁决
+- [OpenAI 商品图片 Owner 单次付费验收手册](ops/OPENAI_PRODUCT_IMAGE_OWNER_CANARY_RUNBOOK.md) — 真实 SKU、一次付费、禁止重试、费用对账与事实裁决
 - [Prism → Image Service 迁移盘点（2026-07-12）](research/prism-to-image-service-inventory-2026-07-12.md) — MultiSell 旧 Prism 运行路径已退役；历史数据与独立 Prism 仓库保留
 - [真实 SKU 的 AI 辅助图片草稿方案](features/ai-assisted-product-image-draft.md) — `superseded`；历史收缩方案
 - [1688 受控草稿链工程事实审计（2026-07-12）](research/project-truth-audit-2026-07-12-1688-draft-workflow.md) — 工程实现与外部事实边界

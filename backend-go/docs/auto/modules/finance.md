@@ -19,7 +19,6 @@ Package: `backend-go/internal/domain/finance/`
 | `GET` | `/api/v1/finance/cash-reconciliations` | `h.ListCashReconciliations` |
 | `POST` | `/api/v1/finance/cash-reconciliations` | `h.CreateCashReconciliation` |
 | `GET` | `/api/v1/finance/ledger` | `h.ListLedger` |
-| `POST` | `/api/v1/finance/mock` | `h.Mock` |
 | `GET` | `/api/v1/finance/orders/:order_id/ledger` | `h.ListOrderLedger` |
 | `POST` | `/api/v1/finance/orders/:order_id/ledger/rebuild` | `h.RebuildOrderLedger` |
 | `GET` | `/api/v1/finance/orders/:order_id/profit` | `h.OrderProfit` |

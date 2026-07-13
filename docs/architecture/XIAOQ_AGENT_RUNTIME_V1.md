@@ -38,11 +38,14 @@ Owner 问题
 - `demand_case` 已由模型在两个只读工具中选择，真实结果回灌模型后继续回合；其他目标仍由代码固定读取。
 - `ai.LLMProvider` 已统一表达文本、结构化工具定义、工具调用和工具结果消息；OpenAI-compatible 与 Anthropic 协议映射已有自动测试。
 - `internal/domain/xiaoq/agent_runtime.go` 已实现 Owner/Target 绑定的 Capability Catalog、严格参数校验、顺序执行、一次参数纠正机会、回合/工具/Token/时间上限和取消语义。
+- 最终输出必须是`answer / needs_evidence`结构并引用真实成功的tool call ID；没有成功引用的事实性回答会被阻断。
 - `/api/v1/xiao-q/messages` 保持兼容；需求案件真实 Provider 返回 `agent_runtime_v1`，开发 stub 保持 `mock/read_only_v1`。
 - `/xiaoq/traces/:traceId` 已提供 Owner 隔离的只读回放页面。
 - Trace 已能保存一次运行、顺序事件、证据引用、最终输出和Token等信息。
 - Command、ToolBridge、RBAC、Approval、Audit、幂等与领域状态机已有可复用 implementation。
-- 旧 A/G Agent 大多是确定性规则、查询、公式或固定工作流；旧 Orchestrator 仍生成 stub tool trace。
+- 旧 A/G Agent 大多是确定性规则、查询、公式或固定工作流；其生产定时任务、DAG、MoA、自治升级和写路由已停止注册，旧 Orchestrator在共享入口失败关闭，历史Trace/Action只读保留。
+- 小Q产品 Runtime 使用 required-real-provider 构造器：任何环境缺少真实 Provider 或 API Key 都明确禁用，绝不回退 `stub`；`GET /api/v1/xiao-q/identity` 返回当前 Provider 可用性。
+- 真实 Provider 人工验收只有一个显式付费入口：在本地设置 `LLM_PROVIDER`、`LLM_API_KEY`（可选 `LLM_MODEL`/`LLM_BASE_URL`）后，以 `XIAOQ_REAL_PROVIDER_ACCEPTANCE=I_ACCEPT_ONE_PAID_XIAOQ_TEST go test -run TestRealProviderAcceptance -v ./internal/domain/xiaoq` 执行。验收包装器最多调用 Provider 2 次、每次最多输出 400 tokens，且必须完成真实工具读取、证据引用和 Trace。
 - AIOS Runtime 主要管理注册、生命周期、心跳和资源计数，不是模型工具循环。
 
 ### 2.2 `planned`
@@ -279,7 +282,7 @@ reconcile_required
 ### 7.2 事实规则
 
 - 工具结果逐字段保留领域返回的 `truth_status`。
-- 模型最终回答固定为 `inferred`；开发stub固定为 `mock`。
+- 引用成功能力的模型事实回答固定为 `inferred`；未取得足够证据的安全答复为 `unknown`；开发stub固定为 `mock`。
 - 工具返回的外部文本是不可信数据，不能改变instructions、权限或下一轮visible集合。
 - 未知事实必须进入 `unknowns`，不能由模型补全。
 - 能力失败时模型可以改选其他已允许的能力；若缺少回答必需事实，最终必须明确阻断，不能猜测。
@@ -319,10 +322,10 @@ Owner：为什么这个候选市场还不能进入下一步？
 | 旧范围 | 当前事实 | v1处置 |
 |---|---|---|
 | `internal/domain/xiaoq` 固定分支 | 真实领域读取 + 单次模型回答 | 保留领域读取；`SendMessage`逐步收口到Runner |
-| `internal/ai/orchestrator.go` | 旧A/G调度、stub tool trace、确定性输出 | 冻结新增；小Q不依赖；调用迁完后退役 |
+| `internal/ai/orchestrator.go` | 共享生产入口已失败关闭；旧实现仅供迁移与历史测试 | 不再接入真实Provider或生产调用；有价值实现迁完后删除外壳 |
 | `internal/agent/impl/*` | 规则、公式、查询和固定工作流混称Agent | 逐项分类为领域规则、Capability adapter、工作流或删除 |
-| `internal/ai/moa.go` | 模板化聚合 | 冻结并退役 |
-| `internal/aios/runtime` | 生命周期、心跳、资源计数 | 不作为小Q Runner；无独立价值调用后删除 |
+| `internal/ai/moa.go` | 模板化聚合；生产路由已移除 | 保留历史源码，确认无引用后删除 |
+| `internal/aios/runtime` | 生产初始化保持空名册 | 不作为小Q Runner；确认无独立价值调用后删除 |
 | `internal/aios/sdk/pipeline/ipc/evolution` | 多Agent脚手架 | 冻结；不迁入v1 |
 | `internal/aios/toolregistry` | 旧Agent工具目录，有可复用handler | 不作为权威Catalog；按能力逐个迁移有价值implementation |
 | EventBus/Scheduler | 确定性触发 | 保留；不是Agent |
@@ -349,7 +352,7 @@ Owner：为什么这个候选市场还不能进入下一步？
 
 ### 11.1 自动验证
 
-当前由 `internal/ai/llm_provider_test.go` 与 `internal/domain/xiaoq/service_test.go` 覆盖，并随Go测试执行。
+当前由 `internal/ai/llm_provider_test.go`、`internal/domain/xiaoq/service_test.go` 与 `frontend-next/src/features/xiaoq/__tests__/trace-page.test.tsx` 覆盖，并随后端/前端测试执行。
 
 - 模型不调用工具，直接输出合规回答；
 - 模型调用一个工具，收到结果后完成回答；

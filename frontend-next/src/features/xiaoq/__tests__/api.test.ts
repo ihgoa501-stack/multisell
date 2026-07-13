@@ -144,7 +144,7 @@ describe('xiao-q api', () => {
     expect(response.links).toEqual([
       { label: '查看候选市场案件', href: '/demand-cases/9' },
       { label: '查看决策卡', href: '/demand-cases/9#decision-card' },
-      { label: '查看运行追踪', href: '/ai/traces/trace-2' },
+      { label: '查看运行追踪', href: '/xiaoq/traces/trace-2' },
     ]);
   });
 

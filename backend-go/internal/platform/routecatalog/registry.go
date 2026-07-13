@@ -73,9 +73,6 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/platform-integrations", ActionType: "credential_change", Description: "创建平台集成"},
 		{Method: "PUT", PathPattern: "/api/v1/platform-integrations/:id", ActionType: "credential_change", Description: "更新平台集成"},
 		{Method: "DELETE", PathPattern: "/api/v1/platform-integrations/:id", ActionType: "credential_change", Description: "删除平台集成"},
-		{Method: "POST", PathPattern: "/api/v1/platform-integrations/publish-to-ozon", ActionType: "auto_publish", Description: "旧 Ozon URL 发布入口：仅 dry-run/sandbox mock，真实写固定 428"},
-		{Method: "POST", PathPattern: "/api/v1/platform-integrations/write-back", ActionType: "auto_publish", Description: "回写到平台"},
-		{Method: "POST", PathPattern: "/api/v1/platform-integrations/write-back/:ref-id/retry", ActionType: "auto_publish", Description: "重试回写"},
 		{Method: "PUT", PathPattern: "/api/v1/platform-integrations/:id/mode", ActionType: "credential_change", Description: "修改集成模式"},
 		{Method: "POST", PathPattern: "/api/v1/platform-integrations/:id/test", ActionType: "credential_change", Description: "测试连接"},
 		{Method: "POST", PathPattern: "/api/v1/platform-integrations/:id/sync", ActionType: "sync_inventory", Description: "同步平台数据"},
@@ -102,7 +99,6 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/finance/orders/:order_id/ledger/rebuild", ActionType: "destructive_data_change", Description: "重建订单账本"},
 		{Method: "POST", PathPattern: "/api/v1/finance/profit/calculate", ActionType: "destructive_data_change", Description: "利润测算"},
 		{Method: "POST", PathPattern: "/api/v1/finance/profit/batch-calculate", ActionType: "destructive_data_change", Description: "批量利润测算"},
-		{Method: "POST", PathPattern: "/api/v1/finance/mock", ActionType: "destructive_data_change", Description: "财务模拟"},
 
 		// ── RBAC mutations ──
 		{Method: "POST", PathPattern: "/api/v1/rbac/roles", ActionType: "permission_change", Description: "创建角色"},
@@ -190,8 +186,6 @@ func DefaultBindings() []Binding {
 
 		// ── Security, autonomy, and destructive workflow mutations ──
 		{Method: "POST", PathPattern: "/api/v1/agents/:id/actions", ActionType: "agent_approve", Description: "执行 Agent 动作"},
-		{Method: "POST", PathPattern: "/api/v1/ai/actions", ActionType: "agent_approve", Description: "创建 AI 动作"},
-		{Method: "POST", PathPattern: "/api/v1/ai/actions/:id/review", ActionType: "agent_approve", Description: "审核 AI 动作"},
 		{Method: "POST", PathPattern: "/api/v1/allocation/auto-allocate/:skuId", ActionType: "sync_inventory", Description: "执行自动分仓"},
 		{Method: "POST", PathPattern: "/api/v1/agent-rules", ActionType: "permission_change", Description: "创建 Agent 行为规则"},
 		{Method: "PUT", PathPattern: "/api/v1/agent-rules/:id", ActionType: "permission_change", Description: "更新 Agent 行为规则"},
@@ -212,9 +206,6 @@ func DefaultBindings() []Binding {
 		{Method: "POST", PathPattern: "/api/v1/workflows/runs/:id/reject", ActionType: "agent_approve", Description: "驳回工作流运行"},
 		{Method: "PUT", PathPattern: "/api/v1/compliance/results/:id/suppress", ActionType: "permission_change", Description: "抑制合规结果"},
 		{Method: "PUT", PathPattern: "/api/v1/shipping/bill-items/:id/review", ActionType: "destructive_data_change", Description: "审核物流账单条目"},
-		{Method: "POST", PathPattern: "/api/v1/ai/actions/:id/approve", ActionType: "agent_approve", Description: "批准 AI 动作"},
-		{Method: "POST", PathPattern: "/api/v1/ai/actions/:id/reject", ActionType: "agent_approve", Description: "驳回 AI 动作"},
-		{Method: "POST", PathPattern: "/api/v1/ai/actions/:id/execute", ActionType: "agent_approve", Description: "执行 AI 动作"},
 		{Method: "POST", PathPattern: "/api/v1/feedback/migrate", ActionType: "destructive_data_change", Description: "迁移反馈数据"},
 		{Method: "DELETE", PathPattern: "/api/v1/feedback/categories/:id", ActionType: "destructive_data_change", Description: "删除反馈类别"},
 		{Method: "DELETE", PathPattern: "/api/v1/feedback/comments/:id", ActionType: "destructive_data_change", Description: "删除反馈评论"},
@@ -222,11 +213,11 @@ func DefaultBindings() []Binding {
 		{Method: "DELETE", PathPattern: "/api/v1/feedback/submissions/:id", ActionType: "destructive_data_change", Description: "删除反馈"},
 		{Method: "DELETE", PathPattern: "/api/v1/feedback/submissions/:id/tags/:tagId", ActionType: "destructive_data_change", Description: "删除反馈标签关系"},
 		{Method: "DELETE", PathPattern: "/api/v1/feedback/tags/:id", ActionType: "destructive_data_change", Description: "删除反馈标签"},
+		{Method: "DELETE", PathPattern: "/api/v1/agents/rules/:id", ActionType: "destructive_data_change", Description: "删除个人 Agent 规则"},
 		{Method: "POST", PathPattern: "/api/v1/sourcing-1688/:id/publish-requests/:attemptId/execute", ActionType: "auto_publish", TargetType: "sourcing_publish_attempt", TargetIDParam: "attemptId", Description: "执行 1688 草稿真实发布"},
 		{Method: "POST", PathPattern: "/api/v1/sourcing-1688/:id/task-links/:linkId/publish-requests/:attemptId/execute", ActionType: "auto_publish", TargetType: "sourcing_publish_attempt", TargetIDParam: "attemptId", Description: "执行指定选品任务的 1688 草稿真实发布"},
 
 		// ── Destructive deletes (fail closed by default) ──
-		{Method: "DELETE", PathPattern: "/api/v1/agents/rules/:id", ActionType: "destructive_data_change", Description: "删除个人 Agent 规则"},
 		{Method: "DELETE", PathPattern: "/api/v1/allocation/rules/:id", ActionType: "destructive_data_change", Description: "删除分仓规则"},
 		{Method: "DELETE", PathPattern: "/api/v1/allocation/warehouses/:id", ActionType: "destructive_data_change", Description: "删除仓库"},
 		{Method: "DELETE", PathPattern: "/api/v1/brands/:id", ActionType: "destructive_data_change", Description: "删除品牌"},

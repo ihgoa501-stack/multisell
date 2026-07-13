@@ -2,17 +2,16 @@
 
 Package: `backend-go/internal/domain/orchestration/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/orchestration/pipeline/config` | `h.ListConfigs` |
-| `POST` | `/api/v1/orchestration/pipeline/config` | `h.CreateConfig` |
-| `GET` | `/api/v1/orchestration/products/:id/pipeline` | `h.GetPipelineStatus` |
-| `POST` | `/api/v1/orchestration/products/:id/pipeline/start` | `h.StartPipeline` |
-| `POST` | `/api/v1/orchestration/products/:id/pipeline/step/:step/retry` | `h.RetryStep` |
+| `GET` | `/pipeline/config` | `h.ListConfigs` |
+| `POST` | `/pipeline/config` | `h.CreateConfig` |
+| `GET` | `/products/:id/pipeline` | `h.GetPipelineStatus` |
+| `POST` | `/products/:id/pipeline/start` | `h.StartPipeline` |
+| `POST` | `/products/:id/pipeline/step/:step/retry` | `h.RetryStep` |
 
 ## Models
 

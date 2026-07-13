@@ -52,3 +52,21 @@
 | 商品图片付费派发在外呼前进入待对账；精确回执才恢复排队，响应未知禁止再次付费执行；可信证据可结案为追回输出、未扣费或已扣费但无可恢复输出，Provider request ID 在成功及可取得的失败路径保存 | `implemented / automated_verified`；productimage、image-service Worker/OpenAI Provider 聚焦测试通过；真实 Provider 调用仍为 `unknown` |
 | 后端全量测试、静态检查和构建 | `automated_verified`；122 包 3449 项测试、`go vet ./...`、`go build ./...` 通过 |
 | 真实外部命令对账、真实 Owner 订单终局读取和真实经营价值 | `unknown`；本次没有连接渠道、供应商、订单、结算或银行数据 |
+
+## 旧 Multi-Agent 运行面退役补充核验（2026-07-13）
+
+本节记录小Q成为唯一 Owner Agent 后的运行面收口，不代表旧源码已全部物理删除，也不提升真实 Provider 验收等级。
+
+| 声明 | 证据等级 |
+|---|---|
+| 旧 A1—A12/G0—G3 Orchestrator 在共享生产入口失败关闭；AIOS 初始化不再注册旧 Agent 名册 | `implemented / automated_verified`；Orchestrator 失败关闭与 AIOS 空名册聚焦测试通过 |
+| 旧 Agent 周期任务、`agent.decided.*` DAG、MoA、信任分自治升级、AgentOS/熵/进化/代谢/旧编排生产路由不再由 Router 注册 | `implemented / automated_verified`；Router 编译与聚焦测试通过，生产注册源码复核无残留入口 |
+| `/api/v1/ai` 仅保留历史 Trace 与 Action 的 GET 读取；旧 chat/run/MoA/action mutation 路由不再注册 | `implemented / automated_verified`；只读路由清单测试通过 |
+| Owner 导航及对应页面移除 AI 指挥中心、Agent 列表、Action 中心、信任自治度、AgentOS 工作队列、Agent 学习/升级、熵/进化/代谢和旧编排；失效的旧内容生成、旧 A1/A8 mock 选品与伪 LLM 配置入口同步移除 | `implemented / automated_verified`；44 个前端测试文件 235 项测试及 79 页生产构建通过，已删除路由不再出现在构建清单 |
+| 全局 Copilot 不再调用旧 `/ai/chat`，只说明小Q边界并进入 `/xiaoq`；WebSocket 不再绑定旧通用 AI Chat handler | `implemented / automated_verified`；源码回归扫描与 Router 测试通过 |
+| 旧 Trace/Action 历史读取要求 `audit.read`，并按 JWT 中当前 Owner 过滤；跨 Owner 详情返回 404 | `implemented / automated_verified`；列表、详情及跨 Owner 回归测试通过 |
+| 小Q产品运行时在所有环境都拒绝 `stub` 与缺失 API Key，身份接口明确展示真实 Provider 是否可用；当前本机四项 Provider 环境变量均未配置 | `implemented / automated_verified`（失败关闭测试）；当前真实 Provider 状态为 `unknown / unavailable`，未执行付费调用 |
+| 真实 Provider 人工验收入口要求显式付费确认，最多 2 次模型调用且每次最多输出 400 tokens；结果必须包含真实工具读取、证据和 Trace | `implemented / automated_verified`（未确认时明确 skip）；真实调用仍为 `unknown` |
+| 本轮最终工程回归 | `automated_verified`；后端 122 包 3504 项测试、Go vet/build，前端 44 文件 235 项测试与 79 页生产构建，462 条 mutation 审计分类及 269 个文档引用检查通过 |
+| 旧领域规则、公式和查询实现 | `implemented / frozen`；暂不物理删除，需在逐项迁入小Q Capability或确认无价值后删除 |
+| 小Q真实 Provider受限人工验收 | `unknown`；本次没有授权或执行付费模型调用 |

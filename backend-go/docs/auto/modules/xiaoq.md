@@ -108,6 +108,9 @@ Package: `backend-go/internal/domain/xiaoq/`
 | `Name` | `string` | `name` | `—` |  |
 | `Description` | `string` | `description` | `—` |  |
 | `Mode` | `string` | `mode` | `—` |  |
+| `Provider` | `string` | `provider` | `—` |  |
+| `RuntimeAvailable` | `bool` | `runtime_available` | `—` |  |
+| `UnavailableReason` | `string` | `unavailable_reason,omitempty` | `—` |  |
 
 ### `RunError`
 **DB table:** `—`

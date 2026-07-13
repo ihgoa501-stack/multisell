@@ -4,13 +4,10 @@
 
 | Route | Has page.tsx | Dynamic |
 |-------|-------------|---------|
-| `/actions` | ✅ |  |
+| `/actions` | — |  |
 | `/aftersales` | ✅ |  |
-| `/agent-learning` | ✅ |  |
-| `/agent-upgrades` | ✅ |  |
-| `/agentos` | ✅ |  |
-| `/agents` | ✅ |  |
-| `/ai` | ✅ |  |
+| `/agent-learning` | — |  |
+| `/agent-upgrades` | — |  |
 | `/allocation` | ✅ |  |
 | `/approval` | ✅ |  |
 | `/batch-ops` | ✅ |  |
@@ -33,11 +30,9 @@
 | `/inventory` | ✅ |  |
 | `/listing-tasks` | ✅ |  |
 | `/listings` | ✅ |  |
-| `/market-intelligence` | ✅ |  |
-| `/metabolism` | ✅ |  |
+| `/market-intelligence` | — |  |
 | `/notifications` | ✅ |  |
 | `/operation-logs` | ✅ |  |
-| `/orchestration` | ✅ |  |
 | `/order-import` | ✅ |  |
 | `/orders` | ✅ |  |
 | `/owner` | ✅ |  |
@@ -58,7 +53,7 @@
 | `/settlement` | ✅ |  |
 | `/shipping` | ✅ |  |
 | `/sku` | ✅ |  |
-| `/sourcing` | ✅ |  |
+| `/sourcing` | — |  |
 | `/sourcing1688` | ✅ |  |
 | `/suppliers` | ✅ |  |
 | `/supplychain` | ✅ |  |

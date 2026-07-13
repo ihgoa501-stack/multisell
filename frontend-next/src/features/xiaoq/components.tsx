@@ -37,12 +37,15 @@ export function ModeTag({ mode }: { mode: XiaoQMode }) {
 }
 
 export function XiaoQBoundaryBanner({ identity }: { identity?: XiaoQIdentity }) {
+	const unavailable = identity?.runtime_available === false;
   return (
     <Alert
-      type="info"
+	  type={unavailable ? 'warning' : 'info'}
       showIcon
       message={<Space wrap><strong>{identity?.name ?? '小Q'}</strong><ModeTag mode={identity?.mode ?? 'read_only'} /></Space>}
-      description="小Q可以读取系统信息、解释证据并提出建议，但不会直接执行发布、采购、价格、库存、订单或资金操作。模拟、未知和推断不会被当作已核验事实。"
+	  description={unavailable
+		? identity?.unavailable_reason
+		: '小Q可以读取系统信息、解释证据并提出建议，但不会直接执行发布、采购、价格、库存、订单或资金操作。模拟、未知和推断不会被当作已核验事实。'}
     />
   );
 }

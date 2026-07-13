@@ -2,17 +2,16 @@
 
 Package: `backend-go/internal/domain/metabolism/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/metabolism` | `h.ListLogs` |
-| `GET` | `/api/v1/metabolism/:id` | `h.GetLog` |
-| `POST` | `/api/v1/metabolism/dry-run` | `h.DryRun` |
-| `GET` | `/api/v1/metabolism/excretion-result` | `h.GetExcretionResult` |
-| `POST` | `/api/v1/metabolism/execute` | `h.ExecuteEntities` |
+| `GET` | `` | `h.ListLogs` |
+| `GET` | `/:id` | `h.GetLog` |
+| `POST` | `/dry-run` | `h.DryRun` |
+| `GET` | `/excretion-result` | `h.GetExcretionResult` |
+| `POST` | `/execute` | `h.ExecuteEntities` |
 
 ## Models
 

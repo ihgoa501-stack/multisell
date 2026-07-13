@@ -327,7 +327,7 @@ Owner 尚未为真实商品录入权利证据或完成五类审核，因此这�
 
 ### Lake 4：精确编辑与创意（暂停）
 
-OpenAI 场景编辑已接入显式关闭的生产付费路径，只允许 `gpt-image-2`、单张精确原图和冻结 Prompt；创建、批准、执行分别校验版权、任务版本、预算预占和单次提交门禁。OpenAI Images Edits 官方契约当前未提供可验证的请求幂等或按请求查询结果能力，因此系统不把 `Idempotency-Key` 请求头当作供应商去重证据：一旦响应不确定就禁止自动重试，并要求 Owner 对账。成功、响应异常和本地 Blob 写入失败均尽量保留脱敏 Provider request ID。`max_cost` 是凌镜预算预占上限，不是供应商硬封顶。当前仅为 `automated_verified`，没有项目专用凭据和 Owner 真实 SKU 外部运行证据，因此不得写成 `external_observed` 或生产验收完成。Adobe 仍只在真实缺口出现后评估。
+OpenAI 场景编辑已接入显式关闭的生产付费路径，只允许 `gpt-image-2`、单张精确原图和冻结 Prompt；创建、批准、执行分别校验版权、任务版本、预算预占和单次提交门禁。OpenAI Images Edits 官方契约当前未提供可验证的请求幂等或按请求查询结果能力，因此系统不把 `Idempotency-Key` 请求头当作供应商去重证据：一旦响应不确定就禁止自动重试，并要求 Owner 对账。成功、响应异常和本地 Blob 写入失败均尽量保留脱敏 Provider request ID。`max_cost` 是凌镜预算预占上限，不是供应商硬封顶。当前仅为 `automated_verified`，没有项目专用凭据和 Owner 真实 SKU 外部运行证据，因此不得写成 `external_observed` 或生产验收完成；真实单次验收必须遵循 [`OPENAI_PRODUCT_IMAGE_OWNER_CANARY_RUNBOOK.md`](../ops/OPENAI_PRODUCT_IMAGE_OWNER_CANARY_RUNBOOK.md)。Adobe 仍只在真实缺口出现后评估。
 
 ### Lake 5：完整 Owner 工作室与小Q只读（等待真实验证）
 
@@ -371,7 +371,7 @@ Owner API：
 
 `unknown`：现有真实平台 Adapter 仍只支持旧 URL 合同，没有一个已经实现 `ControlledPublisher` 并在真实 sandbox/production 验证。因此当前可证明“旧 Adapter 无法绕过、受控 attempt 状态机正确”，不能宣称任何真实渠道已经发布成功或受到该证明保护。
 
-旧 `/api/v1/platform-integrations/publish-to-ozon` 和 `sourcing1688` 旧发布执行已经移除真实 Adapter 调用代码。production、approval-required、未知或未声明模式固定返回 `428 IMAGE_RELEASE_ATTESTATION_REQUIRED`，即使携带审批、任意 HTTPS URL 或伪造 `sandbox://` URL 也不能外写；显式 dry-run/sandbox 只返回无状态 mock，不创建真实发布事实。
+旧 `/api/v1/platform-integrations/publish-to-ozon` 和通用 `write-back`/retry 已从路由注册与 mutation 目录退役；`sourcing1688` 旧发布执行也已移除真实 Adapter 调用代码。真实发布只允许经过 task-link 冻结、Owner 独立批准、release attestation 与终态回执的受控链路。
 
 ## 15. 当前未知与实施前置
 

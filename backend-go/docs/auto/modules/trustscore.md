@@ -2,19 +2,18 @@
 
 Package: `backend-go/internal/domain/trustscore/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/trust-scores` | `h.List` |
-| `GET` | `/api/v1/trust-scores/:agent_id` | `h.GetByAgent` |
-| `PUT` | `/api/v1/trust-scores/:agent_id/level` | `h.UpdateLevel` |
-| `POST` | `/api/v1/trust-scores/auto-upgrade` | `h.AutoUpgrade` |
-| `POST` | `/api/v1/trust-scores/eligible` | `h.Eligible` |
-| `POST` | `/api/v1/trust-scores/recalculate` | `h.Recalculate` |
-| `GET` | `/api/v1/trust-scores/summary` | `h.Summary` |
+| `GET` | `` | `h.List` |
+| `GET` | `/:agent_id` | `h.GetByAgent` |
+| `PUT` | `/:agent_id/level` | `h.UpdateLevel` |
+| `POST` | `/auto-upgrade` | `h.AutoUpgrade` |
+| `POST` | `/eligible` | `h.Eligible` |
+| `POST` | `/recalculate` | `h.Recalculate` |
+| `GET` | `/summary` | `h.Summary` |
 
 ## Models
 

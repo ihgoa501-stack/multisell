@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, Button, Card, Descriptions, Image, message, Modal, Progress, Result, Select, Skeleton, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
-import { AlertOutlined, ArrowLeftOutlined, CheckCircleOutlined, ExclamationCircleOutlined, ReloadOutlined, RollbackOutlined, WarningOutlined } from '@ant-design/icons';
+import { Button, Card, Descriptions, Image, message, Modal, Progress, Result, Skeleton, Space, Table, Tabs, Tag, Tooltip } from 'antd';
+import { ArrowLeftOutlined, CheckCircleOutlined, ExclamationCircleOutlined, ReloadOutlined, RollbackOutlined, WarningOutlined } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import PageContainer from '@/components/ui/PageContainer';
@@ -74,20 +74,6 @@ interface Product360 {
   };
 }
 
-// AI Content generation types
-interface GeneratedContent {
-  title: string;
-  subtitle?: string;
-  description: string;
-  keywords: string[];
-  confidence: number;
-}
-
-interface ContentReviewResult {
-  passed: boolean;
-  issues: string[];
-  adjusted_confidence: number;
-}
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'default',
@@ -243,141 +229,6 @@ function VersionHistoryTab({ productId }: { productId: string }) {
         <p style={{ marginTop: 12, color: 'var(--text-secondary)' }}>回滚操作会自动创建一个当前状态的快照，以便后续恢复。</p>
       </Modal>
     </>
-  );
-}
-
-// ----- Content AI Tab Component -----
-
-function ContentAITab({
-  productName,
-  category,
-  brand,
-}: {
-  productName: string;
-  category: string;
-  brand: string;
-}) {
-  const [language, setLanguage] = useState('zh');
-  const [platform, setPlatform] = useState('ozon');
-  const [genResult, setGenResult] = useState<GeneratedContent | null>(null);
-  const [reviewResult, setReviewResult] = useState<ContentReviewResult | null>(null);
-
-  const generateMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiClient.post<GeneratedContent>('/v1/content/generate', {
-        product_name: productName,
-        category,
-        brand,
-        specifications: '',
-        target_language: language,
-        platform,
-      });
-      return res.data;
-    },
-    onSuccess: (data) => {
-      if (!data) return;
-      setGenResult(data);
-      apiClient.post<ContentReviewResult>('/v1/content/validate', {
-        title: data.title,
-        description: data.description,
-        language,
-        platform,
-      }).then((res) => res.data && setReviewResult(res.data)).catch(() => {
-        setReviewResult({ passed: true, issues: [], adjusted_confidence: data.confidence });
-      });
-    },
-    onError: (err: Error) => {
-      message.error('AI 生成失败: ' + err.message);
-    },
-  });
-
-  return (
-    <Card title="AI 内容生成">
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Select
-            value={language}
-            onChange={setLanguage}
-            style={{ width: 120 }}
-            options={[
-              { value: 'zh', label: '中文' },
-              { value: 'en', label: 'English' },
-              { value: 'ru', label: 'Русский' },
-            ]}
-          />
-          <Select
-            value={platform}
-            onChange={setPlatform}
-            style={{ width: 140 }}
-            options={[
-              { value: 'ozon', label: 'Ozon' },
-              { value: 'shopee', label: 'Shopee' },
-              { value: 'wb', label: 'Wildberries' },
-            ]}
-          />
-          <Button
-            type="primary"
-            icon={<ReloadOutlined />}
-            loading={generateMutation.isPending}
-            onClick={() => generateMutation.mutate()}
-          >
-            AI 生成
-          </Button>
-        </div>
-
-        {generateMutation.isPending && (
-          <Progress percent={100} status="active" strokeColor="#1677ff" showInfo={false} />
-        )}
-
-        {genResult && (
-          <Descriptions bordered column={1} size="small">
-            <Descriptions.Item label="置信度">
-              <Tag color={genResult.confidence >= 0.7 ? 'success' : genResult.confidence >= 0.4 ? 'warning' : 'error'}>
-                {(genResult.confidence * 100).toFixed(0)}%
-              </Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="标题">{genResult.title}</Descriptions.Item>
-            {genResult.subtitle && <Descriptions.Item label="副标题">{genResult.subtitle}</Descriptions.Item>}
-            <Descriptions.Item label="描述">
-              <Typography.Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
-                {genResult.description}
-              </Typography.Paragraph>
-            </Descriptions.Item>
-            <Descriptions.Item label="关键词">
-              {genResult.keywords && genResult.keywords.length > 0
-                ? genResult.keywords.map((kw) => <Tag key={kw}>{kw}</Tag>)
-                : '-'}
-            </Descriptions.Item>
-          </Descriptions>
-        )}
-
-        {reviewResult && reviewResult.issues && reviewResult.issues.length > 0 && (
-          <Alert
-            type="warning"
-            showIcon
-            icon={<AlertOutlined />}
-            message={'验证发现 ' + reviewResult.issues.length + ' 个问题'}
-            description={
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {reviewResult.issues.map((issue, i) => (
-                  <li key={i}>{issue}</li>
-                ))}
-              </ul>
-            }
-          />
-        )}
-
-        {reviewResult && reviewResult.passed && genResult && (
-          <Alert
-            type="success"
-            showIcon
-            icon={<CheckCircleOutlined />}
-            message="内容验证通过"
-            description={'置信度: ' + (reviewResult.adjusted_confidence * 100).toFixed(0) + '%'}
-          />
-        )}
-      </Space>
-    </Card>
   );
 }
 
@@ -558,10 +409,6 @@ export default function Product360Page() {
           </Descriptions>
         </Card>
       ),
-    },
-    {
-      key: 'content', label: '内容',
-      children: <ContentAITab productName={data.name ?? ''} category={data.category_name ?? ''} brand={data.brand_name ?? ''} />,
     },
     {
       key: 'images', label: '图片',

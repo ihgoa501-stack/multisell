@@ -452,7 +452,6 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | GET | `/api/v1/finance/ledger` | ✅ | — |
 | GET/POST/PUT/DELETE | `/api/v1/finance/accounts[/:id]` | ✅ | — |
 | GET/POST | `/api/v1/finance/transactions` | ✅ | — |
-| POST | `/api/v1/finance/mock` | ✅ | — |
 | GET | `/api/v1/finance/orders/:order_id/ledger` | ✅ | — |
 | GET | `/api/v1/finance/orders/:order_id/profit` | ✅ | — |
 | POST | `/api/v1/finance/orders/:order_id/ledger/rebuild` | ✅ | — |
@@ -510,8 +509,8 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | `operationlog` | `/api/v1/operationlog` | 操作审计日志 |
 | `imagegen` | `/api/v1/imagegen` | 商品图片生成（Prism） |
 | `sourcing` | `/api/v1/sourcing` | 1688 选品引擎（A8） |
-| `mock` | `/api/v1/mock` | Mock 数据（启动时自动 seed） |
-| `owner` | `/api/v1/owner` | Owner 面板 |
+| `mock` | `/api/v1/mock` | development-only fixture；acceptance/production 不注册 |
+| `owner` | `/api/v1/owner` | development-only 历史 fixture；正式入口已退役 |
 | `support` | `/api/v1/support` | 客服支持 |
 | `feedback` | — | 反馈系统 |
 
@@ -549,11 +548,11 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | POST | `/api/v1/sourcing/fetch` | ✅ | `sourcing/page.tsx` |
 | GET | `/api/v1/sourcing/recommendations` | ✅ | `sourcing/page.tsx` |
 | **Mock** | | | |
-| POST | `/api/v1/mock/seed` | ✅ | — |
+| POST | `/api/v1/mock/seed` | development only | — |
 | **Owner** | | | |
-| GET | `/api/v1/owner/risk-summary` | ✅ | — |
-| GET | `/api/v1/owner/suggestions` | ✅ | — |
-| GET | `/api/v1/owner/decision-queue` | ✅ | — |
+| GET | `/api/v1/owner/risk-summary` | development only | — |
+| GET | `/api/v1/owner/suggestions` | development only | — |
+| GET | `/api/v1/owner/decision-queue` | development only | — |
 | **Support** | | | |
 | CRUD | `/api/v1/support/conversations[/:id]` | ✅ | — |
 | CRUD | `/api/v1/support/templates[/:id]` | ✅ | — |
@@ -577,7 +576,7 @@ G0 system_health (anomaly > 3) → G1 dashboard_overview
 | `/settings/llm` | LLM 配置 | `settings/llm/page.tsx` |
 | `/settings/rbac` | 权限管理 | `settings/rbac/page.tsx` |
 | `/settings/policy` | 审批策略 | `settings/policy/page.tsx` |
-| `/owner` | Owner 经营总控台 | `owner/page.tsx` |
+| `/owner` | 退役兼容入口，跳转 `/platform-truth` | `owner/page.tsx` |
 | `/experiments` | 经营实验案件列表与创建 | `experiments/page.tsx` |
 | `/experiments/[experimentId]` | 证据、反证、闸门、对象关联、利润与现金终态 | `experiments/[experimentId]/page.tsx` |
 

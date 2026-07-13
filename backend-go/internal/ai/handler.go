@@ -104,8 +104,14 @@ func (h *Handler) RunAgent(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /ai/traces [get]
 func (h *Handler) ListTraces(c *gin.Context) {
+	ownerID := common.UserIDFromCtx(c)
+	if ownerID == nil {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 	p := common.ParsePagination(c)
 	f := &TraceListFilter{
+		UserID:        ownerID,
 		Search:        c.Query("search"),
 		AgentID:       c.Query("agent_id"),
 		Status:        c.Query("status"),
@@ -129,12 +135,17 @@ func (h *Handler) ListTraces(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /ai/traces/{trace_id} [get]
 func (h *Handler) GetTrace(c *gin.Context) {
+	ownerID := common.UserIDFromCtx(c)
+	if ownerID == nil {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 	traceID := c.Param("trace_id")
 	if traceID == "" {
 		response.Error(c, http.StatusBadRequest, "trace_id required")
 		return
 	}
-	detail, err := h.service.GetTrace(traceID)
+	detail, err := h.service.GetTraceForOwner(*ownerID, traceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "trace not found")
@@ -148,13 +159,19 @@ func (h *Handler) GetTrace(c *gin.Context) {
 
 // ListActions GET /ai/actions
 func (h *Handler) ListActions(c *gin.Context) {
+	ownerID := common.UserIDFromCtx(c)
+	if ownerID == nil {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 	p := common.ParsePagination(c)
 	f := &ActionListFilter{
-		Search:   c.Query("search"),
-		AgentID:  c.Query("agent_id"),
-		Status:   c.Query("status"),
+		UserID:    ownerID,
+		Search:    c.Query("search"),
+		AgentID:   c.Query("agent_id"),
+		Status:    c.Query("status"),
 		RiskLevel: c.Query("risk_level"),
-		SquadID:  c.Query("squad_id"),
+		SquadID:   c.Query("squad_id"),
 	}
 	items, total, err := h.service.ListActions(&p, f)
 	if err != nil {
@@ -166,11 +183,16 @@ func (h *Handler) ListActions(c *gin.Context) {
 
 // GetAction GET /ai/actions/:id
 func (h *Handler) GetAction(c *gin.Context) {
+	ownerID := common.UserIDFromCtx(c)
+	if ownerID == nil {
+		response.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 	id, ok := parseID(c)
 	if !ok {
 		return
 	}
-	a, err := h.service.GetAction(id)
+	a, err := h.service.GetActionForOwner(*ownerID, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response.Error(c, http.StatusNotFound, "action not found")
@@ -338,8 +360,6 @@ func parseID(c *gin.Context) (int64, bool) {
 	}
 	return id, true
 }
-
-
 
 func stringify(v interface{}) string {
 	if s, ok := v.(string); ok {

@@ -24,12 +24,12 @@ var execCommand = exec.Command
 
 // Service provides AI trace/action business logic.
 type Service struct {
-	db     *gorm.DB
-	logger *zap.Logger
-	traces *TraceWriter
-	cmd    *command.Dispatcher
-	cat    *actioncatalog.Catalog
-	guard  *guardrails.Chain
+	db       *gorm.DB
+	logger   *zap.Logger
+	traces   *TraceWriter
+	cmd      *command.Dispatcher
+	cat      *actioncatalog.Catalog
+	guard    *guardrails.Chain
 	oplogSvc *operationlog.Service // optional audit logging sink
 }
 
@@ -75,6 +75,9 @@ func (s *Service) TraceWriter() *TraceWriter { return s.traces }
 func (s *Service) ListTraces(p *common.Pagination, f *TraceListFilter) ([]AITrace, int64, error) {
 	q := s.db.Model(&AITrace{})
 	if f != nil {
+		if f.UserID != nil {
+			q = q.Where("user_id = ?", *f.UserID)
+		}
 		if f.Search != "" {
 			like := "%" + f.Search + "%"
 			q = q.Where("trace_id ILIKE ? OR agent_id ILIKE ? OR decision_point ILIKE ?", like, like, like)
@@ -105,10 +108,25 @@ func (s *Service) GetTrace(traceID string) (*TraceDetail, error) {
 	return s.traces.GetDetail(traceID)
 }
 
+// GetTraceForOwner returns trace detail only when the trace belongs to ownerID.
+func (s *Service) GetTraceForOwner(ownerID int64, traceID string) (*TraceDetail, error) {
+	var count int64
+	if err := s.db.Model(&AITrace{}).Where("trace_id = ? AND user_id = ?", traceID, ownerID).Count(&count).Error; err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return s.traces.GetDetail(traceID)
+}
+
 // ListActions returns paginated unified actions.
 func (s *Service) ListActions(p *common.Pagination, f *ActionListFilter) ([]UnifiedAction, int64, error) {
 	q := s.db.Model(&UnifiedAction{})
 	if f != nil {
+		if f.UserID != nil {
+			q = q.Where("user_id = ?", *f.UserID)
+		}
 		if f.Search != "" {
 			like := "%" + f.Search + "%"
 			q = q.Where("title ILIKE ? OR description ILIKE ? OR action_type ILIKE ?", like, like, like)
@@ -141,6 +159,15 @@ func (s *Service) ListActions(p *common.Pagination, f *ActionListFilter) ([]Unif
 func (s *Service) GetAction(id int64) (*UnifiedAction, error) {
 	var a UnifiedAction
 	if err := s.db.First(&a, id).Error; err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// GetActionForOwner returns an action only when it belongs to ownerID.
+func (s *Service) GetActionForOwner(ownerID, id int64) (*UnifiedAction, error) {
+	var a UnifiedAction
+	if err := s.db.Where("id = ? AND user_id = ?", id, ownerID).First(&a).Error; err != nil {
 		return nil, err
 	}
 	return &a, nil
@@ -198,9 +225,9 @@ func (s *Service) CreateAction(in *CreateActionInput) (*UnifiedAction, error) {
 // storing the user ID if provided.
 func (s *Service) ApproveAction(id int64, operator string, userID *int64, _ string) (*UnifiedAction, error) {
 	return s.transitionAction(id, "approved", map[string]interface{}{
-		"approved_by":        operator,
+		"approved_by":         operator,
 		"approved_by_user_id": userID,
-		"approved_at":        nowPtr(),
+		"approved_at":         nowPtr(),
 	}, "suggested", "pending")
 }
 

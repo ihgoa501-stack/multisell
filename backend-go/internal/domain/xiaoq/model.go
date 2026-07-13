@@ -28,6 +28,7 @@ var (
 	ErrAgentCanceled         = errors.New("xiao-q agent run canceled")
 	ErrAgentInvalidOutput    = errors.New("xiao-q agent final output is invalid")
 	ErrAgentProviderDisabled = errors.New("xiao-q real provider is not configured")
+	ErrAgentTracePersistence = errors.New("xiao-q trace or evidence persistence failed")
 )
 
 type MessageInput struct {
@@ -96,10 +97,13 @@ type Provenance struct {
 }
 
 type Identity struct {
-	AgentID     string `json:"agent_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Mode        string `json:"mode"`
+	AgentID           string `json:"agent_id"`
+	Name              string `json:"name"`
+	Description       string `json:"description"`
+	Mode              string `json:"mode"`
+	Provider          string `json:"provider"`
+	RuntimeAvailable  bool   `json:"runtime_available"`
+	UnavailableReason string `json:"unavailable_reason,omitempty"`
 }
 
 type RunError struct {

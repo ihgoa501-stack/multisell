@@ -24,6 +24,18 @@ func mustJSON(v interface{}) string {
 	return string(b)
 }
 
+func TestFinanceRoutesExcludeMockMutation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterRoutes(router.Group("/api/v1"), dbtest.NewDB(t), zap.NewNop())
+
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodPost && route.Path == "/api/v1/finance/mock" {
+			t.Fatal("formal finance routes must not expose the mock ledger mutation")
+		}
+	}
+}
+
 func TestFinanceRoutes_Unauthenticated(t *testing.T) {
 	ts := integrationtest.NewTestServer(t,
 		func(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {

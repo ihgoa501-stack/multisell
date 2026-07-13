@@ -66,8 +66,8 @@ func TestMutationPolicyHasCurrentFullInventory(t *testing.T) {
 	// This number is not the security gate by itself; the source cross-check in
 	// check_audit_coverage.sh catches additions, removals and path changes. It
 	// makes accidental parser or embedded-file truncation immediately visible.
-	if got := len(MutationPolicies()); got != 474 {
-		t.Fatalf("expected 474 explicitly classified mutations, got %d", got)
+	if got := len(MutationPolicies()); got != 462 {
+		t.Fatalf("expected 462 explicitly classified mutations, got %d", got)
 	}
 }
 

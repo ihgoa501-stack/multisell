@@ -303,7 +303,6 @@ func (h *Handler) ListOzonProducts(c *gin.Context) {
 // @Param        body  body  PublishToOzonInput  true  "Publish request"
 // @Success      200   {object}  response.Result
 // @Security     BearerAuth
-// @Router       /platform-integrations/publish-to-ozon [post]
 func (h *Handler) PublishToOzon(c *gin.Context) {
 	var in PublishToOzonInput
 	if err := c.ShouldBindJSON(&in); err != nil {

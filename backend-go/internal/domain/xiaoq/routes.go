@@ -14,7 +14,7 @@ import (
 )
 
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
-	provider := ai.NewLLMProvider(logger)
+	provider := ai.NewRequiredLLMProvider(logger)
 	experimentService := experiment.NewService(db, logger)
 	service := NewService(db, logger, demandcase.NewService(db, logger), experimentService, provider, ai.NewTraceWriter(db, logger)).WithSourcingReader(sourcing1688.NewService(db, logger)).WithOwnerOperatingReader(integrations.NewService(db, logger)).WithBusinessDecisionReader(businessdecision.NewService(db))
 	h := NewHandler(service)

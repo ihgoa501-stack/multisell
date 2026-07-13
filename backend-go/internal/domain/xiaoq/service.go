@@ -64,7 +64,16 @@ func NewService(db *gorm.DB, logger *zap.Logger, demand DemandCaseReader, experi
 }
 
 func (s *Service) Identity() Identity {
-	return Identity{AgentID: AgentID, Name: "小Q", Description: "凌镜 Owner 的受控经营 Agent", Mode: "read_only_v1"}
+	provider := "disabled"
+	if s.provider != nil {
+		provider = s.provider.Name()
+	}
+	available := provider != "disabled" && provider != "stub"
+	identity := Identity{AgentID: AgentID, Name: "小Q", Description: "凌镜 Owner 的受控经营 Agent", Mode: "read_only_v1", Provider: provider, RuntimeAvailable: available}
+	if !available {
+		identity.UnavailableReason = "真实 Provider 与 API Key 尚未配置；小Q不会回退到 stub 假响应"
+	}
+	return identity
 }
 
 func (s *Service) Capabilities() []Capability { return Capabilities() }

@@ -29,8 +29,6 @@ func TestGetActionType(t *testing.T) {
 		{"POST", "/api/v1/inventory/sync-cross-platform/:productId", "sync_inventory"},
 
 		// Integrations
-		{"POST", "/api/v1/platform-integrations/publish-to-ozon", "auto_publish"},
-		{"POST", "/api/v1/platform-integrations/write-back", "auto_publish"},
 
 		// RBAC
 		{"POST", "/api/v1/rbac/roles", "permission_change"},

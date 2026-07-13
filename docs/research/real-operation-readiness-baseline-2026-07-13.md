@@ -71,9 +71,11 @@
 | `/api/v1/aftersales/:id/refund` 与 disputes | 直接退款和旧争议接口已失败关闭 | 售后真实终局只走 `/aftersales/resolutions` |
 | `/api/v1/aftersales` 旧 Create/Update/Delete/Approve/Reject/Receive | 兼容 CRUD 仍可达，但不形成可信外部退款事实 | P0-2 前确认 Owner 页面不把它们展示为权威终局；必要时进一步冻结写入 |
 | `/api/v1/settlement` 旧 CRUD、reconcile、items | 与新的平台事实入口并存 | 真实结算只认 platform account event；兼容记录不得进入最终利润 |
-| `/api/v1/finance/mock` | 明确 mock | 正式环境隐藏或禁用；任何数据保持 `mock` |
-| `/api/v1/platform-integrations/mock/seed` 和 mock adapters | 明确 mock | 正式环境不得把其结果升级为真实事实 |
-| `/api/v1/platform-integrations/publish-to-ozon`、`write-back` | 不是当前受控发布权威入口 | 接入真实凭据前必须证明其失败关闭或从正式路由移除 |
+| `/owner` 与 `/api/v1/owner/*` | 页面混合 mock 展示、真实审批和假成功文案 | 本地已将页面跳转到 `/platform-truth`，后端入口仅在 `development` 注册，`acceptance` 与 `production` 失败关闭；尚未部署，生产状态仍需复核 |
+| `/api/v1/finance/mock` | 明确 mock，且会写入权威财务 ledger 表 | 本地已从路由注册与安全目录移除；尚未部署，部署前不得宣称生产已关闭 |
+| `/api/v1/platform-integrations/publish-to-ozon`、`/write-back` 和 retry | 旧兼容写入会生成 sandbox/dry-run 假成功，并可能触发外部 adapter | 本地已从路由注册与安全目录移除；尚未部署，真实发布继续只走受控 task-link 发布链 |
+| `/api/v1/platform-integrations/mock/seed` 和 mock adapters | 明确 mock | 本地已限制为 `development` 注册，`acceptance` 与 `production` 失败关闭；尚未部署，正式环境仍需用运行时路由表复核 |
+| `/api/v1/platform-integrations/publish-to-ozon`、`write-back` | 不是当前受控发布权威入口 | 本地已从路由移除；部署后复核运行时路由表 |
 | tracking 的手工 status 更新 | 只能是内部状态 | 不得生成 `actual_delivery`；真实签收只认承运商事件 |
 | `docs/api-inventory.md` 和旧模块目录中的 ✅ | 只表示曾发现路由 | 不作为可用性、真实性或当前权威入口证据 |
 

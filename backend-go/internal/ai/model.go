@@ -211,6 +211,7 @@ type ChatResponse struct {
 
 // TraceListFilter captures query parameters.
 type TraceListFilter struct {
+	UserID        *int64
 	Search        string
 	AgentID       string
 	Status        string
@@ -219,6 +220,7 @@ type TraceListFilter struct {
 
 // ActionListFilter captures query parameters.
 type ActionListFilter struct {
+	UserID    *int64
 	Search    string
 	AgentID   string
 	Status    string

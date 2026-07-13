@@ -25,9 +25,6 @@ Package: `backend-go/internal/domain/integrations/`
 | `POST` | `/api/v1/platform-integrations/:id/test` | `h.TestConnection` |
 | `POST` | `/api/v1/platform-integrations/mock/seed` | `` |
 | `GET` | `/api/v1/platform-integrations/owner-fact-options` | `h.OwnerFactOptions` |
-| `POST` | `/api/v1/platform-integrations/publish-to-ozon` | `h.PublishToOzon` |
-| `POST` | `/api/v1/platform-integrations/write-back` | `h.WriteBack` |
-| `POST` | `/api/v1/platform-integrations/write-back/:ref-id/retry` | `h.RetryWriteBack` |
 
 ## Models
 

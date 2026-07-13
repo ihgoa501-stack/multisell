@@ -163,6 +163,23 @@ func NewLLMProvider(logger *zap.Logger) LLMProvider {
 	}
 }
 
+// NewRequiredLLMProvider constructs a provider for product Agent runtimes.
+// Unlike development tooling, product Agents must never fall back to stub data.
+func NewRequiredLLMProvider(logger *zap.Logger) LLMProvider {
+	name := strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER")))
+	if name == "" || name == "stub" {
+		return &DisabledProvider{reason: "real LLM provider is not configured"}
+	}
+	if strings.TrimSpace(os.Getenv("LLM_API_KEY")) == "" {
+		return &DisabledProvider{reason: "LLM_API_KEY is not configured"}
+	}
+	provider := NewLLMProvider(logger)
+	if provider.Name() == "stub" {
+		return &DisabledProvider{reason: "unsupported real LLM provider: " + name}
+	}
+	return provider
+}
+
 // DisabledProvider makes missing production LLM configuration explicit. It
 // never synthesizes data and every attempted call fails closed.
 type DisabledProvider struct{ reason string }
@@ -500,8 +517,14 @@ func (p *anthropicProvider) Chat(ctx context.Context, req *LLMRequest) (*LLMResp
 		}
 		payload["tools"] = tools
 	}
-	body, _ := json.Marshal(payload)
-	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/messages", bytes.NewReader(body))
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/messages", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", p.apiKey)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")

@@ -1,5 +1,7 @@
 # Agent Capabilities
 
+> **superseded 边界（2026-07-13）**：本文主要记录开发会话可用工具和旧 Agent/API 历史清单，不证明凌镜产品内 Agent 能力。旧 A/G Agent、AgentOS、MoA、自治升级及其前端页面已退出生产运行面；凌镜当前唯一 Owner Agent 是 `xiao_q`，其产品能力以 `docs/governance/XIAOQ_CAPABILITY_CONTRACT.md` 为准。
+
 > **用途**: 该文档列出 LingMirror (MultiSell) 项目中所有对 Agent 可用的能力。
 > **定位**: 每个开发 AI 在开始工作前应首先阅读此文档，了解自己有什么能力可用。
 > **维护**: 添加新 API/工具/MCP 时同步更新此文档。
@@ -226,7 +228,6 @@
 | GET | `/api/v1/finance/profit/ranking` | SKU 利润排行 |
 | GET | `/api/v1/finance/summary` | 财务汇总 |
 | GET | `/api/v1/finance/ledger` | 账本列表 |
-| POST | `/api/v1/finance/mock` | 模拟数据 |
 | GET | `/api/v1/finance/orders/:order_id/profit` | 订单利润 |
 | POST | `/api/v1/finance/orders/:order_id/ledger/rebuild` | 重建订单账本 |
 | GET/POST/PUT/DELETE | `/api/v1/finance/accounts` | 账户管理 |

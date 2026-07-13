@@ -1,12 +1,14 @@
-# 凌镜完整 API 参考
+# 凌镜完整 API 参考（2026-07-12 历史快照）
+
+> **superseded**：本页主体表格是 2026-07-12 的运行时快照，不能继续作为当前路由事实源。2026-07-13 已退役旧 A/G Agent、AgentOS、MoA、自治升级、熵/进化/代谢/旧编排与旧内容生成生产路由；对应前端页面也已移除。当前 Agent 入口只有 `/api/v1/xiao-q`。旧 `/api/v1/ai` 仅保留 `GET /traces`、`GET /traces/:trace_id`、`GET /actions`、`GET /actions/:id`，要求 `audit.read` 并按当前 Owner 隔离。精确当前事实以 `httpx.NewRouter(...).Engine.Routes()` 和 `internal/httpx/router_runtime_test.go` 为准，本文待下一次全量重新生成。
 
 > 生成日期：2026-07-12
 >
-> 事实等级：`implemented`（路由已在当前代码中注册）。这不等于 `manually_verified`、`external_observed` 或生产可用。
+> 原快照事实等级：`superseded`；表中路由只表示当时曾注册，不代表当前仍可达。
 >
 > 生成依据：以 `httpx.NewRouter(...).Engine.Routes()` 导出的 Gin 运行时路由表为准，而不是旧文档或前端调用。
 
-本文覆盖当前后端注册的全部 HTTP API。在 Prism 关闭、Metrics 关闭的基线配置下，运行时共发现 **687** 条路由，其中 **683** 条位于 `/api/v1`。此外有 1 条 Prism 条件路由和 1 条 Metrics 条件路由。每条记录包含 HTTP 方法、完整路径、访问门槛和实际处理器。请求体及响应字段仍应以对应 `model.go`、`handler.go` 和测试为准；本清单不虚构代码未声明的字段。
+本文覆盖 development 基线下注册的 HTTP API；精确路由数量应在每次基线生成时从 `httpx.NewRouter(...).Engine.Routes()` 重新计算，不沿用旧计数。`/api/v1/mock/*`、`/api/v1/owner/*` 与 platform integrations mock seed 仅在 development 注册，acceptance 和 production 不可达。每条记录包含 HTTP 方法、完整路径、访问门槛和实际处理器。请求体及响应字段仍应以对应 `model.go`、`handler.go` 和测试为准；本清单不虚构代码未声明的字段。
 
 ## 调用基础
 
@@ -428,7 +430,6 @@ curl -sS -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: appli
 | `GET` | `/api/v1/finance/accounts/:id` | JWT + finance.read | `domain/finance.(*Handler).GetAccount` |
 | `PUT` | `/api/v1/finance/accounts/:id` | JWT + finance.read | `domain/finance.(*Handler).UpdateAccount` |
 | `GET` | `/api/v1/finance/ledger` | JWT + finance.read | `domain/finance.(*Handler).ListLedger` |
-| `POST` | `/api/v1/finance/mock` | JWT + finance.read | `domain/finance.(*Handler).Mock` |
 | `GET` | `/api/v1/finance/orders/:order_id/ledger` | JWT + finance.read | `domain/finance.(*Handler).ListOrderLedger` |
 | `POST` | `/api/v1/finance/orders/:order_id/ledger/rebuild` | JWT + finance.read | `domain/finance.(*Handler).RebuildOrderLedger` |
 | `GET` | `/api/v1/finance/orders/:order_id/profit` | JWT + finance.read | `domain/finance.(*Handler).OrderProfit` |
@@ -673,7 +674,7 @@ curl -sS -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: appli
 | `POST` | `/api/v1/order/:id/status` | JWT + order.read | `domain/order.(*Handler).UpdateStatus` |
 | `GET` | `/api/v1/order/summary` | JWT + order.read | `domain/order.(*Handler).Summary` |
 
-### `owner`
+### `owner`（development fixture only）
 
 | 方法 | 路径 | 访问 | 处理器 |
 |---|---|---|---|
@@ -714,10 +715,7 @@ curl -sS -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: appli
 | `GET` | `/api/v1/platform-integrations/:id/ozon-products` | JWT | `domain/integrations.(*Handler).ListOzonProducts` |
 | `POST` | `/api/v1/platform-integrations/:id/sync` | JWT | `domain/integrations.(*Handler).Sync` |
 | `POST` | `/api/v1/platform-integrations/:id/test` | JWT | `domain/integrations.(*Handler).TestConnection` |
-| `POST` | `/api/v1/platform-integrations/mock/seed` | JWT | `domain/integrations.RegisterRoutes.func1` |
-| `POST` | `/api/v1/platform-integrations/publish-to-ozon` | JWT | `domain/integrations.(*Handler).PublishToOzon` |
-| `POST` | `/api/v1/platform-integrations/write-back` | JWT | `domain/integrations.(*Handler).WriteBack` |
-| `POST` | `/api/v1/platform-integrations/write-back/:ref-id/retry` | JWT | `domain/integrations.(*Handler).RetryWriteBack` |
+| `POST` | `/api/v1/platform-integrations/mock/seed` | JWT + development only | `domain/integrations.RegisterRoutes.func1` |
 
 ### `platform-webhooks`
 

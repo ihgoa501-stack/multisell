@@ -2,19 +2,18 @@
 
 Package: `backend-go/internal/domain/agentrule/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/agent-rules` | `h.ListRules` |
-| `POST` | `/api/v1/agent-rules` | `h.CreateRule` |
-| `DELETE` | `/api/v1/agent-rules/:id` | `h.DeleteRule` |
-| `GET` | `/api/v1/agent-rules/:id` | `h.GetRule` |
-| `PUT` | `/api/v1/agent-rules/:id` | `h.UpdateRule` |
-| `POST` | `/api/v1/agent-rules/:id/toggle` | `h.ToggleRule` |
-| `POST` | `/api/v1/agent-rules/evaluate` | `h.EvaluateRules` |
+| `GET` | `` | `h.ListRules` |
+| `POST` | `` | `h.CreateRule` |
+| `DELETE` | `/:id` | `h.DeleteRule` |
+| `GET` | `/:id` | `h.GetRule` |
+| `PUT` | `/:id` | `h.UpdateRule` |
+| `POST` | `/:id/toggle` | `h.ToggleRule` |
+| `POST` | `/evaluate` | `h.EvaluateRules` |
 
 ## Models
 
