@@ -26,6 +26,7 @@ pom.xml
 product-*/
 !frontend-next/src/app/(main)/product-hub/
 !frontend-next/src/app/(main)/product-images/
+!frontend-next/src/app/(main)/product-opportunities/
 !frontend-next/src/features/product-images/
 src/main/
 

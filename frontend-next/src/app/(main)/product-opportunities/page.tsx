@@ -1,0 +1,26 @@
+'use client';
+
+import { useState } from 'react';
+import { Alert, Button, Card, Form, Input, message, Modal, Space, Table, Tag, Typography } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'next/navigation';
+import apiClient from '@/lib/api-client';
+import PageContainer from '@/components/ui/PageContainer';
+import type { ProductOpportunity } from '@/types/demand-case';
+
+const { Text } = Typography;
+type CreateInput = { demand_case_id:number; market_decision_id:number; title:string; consumer_problem:string; product_thesis:string; target_channel:string; value_hypothesis:string; price_hypothesis:string; source_uri:string; truth_status:'quoted'|'estimated'; strongest_counterevidence:string; unknowns_text:string; stop_condition:string };
+
+export default function ProductOpportunitiesPage(){
+ const params=useSearchParams();const qc=useQueryClient();const [open,setOpen]=useState(Boolean(params.get('market_decision_id')));const [reasonFor,setReasonFor]=useState<ProductOpportunity|null>(null);const [reason,setReason]=useState('');const [form]=Form.useForm<CreateInput>();
+ const query=useQuery({queryKey:['product-opportunities'],queryFn:async()=>(await apiClient.get<ProductOpportunity[]>('/v1/product-opportunities')).data??[]});
+ const create=useMutation({mutationFn:(v:CreateInput)=>apiClient.post<ProductOpportunity>('/v1/product-opportunities',{...v,unknowns:v.unknowns_text.split('\n').map(x=>x.trim()).filter(Boolean)}),onSuccess:()=>{message.success('商品机会草案已创建');setOpen(false);form.resetFields();void qc.invalidateQueries({queryKey:['product-opportunities']})},onError:(e:Error)=>message.error(e.message)});
+ const evaluate=useMutation({mutationFn:(id:number)=>apiClient.post(`/v1/product-opportunities/${id}/evaluate`,{}),onSuccess:()=>void qc.invalidateQueries({queryKey:['product-opportunities']}),onError:(e:Error)=>message.error(e.message)});
+ const decide=useMutation({mutationFn:(o:ProductOpportunity)=>apiClient.post(`/v1/product-opportunities/${o.id}/owner-decisions`,{decision:'approved',reason,idempotency_key:`opportunity-${o.id}-${crypto.randomUUID()}`,version:o.version}),onSuccess:()=>{message.success('商品机会已批准进入货源研究');setReasonFor(null);setReason('');void qc.invalidateQueries({queryKey:['product-opportunities']})},onError:(e:Error)=>message.error(e.message)});
+ return <PageContainer title="商品机会" subtitle="只有 Owner 已选择的市场才能形成商品机会；批准不会自动采购、发布或投放。" loading={query.isLoading} error={query.isError} errorMsg={(query.error as Error|undefined)?.message} onRetry={()=>void query.refetch()} extra={<Button type="primary" onClick={()=>setOpen(true)}>新建商品机会</Button>}>
+  <Alert type="info" showIcon title="商品机会不是候选商品或 Listing" description="它保存消费者问题、商品解法假设、来源、反证、未知和停止线；批准后才可进入货源研究。" style={{marginBottom:16}}/>
+  <Card styles={{body:{padding:0}}}><Table rowKey="id" dataSource={query.data??[]} pagination={false} columns={[{title:'机会',render:(_,o)=><Space orientation="vertical" size={0}><Text strong>{o.title}</Text><Text type="secondary">{o.consumer_problem}</Text></Space>},{title:'渠道',dataIndex:'target_channel'},{title:'真实性',dataIndex:'truth_status',render:(v:string)=><Tag>{v}</Tag>},{title:'状态',dataIndex:'status',render:(v:string)=><Tag color={v==='approved'?'green':v==='evidence_missing'?'orange':'blue'}>{v}</Tag>},{title:'操作',render:(_,o)=><Space><Button disabled={o.status==='approved'||o.status==='rejected'} loading={evaluate.isPending} onClick={()=>evaluate.mutate(o.id)}>检查完整性</Button><Button type="primary" disabled={o.status!=='ready_for_owner'} onClick={()=>setReasonFor(o)}>Owner 批准</Button></Space>} ]}/></Card>
+  <Modal title="新建商品机会草案" open={open} onCancel={()=>setOpen(false)} onOk={()=>form.submit()} okButtonProps={{loading:create.isPending}} width={760}><Form form={form} layout="vertical" initialValues={{demand_case_id:Number(params.get('demand_case_id'))||undefined,market_decision_id:Number(params.get('market_decision_id'))||undefined,truth_status:'quoted'}} onFinish={v=>create.mutate(v)}><Space align="start" style={{width:'100%'}}><Form.Item name="demand_case_id" label="候选市场 ID" rules={[{required:true}]}><Input type="number"/></Form.Item><Form.Item name="market_decision_id" label="Owner 市场决定 ID" rules={[{required:true}]}><Input type="number"/></Form.Item></Space>{[['title','机会名称'],['consumer_problem','消费者具体问题'],['product_thesis','商品解法假设'],['target_channel','目标渠道'],['value_hypothesis','价值假设'],['price_hypothesis','价格假设'],['source_uri','来源 URI'],['strongest_counterevidence','最强反证'],['unknowns_text','仍然未知（每行一项）'],['stop_condition','停止条件']].map(([name,label])=><Form.Item key={name} name={name} label={label} rules={[{required:true}]}><Input.TextArea rows={name==='unknowns_text'?3:2}/></Form.Item>)}</Form></Modal>
+  <Modal title="批准商品机会" open={!!reasonFor} onCancel={()=>{setReasonFor(null);setReason('')}} onOk={()=>reasonFor&&decide.mutate(reasonFor)} okButtonProps={{disabled:!reason.trim(),loading:decide.isPending}}><Alert type="warning" showIcon title="仅批准进入货源研究" description="不会自动采购、发布、投放或创建外部平台商品。" style={{marginBottom:12}}/><Input.TextArea aria-label="批准理由" value={reason} onChange={e=>setReason(e.target.value)} rows={4}/></Modal>
+ </PageContainer>
+}
