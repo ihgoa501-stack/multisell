@@ -30,9 +30,9 @@
 | 运行容器 | frontend、backend、db、caddy 共 4 个容器在运行；前三者健康 | `actual / manually_verified` | 不能据此认定当前版本已部署 |
 | 健康接口 | 容器内 `/api/health` 返回 alive；`/api/ready` 显示 database、event_bus、scheduler、traffic 为 true | `actual / manually_verified` | 部署当前版本后重验 |
 | HTTPS | Caddy 使用 `Caddyfile.ip`；服务器本机经 HTTPS 访问健康接口返回 200 | `actual / manually_verified` | 公网证书信任和 Owner 浏览器访问仍为 `unknown` |
-| 代码版本 | 本地检查基准为 `7a6f75eb...`；服务器为 `b06b191f...`，且服务器有未提交的 `frontend-next/src/lib/api-client.ts` 修改；该修改已包含在当前本地工作树 | `actual` | **停止直接覆盖部署**；先保存服务器差异证据并建立干净发布点 |
+| 代码版本 | 已形成并推送干净发布候选 `codex/real-operation-readiness@9d6d1013`；服务器随后被另一任务切到 `codex/deploy-plugin-minimal-20260713@46319de8`，容器仍运行旧镜像 | `actual` | **停止并发覆盖部署**；待当前生产任务完成或明确交接后再部署 exact commit |
 | 应用版本 | 服务器健康接口报告 `0.2.1`，低于仓库当前 `v0.3.0.0` 口径 | `actual` | P0-2 部署确定提交后统一版本声明 |
-| 备份与恢复 | 服务器已有同日 pre-plugin 备份；本次新建 `multisell_2026-07-13_144223.dump` 及 SHA-256，权限 600；已恢复到隔离临时库并验证 179 张表和迁移版本 100，随后删除临时库，正式服务仍 ready | `actual / manually_verified` | 服务器外加密副本仍为 `unknown`；任何迁移前还需确认其存在 |
+| 备份与恢复 | 服务器已有同日 pre-plugin 备份；本次新建 `multisell_2026-07-13_144223.dump` 及 SHA-256，权限 600；已恢复到隔离临时库并验证 179 张表和迁移版本 100，随后删除临时库，正式服务仍 ready；服务器外副本已保存到 Owner 本机 `/Users/lc/Backups/lingmirror/`，校验值匹配且 `pg_restore --list` 通过 | `actual / manually_verified` | 手工校验文件记录了服务器相对路径，已通过直接比较哈希绕开；后续应只用脚本生成可移植校验文件 |
 | 监控与告警 | 当前运行容器中未见监控栈；告警投递未验证 | `actual / unknown` | P0-2 启动并验证一次真实告警投递 |
 | Owner 登录 | 本次未使用或检查 Owner 凭据 | `unknown` | 部署后由 Owner 完成登录验收，不输出秘密值 |
 | 外部账号与凭据 | 真实渠道、1688、承运商、结算、银行及付费 Provider 可用性未检查 | `unknown` | 到对应门槛时只检查权限和受控调用；真实写入须 exact Owner 批准 |
@@ -91,9 +91,9 @@ P0-1 已通过，理由是：
 
 进入 P0-2，但第一动作不是直接部署：
 
-1. 查明服务器未提交的 `frontend-next/src/lib/api-client.ts` 修改属于什么、是否需要保留；
-2. 选择一个已测试、可追溯的确定提交作为发布点；
-3. 部署前生成数据库备份并保存服务器外副本；
+1. 等待或接管当前 `codex/deploy-plugin-minimal-20260713` 生产任务，禁止两个任务同时切换服务器代码；
+2. 以已验证发布候选 `9d6d1013` 为基准，确认是否需要吸收当前插件分支的独有改动；
+3. 部署 exact commit，并将数据库从当前迁移版本 100 升级到候选版本 151；
 4. 部署当前版本后验证 HTTPS、Owner 登录、RBAC、审计、迁移、监控、告警和恢复；
 5. 在 P0-2 通过前，不把真实渠道、供应商、银行或付费 Provider 凭据接入正式写路径。
 
