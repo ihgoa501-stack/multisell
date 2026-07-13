@@ -82,3 +82,15 @@
 - 当前正式容器没有运行 image-service。后端、前端和数据库容器显示 healthy，但这不能覆盖审计分叉、Ozon panic、图片服务缺失和异地恢复门禁缺失。
 
 因此不得继续把当前正式状态表述为 P0-2 完成，也不得在没有异地不可变备份和真实告警确认的情况下把 `14b3f91b` 切换为正式运行版本。
+
+## 16:28 补充：唯一整合候选与 v151→v153 隔离演练
+
+- 唯一候选：`19bfb84f` 同时是真实运行候选 `1886f30e` 与当前生产插件 L3 `fe07479f` 的后代，避免直接部署旧候选造成插件回退。分支为 `codex/real-operation-readiness`。
+- 候选补强：Slack 告警已要求发送 firing 与 resolved；两个 systemd service 的工作目录修正为 `/opt/multisell`；应用回滚覆盖 image-service，并禁止把主库 migration 152 降回已知分叉链；正式导航移除 Mock/Sandbox/壳入口；固定成功的 mock carrier 只在 development 注册；物流写操作改用只授予启用 Owner/Admin 的 `shipping.write`，新增 migration 153。
+- 全量工程验证：后端 122 个包、3512 项测试通过，`go vet ./...`、`go build ./...` 通过；前端 44 个文件、238 项测试通过，79 页生产构建通过，lint 为 0 error/7 个既有 warning；图片服务 race 测试 114 项和 vet 通过；1688 插件 59 项、相关前端 26 项及后端聚焦测试通过；备份、审计 checkpoint、告警、监控、回滚合同测试通过。
+- 精确镜像：服务器已生成 `lingmirror-backend:19bfb84f`、`lingmirror-frontend:19bfb84f`、`multisell-image-service:19bfb84f`，尚未切换正式容器。
+- 当前库备份：正式 v151 生成本机备份 `multisell_v151_candidate_20260713T082650Z.dump`，SHA-256 与 `pg_restore --list` 通过，权限为 600/root-only。该备份仍非异地不可变，不满足发布门禁。
+- 隔离迁移：从该 v151 备份恢复临时数据库，顺序执行 candidate migration 152 和 153 后为 `153|false`；审计状态 `1352|0|1|0|0|1|1352`，repair snapshot 为 1352 条。临时数据库和容器内临时文件已删除。
+- 正式库未改：演练结束后正式库仍为 `151|false`，当前 1370 条审计记录、1 个根、47 个分叉点、49 个链尾。行数增加说明线上仍有活动，但分叉/链尾形态未在本次演练中改变。
+
+`IMAGE_TAG=19bfb84f ./scripts/verify_prod_compose.sh` 的生产门禁仍应失败，直到真实 S3 Object Lock 异地上传/保留/恢复和真实告警送达全部完成。候选完成不等于 P0-2 完成。
