@@ -1,7 +1,7 @@
 /**
  * Popup script for the LingMirror Sourcing Agent.
  *
- * Displays connection status, provides login/logout controls, and
+ * Displays connection status, provides device-pairing controls, and
  * allows manual triggering of product data extraction on the current tab.
  */
 
@@ -35,27 +35,27 @@ function updateStatus(
 
   switch (status) {
     case "connected":
-      statusLabel.textContent = "Connected";
+      statusLabel.textContent = "已连接";
       fetchBtn.disabled = false;
-      loginBtn.textContent = "Connected";
-      loginBtn.title = "Click to open LingMirror dashboard";
+      loginBtn.textContent = "打开凌镜";
+      loginBtn.title = "打开凌镜插件设置页";
       break;
     case "no_token":
-      statusLabel.textContent = "Not logged in";
+      statusLabel.textContent = "未连接";
       fetchBtn.disabled = true;
-      loginBtn.textContent = "Login to LingMirror";
+      loginBtn.textContent = "连接凌镜";
       loginBtn.title = "";
       break;
     case "disconnected":
-      statusLabel.textContent = "Disconnected";
+      statusLabel.textContent = "已断开";
       fetchBtn.disabled = true;
-      loginBtn.textContent = "Login to LingMirror";
+      loginBtn.textContent = "重新连接";
       loginBtn.title = "";
       break;
     case "error":
-      statusLabel.textContent = "Connection error";
+      statusLabel.textContent = "连接异常";
       fetchBtn.disabled = true;
-      loginBtn.textContent = "Reconnect";
+      loginBtn.textContent = "重新连接";
       loginBtn.title = "";
       break;
   }
@@ -155,34 +155,19 @@ async function handleFetch(): Promise<void> {
   }
 }
 
-/** Handle login/logout. */
+/** Open the Owner-confirmed device-pairing page. */
 async function handleLogin(): Promise<void> {
   const token = await getJWT();
 
   if (token && currentStatus === "connected") {
-    // Already logged in and connected — open dashboard
+    // Already paired — open the pairing/device page.
     const serverUrl = await getServerUrl();
     const httpUrl = getLoginUrl(serverUrl).replace("/login", "");
     chrome.tabs.create({ url: httpUrl });
     return;
   }
 
-  // Not logged in or token missing — guide user to login
-  const serverUrl = await getServerUrl();
-
-  // Ask user for server URL (first-time setup or when not connected)
-  if (!token) {
-    const input = prompt(
-      "Enter your LingMirror server URL:",
-      serverUrl.replace(/^ws:\/\//, "http://").replace(/^wss:\/\//, "https://")
-    );
-    if (input) {
-      const wsUrl = input.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
-      await setServerUrl(wsUrl);
-    }
-  }
-
-  // Open the Owner-confirmed browser pairing page. No JWT is copied.
+  // The trusted settings page supplies its own origin to the extension bridge.
   const loginUrl = getLoginUrl(await getServerUrl());
   chrome.tabs.create({ url: loginUrl });
 }
@@ -194,7 +179,7 @@ async function handleSettings(): Promise<void> {
     .replace(/^ws:\/\//, "http://")
     .replace(/^wss:\/\//, "https://");
   const input = prompt(
-    "LingMirror Server URL:",
+    "凌镜服务器地址：",
     httpUrl.replace(/\/ws\/extension$/, "")
   );
   if (input && input.trim()) {

@@ -21,10 +21,12 @@ function productCard(id, options = {}) {
   </li>`;
 }
 
-function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer_search.htm?keywords=test') {
+function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer_search.htm?keywords=test', storageValues = {}) {
   const { window } = parseHTML(`<html><body><ul id="results">${html}</ul></body></html>`);
   window.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 200, height: 120, top: 20, left: 20, right: 220, bottom: 140 });
   Object.defineProperty(window, 'location', { value: new URL(pageURL), configurable: true });
+  Object.defineProperty(window, 'innerWidth', { value: 1200, writable: true, configurable: true });
+  Object.defineProperty(window, 'innerHeight', { value: 800, writable: true, configurable: true });
   const messages = [];
   const messageListeners = [];
   const chrome = {
@@ -39,7 +41,13 @@ function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer
           messageListeners.push(listener);
         }
       }
-    }
+    },
+    storage: {
+      local: {
+        get: async (key) => ({ [key]: storageValues[key] }),
+        set: async (values) => { Object.assign(storageValues, JSON.parse(JSON.stringify(values))); },
+      },
+    },
   };
   const timeoutsCalled = [];
   const context = vm.createContext({
@@ -57,7 +65,7 @@ function loadList(html, responder, pageURL = 'https://s.1688.com/selloffer/offer
     timeoutsCalled,
   });
   vm.runInContext(compiled, context, { filename: 'content-script-list.js' });
-  return { context, window, document: window.document, messages, timeoutsCalled, messageListeners };
+  return { context, window, document: window.document, messages, timeoutsCalled, messageListeners, storageValues };
 }
 
 test('visible list extraction keeps only exact offer links and explicit fields', () => {
@@ -102,12 +110,62 @@ test('list collector has isolated selection UI and both Owner batch actions', ()
   assert.ok(host?.shadowRoot, 'panel must be isolated in a shadow root');
   const labels = Array.from(host.shadowRoot.querySelectorAll('button')).map((button) => button.textContent);
   assert.ok(labels.includes('采集选中'));
-  assert.ok(labels.includes('采集本页'));
+  assert.ok(labels.includes('采集本页当前可见'));
   assert.ok(labels.includes('停止批量'));
+  assert.match(host.shadowRoot.innerHTML, /只处理当前已加载且可见的商品，不自动翻页/);
   for (const card of loaded.document.querySelectorAll('.offer-item')) {
     const selectorHost = card.querySelector('[data-lingmirror-offer-selector]');
     assert.ok(selectorHost?.shadowRoot, 'card selector must be isolated from marketplace/ERP CSS');
   }
+});
+
+test('list collector can drag within viewport edges, collapse, remember position and stay visible after resize', async () => {
+  const storageValues = {};
+  const loaded = loadList(productCard('2051'), undefined, undefined, storageValues);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const host = loaded.document.getElementById('lingmirror-list-collector-host');
+  const panel = host.shadowRoot.querySelector('section');
+  const handle = host.shadowRoot.getElementById('lingmirror-list-collector-drag-handle');
+  const collapse = Array.from(host.shadowRoot.querySelectorAll('button')).find((button) => button.textContent === '收起');
+  assert.ok(panel && handle && collapse);
+  host.getBoundingClientRect = () => {
+    const width = panel.style.width === 'auto' ? 180 : 354;
+    const left = host.style.left === 'auto' || !host.style.left ? loaded.window.innerWidth - 18 - width : Number.parseFloat(host.style.left);
+    const top = Number.parseFloat(host.style.top) || 80;
+    return { left, right: left + width, top, bottom: top + 120, width, height: 120, x: left, y: top, toJSON() {} };
+  };
+  const pointer = (type, values) => {
+    const event = new loaded.window.Event(type, { bubbles: true, cancelable: true });
+    for (const [key, value] of Object.entries(values)) Object.defineProperty(event, key, { value });
+    handle.dispatchEvent(event);
+  };
+  pointer('pointerdown', { pointerId: 1, clientX: 1100, clientY: 650 });
+  pointer('pointermove', { pointerId: 1, clientX: -500, clientY: -500 });
+  assert.ok(Number.parseFloat(host.style.left) >= 12, 'drag must not leave the left viewport edge');
+  assert.ok(Number.parseFloat(host.style.top) >= 12, 'drag must not leave the top viewport edge');
+  pointer('pointerup', { pointerId: 1, clientX: -500, clientY: -500 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(host.style.left, '18px');
+  assert.equal(storageValues.lingmirror_list_collector_position_v1.side, 'left');
+
+  collapse.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(panel.querySelector('div:not([role="toolbar"])').style.display, 'none');
+  assert.equal(collapse.textContent, '展开');
+  assert.equal(storageValues.lingmirror_list_collector_position_v1.collapsed, true);
+
+  loaded.window.innerHeight = 100;
+  loaded.window.dispatchEvent(new loaded.window.Event('resize'));
+  assert.ok(Number.parseFloat(host.style.top) >= 12);
+  assert.ok(Number.parseFloat(host.style.top) <= 44, 'resize must clamp the collapsed panel into the viewport');
+
+  const restored = loadList(productCard('2052'), undefined, undefined, storageValues);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const restoredHost = restored.document.getElementById('lingmirror-list-collector-host');
+  const restoredPanel = restoredHost.shadowRoot.querySelector('section');
+  assert.equal(restoredHost.style.left, '18px');
+  assert.equal(restoredPanel.style.width, 'auto');
+  assert.ok(Array.from(restoredHost.shadowRoot.querySelectorAll('button')).some((button) => button.textContent === '展开'));
 });
 
 test('collect current page submits every currently visible offer without a fixed quota and keeps per-item results', async () => {
@@ -120,6 +178,19 @@ test('collect current page submits every currently visible offer without a fixed
   const panelText = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot.innerHTML;
   assert.match(panelText, /商品3001：已保存/);
   assert.match(panelText, /商品3002：已保存/);
+});
+
+test('page action confirms the exact visible count before submitting', async () => {
+  const loaded = loadList(productCard('3051') + productCard('3052'));
+  const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
+  const collectPage = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '采集本页当前可见');
+  collectPage.click();
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 0);
+  assert.match(panel.innerHTML, /即将采集 2 个本页当前可见商品；不自动翻页/);
+  const confirm = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '确认采集 2 个');
+  confirm.click();
+  while (vm.runInContext('collectingBatch', loaded.context)) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 2);
 });
 
 test('selection action submits only checked items and batch results preserve each failure independently', async () => {
@@ -135,10 +206,43 @@ test('selection action submits only checked items and batch results preserve eac
   const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
   const collectSelected = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '采集选中');
   collectSelected.click();
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 0);
+  assert.match(panel.innerHTML, /即将采集 2 个已选商品/);
+  Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '确认采集 2 个').click();
   while (vm.runInContext('collectingBatch', loaded.context)) await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 2);
   assert.match(panel.innerHTML, /商品3101：服务器确认未保存/);
   assert.match(panel.innerHTML, /商品3102：已保存 #22/);
+});
+
+test('a confirmed not-saved item can be retried without retrying the whole batch', async () => {
+  let call = 0;
+  const loaded = loadList(productCard('3151'), async (message) => {
+    call += 1;
+    if (call === 1) return { type: 'private_collection_result', requestId: message.requestId,
+      payload: { status: 'not_saved', saved: false, code: 'NOT_SAVED', message: '服务器确认未保存' } };
+    return { type: 'private_collection_result', requestId: message.requestId,
+      payload: { status: 'saved', recordId: 31, snapshotId: 31, idempotentReplay: false, newObservation: true } };
+  });
+  await vm.runInContext('collectOffers(extractVisibleOffers())', loaded.context);
+  const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
+  const retry = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === '重试此项');
+  assert.ok(retry);
+  retry.click();
+  while (!panel.innerHTML.includes('商品3151：已保存 #31')) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(loaded.messages.filter((message) => message.type === 'collect_private_product').length, 2);
+  assert.match(panel.innerHTML, /商品3151：已保存 #31/);
+});
+
+test('an uncertain result does not offer a blind retry', async () => {
+  const loaded = loadList(productCard('3152'), async (message) => ({
+    type: 'private_collection_result', requestId: message.requestId,
+    payload: { status: 'reconcile_required', saved: false, code: 'RECONCILE_REQUIRED', message: '结果待确认，请勿重复点击' },
+  }));
+  await vm.runInContext('collectOffers(extractVisibleOffers())', loaded.context);
+  const panel = loaded.document.getElementById('lingmirror-list-collector-host').shadowRoot;
+  assert.match(panel.innerHTML, /结果待确认，请勿重复点击/);
+  assert.equal(Array.from(panel.querySelectorAll('button')).some((button) => button.textContent === '重试此项'), false);
 });
 
 test('visible extraction has no hard-coded product count', () => {

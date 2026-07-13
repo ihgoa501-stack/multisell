@@ -34,6 +34,13 @@ test('compiled content script has no page-load auto upload path', async () => {
   assert.equal(source.includes('采集到凌镜'), true);
 });
 
+test('pairing bridge forwards the verified page origin to the background worker', async () => {
+  const source = await readFile(new URL('../build/auth-bridge.js', import.meta.url), 'utf8');
+  assert.match(source, /origin:\s*event\.origin/);
+  const background = await readFile(new URL('../build/background.js', import.meta.url), 'utf8');
+  assert.match(background, /setServerUrl\(getServerUrlFromPairingOrigin\(input\.origin\)\)/);
+});
+
 test('manifest contains correct icon paths and action default_icon configurations', async () => {
   const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
   assert.deepEqual(manifest.icons, {

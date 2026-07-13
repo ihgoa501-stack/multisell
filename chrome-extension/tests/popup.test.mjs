@@ -24,6 +24,12 @@ async function runPopupTest(status, storageValues = {}, sessionValues = {}) {
   globalThis.window = window;
   globalThis.document = window.document;
 
+  const promptCalls = [];
+  globalThis.prompt = (...args) => {
+    promptCalls.push(args);
+    return null;
+  };
+
   const sentMessages = [];
   const tabCreated = [];
   const localValues = { ...storageValues };
@@ -89,7 +95,7 @@ async function runPopupTest(status, storageValues = {}, sessionValues = {}) {
   const uniqueId = Math.random().toString(36).slice(2);
   await import(`../build/popup.js?cache=${uniqueId}`);
 
-  return { window, sentMessages, tabCreated };
+  return { window, sentMessages, tabCreated, promptCalls };
 }
 
 test('popup displays boxBtn when status is connected and hides it otherwise', async () => {
@@ -133,4 +139,20 @@ test('popup boxBtn click opens the sourcing1688 tab with correct url', async () 
 
   assert.equal(tabCreated.length, 1);
   assert.equal(tabCreated[0].url, 'http://localhost:3000/sourcing1688');
+});
+
+test('popup describes device pairing in Chinese and never asks for a server before pairing', async () => {
+  const { window, tabCreated, promptCalls } = await runPopupTest('no_token', {
+    lingmirror_server_url: 'wss://118.196.42.156',
+  });
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.equal(window.document.getElementById('statusLabel').textContent, '未连接');
+  const button = window.document.getElementById('loginBtn');
+  assert.equal(button.textContent, '连接凌镜');
+  button.click();
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.deepEqual(promptCalls, []);
+  assert.equal(tabCreated[0].url, 'https://118.196.42.156/settings/plugin');
 });
