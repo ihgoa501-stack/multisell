@@ -337,12 +337,41 @@ async function submitVisibleOffer(offer: VisibleOffer, observationIntent?: "save
       appendBatchResult(`${offer.pageData.title}：已有记录，需Owner选择`, "warn", [view, save]);
       return false;
     }
-    appendBatchResult(`${offer.pageData.title}：${payload?.message || "未确认保存"}`, "error");
+    const actions: HTMLElement[] = [];
+    if (payload?.status === "not_saved") {
+      const retry = makePanelButton("重试此项");
+      retry.addEventListener("click", async () => {
+        retry.disabled = true;
+        retry.textContent = "重试中…";
+        await submitVisibleOffer(offer);
+        retry.textContent = "已重试";
+      });
+      actions.push(retry);
+    }
+    appendBatchResult(`${offer.pageData.title}：${payload?.message || "未确认保存"}`, "error", actions);
     return false;
   } catch (err: any) {
     appendBatchResult(`${offer.pageData.title}：发送失败 (${err?.message || err})`, "error");
     return false;
   }
+}
+
+function confirmBatch(offers: VisibleOffer[], scope: "selected" | "page"): void {
+  if (collectingBatch || !panelResults) return;
+  panelResults.replaceChildren();
+  if (offers.length === 0) {
+    appendBatchResult(scope === "selected" ? "没有已选商品" : "本页当前没有可采集的可靠商品", "warn");
+    return;
+  }
+  const confirm = makePanelButton(`确认采集 ${offers.length} 个`);
+  confirm.addEventListener("click", () => void collectOffers(offers));
+  const cancel = makePanelButton("取消");
+  cancel.addEventListener("click", () => {
+    panelResults?.replaceChildren();
+    updatePanelSummary();
+  });
+  const scopeText = scope === "selected" ? "已选商品" : "本页当前可见商品";
+  appendBatchResult(`即将采集 ${offers.length} 个${scopeText}；不自动翻页。请确认数量后提交。`, "warn", [confirm, cancel]);
 }
 
 async function collectOffers(offers: VisibleOffer[]): Promise<void> {
@@ -394,6 +423,9 @@ function installListCollectorUI(): void {
   Object.assign(panel.style, { width: "330px", maxHeight: "55vh", overflow: "auto", background: "#fff", color: "#111827", border: "1px solid #c7d2fe", borderRadius: "12px", padding: "12px", boxShadow: "0 10px 30px #0003", font: "13px/1.45 system-ui" });
   const title = document.createElement("strong");
   title.textContent = "凌镜 · 当前可见商品";
+  const scopeHint = document.createElement("div");
+  scopeHint.textContent = "只处理当前已加载且可见的商品，不自动翻页。";
+  Object.assign(scopeHint.style, { marginTop: "4px", color: "#4b5563" });
   panelStatus = document.createElement("div");
   panelStatus.style.marginTop = "6px";
 
@@ -419,15 +451,15 @@ function installListCollectorUI(): void {
     scanVisibleOffers();
   });
   collectSelectedButton = makePanelButton("采集选中");
-  collectSelectedButton.addEventListener("click", () => void collectOffers(Array.from(selectedOfferIDs)
+  collectSelectedButton.addEventListener("click", () => confirmBatch(Array.from(selectedOfferIDs)
     .map((id) => currentOffers.get(id) || selectedOfferSnapshots.get(id))
-    .filter((offer): offer is VisibleOffer => Boolean(offer))));
-  collectPageButton = makePanelButton("采集本页");
-  collectPageButton.addEventListener("click", () => { scanVisibleOffers(); void collectOffers(Array.from(currentOffers.values())); });
+    .filter((offer): offer is VisibleOffer => Boolean(offer)), "selected"));
+  collectPageButton = makePanelButton("采集本页当前可见");
+  collectPageButton.addEventListener("click", () => { scanVisibleOffers(); confirmBatch(Array.from(currentOffers.values()), "page"); });
   const cancel = makePanelButton("停止批量");
   cancel.addEventListener("click", () => { cancelBatch = true; });
   panelResults = document.createElement("div");
-  panel.append(title, panelStatus, delayContainer, selectAllButton, collectSelectedButton, collectPageButton, cancel, panelResults);
+  panel.append(title, scopeHint, panelStatus, delayContainer, selectAllButton, collectSelectedButton, collectPageButton, cancel, panelResults);
   shadow.append(panel);
   host.setAttribute("aria-label", "凌镜1688列表采集");
   document.documentElement.append(host);
