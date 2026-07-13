@@ -28,7 +28,17 @@ func governanceRouter(t *testing.T, owner int64) (*gin.Engine, *Service) {
 	g.GET("/tasks/:id/reviews", h.ListReviews)
 	g.POST("/tasks/:id/costs", h.CreateCost)
 	g.GET("/tasks/:id/costs", h.ListCosts)
+	g.GET("/recipes/:recipe_key/summary", h.RecipeSummary)
 	return r, svc
+}
+
+func TestGovernanceAPIRequiresExactSKUForRecipeSummary(t *testing.T) {
+	r, _ := governanceRouter(t, 42)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/product-images/recipes/recipe-1/summary", nil))
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "valid sku_id is required") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
 }
 
 func TestGovernanceAPIListsOnlyOwnerWithPagination(t *testing.T) {

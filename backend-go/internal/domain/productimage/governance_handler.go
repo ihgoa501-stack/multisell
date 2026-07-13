@@ -140,7 +140,12 @@ func (h *GovernanceHandler) RecipeSummary(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.service.RecipeSummary(c.Request.Context(), owner, c.Param("recipe_key"))
+	skuID, err := strconv.ParseInt(c.Query("sku_id"), 10, 64)
+	if err != nil || skuID <= 0 {
+		problem(c, http.StatusBadRequest, "VALIDATION_ERROR", "valid sku_id is required")
+		return
+	}
+	item, err := h.service.RecipeSummary(c.Request.Context(), owner, skuID, c.Param("recipe_key"))
 	if err != nil {
 		writeServiceError(c, err)
 		return

@@ -210,8 +210,8 @@ export default function ProductImagesWorkspace() {
   const releaseEligible = useMemo(() => completed.filter((job) => job.processor !== 'photoroom' && !job.sandbox && !job.watermarked && !job.non_publishable), [completed]);
   const governanceJob = completed.find((job) => job.id === governanceJobId);
   const recipeSummary = useQuery({
-    queryKey: ['product-images', 'recipe-summary', governanceJob?.recipe_key],
-    queryFn: () => getRecipeSummary(governanceJob!.recipe_key!), enabled: Boolean(governanceJob?.recipe_key), retry: false,
+	queryKey: ['product-images', 'recipe-summary', governanceJob?.sku_id, governanceJob?.recipe_key],
+	queryFn: () => getRecipeSummary(governanceJob!.recipe_key!, governanceJob!.sku_id!), enabled: Boolean(governanceJob?.recipe_key && governanceJob?.sku_id), retry: false,
   });
   useEffect(() => {
     if (!governanceJobId && completed[0]) setGovernanceJobId(completed[0].id);

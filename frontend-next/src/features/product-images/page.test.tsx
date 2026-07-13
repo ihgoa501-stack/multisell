@@ -215,8 +215,9 @@ describe('product image workspace', () => {
     vi.mocked(getRecipeSummary).mockResolvedValue({ recipe_key: 'recipe-5', sku_id: 5, purpose: 'scene_gallery', channel: 'ozon', latest_recipe_version: 2, candidates: 3, selected: 2, rejected: 1, rework_requested: 1, acceptance_rate: 2 / 3, review_seconds: 60, production_seconds: 120, rework_rounds: 1, actual_cost: '0.3000', currency: 'USD' });
     renderPage();
     expect(await screen.findByText('D. 候选选择、拒绝与返工')).toBeInTheDocument();
-    expect(await screen.findByText('候选 3')).toBeInTheDocument();
-    expect(screen.getByText('采用 2')).toBeInTheDocument();
+		expect(await screen.findByText('候选 3')).toBeInTheDocument();
+		expect(getRecipeSummary).toHaveBeenCalledWith('recipe-5', 5);
+		expect(screen.getByText('采用 2')).toBeInTheDocument();
     expect(screen.getByText('返工轮次 1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '载入为返工配方' })).toBeEnabled();
   });

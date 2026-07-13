@@ -299,19 +299,19 @@ func (s *Service) CreateCandidateFeedback(ctx context.Context, ownerID, taskID i
 	return review, nil
 }
 
-func (s *Service) RecipeSummary(ctx context.Context, ownerID int64, recipeKey string) (*RecipeSummary, error) {
+func (s *Service) RecipeSummary(ctx context.Context, ownerID, skuID int64, recipeKey string) (*RecipeSummary, error) {
 	recipeKey = strings.TrimSpace(recipeKey)
-	if ownerID <= 0 || recipeKey == "" || len(recipeKey) > 100 {
+	if ownerID <= 0 || skuID <= 0 || recipeKey == "" || len(recipeKey) > 100 {
 		return nil, ErrInvalidInput
 	}
 	var tasks []Task
-	if err := s.db.WithContext(ctx).Where("owner_id = ? AND recipe_key = ?", ownerID, recipeKey).Order("id ASC").Find(&tasks).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("owner_id = ? AND sku_id = ? AND recipe_key = ?", ownerID, skuID, recipeKey).Order("id ASC").Find(&tasks).Error; err != nil {
 		return nil, err
 	}
 	if len(tasks) == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
-	summary := &RecipeSummary{RecipeKey: recipeKey, SKUID: tasks[0].SKUID, Purpose: tasks[0].Purpose, Channel: tasks[0].Channel, Currency: ""}
+	summary := &RecipeSummary{RecipeKey: recipeKey, SKUID: skuID, Purpose: tasks[0].Purpose, Channel: tasks[0].Channel, Currency: ""}
 	taskIDs := make([]int64, 0, len(tasks))
 	for _, task := range tasks {
 		taskIDs = append(taskIDs, task.ID)
