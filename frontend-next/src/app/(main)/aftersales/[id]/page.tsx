@@ -153,7 +153,7 @@ export default function AftersalesDetailPage() {
                 >
                   Agent 分析建议
                 </Button>
-                <Button icon={<RobotOutlined />} onClick={() => window.open(`/ai?query=分析售后单 #${id}，订单ID ${data.order_id as string}，原因: ${data.reason as string}，当前状态: ${status}`, '_blank')}>
+                <Button icon={<RobotOutlined />} onClick={() => window.open('/xiaoq', '_blank')}>
                   AI 咨询
                 </Button>
               </Space>

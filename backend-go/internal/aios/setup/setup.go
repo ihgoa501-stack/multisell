@@ -8,10 +8,8 @@ package setup
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/lingmirror/backend-go/internal/ai"
 	"github.com/lingmirror/backend-go/internal/aios/guardrails"
 	"github.com/lingmirror/backend-go/internal/aios/ipc"
 	"github.com/lingmirror/backend-go/internal/aios/llmgateway"
@@ -70,9 +68,9 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 	tools.SetInventoryDB(db)
 	tools.SetPurchaseDB(db)
 
-	// 2. Create Runtime and register all canonical AI agents from DefaultRegistry.
+	// 2. Keep the historical AIOS runtime empty. xiao_q owns the only active
+	// Agent Runtime and exposes capabilities from internal/domain/xiaoq.
 	rt := runtime.New(logger, bus)
-	registerAllAgents(rt, reg, logger)
 
 	// 3. Create Guardrails Chain (L1-L5) and populate PermissionGuard.
 	chain := guardrails.NewChainWithLogger(logger)
@@ -150,85 +148,6 @@ func Initialize(db *gorm.DB, bus *eventbus.Bus, logger *zap.Logger) *Config {
 		Logger:        logger,
 		DB:            db,
 	}
-}
-
-// registerAllAgents converts the canonical AI agent roster into Runtime
-// AgentManifest entries and registers each one.
-func registerAllAgents(rt *runtime.Runtime, reg *toolregistry.ToolRegistry, logger *zap.Logger) {
-	roster := ai.DefaultRegistry()
-	for _, spec := range roster.Agents {
-		manifest := &runtime.AgentManifest{
-			ID:          spec.ID,
-			Name:        spec.Name,
-			Squad:       squadForAgent(spec.Squad),
-			Version:     "1.0.0",
-			Description: spec.Description,
-			AllowedTools: squadToolPrefixes(spec.Squad, reg),
-			Triggers: []runtime.TriggerDef{
-				{Type: "event", DecisionPoint: spec.PrimaryDecisionPoint()},
-			},
-			ResourceLimits: runtime.ResourceLimits{
-				MaxDecisionDuration: 30 * time.Second,
-			},
-			MemoryConfig: runtime.MemoryConfig{
-				ShortTermTTL: 15 * time.Minute,
-			},
-		}
-		if err := rt.RegisterAgent(*manifest); err != nil {
-			logger.Warn("failed to register agent in Runtime",
-				zap.String("agent_id", spec.ID),
-				zap.Error(err))
-			continue
-		}
-		logger.Debug("agent registered in Runtime",
-			zap.String("agent_id", spec.ID),
-			zap.String("squad", manifest.Squad))
-	}
-}
-
-// squadForAgent maps the AI registry's squad labels to runtime squad names.
-func squadForAgent(squad string) string {
-	switch squad {
-	case "growth", "fulfillment", "risk", "settle", "ops", "governance":
-		return squad
-	default:
-		return "general"
-	}
-}
-
-// squadToolPrefixes returns the list of tool names whose name starts with any
-// of the prefixes mapped to the given squad. For ops and general squads
-// (unrestricted), it returns all registered tools.
-func squadToolPrefixes(squad string, reg *toolregistry.ToolRegistry) []string {
-	squadPrefixes := map[string][]string{
-		"growth":      {"listing.", "sourcing.", "supplier.", "product_scout", "market_analysis", "acos.", "ad.", "customer_service.", "aftersales.", "dashboard.", "sku.", "category.", "platform_fee."},
-		"fulfillment": {"inventory.", "purchase_order.", "shipping."},
-		"risk":        {"finance.", "discount.", "compliance."},
-		"governance":  {"dashboard."},
-		"settle":      {"order.", "finance."},
-	}
-
-	prefixes, ok := squadPrefixes[squad]
-	if !ok {
-		// ops, general: all tools
-		all := reg.List()
-		names := make([]string, len(all))
-		for i, t := range all {
-			names[i] = t.Name
-		}
-		return names
-	}
-
-	var names []string
-	for _, t := range reg.List() {
-		for _, p := range prefixes {
-			if strings.HasPrefix(t.Name, p) {
-				names = append(names, t.Name)
-				break
-			}
-		}
-	}
-	return names
 }
 
 // agentToolCheckerBySquad returns an AgentToolChecker that allows an agent to

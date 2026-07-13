@@ -2,17 +2,16 @@
 
 Package: `backend-go/internal/domain/agentlearning/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/agent-learning/accuracy` | `h.GetAllAccuracy` |
-| `GET` | `/api/v1/agent-learning/accuracy/:agentId` | `h.GetAccuracyByAgent` |
-| `POST` | `/api/v1/agent-learning/evaluate` | `h.EvaluateDecision` |
-| `GET` | `/api/v1/agent-learning/evaluations` | `h.ListEvaluations` |
-| `POST` | `/api/v1/agent-learning/recalculate` | `h.RecalculateAccuracy` |
+| `GET` | `/accuracy` | `h.GetAllAccuracy` |
+| `GET` | `/accuracy/:agentId` | `h.GetAccuracyByAgent` |
+| `POST` | `/evaluate` | `h.EvaluateDecision` |
+| `GET` | `/evaluations` | `h.ListEvaluations` |
+| `POST` | `/recalculate` | `h.RecalculateAccuracy` |
 
 ## Models
 

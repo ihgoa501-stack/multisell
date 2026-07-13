@@ -26,7 +26,6 @@ export const menuGroups: MenuGroup[] = [
     items: [
       { key: '/xiaoq', icon: 'RobotOutlined', label: '小Q' },
       { key: '/platform-truth', icon: 'AuditOutlined', label: '平台真相' },
-      { key: '/owner', icon: 'DashboardOutlined', label: '卖家工作台' },
       { key: '/experiments', icon: 'ExperimentOutlined', label: '事实核验案卷' },
       { key: '/demand-cases', icon: 'SearchOutlined', label: '候选市场' },
       { key: '/product-opportunities', icon: 'BulbOutlined', label: '商品机会' },
@@ -41,8 +40,6 @@ export const menuGroups: MenuGroup[] = [
   {
     label: '商品经营',
     items: [
-      { key: '/market-intelligence', icon: 'RiseOutlined', label: '市场情报' },
-      { key: '/sourcing', icon: 'SearchOutlined', label: 'AI 选品' },
       { key: '/product-hub', icon: 'DatabaseOutlined', label: '产品档案' },
       { key: '/product-images', label: '商品图片工作室' },
       { key: '/products', icon: 'ShoppingOutlined', label: '商品', permission: 'product.read' },
@@ -73,15 +70,8 @@ export const menuGroups: MenuGroup[] = [
     ],
   },
   {
-    label: 'AgentOS',
+    label: '审计与异常',
     items: [
-      { key: '/ai', icon: 'RobotOutlined', label: 'AI 指挥中心' },
-      { key: '/agentos', icon: 'ThunderboltOutlined', label: '控制台', permission: 'agent.read' },
-      { key: '/agents', label: 'Agent 列表' },
-      { key: '/agents/actions', label: 'Action 中心' },
-      { key: '/agents/trust', label: '信任与自主度' },
-      { key: '/agentos/work-items', label: '工作队列' },
-      { key: '/metabolism', label: '代谢评分' },
       { key: '/exceptions', label: '异常监控' },
       { key: '/operation-logs', label: '操作日志', permission: 'audit.read' },
     ],
@@ -90,7 +80,6 @@ export const menuGroups: MenuGroup[] = [
     label: '系统设置',
     items: [
       { key: '/settings', icon: 'SettingOutlined', label: '系统设置', permission: 'settings.read' },
-      { key: '/settings/llm', label: 'LLM 配置' },
       { key: '/settings/rbac', label: '权限管理', permission: 'rbac.manage' },
       { key: '/settings/policy', label: '审批策略' },
       { key: '/design-system', label: '设计系统', status: 'shell' },

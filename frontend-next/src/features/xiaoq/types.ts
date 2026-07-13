@@ -15,6 +15,9 @@ export interface XiaoQIdentity {
   name: string;
   description?: string;
   mode: XiaoQMode;
+	provider?: string;
+	runtime_available?: boolean;
+	unavailable_reason?: string;
   truth_status?: XiaoQTruthStatus;
 }
 

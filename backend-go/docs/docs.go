@@ -34,7 +34,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -59,7 +59,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -84,7 +84,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -135,7 +135,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -169,7 +169,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -194,7 +194,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -219,7 +219,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -250,7 +250,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_ai.ChatInput"
+                            "$ref": "#/definitions/ai.ChatInput"
                         }
                     }
                 ],
@@ -258,7 +258,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -289,7 +289,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_ai.RunAgentRequest"
+                            "$ref": "#/definitions/ai.RunAgentRequest"
                         }
                     }
                 ],
@@ -297,7 +297,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -363,7 +363,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult"
+                            "$ref": "#/definitions/response.PageResult"
                         }
                     }
                 }
@@ -397,7 +397,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -423,7 +423,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_auth.loginRequest"
+                            "$ref": "#/definitions/auth.loginRequest"
                         }
                     }
                 ],
@@ -431,7 +431,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -458,13 +458,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                                    "$ref": "#/definitions/response.Result"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/internal_auth.UserVO"
+                                            "$ref": "#/definitions/auth.UserVO"
                                         }
                                     }
                                 }
@@ -494,7 +494,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_auth.refreshRequest"
+                            "$ref": "#/definitions/auth.refreshRequest"
                         }
                     }
                 ],
@@ -502,7 +502,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -528,7 +528,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_auth.registerRequest"
+                            "$ref": "#/definitions/auth.registerRequest"
                         }
                     }
                 ],
@@ -538,13 +538,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                                    "$ref": "#/definitions/response.Result"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/internal_auth.UserVO"
+                                            "$ref": "#/definitions/auth.UserVO"
                                         }
                                     }
                                 }
@@ -602,7 +602,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult"
+                            "$ref": "#/definitions/response.PageResult"
                         }
                     }
                 }
@@ -631,7 +631,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_domain_candidate.CreateCandidateInput"
+                            "$ref": "#/definitions/candidate.CreateCandidateInput"
                         }
                     }
                 ],
@@ -639,7 +639,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -664,7 +664,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -698,7 +698,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -734,7 +734,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_domain_candidate.UpdateCandidateInput"
+                            "$ref": "#/definitions/candidate.UpdateCandidateInput"
                         }
                     }
                 ],
@@ -742,7 +742,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -774,7 +774,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -812,7 +812,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_domain_candidate.FillFieldsInput"
+                            "$ref": "#/definitions/candidate.FillFieldsInput"
                         }
                     }
                 ],
@@ -820,7 +820,32 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
+                        }
+                    }
+                }
+            }
+        },
+        "/dashboard/brief": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the seller's daily workspace composite brief",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashboard"
+                ],
+                "summary": "Daily brief",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -845,7 +870,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -878,7 +903,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -911,7 +936,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -936,7 +961,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -961,7 +986,46 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
+                        }
+                    }
+                }
+            }
+        },
+        "/loop/batch-evaluate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Run the full evaluation pipeline for multiple products at once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "loop"
+                ],
+                "summary": "Batch evaluate products",
+                "parameters": [
+                    {
+                        "description": "Batch evaluate input",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/loop.BatchEvaluateInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1021,7 +1085,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult"
+                            "$ref": "#/definitions/response.PageResult"
                         }
                     }
                 }
@@ -1046,7 +1110,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1080,7 +1144,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1140,7 +1204,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1165,7 +1229,94 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
+                        }
+                    }
+                }
+            }
+        },
+        "/owner/decision-queue": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get paginated decision queue with filtering, sorting, and status summary",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "owner"
+                ],
+                "summary": "Decision queue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status: waiting_data, ready_for_decision, pending_approval, executing, completed, failed",
+                        "name": "display_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Minimum completeness score filter",
+                        "name": "min_completeness_score",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Minimum profit margin filter",
+                        "name": "min_profit_margin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by target platform ID",
+                        "name": "platform_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by destination country",
+                        "name": "destination_country",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by title or reason",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort field: completeness_score, profit_margin, estimated_profit, confidence, created_at",
+                        "name": "sort_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: asc or desc",
+                        "name": "sort_order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1190,7 +1341,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1215,7 +1366,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1248,7 +1399,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1308,46 +1459,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult"
-                        }
-                    }
-                }
-            }
-        },
-        "/platform-integrations/publish-to-ozon": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Publish a product listing to the Ozon platform",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "integrations"
-                ],
-                "summary": "Publish to Ozon",
-                "parameters": [
-                    {
-                        "description": "Publish request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_domain_integrations.PublishToOzonInput"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.PageResult"
                         }
                     }
                 }
@@ -1381,7 +1493,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1415,144 +1527,32 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
             }
         },
-        "/products": {
+        "/reliability/budget": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get paginated list of products",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "View current LLM monthly budget and spend",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "products"
+                    "reliability"
                 ],
-                "summary": "List products",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Page size",
-                        "name": "size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Search keyword",
-                        "name": "search",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Filter by category",
-                        "name": "category_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Filter by brand",
-                        "name": "brand_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Filter by status",
-                        "name": "status",
-                        "in": "query"
-                    }
-                ],
+                "summary": "Get LLM monthly budget",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Create a new product",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "products"
-                ],
-                "summary": "Create product",
-                "parameters": [
-                    {
-                        "description": "Product data",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_domain_sku.Product"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
-                        }
-                    }
-                }
-            }
-        },
-        "/products/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Get a single product by ID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "products"
-                ],
-                "summary": "Get product",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Product ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1563,7 +1563,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Update an existing product",
+                "description": "Set the monthly spending limit for LLM API calls",
                 "consumes": [
                     "application/json"
                 ],
@@ -1571,24 +1571,17 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "products"
+                    "reliability"
                 ],
-                "summary": "Update product",
+                "summary": "Set LLM monthly budget",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Product ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Updated product data",
+                        "description": "Budget settings",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_domain_sku.Product"
+                            "$ref": "#/definitions/reliability.BudgetInput"
                         }
                     }
                 ],
@@ -1596,39 +1589,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Delete a product by ID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "products"
-                ],
-                "summary": "Delete product",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Product ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.Result"
+                            "$ref": "#/definitions/response.Result"
                         }
                     }
                 }
@@ -1682,7 +1643,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult"
+                            "$ref": "#/definitions/response.PageResult"
                         }
                     }
                 }
@@ -1690,40 +1651,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_lingmirror_backend-go_internal_response.PageResult": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "integer"
-                },
-                "data": {},
-                "message": {
-                    "type": "string"
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_lingmirror_backend-go_internal_response.Result": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "integer"
-                },
-                "data": {},
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_ai.ChatInput": {
+        "ai.ChatInput": {
             "type": "object",
             "required": [
                 "message"
@@ -1744,7 +1672,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_ai.RunAgentRequest": {
+        "ai.RunAgentRequest": {
             "type": "object",
             "required": [
                 "agent_id",
@@ -1772,7 +1700,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_auth.UserVO": {
+        "auth.UserVO": {
             "type": "object",
             "properties": {
                 "created_at": {
@@ -1807,7 +1735,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_auth.loginRequest": {
+        "auth.loginRequest": {
             "type": "object",
             "required": [
                 "password",
@@ -1822,7 +1750,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_auth.refreshRequest": {
+        "auth.refreshRequest": {
             "type": "object",
             "required": [
                 "refresh_token"
@@ -1833,7 +1761,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_auth.registerRequest": {
+        "auth.registerRequest": {
             "type": "object",
             "required": [
                 "password",
@@ -1861,105 +1789,10 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_domain_candidate.CreateCandidateInput": {
-            "type": "object",
-            "required": [
-                "title"
-            ],
-            "properties": {
-                "brand_id": {
-                    "type": "integer"
-                },
-                "category_id": {
-                    "type": "integer"
-                },
-                "collected_at": {
-                    "type": "string"
-                },
-                "completeness_status": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "destination_country": {
-                    "type": "string"
-                },
-                "hs_code": {
-                    "type": "string"
-                },
-                "images": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "main_image": {
-                    "type": "string"
-                },
-                "origin_country": {
-                    "type": "string"
-                },
-                "package_height_cm": {
-                    "type": "number"
-                },
-                "package_length_cm": {
-                    "type": "number"
-                },
-                "package_weight_kg": {
-                    "type": "number"
-                },
-                "package_width_cm": {
-                    "type": "number"
-                },
-                "purchase_currency": {
-                    "type": "string"
-                },
-                "purchase_price": {
-                    "type": "number"
-                },
-                "raw_payload": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "source_platform": {
-                    "type": "string"
-                },
-                "source_url": {
-                    "type": "string"
-                },
-                "spec_json": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "status": {
-                    "type": "string"
-                },
-                "supplier_id": {
-                    "type": "integer"
-                },
-                "target_currency": {
-                    "type": "string"
-                },
-                "target_platform_id": {
-                    "type": "integer"
-                },
-                "target_sale_price": {
-                    "type": "number"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
+        "candidate.CreateCandidateInput": {
+            "type": "object"
         },
-        "internal_domain_candidate.FillField": {
+        "candidate.FillField": {
             "type": "object",
             "required": [
                 "field",
@@ -1972,7 +1805,7 @@ const docTemplate = `{
                 "value": {}
             }
         },
-        "internal_domain_candidate.FillFieldsInput": {
+        "candidate.FillFieldsInput": {
             "type": "object",
             "required": [
                 "fields"
@@ -1981,89 +1814,15 @@ const docTemplate = `{
                 "fields": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/internal_domain_candidate.FillField"
+                        "$ref": "#/definitions/candidate.FillField"
                     }
                 }
             }
         },
-        "internal_domain_candidate.UpdateCandidateInput": {
-            "type": "object",
-            "properties": {
-                "brand_id": {
-                    "type": "integer"
-                },
-                "category_id": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "destination_country": {
-                    "type": "string"
-                },
-                "hs_code": {
-                    "type": "string"
-                },
-                "images": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "main_image": {
-                    "type": "string"
-                },
-                "origin_country": {
-                    "type": "string"
-                },
-                "package_height_cm": {
-                    "type": "number"
-                },
-                "package_length_cm": {
-                    "type": "number"
-                },
-                "package_weight_kg": {
-                    "type": "number"
-                },
-                "package_width_cm": {
-                    "type": "number"
-                },
-                "purchase_currency": {
-                    "type": "string"
-                },
-                "purchase_price": {
-                    "type": "number"
-                },
-                "spec_json": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "status": {
-                    "type": "string"
-                },
-                "supplier_id": {
-                    "type": "integer"
-                },
-                "target_currency": {
-                    "type": "string"
-                },
-                "target_platform_id": {
-                    "type": "integer"
-                },
-                "target_sale_price": {
-                    "type": "number"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
+        "candidate.UpdateCandidateInput": {
+            "type": "object"
         },
-        "internal_domain_integrations.PublishToOzonInput": {
+        "integrations.PublishToOzonInput": {
             "type": "object",
             "required": [
                 "account_id",
@@ -2072,6 +1831,9 @@ const docTemplate = `{
             ],
             "properties": {
                 "account_id": {
+                    "type": "integer"
+                },
+                "approval_id": {
                     "type": "integer"
                 },
                 "currency_code": {
@@ -2088,109 +1850,83 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_domain_sku.Product": {
+        "loop.BatchEvaluateInput": {
             "type": "object",
+            "required": [
+                "product_ids"
+            ],
             "properties": {
-                "ai_description": {
-                    "type": "string"
-                },
-                "ai_status": {
-                    "type": "string"
-                },
-                "ai_title": {
-                    "type": "string"
-                },
-                "brand_id": {
-                    "type": "integer"
-                },
-                "cargo_type": {
-                    "type": "string"
-                },
-                "category_id": {
-                    "type": "integer"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "images": {
+                "product_ids": {
                     "type": "array",
                     "items": {
                         "type": "integer"
                     }
                 },
-                "main_image": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "package_height_cm": {
-                    "type": "number"
-                },
-                "package_length_cm": {
-                    "type": "number"
-                },
-                "package_weight_kg": {
-                    "type": "number"
-                },
-                "package_width_cm": {
-                    "type": "number"
-                },
-                "platform_statuses": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "product_height_cm": {
-                    "type": "number"
-                },
-                "product_length_cm": {
-                    "type": "number"
-                },
-                "product_weight_kg": {
-                    "type": "number"
-                },
-                "product_width_cm": {
-                    "type": "number"
-                },
-                "seo_keywords": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "status": {
-                    "type": "integer"
-                },
-                "subtitle": {
-                    "type": "string"
-                },
-                "unit": {
-                    "type": "string"
-                },
-                "updated_at": {
+                "triggered_by": {
                     "type": "string"
                 }
             }
+        },
+        "reliability.BudgetInput": {
+            "type": "object",
+            "properties": {
+                "monthly_limit_usd": {
+                    "type": "number",
+                    "minimum": 0
+                }
+            }
+        },
+        "response.PageResult": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {},
+                "message": {
+                    "type": "string"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "response.Result": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {},
+                "message": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "",
-	Host:             "",
-	BasePath:         "",
+	Version:          "0.3.0",
+	Host:             "localhost:8080",
+	BasePath:         "/api/v1",
 	Schemes:          []string{},
-	Title:            "",
-	Description:      "",
+	Title:            "LingMirror API",
+	Description:      "Cross-border e-commerce AI AgentOS",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

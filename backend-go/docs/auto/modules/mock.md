@@ -2,16 +2,15 @@
 
 Package: `backend-go/internal/domain/mock/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/mock/orders` | `h.ListOrders` |
-| `POST` | `/api/v1/mock/seed` | `h.Seed` |
-| `GET` | `/api/v1/mock/settlements` | `h.ListSettlements` |
-| `GET` | `/api/v1/mock/sync-statuses` | `h.SyncStatuses` |
+| `GET` | `/orders` | `h.ListOrders` |
+| `POST` | `/seed` | `h.Seed` |
+| `GET` | `/settlements` | `h.ListSettlements` |
+| `GET` | `/sync-statuses` | `h.SyncStatuses` |
 
 ## Models
 

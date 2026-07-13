@@ -10,13 +10,15 @@ import (
 )
 
 // RegisterRoutes registers integrations routes on the given router group.
-func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service) {
-	// Dynamically register the stateful mock adapters if not already registered.
-	if _, ok := GetAdapter("mock_ozon"); !ok {
-		RegisterAdapter("mock_ozon", NewMockOzonAdapter(db, logger))
-	}
-	if _, ok := GetAdapter("mock_shopee"); !ok {
-		RegisterAdapter("mock_shopee", NewMockShopeeAdapter(db, logger))
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approvalSvc *approval.Service, allowMock bool) {
+	if allowMock {
+		// Mock adapters are development fixtures, never production capabilities.
+		if _, ok := GetAdapter("mock_ozon"); !ok {
+			RegisterAdapter("mock_ozon", NewMockOzonAdapter(db, logger))
+		}
+		if _, ok := GetAdapter("mock_shopee"); !ok {
+			RegisterAdapter("mock_shopee", NewMockShopeeAdapter(db, logger))
+		}
 	}
 
 	svc := NewService(db, logger).WithApproval(approvalSvc)
@@ -28,19 +30,18 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, approv
 		group.GET("", h.List)
 		group.GET("/owner-fact-options", h.OwnerFactOptions)
 		group.POST("", h.Create)
-		group.POST("/publish-to-ozon", h.PublishToOzon)
-		group.POST("/write-back", h.WriteBack)
-		group.POST("/write-back/:ref-id/retry", h.RetryWriteBack)
 
 		// Stateful mock storefront seeding route
-		group.POST("/mock/seed", func(c *gin.Context) {
-			mockSvc := NewMockService(db, logger)
-			if err := mockSvc.SeedStorefront(db); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"status": "success", "message": "seeded stateful mock storefront"})
-		})
+		if allowMock {
+			group.POST("/mock/seed", func(c *gin.Context) {
+				mockSvc := NewMockService(db, logger)
+				if err := mockSvc.SeedStorefront(db); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"status": "success", "message": "seeded stateful mock storefront"})
+			})
+		}
 
 		// member-level (with :id)
 		group.GET("/:id", h.Get)

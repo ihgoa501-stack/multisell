@@ -582,6 +582,13 @@ func TestDemandToolArgumentsUseStrictSchema(t *testing.T) {
 	}
 }
 
+func TestPublicToolReasonIsSingleLineAndBounded(t *testing.T) {
+	got := publicToolReason(strings.Repeat("推理细节 ", 100) + "\n敏感尾部")
+	if strings.Contains(got, "\n") || len([]rune(got)) > 121 {
+		t.Fatalf("public reason was not bounded: %q", got)
+	}
+}
+
 func TestDemandAgentStopsAtTokenBudget(t *testing.T) {
 	provider := &fakeProvider{name: "openai", responses: []*ai.LLMResponse{{Answer: "不应返回", Model: "test-model", TokensIn: demandAgentTokenBudget, TokensOut: 1}}}
 	svc := newTestService(t, provider)
@@ -598,7 +605,7 @@ func TestDemandAgentAcceptsStructuredNeedsEvidenceWithoutTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.TruthStatus != TruthUnknown || len(got.Evidence) != 0 || len(provider.requests) != 1 {
+	if got.TruthStatus != TruthUnknown || len(got.Evidence) != 0 || len(got.Unknowns) == 0 || len(provider.requests) != 1 {
 		t.Fatalf("unread final was not bounded: %#v", got)
 	}
 }
@@ -635,6 +642,15 @@ func TestDemandAgentBlocksUngroundedFactualFinal(t *testing.T) {
 	}
 }
 
+func TestDemandAgentRejectsFalseCitationInNeedsEvidence(t *testing.T) {
+	provider := &fakeProvider{name: "openai", responses: []*ai.LLMResponse{{Answer: `{"status":"needs_evidence","answer":"缺少证据。","cited_tool_call_ids":["not-called"]}`, Model: "test-model"}}}
+	svc := newTestService(t, provider)
+	_, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "查看", DemandCaseID: 7})
+	if !errors.Is(err, ErrAgentInvalidOutput) {
+		t.Fatalf("false needs_evidence citation accepted: %v", err)
+	}
+}
+
 func TestDemandAgentValidatesOwnerTargetBeforeCallingModel(t *testing.T) {
 	detail, card := testDemandData()
 	reader := &fakeDemandReader{detail: detail, card: card, getErrors: []error{gorm.ErrRecordNotFound}}
@@ -663,19 +679,28 @@ func TestDemandAgentUsesRealDomainOwnerIsolationBeforeModel(t *testing.T) {
 	}
 }
 
-func TestDemandAgentCapabilityFailureCannotBecomeAnswer(t *testing.T) {
+func TestDemandAgentCanChooseAnotherCapabilityAfterFailure(t *testing.T) {
 	detail, card := testDemandData()
 	reader := &fakeDemandReader{detail: detail, card: card, getErrors: []error{nil, errors.New("demand store unavailable")}}
-	provider := &fakeProvider{name: "openai", responses: []*ai.LLMResponse{{Model: "test-model", ToolCalls: []ai.LLMToolCall{{ID: "read-1", Name: modelToolDemandRead, Arguments: json.RawMessage(`{"demand_case_id":7}`)}}}}}
+	provider := &fakeProvider{name: "openai", responses: []*ai.LLMResponse{
+		{Model: "test-model", Answer: "先读案件。", ToolCalls: []ai.LLMToolCall{{ID: "read-1", Name: modelToolDemandRead, Arguments: json.RawMessage(`{"demand_case_id":7}`)}}},
+		{Model: "test-model", Answer: "案件读取失败，改读决策卡。", ToolCalls: []ai.LLMToolCall{{ID: "card-after-failure", Name: modelToolDemandDecisionRead, Arguments: json.RawMessage(`{"demand_case_id":7}`)}}},
+		{Model: "test-model", Answer: `{"status":"answer","answer":"权威决策卡仍为证据不足。","cited_tool_call_ids":["card-after-failure"]}`},
+	}}
 	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
 	svc := NewService(db, dbtest.NewLogger(t), reader, nil, provider, ai.NewTraceWriter(db, dbtest.NewLogger(t)))
-	_, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "查看", DemandCaseID: 7})
-	var runErr *RunError
-	if !errors.As(err, &runErr) {
-		t.Fatalf("capability failure returned success: %v", err)
+	got, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "查看", DemandCaseID: 7})
+	if err != nil || got.TruthStatus != TruthInferred || reader.cardCalls != 1 {
+		t.Fatalf("agent did not recover through another capability: response=%#v err=%v", got, err)
 	}
-	trace, getErr := svc.GetTrace(context.Background(), 42, runErr.TraceID)
-	if getErr != nil || trace.Trace.Status != "failed" {
+	trace, getErr := svc.GetTrace(context.Background(), 42, got.TraceID)
+	foundFailure := false
+	for _, event := range trace.Events {
+		if event.EventType == "capability_failed" {
+			foundFailure = true
+		}
+	}
+	if getErr != nil || trace.Trace.Status != "completed" || !foundFailure {
 		t.Fatalf("capability failure trace=%#v err=%v", trace, getErr)
 	}
 }
@@ -747,6 +772,23 @@ func TestDemandAgentTraceWriteFailureCannotReachModel(t *testing.T) {
 	svc := NewService(db, dbtest.NewLogger(t), &fakeDemandReader{detail: detail, card: card}, nil, provider, recorder)
 	if _, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "查看", DemandCaseID: 7}); err == nil || len(provider.requests) != 0 {
 		t.Fatalf("trace failure reached model: err=%v requests=%d", err, len(provider.requests))
+	}
+}
+
+func TestDemandAgentEvidenceWriteFailureFailsClosed(t *testing.T) {
+	detail, card := testDemandData()
+	db := dbtest.NewDB(t, &ai.AITrace{}, &ai.AITraceEvent{}, &ai.AIEvidenceRef{}, &ai.UnifiedAction{})
+	provider := &fakeProvider{name: "openai", responses: []*ai.LLMResponse{{Model: "test-model", ToolCalls: []ai.LLMToolCall{{ID: "read-evidence", Name: modelToolDemandRead, Arguments: json.RawMessage(`{"demand_case_id":7}`)}}}}}
+	recorder := &failingTraceRecorder{failAt: "evidence", trace: ai.NewTraceWriter(db, dbtest.NewLogger(t))}
+	svc := NewService(db, dbtest.NewLogger(t), &fakeDemandReader{detail: detail, card: card}, nil, provider, recorder)
+	_, err := svc.SendMessage(context.Background(), 42, MessageInput{Message: "查看", DemandCaseID: 7})
+	var runErr *RunError
+	if !errors.As(err, &runErr) || !errors.Is(err, ErrAgentTracePersistence) {
+		t.Fatalf("evidence failure did not fail closed: %T %v", err, err)
+	}
+	trace, getErr := svc.GetTrace(context.Background(), 42, runErr.TraceID)
+	if getErr != nil || trace.Trace.Status != "failed" {
+		t.Fatalf("evidence failure trace=%#v err=%v", trace, getErr)
 	}
 }
 

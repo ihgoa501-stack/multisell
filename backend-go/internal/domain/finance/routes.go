@@ -26,8 +26,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 		group.GET("/summary", h.Summary)
 		group.GET("/profit-summary", h.ProfitSummary)
 		group.GET("/ledger", h.ListLedger)
-		group.POST("/mock", h.Mock)
-
 		// Order-scoped ledger / profit (static sub-paths before any :id)
 		group.GET("/orders/:order_id/ledger", h.ListOrderLedger)
 		group.GET("/orders/:order_id/profit", h.OrderProfit)

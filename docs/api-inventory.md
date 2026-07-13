@@ -243,7 +243,6 @@
 |--------|------|--------|---------|-------------|
 | GET | `/api/v1/platform-integrations` | ✅ | h.List | — |
 | POST | `/api/v1/platform-integrations` | ✅ | h.Create | — |
-| POST | `/api/v1/platform-integrations/publish-to-ozon` | ✅ | h.PublishToOzon | 旧 URL 入口；仅 dry-run/sandbox mock，真实写返回 428 |
 | GET | `/api/v1/platform-integrations/:id` | ✅ | h.Get | — |
 | PUT | `/api/v1/platform-integrations/:id` | ✅ | h.Update | — |
 | DELETE | `/api/v1/platform-integrations/:id` | ✅ | h.Delete | — |
@@ -364,7 +363,6 @@
 | GET | `/api/v1/finance/summary` | ✅ | h.Summary | — |
 | GET | `/api/v1/finance/profit-summary` | ✅ | h.ProfitSummary | — |
 | GET | `/api/v1/finance/ledger` | ✅ | h.ListLedger | — |
-| POST | `/api/v1/finance/mock` | ✅ | h.Mock | — |
 | GET | `/api/v1/finance/orders/:order_id/ledger` | ✅ | h.ListOrderLedger | — |
 | GET | `/api/v1/finance/orders/:order_id/profit` | ✅ | h.OrderProfit | — |
 | POST | `/api/v1/finance/orders/:order_id/ledger/rebuild` | ✅ | h.RebuildOrderLedger | — |

@@ -2,17 +2,16 @@
 
 Package: `backend-go/internal/domain/sourcing/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `POST` | `/api/v1/sourcing/fetch` | `h.Fetch` |
-| `GET` | `/api/v1/sourcing/keyword-trends` | `h.KeywordTrends` |
-| `GET` | `/api/v1/sourcing/market-overview` | `h.MarketOverview` |
-| `GET` | `/api/v1/sourcing/market-trends` | `h.MarketTrends` |
-| `GET` | `/api/v1/sourcing/recommendations` | `h.ListRecommendations` |
+| `POST` | `/fetch` | `h.Fetch` |
+| `GET` | `/keyword-trends` | `h.KeywordTrends` |
+| `GET` | `/market-overview` | `h.MarketOverview` |
+| `GET` | `/market-trends` | `h.MarketTrends` |
+| `GET` | `/recommendations` | `h.ListRecommendations` |
 
 ## Models
 

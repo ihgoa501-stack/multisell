@@ -75,6 +75,9 @@ func TestInitialize_AllComponentsNonNil(t *testing.T) {
 	if n := cfg.Registry.ToolCount(); n == 0 {
 		t.Error("Initialize: ToolRegistry should have at least one tool registered")
 	}
+	if instances := cfg.Runtime.ListInstances(); len(instances) != 0 {
+		t.Fatalf("legacy AIOS runtime registered %d agents", len(instances))
+	}
 }
 
 // TestInitialize_WithDB ensures Initialize works with a nil *gorm.DB.

@@ -1,27 +1,6 @@
+basePath: /api/v1
 definitions:
-  github_com_lingmirror_backend-go_internal_response.PageResult:
-    properties:
-      code:
-        type: integer
-      data: {}
-      message:
-        type: string
-      page:
-        type: integer
-      size:
-        type: integer
-      total:
-        type: integer
-    type: object
-  github_com_lingmirror_backend-go_internal_response.Result:
-    properties:
-      code:
-        type: integer
-      data: {}
-      message:
-        type: string
-    type: object
-  internal_ai.ChatInput:
+  ai.ChatInput:
     properties:
       agent_id:
         type: string
@@ -35,7 +14,7 @@ definitions:
     required:
     - message
     type: object
-  internal_ai.RunAgentRequest:
+  ai.RunAgentRequest:
     properties:
       agent_id:
         type: string
@@ -54,7 +33,7 @@ definitions:
     - agent_id
     - decision_point
     type: object
-  internal_auth.UserVO:
+  auth.UserVO:
     properties:
       created_at:
         type: string
@@ -77,7 +56,7 @@ definitions:
       username:
         type: string
     type: object
-  internal_auth.loginRequest:
+  auth.loginRequest:
     properties:
       password:
         type: string
@@ -87,14 +66,14 @@ definitions:
     - password
     - username
     type: object
-  internal_auth.refreshRequest:
+  auth.refreshRequest:
     properties:
       refresh_token:
         type: string
     required:
     - refresh_token
     type: object
-  internal_auth.registerRequest:
+  auth.registerRequest:
     properties:
       display_name:
         type: string
@@ -114,72 +93,9 @@ definitions:
     - password
     - username
     type: object
-  internal_domain_candidate.CreateCandidateInput:
-    properties:
-      brand_id:
-        type: integer
-      category_id:
-        type: integer
-      collected_at:
-        type: string
-      completeness_status:
-        type: string
-      created_by:
-        type: string
-      description:
-        type: string
-      destination_country:
-        type: string
-      hs_code:
-        type: string
-      images:
-        items:
-          type: integer
-        type: array
-      main_image:
-        type: string
-      origin_country:
-        type: string
-      package_height_cm:
-        type: number
-      package_length_cm:
-        type: number
-      package_weight_kg:
-        type: number
-      package_width_cm:
-        type: number
-      purchase_currency:
-        type: string
-      purchase_price:
-        type: number
-      raw_payload:
-        items:
-          type: integer
-        type: array
-      source_platform:
-        type: string
-      source_url:
-        type: string
-      spec_json:
-        items:
-          type: integer
-        type: array
-      status:
-        type: string
-      supplier_id:
-        type: integer
-      target_currency:
-        type: string
-      target_platform_id:
-        type: integer
-      target_sale_price:
-        type: number
-      title:
-        type: string
-    required:
-    - title
+  candidate.CreateCandidateInput:
     type: object
-  internal_domain_candidate.FillField:
+  candidate.FillField:
     properties:
       field:
         type: string
@@ -188,69 +104,22 @@ definitions:
     - field
     - value
     type: object
-  internal_domain_candidate.FillFieldsInput:
+  candidate.FillFieldsInput:
     properties:
       fields:
         items:
-          $ref: '#/definitions/internal_domain_candidate.FillField'
+          $ref: '#/definitions/candidate.FillField'
         type: array
     required:
     - fields
     type: object
-  internal_domain_candidate.UpdateCandidateInput:
-    properties:
-      brand_id:
-        type: integer
-      category_id:
-        type: integer
-      description:
-        type: string
-      destination_country:
-        type: string
-      hs_code:
-        type: string
-      images:
-        items:
-          type: integer
-        type: array
-      main_image:
-        type: string
-      origin_country:
-        type: string
-      package_height_cm:
-        type: number
-      package_length_cm:
-        type: number
-      package_weight_kg:
-        type: number
-      package_width_cm:
-        type: number
-      purchase_currency:
-        type: string
-      purchase_price:
-        type: number
-      spec_json:
-        items:
-          type: integer
-        type: array
-      status:
-        type: string
-      supplier_id:
-        type: integer
-      target_currency:
-        type: string
-      target_platform_id:
-        type: integer
-      target_sale_price:
-        type: number
-      title:
-        type: string
-      updated_by:
-        type: string
+  candidate.UpdateCandidateInput:
     type: object
-  internal_domain_integrations.PublishToOzonInput:
+  integrations.PublishToOzonInput:
     properties:
       account_id:
+        type: integer
+      approval_id:
         type: integer
       currency_code:
         type: string
@@ -265,69 +134,51 @@ definitions:
     - price
     - product_id
     type: object
-  internal_domain_sku.Product:
+  loop.BatchEvaluateInput:
     properties:
-      ai_description:
-        type: string
-      ai_status:
-        type: string
-      ai_title:
-        type: string
-      brand_id:
-        type: integer
-      cargo_type:
-        type: string
-      category_id:
-        type: integer
-      created_at:
-        type: string
-      description:
-        type: string
-      id:
-        type: integer
-      images:
+      product_ids:
         items:
           type: integer
         type: array
-      main_image:
+      triggered_by:
         type: string
-      name:
-        type: string
-      package_height_cm:
+    required:
+    - product_ids
+    type: object
+  reliability.BudgetInput:
+    properties:
+      monthly_limit_usd:
+        minimum: 0
         type: number
-      package_length_cm:
-        type: number
-      package_weight_kg:
-        type: number
-      package_width_cm:
-        type: number
-      platform_statuses:
-        items:
-          type: integer
-        type: array
-      product_height_cm:
-        type: number
-      product_length_cm:
-        type: number
-      product_weight_kg:
-        type: number
-      product_width_cm:
-        type: number
-      seo_keywords:
-        items:
-          type: integer
-        type: array
-      status:
+    type: object
+  response.PageResult:
+    properties:
+      code:
         type: integer
-      subtitle:
+      data: {}
+      message:
         type: string
-      unit:
-        type: string
-      updated_at:
+      page:
+        type: integer
+      size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  response.Result:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
         type: string
     type: object
+host: localhost:8080
 info:
   contact: {}
+  description: Cross-border e-commerce AI AgentOS
+  title: LingMirror API
+  version: 0.3.0
 paths:
   /agentos:
     get:
@@ -338,7 +189,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: AgentOS overview
@@ -353,7 +204,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Agent autonomy status
@@ -368,7 +219,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: AgentOS system status
@@ -400,7 +251,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: List work items
@@ -421,7 +272,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Get work item detail
@@ -436,7 +287,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Agent roster
@@ -451,7 +302,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Agent specs
@@ -469,14 +320,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_ai.ChatInput'
+          $ref: '#/definitions/ai.ChatInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: AI chat
@@ -493,14 +344,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_ai.RunAgentRequest'
+          $ref: '#/definitions/ai.RunAgentRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Run AI agent
@@ -542,7 +393,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+            $ref: '#/definitions/response.PageResult'
       security:
       - BearerAuth: []
       summary: List AI traces
@@ -563,7 +414,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Get AI trace
@@ -580,14 +431,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_auth.loginRequest'
+          $ref: '#/definitions/auth.loginRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       summary: User login
       tags:
       - auth
@@ -601,10 +452,10 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            - $ref: '#/definitions/response.Result'
             - properties:
                 data:
-                  $ref: '#/definitions/internal_auth.UserVO'
+                  $ref: '#/definitions/auth.UserVO'
               type: object
       security:
       - BearerAuth: []
@@ -622,14 +473,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_auth.refreshRequest'
+          $ref: '#/definitions/auth.refreshRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       summary: Refresh JWT token
       tags:
       - auth
@@ -645,7 +496,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_auth.registerRequest'
+          $ref: '#/definitions/auth.registerRequest'
       produces:
       - application/json
       responses:
@@ -653,10 +504,10 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            - $ref: '#/definitions/response.Result'
             - properties:
                 data:
-                  $ref: '#/definitions/internal_auth.UserVO'
+                  $ref: '#/definitions/auth.UserVO'
               type: object
       summary: Register a new user
       tags:
@@ -689,7 +540,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+            $ref: '#/definitions/response.PageResult'
       security:
       - BearerAuth: []
       summary: List candidates
@@ -705,14 +556,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_domain_candidate.CreateCandidateInput'
+          $ref: '#/definitions/candidate.CreateCandidateInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Create candidate
@@ -733,7 +584,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Delete candidate
@@ -753,7 +604,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Get candidate detail
@@ -774,14 +625,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_domain_candidate.UpdateCandidateInput'
+          $ref: '#/definitions/candidate.UpdateCandidateInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Update candidate
@@ -803,14 +654,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_domain_candidate.FillFieldsInput'
+          $ref: '#/definitions/candidate.FillFieldsInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Fill candidate fields
@@ -825,12 +676,27 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Count candidates
       tags:
       - candidates
+  /dashboard/brief:
+    get:
+      description: Get the seller's daily workspace composite brief
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Result'
+      security:
+      - BearerAuth: []
+      summary: Daily brief
+      tags:
+      - dashboard
   /dashboard/exceptions:
     get:
       description: Get exception distribution data for the dashboard
@@ -840,7 +706,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Exception distribution
@@ -860,7 +726,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Inventory health
@@ -880,7 +746,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Order trends
@@ -895,7 +761,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Dashboard overview
@@ -910,12 +776,36 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Rejection reason stats
       tags:
       - dashboard
+  /loop/batch-evaluate:
+    post:
+      consumes:
+      - application/json
+      description: Run the full evaluation pipeline for multiple products at once
+      parameters:
+      - description: Batch evaluate input
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/loop.BatchEvaluateInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Result'
+      security:
+      - BearerAuth: []
+      summary: Batch evaluate products
+      tags:
+      - loop
   /order:
     get:
       consumes:
@@ -948,7 +838,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+            $ref: '#/definitions/response.PageResult'
       security:
       - BearerAuth: []
       summary: List orders
@@ -969,7 +859,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Get order
@@ -1007,7 +897,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Update order status
@@ -1022,7 +912,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Order summary
@@ -1037,10 +927,69 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Agent activity
+      tags:
+      - owner
+  /owner/decision-queue:
+    get:
+      description: Get paginated decision queue with filtering, sorting, and status
+        summary
+      parameters:
+      - description: 'Filter by status: waiting_data, ready_for_decision, pending_approval,
+          executing, completed, failed'
+        in: query
+        name: display_status
+        type: string
+      - description: Minimum completeness score filter
+        in: query
+        name: min_completeness_score
+        type: number
+      - description: Minimum profit margin filter
+        in: query
+        name: min_profit_margin
+        type: number
+      - description: Filter by target platform ID
+        in: query
+        name: platform_id
+        type: integer
+      - description: Filter by destination country
+        in: query
+        name: destination_country
+        type: string
+      - description: Search by title or reason
+        in: query
+        name: search
+        type: string
+      - description: 'Sort field: completeness_score, profit_margin, estimated_profit,
+          confidence, created_at'
+        in: query
+        name: sort_by
+        type: string
+      - description: 'Sort order: asc or desc'
+        in: query
+        name: sort_order
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Result'
+      security:
+      - BearerAuth: []
+      summary: Decision queue
       tags:
       - owner
   /owner/platform-sync:
@@ -1052,7 +1001,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Platform sync status
@@ -1067,7 +1016,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Risk summary
@@ -1087,7 +1036,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Owner suggestions
@@ -1125,7 +1074,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+            $ref: '#/definitions/response.PageResult'
       security:
       - BearerAuth: []
       summary: List integrations
@@ -1146,7 +1095,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Sync integration
@@ -1167,170 +1116,50 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
       summary: Test integration connection
       tags:
       - integrations
-  /platform-integrations/publish-to-ozon:
-    post:
-      consumes:
-      - application/json
-      description: Publish a product listing to the Ozon platform
-      parameters:
-      - description: Publish request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_domain_integrations.PublishToOzonInput'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
-      security:
-      - BearerAuth: []
-      summary: Publish to Ozon
-      tags:
-      - integrations
-  /products:
+  /reliability/budget:
     get:
-      consumes:
-      - application/json
-      description: Get paginated list of products
-      parameters:
-      - description: Page number
-        in: query
-        name: page
-        type: integer
-      - description: Page size
-        in: query
-        name: size
-        type: integer
-      - description: Search keyword
-        in: query
-        name: search
-        type: string
-      - description: Filter by category
-        in: query
-        name: category_id
-        type: integer
-      - description: Filter by brand
-        in: query
-        name: brand_id
-        type: integer
-      - description: Filter by status
-        in: query
-        name: status
-        type: integer
+      description: View current LLM monthly budget and spend
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
-      summary: List products
+      summary: Get LLM monthly budget
       tags:
-      - products
-    post:
-      consumes:
-      - application/json
-      description: Create a new product
-      parameters:
-      - description: Product data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_domain_sku.Product'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
-      security:
-      - BearerAuth: []
-      summary: Create product
-      tags:
-      - products
-  /products/{id}:
-    delete:
-      description: Delete a product by ID
-      parameters:
-      - description: Product ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
-      security:
-      - BearerAuth: []
-      summary: Delete product
-      tags:
-      - products
-    get:
-      description: Get a single product by ID
-      parameters:
-      - description: Product ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
-      security:
-      - BearerAuth: []
-      summary: Get product
-      tags:
-      - products
+      - reliability
     put:
       consumes:
       - application/json
-      description: Update an existing product
+      description: Set the monthly spending limit for LLM API calls
       parameters:
-      - description: Product ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Updated product data
+      - description: Budget settings
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_domain_sku.Product'
+          $ref: '#/definitions/reliability.BudgetInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.Result'
+            $ref: '#/definitions/response.Result'
       security:
       - BearerAuth: []
-      summary: Update product
+      summary: Set LLM monthly budget
       tags:
-      - products
+      - reliability
   /skus:
     get:
       consumes:
@@ -1359,10 +1188,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_lingmirror_backend-go_internal_response.PageResult'
+            $ref: '#/definitions/response.PageResult'
       security:
       - BearerAuth: []
       summary: List SKUs
       tags:
       - products
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

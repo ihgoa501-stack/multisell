@@ -1,6 +1,6 @@
 # Route Catalog (auto-generated)
 
-> Total modules: 70 | Total routes: 751
+> Total modules: 70 | Total routes: 747
 
 ## Overview
 
@@ -11,23 +11,23 @@
 | [`productimage`](productimage.md) | 37 | `—` | `domain/productimage/` |
 | [`producthub`](producthub.md) | 30 | `product.read` | `domain/producthub/` |
 | [`aftersales`](aftersales.md) | 22 | `—` | `domain/aftersales/` |
-| [`finance`](finance.md) | 22 | `finance.read` | `domain/finance/` |
+| [`finance`](finance.md) | 21 | `finance.read` | `domain/finance/` |
 | [`price`](price.md) | 20 | `finance.read` | `domain/price/` |
-| [`integrations`](integrations.md) | 20 | `—` | `domain/integrations/` |
 | [`workflow`](workflow.md) | 19 | `—` | `domain/workflow/` |
 | [`sku`](sku.md) | 18 | `product.read` | `domain/sku/` |
 | [`listingtask`](listingtask.md) | 17 | `listing.read` | `domain/listingtask/` |
-| [`demandcase`](demandcase.md) | 17 | `—` | `domain/demandcase/` |
-| [`support`](support.md) | 17 | `—` | `domain/support/` |
 | [`inventory`](inventory.md) | 17 | `inventory.read` | `domain/inventory/` |
-| [`imagegen`](imagegen.md) | 16 | `—` | `domain/imagegen/` |
-| [`supplier`](supplier.md) | 16 | `—` | `domain/supplier/` |
+| [`support`](support.md) | 17 | `—` | `domain/support/` |
+| [`integrations`](integrations.md) | 17 | `—` | `domain/integrations/` |
+| [`demandcase`](demandcase.md) | 17 | `—` | `domain/demandcase/` |
 | [`listing`](listing.md) | 16 | `listing.read` | `domain/listing/` |
+| [`supplier`](supplier.md) | 16 | `—` | `domain/supplier/` |
+| [`imagegen`](imagegen.md) | 16 | `—` | `domain/imagegen/` |
 | [`purchase`](purchase.md) | 16 | `—` | `domain/purchase/` |
 | [`candidate`](candidate.md) | 14 | `—` | `domain/candidate/` |
-| [`allocation`](allocation.md) | 13 | `—` | `domain/allocation/` |
 | [`supplychain`](supplychain.md) | 13 | `—` | `domain/supplychain/` |
 | [`settlement`](settlement.md) | 13 | `settlement.read` | `domain/settlement/` |
+| [`allocation`](allocation.md) | 13 | `—` | `domain/allocation/` |
 | [`notification`](notification.md) | 11 | `—` | `domain/notification/` |
 | [`exceptions`](exceptions.md) | 10 | `—` | `domain/exceptions/` |
 | [`platform`](platform.md) | 10 | `—` | `domain/platform/` |
@@ -122,29 +122,29 @@
 
 ## agentlearning
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/agent-learning/accuracy` | `h.GetAllAccuracy` |
-| `GET` | `/api/v1/agent-learning/accuracy/:agentId` | `h.GetAccuracyByAgent` |
-| `POST` | `/api/v1/agent-learning/evaluate` | `h.EvaluateDecision` |
-| `GET` | `/api/v1/agent-learning/evaluations` | `h.ListEvaluations` |
-| `POST` | `/api/v1/agent-learning/recalculate` | `h.RecalculateAccuracy` |
+| `GET` | `/accuracy` | `h.GetAllAccuracy` |
+| `GET` | `/accuracy/:agentId` | `h.GetAccuracyByAgent` |
+| `POST` | `/evaluate` | `h.EvaluateDecision` |
+| `GET` | `/evaluations` | `h.ListEvaluations` |
+| `POST` | `/recalculate` | `h.RecalculateAccuracy` |
 
 ## agentrule
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/agent-rules` | `h.ListRules` |
-| `POST` | `/api/v1/agent-rules` | `h.CreateRule` |
-| `DELETE` | `/api/v1/agent-rules/:id` | `h.DeleteRule` |
-| `GET` | `/api/v1/agent-rules/:id` | `h.GetRule` |
-| `PUT` | `/api/v1/agent-rules/:id` | `h.UpdateRule` |
-| `POST` | `/api/v1/agent-rules/:id/toggle` | `h.ToggleRule` |
-| `POST` | `/api/v1/agent-rules/evaluate` | `h.EvaluateRules` |
+| `GET` | `` | `h.ListRules` |
+| `POST` | `` | `h.CreateRule` |
+| `DELETE` | `/:id` | `h.DeleteRule` |
+| `GET` | `/:id` | `h.GetRule` |
+| `PUT` | `/:id` | `h.UpdateRule` |
+| `POST` | `/:id/toggle` | `h.ToggleRule` |
+| `POST` | `/evaluate` | `h.EvaluateRules` |
 
 ## allocation
 
@@ -304,12 +304,12 @@
 
 ## content
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `POST` | `/api/v1/content/generate` | `h.GenerateContent` |
-| `POST` | `/api/v1/content/validate` | `h.ValidateContent` |
+| `POST` | `/generate` | `h.GenerateContent` |
+| `POST` | `/validate` | `h.ValidateContent` |
 
 ## cost
 
@@ -373,26 +373,26 @@
 
 ## entropy
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/entropy` | `h.GetSummary` |
-| `GET` | `/api/v1/entropy/changelog` | `h.GetChangeLog` |
-| `POST` | `/api/v1/entropy/defense` | `h.RunDefenses` |
-| `GET` | `/api/v1/entropy/health` | `h.GetHealthScores` |
-| `GET` | `/api/v1/entropy/spc` | `h.GetSpcStatus` |
+| `GET` | `` | `h.GetSummary` |
+| `GET` | `/changelog` | `h.GetChangeLog` |
+| `POST` | `/defense` | `h.RunDefenses` |
+| `GET` | `/health` | `h.GetHealthScores` |
+| `GET` | `/spc` | `h.GetSpcStatus` |
 
 ## evolution
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/evolution/nudges` | `h.ListNudges` |
-| `POST` | `/api/v1/evolution/nudges/:id/accept` | `h.AcceptNudge` |
-| `POST` | `/api/v1/evolution/nudges/:id/dismiss` | `h.DismissNudge` |
-| `POST` | `/api/v1/evolution/nudges/evaluate` | `h.EvaluateNudges` |
+| `GET` | `/nudges` | `h.ListNudges` |
+| `POST` | `/nudges/:id/accept` | `h.AcceptNudge` |
+| `POST` | `/nudges/:id/dismiss` | `h.DismissNudge` |
+| `POST` | `/nudges/evaluate` | `h.EvaluateNudges` |
 
 ## exceptions
 
@@ -457,7 +457,6 @@
 | `GET` | `/api/v1/finance/cash-reconciliations` | `h.ListCashReconciliations` |
 | `POST` | `/api/v1/finance/cash-reconciliations` | `h.CreateCashReconciliation` |
 | `GET` | `/api/v1/finance/ledger` | `h.ListLedger` |
-| `POST` | `/api/v1/finance/mock` | `h.Mock` |
 | `GET` | `/api/v1/finance/orders/:order_id/ledger` | `h.ListOrderLedger` |
 | `POST` | `/api/v1/finance/orders/:order_id/ledger/rebuild` | `h.RebuildOrderLedger` |
 | `GET` | `/api/v1/finance/orders/:order_id/profit` | `h.OrderProfit` |
@@ -530,9 +529,6 @@
 | `POST` | `/api/v1/platform-integrations/:id/test` | `h.TestConnection` |
 | `POST` | `/api/v1/platform-integrations/mock/seed` | `` |
 | `GET` | `/api/v1/platform-integrations/owner-fact-options` | `h.OwnerFactOptions` |
-| `POST` | `/api/v1/platform-integrations/publish-to-ozon` | `h.PublishToOzon` |
-| `POST` | `/api/v1/platform-integrations/write-back` | `h.WriteBack` |
-| `POST` | `/api/v1/platform-integrations/write-back/:ref-id/retry` | `h.RetryWriteBack` |
 
 ## inventory
 
@@ -641,26 +637,26 @@
 
 ## metabolism
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/metabolism` | `h.ListLogs` |
-| `GET` | `/api/v1/metabolism/:id` | `h.GetLog` |
-| `POST` | `/api/v1/metabolism/dry-run` | `h.DryRun` |
-| `GET` | `/api/v1/metabolism/excretion-result` | `h.GetExcretionResult` |
-| `POST` | `/api/v1/metabolism/execute` | `h.ExecuteEntities` |
+| `GET` | `` | `h.ListLogs` |
+| `GET` | `/:id` | `h.GetLog` |
+| `POST` | `/dry-run` | `h.DryRun` |
+| `GET` | `/excretion-result` | `h.GetExcretionResult` |
+| `POST` | `/execute` | `h.ExecuteEntities` |
 
 ## mock
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/mock/orders` | `h.ListOrders` |
-| `POST` | `/api/v1/mock/seed` | `h.Seed` |
-| `GET` | `/api/v1/mock/settlements` | `h.ListSettlements` |
-| `GET` | `/api/v1/mock/sync-statuses` | `h.SyncStatuses` |
+| `GET` | `/orders` | `h.ListOrders` |
+| `POST` | `/seed` | `h.Seed` |
+| `GET` | `/settlements` | `h.ListSettlements` |
+| `GET` | `/sync-statuses` | `h.SyncStatuses` |
 
 ## notification
 
@@ -692,15 +688,15 @@
 
 ## orchestration
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/orchestration/pipeline/config` | `h.ListConfigs` |
-| `POST` | `/api/v1/orchestration/pipeline/config` | `h.CreateConfig` |
-| `GET` | `/api/v1/orchestration/products/:id/pipeline` | `h.GetPipelineStatus` |
-| `POST` | `/api/v1/orchestration/products/:id/pipeline/start` | `h.StartPipeline` |
-| `POST` | `/api/v1/orchestration/products/:id/pipeline/step/:step/retry` | `h.RetryStep` |
+| `GET` | `/pipeline/config` | `h.ListConfigs` |
+| `POST` | `/pipeline/config` | `h.CreateConfig` |
+| `GET` | `/products/:id/pipeline` | `h.GetPipelineStatus` |
+| `POST` | `/products/:id/pipeline/start` | `h.StartPipeline` |
+| `POST` | `/products/:id/pipeline/step/:step/retry` | `h.RetryStep` |
 
 ## order
 
@@ -737,30 +733,30 @@
 
 ## owner
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/owner/agent-activity` | `h.AgentActivity` |
-| `GET` | `/api/v1/owner/decision-queue` | `h.GetDecisionQueue` |
-| `GET` | `/api/v1/owner/pipeline-chain` | `h.PipelineChain` |
-| `GET` | `/api/v1/owner/platform-sync` | `h.PlatformSyncStatus` |
-| `GET` | `/api/v1/owner/risk-summary` | `h.RiskSummary` |
-| `GET` | `/api/v1/owner/suggestions` | `h.Suggestions` |
-| `POST` | `/api/v1/owner/suggestions/:id/feedback` | `h.Feedback` |
+| `GET` | `/agent-activity` | `h.AgentActivity` |
+| `GET` | `/decision-queue` | `h.GetDecisionQueue` |
+| `GET` | `/pipeline-chain` | `h.PipelineChain` |
+| `GET` | `/platform-sync` | `h.PlatformSyncStatus` |
+| `GET` | `/risk-summary` | `h.RiskSummary` |
+| `GET` | `/suggestions` | `h.Suggestions` |
+| `POST` | `/suggestions/:id/feedback` | `h.Feedback` |
 
 ## personalrule
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/agents/rules` | `h.ListRules` |
-| `POST` | `/api/v1/agents/rules` | `h.CreateRule` |
-| `DELETE` | `/api/v1/agents/rules/:id` | `h.DeleteRule` |
-| `GET` | `/api/v1/agents/rules/:id` | `h.GetRule` |
-| `PUT` | `/api/v1/agents/rules/:id` | `h.UpdateRule` |
-| `POST` | `/api/v1/agents/rules/apply` | `h.ApplyRules` |
+| `GET` | `` | `h.ListRules` |
+| `POST` | `` | `h.CreateRule` |
+| `DELETE` | `/:id` | `h.DeleteRule` |
+| `GET` | `/:id` | `h.GetRule` |
+| `PUT` | `/:id` | `h.UpdateRule` |
+| `POST` | `/apply` | `h.ApplyRules` |
 
 ## platform
 
@@ -1005,12 +1001,12 @@
 
 ## settings
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/settings/llm` | `h.GetLLM` |
-| `PUT` | `/api/v1/settings/llm` | `h.UpdateLLM` |
+| `GET` | `/llm` | `h.GetLLM` |
+| `PUT` | `/llm` | `h.UpdateLLM` |
 
 ## settlement
 
@@ -1111,15 +1107,15 @@
 
 ## sourcing
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `POST` | `/api/v1/sourcing/fetch` | `h.Fetch` |
-| `GET` | `/api/v1/sourcing/keyword-trends` | `h.KeywordTrends` |
-| `GET` | `/api/v1/sourcing/market-overview` | `h.MarketOverview` |
-| `GET` | `/api/v1/sourcing/market-trends` | `h.MarketTrends` |
-| `GET` | `/api/v1/sourcing/recommendations` | `h.ListRecommendations` |
+| `POST` | `/fetch` | `h.Fetch` |
+| `GET` | `/keyword-trends` | `h.KeywordTrends` |
+| `GET` | `/market-overview` | `h.MarketOverview` |
+| `GET` | `/market-trends` | `h.MarketTrends` |
+| `GET` | `/recommendations` | `h.ListRecommendations` |
 
 ## sourcing1688
 
@@ -1289,17 +1285,17 @@
 
 ## trustscore
 
-**Prefix:** `/api/v1`
+**Prefix:** ``
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/trust-scores` | `h.List` |
-| `GET` | `/api/v1/trust-scores/:agent_id` | `h.GetByAgent` |
-| `PUT` | `/api/v1/trust-scores/:agent_id/level` | `h.UpdateLevel` |
-| `POST` | `/api/v1/trust-scores/auto-upgrade` | `h.AutoUpgrade` |
-| `POST` | `/api/v1/trust-scores/eligible` | `h.Eligible` |
-| `POST` | `/api/v1/trust-scores/recalculate` | `h.Recalculate` |
-| `GET` | `/api/v1/trust-scores/summary` | `h.Summary` |
+| `GET` | `` | `h.List` |
+| `GET` | `/:agent_id` | `h.GetByAgent` |
+| `PUT` | `/:agent_id/level` | `h.UpdateLevel` |
+| `POST` | `/auto-upgrade` | `h.AutoUpgrade` |
+| `POST` | `/eligible` | `h.Eligible` |
+| `POST` | `/recalculate` | `h.Recalculate` |
+| `GET` | `/summary` | `h.Summary` |
 
 ## workflow
 

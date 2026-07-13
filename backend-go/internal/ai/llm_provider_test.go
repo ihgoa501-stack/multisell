@@ -248,6 +248,29 @@ func TestNewLLMProvider_Default(t *testing.T) {
 	}
 }
 
+func TestNewRequiredLLMProviderNeverFallsBackToStub(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "")
+	t.Setenv("LLM_API_KEY", "")
+	p := NewRequiredLLMProvider(testLogger())
+	if p.Name() != "disabled" {
+		t.Fatalf("provider = %q, want disabled", p.Name())
+	}
+	if _, err := p.Chat(context.Background(), &LLMRequest{}); err == nil || !strings.Contains(err.Error(), "real LLM provider") {
+		t.Fatalf("disabled error = %v", err)
+	}
+}
+
+func TestNewRequiredLLMProviderRequiresAPIKeyInDevelopment(t *testing.T) {
+	t.Setenv("ENV", "development")
+	t.Setenv("GIN_MODE", "debug")
+	t.Setenv("LLM_PROVIDER", "openai")
+	t.Setenv("LLM_API_KEY", "")
+	p := NewRequiredLLMProvider(testLogger())
+	if p.Name() != "disabled" {
+		t.Fatalf("provider = %q, want disabled", p.Name())
+	}
+}
+
 func TestNewLLMProvider_ProductionWithoutKeyIsDisabled(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("ENV", "production")

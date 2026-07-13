@@ -2,16 +2,15 @@
 
 Package: `backend-go/internal/domain/evolution/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/evolution/nudges` | `h.ListNudges` |
-| `POST` | `/api/v1/evolution/nudges/:id/accept` | `h.AcceptNudge` |
-| `POST` | `/api/v1/evolution/nudges/:id/dismiss` | `h.DismissNudge` |
-| `POST` | `/api/v1/evolution/nudges/evaluate` | `h.EvaluateNudges` |
+| `GET` | `/nudges` | `h.ListNudges` |
+| `POST` | `/nudges/:id/accept` | `h.AcceptNudge` |
+| `POST` | `/nudges/:id/dismiss` | `h.DismissNudge` |
+| `POST` | `/nudges/evaluate` | `h.EvaluateNudges` |
 
 ## Models
 

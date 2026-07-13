@@ -37,6 +37,11 @@ func TestHTTPIdentityAndCapabilitiesExposeOnlyReadV1(t *testing.T) {
 			t.Fatalf("GET %s status=%d body=%s", path, w.Code, w.Body.String())
 		}
 	}
+	identity := httptest.NewRecorder()
+	r.ServeHTTP(identity, httptest.NewRequest(http.MethodGet, "/api/v1/xiao-q/identity", nil))
+	if !strings.Contains(identity.Body.String(), `"runtime_available":false`) || !strings.Contains(identity.Body.String(), "不会回退到 stub") {
+		t.Fatalf("stub provider availability not disclosed: %s", identity.Body.String())
+	}
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/xiao-q/capabilities", nil))
 	if strings.Contains(w.Body.String(), "mutate") || !strings.Contains(w.Body.String(), CapabilityDemandCaseRead) || !strings.Contains(w.Body.String(), CapabilityDemandCaseDecisionRead) || !strings.Contains(w.Body.String(), CapabilityExperimentRead) || !strings.Contains(w.Body.String(), CapabilityExperimentGateRead) {

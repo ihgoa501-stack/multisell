@@ -35,15 +35,16 @@ type EventPublisher interface {
 
 // Orchestrator coordinates AI agent workflows.
 type Orchestrator struct {
-	db            *gorm.DB
-	logger        *zap.Logger
-	registry      *AgentRegistry
-	traces        *TraceWriter
-	provider      LLMProvider
-	agentImpls    map[string]impl.Agent
-	hub           *realtime.Hub
-	bus           EventPublisher
-	decisionCache *decisionCache
+	db             *gorm.DB
+	logger         *zap.Logger
+	registry       *AgentRegistry
+	traces         *TraceWriter
+	provider       LLMProvider
+	agentImpls     map[string]impl.Agent
+	hub            *realtime.Hub
+	bus            EventPublisher
+	decisionCache  *decisionCache
+	disabledReason string
 
 	// guardrails is the AIOS guardrails chain for L1-L5 defensive checks.
 	// When nil, all checks pass through (no-op). Set via WithGuardrails().
@@ -80,6 +81,13 @@ func NewOrchestrator(db *gorm.DB, logger *zap.Logger) *Orchestrator {
 // WithProvider overrides the LLM provider (useful for tests).
 func (o *Orchestrator) WithProvider(p LLMProvider) *Orchestrator {
 	o.provider = p
+	return o
+}
+
+// Disable freezes the superseded multi-Agent runtime while keeping historical
+// traces and deterministic domain services readable.
+func (o *Orchestrator) Disable(reason string) *Orchestrator {
+	o.disabledReason = reason
 	return o
 }
 
@@ -221,6 +229,9 @@ func (o *Orchestrator) RunWithContext(ctx context.Context, req *RunAgentRequest)
 // runWithTimeout is the internal implementation used by both Run and RunWithContext.
 // A timeoutSeconds value of 0 means no timeout.
 func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) (*RunAgentResult, error) {
+	if o.disabledReason != "" {
+		return nil, fmt.Errorf("legacy agent runtime disabled: %s", o.disabledReason)
+	}
 	agent, ok := o.registry.Get(req.AgentID)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent: %s", req.AgentID)
@@ -322,8 +333,8 @@ func (o *Orchestrator) runWithTimeout(req *RunAgentRequest, timeoutSeconds int) 
 			}, nil
 		}
 		if ruleResult != nil {
-				output = ruleResult.Output
-			}
+			output = ruleResult.Output
+		}
 	}
 
 	// Emit reasoning event.

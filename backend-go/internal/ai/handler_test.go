@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -99,11 +100,13 @@ func TestHandler_RunAgent_MissingFields(t *testing.T) {
 
 func TestHandler_ListTraces(t *testing.T) {
 	db := newTestDB(t)
+	ownerID := int64(41)
 	// Seed a trace so there is data to list.
 	w := NewTraceWriter(db, testLogger())
 	traceID, err := w.Start(&CreateTraceInput{
 		AgentID:       "A5",
 		DecisionPoint: "stock_alert",
+		UserID:        &ownerID,
 	})
 	if err != nil {
 		t.Fatalf("seed trace: %v", err)
@@ -116,6 +119,7 @@ func TestHandler_ListTraces(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
+	c.Set("user_id", ownerID)
 	c.Request = httptest.NewRequest(http.MethodGet, "/traces", nil)
 
 	h.ListTraces(c)
@@ -137,10 +141,12 @@ func TestHandler_ListTraces(t *testing.T) {
 
 func TestHandler_GetTrace(t *testing.T) {
 	db := newTestDB(t)
+	ownerID := int64(42)
 	w := NewTraceWriter(db, testLogger())
 	traceID, err := w.Start(&CreateTraceInput{
 		AgentID:       "A1",
 		DecisionPoint: "product_scout",
+		UserID:        &ownerID,
 	})
 	if err != nil {
 		t.Fatalf("seed trace: %v", err)
@@ -152,6 +158,7 @@ func TestHandler_GetTrace(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
+	c.Set("user_id", ownerID)
 	c.Params = []gin.Param{{Key: "trace_id", Value: traceID}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/traces/"+traceID, nil)
 
@@ -171,12 +178,14 @@ func TestHandler_GetTrace(t *testing.T) {
 
 func TestHandler_ListActions(t *testing.T) {
 	db := newTestDB(t)
+	ownerID := int64(43)
 	svc := NewService(db, testLogger())
 	// Seed an action.
 	_, err := svc.CreateAction(&CreateActionInput{
 		SourceTable: "ai_trace", SourceID: "trc_la_1", SourceType: "agent_run",
 		AgentID: "A6", ActionType: "profit_check", Title: "list test",
 		ProposedBy: "agent:A6",
+		UserID:     &ownerID,
 	})
 	if err != nil {
 		t.Fatalf("seed action: %v", err)
@@ -187,6 +196,7 @@ func TestHandler_ListActions(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
+	c.Set("user_id", ownerID)
 	c.Request = httptest.NewRequest(http.MethodGet, "/actions", nil)
 
 	h.ListActions(c)
@@ -203,6 +213,49 @@ func TestHandler_ListActions(t *testing.T) {
 	}
 	if total, ok := resp["total"].(float64); !ok || total < 1 {
 		t.Fatalf("total = %v, want >= 1", resp["total"])
+	}
+}
+
+func TestHandler_LegacyDetailDoesNotCrossOwnerBoundary(t *testing.T) {
+	db := newTestDB(t)
+	ownerID := int64(44)
+	otherOwnerID := int64(45)
+	w := NewTraceWriter(db, testLogger())
+	traceID, err := w.Start(&CreateTraceInput{
+		AgentID: "A1", DecisionPoint: "product_scout", UserID: &otherOwnerID,
+	})
+	if err != nil {
+		t.Fatalf("seed trace: %v", err)
+	}
+	svc := NewService(db, testLogger())
+	action, err := svc.CreateAction(&CreateActionInput{
+		SourceTable: "ai_trace", SourceID: traceID, SourceType: "agent_run",
+		AgentID: "A1", ActionType: "product_scout", Title: "other owner",
+		ProposedBy: "agent:A1", UserID: &otherOwnerID,
+	})
+	if err != nil {
+		t.Fatalf("seed action: %v", err)
+	}
+	h := NewHandler(svc, NewOrchestrator(db, testLogger()), nil)
+
+	traceRecorder := httptest.NewRecorder()
+	traceContext, _ := gin.CreateTestContext(traceRecorder)
+	traceContext.Set("user_id", ownerID)
+	traceContext.Params = []gin.Param{{Key: "trace_id", Value: traceID}}
+	traceContext.Request = httptest.NewRequest(http.MethodGet, "/traces/"+traceID, nil)
+	h.GetTrace(traceContext)
+	if traceRecorder.Code != http.StatusNotFound {
+		t.Fatalf("cross-owner trace status = %d, want 404", traceRecorder.Code)
+	}
+
+	actionRecorder := httptest.NewRecorder()
+	actionContext, _ := gin.CreateTestContext(actionRecorder)
+	actionContext.Set("user_id", ownerID)
+	actionContext.Params = []gin.Param{{Key: "id", Value: fmt.Sprint(action.ID)}}
+	actionContext.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/actions/%d", action.ID), nil)
+	h.GetAction(actionContext)
+	if actionRecorder.Code != http.StatusNotFound {
+		t.Fatalf("cross-owner action status = %d, want 404", actionRecorder.Code)
 	}
 }
 
@@ -428,6 +481,7 @@ func TestHandler_ActionNotFound(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
+	c.Set("user_id", int64(1))
 	c.Params = []gin.Param{{Key: "id", Value: "99999"}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/actions/99999", nil)
 
@@ -446,6 +500,7 @@ func TestHandler_TraceNotFound(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
+	c.Set("user_id", int64(1))
 	c.Params = []gin.Param{{Key: "trace_id", Value: "trc_nonexistent"}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/traces/trc_nonexistent", nil)
 

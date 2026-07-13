@@ -134,17 +134,12 @@ Authorization: Bearer <token>
 | `/api/v1/listings` | 刊登 | CRUD |
 | `/api/v1/listing-tasks` | 刊登任务 | CRUD + 工作台 |
 | `/api/v1/logistics` | 物流费率 | 配置 + 报价计算 |
-| `/api/v1/sourcing` | 选品(A8) | 利润计算 + 评分 |
 | `/api/v1/image-gen` | 商品生图 | 生成请求 |
 | `/api/v1/aftersales` | 售后 | CRUD + 纠纷 |
-| `/api/v1/agent-rules` | Agent 规则 | CRUD |
-| `/api/v1/entropy` | 自净化 | 防御 + 健康检查 |
-| `/api/v1/evolution` | 演化 | CRUD |
-| `/api/v1/trust-scores` | 信任分 | 计算 + 升级 |
 | `/api/v1/approvals` | 审批 | CRUD |
-| `/api/v1/ai` | AI 对话 | Chat + Stream |
-| `/api/v1/agents` | Agent 执行 | Run + Trace |
-| `/api/v1/agentos` | AgentOS | Dashboard + WorkItems |
+| `/api/v1/xiao-q` | 唯一 Owner Agent 小Q | 受控 Capability、消息与 Trace |
+| `/api/v1/ai/traces` | 旧 Agent 历史审计 | 仅 GET，`audit.read` 且按 Owner 隔离 |
+| `/api/v1/ai/actions` | 旧 Action 历史审计 | 仅 GET，`audit.read` 且按 Owner 隔离 |
 
 ---
 
@@ -152,9 +147,9 @@ Authorization: Bearer <token>
 
 - 端点: `GET /ws`
 - 协议: Gorilla WebSocket
-- 用途: AI streaming + 实时更新
+- 用途: 认证后的实时业务更新
 - 集成: `realtime.NewHub` + `realtime.NewHandler`
-- 支持 AI Chat 二进制传输（通过 `WithAIChat` 配置）
+- 旧通用 AI Chat handler 已解除绑定；小Q使用 `/api/v1/xiao-q` 受控 HTTP 契约
 
 ---
 

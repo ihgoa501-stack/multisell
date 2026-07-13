@@ -129,29 +129,20 @@ Pagination: `common.ParsePagination(c)`, `common.ParseSort(c)`.
 
 ### Platform Infrastructure (`internal/platform/`)
 
-Four in-process coordination primitives for agent-to-agent and agent-to-system communication:
+Four in-process coordination primitives for deterministic domain coordination and xiao_q capabilities:
 
-- **Event Bus** (`eventbus/bus.go`) — pub/sub with glob topic matching (`order.*`). Used for agent pipeline chains, scheduler ticks, cross-module async events. ~15 subscriptions in `router.go`.
+- **Event Bus** (`eventbus/bus.go`) — pub/sub with glob topic matching (`order.*`). Used for scheduler ticks and cross-module async events.
 - **Command Dispatcher** (`command/command.go`) — typed handler registry: `stock_alert`, `replenish`, `price_review`, `listing_optimize`, `compliance_check`.
-- **Scheduler** (`scheduler/`) — periodic task runner (5 min to 6 hr intervals). Publishes `scheduler.tick.{agent_id}` events.
-- **ToolBridge** (`toolbridge/bridge.go`) — plugin-driver-based tool execution bridge for agents to run external tools.
+- **Scheduler** (`scheduler/`) — deterministic periodic task runner. It no longer schedules the retired A/G Agent roster.
+- **ToolBridge** (`toolbridge/bridge.go`) — controlled bridge for approved external tools.
 
-### Agent Pipeline Chain
+### Retired Multi-Agent Runtime
 
-Event bus subscriptions chain agent decisions automatically (defined in `router.go`):
-
-```
-A5 stock_alert (red)              → G3 discount_risk_check
-G3 discount_risk_check (block)     → A6 profit_watch
-A6 profit_watch (loss/threshold)   → A2 listing_optimize
-G0 system_health (anomaly > 3)    → G1 dashboard_overview
-
-Scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/M1/trustscore/entropy
-```
+The A1-A12/G0-G3 scheduler chain, MoA, autonomy upgrades, AgentOS mutation routes and `agent.decided.*` DAG are no longer registered in the production router. Historical `/api/v1/ai/traces` and `/api/v1/ai/actions` remain read-only for audit. `internal/ai/`, `internal/agent/` and `internal/aios/` retain migration source only; do not add new runtime callers. The only active Owner Agent is `xiao_q`.
 
 ### WebSocket
 
-`internal/realtime/` — hub for AI streaming and live updates. Endpoint: `GET /ws`.
+`internal/realtime/` — authenticated live-update hub. Endpoint: `GET /ws`. The retired generic AI chat handler is no longer attached;小Q交互使用受控 `/api/v1/xiao-q` HTTP 契约。
 
 ### Configuration
 
@@ -227,15 +218,13 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 
 | Package | Purpose |
 |---------|---------|
-| `internal/ai/` | LLM orchestration, chat, streaming, traces, provider abstraction |
-| `internal/agent/` | Agent registry + execution |
-| `internal/agentos/` | Cockpit dashboard, work items, autonomy |
-| `domain/agentrule/` | Agent behavior rules |
-| `domain/entropy/` | Self-cleansing: SPC control, health scoring |
-| `domain/evolution/` | Agent evolution nudges |
+| `internal/domain/xiaoq/` | 唯一 Owner Agent、Capability Catalog、Agent Runtime 与 Trace |
+| `internal/ai/` | Provider adapter及只读历史Trace；旧A/G Orchestrator已失败关闭 |
+| `internal/agent/`, `internal/agentos/` | 冻结的旧运行外壳，不再注册生产路由 |
+| `domain/agentrule/`, `domain/entropy/`, `domain/evolution/` | 冻结的旧自治治理实现，不再注册生产路由 |
 | `domain/logistics/` | Cross-border shipping rate engine (A10) |
-| `domain/sourcing/` | Sourcing profit formula engine (A8) |
-| `domain/trustscore/` | Trust score + autonomy gating |
+| `domain/sourcing/` | 冻结的旧 A8/mock 市场来源实现，不再注册生产路由 |
+| `domain/trustscore/` | 冻结的旧自治等级实现，不再注册生产路由 |
 | `domain/actionpolicy/` | Action approval policy |
 
 ## Documentation
@@ -268,9 +257,8 @@ Alias `@` → `src/`. E2E: `frontend-next/e2e/` (Playwright).
 
 | Priority | Issue | Location |
 |----------|-------|----------|
-| P0 | Agent output is stub (fake data, not real LLM) | `orchestrator.go:172` — `synthesizeOutput()` |
-| P1 | MoA aggregation is structured but still deterministic, not LLM-synthesized | `moa.go` — `synthesize()` returns structured findings/conflicts/recommendation |
-| P1 | Owner dashboard /owner is Mock | `frontend-next/src/app/(main)/owner/` |
+| P0 | 小Q Agent Runtime 尚未完成一次受预算限制的真实 Provider 人工验收 | `docs/architecture/XIAOQ_AGENT_RUNTIME_V1.md` |
+| P1 | 旧 Owner mock 工作台已从正式入口退役；`/owner` 仅跳转 `/platform-truth`，后端 fixture 路由只允许 development | `frontend-next/src/app/(main)/owner/`, `backend-go/internal/httpx/router.go` |
 | P2 | Only 3 platform adapters (Ozon + Shopee + Shopify), still thinly tested | `domain/integrations/` |
 | P2 | Frontend dev server has no watchdog — exits silently | `npm run dev` process |
 | P3 | No real CI trigger yet (doc-links job added but not tested) | `.github/workflows/ci.yml` |

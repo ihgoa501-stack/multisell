@@ -48,7 +48,7 @@ function normalizeLinks(
   if (links?.decision_card) normalized.push({ label: '查看决策卡', href: links.decision_card });
   if (links?.experiment) normalized.push({ label: '查看经营实验', href: links.experiment });
   if (links?.gate_status) normalized.push({ label: '查看实验闸门状态', href: links.gate_status });
-  if (links?.trace) normalized.push({ label: '查看运行追踪', href: links.trace });
+  if (links?.trace) normalized.push({ label: '查看运行追踪', href: links.trace.replace(/^\/ai\/traces\//, '/xiaoq/traces/') });
   if (normalized.length === 0 && demandCaseID) {
     normalized.push({ label: '查看候选市场案件', href: `/demand-cases/${demandCaseID}` });
   }

@@ -2,14 +2,13 @@
 
 Package: `backend-go/internal/domain/content/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `POST` | `/api/v1/content/generate` | `h.GenerateContent` |
-| `POST` | `/api/v1/content/validate` | `h.ValidateContent` |
+| `POST` | `/generate` | `h.GenerateContent` |
+| `POST` | `/validate` | `h.ValidateContent` |
 
 ## Models
 

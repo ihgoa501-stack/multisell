@@ -168,22 +168,13 @@ Six in-process coordination primitives + two compliance registries:
 - **ApprovalRequired** (`approval.go`) — intercepts high-risk routes (price, inventory, order, integrations, rbac), validates `X-Approval-ID` header against the `approval_request` table. Checks kill switch first.
 - **CI validation** — scripts/verify_pr.py parses PR body checkboxes; scripts/check_known_issues.sh checks KNOWN_ISSUES expiry; scripts/check_audit_coverage.sh validates middleware/registry alignment.
 
-### Agent Pipeline Chain
+### Retired Multi-Agent Runtime
 
-Event bus subscriptions chain agent decisions automatically (defined in `router.go`):
-
-```
-A5 stock_alert (red)              → G3 discount_risk_check
-G3 discount_risk_check (block)     → A6 profit_watch
-A6 profit_watch (loss/threshold)   → A2 listing_optimize
-G0 system_health (anomaly > 3)    → G1 dashboard_overview
-
-All scheduled agents: G0/A4/G1/A5/G3/A6/A3/G2/A7/M1/trustscore/entropy
-```
+The A1-A12/G0-G3 scheduler chain, MoA, autonomy upgrades, AgentOS mutation routes and `agent.decided.*` DAG are no longer registered in the production router. Historical `/api/v1/ai/traces` and `/api/v1/ai/actions` remain read-only for audit. `internal/ai/`, `internal/agent/` and `internal/aios/` retain migration source only; do not add new runtime callers. The only active Owner Agent is `xiao_q`.
 
 ### WebSocket
 
-`internal/realtime/` — hub for AI streaming and live updates. Endpoint: `GET /ws`. Integrated into AI route streaming for real-time chat/decision output.
+`internal/realtime/` — authenticated live-update hub. Endpoint: `GET /ws`. The retired generic AI chat handler is no longer attached;小Q交互使用受控 `/api/v1/xiao-q` HTTP 契约。
 
 ### Configuration
 
@@ -271,15 +262,13 @@ E2E tests: `frontend-next/e2e/` (Playwright, separate sub-project).
 
 | Package | Purpose |
 |---------|---------|
-| `internal/ai/` | LLM orchestration, chat, streaming, traces, provider abstraction |
-| `internal/agent/` | Agent registry + execution entry points |
-| `internal/agentos/` | Cockpit dashboard, work items, autonomy overview |
-| `domain/agentrule/` | Agent behavior rules |
-| `domain/entropy/` | Self-cleansing: SPC control, health scoring, defenses |
-| `domain/evolution/` | Agent evolution nudges |
+| `internal/domain/xiaoq/` | 唯一 Owner Agent、Capability Catalog、Agent Runtime 与 Trace |
+| `internal/ai/` | Provider adapter及只读历史Trace；旧A/G Orchestrator已失败关闭 |
+| `internal/agent/`, `internal/agentos/` | 冻结的旧运行外壳，不再注册生产路由 |
+| `domain/agentrule/`, `domain/entropy/`, `domain/evolution/` | 冻结的旧自治治理实现，不再注册生产路由 |
 | `domain/logistics/` | Cross-border shipping rate engine (A10) |
-| `domain/sourcing/` | Sourcing profit formula engine (A8) |
-| `domain/trustscore/` | Trust score calculation, autonomy gating |
+| `domain/sourcing/` | 冻结的旧 A8/mock 市场来源实现，不再注册生产路由 |
+| `domain/trustscore/` | 冻结的旧自治等级实现，不再注册生产路由 |
 | `domain/actionpolicy/` | Action approval policy |
 
 Legacy Hermes Python (`backend/app/agent/`) is reference-only.

@@ -99,7 +99,7 @@ export default function AppSidebar() {
           borderBottom: '1px solid var(--bd)',
           cursor: 'pointer',
         }}
-        onClick={() => router.push('/ai')}
+        onClick={() => router.push('/xiaoq')}
       >
         <div
           style={{
@@ -483,7 +483,7 @@ export default function AppSidebar() {
         }}
       >
         <div
-          onClick={() => router.push('/ai')}
+          onClick={() => router.push('/xiaoq')}
           style={{
             display: 'flex',
             alignItems: 'center',

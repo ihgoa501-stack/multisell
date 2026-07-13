@@ -2,17 +2,16 @@
 
 Package: `backend-go/internal/domain/entropy/`
 
-**Base mount prefix:** `/api/v1`
 
 ## API Routes
 
 | Method | Path | Handler |
 |--------|------|--------|
-| `GET` | `/api/v1/entropy` | `h.GetSummary` |
-| `GET` | `/api/v1/entropy/changelog` | `h.GetChangeLog` |
-| `POST` | `/api/v1/entropy/defense` | `h.RunDefenses` |
-| `GET` | `/api/v1/entropy/health` | `h.GetHealthScores` |
-| `GET` | `/api/v1/entropy/spc` | `h.GetSpcStatus` |
+| `GET` | `` | `h.GetSummary` |
+| `GET` | `/changelog` | `h.GetChangeLog` |
+| `POST` | `/defense` | `h.RunDefenses` |
+| `GET` | `/health` | `h.GetHealthScores` |
+| `GET` | `/spc` | `h.GetSpcStatus` |
 
 ## Models
 

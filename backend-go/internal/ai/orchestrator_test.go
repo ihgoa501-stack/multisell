@@ -114,6 +114,28 @@ func TestOrchestrator_RunWithContext_Timeout(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_DisabledRuntimeFailsBeforeTraceOrProvider(t *testing.T) {
+	db := newTestDB(t)
+	orch := NewOrchestrator(db, testLogger()).Disable("superseded by xiao_q")
+
+	_, err := orch.Run(&RunAgentRequest{
+		AgentID:       "A5",
+		DecisionPoint: "stock_alert",
+		Context:       a5FullContext,
+	})
+	if err == nil || !strings.Contains(err.Error(), "legacy agent runtime disabled") {
+		t.Fatalf("expected disabled runtime error, got %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&AITrace{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("disabled runtime created %d traces", count)
+	}
+}
+
 // ----- decision cache -----
 
 func TestOrchestrator_DecisionCache(t *testing.T) {

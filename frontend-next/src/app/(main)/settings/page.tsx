@@ -2,7 +2,6 @@
 
 import { Card, Col, Row } from 'antd';
 import {
-  RobotOutlined,
   SafetyCertificateOutlined,
   ApiOutlined,
   InfoCircleOutlined,
@@ -19,14 +18,6 @@ interface SettingCard {
 }
 
 const CARDS: SettingCard[] = [
-  {
-    key: 'llm',
-    title: 'LLM 配置',
-    desc: '管理各 Agent 的模型配置与参数',
-    icon: <RobotOutlined style={{ fontSize: 32, color: 'var(--i4)' }} />,
-    path: '/settings/llm',
-    color: 'var(--i4)',
-  },
   {
     key: 'rbac',
     title: 'RBAC 权限',

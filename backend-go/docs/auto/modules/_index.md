@@ -29,10 +29,10 @@
 | [exceptions](exceptions.md) | 10 | 2 | `—` |
 | [exchangerate](exchangerate.md) | 5 | 4 | `—` |
 | [experiment](experiment.md) | 9 | 7 | `—` |
-| [finance](finance.md) | 22 | 19 | `finance.read` |
+| [finance](finance.md) | 21 | 19 | `finance.read` |
 | [imagegen](imagegen.md) | 16 | 3 | `—` |
 | [importbatch](importbatch.md) | 7 | 2 | `—` |
-| [integrations](integrations.md) | 20 | 10 | `—` |
+| [integrations](integrations.md) | 17 | 10 | `—` |
 | [inventory](inventory.md) | 17 | 11 | `inventory.read` |
 | [landedcost](landedcost.md) | 3 | 5 | `—` |
 | [listing](listing.md) | 16 | 9 | `listing.read` |
