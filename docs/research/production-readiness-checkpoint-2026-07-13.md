@@ -58,3 +58,15 @@
 秘密轮换后的日志复核发现，当前正式运行镜像每次 `scheduler.tick.ozon_sync` 都会再次调用全局 adapter 初始化，触发 `platform adapter already registered: ozon` panic。EventBus 捕获了 panic，因此没有进入 Ozon 同步调用，但 `/api/ready` 仍返回成功，说明健康接口不能替代错误日志验收。
 
 当前没有 Owner 选定的 Ozon 市场决定，也没有授权默认周期性平台读取。修复提交 `9239db40` 删除默认 Ozon 定时任务及订阅，保留 Ozon 连接器和受控入口；聚焦 HTTP/集成测试与 vet 通过，后端候选镜像已构建但尚未部署。正式运行镜像仍会出现该 panic，必须在 P0-2 正式切换后复核日志为零。
+
+## 15:45 补充：公网边界与 Owner 会话只读验收
+
+- SSH 与主机边界：`PasswordAuthentication=no`、`KbdInteractiveAuthentication=no`，root 仅允许密钥；UFW 为默认拒绝入站，只放行 22、80、443，fail2ban 正常运行。
+- 服务暴露：PostgreSQL、后端和前端容器端口均未直接发布；从公网进行 HTTP/PostgreSQL 协议探测时，3000、5432、8080、9090 均无应用响应。80 只重定向至 443。
+- TLS：443 使用受信任的 Let's Encrypt IP 证书，SAN 为当前生产 IP；响应包含 HSTS、CSP 和 `X-Frame-Options: DENY`。证书当前有效期至 2026-07-19，仍需依赖 Caddy 自动续期，尚未完成一次真实续期观察。
+- 鉴权：未携带 Authorization 请求 `GET /api/v1/auth/extension-devices` 实际返回 401 `missing authorization header`。
+- 已登录会话：现有浏览器会话可读取 `/settings/plugin` 的生产环境页和空设备列表，也可读取 `/settings/rbac` 的三个角色记录；全程未读取或输出令牌，未点击配对、创建、编辑或删除操作。数据库侧只有一个启用用户具有 Owner/Admin 角色，但浏览器会话与该用户的精确身份映射没有直接取证，保持 `inferred`，不得写成已确认。
+- 界面真实性阻断：正式运行旧前端仍展示“3 Agents Online”、三项虚假运行任务、信任指数 85/127 次决策、商品 2,847、待发布 8 等无事实来源数字，并保留大量 Mock/Sandbox 导航。该界面会误导 Owner，P0-2 不得通过；候选发布前必须移除或显式标为不可用，并重新做浏览器验收。
+- 版本差异：当前正式运行的 `/api/v1/platform-truth` 返回 404，说明线上仍是旧运行版本；这不是候选平台真相能力的生产验证。
+
+以上只证明生产网络边界和部分鉴权行为实际存在，不证明正式系统已达到可用、可恢复或真实经营闭环。
