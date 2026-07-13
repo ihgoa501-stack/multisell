@@ -528,10 +528,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		Interval: time.Hour * 6, Description: "熵防御周期",
 	})
 	sched.Register(scheduler.Task{
-		ID: "tick-ozon-sync", AgentID: "ozon_sync", DecisionPoint: "sync_orders",
-		Interval: time.Minute * 15, Description: "Ozon 订单同步",
-	})
-	sched.Register(scheduler.Task{
 		ID: "tick-a8", AgentID: "A8", DecisionPoint: "sourcing_scan",
 		Interval: time.Hour * 1, Description: "选品扫描",
 	})
@@ -551,22 +547,6 @@ func NewRouter(db *gorm.DB, cfg *config.Config, logger *zap.Logger) *App {
 		ID: "tick-orch", AgentID: "orch", DecisionPoint: "supply_chain_heartbeat",
 		Interval: time.Minute * 15, Description: "供应链编排心跳",
 	})
-
-	// Ozon sync handler
-	bus.Subscribe("scheduler.tick.ozon_sync",
-		mutationGuard.Guard(eventbus.MutationInfo{
-			SystemAction: "system.integrations.ozon_order_sync",
-			Domain:       "integrations",
-			Description:  "定时从 Ozon 平台同步订单数据到本地数据库",
-		}, func(ctx context.Context, evt eventbus.Event) error {
-			integrations.InitAdapters(db, logger)
-			svc := integrations.NewService(db, logger)
-			if err := svc.SyncOzonOrders(ctx); err != nil {
-				return err
-			}
-			pipeline := aimapper.NewPipeline(aimapper.NewMapper(), db, logger)
-			return svc.SyncOzonOrdersRaw(ctx, pipeline)
-		}))
 
 	app := &App{Engine: r, Bus: bus, Scheduler: sched, Cancel: busCancel}
 	app.acceptingTraffic.Store(true)
